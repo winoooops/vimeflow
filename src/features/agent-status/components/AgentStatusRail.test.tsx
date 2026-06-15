@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { test, expect, vi } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
@@ -7,7 +7,7 @@ import { ctxTone } from '../utils/contextTone'
 
 const notRunning = false
 
-test('renders glyph chip, context bucket, cache bucket, and running dot when running', () => {
+test('renders glyph chip, context meter, cache meter, and running dot when running', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -19,17 +19,22 @@ test('renders glyph chip, context bucket, cache bucket, and running dot when run
   )
 
   expect(screen.getByText('∴')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-ctx')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-ctx-pct')).toHaveTextContent('42%')
-  expect(screen.getByTestId('bucket-cache')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-cache-pct')).toHaveTextContent('75%')
+  expect(screen.getByRole('meter', { name: 'CTX' })).toHaveAttribute(
+    'aria-valuenow',
+    '42'
+  )
+
+  expect(screen.getByRole('meter', { name: 'CACHE' })).toHaveAttribute(
+    'aria-valuenow',
+    '75'
+  )
   expect(screen.getByTestId('running-dot')).toBeInTheDocument()
 })
 
-// The context bucket shares the continuous ctxTone sweep with the expanded
+// The context meter shares the continuous ctxTone sweep with the expanded
 // reservoir card so the context color agrees across collapsed + expanded
 // states — no more tiered token swaps.
-test('context bucket color follows the shared ctxTone sweep', () => {
+test('context meter color follows the shared ctxTone sweep', () => {
   const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -40,9 +45,9 @@ test('context bucket color follows the shared ctxTone sweep', () => {
     />
   )
 
-  expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: ctxTone(92).base,
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CTX' })).getByText('%')
+  ).toHaveStyle({ color: ctxTone(92).base })
 
   rerender(
     <AgentStatusRail
@@ -54,12 +59,12 @@ test('context bucket color follows the shared ctxTone sweep', () => {
     />
   )
 
-  expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: ctxTone(40).base,
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CTX' })).getByText('%')
+  ).toHaveStyle({ color: ctxTone(40).base })
 })
 
-test('hides context bucket when contextUsedPercentage is null', () => {
+test('hides context meter when contextUsedPercentage is null', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -70,10 +75,10 @@ test('hides context bucket when contextUsedPercentage is null', () => {
     />
   )
 
-  expect(screen.queryByTestId('bucket-ctx')).not.toBeInTheDocument()
+  expect(screen.queryByRole('meter', { name: 'CTX' })).not.toBeInTheDocument()
 })
 
-test('hides cache bucket when cacheHitPercentage is null', () => {
+test('hides cache meter when cacheHitPercentage is null', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -84,10 +89,10 @@ test('hides cache bucket when cacheHitPercentage is null', () => {
     />
   )
 
-  expect(screen.queryByTestId('bucket-cache')).not.toBeInTheDocument()
+  expect(screen.queryByRole('meter', { name: 'CACHE' })).not.toBeInTheDocument()
 })
 
-test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
+test('cache meter tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -98,9 +103,9 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-success-muted)',
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
+  ).toHaveStyle({ color: 'var(--color-success-muted)' })
 
   rerender(
     <AgentStatusRail
@@ -112,9 +117,9 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-primary)',
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
+  ).toHaveStyle({ color: 'var(--color-primary)' })
 
   rerender(
     <AgentStatusRail
@@ -126,9 +131,9 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-tertiary)',
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
+  ).toHaveStyle({ color: 'var(--color-tertiary)' })
 })
 
 test('omits running dot when isRunning is false', () => {
@@ -193,4 +198,41 @@ test('rail sits on the canvas surface token', () => {
 
   expect(rail.className).toContain('bg-surface')
   expect(rail.className).not.toContain('bg-surface-container')
+})
+
+test('adds macOS drag coverage while keeping expand clickable', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+      reserveWindowControls
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).toHaveClass(
+    'vf-app-drag-region'
+  )
+
+  expect(
+    screen.getByRole('button', { name: /expand activity panel/i })
+  ).toHaveClass('vf-app-no-drag')
+})
+
+test('does not add rail drag coverage when native controls are not reserved', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).not.toHaveClass(
+    'vf-app-drag-region'
+  )
 })

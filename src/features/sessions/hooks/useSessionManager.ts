@@ -108,6 +108,7 @@ export interface SessionManager {
     paneId: string,
     percentage: number
   ) => void
+  clearPaneCacheHistory: (sessionId: string, paneId: string) => void
   updateBrowserPaneUrl?: (
     sessionId: string,
     paneId: string,
@@ -1794,6 +1795,33 @@ export const useSessionManager = (
     []
   )
 
+  const clearPaneCacheHistory = useCallback(
+    (sessionId: string, paneId: string): void => {
+      const target = sessionsRef.current.find((s) => s.id === sessionId)
+      const targetPane = target?.panes.find((p) => p.id === paneId)
+      if (!targetPane) {
+        return
+      }
+
+      deleteCacheHistory(targetPane.ptyId)
+
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const panes = session.panes.map((pane) =>
+            pane.id === paneId ? { ...pane, cacheHistory: [] } : pane
+          )
+
+          return { ...session, panes }
+        })
+      )
+    },
+    []
+  )
+
   const updatePaneAgentType = useCallback(
     (
       sessionId: string,
@@ -1938,6 +1966,7 @@ export const useSessionManager = (
     reorderSessions,
     updatePaneCwd,
     appendPaneCacheReading,
+    clearPaneCacheHistory,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,

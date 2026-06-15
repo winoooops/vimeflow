@@ -196,8 +196,8 @@ export const stateToken: Record<SessionState, StateVisual> = {
 
 /* ------------------------------------------------------------------
  * Context smiley helper (UNIFIED.md §5.4). Input is "percent full" (0-100).
- * Breakpoints (60/80/90) mirror the ContextBucket emoji in
- * src/features/agent-status. NOTE: the status-bar ContextSmiley uses a
+ * Breakpoints (60/80/90) mirror the legacy context-bucket emoji (now the
+ * status-bar ContextSmiley). NOTE: the status-bar ContextSmiley uses a
  * different 50/75/90 set (contextPresentation()) -- a known divergence.
  * ------------------------------------------------------------------ */
 

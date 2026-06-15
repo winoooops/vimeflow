@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
-import { Bucket } from './Bucket'
+import { RailMeter } from './RailMeter'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
@@ -9,6 +9,7 @@ export interface AgentStatusRailProps {
   cacheHitPercentage: number | null
   isRunning: boolean
   onExpand: () => void
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can drive the `transition-[width]` animation on
@@ -20,7 +21,7 @@ export const RAIL_WIDTH_PX = 44
 // These literals mirror tokens in `docs/design/tokens.ts` (success-muted,
 // primary, tertiary); `tokens.ts` is the design reference and is NOT imported
 // from `src/` (see the rationale in `TokenCache.tsx`). If the palette migrates,
-// update these in lockstep. The context bucket no longer uses tiered tokens —
+// update these in lockstep. The context meter no longer uses tiered tokens —
 // it shares the continuous `ctxTone` sweep with the expanded reservoir card so
 // the context color agrees across collapsed and expanded states.
 const TONE_DANGER = 'var(--color-tertiary)' // tertiary (strong pink, low cache)
@@ -44,6 +45,7 @@ export const AgentStatusRail = ({
   cacheHitPercentage,
   isRunning,
   onExpand,
+  reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
   const cachePct = cacheHitPercentage
@@ -51,14 +53,16 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
+      className={`flex h-full flex-col items-center bg-surface pb-3 pt-2 ${
+        reserveWindowControls ? 'vf-app-drag-region' : ''
+      }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
       <button
         type="button"
         onClick={onExpand}
         aria-label="Expand activity panel"
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        className="vf-app-no-drag grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
       >
         <span className="material-symbols-outlined text-base">
           chevron_left
@@ -78,17 +82,19 @@ export const AgentStatusRail = ({
       </div>
 
       {ctxPct !== null && (
-        <Bucket
-          pct={ctxPct}
-          color={ctxTone(ctxPct).base}
-          label="CTX"
-          tooltip={`Context: ${Math.round(ctxPct)}%`}
-        />
+        <div className="vf-app-no-drag">
+          <RailMeter
+            pct={ctxPct}
+            color={ctxTone(ctxPct).base}
+            label="CTX"
+            tooltip={`Context: ${Math.round(ctxPct)}%`}
+          />
+        </div>
       )}
 
       {cachePct !== null && (
-        <div className="mt-4">
-          <Bucket
+        <div className="vf-app-no-drag mt-4">
+          <RailMeter
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"

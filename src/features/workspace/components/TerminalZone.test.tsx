@@ -59,6 +59,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       showFocusHighlight,
       onRestart,
       onClose,
+      onCommandSubmit,
       session,
       isActive,
     }: TerminalPaneProps): ReactElement => (
@@ -104,6 +105,15 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
             onClick={() => onCwdChange('/changed')}
           >
             mock-cwd
+          </button>
+        )}
+        {onCommandSubmit && (
+          <button
+            type="button"
+            data-testid={`mock-command-${pane.ptyId}`}
+            onClick={() => onCommandSubmit(pane.ptyId, '/clear')}
+          >
+            mock-command
           </button>
         )}
       </div>
@@ -296,6 +306,17 @@ describe('TerminalZone', () => {
     await user.click(screen.getByTestId('mock-cwd-sess-1'))
 
     expect(onSessionCwdChange).toHaveBeenCalledWith('sess-1', 'p0', '/changed')
+  })
+
+  test('forwards terminal command submissions from panes', async () => {
+    const user = userEvent.setup()
+    const onCommandSubmit = vi.fn()
+
+    render(<TerminalZone {...defaultProps} onCommandSubmit={onCommandSubmit} />)
+
+    await user.click(screen.getByTestId('mock-command-sess-1'))
+
+    expect(onCommandSubmit).toHaveBeenCalledWith('sess-1', '/clear')
   })
 
   test('forwards deferred terminal fit state to TerminalPane', () => {

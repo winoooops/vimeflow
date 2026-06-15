@@ -33,6 +33,7 @@ export interface TerminalZoneProps {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+  onCommandSubmit?: (ptyId: string, command: string) => void
   /**
    * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
    */
@@ -78,6 +79,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onSessionCwdChange = undefined,
       loading = false,
       onPaneReady = undefined,
+      onCommandSubmit = undefined,
       onSessionRestart = undefined,
       deferTerminalFit = false,
       service,
@@ -184,6 +186,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     isActive={isActive}
                     onSessionCwdChange={onSessionCwdChange}
                     onPaneReady={onPaneReady}
+                    onCommandSubmit={onCommandSubmit}
                     onSessionRestart={onSessionRestart}
                     onSetActivePane={setSessionActivePane}
                     onBrowserPaneUrlChange={updateBrowserPaneUrl}
