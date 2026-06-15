@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import * as useGitStatusModule from '../../../diff/hooks/useGitStatus'
+import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import {
   clearStatusSnapshots,
   readStatusScrollAnchor,
@@ -103,6 +104,18 @@ const defaultProps = {
   onCollapse: (): void => undefined,
   cacheHistory: [],
 }
+
+const createGitStatus = (
+  overrides: Partial<UseGitStatusReturn> = {}
+): UseGitStatusReturn => ({
+  files: [],
+  filesCwd: '/tmp/repo',
+  loading: false,
+  error: null,
+  refresh: vi.fn(),
+  idle: false,
+  ...overrides,
+})
 
 describe('AgentStatusPanel', () => {
   afterEach(() => {
@@ -866,6 +879,342 @@ describe('AgentStatusPanel', () => {
 
     expect(scrollElement.scrollTop).toBe(120)
     expect(readStatusScrollAnchor('pty-pane-1')).toBe(120)
+  })
+
+  test('retains the previous content body while a cold target pane is refreshing', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cacheHistory={[75]}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('agent-status-panel-body-refresh-indicator')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fetching')
+  })
+
+  test('keeps the last stable body during the pane-switch render before refresh starts', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cacheHistory={[75]}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('fetching latest')).toBeInTheDocument()
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fetching')
+  })
+
+  test('releases the retained body after refresh settles', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.queryByText('src/retained.ts')).not.toBeInTheDocument()
+    expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-refresh-indicator')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fresh')
+  })
+
+  test('makes retained body non-interactive while fetching a cold target pane', async () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const onOpenDiff = vi.fn()
+
+    const retainedGitStatus = createGitStatus({
+      files: [
+        {
+          path: 'retained-diff.ts',
+          status: 'modified',
+          insertions: 3,
+          deletions: 1,
+          staged: false,
+        },
+      ],
+    })
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cwd="/tmp/repo"
+        gitStatus={retainedGitStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveClass('select-none')
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+
+    // Clicks on the retained FilesChanged row must not dispatch while the
+    // snapshot is retained, because onOpenDiff is wired through FilesChanged
+    // and would otherwise fire with the target pane's context.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /retained-diff\.ts/ }))
+    expect(onOpenDiff).not.toHaveBeenCalled()
+  })
+
+  test('keeps the current body interactive during a same-pane refresh', () => {
+    const onOpenDiff = vi.fn()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        cwd="/tmp/repo"
+        isRefreshing
+        snapshotKey="pty-pane-1"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).not.toHaveClass('select-none')
+
+    fireEvent.click(screen.getByText('a.ts'))
+    expect(onOpenDiff).toHaveBeenCalled()
+  })
+
+  test('shows fixed body skeletons on a cold load with no retained content', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...inactiveAgentStatus,
+          sessionId: 'pty-pane-1',
+        }}
+        gitStatus={createGitStatus()}
+        isRefreshing
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    expect(
+      screen.getByTestId('agent-status-panel-overview-loading')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-body-loading')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Loading agent status')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    )
   })
 
   test('renders Header above the body with the provided agent status and onCollapse', async () => {

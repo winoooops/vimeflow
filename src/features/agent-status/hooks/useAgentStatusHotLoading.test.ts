@@ -1,7 +1,10 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { refreshVisibleAgentStatusPanes } from '../utils/statusRefreshCoordinator'
-import { useAgentStatusHotLoading } from './useAgentStatusHotLoading'
+import {
+  MIN_AGENT_STATUS_REFRESH_MS,
+  useAgentStatusHotLoading,
+} from './useAgentStatusHotLoading'
 
 vi.mock('../utils/statusRefreshCoordinator', async () => {
   const actual = await vi.importActual<
@@ -73,5 +76,44 @@ describe('useAgentStatusHotLoading', () => {
     resolveRefresh([])
 
     await waitFor(() => expect(result.current).toBe(false))
+  })
+
+  test('keeps immediate refreshes visible for the minimum duration', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-15T12:00:00Z'))
+
+    try {
+      vi.mocked(refreshVisibleAgentStatusPanes).mockResolvedValueOnce([])
+
+      const { result } = renderHook(() =>
+        useAgentStatusHotLoading({
+          activePtyId: 'pty-a',
+          visiblePtyIds: ['pty-a'],
+        })
+      )
+
+      expect(refreshVisibleAgentStatusPanes).toHaveBeenCalledWith({
+        activePtyId: 'pty-a',
+        visiblePtyIds: ['pty-a'],
+      })
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(result.current).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(MIN_AGENT_STATUS_REFRESH_MS - 1)
+      })
+      expect(result.current).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(result.current).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

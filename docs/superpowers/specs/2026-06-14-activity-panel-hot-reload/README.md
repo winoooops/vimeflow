@@ -3,7 +3,7 @@
 **Linear:** [VIM-127](https://linear.app/vimeflow/issue/VIM-127/epic-stabilize-activity-panel-hot-reload-across-pane-switching)
 **Integration branch:** `feat/vim-127-activity-panel-hot-reload`
 **PR1 branch / worktree:** `feature/vim-127` on `worktrees/vim-127-activity-panel-hot-reload`
-**Status:** draft
+**Status:** PR5 in progress
 **Supporting design analysis:** [`docs/design/activity-panel-hot-reload-analysis.html`](../../../design/activity-panel-hot-reload-analysis.html)
 
 ## Overview
@@ -51,6 +51,7 @@ If Claude returns `overall_correctness: "patch has issues"`, fix only issues tha
 
 - The final implementation removes the visible jump/flicker behavior in the recording scenario: long histories, multiple panes, and fast pane switching.
 - Pane switches retain existing content and per-pane scroll position while fresh data loads.
+- Warm pane switches keep a retained below-header body visible until cold target status settles; first-load cases use fixed skeleton footprints instead of flashing empty content.
 - Prefetch stays bounded to visible panes in the current session unless a later PR explicitly revises that boundary.
 - Tests cover snapshot reuse, stale request drops, bounded prefetch, and scroll retention.
 - The final docs explain the implemented behavior and any remaining limitations.
