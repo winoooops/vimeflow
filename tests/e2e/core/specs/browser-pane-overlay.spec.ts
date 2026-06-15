@@ -125,15 +125,18 @@ const assertCdpTarget = async (
   const targets = (await response.json()) as BrowserCdpListTarget[]
   const expectedTargetId = `${identity.sessionId}:${identity.paneId}`
   const targetExists = targets.some(
-    (target) =>
-      target.id === cdpInfo.targetId &&
-      target.id === expectedTargetId &&
-      target.type === 'page'
+    (target) => target.id === cdpInfo.targetId && target.type === 'page'
   )
 
   if (!targetExists) {
     throw new Error(
-      `CDP list did not include the browser pane target ${expectedTargetId}`
+      `CDP list did not include browser pane target ${cdpInfo.targetId}`
+    )
+  }
+
+  if (cdpInfo.targetId !== expectedTargetId) {
+    throw new Error(
+      `CDP target id mismatch: got ${cdpInfo.targetId}, expected ${expectedTargetId}`
     )
   }
 }
@@ -293,9 +296,5 @@ describe('BrowserPane native overlay occlusion', () => {
       hiddenCapture.sequence
     )
     assertRealLayoutBounds(shownCapture, 'restored')
-
-    if (shownCapture.sequence <= hiddenCapture.sequence) {
-      throw new Error('browser pane did not restore after it was hidden')
-    }
   })
 })
