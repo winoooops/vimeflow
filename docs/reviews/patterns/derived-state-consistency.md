@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-13
-ref_count: 6
+ref_count: 7
 ---
 
 # Derived State Consistency
