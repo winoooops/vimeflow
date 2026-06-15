@@ -1092,6 +1092,89 @@ describe('AgentStatusPanel', () => {
     ).toHaveAttribute('data-body-phase', 'fresh')
   })
 
+  test('makes retained body non-interactive while fetching a cold target pane', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const onOpenDiff = vi.fn()
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveClass('select-none')
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+
+    // Clicks on retained content must not dispatch while the snapshot is
+    // retained, because the action callbacks still belong to the current pane.
+    fireEvent.click(screen.getByText('src/retained.ts'))
+    expect(onOpenDiff).not.toHaveBeenCalled()
+  })
+
+  test('keeps the current body interactive during a same-pane refresh', () => {
+    const onOpenDiff = vi.fn()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        cwd="/tmp/repo"
+        isRefreshing
+        snapshotKey="pty-pane-1"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).not.toHaveClass('select-none')
+
+    fireEvent.click(screen.getByText('a.ts'))
+    expect(onOpenDiff).toHaveBeenCalled()
+  })
+
   test('shows fixed body skeletons on a cold load with no retained content', () => {
     render(
       <AgentStatusPanel

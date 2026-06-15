@@ -323,8 +323,9 @@ export const AgentStatusPanel = ({
   const bodyCacheHistory = bodyState.snapshot.cacheHistory
   const bodySnapshotKey = bodyState.snapshot.snapshotKey
   const isBodyLoading = bodyState.phase === 'loading'
-  const isBodyRefreshing = bodyState.phase === 'fetching'
-  const showsRefreshing = isRefreshing || isBodyRefreshing
+  const isBodyFetching = bodyState.phase === 'fetching'
+  const showsRefreshing = isRefreshing || isBodyFetching
+  const isRetainedBody = isBodyFetching && bodySnapshotKey !== snapshotKey
   const events = useActivityEvents(status)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const programmaticScrollTopRef = useRef<number | null>(null)
@@ -566,7 +567,7 @@ export const AgentStatusPanel = ({
       )}
 
       <div className="relative min-h-0 flex-1">
-        {isBodyRefreshing && <AgentStatusPanelBodyRefreshIndicator />}
+        {isBodyFetching && <AgentStatusPanelBodyRefreshIndicator />}
         <div
           ref={scrollContainerRef}
           data-testid="agent-status-panel-scroll-region"
@@ -577,7 +578,11 @@ export const AgentStatusPanel = ({
           {isBodyLoading ? (
             <AgentStatusPanelBodySkeleton />
           ) : (
-            <>
+            <div
+              data-testid="agent-status-panel-body-content"
+              className={isRetainedBody ? 'select-none' : undefined}
+              inert={isRetainedBody || undefined}
+            >
               <ToolCallSummary
                 total={status.toolCalls.total}
                 byType={status.toolCalls.byType}
@@ -601,7 +606,7 @@ export const AgentStatusPanel = ({
                 onSelect={onOpenDiff}
               />
               <TestResults snapshot={status.testRun} onOpenFile={onOpenFile} />
-            </>
+            </div>
           )}
         </div>
       </div>
