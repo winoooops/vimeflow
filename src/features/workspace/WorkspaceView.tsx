@@ -1766,15 +1766,6 @@ const WorkspaceViewContent = (): ReactElement => {
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
 
-  const areBrowserPanesOccluded =
-    terminalFitDeferred ||
-    showUnsavedDialog ||
-    commandPalette.state.isOpen ||
-    hasVisibleBurner ||
-    paneRenameNode !== null ||
-    fileError !== null ||
-    infoMessage !== null
-
   const feedbackDispatch = useMemo(() => {
     // Inline-review feedback dispatches to the single CONNECTED (active) pane —
     // the one whose diff is on screen. We gate the candidate on LIVE agent
@@ -1920,7 +1911,7 @@ const WorkspaceViewContent = (): ReactElement => {
         unsavedChangesDialogOpen={showUnsavedDialog}
         burnerTerminalOpen={hasVisibleBurner}
         paneRenameOpen={paneRenameNode !== null}
-        dragOverlayOpen={terminalFitDeferred}
+        dragOverlayOpen={isDragging}
         bannerOpen={fileError !== null || infoMessage !== null}
       />
       {isCompactViewport && !isSidebarClosed && (
@@ -2231,7 +2222,6 @@ const WorkspaceViewContent = (): ReactElement => {
               updateBrowserPaneUrl={updateBrowserPaneUrl}
               addPane={addPane}
               removePane={removePane}
-              areBrowserPanesOccluded={areBrowserPanesOccluded}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)

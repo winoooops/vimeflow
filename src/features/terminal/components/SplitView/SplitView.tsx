@@ -51,7 +51,6 @@ export interface SplitViewProps {
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
-  areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
 }
@@ -113,7 +112,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
-      areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
     }: SplitViewProps,
@@ -323,7 +321,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           session={session}
                           pane={pane}
                           isActive={isActive}
-                          isOccluded={areBrowserPanesOccluded}
                           onClose={closeHandler}
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
