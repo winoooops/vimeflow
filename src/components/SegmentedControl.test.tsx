@@ -148,4 +148,34 @@ describe('SegmentedControl', () => {
       'text-primary'
     )
   })
+
+  test('unmatched value does not render thumb and keeps first option tabbable', () => {
+    render(
+      <SegmentedControl
+        aria-label="Sidebar tabs"
+        data-testid="sidebar-tabs"
+        thumbTestId="sidebar-tabs-thumb"
+        variant="sidebar"
+        value="missing"
+        options={[
+          { value: 'sessions', label: 'Sessions', icon: 'terminal' },
+          { value: 'files', label: 'Files', icon: 'folder' },
+        ]}
+        onChange={vi.fn()}
+      />
+    )
+
+    const group = screen.getByTestId('sidebar-tabs')
+    expect(
+      within(group).queryByTestId('sidebar-tabs-thumb')
+    ).not.toBeInTheDocument()
+
+    const sessions = screen.getByRole('button', { name: 'Sessions' })
+    const files = screen.getByRole('button', { name: 'Files' })
+
+    expect(sessions).toHaveAttribute('tabindex', '0')
+    expect(files).toHaveAttribute('tabindex', '-1')
+    expect(sessions).toHaveAttribute('aria-pressed', 'false')
+    expect(files).toHaveAttribute('aria-pressed', 'false')
+  })
 })

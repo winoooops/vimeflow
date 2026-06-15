@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 23
+ref_count: 24
 ---
 
 # Accessibility
@@ -540,4 +540,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
 - **Finding:** The overflow menu trigger passed `pressed={open}` to `IconButton` while also forwarding `aria-expanded={open}`. `BaseButton` emits `aria-pressed` from the `pressed` prop, so the button carried both ARIA states when open — screen readers announce a disclosure widget as a toggle button that is both pressed and expanded.
 - **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
+- **Commit:** same commit as this entry
+
+### 51. SegmentedControl unmatched value is visually coerced to the first option
+
+- **Source:** github-codex-connector | PR #461 round 2 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/components/SegmentedControl.tsx`
+- **Finding:** `activeIndex` was computed with `Math.max(0, options.findIndex(...))` and used for both the sidebar active-thumb transform and roving `tabIndex`. When a controlled `value` did not match any option, the control showed the thumb under option 0 and made option 0 tabbable while all buttons exposed `aria-pressed=false`, producing a visual/assistive-state mismatch.
+- **Fix:** Preserved the raw `findIndex` result as `activeIndex`, added a separate `focusIndex = Math.max(0, activeIndex)` used only for keyboard entry (`tabIndex`), and guarded thumb rendering with `activeIndex >= 0` so no thumb appears when no option is semantically selected. Added a regression test verifying the thumb is absent, the first option remains tabbable, and both options report `aria-pressed="false"` for an unmatched value.
 - **Commit:** same commit as this entry

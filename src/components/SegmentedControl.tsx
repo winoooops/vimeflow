@@ -198,10 +198,8 @@ export const SegmentedControl = <T extends string | number>({
   thumbTestId = undefined,
   style = undefined,
 }: SegmentedControlProps<T>): ReactElement => {
-  const activeIndex = Math.max(
-    0,
-    options.findIndex((option) => option.value === value)
-  )
+  const activeIndex = options.findIndex((option) => option.value === value)
+  const focusIndex = Math.max(0, activeIndex)
   const optionCount = Math.max(1, options.length)
 
   const thumbStyle: CSSProperties = {
@@ -268,7 +266,7 @@ export const SegmentedControl = <T extends string | number>({
       style={style}
       className={segmentedTrackVariants({ variant, class: className })}
     >
-      {showActiveThumb && options.length > 0 && (
+      {showActiveThumb && options.length > 0 && activeIndex >= 0 && (
         <div
           aria-hidden="true"
           data-testid={thumbTestId}
@@ -291,7 +289,7 @@ export const SegmentedControl = <T extends string | number>({
             aria-label={option.ariaLabel ?? option.label}
             aria-pressed={active}
             data-active={active ? 'true' : undefined}
-            tabIndex={index === activeIndex ? 0 : -1}
+            tabIndex={index === focusIndex ? 0 : -1}
             onClick={
               active && skipActiveReselect
                 ? undefined
