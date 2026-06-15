@@ -251,48 +251,42 @@
   }
 }
 
-/* Context reservoir (WaterTank) parallax. Each wave path is 2x the tank width
-   (496) and translates by exactly one tank width (248) for a seamless loop.
-   `transform-box: fill-box` is required so the -50% resolves against the 496px
-   path, not the 248px viewBox — without it the percentage is viewBox-relative
-   (-124px), half the back wave's 248px wavelength, so it resets mid-wave every
-   loop. Both waves move the same direction; the back wave reads as a distinct
-   layer through its longer wavelength, slower speed, taller amplitude, and
-   offset phase. Honors prefers-reduced-motion — the static tank is legible. */
-@keyframes vfTankWaveA {
+/* Context reservoir (WaterTank) ambient drift. Each wave path is 3x the tank
+   width (744) and the keyframe drifts the group by exactly one tank width
+   (248 = -33.333% of 744) for a seamless loop. `transform-box: fill-box` makes
+   the percentage resolve against the 744px path, not the 248px viewBox —
+   without it the percentage is viewBox-relative and resets mid-wave. Three
+   tiles (not two) leave runway for the JS hover boost (useReservoirFlow) to
+   stack on top of this -248 drift without sampling past the path's right edge.
+   The base drift is deliberately slow and calm; the back wave reads as a
+   distinct, slower parallax layer (longer wavelength, slower speed, taller
+   amplitude, offset phase). Honors prefers-reduced-motion — the static filled
+   tank is fully legible. */
+@keyframes vfTankDrift {
   from {
     transform: translateX(0);
   }
   to {
-    transform: translateX(-50%);
+    transform: translateX(-33.3333%);
   }
 }
 
-@keyframes vfTankWaveB {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.vf-tank-wave-a,
-.vf-tank-wave-b {
+.vf-tank-drift-a,
+.vf-tank-drift-b {
   transform-box: fill-box;
 }
 
-.vf-tank-wave-a {
-  animation: vfTankWaveA 4.6s linear infinite;
+.vf-tank-drift-a {
+  animation: vfTankDrift 9s linear infinite;
 }
 
-.vf-tank-wave-b {
-  animation: vfTankWaveB 7s linear infinite;
+.vf-tank-drift-b {
+  animation: vfTankDrift 13s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vf-tank-wave-a,
-  .vf-tank-wave-b {
+  .vf-tank-drift-a,
+  .vf-tank-drift-b {
     animation: none;
   }
 }

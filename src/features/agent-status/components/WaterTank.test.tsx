@@ -31,11 +31,11 @@ describe('WaterTank', () => {
     expect(screen.queryByTestId('tank-water')).not.toBeInTheDocument()
   })
 
-  test('applies the seamless parallax wave classes', () => {
+  test('applies the slow base-drift classes', () => {
     render(<WaterTank pct={56} theme="dark" />)
 
-    expect(screen.getByTestId('tank-wave-front')).toHaveClass('vf-tank-wave-a')
-    expect(screen.getByTestId('tank-wave-back')).toHaveClass('vf-tank-wave-b')
+    expect(screen.getByTestId('tank-wave-front')).toHaveClass('vf-tank-drift-a')
+    expect(screen.getByTestId('tank-wave-back')).toHaveClass('vf-tank-drift-b')
   })
 
   test('honors a custom height in the viewBox', () => {

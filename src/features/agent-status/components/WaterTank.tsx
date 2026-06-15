@@ -1,9 +1,13 @@
-import { useId, type ReactElement } from 'react'
+import { useEffect, useId, useRef, type ReactElement } from 'react'
 import {
   resolveContextTone,
   tankChrome,
   type ReservoirTheme,
 } from '../utils/contextTone'
+import {
+  useReservoirFlow,
+  type ReservoirFlowRefs,
+} from '../hooks/useReservoirFlow'
 
 export interface WaterTankProps {
   /** Context fill, 0-100. Drives the waterline height and the tone. */
@@ -15,14 +19,16 @@ export interface WaterTankProps {
   empty?: boolean
 }
 
-// The parallax waves always animate; prefers-reduced-motion disables them via
-// CSS (the static filled tank is fully legible).
-
 // SVG is drawn in a fixed 248-wide user space and stretched to the container
-// (preserveAspectRatio="none"); each wave path spans 2x the width and the
-// keyframe translates it by exactly one width (-50%), so the loop is seamless.
+// (preserveAspectRatio="none"). Each wave path spans 3x the tank width: the CSS
+// keyframe (vf-tank-drift-*) drifts the outer group by exactly one tank
+// (translateX(-33.333%) of the 3x path under transform-box: fill-box) for a
+// calm, always-on, seamless loop, and a nested boost group adds an extra
+// hover-driven drift via useReservoirFlow. Three tiles (not two) give the
+// base + boost translate enough runway to never sample past the path's right
+// edge. Reduced-motion disables both layers.
 const TANK_WIDTH = 248
-const WAVE_SPAN = TANK_WIDTH * 2
+const WAVE_SPAN = TANK_WIDTH * 3
 // Wavelengths that divide the tank width evenly so each wave tiles without a
 // seam on loop (the handoff's back-wave length of 150 did not tile the 248px
 // translate). The back wave reads as a distinct, slower parallax layer: one
@@ -52,6 +58,20 @@ export const WaterTank = ({
   const dryId = `tank-dry-${rid}`
   const clipId = `tank-clip-${rid}`
 
+  const svgRef = useRef<SVGSVGElement>(null)
+  const frontRef = useRef<SVGGElement>(null)
+  const backRef = useRef<SVGGElement>(null)
+  const flowRefsRef = useRef<ReservoirFlowRefs | null>(null)
+
+  useEffect(() => {
+    flowRefsRef.current =
+      frontRef.current !== null && backRef.current !== null
+        ? { front: frontRef.current, back: backRef.current }
+        : null
+  }, [empty])
+
+  useReservoirFlow(svgRef, flowRefsRef)
+
   const wavePath = (
     amplitude: number,
     phase: number,
@@ -75,6 +95,7 @@ export const WaterTank = ({
 
   return (
     <svg
+      ref={svgRef}
       data-testid="water-tank"
       viewBox={`0 0 ${TANK_WIDTH} ${height}`}
       width="100%"
@@ -133,30 +154,34 @@ export const WaterTank = ({
 
         {!empty && (
           <>
-            {/* back wave — slower, taller, dim */}
-            <g data-testid="tank-wave-back" className="vf-tank-wave-b">
-              <path
-                d={wavePath(3.2, 0.9, WAVELENGTH_BACK)}
-                fill={`url(#${fillId})`}
-                opacity="0.5"
-              />
+            {/* back wave — slow CSS drift; inner group takes the hover boost */}
+            <g data-testid="tank-wave-back" className="vf-tank-drift-b">
+              <g ref={backRef}>
+                <path
+                  d={wavePath(3.2, 0.9, WAVELENGTH_BACK)}
+                  fill={`url(#${fillId})`}
+                  opacity="0.5"
+                />
+              </g>
             </g>
             {/* front wave — the primary body + bright meniscus crest */}
-            <g data-testid="tank-wave-front" className="vf-tank-wave-a">
-              <path
-                data-testid="tank-water"
-                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT)}
-                fill={`url(#${fillId})`}
-              />
-              <path
-                data-testid="tank-meniscus"
-                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT, false)}
-                fill="none"
-                stroke={tone.meniscus}
-                strokeWidth="1.5"
-                strokeOpacity="0.9"
-                style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
-              />
+            <g data-testid="tank-wave-front" className="vf-tank-drift-a">
+              <g ref={frontRef}>
+                <path
+                  data-testid="tank-water"
+                  d={wavePath(2.4, 2.4, WAVELENGTH_FRONT)}
+                  fill={`url(#${fillId})`}
+                />
+                <path
+                  data-testid="tank-meniscus"
+                  d={wavePath(2.4, 2.4, WAVELENGTH_FRONT, false)}
+                  fill="none"
+                  stroke={tone.meniscus}
+                  strokeWidth="1.5"
+                  strokeOpacity="0.9"
+                  style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
+                />
+              </g>
             </g>
           </>
         )}
