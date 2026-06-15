@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
-import { Bucket } from './Bucket'
+import { RailMeter } from './RailMeter'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
@@ -21,7 +21,7 @@ export const RAIL_WIDTH_PX = 44
 // These literals mirror tokens in `docs/design/tokens.ts` (success-muted,
 // primary, tertiary); `tokens.ts` is the design reference and is NOT imported
 // from `src/` (see the rationale in `TokenCache.tsx`). If the palette migrates,
-// update these in lockstep. The context bucket no longer uses tiered tokens —
+// update these in lockstep. The context meter no longer uses tiered tokens —
 // it shares the continuous `ctxTone` sweep with the expanded reservoir card so
 // the context color agrees across collapsed and expanded states.
 const TONE_DANGER = 'var(--color-tertiary)' // tertiary (strong pink, low cache)
@@ -83,7 +83,7 @@ export const AgentStatusRail = ({
 
       {ctxPct !== null && (
         <div className="vf-app-no-drag">
-          <Bucket
+          <RailMeter
             pct={ctxPct}
             color={ctxTone(ctxPct).base}
             label="CTX"
@@ -94,7 +94,7 @@ export const AgentStatusRail = ({
 
       {cachePct !== null && (
         <div className="vf-app-no-drag mt-4">
-          <Bucket
+          <RailMeter
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"

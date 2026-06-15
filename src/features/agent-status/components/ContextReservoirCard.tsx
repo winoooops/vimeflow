@@ -3,7 +3,7 @@ import { useTheme } from '@/theme/useTheme'
 import { WaterTank } from './WaterTank'
 import { resolveContextTone, tankChrome } from '../utils/contextTone'
 
-export interface ContextBucketProps {
+export interface ContextReservoirCardProps {
   usedPercentage: number | null
   contextWindowSize: number
 }
@@ -39,10 +39,10 @@ const DASH = '—'
  * collapsed rail meter). No emoji — the degrading faces live in the bottom
  * status bar.
  */
-export const ContextBucket = ({
+export const ContextReservoirCard = ({
   usedPercentage,
   contextWindowSize,
-}: ContextBucketProps): ReactElement => {
+}: ContextReservoirCardProps): ReactElement => {
   const pct = usedPercentage
   const mode = useTheme().kind
   const effectivePct = pct ?? 0
@@ -69,9 +69,21 @@ export const ContextBucket = ({
     background: `linear-gradient(135deg, color-mix(in srgb, ${tone.base} ${mode === 'light' ? 11 : 8}%, transparent), color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent))`,
   }
 
+  // Screen readers announce this as a meter — the context window as a value
+  // within a fixed 0-100 range. The visible tank/number are its presentation.
+  const valueText =
+    pct === null
+      ? 'Context usage unknown'
+      : `${Math.round(pct)}% used · ${formatTokenCount(used)} of ${formatTokenCount(contextWindowSize)} tokens · ${compactTokens(headroom)} left`
+
   return (
     <div
-      data-testid="context-bucket"
+      role="meter"
+      aria-label="Context window usage"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct === null ? undefined : Math.round(pct)}
+      aria-valuetext={valueText}
       className="cursor-default overflow-hidden"
       style={cardStyle}
     >
@@ -97,7 +109,6 @@ export const ContextBucket = ({
             Context
           </span>
           <span
-            data-testid="context-percentage"
             className={`font-display text-[18px] font-bold leading-none tracking-[-0.01em] tabular-nums ${pct === null ? 'text-outline' : ''}`}
             style={pct !== null ? { color: tone.bigNum } : undefined}
           >

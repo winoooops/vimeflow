@@ -8,7 +8,7 @@ import {
 import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import type { SessionStatus } from '../../../sessions/types'
-import { ContextBucket } from '../ContextBucket'
+import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
 import { ToolCallSummary } from '../ToolCallSummary'
 import { FilesChanged } from '../FilesChanged'
@@ -144,7 +144,7 @@ export const AgentStatusPanel = ({
       />
 
       <div className="flex flex-col gap-2 p-2">
-        <ContextBucket
+        <ContextReservoirCard
           usedPercentage={status.contextWindow?.usedPercentage ?? null}
           contextWindowSize={
             status.contextWindow?.contextWindowSize ??

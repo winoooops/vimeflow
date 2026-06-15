@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 23
+ref_count: 24
 ---
 
 # Accessibility
@@ -540,4 +540,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/agent-status/hooks/useReservoirFlow.ts`
 - **Finding:** `onLeave` called `ensureLoop()` unconditionally, so it scheduled a rAF frame even when `prefers-reduced-motion: reduce` was active, the water refs were null, or the loop was already at rest. Under reduced motion this could re-apply a cached `translate(...)` transform after `onMqlChange` had explicitly cleared it.
 - **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Meter reports unknown context usage as 0%
+
+- **Source:** github-codex-connector | PR #462 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** When `usedPercentage` was `null` (context window not yet known), the card still derived `aria-valuenow` from `effectivePct` (`pct ?? 0`), exposing a 0% meter value while the visible UI and `aria-valuetext` announced the usage as unknown. Screen-reader users could confuse an initial/unknown state with a genuinely empty context window.
+- **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
