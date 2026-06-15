@@ -9,6 +9,7 @@ export interface AgentStatusRailProps {
   cacheHitPercentage: number | null
   isRunning: boolean
   onExpand: () => void
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can drive the `transition-[width]` animation on
@@ -44,6 +45,7 @@ export const AgentStatusRail = ({
   cacheHitPercentage,
   isRunning,
   onExpand,
+  reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
   const cachePct = cacheHitPercentage
@@ -51,14 +53,16 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
+      className={`flex h-full flex-col items-center bg-surface pb-3 pt-2 ${
+        reserveWindowControls ? 'vf-app-drag-region' : ''
+      }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
       <button
         type="button"
         onClick={onExpand}
         aria-label="Expand activity panel"
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        className="vf-app-no-drag grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
       >
         <span className="material-symbols-outlined text-base">
           chevron_left
