@@ -604,11 +604,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               isTestFile: p.isTestFile,
             }
 
-            setStatus((prev) => {
-              const duplicate = seenToolUseIdsRef.current.has(p.toolUseId)
-              seenToolUseIdsRef.current.add(p.toolUseId)
-              writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
+            const duplicate = seenToolUseIdsRef.current.has(p.toolUseId)
+            seenToolUseIdsRef.current.add(p.toolUseId)
+            writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
 
+            setStatus((prev) => {
               if (duplicate) {
                 const active =
                   prev.toolCalls.active?.toolUseId === p.toolUseId

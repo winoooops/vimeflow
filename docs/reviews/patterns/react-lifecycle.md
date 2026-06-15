@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-11
+last_updated: 2026-06-15
 ref_count: 15
 ---
 
@@ -310,4 +310,22 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/WorkspaceView.tsx`, `src/features/workspace/components/AgentStatusCard.tsx`
 - **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Ref mutation + store write inside setStatus updater breaks React StrictMode
+
+- **Source:** github-claude | PR #456 round 1 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `seenToolUseIdsRef.current.has/add` and `writeStatusSeenToolUseIds` were called inside the functional `setStatus` updater. React 18 StrictMode double-invokes state updaters with the same `prev` in development, so the first invocation mutated the ref and the second invocation treated the legitimate tool call as a duplicate, returning `prev` unchanged.
+- **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure (before `setStatus`), capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Move seen-tool ID writes out of the state updater
+
+- **Source:** github-codex-connector | PR #456 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
+- **Fix:** Same change as entry 31: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
