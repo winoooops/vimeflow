@@ -1,4 +1,9 @@
-import { render as rtlRender, screen, act, within } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  act,
+  within,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'

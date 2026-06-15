@@ -4,7 +4,6 @@ category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-14
 ref_count: 13
-
 ---
 
 # Error Surfacing

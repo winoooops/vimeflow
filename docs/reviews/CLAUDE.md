@@ -42,7 +42,7 @@ When appending findings to a pattern file, label the source so future readers ca
   `/lifeline:upsource-review`).
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
-|------------------------------------------------------------------------------------------------------|--------------------|----------|------|--------------|
+| ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 37       | 16   | 2026-06-12   |
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 2        | 0    | 2026-06-11   |
@@ -94,4 +94,3 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
-
