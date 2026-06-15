@@ -66,12 +66,30 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
     bindings: [
       { id: 'palette', label: 'Open command palette', keys: [['Mod', ';']] },
       {
+        id: 'new-session',
+        label: 'New terminal session',
+        keys: (isMac) => (isMac ? [['Mod', 'N']] : [['Mod', 'Shift', 'N']]),
+      },
+      {
         id: 'sidebar',
         label: 'Toggle sidebar',
         keys: (isMac) => (isMac ? [['Mod', 'B']] : [['Mod', 'Shift', 'B']]),
       },
+      {
+        id: 'sidebar-switch',
+        label: 'Sidebar: show sessions / files',
+        keys: [
+          ['Mod', 'Shift', 'S'],
+          ['Mod', 'Shift', 'F'],
+        ],
+      },
       { id: 'editor', label: 'Focus editor', keys: [['Mod', 'E']] },
       { id: 'diff', label: 'Focus diff', keys: [['Mod', 'G']] },
+      {
+        id: 'dock',
+        label: 'Show / hide editor & diff dock',
+        keys: [['Mod', '0']],
+      },
     ],
   },
   {

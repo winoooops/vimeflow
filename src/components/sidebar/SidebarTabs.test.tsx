@@ -112,6 +112,42 @@ describe('SidebarTabs', () => {
     )
   })
 
+  test('shows a tooltip with the keyboard shortcut when an item provides one', async () => {
+    const user = userEvent.setup()
+    const tabsWithTips: readonly SidebarTabItem<Tab>[] = [
+      {
+        id: 'sessions',
+        label: 'SESSIONS',
+        icon: 'view_agenda',
+        tooltip: 'Sessions',
+        shortcut: ['Mod', 'Shift', 'S'],
+      },
+      {
+        id: 'files',
+        label: 'FILES',
+        icon: 'folder_open',
+        tooltip: 'Files',
+        shortcut: ['Mod', 'Shift', 'F'],
+      },
+    ]
+
+    render(
+      <SidebarTabs<Tab>
+        tabs={tabsWithTips}
+        activeId="sessions"
+        onChange={vi.fn()}
+      />
+    )
+
+    // Buttons still render as two direct, individually-labelled controls.
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+
+    await user.hover(screen.getByRole('button', { name: 'FILES' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Files')
+  })
+
   test('uses the default sidebar width instead of flexing with the sidebar', () => {
     render(
       <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />

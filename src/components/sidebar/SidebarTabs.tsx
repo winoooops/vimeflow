@@ -1,9 +1,20 @@
-import { type CSSProperties, type ReactElement } from 'react'
+import {
+  Fragment,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
+import { Tooltip } from '../Tooltip'
+import { type ShortcutInput } from '../../lib/formatShortcut'
 
 export interface SidebarTabItem<TId extends string = string> {
   id: TId
   label: string
   icon?: string
+  /** Optional tooltip body shown on hover/focus. */
+  tooltip?: ReactNode
+  /** Optional keyboard-shortcut chip rendered inside the tooltip. */
+  shortcut?: ShortcutInput
 }
 
 export interface SidebarTabsProps<TId extends string = string> {
@@ -58,9 +69,8 @@ export const SidebarTabs = <TId extends string = string>({
       {tabs.map((item) => {
         const isActive = item.id === activeId
 
-        return (
+        const button = (
           <button
-            key={item.id}
             type="button"
             aria-pressed={isActive}
             onClick={() => {
@@ -83,6 +93,21 @@ export const SidebarTabs = <TId extends string = string>({
             ) : null}
             {item.label}
           </button>
+        )
+
+        // Tooltip clones its child (no wrapper element), so the button stays a
+        // direct flex child of the track and keeps its `flex-1` sizing.
+        return item.tooltip ? (
+          <Tooltip
+            key={item.id}
+            content={item.tooltip}
+            shortcut={item.shortcut}
+            placement="bottom"
+          >
+            {button}
+          </Tooltip>
+        ) : (
+          <Fragment key={item.id}>{button}</Fragment>
         )
       })}
     </div>

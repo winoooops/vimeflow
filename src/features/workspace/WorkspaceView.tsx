@@ -72,6 +72,7 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
+import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
@@ -181,8 +182,20 @@ const readCompactViewport = (): boolean =>
   window.matchMedia(COMPACT_WORKSPACE_QUERY).matches
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
-  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
-  { id: 'files', label: 'FILES', icon: 'folder_open' },
+  {
+    id: 'sessions',
+    label: 'SESSIONS',
+    icon: 'view_agenda',
+    tooltip: 'Sessions',
+    shortcut: ['Mod', 'Shift', 'S'],
+  },
+  {
+    id: 'files',
+    label: 'FILES',
+    icon: 'folder_open',
+    tooltip: 'Files',
+    shortcut: ['Mod', 'Shift', 'F'],
+  },
 ]
 
 const normalizePathForComparison = (path: string): string =>
@@ -1431,6 +1444,35 @@ export const WorkspaceView = (): ReactElement => {
 
   useNewSessionShortcut({
     onNewSession: handleCreateSession,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
+  // VIM-104: ⌘⇧S / ⌘⇧F switch the left sidebar between Sessions and Files,
+  // revealing the sidebar first if it is collapsed (or opening the compact
+  // drawer on narrow viewports) so the chosen view is always visible.
+  const revealSidebar = useCallback((): void => {
+    if (isCompactViewport) {
+      setCompactSidebarOpen(true)
+
+      return
+    }
+
+    setSidebarCollapsed(false)
+  }, [isCompactViewport, setCompactSidebarOpen, setSidebarCollapsed])
+
+  const handleShowSessions = useCallback((): void => {
+    setActiveTab('sessions')
+    revealSidebar()
+  }, [setActiveTab, revealSidebar])
+
+  const handleShowFiles = useCallback((): void => {
+    setActiveTab('files')
+    revealSidebar()
+  }, [setActiveTab, revealSidebar])
+
+  useSidebarTabShortcut({
+    onShowSessions: handleShowSessions,
+    onShowFiles: handleShowFiles,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
