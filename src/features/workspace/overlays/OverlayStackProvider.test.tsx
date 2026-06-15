@@ -146,4 +146,65 @@ describe('OverlayStackProvider', () => {
       expect(snapshot?.nativeSurfaceState).toBeUndefined()
     })
   })
+
+  test('keeps occluding overlay ids in deterministic order after re-registration', async () => {
+    let snapshots: readonly ProbeSnapshot[] = []
+
+    const onSnapshot = (snapshot: ProbeSnapshot): void => {
+      snapshots = [...snapshots, snapshot]
+    }
+
+    interface OccludingOverlayProbeProps {
+      id: string
+      plane: 'dialog' | 'popover'
+    }
+
+    const OccludingOverlayProbe = ({
+      id,
+      plane,
+    }: OccludingOverlayProbeProps): ReactElement | null => {
+      useOverlayRegistration({
+        id,
+        plane,
+        isOpen: true,
+        nativeOcclusion: 'global',
+      })
+
+      return null
+    }
+
+    const { rerender } = render(
+      <OverlayStackProvider>
+        <OccludingOverlayProbe id="overlay-b" plane="dialog" />
+        <OccludingOverlayProbe id="overlay-a" plane="dialog" />
+        <NativeSurfaceProbe />
+        <SnapshotProbe onSnapshot={onSnapshot} />
+      </OverlayStackProvider>
+    )
+
+    await waitFor(() => {
+      const snapshot = latestSnapshotFrom(snapshots)
+      expect(snapshot?.nativeSurfaceState?.occludingOverlayIds).toEqual([
+        'overlay-a',
+        'overlay-b',
+      ])
+    })
+
+    rerender(
+      <OverlayStackProvider>
+        <OccludingOverlayProbe id="overlay-b" plane="dialog" />
+        <OccludingOverlayProbe id="overlay-a" plane="popover" />
+        <NativeSurfaceProbe />
+        <SnapshotProbe onSnapshot={onSnapshot} />
+      </OverlayStackProvider>
+    )
+
+    await waitFor(() => {
+      const snapshot = latestSnapshotFrom(snapshots)
+      expect(snapshot?.nativeSurfaceState?.occludingOverlayIds).toEqual([
+        'overlay-a',
+        'overlay-b',
+      ])
+    })
+  })
 })

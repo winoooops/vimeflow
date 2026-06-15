@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 17
+ref_count: 18
 ---
 
 # React Lifecycle
@@ -328,4 +328,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
 - **Finding:** Pre-aggregated `nativeSurfaceStates` was computed by a `useMemo` keyed on `[nativeSurfaces, overlays]`, which only update when descriptors are registered or unregistered. `useOverlayRegistration` stores a stable `getRect` callback that reads from `latestDescriptorRef`, so moving or resizing an already-open `intersects` overlay does not change the descriptor arrays. The snapshot therefore kept the occlusion values from the last registration moment and would silently expose stale `occluded`/`occludingOverlayIds` to any context consumer reading `nativeSurfaceStates`.
 - **Fix:** Removed `nativeSurfaceStates` from `OverlayStackSnapshot` and the context value, leaving `getNativeSurfaceState(descriptor)` as the only public occlusion API. It evaluates the live `getRect` callbacks during each consumer's render, so geometry changes are always reflected. Added JSDoc explaining the design choice and updated the provider test to read live state via `getNativeSurfaceState` instead of the removed snapshot field.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. `occludingOverlayIds` order depends on Map insertion order, breaking referential stability after re-registration
+
+- **Source:** github-codex-connector | PR #467 round 5 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx` and `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** `occludingOverlayIds` was derived by filtering `Array.from(overlayDescriptors.values())` and mapping to ids, preserving the underlying `Map` insertion order. `useOverlayRegistration` unregisters and re-registers an overlay whenever any of its logical descriptor fields change; a re-registered overlay moves to the tail of the `Map`, so a semantically identical set of occluders could produce a different positional array. `areOcclusionStatesEqual` compared ids positionally, so the reordering caused `useNativeSurface` to replace its cached `NativeSurfaceState` even though visibility had not changed, defeating the referential-stability contract.
+- **Fix:** Sorted the `occludingOverlayIds` array alphabetically in `nativeSurfaceStateFrom` before returning the state. Added a regression test that registers two occluding overlays, re-registers one by changing a non-occlusion prop, and asserts the id order remains deterministic.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -175,6 +175,7 @@ const nativeSurfaceStateFrom = (
   const occludingOverlayIds = overlays
     .filter((overlay) => overlayOccludesNativeSurface(overlay, surface))
     .map((overlay) => overlay.id)
+    .sort()
 
   return {
     ...surface,
