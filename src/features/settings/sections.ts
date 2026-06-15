@@ -76,6 +76,20 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
         keys: (isMac) => (isMac ? [['Mod', 'N']] : [['Mod', 'Shift', 'N']]),
       },
       {
+        id: 'session-nav',
+        label: 'Previous / next session',
+        keys: (isMac) =>
+          isMac
+            ? [
+                ['Mod', '['],
+                ['Mod', ']'],
+              ]
+            : [
+                ['Mod', 'Shift', '['],
+                ['Mod', 'Shift', ']'],
+              ],
+      },
+      {
         id: 'sidebar',
         label: 'Toggle sidebar',
         keys: (isMac) => (isMac ? [['Mod', 'B']] : [['Mod', 'Shift', 'B']]),
@@ -94,6 +108,11 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
         id: 'dock',
         label: 'Show / hide editor & diff dock',
         keys: [['Mod', '0']],
+      },
+      {
+        id: 'burner',
+        label: 'Toggle burner terminal',
+        keys: [['Ctrl', '`']],
       },
     ],
   },
@@ -171,23 +190,6 @@ export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
         keys: [':vsplit', ':split', ':only'],
       },
       { id: 'vim-edit', label: 'Open a file', keys: [':edit'] },
-    ],
-  },
-  {
-    zone: 'Vim leader chords (Mod; then a key)',
-    bindings: [
-      {
-        id: 'vim-hjkl',
-        label: 'Focus pane left / down / up / right',
-        keys: ['h', 'j', 'k', 'l'],
-      },
-      { id: 'vim-cycle', label: 'Cycle to next pane', keys: ['w'] },
-      { id: 'vim-close', label: 'Close pane', keys: ['c'] },
-      {
-        id: 'vim-layout-chord',
-        label: 'Layout: split / vsplit / only',
-        keys: ['s', 'v', 'o'],
-      },
     ],
   },
 ]

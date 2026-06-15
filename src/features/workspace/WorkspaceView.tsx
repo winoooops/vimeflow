@@ -50,7 +50,6 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { useVimLeaderChords } from '../command-palette/hooks/useVimLeaderChords'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import {
@@ -73,6 +72,8 @@ import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
+import { useSessionNavShortcut } from './hooks/useSessionNavShortcut'
+import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
@@ -1346,14 +1347,6 @@ export const WorkspaceView = (): ReactElement => {
     [setSessionLayout]
   )
 
-  useVimLeaderChords({
-    keymapPreset: settings.keymapPreset,
-    activeSession,
-    setSessionActivePane,
-    closeActivePane: closeActivePaneCommand,
-    setActiveSessionLayout: setActiveSessionLayoutCommand,
-  })
-
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -1475,6 +1468,47 @@ export const WorkspaceView = (): ReactElement => {
     onShowFiles: handleShowFiles,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
+
+  // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
+  // on Linux). Mirrors the previous/next-session palette commands.
+  const switchRelativeSession = useCallback(
+    (delta: number): void => {
+      if (sessions.length === 0) {
+        notifyInfo('No open sessions')
+
+        return
+      }
+
+      const index = sessions.findIndex((s) => s.id === activeSessionId)
+
+      const nextIndex =
+        index === -1
+          ? delta > 0
+            ? 0
+            : sessions.length - 1
+          : (index + delta + sessions.length) % sessions.length
+
+      setActiveSessionId(sessions[nextIndex].id)
+    },
+    [sessions, activeSessionId, setActiveSessionId, notifyInfo]
+  )
+
+  const handlePrevSession = useCallback((): void => {
+    switchRelativeSession(-1)
+  }, [switchRelativeSession])
+
+  const handleNextSession = useCallback((): void => {
+    switchRelativeSession(1)
+  }, [switchRelativeSession])
+
+  useSessionNavShortcut({
+    onPrevSession: handlePrevSession,
+    onNextSession: handleNextSession,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
+  // VIM-104: Ctrl+` toggles the burner terminal popup for the focused pane.
+  useBurnerToggleShortcut({ onToggle: toggleBurnerCommand })
 
   // One elastic size per axis so values survive dock unmounts and position changes.
   const verticalDockElastic = useElasticContainer({

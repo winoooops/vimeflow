@@ -6,9 +6,7 @@ import { clickBySelector } from '../../shared/actions.js'
  *
  * App-level shortcuts are `document` capture-phase keydown listeners, so we
  * trigger them by dispatching synthetic KeyboardEvents to `document` (the same
- * shape the unit tests use). Leader chords dispatch `⌘;` and the follow-up key
- * inside ONE `browser.execute` so the chord lands within the 500ms leader
- * window regardless of WebDriver round-trip latency.
+ * shape the unit tests use).
  */
 
 interface KeyInit {
@@ -39,30 +37,16 @@ const fireKey = async (init: KeyInit): Promise<void> => {
   }, init)
 }
 
-// `⌘;` then the chord key, dispatched synchronously so the chord is seen while
-// the leader window is still open.
-const fireLeaderChord = async (chordKey: string): Promise<void> => {
-  await browser.execute(
-    (k: string, useMeta: boolean) => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: ';',
-          ...(useMeta ? { metaKey: true } : { ctrlKey: true }),
-          bubbles: true,
-          cancelable: true,
-        })
-      )
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: k,
-          bubbles: true,
-          cancelable: true,
-        })
-      )
-    },
-    chordKey,
-    isMac
+// Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
+// and pressing Enter.
+const runExCommand = async (command: string): Promise<void> => {
+  await fireKey({ key: ';', ...modInit() })
+  const input = await $(
+    '[role="combobox"][aria-label="Command palette search"]'
   )
+  await input.waitForDisplayed({ timeout: 8_000 })
+  await input.setValue(command)
+  await fireKey({ key: 'Enter' })
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
@@ -186,15 +170,18 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
     if ((await select.getValue()) !== 'vimeflow') {
       throw new Error('Keymap preset did not default to "vimeflow"')
     }
-    if (await bodyHasText('Cycle to next pane')) {
-      throw new Error('Vim leader-chord rows shown while preset is vimeflow')
+    if (await bodyHasText('Layout: vsplit / split / only')) {
+      throw new Error('Vim binding rows shown while preset is vimeflow')
     }
 
     await select.selectByAttribute('value', 'vim')
-    await browser.waitUntil(async () => bodyHasText('Cycle to next pane'), {
-      timeout: 8_000,
-      timeoutMsg: 'Vim binding rows did not appear after switching to Vim',
-    })
+    await browser.waitUntil(
+      async () => bodyHasText('Layout: vsplit / split / only'),
+      {
+        timeout: 8_000,
+        timeoutMsg: 'Vim binding rows did not appear after switching to Vim',
+      }
+    )
 
     await closeSettings()
 
@@ -222,30 +209,14 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   it('Vim ex-command :vsplit (via palette) sets the vsplit layout', async () => {
     await setPreset('vim')
 
-    await fireKey({ key: ';', ...modInit() })
-    const input = await $(
-      '[role="combobox"][aria-label="Command palette search"]'
-    )
-    await input.waitForDisplayed({ timeout: 8_000 })
-
-    await input.setValue(':vsplit')
-    await fireKey({ key: 'Enter' })
+    await runExCommand(':vsplit')
 
     await waitForLayout('vsplit')
   })
 
-  it('Vim leader chord (Cmd+; then s) sets the hsplit layout', async () => {
-    // preset is already vim from the previous test
-    await fireLeaderChord('s')
-    await waitForLayout('hsplit')
-
-    await fireLeaderChord('v')
-    await waitForLayout('vsplit')
-  })
-
-  it('Cmd+Shift+Arrow and the Cmd+; h chord move focus between two panes', async () => {
+  it('Cmd+Shift+Arrow moves focus between two panes', async () => {
     // Ensure a 2-pane vsplit, then fill the empty slot with a second shell.
-    await fireLeaderChord('v')
+    await runExCommand(':vsplit')
     await waitForLayout('vsplit')
 
     const addShell = await $('[aria-label="add shell pane"]')
@@ -283,13 +254,6 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
         }),
       1,
       'Cmd+Shift+Right did not focus the second (right) pane'
-    )
-
-    // Vim leader chord h → back to the left (first) pane.
-    await focusUntil(
-      () => fireLeaderChord('h'),
-      0,
-      'Cmd+; h did not focus the first (left) pane'
     )
   })
 })

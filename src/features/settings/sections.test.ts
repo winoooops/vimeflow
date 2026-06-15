@@ -88,7 +88,7 @@ describe('VIM_KEYMAP_GROUPS', () => {
     const ids = VIM_KEYMAP_GROUPS.flatMap((g) => g.bindings).map((b) => b.id)
 
     expect(ids).toContain('vim-q')
-    expect(ids).toContain('vim-cycle')
+    expect(ids).toContain('vim-w')
   })
 
   test('each binding has id, label, and keys', () => {

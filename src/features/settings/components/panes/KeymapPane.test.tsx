@@ -50,13 +50,13 @@ describe('KeymapPane', () => {
     const user = userEvent.setup()
     render(<KeymapPane />)
 
-    expect(screen.queryByText('Cycle to next pane')).not.toBeInTheDocument()
+    expect(screen.queryByText('Save file')).not.toBeInTheDocument()
 
     const select = screen.getByLabelText('Keymap preset')
     await user.selectOptions(select, 'vim')
 
     expect(select).toHaveValue('vim')
-    expect(screen.getByText('Cycle to next pane')).toBeInTheDocument()
+    expect(screen.getByText('Save file')).toBeInTheDocument()
 
     KEYMAP_GROUPS.flatMap((g) => g.bindings).forEach((b) => {
       expect(screen.queryAllByText(b.label).length).toBeGreaterThan(0)

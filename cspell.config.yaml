@@ -102,6 +102,7 @@ words:
   - hsplit
   - AZERTY # French/Belgian keyboard layout
   - QWERTZ # German/Swiss keyboard layout
+  - Backquote # DOM KeyboardEvent.code for the backtick key
 
   # Syntax Highlighting
   - shiki
