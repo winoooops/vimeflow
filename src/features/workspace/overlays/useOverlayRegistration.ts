@@ -10,7 +10,7 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
   const latestDescriptorRef = useRef(descriptor)
   latestDescriptorRef.current = descriptor
 
-  const { id, plane } = descriptor
+  const { id, plane, nativeOcclusion } = descriptor
 
   useLayoutEffect(() => {
     const overlayDescriptor = {
@@ -29,5 +29,11 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
     registerOverlayDescriptor(overlayDescriptor)
 
     return (): void => unregisterOverlayDescriptor(id)
-  }, [id, plane, registerOverlayDescriptor, unregisterOverlayDescriptor])
+  }, [
+    id,
+    plane,
+    nativeOcclusion,
+    registerOverlayDescriptor,
+    unregisterOverlayDescriptor,
+  ])
 }

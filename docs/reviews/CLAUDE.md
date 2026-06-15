@@ -44,7 +44,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 37       | 19   | 2026-06-15   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md) | correctness | 1 | 0 | 2026-06-15 |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 38       | 20   | 2026-06-15   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 2        | 1    | 2026-06-15   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -90,6 +91,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 2        | 0    | 2026-06-15   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 3        | 1    | 2026-06-15   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |

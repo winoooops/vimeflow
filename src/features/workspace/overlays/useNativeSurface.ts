@@ -25,6 +25,7 @@ export const useNativeSurface = (
 ): NativeSurfaceState => {
   const {
     getNativeSurfaceState,
+    overlays,
     registerNativeSurfaceDescriptor,
     unregisterNativeSurfaceDescriptor,
   } = useOverlayStackContext()
@@ -76,6 +77,14 @@ export const useNativeSurface = (
   // descriptor identity and overlay membership stay stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
+    const hasOpenIntersectingOverlay = overlays.some(
+      (overlay) => overlay.isOpen && overlay.nativeOcclusion === 'intersects'
+    )
+
+    if (!hasOpenIntersectingOverlay) {
+      return
+    }
+
     const committedState = getNativeSurfaceState({
       id,
       owner,

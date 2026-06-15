@@ -7,6 +7,7 @@ export interface WorkspaceOverlayRegistrationsProps {
   burnerTerminalOpen: boolean
   paneRenameOpen: boolean
   dragOverlayOpen: boolean
+  dockDragOverlayOpen: boolean
   bannerOpen: boolean
 }
 
@@ -30,6 +31,7 @@ export const WorkspaceOverlayRegistrations = ({
   burnerTerminalOpen,
   paneRenameOpen,
   dragOverlayOpen,
+  dockDragOverlayOpen,
   bannerOpen,
 }: WorkspaceOverlayRegistrationsProps): ReactElement | null => {
   useOverlayRegistration({
@@ -57,6 +59,13 @@ export const WorkspaceOverlayRegistrations = ({
     id: 'workspace-drag-overlay',
     plane: 'drag',
     isOpen: dragOverlayOpen,
+    nativeOcclusion: 'global',
+  })
+
+  useOverlayRegistration({
+    id: 'dock-drag-overlay',
+    plane: 'drag',
+    isOpen: dockDragOverlayOpen,
     nativeOcclusion: 'global',
   })
 

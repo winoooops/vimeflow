@@ -73,6 +73,7 @@ interface HarnessProps {
   burnerTerminalOpen?: boolean
   paneRenameOpen?: boolean
   dragOverlayOpen?: boolean
+  dockDragOverlayOpen?: boolean
   bannerOpen?: boolean
   paneRenameRect?: DOMRectReadOnly
   bannerRect?: DOMRectReadOnly
@@ -84,6 +85,7 @@ const Harness = ({
   burnerTerminalOpen = false,
   paneRenameOpen = false,
   dragOverlayOpen = false,
+  dockDragOverlayOpen = false,
   bannerOpen = false,
   paneRenameRect = rect(200, 0, 50, 50),
   bannerRect = rect(200, 0, 50, 50),
@@ -95,6 +97,7 @@ const Harness = ({
       burnerTerminalOpen={burnerTerminalOpen}
       paneRenameOpen={paneRenameOpen}
       dragOverlayOpen={dragOverlayOpen}
+      dockDragOverlayOpen={dockDragOverlayOpen}
       bannerOpen={bannerOpen}
     />
     <RectTarget overlayId="pane-rename" rectValue={paneRenameRect} />
@@ -127,6 +130,24 @@ describe('WorkspaceOverlayRegistrations', () => {
         /^burner-terminal-popup,unsaved-changes-dialog,workspace-drag-overlay$/u
       )
     })
+
+    rerender(<Harness />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+    )
+  })
+
+  test('registers a separate dock-drag overlay that occludes native surfaces', async () => {
+    const { rerender } = render(<Harness />)
+
+    expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+
+    rerender(<Harness dockDragOverlayOpen />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent(/^dock-drag-overlay$/u)
+    )
 
     rerender(<Harness />)
 

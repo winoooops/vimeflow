@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 19
+ref_count: 20
 ---
 
 # React Lifecycle
@@ -346,4 +346,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
 - **Finding:** `latestDescriptorRef.current` was updated during render, but the descriptor stored in the provider captured `isOpen` and `nativeOcclusion` from the previous effect registration. Between render and the layout-effect re-registration, `getNativeSurfaceState` read stale logical fields, producing a one-frame native-surface visibility error during overlay open/close or `nativeOcclusion` policy transitions.
 - **Fix:** Changed the registered descriptor to read `isOpen`, `nativeOcclusion`, and `getRect` through `latestDescriptorRef.current` — `isOpen` and `nativeOcclusion` as getters and `getRect` as a callback — so the provider map always observes the latest render values before the effect re-registers.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. useNativeSurface: unconstrained useLayoutEffect causes layout reads every commit
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The dep-array-less `useLayoutEffect` (lines 78-92) runs after every React commit for every mounted `BrowserPane`. When an `'intersects'`-type overlay is open (pane-rename or workspace-banners), each commit calls `getBoundingClientRect()` on the overlay element (`document.querySelector(...)`) and on `contentRef.current`. During pane-rename, every keystroke is a commit, producing 2 forced layout reads per browser pane per keystroke. The `areOcclusionStatesEqual` guard correctly prevents render cascades, so only the reads accumulate. With multiple panes the reads are proportional. Fix: skip the re-check when no open `'intersects'` overlay is registered, reducing DOM reads to zero during the common `'global'`-only case.
+- **Fix:** Added an early return in the post-commit useLayoutEffect when no open intersecting overlay is registered, eliminating layout reads in the global-only case.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

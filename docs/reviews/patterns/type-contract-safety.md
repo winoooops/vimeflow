@@ -3,7 +3,7 @@ id: type-contract-safety
 category: code-quality
 created: 2026-06-15
 last_updated: 2026-06-15
-ref_count: 0
+ref_count: 1
 ---
 
 # Type Contract Safety
@@ -42,3 +42,12 @@ expands.
 - **Finding:** `areNativeSurfaceDescriptorsEqual` compared `id`, `belowPlane`, and `getRect` but not `owner`. Because `NativeSurfaceOwner` is currently a singleton (`'browser-pane'`), the omission has no visible effect today. Once a second owner is added, a re-registered surface whose `owner` changes while its other fields stay the same would be treated as unchanged, leaving stale owner metadata in `nativeSurfaces`.
 - **Fix:** Added `left.owner === right.owner` to `areNativeSurfaceDescriptorsEqual`, with the same `eslint-disable-next-line @typescript-eslint/no-unnecessary-condition` suppression already used for the singleton owner comparison in `useNativeSurface.ts`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)\_
+
+### 3. useOverlayRegistration proxy: `as OverlayDescriptor` silences union safety
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
+- **Finding:** The proxy object in `useLayoutEffect` is cast to `OverlayDescriptor` via `as` (line 27) rather than satisfying the discriminated union. Because `get nativeOcclusion()` reads `latestDescriptorRef.current.nativeOcclusion` live, the runtime variant can shift from `'none'`/`'global'` to `'intersects'` without re-running the effect (only `id` and `plane` changes trigger a re-run). When that shift occurs, `overlayOccludesNativeSurface` branches into `rectsIntersect` but `overlay.getRect()` returns `null` (the proxy calls `latestDescriptorRef.current.getRect?.() ?? null`), so the overlay silently fails to occlude. Fix: include `nativeOcclusion` in the effect deps so re-registration fires on variant changes, or close over it in the proxy to hold it stable.
+- **Fix:** Added nativeOcclusion to the useLayoutEffect dependency array so the proxy re-registers when the occlusion variant changes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

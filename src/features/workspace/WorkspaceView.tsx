@@ -1970,6 +1970,9 @@ const WorkspaceViewContent = (): ReactElement => {
         burnerTerminalOpen={hasVisibleBurner}
         paneRenameOpen={paneRenameNode !== null}
         dragOverlayOpen={isDragging}
+        dockDragOverlayOpen={
+          verticalDockElastic.isDragging || horizontalDockElastic.isDragging
+        }
         bannerOpen={fileError !== null || infoMessage !== null}
       />
       {isCompactViewport && !isSidebarClosed && (
