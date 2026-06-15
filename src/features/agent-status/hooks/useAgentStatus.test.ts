@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type { TestRunSnapshot } from '../types'
+import { clearStatusSnapshots } from '../utils/statusSnapshotStore'
 import { useAgentStatus } from './useAgentStatus'
 
 type EventCallback<T = unknown> = (payload: T) => void
@@ -56,6 +57,7 @@ const emit = <T>(eventName: string, payload: T): void => {
 describe('useAgentStatus', () => {
   beforeEach(() => {
     eventListeners.clear()
+    clearStatusSnapshots()
     vi.clearAllMocks()
     // Restore default implementations so per-test overrides don't leak.
     vi.mocked(invoke).mockImplementation(defaultInvokeImpl)
@@ -297,6 +299,96 @@ describe('useAgentStatus', () => {
     expect(result.current.isActive).toBe(false)
     expect(result.current.agentType).toBeNull()
     expect(result.current.sessionId).toBe('session-2')
+  })
+
+  test('restores a cached status snapshot when switching back to a pane', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'sonnet-4-5',
+        modelDisplayName: 'Sonnet 4.5',
+        version: '1.0',
+        agentSessionId: 'agent-session-1',
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.modelId).toBe('sonnet-4-5')
+
+    rerender({ id: 'session-2' })
+
+    expect(result.current.sessionId).toBe('session-2')
+    expect(result.current.modelId).toBeNull()
+
+    rerender({ id: 'session-1' })
+
+    expect(result.current.sessionId).toBe('session-1')
+    expect(result.current.modelId).toBe('sonnet-4-5')
+    expect(result.current.agentSessionId).toBe('agent-session-1')
+  })
+
+  test('collapses a restored active snapshot when the inactive pane agent exited', async () => {
+    const detections = new Map<string, unknown>([
+      [
+        'pty-session-1',
+        {
+          sessionId: 'pty-session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        },
+      ],
+      ['pty-session-2', null],
+    ])
+
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      if (cmd === 'detect_agent_in_session') {
+        const sessionId =
+          typeof args === 'object' && args !== null && 'sessionId' in args
+            ? String(args.sessionId)
+            : ''
+
+        return Promise.resolve(detections.get(sessionId) ?? null)
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(result.current.agentExited).toBe(false)
+    })
+
+    detections.set('pty-session-1', null)
+
+    rerender({ id: 'session-2' })
+
+    expect(result.current.sessionId).toBe('session-2')
+    expect(result.current.isActive).toBe(false)
+
+    rerender({ id: 'session-1' })
+
+    expect(result.current.sessionId).toBe('session-1')
+    expect(result.current.isActive).toBe(true)
+
+    await vi.waitFor(() => {
+      expect(result.current.agentExited).toBe(true)
+    })
   })
 
   test('surfaces currentUsage through normalization', async () => {
@@ -569,6 +661,60 @@ describe('useAgentStatus', () => {
     expect(result.current.recentToolCalls).toHaveLength(50)
     // Newest first — arrival order determines insertion, and #54 was last.
     expect(result.current.recentToolCalls[0].args).toBe('{"i":54}')
+  })
+
+  test('does not double count replayed tool calls after restoring a snapshot', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    for (let index = 0; index < 55; index += 1) {
+      act(() => {
+        emit('agent-tool-call', {
+          sessionId: 'pty-session-1',
+          toolUseId: `toolu_${String(index).padStart(3, '0')}`,
+          tool: 'Read',
+          args: `{"i":${String(index)}}`,
+          status: 'done',
+          timestamp: `2026-04-12T00:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}Z`,
+          durationMs: 100,
+        })
+      })
+    }
+
+    expect(result.current.toolCalls.total).toBe(55)
+    expect(result.current.recentToolCalls).toHaveLength(50)
+
+    rerender({ id: 'session-2' })
+    rerender({ id: 'session-1' })
+
+    expect(result.current.toolCalls.total).toBe(55)
+
+    for (let index = 0; index < 55; index += 1) {
+      act(() => {
+        emit('agent-tool-call', {
+          sessionId: 'pty-session-1',
+          toolUseId: `toolu_${String(index).padStart(3, '0')}`,
+          tool: 'Read',
+          args: `{"i":${String(index)}}`,
+          status: 'done',
+          timestamp: `2026-04-12T00:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}Z`,
+          durationMs: 100,
+        })
+      })
+    }
+
+    expect(result.current.toolCalls.total).toBe(55)
+    expect(result.current.toolCalls.byType).toEqual({ Read: 55 })
+    expect(result.current.recentToolCalls).toHaveLength(50)
+    expect(
+      new Set(result.current.recentToolCalls.map((call) => call.id)).size
+    ).toBe(50)
   })
 
   test('sets active tool call on running status', async () => {
