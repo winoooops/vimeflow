@@ -516,7 +516,10 @@ export const WorkspaceView = (): ReactElement => {
     () =>
       activeSession === undefined
         ? []
-        : selectVisiblePanes(activeSession.panes, LAYOUTS[activeSession.layout].capacity)
+        : selectVisiblePanes(
+            activeSession.panes,
+            LAYOUTS[activeSession.layout].capacity
+          )
             .filter((pane) => isShellPane(pane))
             .map((pane) => pane.ptyId),
     [activeSession]

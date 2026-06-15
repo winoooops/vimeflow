@@ -329,6 +329,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
 - **Fix:** Same change as entry 31: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 33. Fragile `\n` separator in effect dependency signature
 
 - **Source:** github-claude | PR #459 round 1 | 2026-06-15

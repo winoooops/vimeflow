@@ -31,6 +31,7 @@ feature.
 - **Finding:** `latest_account_rate_limits` called `discover_db(&self.codex_home, "logs")` on every invocation. `discover_db` does `std::fs::read_dir(codex_home)`, then opens a read-only SQLite connection for each `.sqlite` file and queries `sqlite_master` to check if the target table exists. Over a busy session this accumulates repeated directory reads and SQLite open/close cycles for every decoded status event.
 - **Fix:** Added a `logs_db_cache: std::sync::OnceLock<PathBuf>` field to `CompositeLocator`. `latest_account_rate_limits` checks the cache first; on a miss it runs `discover_db`, stores the result only on success, and retries on subsequent calls if the earlier discovery returned `None`. This eliminates repeated filesystem I/O without changing per-call read-query behavior.
 - **Commit:** same commit as this entry
+
 ### 2. Stale active snapshot returned when detection returns null
 
 - **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
