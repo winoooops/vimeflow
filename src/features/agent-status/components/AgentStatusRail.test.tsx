@@ -194,3 +194,40 @@ test('rail sits on the canvas surface token', () => {
   expect(rail.className).toContain('bg-surface')
   expect(rail.className).not.toContain('bg-surface-container')
 })
+
+test('adds macOS drag coverage while keeping expand clickable', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+      reserveWindowControls
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).toHaveClass(
+    'vf-app-drag-region'
+  )
+
+  expect(
+    screen.getByRole('button', { name: /expand activity panel/i })
+  ).toHaveClass('vf-app-no-drag')
+})
+
+test('does not add rail drag coverage when native controls are not reserved', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).not.toHaveClass(
+    'vf-app-drag-region'
+  )
+})

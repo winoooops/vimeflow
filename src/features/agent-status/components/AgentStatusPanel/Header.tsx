@@ -7,16 +7,20 @@ export interface AgentStatusPanelHeaderProps {
   agent: Agent
   status: SessionStatus
   onCollapse: () => void
+  reserveWindowControls?: boolean
 }
 
 export const AgentStatusPanelHeader = ({
   agent,
   status,
   onCollapse,
+  reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
   <div
     data-testid="agent-status-panel-header"
-    className="flex items-center gap-2.5 px-3 py-2.5"
+    className={`flex items-center gap-2.5 px-3 py-2.5 ${
+      reserveWindowControls ? 'vf-app-drag-region' : ''
+    }`}
     style={{
       background: `linear-gradient(180deg, ${agent.accentDim}, transparent 80%)`,
     }}
@@ -38,7 +42,7 @@ export const AgentStatusPanelHeader = ({
       type="button"
       onClick={onCollapse}
       aria-label="Collapse activity panel"
-      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
+      className="vf-app-no-drag grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
     >
       <span className="material-symbols-outlined text-base">chevron_right</span>
     </button>
