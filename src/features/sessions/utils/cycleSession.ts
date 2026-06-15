@@ -25,7 +25,7 @@ export const cycleSession = <T extends { id: string }>(
       ? delta > 0
         ? 0
         : items.length - 1
-      : (index + delta + items.length) % items.length
+      : (((index + delta) % items.length) + items.length) % items.length
 
   return items[nextIndex]
 }

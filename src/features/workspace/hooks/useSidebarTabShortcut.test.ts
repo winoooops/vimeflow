@@ -21,7 +21,9 @@ const fireKey = (
 ): boolean => {
   const code =
     modifiers.code ??
-    (key.length === 1 && /[a-zA-Z]/.test(key) ? `Key${key.toUpperCase()}` : undefined)
+    (key.length === 1 && /[a-zA-Z]/.test(key)
+      ? `Key${key.toUpperCase()}`
+      : undefined)
 
   const event = new KeyboardEvent('keydown', {
     key,
@@ -126,7 +128,11 @@ describe('useSidebarTabShortcut', () => {
     const props = makeProps({ modKey: '⌘' })
     renderHook(() => useSidebarTabShortcut(props))
 
-    const prevented = fireKey('ы', { metaKey: true, shiftKey: true, code: 'KeyS' })
+    const prevented = fireKey('ы', {
+      metaKey: true,
+      shiftKey: true,
+      code: 'KeyS',
+    })
 
     expect(props.onShowSessions).toHaveBeenCalledOnce()
     expect(prevented).toBe(true)

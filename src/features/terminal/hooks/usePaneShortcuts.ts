@@ -200,6 +200,8 @@ export const usePaneShortcuts = ({
         event.stopPropagation()
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
+
+        return
       }
 
       const arrowDirection: PaneDirection | null =

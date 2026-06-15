@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-15
-ref_count: 4
+ref_count: 5
 ---
 
 # Keyboard Shortcut Guards
@@ -367,4 +367,13 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1500-1512
 - **Finding:** When Ctrl/Cmd+[ or ] changed `activeSessionId`, `TerminalZone` kept inactive sessions mounted hidden and the newly shown session's active pane did not get a focus rising edge. DOM focus could stay on the old hidden xterm textarea or fall to `body`, so subsequent typing went nowhere until the user clicked.
 - **Fix:** Called `claimTerminal()` immediately after `setActiveSessionId(nextSession.id)` in `switchRelativeSession`, reusing the existing terminal-focus request path so the new active session's pane receives focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Backslash layout-cycle shortcut falls through into the arrow-direction block
+
+- **Source:** github-claude | PR #460 round 10 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L187-203
+- **Finding:** The `event.code === 'Backslash'` branch called `setSessionLayout` but did not `return`. The branch happened to be safe because `arrowDirection` was `null` for Backslash and the subsequent guard exited, but any future case inserted between the Backslash block and the arrow block would execute on every `⌘\` / `Ctrl+\` keypress.
+- **Fix:** Added an explicit `return` immediately after `setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])` so the Backslash branch exclusively owns the keystroke.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
