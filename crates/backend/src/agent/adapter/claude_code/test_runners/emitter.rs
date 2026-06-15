@@ -34,6 +34,10 @@ impl TestRunEmitter {
         }
     }
 
+    pub fn clear_pending(&mut self) {
+        self.pending = None;
+    }
+
     pub fn finish_replay(&mut self) {
         if self.replay_done {
             return;
@@ -89,6 +93,16 @@ mod tests {
         let v = sink.recorded();
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].1["summary"]["passed"], 3);
+    }
+
+    #[test]
+    fn clear_pending_drops_replay_buffer_without_ending_replay() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut e = TestRunEmitter::new(sink.clone());
+        e.submit(snap(1));
+        e.clear_pending();
+        e.finish_replay();
+        assert_eq!(sink.count("test-run"), 0);
     }
 
     #[test]

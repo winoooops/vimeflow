@@ -190,6 +190,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
       appendPaneCacheReading: vi.fn(),
+      clearPaneCacheHistory: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
@@ -370,6 +371,29 @@ describe('WorkspaceView - Command Palette Integration', () => {
         removePane: mockSessionManager.removePane,
       })
     )
+  })
+
+  test('terminal /clear resets the active pane status generation and cache history', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        1
+      )
+    })
   })
 
   test('occludes browser panes while the command palette is open', async () => {
