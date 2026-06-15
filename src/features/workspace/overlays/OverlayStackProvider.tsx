@@ -18,7 +18,7 @@ export type OverlayPlane =
 
 export type NativeOcclusionPolicy = 'none' | 'intersects' | 'global'
 
-type BaseOverlayDescriptor = {
+interface BaseOverlayDescriptor {
   id: string
   plane: OverlayPlane
   isOpen: boolean
@@ -163,7 +163,7 @@ const overlayOccludesNativeSurface = (
     return true
   }
 
-  return rectsIntersect(overlay.getRect?.() ?? null, surface.getRect())
+  return rectsIntersect(overlay.getRect(), surface.getRect())
 }
 
 const nativeSurfaceStateFrom = (
