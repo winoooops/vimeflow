@@ -98,6 +98,23 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
   disconnect: vi.fn(),
 }))
 
+// jsdom exposes the `inert` attribute but does not suppress activation of
+// inert subtrees. Block click activation at capture so tests can assert the
+// real-browser non-interactivity behavior of retained/inert bodies.
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'click',
+    (event): void => {
+      const target = event.target as Element | null
+      if (target !== null && target.closest('[inert]') !== null) {
+        event.stopImmediatePropagation()
+        event.preventDefault()
+      }
+    },
+    true
+  )
+}
+
 // Mock matchMedia for xterm.js (used for DPI detection and color scheme)
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

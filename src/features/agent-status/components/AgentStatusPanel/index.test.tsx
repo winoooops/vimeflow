@@ -1092,7 +1092,7 @@ describe('AgentStatusPanel', () => {
     ).toHaveAttribute('data-body-phase', 'fresh')
   })
 
-  test('makes retained body non-interactive while fetching a cold target pane', () => {
+  test('makes retained body non-interactive while fetching a cold target pane', async () => {
     const richStatus: AgentStatus = {
       ...activeAgentStatus,
       sessionId: 'pty-pane-1',
@@ -1121,12 +1121,24 @@ describe('AgentStatusPanel', () => {
 
     const onOpenDiff = vi.fn()
 
+    const retainedGitStatus = createGitStatus({
+      files: [
+        {
+          path: 'retained-diff.ts',
+          status: 'modified',
+          insertions: 3,
+          deletions: 1,
+          staged: false,
+        },
+      ],
+    })
+
     const { rerender } = render(
       <AgentStatusPanel
         {...defaultProps}
         agentStatus={richStatus}
         cwd="/tmp/repo"
-        gitStatus={createGitStatus()}
+        gitStatus={retainedGitStatus}
         snapshotKey="pty-pane-1"
       />
     )
@@ -1148,9 +1160,11 @@ describe('AgentStatusPanel', () => {
     expect(content).toHaveClass('select-none')
     expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
 
-    // Clicks on retained content must not dispatch while the snapshot is
-    // retained, because the action callbacks still belong to the current pane.
-    fireEvent.click(screen.getByText('src/retained.ts'))
+    // Clicks on the retained FilesChanged row must not dispatch while the
+    // snapshot is retained, because onOpenDiff is wired through FilesChanged
+    // and would otherwise fire with the target pane's context.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /retained-diff\.ts/ }))
     expect(onOpenDiff).not.toHaveBeenCalled()
   })
 
