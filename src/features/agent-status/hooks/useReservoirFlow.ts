@@ -11,11 +11,11 @@ export interface ReservoirFlowRefs {
 // a visible jump.
 const WRAP = 248
 // Extra drift (user units / second) added at full hover intensity, on top of
-// the always-on CSS base drift. Deliberately gentle: the reservoir should
-// quicken "a bit" on hover, not race. Front ripples gain more than the broad
-// back swell, preserving the parallax.
-const FRONT_BOOST = WRAP / 14
-const BACK_BOOST = WRAP / 20
+// the always-on CSS base drift. Tuned for a clear, obvious quickening on hover
+// (~2.2x the base 6s/9s drift), eased in and out. Front ripples gain more than
+// the broad back swell, preserving the parallax.
+const FRONT_BOOST = WRAP / 5
+const BACK_BOOST = WRAP / 7
 // Per-second easing of the hover intensity (0..1) so the speed ramps in and
 // out smoothly instead of stepping — the calm, natural feel of the old spring.
 const EASE_PER_SECOND = 5

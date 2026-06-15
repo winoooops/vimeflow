@@ -35,6 +35,11 @@ const WAVE_SPAN = TANK_WIDTH * 3
 // broad swell across the tank behind the front's two faster ripples.
 const WAVELENGTH_FRONT = TANK_WIDTH / 2 // 124 — two ripples across the tank
 const WAVELENGTH_BACK = TANK_WIDTH // 248 — one broad swell behind
+// Wave amplitudes (user units, of a 104 tank). Tall enough that the calm drift
+// reads as moving water rather than a flat fill — the front carries the bright
+// meniscus crest, the back is a broader, taller swell behind it.
+const AMP_FRONT = 5
+const AMP_BACK = 7
 
 /**
  * Y coordinate (in SVG user units) of the waterline for a given fill. A 2%
@@ -158,7 +163,7 @@ export const WaterTank = ({
             <g data-testid="tank-wave-back" className="vf-tank-drift-b">
               <g ref={backRef}>
                 <path
-                  d={wavePath(3.2, 0.9, WAVELENGTH_BACK)}
+                  d={wavePath(AMP_BACK, 0.9, WAVELENGTH_BACK)}
                   fill={`url(#${fillId})`}
                   opacity="0.5"
                 />
@@ -169,12 +174,12 @@ export const WaterTank = ({
               <g ref={frontRef}>
                 <path
                   data-testid="tank-water"
-                  d={wavePath(2.4, 2.4, WAVELENGTH_FRONT)}
+                  d={wavePath(AMP_FRONT, 2.4, WAVELENGTH_FRONT)}
                   fill={`url(#${fillId})`}
                 />
                 <path
                   data-testid="tank-meniscus"
-                  d={wavePath(2.4, 2.4, WAVELENGTH_FRONT, false)}
+                  d={wavePath(AMP_FRONT, 2.4, WAVELENGTH_FRONT, false)}
                   fill="none"
                   stroke={tone.meniscus}
                   strokeWidth="1.5"

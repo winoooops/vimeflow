@@ -277,11 +277,11 @@
 }
 
 .vf-tank-drift-a {
-  animation: vfTankDrift 9s linear infinite;
+  animation: vfTankDrift 6s linear infinite;
 }
 
 .vf-tank-drift-b {
-  animation: vfTankDrift 13s linear infinite;
+  animation: vfTankDrift 9s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
