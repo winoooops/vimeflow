@@ -228,6 +228,27 @@ describe('useReservoirFlow', () => {
     expect(pending).not.toBeNull()
   })
 
+  test('paints the resting surface when reduced-motion is enabled mid-hover', () => {
+    const refs = makeRefs()
+    render(<Harness refs={refs} />)
+    const hover = screen.getByTestId('hover')
+    mockBox(hover)
+    fireEnter(hover)
+    fireMove(hover, 124)
+    runFrames(40)
+
+    const crestBefore = refs.meniscus.getAttribute('d') ?? ''
+    expect(yAt(crestBefore, 124)).toBeLessThan(yAt(crestBefore, 0))
+
+    mql.matches = true
+    mql.fire()
+    expect(pending).toBeNull()
+
+    const expected = buildReservoirSurface(62, 104, 0, 0, 124, 30).crest
+    expect(refs.meniscus.getAttribute('d')).toBe(expected)
+    expect(refs.fill.getAttribute('d')).toContain('L 248 104 L 0 104 Z')
+  })
+
   test('stops the loop when the tank goes inactive (context unknown)', () => {
     const { rerender } = render(<Harness refs={makeRefs()} active />)
     runFrames(5)

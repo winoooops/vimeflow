@@ -187,6 +187,28 @@ export const useReservoirFlow = (
     const onMqlChange = (): void => {
       if (mql.matches) {
         stop()
+        // Reset swell state to rest and paint the static resting surface
+        // immediately. React no longer owns the `d` attributes, so the same
+        // imperative owner must restore them when animation is disabled live.
+        amp = 0
+        targetAmp = 0
+        swellX = TANK_WIDTH / 2
+        cursorX = TANK_WIDTH / 2
+        phase = 0
+        const refs = refsRef.current
+        const geom = geomRef.current
+        if (refs !== null && geom !== null) {
+          const { fill, crest } = buildReservoirSurface(
+            geom.level,
+            geom.height,
+            0,
+            0,
+            TANK_WIDTH / 2,
+            preset.width
+          )
+          refs.fill.setAttribute('d', fill)
+          refs.meniscus.setAttribute('d', crest)
+        }
       } else {
         start()
       }
