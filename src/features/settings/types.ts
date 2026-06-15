@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { ShortcutInput } from '../../lib/formatShortcut'
 
 export type SettingsSectionId =
   | 'general'
@@ -107,10 +108,12 @@ export interface AppearanceScheme {
   text: string
 }
 
+export type KeymapKeys = ShortcutInput[] | ((isMac: boolean) => ShortcutInput[])
+
 export interface KeymapBinding {
   id: string
   label: string
-  keys: string[]
+  keys: KeymapKeys
 }
 
 export interface KeymapGroup {

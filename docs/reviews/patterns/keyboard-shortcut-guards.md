@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-15
-ref_count: 1
+ref_count: 2
 ---
 
 # Keyboard Shortcut Guards
@@ -29,6 +29,14 @@ against three classes of false-fire:
    `event.preventDefault()` in the main process suppresses the renderer `keydown`,
    so a renderer-only guard (e.g. `event.repeat`) never runs. The main-process
    matcher must replicate the guard itself (filter `input.isAutoRepeat`).
+5. **Optional guard defaults must be safe** — when a caller can omit a guard
+   prop, the hook should default to _not_ claiming the keystroke. Treating
+   `undefined` as "active" lets capture-phase shortcuts steal input from
+   unfocused surfaces.
+6. **Platform-specific display** — keymap hints, tooltips, and settings labels
+   that show shortcuts must render the modifier that matches the runtime
+   platform (`⌘` on macOS, `Ctrl` on Linux/Windows). Hardcoding `⌘` in the UI
+   misleads non-Mac users and drifts from the behavior-side modifier choice.
 
 ## Findings
 
@@ -296,4 +304,22 @@ against three classes of false-fire:
 - **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
 - **Finding:** After the container-active and dialog guards passed, the directional arrow handler returned without claiming the key when `resolveDirectionalPane` found no neighbor. Because the listener runs at the document capture phase, the unclaimed `keydown` reached xterm.js and forwarded a modified-arrow escape sequence to the PTY on Linux/Windows, making an advertised pane-navigation chord affect the running shell/editor at layout edges or in single-pane sessions.
 - **Fix:** Called `event.preventDefault()` and `event.stopPropagation()` before returning from the `target === null` branch, while keeping the editor/dock guard intact. Updated the regression test to expect the shortcut is claimed at edges.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Directional arrow shortcut claims keys when container-active guard is omitted
+
+- **Source:** github-claude | PR #460 round 3 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The `Cmd/Ctrl+Shift+Arrow` handler checked `isTerminalContainerActive !== undefined && !isTerminalContainerActive` before returning. When the prop was omitted (default `undefined`), the guard was skipped and the capture-phase listener claimed the modified-arrow keystroke even though no caller had vouched that the terminal container owned focus.
+- **Fix:** Changed the guard to `if (!isTerminalContainerActive) return`, treating an omitted guard as inactive. Updated all directional-focus regression tests to pass `isTerminalContainerActive: true` and added a new test asserting the shortcut passes through when the guard is omitted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Keymap pane hardcodes ⌘ modifier on all platforms
+
+- **Source:** github-codex-connector | PR #460 round 3 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/sections.ts`, `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** The Keymap settings pane stored pre-rendered `⌘`-prefixed strings in `KEYMAP_GROUPS` and `VIM_KEYMAP_GROUPS`. On Linux/Windows the actual shortcuts use `Ctrl`, so the authoritative read-only keymap list advertised the wrong modifier on every non-Mac platform.
+- **Fix:** Migrated the keymap data to `ShortcutInput` tokens (`Mod`, `Ctrl`, `Shift`, arrow glyphs, etc.) and rendered each binding through the existing `formatShortcut` utility, which maps `Mod` to `⌘` on macOS and `Ctrl` elsewhere. Added a `KeymapKeys` type that can be a static list or a function `(isMac) => ShortcutInput[]` so chords that require Shift only on Ctrl platforms (sidebar `Ctrl+Shift+B`, terminal copy `Ctrl+Shift+C`) render correctly on every OS. Also formatted the Vim zone labels and footer text through `formatShortcut` so palette references stay platform-correct. Added regression tests asserting `⌘B`/`⌘C` on Mac and `Ctrl+Shift+B`/`Ctrl+Shift+C` on Linux/Windows.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -229,12 +229,11 @@ export const usePaneShortcuts = ({
       // runs at the document capture phase with stopPropagation(), so it
       // needs the same guard or it would silence CodeMirror's text-selection
       // shortcuts (Cmd/Ctrl+Shift+Arrow) whenever a neighbor pane exists.
+      // When the caller does not provide the guard at all, default to safe:
+      // do not claim the keystroke. (Claude review round 3.)
       const isTerminalContainerActiveValue =
         isTerminalContainerActiveRef.current
-      if (
-        isTerminalContainerActiveValue !== undefined &&
-        !isTerminalContainerActiveValue
-      ) {
+      if (!isTerminalContainerActiveValue) {
         return
       }
       if (document.querySelector(DIALOG_SELECTOR)) {

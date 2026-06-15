@@ -62,4 +62,34 @@ describe('KeymapPane', () => {
       expect(screen.queryAllByText(b.label).length).toBeGreaterThan(0)
     })
   })
+
+  test('renders Mac-style modifier glyphs on macOS', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'MacIntel',
+    })
+
+    render(<KeymapPane />)
+
+    expect(screen.getByText('⌘;')).toBeInTheDocument()
+    expect(screen.getByText('⌘B')).toBeInTheDocument()
+    expect(screen.getByText('⌘C')).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('renders Ctrl-style modifiers on Linux/Windows', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+
+    render(<KeymapPane />)
+
+    expect(screen.getByText('Ctrl+;')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+B')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+Shift+C')).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
 })

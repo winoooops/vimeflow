@@ -64,10 +64,14 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
   {
     zone: 'Global',
     bindings: [
-      { id: 'palette', label: 'Open command palette', keys: ['⌘', ';'] },
-      { id: 'sidebar', label: 'Toggle sidebar', keys: ['⌘', 'B'] },
-      { id: 'editor', label: 'Focus editor', keys: ['⌘', 'E'] },
-      { id: 'diff', label: 'Focus diff', keys: ['⌘', 'G'] },
+      { id: 'palette', label: 'Open command palette', keys: [['Mod', ';']] },
+      {
+        id: 'sidebar',
+        label: 'Toggle sidebar',
+        keys: (isMac) => (isMac ? [['Mod', 'B']] : [['Mod', 'Shift', 'B']]),
+      },
+      { id: 'editor', label: 'Focus editor', keys: [['Mod', 'E']] },
+      { id: 'diff', label: 'Focus diff', keys: [['Mod', 'G']] },
     ],
   },
   {
@@ -76,25 +80,39 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
       {
         id: 'focus-number',
         label: 'Focus pane by number',
-        keys: ['⌘1', '⌘2', '⌘3', '⌘4'],
+        keys: [
+          ['Mod', '1'],
+          ['Mod', '2'],
+          ['Mod', '3'],
+          ['Mod', '4'],
+        ],
       },
       {
         id: 'focus-direction',
         label: 'Focus pane left / down / up / right',
-        keys: ['⌘⇧←', '⌘⇧↓', '⌘⇧↑', '⌘⇧→'],
+        keys: [
+          ['Mod', 'Shift', '←'],
+          ['Mod', 'Shift', '↓'],
+          ['Mod', 'Shift', '↑'],
+          ['Mod', 'Shift', '→'],
+        ],
       },
-      { id: 'cycle-layout', label: 'Cycle layout', keys: ['⌘', '\\'] },
+      { id: 'cycle-layout', label: 'Cycle layout', keys: [['Mod', '\\']] },
     ],
   },
   {
     zone: 'Terminal',
     bindings: [
-      { id: 'copy', label: 'Copy selection', keys: ['⌘', 'C'] },
-      { id: 'paste', label: 'Paste', keys: ['⌘', '⇧', 'V'] },
+      {
+        id: 'copy',
+        label: 'Copy selection',
+        keys: (isMac) => (isMac ? [['Mod', 'C']] : [['Mod', 'Shift', 'C']]),
+      },
+      { id: 'paste', label: 'Paste', keys: [['Mod', 'Shift', 'V']] },
       {
         id: 'interrupt',
         label: 'Interrupt (sent to the agent)',
-        keys: ['⌃', 'C'],
+        keys: [['Ctrl', 'C']],
       },
     ],
   },
@@ -113,7 +131,7 @@ export const KEYMAP_GROUPS: KeymapGroup[] = [
 // cspell:disable
 export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
   {
-    zone: 'Vim ex-commands (type in the ⌘; palette)',
+    zone: 'Vim ex-commands (type in the Mod; palette)',
     bindings: [
       { id: 'vim-w', label: 'Save file', keys: [':w'] },
       { id: 'vim-q', label: 'Close pane', keys: [':q'] },
@@ -133,7 +151,7 @@ export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
     ],
   },
   {
-    zone: 'Vim leader chords (⌘; then a key)',
+    zone: 'Vim leader chords (Mod; then a key)',
     bindings: [
       {
         id: 'vim-hjkl',

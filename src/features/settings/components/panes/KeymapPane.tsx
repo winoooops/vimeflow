@@ -1,14 +1,30 @@
 import type { ReactElement } from 'react'
+import {
+  formatShortcut,
+  isMacPlatform,
+  type ShortcutInput,
+} from '../../../../lib/formatShortcut'
 import { useSettings } from '../../hooks/useSettings'
 import { KEYMAP_GROUPS, VIM_KEYMAP_GROUPS } from '../../sections'
-import type { KeymapGroup } from '../../types'
+import type { KeymapBinding, KeymapGroup, KeymapKeys } from '../../types'
 import { Kbd } from '../Kbd'
 import { PaneTitle, Row, Select } from '../controls'
+
+const resolveKeys = (keys: KeymapKeys): ShortcutInput[] =>
+  typeof keys === 'function' ? keys(isMacPlatform()) : keys
+
+const renderKeys = (binding: KeymapBinding): ReactElement[] =>
+  resolveKeys(binding.keys).map((k, index) => (
+    <Kbd key={`${binding.id}-${index}`}>{formatShortcut(k)}</Kbd>
+  ))
+
+const formatZone = (zone: string): string =>
+  zone.replace('Mod;', formatShortcut(['Mod', ';']))
 
 const renderGroup = (group: KeymapGroup): ReactElement => (
   <div key={group.zone} className="mb-4">
     <div className="mb-2.5 font-mono text-[10px] uppercase tracking-widest text-on-surface-muted">
-      {group.zone}
+      {formatZone(group.zone)}
     </div>
 
     <div className="overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest/50">
@@ -24,11 +40,7 @@ const renderGroup = (group: KeymapGroup): ReactElement => (
           <span className="min-w-0 flex-1 font-body text-[13px] text-on-surface-variant">
             {b.label}
           </span>
-          <span className="flex gap-1">
-            {b.keys.map((k) => (
-              <Kbd key={`${b.id}-${k}`}>{k}</Kbd>
-            ))}
-          </span>
+          <span className="flex gap-1">{renderKeys(b)}</span>
         </div>
       ))}
     </div>
@@ -62,7 +74,8 @@ export const KeymapPane = (): ReactElement => {
       {showVim && VIM_KEYMAP_GROUPS.map(renderGroup)}
 
       <p className="font-body text-xs text-on-surface-muted">
-        More actions are available in the ⌘; command palette.
+        More actions are available in the {formatShortcut(['Mod', ';'])} command
+        palette.
       </p>
     </>
   )

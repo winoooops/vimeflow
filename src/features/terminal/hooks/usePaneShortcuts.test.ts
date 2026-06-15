@@ -536,6 +536,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -582,6 +583,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -608,6 +610,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -629,6 +632,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -650,6 +654,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -671,6 +676,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -696,6 +702,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -737,5 +744,28 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
 
     document.body.removeChild(dockElement)
+  })
+
+  test('Ctrl+Shift+Arrow passes through when container-active guard is omitted', () => {
+    // The directional handler defaults to safe: if no caller vouches that the
+    // terminal container owns focus, the shortcut must not claim the key.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 })
