@@ -356,3 +356,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes (e.g., after shrinking to `single`/`vsplit`) still received prefetches and warm snapshots. The background-work boundary diverged from the UI visibility boundary.
 - **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Scroll-anchor compensation inferred prepend from list length
+
+- **Source:** github-claude + github-codex-connector (P2) | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The prepend detector compared `feedEvents.length` to a stored count. When the capped activity feed replaced its oldest row (total length unchanged) or appended rows at the bottom, the detector produced false negatives/positives. The compensation amount also relied on total `scrollHeight` growth, which is zero when an equal-height row drops off the bottom.
+- **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` (with `CSS.escape` on the selector) and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
+- **Commit:** see `git blame` / `git log` on this line

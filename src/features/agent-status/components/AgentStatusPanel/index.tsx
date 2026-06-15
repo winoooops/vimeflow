@@ -71,7 +71,7 @@ export const AgentStatusPanel = ({
   const programmaticScrollTopRef = useRef<number | null>(null)
 
   const scrollMetricsRef = useRef<{
-    feedEventCount: number
+    firstEventId: string | null
     snapshotKey: string | null
     scrollHeight: number
     scrollTop: number
@@ -109,9 +109,6 @@ export const AgentStatusPanel = ({
         : events.filter((event) => event.id !== runningEvent.id),
     [events, runningEvent]
   )
-
-  const feedEventCountRef = useRef(feedEvents.length)
-  feedEventCountRef.current = feedEvents.length
 
   // Own the live "running Ns" clock: tick only while an action runs, resetting
   // immediately when a new one starts so the counter never reads stale.
@@ -166,11 +163,15 @@ export const AgentStatusPanel = ({
     scrollContainer.scrollTop = scrollTop
     programmaticScrollTopRef.current = scrollContainer.scrollTop
     scrollMetricsRef.current = {
-      feedEventCount: feedEventCountRef.current,
+      firstEventId: feedEvents[0]?.id ?? null,
       snapshotKey,
       scrollHeight: scrollContainer.scrollHeight,
       scrollTop: scrollContainer.scrollTop,
     }
+    // restoreScrollAnchor intentionally depends only on snapshotKey. It runs on
+    // mount/key change to restore the saved scroll position; the latest feed
+    // identity is updated by the following layout effect on every render cycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshotKey])
 
   useLayoutEffect(() => {
@@ -187,38 +188,45 @@ export const AgentStatusPanel = ({
     const previousMetrics = scrollMetricsRef.current
 
     if (previousMetrics?.snapshotKey === snapshotKey) {
-      const scrollHeightDelta =
-        scrollContainer.scrollHeight - previousMetrics.scrollHeight
-
       const activityPrepended =
-        feedEvents.length > previousMetrics.feedEventCount
+        (feedEvents[0]?.id ?? null) !== previousMetrics.firstEventId
 
-      if (
-        activityPrepended &&
-        scrollHeightDelta > 0 &&
-        previousMetrics.scrollTop > 0
-      ) {
-        const nextScrollTop = previousMetrics.scrollTop + scrollHeightDelta
+      if (activityPrepended && previousMetrics.scrollTop > 0) {
+        const firstRow = scrollContainer.querySelector<HTMLElement>(
+          `[data-event-id="${CSS.escape(feedEvents[0]?.id ?? '')}"]`
+        )
 
-        programmaticScrollTopRef.current = nextScrollTop
-        scrollContainer.scrollTop = nextScrollTop
-        programmaticScrollTopRef.current = scrollContainer.scrollTop
+        const firstRowHeight = firstRow?.offsetHeight ?? 0
 
-        if (snapshotKey !== null) {
-          writeStatusScrollAnchor(snapshotKey, scrollContainer.scrollTop)
+        const scrollHeightDelta =
+          scrollContainer.scrollHeight - previousMetrics.scrollHeight
+
+        const prependDelta =
+          firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta
+
+        if (prependDelta > 0) {
+          const nextScrollTop = previousMetrics.scrollTop + prependDelta
+
+          programmaticScrollTopRef.current = nextScrollTop
+          scrollContainer.scrollTop = nextScrollTop
+          programmaticScrollTopRef.current = scrollContainer.scrollTop
+
+          if (snapshotKey !== null) {
+            writeStatusScrollAnchor(snapshotKey, scrollContainer.scrollTop)
+          }
         }
       }
     }
 
     scrollMetricsRef.current = {
-      feedEventCount: feedEvents.length,
+      firstEventId: feedEvents[0]?.id ?? null,
       snapshotKey,
       scrollHeight: scrollContainer.scrollHeight,
       scrollTop: scrollContainer.scrollTop,
     }
   }, [
     snapshotKey,
-    feedEvents.length,
+    feedEvents,
     runningId,
     status.toolCalls.total,
     effectiveFiles.length,
@@ -271,7 +279,7 @@ export const AgentStatusPanel = ({
       />
 
       <span className="sr-only" role="status" aria-live="polite">
-        {isRefreshing ? 'Fetching latest agent status' : 'Agent status updated'}
+        {isRefreshing ? 'Fetching latest agent status' : ''}
       </span>
 
       <div className="flex flex-col gap-2 p-2">

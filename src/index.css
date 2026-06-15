@@ -280,6 +280,7 @@
     color-mix(in srgb, var(--color-primary-container) 58%, transparent),
     transparent
   );
+  transform: translateX(-100%);
   animation: vfActivityRefreshComet 1.4s ease-in-out infinite;
 }
 

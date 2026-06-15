@@ -18,7 +18,7 @@ export const AgentStatusPanelHeader = ({
 }: AgentStatusPanelHeaderProps): ReactElement => (
   <div
     data-testid="agent-status-panel-header"
-    className="relative flex h-11 shrink-0 items-center gap-2.5 px-2 pr-2 pl-3.5"
+    className="relative flex h-11 shrink-0 items-center gap-2.5 pr-2 pl-3.5"
     style={{
       background: `linear-gradient(180deg, ${agent.accentDim}, transparent 80%)`,
     }}

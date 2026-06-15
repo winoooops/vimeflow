@@ -486,6 +486,212 @@ describe('AgentStatusPanel', () => {
     expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
   })
 
+  test('preserves the visual scroll anchor when prepending replaces the oldest row', () => {
+    const cappedHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 2,
+        byType: { Read: 2 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'middle-read',
+          tool: 'Read',
+          args: 'src/middle.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:30Z',
+          isTestFile: false,
+        },
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:58:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={cappedHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...cappedHistoryStatus,
+          toolCalls: {
+            total: 3,
+            byType: { Read: 3 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'middle-read',
+              tool: 'Read',
+              args: 'src/middle.ts',
+              status: 'done',
+              durationMs: 100,
+              timestamp: '2026-04-22T11:59:30Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+  })
+
+  test('compensates by inserted row height when total scroll height does not grow', () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight'
+    )
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      value: 60,
+    })
+
+    const cappedHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 2,
+        byType: { Read: 2 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'middle-read',
+          tool: 'Read',
+          args: 'src/middle.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:30Z',
+          isTestFile: false,
+        },
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:58:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={cappedHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    const scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...cappedHistoryStatus,
+          toolCalls: {
+            total: 3,
+            byType: { Read: 3 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'middle-read',
+              tool: 'Read',
+              args: 'src/middle.ts',
+              status: 'done',
+              durationMs: 100,
+              timestamp: '2026-04-22T11:59:30Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+
+    if (originalOffsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetHeight',
+        originalOffsetHeight
+      )
+    }
+  })
+
   test('does not adjust scroll when a lower sidebar section grows', () => {
     const emptyGitStatus = {
       files: [],
