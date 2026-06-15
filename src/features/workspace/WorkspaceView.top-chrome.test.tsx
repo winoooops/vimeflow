@@ -186,6 +186,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   }
 
   beforeEach(async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: '',
+      configurable: true,
+    })
     vi.clearAllMocks()
     act(() => {
       setSidebarCollapsed(false)

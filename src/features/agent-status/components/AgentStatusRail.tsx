@@ -82,16 +82,18 @@ export const AgentStatusRail = ({
       </div>
 
       {ctxPct !== null && (
-        <Bucket
-          pct={ctxPct}
-          color={ctxTone(ctxPct).base}
-          label="CTX"
-          tooltip={`Context: ${Math.round(ctxPct)}%`}
-        />
+        <div className="vf-app-no-drag">
+          <Bucket
+            pct={ctxPct}
+            color={ctxTone(ctxPct).base}
+            label="CTX"
+            tooltip={`Context: ${Math.round(ctxPct)}%`}
+          />
+        </div>
       )}
 
       {cachePct !== null && (
-        <div className="mt-4">
+        <div className="vf-app-no-drag mt-4">
           <Bucket
             pct={cachePct}
             color={cacheTone(cachePct)}
