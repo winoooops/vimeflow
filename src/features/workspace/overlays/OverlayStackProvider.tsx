@@ -18,13 +18,25 @@ export type OverlayPlane =
 
 export type NativeOcclusionPolicy = 'none' | 'intersects' | 'global'
 
-export interface OverlayDescriptor {
+type BaseOverlayDescriptor = {
   id: string
   plane: OverlayPlane
   isOpen: boolean
-  nativeOcclusion: NativeOcclusionPolicy
-  getRect?: () => DOMRectReadOnly | null
 }
+
+export type OverlayDescriptor =
+  | (BaseOverlayDescriptor & {
+      nativeOcclusion: 'none'
+      getRect?: () => DOMRectReadOnly | null
+    })
+  | (BaseOverlayDescriptor & {
+      nativeOcclusion: 'global'
+      getRect?: () => DOMRectReadOnly | null
+    })
+  | (BaseOverlayDescriptor & {
+      nativeOcclusion: 'intersects'
+      getRect: () => DOMRectReadOnly | null
+    })
 
 export type NativeSurfaceOwner = 'browser-pane'
 

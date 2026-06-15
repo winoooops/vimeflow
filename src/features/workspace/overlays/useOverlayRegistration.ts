@@ -13,14 +13,16 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
   const { id, plane, isOpen, nativeOcclusion } = descriptor
 
   useLayoutEffect(() => {
-    registerOverlayDescriptor({
+    const overlayDescriptor: OverlayDescriptor = {
       id,
       plane,
       isOpen,
       nativeOcclusion,
       getRect: (): DOMRectReadOnly | null =>
         latestDescriptorRef.current.getRect?.() ?? null,
-    })
+    }
+
+    registerOverlayDescriptor(overlayDescriptor)
 
     return (): void => unregisterOverlayDescriptor(id)
   }, [

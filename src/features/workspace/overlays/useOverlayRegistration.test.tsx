@@ -1,10 +1,7 @@
 import { type ReactElement } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import {
-  OverlayStackProvider,
-  type NativeOcclusionPolicy,
-} from './OverlayStackProvider'
+import { OverlayStackProvider } from './OverlayStackProvider'
 import { useNativeSurface } from './useNativeSurface'
 import { useOverlayRegistration } from './useOverlayRegistration'
 
@@ -36,7 +33,7 @@ const rect = (
 
 interface RegisteredOverlayProps {
   isOpen: boolean
-  nativeOcclusion?: NativeOcclusionPolicy
+  nativeOcclusion?: 'none' | 'global'
 }
 
 const RegisteredOverlay = ({
@@ -72,7 +69,7 @@ const NativeSurfaceStatus = (): ReactElement => {
 
 interface HarnessProps {
   isOpen?: boolean
-  nativeOcclusion?: NativeOcclusionPolicy
+  nativeOcclusion?: 'none' | 'global'
   hideOverlay?: boolean
 }
 
