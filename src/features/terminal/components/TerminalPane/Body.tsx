@@ -376,52 +376,55 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     [applyAgentCwdHint, flushAgentCwdOutputBuffer]
   )
 
-  const handleTerminalInput = useCallback((data: string): void => {
-    if (agentCwdSourceRef.current !== 'text-hint') {
-      // Continue below; command submission still needs to be tracked even when
-      // the cwd hint guard has nothing to unlock.
-    } else {
-      agentCwdSourceRef.current = 'user-input'
-      logAgentCwdDebug('user-input', {
-        sessionId,
-        agentCwd: agentCwdRef.current,
-        unlocked: true,
-      })
-    }
+  const handleTerminalInput = useCallback(
+    (data: string): void => {
+      if (agentCwdSourceRef.current !== 'text-hint') {
+        // Continue below; command submission still needs to be tracked even when
+        // the cwd hint guard has nothing to unlock.
+      } else {
+        agentCwdSourceRef.current = 'user-input'
+        logAgentCwdDebug('user-input', {
+          sessionId,
+          agentCwd: agentCwdRef.current,
+          unlocked: true,
+        })
+      }
 
-    for (const char of stripTerminalInputControlSequences(data)) {
-      if (char === '\r' || char === '\n') {
-        const submitted = submittedInputLineRef.current.trim()
-        submittedInputLineRef.current = ''
-        if (submitted.length > 0) {
-          onCommandSubmitRef.current?.(sessionIdRef.current, submitted)
+      for (const char of stripTerminalInputControlSequences(data)) {
+        if (char === '\r' || char === '\n') {
+          const submitted = submittedInputLineRef.current.trim()
+          submittedInputLineRef.current = ''
+          if (submitted.length > 0) {
+            onCommandSubmitRef.current?.(sessionIdRef.current, submitted)
+          }
+
+          continue
         }
 
-        continue
+        if (char === '\b' || char === '\x7f') {
+          submittedInputLineRef.current = submittedInputLineRef.current.slice(
+            0,
+            -1
+          )
+
+          continue
+        }
+
+        if (char === '\u0003' || char === '\u0015') {
+          submittedInputLineRef.current = ''
+
+          continue
+        }
+
+        if (char < ' ' || char === '\u001b') {
+          continue
+        }
+
+        submittedInputLineRef.current += char
       }
-
-      if (char === '\b' || char === '\x7f') {
-        submittedInputLineRef.current = submittedInputLineRef.current.slice(
-          0,
-          -1
-        )
-
-        continue
-      }
-
-      if (char === '\u0003' || char === '\u0015') {
-        submittedInputLineRef.current = ''
-
-        continue
-      }
-
-      if (char < ' ' || char === '\u001b') {
-        continue
-      }
-
-      submittedInputLineRef.current += char
-    }
-  }, [sessionId])
+    },
+    [sessionId]
+  )
 
   const handleRestoreStart = useCallback((): void => {
     isRestoringOutputRef.current = true

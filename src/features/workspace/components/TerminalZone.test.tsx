@@ -312,9 +312,7 @@ describe('TerminalZone', () => {
     const user = userEvent.setup()
     const onCommandSubmit = vi.fn()
 
-    render(
-      <TerminalZone {...defaultProps} onCommandSubmit={onCommandSubmit} />
-    )
+    render(<TerminalZone {...defaultProps} onCommandSubmit={onCommandSubmit} />)
 
     await user.click(screen.getByTestId('mock-command-sess-1'))
 
