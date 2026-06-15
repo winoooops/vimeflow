@@ -251,6 +251,49 @@
   }
 }
 
+/* Activity panel refresh affordance. The sweep rides inside the header
+   divider so refresh state never changes layout height. */
+@keyframes vfActivityRefreshComet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(240%);
+  }
+}
+
+@keyframes vfActivityGlyphBreathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+  }
+}
+
+.vf-activity-refresh-comet {
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-primary-container) 58%, transparent),
+    transparent
+  );
+  animation: vfActivityRefreshComet 1.4s ease-in-out infinite;
+}
+
+.vf-activity-glyph-refresh {
+  animation: vfActivityGlyphBreathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vf-activity-refresh-comet,
+  .vf-activity-glyph-refresh {
+    animation: none;
+  }
+}
+
 /* Diff viewer styling */
 .diff-added {
   background-color: var(--color-diff-added);

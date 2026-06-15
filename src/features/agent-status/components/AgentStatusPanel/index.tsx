@@ -37,6 +37,7 @@ interface AgentStatusPanelProps {
   onOpenDiff: (file: ChangedFile) => void
   onOpenFile?: (path: string) => void
   gitStatus?: UseGitStatusReturn
+  isRefreshing?: boolean
   agent: Agent
   status: SessionStatus
   onCollapse: () => void
@@ -57,6 +58,7 @@ export const AgentStatusPanel = ({
   onOpenDiff,
   onOpenFile = undefined,
   gitStatus = undefined,
+  isRefreshing = false,
   agent,
   status: sessionStatus,
   onCollapse,
@@ -67,6 +69,13 @@ export const AgentStatusPanel = ({
   const events = useActivityEvents(status)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const programmaticScrollTopRef = useRef<number | null>(null)
+
+  const scrollMetricsRef = useRef<{
+    feedEventCount: number
+    snapshotKey: string | null
+    scrollHeight: number
+    scrollTop: number
+  } | null>(null)
 
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
@@ -100,6 +109,9 @@ export const AgentStatusPanel = ({
         : events.filter((event) => event.id !== runningEvent.id),
     [events, runningEvent]
   )
+
+  const feedEventCountRef = useRef(feedEvents.length)
+  feedEventCountRef.current = feedEvents.length
 
   // Own the live "running Ns" clock: tick only while an action runs, resetting
   // immediately when a new one starts so the counter never reads stale.
@@ -137,7 +149,7 @@ export const AgentStatusPanel = ({
 
   const canActivate = liveFile !== null
 
-  useLayoutEffect(() => {
+  const restoreScrollAnchor = useCallback((): void => {
     if (snapshotKey === null) {
       return
     }
@@ -153,11 +165,63 @@ export const AgentStatusPanel = ({
     programmaticScrollTopRef.current = scrollTop
     scrollContainer.scrollTop = scrollTop
     programmaticScrollTopRef.current = scrollContainer.scrollTop
+    scrollMetricsRef.current = {
+      feedEventCount: feedEventCountRef.current,
+      snapshotKey,
+      scrollHeight: scrollContainer.scrollHeight,
+      scrollTop: scrollContainer.scrollTop,
+    }
+  }, [snapshotKey])
+
+  useLayoutEffect(() => {
+    restoreScrollAnchor()
+  }, [restoreScrollAnchor])
+
+  useLayoutEffect(() => {
+    const scrollContainer = scrollContainerRef.current
+
+    if (scrollContainer === null) {
+      return
+    }
+
+    const previousMetrics = scrollMetricsRef.current
+
+    if (previousMetrics?.snapshotKey === snapshotKey) {
+      const scrollHeightDelta =
+        scrollContainer.scrollHeight - previousMetrics.scrollHeight
+
+      const activityPrepended =
+        feedEvents.length > previousMetrics.feedEventCount
+
+      if (
+        activityPrepended &&
+        scrollHeightDelta > 0 &&
+        previousMetrics.scrollTop > 0
+      ) {
+        const nextScrollTop = previousMetrics.scrollTop + scrollHeightDelta
+
+        programmaticScrollTopRef.current = nextScrollTop
+        scrollContainer.scrollTop = nextScrollTop
+        programmaticScrollTopRef.current = scrollContainer.scrollTop
+
+        if (snapshotKey !== null) {
+          writeStatusScrollAnchor(snapshotKey, scrollContainer.scrollTop)
+        }
+      }
+    }
+
+    scrollMetricsRef.current = {
+      feedEventCount: feedEvents.length,
+      snapshotKey,
+      scrollHeight: scrollContainer.scrollHeight,
+      scrollTop: scrollContainer.scrollTop,
+    }
   }, [
     snapshotKey,
-    feedEvents,
+    feedEvents.length,
     runningId,
-    effectiveFiles,
+    status.toolCalls.total,
+    effectiveFiles.length,
     effectiveLoading,
     error,
     status.testRun,
@@ -178,6 +242,15 @@ export const AgentStatusPanel = ({
       }
 
       writeStatusScrollAnchor(snapshotKey, nextScrollTop)
+
+      const currentMetrics = scrollMetricsRef.current
+      if (currentMetrics !== null) {
+        scrollMetricsRef.current = {
+          ...currentMetrics,
+          scrollHeight: event.currentTarget.scrollHeight,
+          scrollTop: nextScrollTop,
+        }
+      }
     },
     [snapshotKey]
   )
@@ -192,9 +265,14 @@ export const AgentStatusPanel = ({
     >
       <AgentStatusPanelHeader
         agent={agent}
+        isRefreshing={isRefreshing}
         status={sessionStatus}
         onCollapse={onCollapse}
       />
+
+      <span className="sr-only" role="status" aria-live="polite">
+        {isRefreshing ? 'Fetching latest agent status' : 'Agent status updated'}
+      </span>
 
       <div className="flex flex-col gap-2 p-2">
         <ContextBucket

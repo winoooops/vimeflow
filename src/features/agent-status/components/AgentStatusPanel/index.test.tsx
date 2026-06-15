@@ -408,6 +408,147 @@ describe('AgentStatusPanel', () => {
     expect(readStatusScrollAnchor('pty-pane-1')).toBe(260)
   })
 
+  test('preserves the visual scroll anchor when new activity prepends above history', () => {
+    const oldHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={oldHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...oldHistoryStatus,
+          toolCalls: {
+            total: 2,
+            byType: { Read: 2 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            ...oldHistoryStatus.recentToolCalls,
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+  })
+
+  test('does not adjust scroll when a lower sidebar section grows', () => {
+    const emptyGitStatus = {
+      files: [],
+      filesCwd: '/tmp/repo',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        gitStatus={emptyGitStatus}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        gitStatus={{
+          ...emptyGitStatus,
+          files: [
+            {
+              path: 'later.ts',
+              status: 'modified',
+              insertions: 4,
+              deletions: 1,
+              staged: false,
+            },
+          ],
+        }}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(120)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(120)
+  })
+
   test('renders Header above the body with the provided agent status and onCollapse', async () => {
     const onCollapse = vi.fn()
     render(
@@ -431,6 +572,22 @@ describe('AgentStatusPanel', () => {
       screen.getByRole('button', { name: /collapse activity panel/i })
     )
     expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  test('passes refreshing state into the fixed header affordance', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        isRefreshing
+      />
+    )
+
+    expect(screen.getByText('fetching latest')).toBeInTheDocument()
+    expect(screen.getByText('Fetching latest agent status')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    )
   })
 })
 
