@@ -5,6 +5,21 @@ import {
   useOverlayStackContext,
 } from './OverlayStackProvider'
 
+const areOcclusionStatesEqual = (
+  left: NativeSurfaceState,
+  right: NativeSurfaceState
+): boolean =>
+  left.id === right.id &&
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  left.owner === right.owner &&
+  left.belowPlane === right.belowPlane &&
+  left.getRect === right.getRect &&
+  left.occluded === right.occluded &&
+  left.occludingOverlayIds.length === right.occludingOverlayIds.length &&
+  left.occludingOverlayIds.every(
+    (value, index) => value === right.occludingOverlayIds[index]
+  )
+
 export const useNativeSurface = (
   descriptor: NativeSurfaceDescriptor
 ): NativeSurfaceState => {
@@ -41,10 +56,17 @@ export const useNativeSurface = (
     unregisterNativeSurfaceDescriptor,
   ])
 
-  return getNativeSurfaceState({
+  const nextState = getNativeSurfaceState({
     id,
     owner,
     belowPlane,
     getRect,
   })
+  const stateRef = useRef(nextState)
+
+  if (!areOcclusionStatesEqual(stateRef.current, nextState)) {
+    stateRef.current = nextState
+  }
+
+  return stateRef.current
 }

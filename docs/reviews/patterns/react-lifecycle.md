@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-11
-ref_count: 15
+last_updated: 2026-06-15
+ref_count: 16
 ---
 
 # React Lifecycle
@@ -311,3 +311,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. `useNativeSurface` returns a fresh `NativeSurfaceState` object on every render
+
+- **Source:** github-claude | PR #467 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The hook synchronously called `getNativeSurfaceState` in render, and `nativeSurfaceStateFrom` always allocated a fresh object and `occludingOverlayIds` array. Consumers that used the returned state in `useEffect`, `useMemo`, or `useCallback` dependency arrays would re-run on every parent re-render, even when occlusion had not changed. A naive `useMemo` with `[getNativeSurfaceState, id, owner, belowPlane, getRect]` did not work in this codebase because the overlay stack uses a `latestDescriptorRef` pattern: overlay descriptors are stored once and read through refs on subsequent renders, so the `overlays` array reference (and therefore `getNativeSurfaceState`) does not change when an overlay's rect or other mutable content changes.
+- **Fix:** Compute the state every render so the latest ref-based overlay descriptor values are observed, but keep a `useRef` to the previous result and return the previous object when descriptor identity, occlusion flag, and `occludingOverlayIds` content are unchanged. This preserves referential stability for dependency arrays without breaking the ref-based content-update path.
+- **Commit:** _(PR #467 round 1)_
