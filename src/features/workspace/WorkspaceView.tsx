@@ -52,6 +52,7 @@ import {
 } from '../command-palette/hooks/usePaneRenameChord'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
+import { cycleSession } from '../sessions/utils/cycleSession'
 import {
   clampSize,
   useResizable,
@@ -1319,13 +1320,20 @@ export const WorkspaceView = (): ReactElement => {
   const openFileInEditorCommand = useCallback((path: string): void => {
     // Resolve relative `:edit <path>` inputs against the active pane's cwd so
     // the backend does not canonicalize them relative to the Electron/sidecar
-    // process cwd.
+    // process cwd. Leave Unix absolute (`/`), home (`~`), Windows drive-letter
+    // (`C:\`), and UNC (`\\server\share`) paths untouched.
+    const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
+
+    const isAbsolute =
+      path.startsWith('/') ||
+      path.startsWith('~') ||
+      WINDOWS_DRIVE_PATH.test(path) ||
+      path.startsWith('\\\\')
     let resolvedPath = path
 
     if (
       path.length > 0 &&
-      !path.startsWith('/') &&
-      !path.startsWith('~') &&
+      !isAbsolute &&
       activeCwdRef.current !== '.' &&
       activeCwdRef.current.length > 0
     ) {
@@ -1491,22 +1499,14 @@ export const WorkspaceView = (): ReactElement => {
   // on Linux). Mirrors the previous/next-session palette commands.
   const switchRelativeSession = useCallback(
     (delta: number): void => {
-      if (sessions.length === 0) {
+      const nextSession = cycleSession(sessions, activeSessionId, delta)
+      if (nextSession === null) {
         notifyInfo('No open sessions')
 
         return
       }
 
-      const index = sessions.findIndex((s) => s.id === activeSessionId)
-
-      const nextIndex =
-        index === -1
-          ? delta > 0
-            ? 0
-            : sessions.length - 1
-          : (index + delta + sessions.length) % sessions.length
-
-      setActiveSessionId(sessions[nextIndex].id)
+      setActiveSessionId(nextSession.id)
     },
     [sessions, activeSessionId, setActiveSessionId, notifyInfo]
   )

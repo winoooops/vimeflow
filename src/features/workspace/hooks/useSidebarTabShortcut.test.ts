@@ -155,6 +155,40 @@ describe('useSidebarTabShortcut', () => {
     expect(props.onShowFiles).toHaveBeenCalledOnce()
   })
 
+  test('fires while the sidebar drawer is open even when focus is outside it', () => {
+    const sidebarDialog = document.createElement('div')
+    sidebarDialog.setAttribute('role', 'dialog')
+    sidebarDialog.setAttribute('aria-label', 'Sidebar')
+    append(sidebarDialog)
+
+    const props = makeProps({ modKey: '⌘' })
+    renderHook(() => useSidebarTabShortcut(props))
+
+    // Focus is still on document.body (the opener/terminal did not move it).
+    fireKey('F', { metaKey: true, shiftKey: true }, document.body)
+
+    expect(props.onShowFiles).toHaveBeenCalledOnce()
+  })
+
+  test('still defers to a non-sidebar dialog even if the sidebar drawer is open', () => {
+    const sidebarDialog = document.createElement('div')
+    sidebarDialog.setAttribute('role', 'dialog')
+    sidebarDialog.setAttribute('aria-label', 'Sidebar')
+    append(sidebarDialog)
+
+    const otherDialog = document.createElement('div')
+    otherDialog.setAttribute('role', 'dialog')
+    append(otherDialog)
+
+    const props = makeProps({ modKey: '⌘' })
+    renderHook(() => useSidebarTabShortcut(props))
+
+    const prevented = fireKey('F', { metaKey: true, shiftKey: true })
+
+    expect(props.onShowFiles).not.toHaveBeenCalled()
+    expect(prevented).toBe(false)
+  })
+
   test('detaches its listener on unmount', () => {
     const props = makeProps({ modKey: '⌘' })
     const { unmount } = renderHook(() => useSidebarTabShortcut(props))

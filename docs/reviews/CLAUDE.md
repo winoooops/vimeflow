@@ -48,7 +48,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 2        | 0    | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 3    | 2026-06-15   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 11       | 8    | 2026-06-15   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
@@ -74,9 +74,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 20       | 7    | 2026-06-15   |
-| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 16       | 3    | 2026-06-12   |
+| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-15   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 24       | 1    | 2026-06-15   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 25       | 1    | 2026-06-15   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |

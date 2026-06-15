@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-12
+last_updated: 2026-06-15
 ref_count: 3
 ---
 
@@ -184,4 +184,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/editor/hooks/useCodeMirror.ts` L175-193
 - **Finding:** `writeClipboardText` and its private `writeViaTextarea` fallback were defined inside `useCodeMirror.ts`, a module dense with CodeMirror view/state, Vim-mode wiring, and React hook concerns. The helper has zero imports from `@codemirror/*` and is a general-purpose DOM clipboard writer; `MarkdownReadingView.tsx` already needed to call it, forcing a cross-module import from an unrelated hook file. Future maintainers looking for clipboard fallback logic are unlikely to check a CodeMirror hook first, and refactors of `useCodeMirror.ts` risk silently breaking the reading view's copy path.
 - **Fix:** Promoted the helper to `src/features/editor/utils/clipboard.ts`, exported `ClipboardLike` from the same module, and added the required co-located `clipboard.test.ts`. Updated `useCodeMirror.ts` and `MarkdownReadingView.tsx` to import from the new utility module. The move keeps the hook focused on CodeMirror integration and places the clipboard abstraction next to `readingStyleStore.ts`, the existing stateless utility in `src/features/editor/utils/`.
+- **Commit:** same commit as this entry
+
+### 16. Duplicated session-cycling logic in `WorkspaceView` and `buildWorkspaceCommands`
+
+- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1492-1509, `src/features/workspace/commands/buildWorkspaceCommands.ts` L187-204
+- **Finding:** Both files implemented an identical wrap-around session cycle (empty-sessions guard, `findIndex` on `activeSessionId`, modulo wrap, `setActiveSessionId`). The two closures differed only in variable names (`idx`/`nextIdx` vs `index`/`nextIndex`), making the duplication non-obvious in future diffs. A behavior change — different empty-list message, skip-locked-session guard, etc. — would have to be applied independently in both places, and the compiler would not warn on divergence.
+- **Fix:** Extracted a pure `cycleSession(items, activeId, delta)` utility into `src/features/sessions/utils/cycleSession.ts` with co-located `cycleSession.test.ts`. Replaced both closures with one-liner delegates that call the utility and surface the same "No open sessions" toast when it returns `null`.
 - **Commit:** same commit as this entry

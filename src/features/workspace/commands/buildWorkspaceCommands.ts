@@ -4,6 +4,7 @@ import type {
   SessionCloseResult,
   LayoutId,
 } from '../../sessions/types'
+import { cycleSession } from '../../sessions/utils/cycleSession'
 import { validateTitle } from '../../sessions/utils/sanitizeTitle'
 import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
@@ -185,22 +186,14 @@ export const buildWorkspaceCommands = (
     sessions.findIndex((s) => s.id === activeSessionId)
 
   const switchRelativeSession = (delta: number): void => {
-    if (sessions.length === 0) {
+    const nextSession = cycleSession(sessions, activeSessionId, delta)
+    if (nextSession === null) {
       notifyInfo('No open sessions')
 
       return
     }
 
-    const idx = findActiveIndex()
-
-    const nextIdx =
-      idx === -1
-        ? delta > 0
-          ? 0
-          : sessions.length - 1
-        : (idx + delta + sessions.length) % sessions.length
-
-    setActiveSessionId(sessions[nextIdx].id)
+    setActiveSessionId(nextSession.id)
   }
 
   const closeActiveSessionCommand = (): void => {
