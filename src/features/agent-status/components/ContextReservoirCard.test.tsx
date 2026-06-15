@@ -156,6 +156,14 @@ describe('ContextReservoirCard null state', () => {
     expect(screen.getByTestId('context-headroom')).toHaveTextContent('—')
   })
 
+  test('omits aria-valuenow while the context percentage is unknown', () => {
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={null} />)
+
+    expect(
+      screen.getByRole('meter', { name: /context window usage/i })
+    ).not.toHaveAttribute('aria-valuenow')
+  })
+
   test('omits the water and the value pill when context is unknown', () => {
     render(<ContextReservoirCard {...defaultProps} usedPercentage={null} />)
 

@@ -82,7 +82,7 @@ export const ContextReservoirCard = ({
       aria-label="Context window usage"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(effectivePct)}
+      aria-valuenow={pct === null ? undefined : Math.round(pct)}
       aria-valuetext={valueText}
       className="cursor-default overflow-hidden"
       style={cardStyle}
