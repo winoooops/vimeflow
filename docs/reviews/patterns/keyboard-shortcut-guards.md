@@ -323,3 +323,12 @@ against three classes of false-fire:
 - **Finding:** The Keymap settings pane stored pre-rendered `⌘`-prefixed strings in `KEYMAP_GROUPS` and `VIM_KEYMAP_GROUPS`. On Linux/Windows the actual shortcuts use `Ctrl`, so the authoritative read-only keymap list advertised the wrong modifier on every non-Mac platform.
 - **Fix:** Migrated the keymap data to `ShortcutInput` tokens (`Mod`, `Ctrl`, `Shift`, arrow glyphs, etc.) and rendered each binding through the existing `formatShortcut` utility, which maps `Mod` to `⌘` on macOS and `Ctrl` elsewhere. Added a `KeymapKeys` type that can be a static list or a function `(isMac) => ShortcutInput[]` so chords that require Shift only on Ctrl platforms (sidebar `Ctrl+Shift+B`, terminal copy `Ctrl+Shift+C`) render correctly on every OS. Also formatted the Vim zone labels and footer text through `formatShortcut` so palette references stay platform-correct. Added regression tests asserting `⌘B`/`⌘C` on Mac and `Ctrl+Shift+B`/`Ctrl+Shift+C` on Linux/Windows.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Sidebar-tab shortcut bailed on the sidebar drawer itself
+
+- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L59-61
+- **Finding:** The shortcut hook used a blanket `document.querySelector(DIALOG_SELECTOR)` guard to defer to open modals. On compact viewports the sidebar shell is rendered as `role="dialog"` for a11y, so after opening Sessions with Ctrl/Cmd+Shift+S the guard treated the sidebar itself as a modal and suppressed Ctrl/Cmd+Shift+F/S, preventing keyboard switching between Sessions and Files while the drawer was open.
+- **Fix:** Replaced the single-selector bail-out with the same exception used by `useSidebarShortcut`: enumerate `openDialogs`, detect when the event target is inside `[role="dialog"][aria-label="Sidebar"]`, and only return early when a dialog is open AND the focus is not inside the sidebar drawer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -683,3 +683,12 @@ filesystem scope restrictions).
 - **Finding:** `KEYMAP_GROUPS` bindings can declare `keys` as either `ShortcutInput[]` or `(isMac: boolean) => ShortcutInput[]`. The test `expect(b.keys.length).toBeGreaterThan(0)` calls `.length` directly on the union, which on a function returns the function's arity (always 1) rather than the resolved shortcut array length. A regression that empties the returned array would pass the suite silently.
 - **Fix:** Resolved the function branch before asserting: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
 - **Commit:** same commit as this entry
+
+### 66. Sibling VIM_KEYMAP_GROUPS test repeated the same union-typed `.length` mistake
+
+- **Source:** github-claude | PR #460 round 5 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/settings/sections.test.ts` L94-99
+- **Finding:** After fixing `KEYMAP_GROUPS` in the same file, the adjacent `VIM_KEYMAP_GROUPS` binding test still called `expect(b.keys.length).toBeGreaterThan(0)` directly on the `ShortcutInput[] | ((isMac: boolean) => ShortcutInput[])` union. A future vim binding using the function form would silently pass because `function.length` reports parameter count, not the returned array length.
+- **Fix:** Mirrored the same resolution pattern used for `KEYMAP_GROUPS`: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
+- **Commit:** same commit as this entry

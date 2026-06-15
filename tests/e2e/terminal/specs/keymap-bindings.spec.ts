@@ -117,7 +117,7 @@ const gotoKeymapPane = async (): Promise<void> => {
 }
 
 const closeSettings = async (): Promise<void> => {
-  await clickBySelector('[role="dialog"] button[title="close"]')
+  await clickBySelector('[role="dialog"] button[aria-label="Close"]')
   await (
     await $('[role="dialog"][aria-label="Settings"]')
   ).waitForDisplayed({ reverse: true, timeout: 5_000 })

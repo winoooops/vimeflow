@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-15
-ref_count: 7
+ref_count: 8
 ---
 
 # Derived State Consistency
@@ -140,3 +140,12 @@ base data is technically "correct."
 - **Finding:** `focusDirection` passed the active pane's raw `session.panes` index into `resolveDirectionalPane`, but the layout grid only contains slots up to `capacity - 1`. When the session had more panes than the layout capacity and the active pane was rescued into the last visible slot, the chord consumed the key and returned `true` with no movement because the raw slot did not exist in the grid.
 - **Fix:** Mirrored the `usePaneShortcuts` approach: compute `visiblePanes` via `selectVisiblePanes(session.panes, shape.capacity)`, resolve from `activeVisibleIndex`, and activate `visiblePanes[targetVisibleIndex].id`. Added an over-capacity regression test for Vim leader `h`/`j`/`k`/`l`.
 - **Commit:** same commit as this entry
+
+### 11. Vim leader `w` chord cycled through raw pane array instead of visible slots
+
+- **Source:** github-claude | PR #460 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/hooks/useVimLeaderChords.ts` L79-93
+- **Finding:** `cycleNextPane` advanced through `session.panes` directly. In an over-capacity layout (e.g. three panes in a two-slot `vsplit`), pressing the leader `w` chord could focus a hidden pane. `selectVisiblePanes` would then rescue that pane into the last visible slot, evicting the pane that was already there and causing a visible layout jump. This also made `w` inconsistent with the directional `h`/`j`/`k`/`l` chords, which already resolved against the visible-slot subset.
+- **Fix:** Derived the current layout shape from `LAYOUTS[session.layout]`, guarded the `undefined` case, computed `visiblePanes = selectVisiblePanes(session.panes, shape.capacity)`, and cycled within the visible array before activating `visiblePanes[next].id`. Added an over-capacity regression test verifying that `w` wraps within the visible subset rather than jumping to a hidden pane.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

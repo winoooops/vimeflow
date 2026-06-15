@@ -1309,12 +1309,30 @@ export const WorkspaceView = (): ReactElement => {
   const requestOpenFileRef = useRef(requestOpenFile)
   requestOpenFileRef.current = requestOpenFile
 
+  const activeCwdRef = useRef(activeCwd)
+  activeCwdRef.current = activeCwd
+
   const saveActiveFileCommand = useCallback((): void => {
     void handleVimSaveRef.current()
   }, [])
 
   const openFileInEditorCommand = useCallback((path: string): void => {
-    requestOpenFileRef.current(path)
+    // Resolve relative `:edit <path>` inputs against the active pane's cwd so
+    // the backend does not canonicalize them relative to the Electron/sidecar
+    // process cwd.
+    let resolvedPath = path
+
+    if (
+      path.length > 0 &&
+      !path.startsWith('/') &&
+      !path.startsWith('~') &&
+      activeCwdRef.current !== '.' &&
+      activeCwdRef.current.length > 0
+    ) {
+      resolvedPath = `${activeCwdRef.current.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+    }
+
+    requestOpenFileRef.current(resolvedPath)
   }, [])
 
   const closeActivePaneCommand = useCallback((): void => {
