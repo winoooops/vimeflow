@@ -135,6 +135,16 @@ describe('TerminalPane index', () => {
     )
   })
 
+  test('forwards submitted terminal command callback to Body', () => {
+    const onCommandSubmit = vi.fn()
+
+    render(<TerminalPane {...baseProps} onCommandSubmit={onCommandSubmit} />)
+
+    expect(bodyPropsSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ onCommandSubmit })
+    )
+  })
+
   test('the burner button activates its pane (spec §8) then toggles its burner', async () => {
     const onBurner = vi.fn()
     const onRequestActive = vi.fn()

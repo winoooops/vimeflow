@@ -35,6 +35,7 @@ export interface SplitViewProps {
   isActive: boolean
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
+  onCommandSubmit?: (ptyId: string, command: string) => void
   onSessionRestart?: (sessionId: string) => void
   onSetActivePane?: (sessionId: string, paneId: string) => void
   onBrowserPaneUrlChange?: (
@@ -104,6 +105,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       isActive,
       onSessionCwdChange = undefined,
       onPaneReady = undefined,
+      onCommandSubmit = undefined,
       onSessionRestart = undefined,
       onSetActivePane = undefined,
       onBrowserPaneUrlChange = undefined,
@@ -342,6 +344,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                             onSessionCwdChange?.(session.id, pane.id, cwd)
                           }
                           onPaneReady={onPaneReady}
+                          onCommandSubmit={onCommandSubmit}
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
                           onBurner={onBurner}

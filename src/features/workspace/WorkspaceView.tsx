@@ -256,6 +256,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     appendPaneCacheReading,
+    clearPaneCacheHistory,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -508,10 +509,28 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPaneId = activePtyBackedPane?.id
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
-  const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+  const [agentStatusReset, setAgentStatusReset] = useState<{
+    ptyId: string
+    generation: number
+  } | null>(null)
+
+  const agentStatusResetGeneration =
+    agentStatusReset !== null &&
+    agentStatusReset.ptyId === activePtyBackedPanePtyId
+      ? agentStatusReset.generation
+      : 0
+
+  const agentStatus = useAgentStatus(
+    activePtyBackedPanePtyId ?? null,
+    agentStatusResetGeneration
+  )
 
   useCacheHistoryCollector({
     ptyId: activePtyBackedPanePtyId ?? null,
+    runId:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? agentStatus.agentSessionId
+        : null,
     sessionId: activeSessionId,
     paneId: activePtyBackedPaneId ?? null,
     usage:
@@ -519,7 +538,46 @@ export const WorkspaceView = (): ReactElement => {
         ? (agentStatus.contextWindow?.currentUsage ?? null)
         : null,
     onReading: appendPaneCacheReading,
+    onReset: clearPaneCacheHistory,
   })
+
+  const handleTerminalCommandSubmit = useCallback(
+    (ptyId: string, command: string): void => {
+      if (command !== '/clear') {
+        return
+      }
+
+      // Only reset agent-status state when the active pane is actually running
+      // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
+      // syntactically identical to a Codex `/clear` command, and a false reset
+      // for a live Codex session would suppress same-run events until the next
+      // session boundary (Claude Code Review on PR #469).
+      if (
+        ptyId === activePtyBackedPanePtyId &&
+        agentStatus.agentType === 'codex'
+      ) {
+        setAgentStatusReset((prev) => ({
+          ptyId,
+          generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
+        }))
+      }
+
+      for (const session of sessions) {
+        const pane = session.panes.find((p) => p.ptyId === ptyId)
+        if (pane) {
+          clearPaneCacheHistory(session.id, pane.id)
+
+          return
+        }
+      }
+    },
+    [
+      activePtyBackedPanePtyId,
+      agentStatus.agentType,
+      clearPaneCacheHistory,
+      sessions,
+    ]
+  )
 
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
@@ -2231,6 +2289,7 @@ export const WorkspaceView = (): ReactElement => {
               deferTerminalFit={terminalFitDeferred}
               loading={loading}
               onPaneReady={notifyPaneReady}
+              onCommandSubmit={handleTerminalCommandSubmit}
               onSessionRestart={restartSession}
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
