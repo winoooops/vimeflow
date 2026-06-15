@@ -1,4 +1,10 @@
-import { useEffect, useId, useRef, type ReactElement } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  type ReactElement,
+} from 'react'
 import {
   resolveContextTone,
   tankChrome,
@@ -58,8 +64,10 @@ export const WaterTank = ({
   const dryId = `tank-dry-${rid}`
   const clipId = `tank-clip-${rid}`
 
-  // Resting surface for the first paint / reduced-motion; the hook takes over
-  // the `d` attributes each frame once it starts. No swell at rest (amp 0).
+  // Resting surface for the first paint / reduced-motion. React no longer owns
+  // the animated `d` attributes — we seed them imperatively below so `pct`
+  // updates cannot overwrite the rAF-painted surface for a frame. No swell at
+  // rest (amp 0).
   const resting = buildReservoirSurface(
     level,
     height,
@@ -79,12 +87,49 @@ export const WaterTank = ({
   // every pct change.
   geomRef.current = { level, height }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const fill = fillRef.current
+    const meniscus = meniscusRef.current
     flowRefsRef.current =
-      fillRef.current !== null && meniscusRef.current !== null
-        ? { fill: fillRef.current, meniscus: meniscusRef.current }
+      fill !== null && meniscus !== null
+        ? { fill, meniscus }
         : null
-  }, [empty])
+    // Seed the first paint / reduced-motion surface before the browser paints.
+    // Compute from the mutable geom ref rather than the render-scoped `resting`
+    // so this effect does not re-run on every `pct` change.
+    const geom = geomRef.current
+    if (fill === null || meniscus === null || geom === null) {
+      return
+    }
+
+    const { fill: fillPath, crest } = buildReservoirSurface(
+      geom.level,
+      geom.height,
+      0,
+      0,
+      TANK_WIDTH / 2,
+      SWELL_PRESETS[swell].width
+    )
+    fill.setAttribute('d', fillPath)
+    meniscus.setAttribute('d', crest)
+  }, [empty, swell])
+
+  // Keep the static surface in sync with `pct` under reduced motion. During
+  // normal animation the rAF loop in useReservoirFlow owns the `d` attributes
+  // and reads geomRef.current each frame, so this passive effect deliberately
+  // does nothing when reduced motion is not requested.
+  useEffect(() => {
+    const fill = fillRef.current
+    const meniscus = meniscusRef.current
+    if (fill === null || meniscus === null) {
+      return
+    }
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return
+    }
+    fill.setAttribute('d', resting.fill)
+    meniscus.setAttribute('d', resting.crest)
+  }, [resting.fill, resting.crest])
 
   useReservoirFlow(svgRef, flowRefsRef, geomRef, !empty, swell)
 
@@ -152,13 +197,11 @@ export const WaterTank = ({
             <path
               ref={fillRef}
               data-testid="tank-water"
-              d={resting.fill}
               fill={`url(#${fillId})`}
             />
             <path
               ref={meniscusRef}
               data-testid="tank-meniscus"
-              d={resting.crest}
               fill="none"
               stroke={tone.meniscus}
               strokeWidth="1.5"
