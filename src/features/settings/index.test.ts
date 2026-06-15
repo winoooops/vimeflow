@@ -2,9 +2,10 @@ import { describe, expect, test } from 'vitest'
 import {
   BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
-  KEYMAPS,
+  KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
   SettingsDialog,
+  VIM_KEYMAP_GROUPS,
   useSettingsDialog,
 } from './index'
 
@@ -20,7 +21,8 @@ describe('settings feature barrel', () => {
   test('exports section and scheme constants', () => {
     expect(SETTINGS_SECTIONS.length).toBeGreaterThan(0)
     expect(BUILTIN_SCHEMES.length).toBeGreaterThan(0)
-    expect(KEYMAPS.length).toBeGreaterThan(0)
+    expect(KEYMAP_GROUPS.length).toBeGreaterThan(0)
+    expect(VIM_KEYMAP_GROUPS.length).toBeGreaterThan(0)
     expect(DEFAULT_ALIASES.length).toBeGreaterThan(0)
   })
 })

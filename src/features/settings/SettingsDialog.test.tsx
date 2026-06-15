@@ -1,9 +1,14 @@
-import { describe, expect, test, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
+import { render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
 import { SETTINGS_SECTIONS } from './sections'
+import { DEFAULT_SETTINGS } from './store/settingsDefaults'
+import { SettingsProvider } from './SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 const DialogWithTrigger = ({
   initialOpen = false,
@@ -23,6 +28,20 @@ const DialogWithTrigger = ({
 }
 
 describe('SettingsDialog', () => {
+  beforeEach(() => {
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),
+        save: vi.fn().mockResolvedValue(undefined),
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
+  })
+
   test('returns null and renders no dialog when open is false', () => {
     // eslint-disable-next-line react/jsx-boolean-value
     render(<SettingsDialog open={false} onClose={vi.fn()} />)

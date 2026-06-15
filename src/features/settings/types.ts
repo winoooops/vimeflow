@@ -113,6 +113,11 @@ export interface KeymapBinding {
   keys: string[]
 }
 
+export interface KeymapGroup {
+  zone: string
+  bindings: KeymapBinding[]
+}
+
 export type { AgentAlias } from '../../bindings/AgentAlias'
 
 export interface PlaceholderPaneProps {

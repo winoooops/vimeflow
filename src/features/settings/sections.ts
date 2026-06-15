@@ -1,7 +1,7 @@
 import type {
   AgentAlias,
   AppearanceScheme,
-  KeymapBinding,
+  KeymapGroup,
   SettingsSection,
 } from './types'
 
@@ -60,20 +60,97 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   },
 ]
 
-export const KEYMAPS: KeymapBinding[] = [
-  { id: 'open_palette', label: 'Open command palette', keys: ['⌘', 'K'] },
-  { id: 'focus_pane_1', label: 'Focus pane 1', keys: ['⌘', '1'] },
-  { id: 'focus_pane_2', label: 'Focus pane 2', keys: ['⌘', '2'] },
-  { id: 'focus_pane_3', label: 'Focus pane 3', keys: ['⌘', '3'] },
-  { id: 'focus_pane_4', label: 'Focus pane 4', keys: ['⌘', '4'] },
-  { id: 'toggle_split', label: 'Toggle split layout', keys: ['⌘', '\\'] },
-  { id: 'new_session', label: 'New agent session', keys: ['⌘', 'T'] },
-  { id: 'close_pane', label: 'Close focused pane', keys: ['⌘', 'W'] },
-  { id: 'open_settings', label: 'Open settings', keys: ['⌘', ','] },
-  { id: 'toggle_dock', label: 'Show/hide editor & diff', keys: ['⌘', 'J'] },
-  { id: 'next_pane', label: 'Next pane', keys: ['⌘', '⇥'] },
-  { id: 'pause_agent', label: 'Pause focused agent', keys: ['⌃', 'C'] },
+export const KEYMAP_GROUPS: KeymapGroup[] = [
+  {
+    zone: 'Global',
+    bindings: [
+      { id: 'palette', label: 'Open command palette', keys: ['⌘', ';'] },
+      { id: 'sidebar', label: 'Toggle sidebar', keys: ['⌘', 'B'] },
+      { id: 'editor', label: 'Focus editor', keys: ['⌘', 'E'] },
+      { id: 'diff', label: 'Focus diff', keys: ['⌘', 'G'] },
+    ],
+  },
+  {
+    zone: 'Panes & Layout',
+    bindings: [
+      {
+        id: 'focus-number',
+        label: 'Focus pane by number',
+        keys: ['⌘1', '⌘2', '⌘3', '⌘4'],
+      },
+      {
+        id: 'focus-direction',
+        label: 'Focus pane left / down / up / right',
+        keys: ['⌘⇧←', '⌘⇧↓', '⌘⇧↑', '⌘⇧→'],
+      },
+      { id: 'cycle-layout', label: 'Cycle layout', keys: ['⌘', '\\'] },
+    ],
+  },
+  {
+    zone: 'Terminal',
+    bindings: [
+      { id: 'copy', label: 'Copy selection', keys: ['⌘', 'C'] },
+      { id: 'paste', label: 'Paste', keys: ['⌘', '⇧', 'V'] },
+      {
+        id: 'interrupt',
+        label: 'Interrupt (sent to the agent)',
+        keys: ['⌃', 'C'],
+      },
+    ],
+  },
+  {
+    zone: 'Diff (when focused)',
+    bindings: [
+      { id: 'diff-nav', label: 'Next / previous file', keys: ['j', 'k'] },
+      { id: 'diff-open', label: 'Open file', keys: ['Enter'] },
+      { id: 'diff-stage', label: 'Stage / discard', keys: ['Space', 'd'] },
+      { id: 'diff-hunk', label: 'Next / previous hunk', keys: ['→', '←'] },
+      { id: 'diff-back', label: 'Back to file list', keys: ['Esc'] },
+    ],
+  },
 ]
+
+// cspell:disable
+export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
+  {
+    zone: 'Vim ex-commands (type in the ⌘; palette)',
+    bindings: [
+      { id: 'vim-w', label: 'Save file', keys: [':w'] },
+      { id: 'vim-q', label: 'Close pane', keys: [':q'] },
+      { id: 'vim-qa', label: 'Close session', keys: [':qa'] },
+      { id: 'vim-tabnew', label: 'New session', keys: [':tabnew'] },
+      {
+        id: 'vim-tab-nav',
+        label: 'Next / previous session',
+        keys: [':tabn', ':tabp'],
+      },
+      {
+        id: 'vim-layout-cmd',
+        label: 'Layout: vsplit / split / only',
+        keys: [':vsplit', ':split', ':only'],
+      },
+      { id: 'vim-edit', label: 'Open a file', keys: [':edit'] },
+    ],
+  },
+  {
+    zone: 'Vim leader chords (⌘; then a key)',
+    bindings: [
+      {
+        id: 'vim-hjkl',
+        label: 'Focus pane left / down / up / right',
+        keys: ['h', 'j', 'k', 'l'],
+      },
+      { id: 'vim-cycle', label: 'Cycle to next pane', keys: ['w'] },
+      { id: 'vim-close', label: 'Close pane', keys: ['c'] },
+      {
+        id: 'vim-layout-chord',
+        label: 'Layout: split / vsplit / only',
+        keys: ['s', 'v', 'o'],
+      },
+    ],
+  },
+]
+// cspell:enable
 
 export const DEFAULT_ALIASES: AgentAlias[] = [
   {

@@ -2,8 +2,9 @@ import { describe, expect, test } from 'vitest'
 import {
   BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
-  KEYMAPS,
+  KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
+  VIM_KEYMAP_GROUPS,
 } from './sections'
 
 describe('SETTINGS_SECTIONS', () => {
@@ -57,14 +58,40 @@ describe('BUILTIN_SCHEMES', () => {
   })
 })
 
-describe('KEYMAPS', () => {
-  test('contains the expected bindings', () => {
-    expect(KEYMAPS.some((b) => b.id === 'open_settings')).toBe(true)
-    expect(KEYMAPS.some((b) => b.id === 'open_palette')).toBe(true)
+describe('KEYMAP_GROUPS', () => {
+  test('contains the expected base bindings', () => {
+    const ids = KEYMAP_GROUPS.flatMap((g) => g.bindings).map((b) => b.id)
+
+    expect(ids).toContain('palette')
+    expect(ids).toContain('cycle-layout')
+  })
+
+  test('each group has a zone and at least one binding', () => {
+    KEYMAP_GROUPS.forEach((g) => {
+      expect(g.zone).toBeDefined()
+      expect(g.bindings.length).toBeGreaterThan(0)
+    })
   })
 
   test('each binding has id, label, and keys', () => {
-    KEYMAPS.forEach((b) => {
+    KEYMAP_GROUPS.flatMap((g) => g.bindings).forEach((b) => {
+      expect(b.id).toBeDefined()
+      expect(b.label).toBeDefined()
+      expect(b.keys.length).toBeGreaterThan(0)
+    })
+  })
+})
+
+describe('VIM_KEYMAP_GROUPS', () => {
+  test('contains vim-specific bindings', () => {
+    const ids = VIM_KEYMAP_GROUPS.flatMap((g) => g.bindings).map((b) => b.id)
+
+    expect(ids).toContain('vim-q')
+    expect(ids).toContain('vim-cycle')
+  })
+
+  test('each binding has id, label, and keys', () => {
+    VIM_KEYMAP_GROUPS.flatMap((g) => g.bindings).forEach((b) => {
       expect(b.id).toBeDefined()
       expect(b.label).toBeDefined()
       expect(b.keys.length).toBeGreaterThan(0)
