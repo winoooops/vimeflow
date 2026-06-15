@@ -114,6 +114,8 @@ const areNativeSurfaceDescriptorsEqual = (
   right: NativeSurfaceDescriptor
 ): boolean =>
   left.id === right.id &&
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  left.owner === right.owner &&
   left.belowPlane === right.belowPlane &&
   left.getRect === right.getRect
 
