@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-15
-ref_count: 2
+ref_count: 3
 ---
 
 # Keyboard Shortcut Guards
@@ -340,4 +340,13 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L73-75
 - **Finding:** The cycle-5 fix allowed the tab shortcut only when focus was inside `[role="dialog"][aria-label="Sidebar"]`. On compact viewports `revealSidebar` opens the drawer without moving focus into it, so a user opening Sessions with Ctrl/Cmd+Shift+S from the terminal/main area still had `document.activeElement` outside the drawer. The next S/F chord therefore failed the `inSidebarDialog` check and was suppressed, forcing keyboard-only users to click or tab into the drawer before switching to Files.
 - **Fix:** Dropped the target-dependent `inSidebarDialog` check. The guard now asks: "is any non-sidebar dialog open?" using `document.querySelectorAll(DIALOG_SELECTOR)` and a reference comparison against the sidebar dialog node. If the only open dialog is the sidebar drawer, the shortcut fires regardless of where focus lives.
-- **Commit:** same commit as this entry
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Directional pane shortcut intercepted bare Ctrl+Arrow on Linux/Windows
+
+- **Source:** github-codex-connector | PR #460 round 7 | 2026-06-15
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L224-242
+- **Finding:** The directional arrow handler was shift-agnostic, so on Linux/Windows (where `preferModifier` is `ctrl`) it claimed bare `Ctrl+Arrow` keystrokes before xterm could forward them to the PTY. `Ctrl+Left/Right` is common terminal input for word movement in shells, readline, vim, tmux, and other TUI programs, causing visible terminal input regressions. The PR's own design doc (`docs/superpowers/specs/2026-06-14-keymap-presets-vim-mode-design.md` §5.2) specified `⌘+Shift`+arrow.
+- **Fix:** Added `if (!event.shiftKey) return` after the container-active and dialog guards in the arrow branch, restoring the Shift requirement on all platforms. Updated the regression test that previously asserted shiftless navigation to instead assert that bare `Ctrl+Arrow` and bare `Cmd+Arrow` pass through, and updated the Keymap settings labels to advertise `Mod+Shift+Arrow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

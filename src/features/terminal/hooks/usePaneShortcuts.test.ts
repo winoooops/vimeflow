@@ -527,7 +527,7 @@ describe('usePaneShortcuts container reclaim extensions', () => {
   })
 })
 
-describe('directional focus (Ctrl/Cmd+Arrow)', () => {
+describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
   test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
     const setSessionActivePane = vi.fn()
     renderHook(() =>
@@ -551,10 +551,10 @@ describe('directional focus (Ctrl/Cmd+Arrow)', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('vsplit active p0 plain Cmd/Ctrl+Right (no Shift) focuses p1', () => {
-    // VIM-104 follow-up: directional nav is now shift-agnostic — plain
-    // ⌘/Ctrl+Arrow navigates (Shift no longer required), since the chord has
-    // no terminal meaning and the editor/dock is guarded out below.
+  test('vsplit active p0 plain Ctrl+Right (no Shift) passes through to terminal', () => {
+    // Ctrl+Arrow is common terminal input (readline word movement, vim/tmux
+    // bindings). The directional pane shortcut requires Shift on Ctrl
+    // platforms so terminal programs keep the bare chord.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -571,9 +571,33 @@ describe('directional focus (Ctrl/Cmd+Arrow)', () => {
       code: 'ArrowRight',
     })
 
-    expect(setSessionActivePane).toHaveBeenCalledOnce()
-    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
-    expect(event.preventDefaultSpy).toHaveBeenCalled()
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mac vsplit active p0 plain Cmd+Right (no Shift) passes through', () => {
+    // The Shift requirement applies on macOS too so the advertised chord
+    // matches the design doc: ⌘+Shift+Arrow focuses panes; bare ⌘+Arrow is
+    // left for editor line/document navigation.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+        preferModifier: 'meta',
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      metaKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
   test('directional focus is suppressed while a dialog is open', () => {

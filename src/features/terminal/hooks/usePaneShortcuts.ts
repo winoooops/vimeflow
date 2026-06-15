@@ -221,19 +221,23 @@ export const usePaneShortcuts = ({
         return
       }
 
-      // ⌘/Ctrl+Arrow navigates panes — shift-agnostic, mirroring the ⌘1-4
-      // digit shortcuts above (Shift is NOT required; ⌘⇧+Arrow still works).
-      // This is a terminal-pane action: it is gated on the terminal container
-      // being active and runs at the document capture phase with
-      // stopPropagation, so when the editor/dock is focused the handler bails
-      // and ⌘+Arrow stays the editor's own line/document navigation. With no
-      // guard provided at all, default to safe — do not claim the keystroke.
+      // ⌘/Ctrl+Shift+Arrow navigates panes. Shift is required so that plain
+      // Ctrl+Arrow on Linux/Windows still reaches terminal programs (shell
+      // word movement, vim/tmux bindings, etc.). The chord is gated on the
+      // terminal container being active and runs at the document capture phase
+      // with stopPropagation, so when the editor/dock is focused the handler
+      // bails and ⌘+Arrow stays the editor's own line/document navigation.
+      // With no guard provided at all, default to safe — do not claim the
+      // keystroke.
       const isTerminalContainerActiveValue =
         isTerminalContainerActiveRef.current
       if (!isTerminalContainerActiveValue) {
         return
       }
       if (document.querySelector(DIALOG_SELECTOR)) {
+        return
+      }
+      if (!event.shiftKey) {
         return
       }
       const shape = LAYOUTS[activeSession.layout] as LayoutShape | undefined
