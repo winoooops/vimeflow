@@ -1,6 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import { useEffect, useRef, type ReactElement } from 'react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+  type Mock,
+} from 'vitest'
 import {
   useReservoirFlow,
   buildReservoirSurface,
@@ -20,13 +28,31 @@ const fireMove = (el: Element, clientX: number): void => {
   el.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX }))
 }
 
-const makeMql = (
+// A matchMedia mock that captures change listeners and can fire them, so the
+// hook's onMqlChange handler and its cleanup are reachable in tests.
+interface MockMql {
   matches: boolean
-): {
-  matches: boolean
-  addEventListener: () => void
-  removeEventListener: () => void
-} => ({ matches, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+  addEventListener: Mock<(type: string, cb: EventListener) => void>
+  removeEventListener: Mock<(type: string, cb: EventListener) => void>
+  fire: () => void
+}
+
+const makeMql = (matches: boolean): MockMql => {
+  const listeners: EventListener[] = []
+
+  return {
+    matches,
+    addEventListener: vi.fn((_: string, cb: EventListener) => {
+      listeners.push(cb)
+    }),
+    removeEventListener: vi.fn(),
+    fire: (): void => {
+      listeners.forEach((cb) => {
+        cb(new Event('change'))
+      })
+    },
+  }
+}
 
 const makeRefs = (): ReservoirSurfaceRefs => ({
   fill: document.createElementNS(SVG_NS, 'path'),
@@ -72,7 +98,7 @@ const runFrames = (n: number): void => {
   }
 }
 
-let mql: ReturnType<typeof makeMql>
+let mql: MockMql
 
 beforeEach(() => {
   now = 0
@@ -187,6 +213,21 @@ describe('useReservoirFlow', () => {
     expect(refs.fill.getAttribute('d')).toBeNull()
   })
 
+  test('stops and resumes the drift when reduced-motion toggles', () => {
+    const refs = makeRefs()
+    render(<Harness refs={refs} />)
+    runFrames(5)
+    expect(pending).not.toBeNull()
+
+    mql.matches = true
+    mql.fire() // onMqlChange -> stop()
+    expect(pending).toBeNull()
+
+    mql.matches = false
+    mql.fire() // onMqlChange -> start()
+    expect(pending).not.toBeNull()
+  })
+
   test('stops the loop when the tank goes inactive (context unknown)', () => {
     const { rerender } = render(<Harness refs={makeRefs()} active />)
     runFrames(5)
@@ -209,6 +250,11 @@ describe('useReservoirFlow', () => {
 
     const removed = removeSpy.mock.calls.map((c) => c[0])
     expect(removed).toContain('pointerenter')
+    expect(removed).toContain('pointerleave')
     expect(removed).toContain('pointermove')
+    expect(mql.removeEventListener).toHaveBeenCalledWith(
+      'change',
+      expect.any(Function)
+    )
   })
 })
