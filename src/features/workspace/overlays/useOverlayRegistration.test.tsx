@@ -1,7 +1,11 @@
 import { type ReactElement } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import { OverlayStackProvider } from './OverlayStackProvider'
+import {
+  OverlayStackProvider,
+  type NativeOcclusionPolicy,
+  type OverlayDescriptor,
+} from './OverlayStackProvider'
 import { useNativeSurface } from './useNativeSurface'
 import { useOverlayRegistration } from './useOverlayRegistration'
 
@@ -33,19 +37,32 @@ const rect = (
 
 interface RegisteredOverlayProps {
   isOpen: boolean
-  nativeOcclusion?: 'none' | 'global'
+  nativeOcclusion?: NativeOcclusionPolicy
+  overlayRect?: DOMRectReadOnly | null
 }
 
 const RegisteredOverlay = ({
   isOpen,
   nativeOcclusion = 'global',
+  overlayRect = null,
 }: RegisteredOverlayProps): ReactElement | null => {
-  useOverlayRegistration({
-    id: 'overlay',
-    plane: 'dialog',
-    isOpen,
-    nativeOcclusion,
-  })
+  const descriptor: OverlayDescriptor =
+    nativeOcclusion === 'intersects'
+      ? {
+          id: 'overlay',
+          plane: 'dialog',
+          isOpen,
+          nativeOcclusion,
+          getRect: () => overlayRect,
+        }
+      : {
+          id: 'overlay',
+          plane: 'dialog',
+          isOpen,
+          nativeOcclusion,
+        }
+
+  useOverlayRegistration(descriptor)
 
   return null
 }
@@ -69,18 +86,24 @@ const NativeSurfaceStatus = (): ReactElement => {
 
 interface HarnessProps {
   isOpen?: boolean
-  nativeOcclusion?: 'none' | 'global'
+  nativeOcclusion?: NativeOcclusionPolicy
+  overlayRect?: DOMRectReadOnly | null
   hideOverlay?: boolean
 }
 
 const Harness = ({
   isOpen = false,
   nativeOcclusion = 'global',
+  overlayRect = null,
   hideOverlay = false,
 }: HarnessProps): ReactElement => (
   <OverlayStackProvider>
     {!hideOverlay ? (
-      <RegisteredOverlay isOpen={isOpen} nativeOcclusion={nativeOcclusion} />
+      <RegisteredOverlay
+        isOpen={isOpen}
+        nativeOcclusion={nativeOcclusion}
+        overlayRect={overlayRect}
+      />
     ) : null}
     <NativeSurfaceStatus />
   </OverlayStackProvider>
@@ -113,6 +136,26 @@ describe('useOverlayRegistration', () => {
 
     await waitFor(() =>
       expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+    )
+  })
+
+  test('re-registers when native occlusion policy changes to intersects', async () => {
+    const { rerender } = render(<Harness isOpen nativeOcclusion="none" />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+    )
+
+    rerender(
+      <Harness
+        isOpen
+        nativeOcclusion="intersects"
+        overlayRect={rect(0, 0, 100, 100)}
+      />
+    )
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('overlay')
     )
   })
 

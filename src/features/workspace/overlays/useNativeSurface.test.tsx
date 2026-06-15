@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   OverlayStackProvider,
   type NativeOcclusionPolicy,
@@ -132,6 +132,54 @@ describe('useNativeSurface', () => {
     await waitFor(() =>
       expect(nativeSurfaceStatus()).toHaveTextContent('overlay')
     )
+  })
+
+  test('does not read rectangles for global-only overlay occlusion', async () => {
+    const getOverlayRect = vi.fn(() => rect(0, 0, 100, 100))
+    const getSurfaceRect = vi.fn(() => rect(0, 0, 100, 100))
+
+    const GlobalOverlay = (): ReactElement | null => {
+      useOverlayRegistration({
+        id: 'overlay',
+        plane: 'dialog',
+        isOpen: true,
+        nativeOcclusion: 'global',
+        getRect: getOverlayRect,
+      })
+
+      return null
+    }
+
+    const NativeSurfaceProbe = (): ReactElement => {
+      const nativeSurface = useNativeSurface({
+        id: 'surface',
+        owner: 'browser-pane',
+        belowPlane: 'pane-chrome',
+        getRect: getSurfaceRect,
+      })
+
+      return (
+        <div role="status" aria-label="Native surface occlusion">
+          {nativeSurface.occluded
+            ? nativeSurface.occludingOverlayIds.join(',')
+            : 'clear'}
+        </div>
+      )
+    }
+
+    render(
+      <OverlayStackProvider>
+        <GlobalOverlay />
+        <NativeSurfaceProbe />
+      </OverlayStackProvider>
+    )
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('overlay')
+    )
+
+    expect(getOverlayRect).not.toHaveBeenCalled()
+    expect(getSurfaceRect).not.toHaveBeenCalled()
   })
 
   test('same-plane overlays do not occlude the native surface threshold', async () => {
