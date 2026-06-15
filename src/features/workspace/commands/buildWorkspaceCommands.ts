@@ -1,8 +1,21 @@
-import type { Session, SessionCloseResult } from '../../sessions/types'
+// cspell:ignore tabnew tabclose tabnext tabn tabprev tabp tabe tabc
+import type {
+  Session,
+  SessionCloseResult,
+  LayoutId,
+} from '../../sessions/types'
 import { validateTitle } from '../../sessions/utils/sanitizeTitle'
 import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
+
+// Score a query against every alias form of a vim ex-command and return the
+// best match. The command-palette filter strips the leading ':' before calling
+// `match`, so forms here must be ':'-stripped (e.g. 'w', 'write').
+const aliasMatch =
+  (...forms: string[]) =>
+  (query: string): number =>
+    forms.reduce((best, form) => Math.max(best, fuzzyMatch(query, form)), 0)
 
 // Single source of truth for which Session fields a workspace command may
 // read. `WorkspaceTab` derives its shape from this list, and the workspace's
@@ -65,6 +78,27 @@ export interface WorkspaceCommandDeps {
    * so the builder's unit tests need not thread it; WorkspaceView always wires it.
    */
   toggleBurner?: () => void
+  /**
+   * Keymap preset that gates vim-flavored ex-command aliases (VIM-104 B1).
+   * Optional so existing callers/tests stay valid.
+   */
+  keymapPreset?: string
+  /**
+   * Save the active editor file, wired to `:w` / `:write`.
+   */
+  saveActiveFile?: () => void
+  /**
+   * Open a file path in the editor, wired to `:edit <path>`.
+   */
+  openFileInEditor?: (path: string) => void
+  /**
+   * Close the focused pane, guarded by `canClosePane`. Wired to `:q`.
+   */
+  closeActivePane?: () => void
+  /**
+   * Change the active session's layout. Wired to `:vsplit`, `:split`, `:only`.
+   */
+  setActiveSessionLayout?: (layoutId: LayoutId) => void
 }
 
 interface FallbackPaneRenameRequestState {
@@ -114,6 +148,11 @@ export const buildWorkspaceCommands = (
     notifyInfo,
     toggleSidebar,
     toggleBurner,
+    keymapPreset,
+    saveActiveFile,
+    openFileInEditor,
+    closeActivePane,
+    setActiveSessionLayout,
   } = deps
 
   const fallbackPaneRenameRequestState =
@@ -144,6 +183,37 @@ export const buildWorkspaceCommands = (
   const findActiveIndex = (): number =>
     sessions.findIndex((s) => s.id === activeSessionId)
 
+  const switchRelativeSession = (delta: number): void => {
+    if (sessions.length === 0) {
+      notifyInfo('No open sessions')
+
+      return
+    }
+
+    const idx = findActiveIndex()
+
+    const nextIdx =
+      idx === -1
+        ? delta > 0
+          ? 0
+          : sessions.length - 1
+        : (idx + delta + sessions.length) % sessions.length
+
+    setActiveSessionId(sessions[nextIdx].id)
+  }
+
+  const closeActiveSessionCommand = (): void => {
+    const idx = findActiveIndex()
+
+    if (idx === -1) {
+      notifyInfo('No active tab to close')
+
+      return
+    }
+
+    removeSession(sessions[idx].id)
+  }
+
   const browserCommand: Command | undefined = createBrowserSession
     ? {
         id: 'new-browser',
@@ -156,7 +226,7 @@ export const buildWorkspaceCommands = (
       }
     : undefined
 
-  return [
+  const baseCommands: Command[] = [
     {
       id: 'new',
       label: ':new',
@@ -173,15 +243,7 @@ export const buildWorkspaceCommands = (
       description: 'Close the active terminal session',
       icon: 'close',
       execute: (): void => {
-        const idx = findActiveIndex()
-
-        if (idx === -1) {
-          notifyInfo('No active tab to close')
-
-          return
-        }
-
-        removeSession(sessions[idx].id)
+        closeActiveSessionCommand()
       },
     },
     {
@@ -287,16 +349,7 @@ export const buildWorkspaceCommands = (
       description: 'Switch to the next terminal session',
       icon: 'arrow_forward',
       execute: (): void => {
-        if (sessions.length === 0) {
-          notifyInfo('No open sessions')
-
-          return
-        }
-
-        const idx = findActiveIndex()
-        const nextIdx = idx === -1 ? 0 : (idx + 1) % sessions.length
-
-        setActiveSessionId(sessions[nextIdx].id)
+        switchRelativeSession(1)
       },
     },
     {
@@ -305,20 +358,7 @@ export const buildWorkspaceCommands = (
       description: 'Switch to the previous terminal session',
       icon: 'arrow_back',
       execute: (): void => {
-        if (sessions.length === 0) {
-          notifyInfo('No open sessions')
-
-          return
-        }
-
-        const idx = findActiveIndex()
-
-        const prevIdx =
-          idx === -1
-            ? sessions.length - 1
-            : (idx - 1 + sessions.length) % sessions.length
-
-        setActiveSessionId(sessions[prevIdx].id)
+        switchRelativeSession(-1)
       },
     },
     {
@@ -439,4 +479,166 @@ export const buildWorkspaceCommands = (
       },
     },
   ]
+
+  if (keymapPreset !== 'vim') {
+    return baseCommands
+  }
+
+  const vimCommands: Command[] = [
+    {
+      id: 'vim-write',
+      label: ':w',
+      description: 'Save the active file',
+      icon: 'save',
+      match: aliasMatch('w', 'write'),
+      execute: (): void => {
+        if (saveActiveFile) {
+          saveActiveFile()
+
+          return
+        }
+
+        notifyInfo('No file to save')
+      },
+    },
+    {
+      id: 'vim-quit',
+      label: ':q',
+      description: 'Close the focused pane',
+      icon: 'close',
+      // :q has no secondary alias in the design.
+      execute: (): void => {
+        if (closeActivePane) {
+          closeActivePane()
+
+          return
+        }
+
+        notifyInfo('No pane to close')
+      },
+    },
+    {
+      id: 'vim-quit-all',
+      label: ':qa',
+      description: 'Close the active session',
+      icon: 'exit_to_app',
+      execute: (): void => {
+        closeActiveSessionCommand()
+      },
+    },
+    {
+      id: 'vim-tabnew',
+      label: ':tabnew',
+      description: 'New session',
+      icon: 'add',
+      match: aliasMatch('tabnew', 'tabe'),
+      execute: (): void => {
+        createSession()
+      },
+    },
+    {
+      id: 'vim-tabclose',
+      label: ':tabclose',
+      description: 'Close the active session',
+      icon: 'close',
+      match: aliasMatch('tabclose', 'tabc'),
+      execute: (): void => {
+        closeActiveSessionCommand()
+      },
+    },
+    {
+      id: 'vim-tabnext',
+      label: ':tabn',
+      description: 'Next session',
+      icon: 'arrow_forward',
+      match: aliasMatch('tabn', 'tabnext'),
+      execute: (): void => {
+        switchRelativeSession(1)
+      },
+    },
+    {
+      id: 'vim-tabprev',
+      label: ':tabp',
+      description: 'Previous session',
+      icon: 'arrow_back',
+      match: aliasMatch('tabp', 'tabprev'),
+      execute: (): void => {
+        switchRelativeSession(-1)
+      },
+    },
+    {
+      id: 'vim-vsplit',
+      label: ':vsplit',
+      description: 'Left/right split layout',
+      icon: 'vertical_split',
+      match: aliasMatch('vsplit', 'vs'),
+      execute: (): void => {
+        if (setActiveSessionLayout) {
+          setActiveSessionLayout('vsplit')
+
+          return
+        }
+
+        notifyInfo('Layout change unavailable')
+      },
+    },
+    {
+      id: 'vim-split',
+      label: ':split',
+      description: 'Top/bottom split layout',
+      icon: 'horizontal_split',
+      match: aliasMatch('split', 'sp'),
+      execute: (): void => {
+        if (setActiveSessionLayout) {
+          setActiveSessionLayout('hsplit')
+
+          return
+        }
+
+        notifyInfo('Layout change unavailable')
+      },
+    },
+    {
+      id: 'vim-only',
+      label: ':only',
+      description: 'Single-pane layout',
+      icon: 'crop_free',
+      match: aliasMatch('only', 'on'),
+      execute: (): void => {
+        if (setActiveSessionLayout) {
+          setActiveSessionLayout('single')
+
+          return
+        }
+
+        notifyInfo('Layout change unavailable')
+      },
+    },
+    {
+      id: 'vim-edit',
+      label: ':edit',
+      description: 'Open a file (:edit <path>)',
+      icon: 'edit',
+      match: aliasMatch('edit', 'e'),
+      execute: (args: string): void => {
+        const path = args.trim()
+
+        if (!path) {
+          notifyInfo('Usage: :edit <path>')
+
+          return
+        }
+
+        if (openFileInEditor) {
+          openFileInEditor(path)
+
+          return
+        }
+
+        notifyInfo('Editor unavailable')
+      },
+    },
+  ]
+
+  return [...baseCommands, ...vimCommands]
 }

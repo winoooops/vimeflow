@@ -6,7 +6,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import {
   act,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
   within,
@@ -23,6 +23,10 @@ import {
   MockResizeObserver,
   installMockResizeObserver,
 } from '../../test/mockResizeObserver'
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 const workspaceTerminalMock = vi.hoisted(() => {
   const defaultSessionList = (): SessionList => ({

@@ -1,5 +1,6 @@
 export {
   SplitView,
+  canClosePane,
   type SplitViewHandle,
   type SplitViewProps,
 } from './SplitView'

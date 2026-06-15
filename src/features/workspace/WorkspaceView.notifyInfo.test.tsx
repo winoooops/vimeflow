@@ -1,7 +1,17 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   useAgentStatus: vi.fn(() => ({

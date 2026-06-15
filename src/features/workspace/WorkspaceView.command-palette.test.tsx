@@ -1,13 +1,50 @@
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  act,
+  within,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement, ReactNode } from 'react'
+import { useState, type ReactElement, type ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider, SettingsContext } from '../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
+import type { AppSettings } from '../../bindings/AppSettings'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
 import { AGENTS } from '../../agents/registry'
 import type { TerminalZoneProps } from './components/TerminalZone'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
+
+const VimKeymapProvider = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => {
+  const [settings, setSettings] = useState<AppSettings>({
+    ...DEFAULT_SETTINGS,
+    keymapPreset: 'vim',
+  })
+
+  return (
+    <SettingsContext.Provider
+      value={{
+        settings,
+        saveError: null,
+        update: (patch): void => {
+          setSettings((prev) => ({ ...prev, ...patch }))
+        },
+      }}
+    >
+      {children}
+    </SettingsContext.Provider>
+  )
+}
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 
@@ -646,6 +683,46 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('session-1')
     expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
+  })
+
+  test(':edit command respects dirty buffer guard', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    rtlRender(<WorkspaceView />, { wrapper: VimKeymapProvider })
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':edit src/other.ts')
+    await user.keyboard('{Enter}')
+
+    expect(openFile).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
   })
 
   test('does not open the palette while the unsaved dialog is active', async () => {
