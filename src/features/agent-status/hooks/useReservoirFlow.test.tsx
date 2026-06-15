@@ -18,7 +18,7 @@ import {
 } from './useReservoirFlow'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
-const INACTIVE = false // jsx-boolean-value wants false props omitted; alias it
+const INACTIVE = false // react/jsx-boolean-value (assumeUndefinedIsFalse) flags explicit false props; alias it
 
 const fireEnter = (el: Element): void => {
   el.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true }))

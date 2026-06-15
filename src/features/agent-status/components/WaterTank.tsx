@@ -91,9 +91,7 @@ export const WaterTank = ({
     const fill = fillRef.current
     const meniscus = meniscusRef.current
     flowRefsRef.current =
-      fill !== null && meniscus !== null
-        ? { fill, meniscus }
-        : null
+      fill !== null && meniscus !== null ? { fill, meniscus } : null
     // Seed the first paint / reduced-motion surface before the browser paints.
     // Compute from the mutable geom ref rather than the render-scoped `resting`
     // so this effect does not re-run on every `pct` change.

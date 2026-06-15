@@ -84,7 +84,7 @@ export const buildReservoirSurface = (
 
   return {
     crest: crest.trim(),
-    fill: `${crest}L ${TANK_WIDTH} ${height} L 0 ${height} Z`,
+    fill: `${crest.trim()} L ${TANK_WIDTH} ${height} L 0 ${height} Z`,
   }
 }
 
