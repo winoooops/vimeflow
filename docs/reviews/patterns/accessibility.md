@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-15
 ref_count: 23
 ---
 
@@ -532,3 +532,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 50. Disclosure button receives both `aria-pressed` and `aria-expanded`
+
+- **Source:** github-claude | PR #454 round 2 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** The overflow menu trigger passed `pressed={open}` to `IconButton` while also forwarding `aria-expanded={open}`. `BaseButton` emits `aria-pressed` from the `pressed` prop, so the button carried both ARIA states when open — screen readers announce a disclosure widget as a toggle button that is both pressed and expanded.
+- **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
+- **Commit:** same commit as this entry

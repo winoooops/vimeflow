@@ -6,8 +6,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
 // (= 12 px). Exported through index.ts so consumers and measurement logic keep
@@ -195,22 +197,19 @@ const OverflowMenu = ({
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
-        <button
+        <IconButton
           ref={setAnchor}
-          type="button"
+          icon="more_horiz"
+          label={`Show ${hiddenItems.length} more controls`}
+          size="lg"
+          showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already supplies the label
           onClick={(): void => setOpen((previous) => !previous)}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
-          aria-label={`Show ${hiddenItems.length} more controls`}
           aria-haspopup="dialog"
           aria-expanded={open}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            more_horiz
-          </span>
-        </button>
+          // Circular overflow affordance — an intentional radius exception
+          // (the chip's 32px width feeds the PriorityPlus overflow math).
+          className="rounded-full"
+        />
       </Tooltip>
       <Popover
         anchor={anchor}

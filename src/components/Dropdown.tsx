@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { ToolbarButton } from '@/components/ToolbarButton'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import { OptionList, type DropdownOption } from '@/components/base/OptionList'
@@ -119,30 +120,14 @@ export const Dropdown = <T extends string | number>({
             </span>
           ) : null}
           <Tooltip content={current?.label ?? String(value)}>
-            <button
+            <ToolbarButton
               ref={refs.setReference}
-              type="button"
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors min-w-[6rem] justify-between"
+              icon={leadingIcon}
+              label={current?.label ?? String(value)}
+              trailingIcon="expand_more"
+              className="min-w-[6rem] max-w-[7rem] justify-between"
               {...triggerProps}
-            >
-              {leadingIcon !== undefined ? (
-                <span
-                  aria-hidden="true"
-                  className="material-symbols-outlined text-[15px] leading-none text-primary-dim shrink-0"
-                >
-                  {leadingIcon}
-                </span>
-              ) : null}
-              <span className="truncate max-w-[7rem]">
-                {current?.label ?? String(value)}
-              </span>
-              <span
-                aria-hidden="true"
-                className="material-symbols-outlined text-sm leading-none shrink-0"
-              >
-                expand_more
-              </span>
-            </button>
+            />
           </Tooltip>
         </>
       )}

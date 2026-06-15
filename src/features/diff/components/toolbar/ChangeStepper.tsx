@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface ChangeStepperProps {
   // 1-based `N/N` hunk position string (or `0/0` when there are no hunks),
@@ -57,36 +59,26 @@ export const ChangeStepper = ({
     </Tooltip>
     <span className="flex flex-col">
       <Tooltip content="Previous change">
-        <button
-          type="button"
+        <IconButton
+          icon="keyboard_arrow_up"
+          label="prev hunk"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="prev hunk"
           onClick={onPrev}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-sm leading-none"
-          >
-            keyboard_arrow_up
-          </span>
-        </button>
+        />
       </Tooltip>
       <Tooltip content="Next change">
-        <button
-          type="button"
+        <IconButton
+          icon="keyboard_arrow_down"
+          label="next hunk"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="next hunk"
           onClick={onNext}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-sm leading-none"
-          >
-            keyboard_arrow_down
-          </span>
-        </button>
+        />
       </Tooltip>
     </span>
   </span>

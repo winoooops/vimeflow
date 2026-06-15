@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 
 const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
   if (active) {
@@ -12,9 +12,6 @@ const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
 
   return 'open burner terminal'
 }
-
-const burnerButtonTooltip = (active: boolean): string =>
-  active ? 'Burner terminal · running' : 'Burner terminal'
 
 export interface HeaderActionsProps {
   isCollapsed: boolean
@@ -45,71 +42,43 @@ export const HeaderActions = ({
 }: HeaderActionsProps): ReactElement => (
   <>
     {onBurner && (
-      <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
-        <button
-          type="button"
-          aria-label={burnerButtonLabel(burnerActive, burnerShellExists)}
-          onClick={(event) => {
-            event.stopPropagation()
-            onBurner()
-          }}
-          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-wash-subtle ${
-            burnerActive
-              ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
-              : 'text-on-surface-muted bg-transparent'
-          }`}
-        >
-          <span
-            className="material-symbols-outlined text-[13px]"
-            aria-hidden="true"
-          >
-            terminal
-          </span>
-        </button>
-      </Tooltip>
-    )}
-
-    <Tooltip
-      content={isCollapsed ? 'Expand status' : 'Collapse status'}
-      placement="bottom"
-    >
-      <button
-        type="button"
-        aria-label={isCollapsed ? 'expand status' : 'collapse status'}
+      <IconButton
+        icon="terminal"
+        label={burnerButtonLabel(burnerActive, burnerShellExists)}
+        size="sm"
         onClick={(event) => {
           event.stopPropagation()
-          onToggleCollapse()
+          onBurner()
         }}
-        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-wash-subtle"
-      >
-        <span
-          className="material-symbols-outlined text-[13px]"
-          aria-hidden="true"
-        >
-          {isCollapsed ? 'unfold_more' : 'unfold_less'}
-        </span>
-      </button>
-    </Tooltip>
+        // Running is a status tint, not a toggle — no `pressed` (it would override the accent).
+        className={
+          burnerActive
+            ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
+            : undefined
+        }
+      />
+    )}
+
+    <IconButton
+      icon={isCollapsed ? 'unfold_more' : 'unfold_less'}
+      label={isCollapsed ? 'expand status' : 'collapse status'}
+      size="sm"
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggleCollapse()
+      }}
+    />
 
     {onClose && (
-      <Tooltip content="Close pane" placement="bottom">
-        <button
-          type="button"
-          aria-label="close pane"
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-wash-subtle"
-        >
-          <span
-            className="material-symbols-outlined text-[13px]"
-            aria-hidden="true"
-          >
-            close
-          </span>
-        </button>
-      </Tooltip>
+      <IconButton
+        icon="close"
+        label="close pane"
+        size="sm"
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}
+      />
     )}
   </>
 )

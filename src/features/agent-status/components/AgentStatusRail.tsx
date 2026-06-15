@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../agents/registry'
 import { Bucket } from './Bucket'
 
@@ -70,16 +71,12 @@ export const AgentStatusRail = ({
       className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      <button
-        type="button"
+      <IconButton
+        icon="chevron_left"
+        label="Expand activity panel"
         onClick={onExpand}
-        aria-label="Expand activity panel"
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
-      >
-        <span className="material-symbols-outlined text-base">
-          chevron_left
-        </span>
-      </button>
+        className="shrink-0"
+      />
 
       <div
         data-testid="agent-glyph-chip"

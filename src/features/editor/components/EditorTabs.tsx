@@ -59,6 +59,7 @@ export const EditorTabs = ({
                 {tab.fileName}
                 {tab.isDirty && <span className="ml-1 text-primary">●</span>}
               </span>
+              {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
               <button
                 onClick={(e) => handleCloseClick(e, tab.id)}
                 aria-label={`Close ${tab.fileName}`}

@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface FilePillProps {
   // Basename + count are rendered on the lavender pill body. `fileName` is the
@@ -44,20 +46,15 @@ export const FilePill = ({
   return (
     <span className="inline-flex items-center gap-0.5">
       <Tooltip content="Previous file">
-        <button
-          type="button"
+        <IconButton
+          icon="chevron_left"
+          label="previous file"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="previous file"
           onClick={onPrev}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            chevron_left
-          </span>
-        </button>
+        />
       </Tooltip>
       <Tooltip content={fileName ?? `File ${counterText}`}>
         {/* role="group" makes the aria-label a valid author name. ARIA 1.2
@@ -88,20 +85,15 @@ export const FilePill = ({
         </div>
       </Tooltip>
       <Tooltip content="Next file">
-        <button
-          type="button"
+        <IconButton
+          icon="chevron_right"
+          label="next file"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="next file"
           onClick={onNext}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            chevron_right
-          </span>
-        </button>
+        />
       </Tooltip>
     </span>
   )

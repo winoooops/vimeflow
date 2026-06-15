@@ -541,6 +541,25 @@ describe('DiffChipToolbar', () => {
       ).toBeInTheDocument()
     })
 
+    test('Discard All (IconButton anchor) forwards the dialog disclosure attributes', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      const trigger = screen.getByRole('button', { name: /^discard all$/i })
+      // The migrated IconButton forwards aria-haspopup / aria-expanded through
+      // ...rest; closed reads aria-expanded=false.
+      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+      await user.click(trigger)
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    })
+
     test('Discard All button exposes a tooltip on hover', async () => {
       const user = userEvent.setup()
 
