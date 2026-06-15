@@ -1,11 +1,9 @@
-import type { BrowserPaneBoundsRequest } from '../features/browser/types'
+import type { BrowserPaneBoundsCapture as BrowserPaneBoundsCaptureSource } from '../features/browser/browserBridge'
 
 export {}
 
 declare global {
-  interface BrowserPaneBoundsCapture extends BrowserPaneBoundsRequest {
-    sequence: number
-  }
+  type BrowserPaneBoundsCapture = BrowserPaneBoundsCaptureSource
 
   interface Window {
     __VIMEFLOW_E2E__?: {
