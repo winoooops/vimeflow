@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 18
+ref_count: 19
 ---
 
 # React Lifecycle
@@ -337,4 +337,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx` and `src/features/workspace/overlays/useNativeSurface.ts`
 - **Finding:** `occludingOverlayIds` was derived by filtering `Array.from(overlayDescriptors.values())` and mapping to ids, preserving the underlying `Map` insertion order. `useOverlayRegistration` unregisters and re-registers an overlay whenever any of its logical descriptor fields change; a re-registered overlay moves to the tail of the `Map`, so a semantically identical set of occluders could produce a different positional array. `areOcclusionStatesEqual` compared ids positionally, so the reordering caused `useNativeSurface` to replace its cached `NativeSurfaceState` even though visibility had not changed, defeating the referential-stability contract.
 - **Fix:** Sorted the `occludingOverlayIds` array alphabetically in `nativeSurfaceStateFrom` before returning the state. Added a regression test that registers two occluding overlays, re-registers one by changing a non-occlusion prop, and asserts the id order remains deterministic.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Registered overlay descriptor exposes stale `isOpen`/`nativeOcclusion` for one frame
+
+- **Source:** github-claude | PR #467 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
+- **Finding:** `latestDescriptorRef.current` was updated during render, but the descriptor stored in the provider captured `isOpen` and `nativeOcclusion` from the previous effect registration. Between render and the layout-effect re-registration, `getNativeSurfaceState` read stale logical fields, producing a one-frame native-surface visibility error during overlay open/close or `nativeOcclusion` policy transitions.
+- **Fix:** Changed the registered descriptor to read `isOpen`, `nativeOcclusion`, and `getRect` through `latestDescriptorRef.current` — `isOpen` and `nativeOcclusion` as getters and `getRect` as a callback — so the provider map always observes the latest render values before the effect re-registers.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
