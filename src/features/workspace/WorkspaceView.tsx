@@ -79,6 +79,7 @@ import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
+import { LAYOUTS, selectVisiblePanes } from '../terminal/components/SplitView'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -513,10 +514,12 @@ export const WorkspaceView = (): ReactElement => {
 
   const visibleAgentStatusPtyIds = useMemo(
     () =>
-      activeSession?.panes
-        .filter((pane) => isShellPane(pane))
-        .map((pane) => pane.ptyId) ?? [],
-    [activeSession?.panes]
+      activeSession === undefined
+        ? []
+        : selectVisiblePanes(activeSession.panes, LAYOUTS[activeSession.layout].capacity)
+            .filter((pane) => isShellPane(pane))
+            .map((pane) => pane.ptyId),
+    [activeSession]
   )
 
   useAgentStatusHotLoading({

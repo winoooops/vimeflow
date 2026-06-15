@@ -1,5 +1,6 @@
 export {
   SplitView,
+  selectVisiblePanes,
   type SplitViewHandle,
   type SplitViewProps,
 } from './SplitView'

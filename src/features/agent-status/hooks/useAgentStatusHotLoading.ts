@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import {
-  planVisibleStatusRefreshes,
   refreshVisibleAgentStatusPanes,
+  type VisibleStatusRefreshRequest,
 } from '../utils/statusRefreshCoordinator'
 
 interface UseAgentStatusHotLoadingOptions {
@@ -13,26 +13,18 @@ export const useAgentStatusHotLoading = ({
   activePtyId,
   visiblePtyIds,
 }: UseAgentStatusHotLoadingOptions): void => {
-  const plannedPtyIds = useMemo(
-    () => planVisibleStatusRefreshes({ activePtyId, visiblePtyIds }),
+  const refreshSignature = useMemo(
+    () => JSON.stringify({ activePtyId, visiblePtyIds }),
     [activePtyId, visiblePtyIds]
   )
 
-  const plannedPtyIdSignature = plannedPtyIds.join('\n')
-
   useEffect(() => {
-    const nextVisiblePtyIds =
-      plannedPtyIdSignature.length === 0
-        ? []
-        : plannedPtyIdSignature.split('\n')
+    const request = JSON.parse(refreshSignature) as VisibleStatusRefreshRequest
 
-    if (nextVisiblePtyIds.length === 0) {
+    if (request.visiblePtyIds.length === 0) {
       return
     }
 
-    void refreshVisibleAgentStatusPanes({
-      activePtyId,
-      visiblePtyIds: nextVisiblePtyIds,
-    })
-  }, [activePtyId, plannedPtyIdSignature])
+    void refreshVisibleAgentStatusPanes(request)
+  }, [refreshSignature])
 }

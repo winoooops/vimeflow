@@ -329,3 +329,29 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
 - **Fix:** Same change as entry 31: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+### 33. Fragile `\n` separator in effect dependency signature
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** `plannedPtyIds.join('\n')` and `.split('\n')` assumed PTY IDs never contain newlines. A future backend ID containing `\n` would split into phantom tokens and refresh wrong panes.
+- **Fix:** Replaced the join/split signature with `JSON.stringify({ activePtyId, visiblePtyIds })` and parsed it inside the effect. JSON escapes any special characters, making the dependency string robust.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Hook pre-plans then coordinator re-plans
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** The hook called `planVisibleStatusRefreshes` to build a stable effect dep, then passed the planned IDs to `refreshVisibleAgentStatusPanes`, which called the same planner again. The double-planning is idempotent today but creates silent coupling if the algorithm evolves.
+- **Fix:** Removed the hook's pre-planning; it now serializes the raw `{ activePtyId, visiblePtyIds }` request as the effect dep and lets the coordinator do all planning internally.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Hot-loading scope should match SplitView visibility
+
+- **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes (e.g., after shrinking to `single`/`vsplit`) still received prefetches and warm snapshots. The background-work boundary diverged from the UI visibility boundary.
+- **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

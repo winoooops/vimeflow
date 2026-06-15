@@ -107,10 +107,6 @@ export const createAgentStatusRefreshCoordinator = ({
       const previous = readStatus(ptyId)
 
       if (detected === null) {
-        if (previous !== null) {
-          return previous
-        }
-
         return writeStatus(ptyId, createDefaultAgentStatus(ptyId)).status
       }
 
@@ -177,6 +173,10 @@ export const refreshVisibleAgentStatusPanes = (
 ): Promise<AgentStatus[]> =>
   agentStatusRefreshCoordinator.refreshVisiblePanes(request)
 
+// Intentionally reserved for PR4 lifecycle hooks (session close / workspace
+// teardown). Calling it from a `useEffect` cleanup today would drop in-flight
+// prefetches on every `WorkspaceView` unmount; PR4 will wire it to the
+// appropriate long-lived lifecycle boundary.
 export const clearAgentStatusRefreshCoordinator = (): void => {
   agentStatusRefreshCoordinator.clear()
 }

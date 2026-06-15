@@ -198,4 +198,39 @@ describe('statusRefreshCoordinator', () => {
       toolCalls: richStatus.toolCalls,
     })
   })
+
+  test('writes a default snapshot when detection returns null for a previously active pane', async () => {
+    const previousStatus: AgentStatus = {
+      ...createDefaultAgentStatus('pty-a'),
+      isActive: true,
+      agentType: 'claude-code',
+    }
+
+    const writeStatus = vi.fn((_ptyId: string, status: AgentStatus) => ({
+      status,
+      scrollTop: 0,
+      updatedAt: 1,
+    }))
+
+    const coordinator = createAgentStatusRefreshCoordinator({
+      detectAgent: () => Promise.resolve(null),
+      readStatus: () => previousStatus,
+      writeStatus,
+    })
+
+    await coordinator.refreshVisiblePanes({
+      activePtyId: 'pty-a',
+      visiblePtyIds: ['pty-a'],
+    })
+
+    expect(writeStatus).toHaveBeenCalledTimes(1)
+    expect(writeStatus).toHaveBeenCalledWith(
+      'pty-a',
+      expect.objectContaining({
+        sessionId: 'pty-a',
+        isActive: false,
+        agentType: null,
+      })
+    )
+  })
 })

@@ -30,7 +30,7 @@ describe('useAgentStatusHotLoading', () => {
     expect(refreshVisibleAgentStatusPanes).not.toHaveBeenCalled()
   })
 
-  test('refreshes active pane before deduplicated visible siblings', async () => {
+  test('refreshes visible panes through the coordinator', async () => {
     renderHook(() =>
       useAgentStatusHotLoading({
         activePtyId: 'pty-b',
@@ -41,7 +41,7 @@ describe('useAgentStatusHotLoading', () => {
     await waitFor(() => {
       expect(refreshVisibleAgentStatusPanes).toHaveBeenCalledWith({
         activePtyId: 'pty-b',
-        visiblePtyIds: ['pty-b', 'pty-a'],
+        visiblePtyIds: ['pty-a', 'pty-b', 'pty-a'],
       })
     })
   })
