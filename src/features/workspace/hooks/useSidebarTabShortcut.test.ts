@@ -22,6 +22,7 @@ const fireKey = (
   const code =
     modifiers.code ??
     (key.length === 1 && /[a-zA-Z]/.test(key) ? `Key${key.toUpperCase()}` : undefined)
+
   const event = new KeyboardEvent('keydown', {
     key,
     code,
