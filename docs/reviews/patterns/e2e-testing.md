@@ -225,5 +225,5 @@ completely different root causes. The generic fast-failure modes:
 - **Severity:** P2 / MEDIUM
 - **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts` L284
 - **Finding:** The core WDIO config keeps Mocha's per-test timeout at 30s, but the browser overlay spec can legitimately spend more than that across sequential helper waits: 20s for the terminal, 10s for the split slot, 15s for the browser pane, 15s for CDP registration, plus the command-palette and bounds-capture waits. On a cold CI run Mocha aborted the test with a generic timeout even though the helper-specific budgets were still in progress, hiding the real bottleneck.
-- **Fix:** Passed `60_000` as the third argument to `it(...)` in the browser overlay spec, giving the sequential waits enough headroom while leaving the project-wide 30s default in place for faster specs. This keeps the timeout local to the one spec that needs it.
+- **Fix:** Chained `.timeout(60_000)` on the `it(...)` call in the browser overlay spec, using Mocha's per-test timeout API to give the sequential waits enough headroom while leaving the project-wide 30s default in place for faster specs. This keeps the timeout local to the one spec that needs it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
