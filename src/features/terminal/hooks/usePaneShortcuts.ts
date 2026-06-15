@@ -3,11 +3,16 @@ import type { LayoutId, Session } from '../../sessions/types'
 // Source the data constant directly from its module rather than the
 // SplitView barrel — keeps usePaneShortcuts decoupled from a
 // sibling component's re-export surface.
-import { LAYOUTS } from '../components/SplitView/layouts'
+import { LAYOUTS, type LayoutShape } from '../components/SplitView/layouts'
+import {
+  resolveDirectionalPane,
+  type PaneDirection,
+} from '../utils/resolveDirectionalPane'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
 } from '../../workspace/containerIds'
+import { selectVisiblePanes } from '../utils/selectVisiblePanes'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -195,7 +200,90 @@ export const usePaneShortcuts = ({
         event.stopPropagation()
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
+
+        return
       }
+
+      const arrowDirection: PaneDirection | null =
+        ((): PaneDirection | null => {
+          switch (event.code) {
+            case 'ArrowLeft':
+              return 'left'
+            case 'ArrowRight':
+              return 'right'
+            case 'ArrowUp':
+              return 'up'
+            case 'ArrowDown':
+              return 'down'
+            default:
+              return null
+          }
+        })()
+      if (arrowDirection === null) {
+        return
+      }
+
+      // ⌘/Ctrl+Shift+Arrow navigates panes. Shift is required so that plain
+      // Ctrl+Arrow on Linux/Windows still reaches terminal programs (shell
+      // word movement, vim/tmux bindings, etc.). The chord is gated on the
+      // terminal container being active and runs at the document capture phase
+      // with stopPropagation, so when the editor/dock is focused the handler
+      // bails and ⌘+Arrow stays the editor's own line/document navigation.
+      // With no guard provided at all, default to safe — do not claim the
+      // keystroke.
+      const isTerminalContainerActiveValue =
+        isTerminalContainerActiveRef.current
+      if (!isTerminalContainerActiveValue) {
+        return
+      }
+      if (document.querySelector(DIALOG_SELECTOR)) {
+        return
+      }
+      if (!event.shiftKey) {
+        return
+      }
+      const shape = LAYOUTS[activeSession.layout] as LayoutShape | undefined
+      if (shape === undefined) {
+        return
+      }
+
+      // When the session has more panes than the layout capacity, SplitView
+      // renders the active pane in the last visible slot via
+      // selectVisiblePanes. Directional resolution must run against the
+      // visible slot grid, not the original pane array indices, or a pane
+      // beyond the layout prefix can end up at a slot that doesn't exist.
+      const visiblePanes = selectVisiblePanes(
+        activeSession.panes,
+        shape.capacity
+      )
+      const activeVisibleIndex = visiblePanes.findIndex((pane) => pane.active)
+      if (activeVisibleIndex === -1) {
+        return
+      }
+
+      const targetVisibleIndex = resolveDirectionalPane(
+        shape,
+        activeVisibleIndex,
+        visiblePanes.length,
+        arrowDirection
+      )
+      if (targetVisibleIndex === null) {
+        // The chord is recognized as an app-level pane-navigation shortcut
+        // and the editor/dock/dialog guards have already passed. Claim it so
+        // the keystroke doesn't fall through to xterm and emit a modified-
+        // arrow escape sequence to the PTY at layout edges or in single-pane
+        // sessions. (Codex review cycle 11.)
+        event.preventDefault()
+        event.stopPropagation()
+
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      setSessionActivePane(
+        activeSession.id,
+        visiblePanes[targetVisibleIndex].id
+      )
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

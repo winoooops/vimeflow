@@ -1,7 +1,7 @@
 import type {
   AgentAlias,
   AppearanceScheme,
-  KeymapBinding,
+  KeymapGroup,
   SettingsSection,
 } from './types'
 
@@ -22,6 +22,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
 
+/* eslint-disable vimeflow/no-hardcoded-colors -- literal preview swatches for the
+   appearance scheme picker (AppearancePane): each entry intentionally shows that
+   scheme's own accent/surface/text, which are distinct from the active theme's
+   runtime tokens, so they cannot be expressed as semantic var(--color-*) tokens. */
 export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   {
     id: 'obsidian',
@@ -59,21 +63,137 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
     text: '#343331',
   },
 ]
+/* eslint-enable vimeflow/no-hardcoded-colors */
 
-export const KEYMAPS: KeymapBinding[] = [
-  { id: 'open_palette', label: 'Open command palette', keys: ['⌘', 'K'] },
-  { id: 'focus_pane_1', label: 'Focus pane 1', keys: ['⌘', '1'] },
-  { id: 'focus_pane_2', label: 'Focus pane 2', keys: ['⌘', '2'] },
-  { id: 'focus_pane_3', label: 'Focus pane 3', keys: ['⌘', '3'] },
-  { id: 'focus_pane_4', label: 'Focus pane 4', keys: ['⌘', '4'] },
-  { id: 'toggle_split', label: 'Toggle split layout', keys: ['⌘', '\\'] },
-  { id: 'new_session', label: 'New agent session', keys: ['⌘', 'T'] },
-  { id: 'close_pane', label: 'Close focused pane', keys: ['⌘', 'W'] },
-  { id: 'open_settings', label: 'Open settings', keys: ['⌘', ','] },
-  { id: 'toggle_dock', label: 'Show/hide editor & diff', keys: ['⌘', 'J'] },
-  { id: 'next_pane', label: 'Next pane', keys: ['⌘', '⇥'] },
-  { id: 'pause_agent', label: 'Pause focused agent', keys: ['⌃', 'C'] },
+export const KEYMAP_GROUPS: KeymapGroup[] = [
+  {
+    zone: 'Global',
+    bindings: [
+      { id: 'palette', label: 'Open command palette', keys: [['Mod', ';']] },
+      {
+        id: 'new-session',
+        label: 'New terminal session',
+        keys: (isMac) => (isMac ? [['Mod', 'N']] : [['Mod', 'Shift', 'N']]),
+      },
+      {
+        id: 'session-nav',
+        label: 'Previous / next session',
+        keys: (isMac) =>
+          isMac
+            ? [
+                ['Mod', '['],
+                ['Mod', ']'],
+              ]
+            : [
+                ['Mod', 'Shift', '['],
+                ['Mod', 'Shift', ']'],
+              ],
+      },
+      {
+        id: 'sidebar',
+        label: 'Toggle sidebar',
+        keys: (isMac) => (isMac ? [['Mod', 'B']] : [['Mod', 'Shift', 'B']]),
+      },
+      {
+        id: 'sidebar-switch',
+        label: 'Sidebar: show sessions / files',
+        keys: [
+          ['Mod', 'Shift', 'S'],
+          ['Mod', 'Shift', 'F'],
+        ],
+      },
+      { id: 'editor', label: 'Focus editor', keys: [['Mod', 'E']] },
+      { id: 'diff', label: 'Focus diff', keys: [['Mod', 'G']] },
+      {
+        id: 'dock',
+        label: 'Show / hide editor & diff dock',
+        keys: [['Mod', '0']],
+      },
+      {
+        id: 'burner',
+        label: 'Toggle burner terminal',
+        keys: [['Ctrl', '`']],
+      },
+    ],
+  },
+  {
+    zone: 'Panes & Layout',
+    bindings: [
+      {
+        id: 'focus-number',
+        label: 'Focus pane by number',
+        keys: [
+          ['Mod', '1'],
+          ['Mod', '2'],
+          ['Mod', '3'],
+          ['Mod', '4'],
+        ],
+      },
+      {
+        id: 'focus-direction',
+        label: 'Focus pane left / down / up / right',
+        keys: [
+          ['Mod', 'Shift', '←'],
+          ['Mod', 'Shift', '↓'],
+          ['Mod', 'Shift', '↑'],
+          ['Mod', 'Shift', '→'],
+        ],
+      },
+      { id: 'cycle-layout', label: 'Cycle layout', keys: [['Mod', '\\']] },
+    ],
+  },
+  {
+    zone: 'Terminal',
+    bindings: [
+      {
+        id: 'copy',
+        label: 'Copy selection',
+        keys: (isMac) => (isMac ? [['Mod', 'C']] : [['Mod', 'Shift', 'C']]),
+      },
+      { id: 'paste', label: 'Paste', keys: [['Mod', 'Shift', 'V']] },
+      {
+        id: 'interrupt',
+        label: 'Interrupt (sent to the agent)',
+        keys: [['Ctrl', 'C']],
+      },
+    ],
+  },
+  {
+    zone: 'Diff (when focused)',
+    bindings: [
+      { id: 'diff-nav', label: 'Next / previous file', keys: ['j', 'k'] },
+      { id: 'diff-open', label: 'Open file', keys: ['Enter'] },
+      { id: 'diff-stage', label: 'Stage / discard', keys: ['Space', 'd'] },
+      { id: 'diff-hunk', label: 'Next / previous hunk', keys: ['→', '←'] },
+      { id: 'diff-back', label: 'Back to file list', keys: ['Esc'] },
+    ],
+  },
 ]
+
+// cspell:disable
+export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
+  {
+    zone: 'Vim ex-commands (type in the Mod; palette)',
+    bindings: [
+      { id: 'vim-w', label: 'Save file', keys: [':w'] },
+      { id: 'vim-q', label: 'Close pane', keys: [':q'] },
+      { id: 'vim-qa', label: 'Close session', keys: [':qa'] },
+      { id: 'vim-tabnew', label: 'New session', keys: [':tabnew'] },
+      {
+        id: 'vim-tab-nav',
+        label: 'Next / previous session',
+        keys: [':tabn', ':tabp'],
+      },
+      {
+        id: 'vim-layout-cmd',
+        label: 'Layout: vsplit / split / only',
+        keys: [':vsplit', ':split', ':only'],
+      },
+      { id: 'vim-edit', label: 'Open a file', keys: [':edit'] },
+    ],
+  },
+]
+// cspell:enable
 
 export const DEFAULT_ALIASES: AgentAlias[] = [
   {

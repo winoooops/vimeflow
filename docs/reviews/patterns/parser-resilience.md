@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-12
-ref_count: 8
+last_updated: 2026-06-15
+ref_count: 9
 ---
 
 # Parser Resilience
@@ -210,4 +210,13 @@ true` and drop the chunk.
 - **File:** `eslint-rules/no-hardcoded-colors.js` L9
 - **Finding:** The new `no-hardcoded-colors` rule matched white/black utilities for `text`, `bg`, `border`, etc., but omitted the Tailwind gradient-stop prefixes `from`, `via`, and `to`. Class strings such as `from-white/5`, `via-black`, and `to-white/20` passed lint even though they are hardcoded colors, weakening the per-commit guard for the runtime theme migration.
 - **Fix:** Extended the white/black utility regex to include `from|via|to` and added invalid `RuleTester` cases for `from-white/5`, `via-black`, and `to-white/20`.
+- **Commit:** same commit as this entry
+
+### 12. Slot-name parser assumed `p{N}` format and silently produced `NaN`
+
+- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/terminal/utils/resolveDirectionalPane.ts`
+- **Finding:** `resolveDirectionalPane` extracted pane indices with `Number(slot.slice(1))`, assuming every slot name in `layout.areas` was exactly `p{integer}`. A slot like `"main"` produced `Number("ain") = NaN`; `NaN < paneCount` is `false`, so the slot was silently skipped rather than flagged. Future layouts with different naming would get no diagnostic.
+- **Fix:** Added a `parseSlotIndex` helper that validates with `/^p(\d+)$/` and returns `null` for non-matching slots, making the implicit `p{N}` contract explicit. Both the neighbor-filter path and the candidate-index path now use the helper.
 - **Commit:** same commit as this entry

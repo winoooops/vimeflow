@@ -5,8 +5,9 @@ export { useSettingsDialog } from './hooks/useSettingsDialog'
 export {
   BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
-  KEYMAPS,
+  KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
+  VIM_KEYMAP_GROUPS,
 } from './sections'
 
 export type {
@@ -15,6 +16,7 @@ export type {
   IconProps,
   KbdProps,
   KeymapBinding,
+  KeymapGroup,
   SettingsDialogProps,
   SettingsHeaderProps,
   SettingsScope,

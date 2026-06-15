@@ -94,11 +94,18 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 
 // eslint-disable-next-line import/first
-import { render, screen, within } from '@testing-library/react'
+import { render as rtlRender, screen, within } from '@testing-library/react'
 // eslint-disable-next-line import/first
 import userEvent from '@testing-library/user-event'
 // eslint-disable-next-line import/first
+import type { ReactElement } from 'react'
+// eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
+// eslint-disable-next-line import/first
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 describe('Feature 23: Final Phase 2 Verification', () => {
   describe('1. workspace zones render (VIM-76: icon rail removed)', () => {

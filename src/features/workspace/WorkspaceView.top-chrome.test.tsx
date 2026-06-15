@@ -1,4 +1,9 @@
-import { render, screen, act, within } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  act,
+  within,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -7,6 +12,14 @@ import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session, SessionStatus, LayoutId } from '../sessions/types'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+// WorkspaceView consumes useSettings (keymap preset, VIM-104); the provider
+// tolerates a missing window.vimeflow and falls back to DEFAULT_SETTINGS, so no
+// settings IPC mock is needed here. Mirrors the wrapper used by the sibling
+// WorkspaceView suites.
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')

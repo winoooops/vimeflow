@@ -42,19 +42,19 @@ When appending findings to a pattern file, label the source so future readers ca
   `/lifeline:upsource-review`).
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
-|------------------------------------------------------------------------------------------------------|--------------------|----------|------|--------------|
-| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
+| ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 23       | 4    | 2026-06-15   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 37       | 16   | 2026-06-12   |
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 2        | 0    | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 3    | 2026-06-15   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 8        | 6    | 2026-06-13   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 11       | 8    | 2026-06-15   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 68       | 31   | 2026-06-15   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 70       | 31   | 2026-06-15   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 90       | 26   | 2026-06-15   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 67       | 23   | 2026-06-15   |
@@ -73,10 +73,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 43       | 13   | 2026-06-14   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 19       | 7    | 2026-06-06   |
-| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 16       | 3    | 2026-06-12   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 20       | 7    | 2026-06-15   |
+| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-15   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 29       | 5    | 2026-06-15   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
@@ -94,4 +94,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
-
+| [Modulo Correctness](patterns/modulo-correctness.md)                                                 | correctness        | 1        | 0    | 2026-06-15   |

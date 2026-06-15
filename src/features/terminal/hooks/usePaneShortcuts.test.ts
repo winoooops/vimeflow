@@ -526,3 +526,275 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
+  test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('vsplit active p0 plain Ctrl+Right (no Shift) passes through to terminal', () => {
+    // Ctrl+Arrow is common terminal input (readline word movement, vim/tmux
+    // bindings). The directional pane shortcut requires Shift on Ctrl
+    // platforms so terminal programs keep the bare chord.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mac vsplit active p0 plain Cmd+Right (no Shift) passes through', () => {
+    // The Shift requirement applies on macOS too so the advertised chord
+    // matches the design doc: ⌘+Shift+Arrow focuses panes; bare ⌘+Arrow is
+    // left for editor line/document navigation.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+        preferModifier: 'meta',
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      metaKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('directional focus is suppressed while a dialog is open', () => {
+    const setSessionActivePane = vi.fn()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dialog)
+  })
+
+  test('single active p0 Ctrl+Shift+Right at edge claims the shortcut', () => {
+    // No neighbor exists, but the chord is recognized as an app-level pane-
+    // navigation shortcut after the container/dialog guards pass, so we
+    // prevent it from falling through to xterm and reaching the PTY.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('hsplit active p0 Ctrl+Shift+Down focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'hsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('quad active p0 Ctrl+Shift+Down focuses p2', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p2')
+  })
+
+  test('quad active p0 Ctrl+Shift+Right focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('vsplit over-capacity: active pane beyond prefix resolves against visible slots', () => {
+    // 3 panes in a 2-slot vsplit, active at index 2. SplitView renders
+    // [p0, p2] in slots p0/p1. The active pane is at visible slot 1, so
+    // ArrowLeft should move to visible slot 0 (pane p0) — not fail because
+    // p3 isn't in the grid.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1', 'p2'], 2)],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+      })
+    )
+
+    fire('ArrowLeft', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowLeft',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
+
+  test('Ctrl+Shift+Arrow passes through when terminal container is not active', () => {
+    const setSessionActivePane = vi.fn()
+    const dockElement = document.createElement('div')
+    dockElement.setAttribute('data-container-id', 'dock')
+    dockElement.setAttribute('tabindex', '-1')
+    document.body.appendChild(dockElement)
+    dockElement.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dockElement)
+  })
+
+  test('Ctrl+Shift+Arrow passes through when container-active guard is omitted', () => {
+    // The directional handler defaults to safe: if no caller vouches that the
+    // terminal container owns focus, the shortcut must not claim the key.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+})

@@ -1,7 +1,17 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 vi.mock('../terminal/components/TerminalPane', () => ({
   TerminalPane: vi.fn(() => (

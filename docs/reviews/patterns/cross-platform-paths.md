@@ -2,7 +2,7 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-05-07
+last_updated: 2026-06-15
 ref_count: 3
 ---
 
@@ -70,3 +70,12 @@ consider using path libraries for cross-platform code.
 - **Finding:** Cycle 1's F5 fix re-wired the Codex `session_index.jsonl` title-sync watcher by computing `session_index_path = located.trust_root.join("session_index.jsonl")` and handing it to `spawn_watch`. But `default_codex_home()` returns relative `PathBuf::from(".codex")` when `dirs::home_dir()` is `None` (headless containers, service sessions with no `HOME` env, CI environments) — that relative path flows into `CompositeLocator::codex_home` → `LocatedStatusSource::trust_root`. The status-path flow tolerated this because `ensure_status_source_under_trust_root` canonicalizes early and fails noisily if `trust_root` can't resolve; the title-sync path I added in cycle 1 bypassed that gate entirely, so `session_index::spawn_watch` would open `.codex/session_index.jsonl` against the sidecar's cwd (NOT the user's home), silently emit zero events, and the operator would have no signal that Codex titles weren't updating. Sibling of #5 — same shape (platform-conditional / environment-conditional plumbing) but the gate this time wasn't a `cfg!` check, it was an implicit "canonicalize-or-error" gate that the new path missed.
 - **Fix:** Add an explicit `if !located.trust_root.is_absolute()` guard in `start_watching` before spawning the title-sync watcher. Non-absolute trust_root → skip the spawn, set both `session_index_stop` / `session_index_join` to `None` (so `WatcherHandle::Drop` becomes a no-op for those fields), and emit `log::warn!` naming the offending relative path. Operators correlating "Codex titles aren't updating" now have a single grep target (`"codex title-sync: skipping spawn"`) and the cause (missing HOME / `dirs::home_dir()` returns `None`). Code-review heuristic: when a refactor adds a NEW consumer of a value that an EXISTING consumer treats as trusted (canonical path, validated URL, sanitized input), audit how the existing consumer earned that trust — usually via a canonicalization / validation / sanitization step that the new consumer might be bypassing. If the value's invariant is "absolute path", add an `is_absolute()` assertion at the new consumer; if "no traversal characters", re-run the sanitizer; if "schema-valid", re-validate. Don't assume upstream did it just because the type signature is the same.
 - **Commit:** _(PR #302 upsource cycle 2 fix commit)_
+
+### 7. `:edit <path>` treated Windows absolute paths as relative to the active cwd
+
+- **Source:** github-codex-connector | PR #460 round 1 | 2026-06-15
+- **Severity:** MEDIUM (P2)
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1319-1336
+- **Finding:** The Vim `:edit <path>` handler resolved non-absolute, non-`~` paths against `activeCwd`, but the guard only checked Unix absolute markers (`/`, `~`). A Windows absolute path such as `C:\Users\me\file.ts` or a UNC path `\\server\share\file.ts` therefore fell through as "relative" and was prefixed with `activeCwd`, producing an invalid merged path before it reached filesystem IPC.
+- **Fix:** Added a cross-platform absolute-path predicate that also recognizes Windows drive-letter roots (`^[A-Za-z]:[\\/]`) and UNC roots (`\\\\`). Relative-path prepending now runs only when all three absolute markers are absent.
+- **Commit:** same commit as this entry

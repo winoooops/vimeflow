@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-06
-ref_count: 1
+last_updated: 2026-06-15
+ref_count: 5
 ---
 
 # Keyboard Shortcut Guards
@@ -29,6 +29,14 @@ against three classes of false-fire:
    `event.preventDefault()` in the main process suppresses the renderer `keydown`,
    so a renderer-only guard (e.g. `event.repeat`) never runs. The main-process
    matcher must replicate the guard itself (filter `input.isAutoRepeat`).
+5. **Optional guard defaults must be safe** — when a caller can omit a guard
+   prop, the hook should default to _not_ claiming the keystroke. Treating
+   `undefined` as "active" lets capture-phase shortcuts steal input from
+   unfocused surfaces.
+6. **Platform-specific display** — keymap hints, tooltips, and settings labels
+   that show shortcuts must render the modifier that matches the runtime
+   platform (`⌘` on macOS, `Ctrl` on Linux/Windows). Hardcoding `⌘` in the UI
+   misleads non-Mac users and drifts from the behavior-side modifier choice.
 
 ## Findings
 
@@ -278,4 +286,94 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/components/SidebarToggle.tsx`
 - **Finding:** The toggle button always rendered `'Show sidebar  ⌘B'` / `'Hide sidebar  ⌘B'` as the `title` tooltip, regardless of platform. On Linux and Windows the actual shortcut is `Ctrl+⇧B`, so hovering the button showed the wrong hint.
 - **Fix:** Added an optional `shortcutHint?: string` prop to `SidebarToggleProps` (defaulting to `'⌘B'`) and threaded a platform-appropriate value (`preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'`) from `WorkspaceView` through `AgentStatusCard` and `IconRail`.
+- **Commit:** same commit as this entry
+
+### 20. Directional pane shortcut lacked the `isTerminalContainerActive` guard used by digit keys
+
+- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The new `Cmd/Ctrl+Shift+Arrow` directional handler registered at the document capture phase with `stopPropagation()` but only checked `event.shiftKey` before acting. It did not reuse the existing `isTerminalContainerActive` guard that the digit-key handler already used, so the shortcut fired when CodeMirror (in the dock) had focus and silently stole `Cmd+Shift+Arrow` text-selection shortcuts whenever a neighbor pane existed.
+- **Fix:** Added the same guard pattern used by the digit-key path: when `isTerminalContainerActive` is explicitly provided and `false`, return early before the `shiftKey` check so editor focus keeps the event.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. No-op directional shortcuts still propagated into the terminal
+
+- **Source:** github-claude | PR #460 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** After the container-active and dialog guards passed, the directional arrow handler returned without claiming the key when `resolveDirectionalPane` found no neighbor. Because the listener runs at the document capture phase, the unclaimed `keydown` reached xterm.js and forwarded a modified-arrow escape sequence to the PTY on Linux/Windows, making an advertised pane-navigation chord affect the running shell/editor at layout edges or in single-pane sessions.
+- **Fix:** Called `event.preventDefault()` and `event.stopPropagation()` before returning from the `target === null` branch, while keeping the editor/dock guard intact. Updated the regression test to expect the shortcut is claimed at edges.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Directional arrow shortcut claims keys when container-active guard is omitted
+
+- **Source:** github-claude | PR #460 round 3 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The `Cmd/Ctrl+Shift+Arrow` handler checked `isTerminalContainerActive !== undefined && !isTerminalContainerActive` before returning. When the prop was omitted (default `undefined`), the guard was skipped and the capture-phase listener claimed the modified-arrow keystroke even though no caller had vouched that the terminal container owned focus.
+- **Fix:** Changed the guard to `if (!isTerminalContainerActive) return`, treating an omitted guard as inactive. Updated all directional-focus regression tests to pass `isTerminalContainerActive: true` and added a new test asserting the shortcut passes through when the guard is omitted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Keymap pane hardcodes ⌘ modifier on all platforms
+
+- **Source:** github-codex-connector | PR #460 round 3 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/sections.ts`, `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** The Keymap settings pane stored pre-rendered `⌘`-prefixed strings in `KEYMAP_GROUPS` and `VIM_KEYMAP_GROUPS`. On Linux/Windows the actual shortcuts use `Ctrl`, so the authoritative read-only keymap list advertised the wrong modifier on every non-Mac platform.
+- **Fix:** Migrated the keymap data to `ShortcutInput` tokens (`Mod`, `Ctrl`, `Shift`, arrow glyphs, etc.) and rendered each binding through the existing `formatShortcut` utility, which maps `Mod` to `⌘` on macOS and `Ctrl` elsewhere. Added a `KeymapKeys` type that can be a static list or a function `(isMac) => ShortcutInput[]` so chords that require Shift only on Ctrl platforms (sidebar `Ctrl+Shift+B`, terminal copy `Ctrl+Shift+C`) render correctly on every OS. Also formatted the Vim zone labels and footer text through `formatShortcut` so palette references stay platform-correct. Added regression tests asserting `⌘B`/`⌘C` on Mac and `Ctrl+Shift+B`/`Ctrl+Shift+C` on Linux/Windows.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Sidebar-tab shortcut bailed on the sidebar drawer itself
+
+- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L59-61
+- **Finding:** The shortcut hook used a blanket `document.querySelector(DIALOG_SELECTOR)` guard to defer to open modals. On compact viewports the sidebar shell is rendered as `role="dialog"` for a11y, so after opening Sessions with Ctrl/Cmd+Shift+S the guard treated the sidebar itself as a modal and suppressed Ctrl/Cmd+Shift+F/S, preventing keyboard switching between Sessions and Files while the drawer was open.
+- **Fix:** Replaced the single-selector bail-out with the same exception used by `useSidebarShortcut`: enumerate `openDialogs`, detect when the event target is inside `[role="dialog"][aria-label="Sidebar"]`, and only return early when a dialog is open AND the focus is not inside the sidebar drawer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Sidebar-tab shortcut required focus inside the drawer after opening it from elsewhere
+
+- **Source:** github-codex-connector | PR #460 round 6 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L73-75
+- **Finding:** The cycle-5 fix allowed the tab shortcut only when focus was inside `[role="dialog"][aria-label="Sidebar"]`. On compact viewports `revealSidebar` opens the drawer without moving focus into it, so a user opening Sessions with Ctrl/Cmd+Shift+S from the terminal/main area still had `document.activeElement` outside the drawer. The next S/F chord therefore failed the `inSidebarDialog` check and was suppressed, forcing keyboard-only users to click or tab into the drawer before switching to Files.
+- **Fix:** Dropped the target-dependent `inSidebarDialog` check. The guard now asks: "is any non-sidebar dialog open?" using `document.querySelectorAll(DIALOG_SELECTOR)` and a reference comparison against the sidebar dialog node. If the only open dialog is the sidebar drawer, the shortcut fires regardless of where focus lives.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Directional pane shortcut intercepted bare Ctrl+Arrow on Linux/Windows
+
+- **Source:** github-codex-connector | PR #460 round 7 | 2026-06-15
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L224-242
+- **Finding:** The directional arrow handler was shift-agnostic, so on Linux/Windows (where `preferModifier` is `ctrl`) it claimed bare `Ctrl+Arrow` keystrokes before xterm could forward them to the PTY. `Ctrl+Left/Right` is common terminal input for word movement in shells, readline, vim, tmux, and other TUI programs, causing visible terminal input regressions. The PR's own design doc (`docs/superpowers/specs/2026-06-14-keymap-presets-vim-mode-design.md` §5.2) specified `⌘+Shift`+arrow.
+- **Fix:** Added `if (!event.shiftKey) return` after the container-active and dialog guards in the arrow branch, restoring the Shift requirement on all platforms. Updated the regression test that previously asserted shiftless navigation to instead assert that bare `Ctrl+Arrow` and bare `Cmd+Arrow` pass through, and updated the Keymap settings labels to advertise `Mod+Shift+Arrow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Sidebar-tab shortcut matched logical `event.key`, breaking non-Latin layouts
+
+- **Source:** github-claude | PR #460 round 9 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L43-45
+- **Finding:** The shortcut detected S/F via `event.key.toLowerCase()`. On non-Latin IME layouts (Cyrillic, Arabic, Hebrew, CJK), the physical S/F keys produce non-Latin characters in `event.key`, so the guard never matched and ⌘⇧S / Ctrl+⇧S silently did nothing. Other keyboard hooks in the same PR already used `event.code` for physical-key matching.
+- **Fix:** Replaced the `event.key` check with `event.code !== 'KeyS' && event.code !== 'KeyF'` and derived the dispatch key from `event.code`. Updated the unit-test helper to set `KeyboardEvent.code` by default and added a regression test with a Cyrillic `event.key`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Session-navigation shortcut did not reclaim terminal focus after switching
+
+- **Source:** github-codex-connector | PR #460 round 9 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1500-1512
+- **Finding:** When Ctrl/Cmd+[ or ] changed `activeSessionId`, `TerminalZone` kept inactive sessions mounted hidden and the newly shown session's active pane did not get a focus rising edge. DOM focus could stay on the old hidden xterm textarea or fall to `body`, so subsequent typing went nowhere until the user clicked.
+- **Fix:** Called `claimTerminal()` immediately after `setActiveSessionId(nextSession.id)` in `switchRelativeSession`, reusing the existing terminal-focus request path so the new active session's pane receives focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Backslash layout-cycle shortcut falls through into the arrow-direction block
+
+- **Source:** github-claude | PR #460 round 10 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L187-203
+- **Finding:** The `event.code === 'Backslash'` branch called `setSessionLayout` but did not `return`. The branch happened to be safe because `arrowDirection` was `null` for Backslash and the subsequent guard exited, but any future case inserted between the Backslash block and the arrow block would execute on every `⌘\` / `Ctrl+\` keypress.
+- **Fix:** Added an explicit `return` immediately after `setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])` so the Backslash branch exclusively owns the keystroke.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

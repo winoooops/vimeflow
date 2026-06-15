@@ -1,7 +1,9 @@
+// cspell:ignore tabnew tabclose tabnext tabn tabprev tabp tabe tabc
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { AgentRenameError } from '../../../lib/backend'
 import {
   buildWorkspaceCommands,
+  type WorkspaceCommandDeps,
   type WorkspaceTab,
 } from './buildWorkspaceCommands'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
@@ -1432,5 +1434,315 @@ describe('buildWorkspaceCommands - failure modes', () => {
     prevCmd?.execute?.('')
     expect(notifyInfo).toHaveBeenCalledWith('No open sessions')
     expect(setActiveSessionId).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildWorkspaceCommands - vim aliases (VIM-104 B1)', () => {
+  const mockSessions: WorkspaceTab[] = [
+    { id: 'session-1', name: 'main' },
+    { id: 'session-2', name: 'feature-branch' },
+    { id: 'session-3', name: 'bugfix' },
+  ]
+
+  const buildVimCommands = (
+    overrides: Partial<WorkspaceCommandDeps> = {}
+  ): ReturnType<typeof buildWorkspaceCommands> =>
+    buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession: vi.fn(),
+      removeSession: vi.fn(),
+      renameSession: vi.fn(),
+      setPaneUserLabel: vi.fn(),
+      renameAgentSession: vi.fn().mockResolvedValue(undefined),
+      activePanePtyId: 'pty-active',
+      setActiveSessionId: vi.fn(),
+      notifyInfo: vi.fn(),
+      keymapPreset: 'vim',
+      ...overrides,
+    })
+
+  test('vim aliases are absent when keymapPreset is not vim', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession: vi.fn(),
+      removeSession: vi.fn(),
+      renameSession: vi.fn(),
+      setPaneUserLabel: vi.fn(),
+      renameAgentSession: vi.fn().mockResolvedValue(undefined),
+      activePanePtyId: 'pty-active',
+      setActiveSessionId: vi.fn(),
+      notifyInfo: vi.fn(),
+      keymapPreset: 'vimeflow',
+    })
+
+    const vimIds = [
+      'vim-write',
+      'vim-quit',
+      'vim-quit-all',
+      'vim-tabnew',
+      'vim-tabclose',
+      'vim-tabnext',
+      'vim-tabprev',
+      'vim-vsplit',
+      'vim-split',
+      'vim-only',
+      'vim-edit',
+    ]
+
+    for (const id of vimIds) {
+      expect(commands.find((c) => c.id === id)).toBeUndefined()
+    }
+  })
+
+  test('vim aliases are absent when keymapPreset is undefined', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession: vi.fn(),
+      removeSession: vi.fn(),
+      renameSession: vi.fn(),
+      setPaneUserLabel: vi.fn(),
+      renameAgentSession: vi.fn().mockResolvedValue(undefined),
+      activePanePtyId: 'pty-active',
+      setActiveSessionId: vi.fn(),
+      notifyInfo: vi.fn(),
+    })
+
+    expect(commands.some((c) => c.id.startsWith('vim-'))).toBe(false)
+  })
+
+  test(':w calls saveActiveFile', () => {
+    const saveActiveFile = vi.fn()
+    const commands = buildVimCommands({ saveActiveFile })
+
+    const cmd = commands.find((c) => c.id === 'vim-write')
+    expect(cmd?.label).toBe(':w')
+
+    cmd?.execute?.('')
+    expect(saveActiveFile).toHaveBeenCalledOnce()
+  })
+
+  test(':w notifies when saveActiveFile is unavailable', () => {
+    const notifyInfo = vi.fn()
+    const commands = buildVimCommands({ notifyInfo, saveActiveFile: undefined })
+
+    const cmd = commands.find((c) => c.id === 'vim-write')
+    cmd?.execute?.('')
+
+    expect(notifyInfo).toHaveBeenCalledWith('No file to save')
+  })
+
+  test(':q calls closeActivePane', () => {
+    const closeActivePane = vi.fn()
+    const commands = buildVimCommands({ closeActivePane })
+
+    const cmd = commands.find((c) => c.id === 'vim-quit')
+    expect(cmd?.label).toBe(':q')
+
+    cmd?.execute?.('')
+    expect(closeActivePane).toHaveBeenCalledOnce()
+  })
+
+  test(':q notifies when closeActivePane is unavailable', () => {
+    const notifyInfo = vi.fn()
+
+    const commands = buildVimCommands({
+      notifyInfo,
+      closeActivePane: undefined,
+    })
+
+    const cmd = commands.find((c) => c.id === 'vim-quit')
+    cmd?.execute?.('')
+
+    expect(notifyInfo).toHaveBeenCalledWith('No pane to close')
+  })
+
+  test(':qa removes the active session', () => {
+    const removeSession = vi.fn()
+    const commands = buildVimCommands({ removeSession })
+
+    const cmd = commands.find((c) => c.id === 'vim-quit-all')
+    expect(cmd?.label).toBe(':qa')
+
+    cmd?.execute?.('')
+    expect(removeSession).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':qa guards missing active session', () => {
+    const notifyInfo = vi.fn()
+    const removeSession = vi.fn()
+
+    const commands = buildVimCommands({
+      sessions: mockSessions,
+      activeSessionId: null,
+      notifyInfo,
+      removeSession,
+    })
+
+    commands.find((c) => c.id === 'vim-quit-all')?.execute?.('')
+    expect(notifyInfo).toHaveBeenCalledWith('No active tab to close')
+    expect(removeSession).not.toHaveBeenCalled()
+  })
+
+  test(':tabnew calls createSession', () => {
+    const createSession = vi.fn()
+    const commands = buildVimCommands({ createSession })
+
+    const cmd = commands.find((c) => c.id === 'vim-tabnew')
+    expect(cmd?.label).toBe(':tabnew')
+
+    cmd?.execute?.('')
+    expect(createSession).toHaveBeenCalledOnce()
+  })
+
+  test(':tabclose removes the active session', () => {
+    const removeSession = vi.fn()
+    const commands = buildVimCommands({ removeSession })
+
+    const cmd = commands.find((c) => c.id === 'vim-tabclose')
+    expect(cmd?.label).toBe(':tabclose')
+
+    cmd?.execute?.('')
+    expect(removeSession).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':tabn activates the next session (wraps)', () => {
+    const setActiveSessionId = vi.fn()
+
+    const commands = buildVimCommands({
+      activeSessionId: 'session-3',
+      setActiveSessionId,
+    })
+
+    const cmd = commands.find((c) => c.id === 'vim-tabnext')
+    expect(cmd?.label).toBe(':tabn')
+
+    cmd?.execute?.('')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':tabp activates the previous session', () => {
+    const setActiveSessionId = vi.fn()
+
+    const commands = buildVimCommands({
+      activeSessionId: 'session-2',
+      setActiveSessionId,
+    })
+
+    const cmd = commands.find((c) => c.id === 'vim-tabprev')
+    expect(cmd?.label).toBe(':tabp')
+
+    cmd?.execute?.('')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':vsplit sets vsplit layout', () => {
+    const setActiveSessionLayout = vi.fn()
+    const commands = buildVimCommands({ setActiveSessionLayout })
+
+    const cmd = commands.find((c) => c.id === 'vim-vsplit')
+    expect(cmd?.label).toBe(':vsplit')
+
+    cmd?.execute?.('')
+    expect(setActiveSessionLayout).toHaveBeenCalledWith('vsplit')
+  })
+
+  test(':split sets hsplit layout', () => {
+    const setActiveSessionLayout = vi.fn()
+    const commands = buildVimCommands({ setActiveSessionLayout })
+
+    const cmd = commands.find((c) => c.id === 'vim-split')
+    expect(cmd?.label).toBe(':split')
+
+    cmd?.execute?.('')
+    expect(setActiveSessionLayout).toHaveBeenCalledWith('hsplit')
+  })
+
+  test(':only sets single layout', () => {
+    const setActiveSessionLayout = vi.fn()
+    const commands = buildVimCommands({ setActiveSessionLayout })
+
+    const cmd = commands.find((c) => c.id === 'vim-only')
+    expect(cmd?.label).toBe(':only')
+
+    cmd?.execute?.('')
+    expect(setActiveSessionLayout).toHaveBeenCalledWith('single')
+  })
+
+  test('layout commands notify when setActiveSessionLayout is unavailable', () => {
+    const notifyInfo = vi.fn()
+
+    const commands = buildVimCommands({
+      notifyInfo,
+      setActiveSessionLayout: undefined,
+    })
+
+    commands.find((c) => c.id === 'vim-vsplit')?.execute?.('')
+    commands.find((c) => c.id === 'vim-split')?.execute?.('')
+    commands.find((c) => c.id === 'vim-only')?.execute?.('')
+
+    expect(notifyInfo).toHaveBeenCalledTimes(3)
+    expect(notifyInfo).toHaveBeenCalledWith('Layout change unavailable')
+  })
+
+  test(':edit opens the trimmed path', () => {
+    const openFileInEditor = vi.fn()
+    const commands = buildVimCommands({ openFileInEditor })
+
+    const cmd = commands.find((c) => c.id === 'vim-edit')
+    expect(cmd?.label).toBe(':edit')
+
+    cmd?.execute?.('  foo.ts  ')
+    expect(openFileInEditor).toHaveBeenCalledWith('foo.ts')
+  })
+
+  test(':edit notifies on missing path', () => {
+    const notifyInfo = vi.fn()
+    const commands = buildVimCommands({ notifyInfo })
+
+    commands.find((c) => c.id === 'vim-edit')?.execute?.('   ')
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :edit <path>')
+  })
+
+  test(':edit notifies when editor is unavailable', () => {
+    const notifyInfo = vi.fn()
+
+    const commands = buildVimCommands({
+      notifyInfo,
+      openFileInEditor: undefined,
+    })
+
+    commands.find((c) => c.id === 'vim-edit')?.execute?.('foo.ts')
+    expect(notifyInfo).toHaveBeenCalledWith('Editor unavailable')
+  })
+
+  test.each([
+    { id: 'vim-write', primary: 'w', alias: 'write' },
+    { id: 'vim-tabnew', primary: 'tabnew', alias: 'tabe' },
+    { id: 'vim-tabclose', primary: 'tabclose', alias: 'tabc' },
+    { id: 'vim-tabnext', primary: 'tabn', alias: 'tabnext' },
+    { id: 'vim-tabprev', primary: 'tabp', alias: 'tabprev' },
+    { id: 'vim-vsplit', primary: 'vsplit', alias: 'vs' },
+    { id: 'vim-split', primary: 'split', alias: 'sp' },
+    { id: 'vim-only', primary: 'only', alias: 'on' },
+    { id: 'vim-edit', primary: 'edit', alias: 'e' },
+  ])(
+    ':$primary and :$alias both match the command palette query',
+    ({ id, primary, alias }) => {
+      const commands = buildVimCommands()
+      const cmd = commands.find((c) => c.id === id)
+      expect(cmd).toBeDefined()
+      expect(cmd?.match?.(primary)).toBeGreaterThan(0)
+      expect(cmd?.match?.(alias)).toBeGreaterThan(0)
+    }
+  )
+
+  test(':q and :qa do not define a custom match function', () => {
+    const commands = buildVimCommands()
+
+    expect(commands.find((c) => c.id === 'vim-quit')?.match).toBeUndefined()
+    expect(commands.find((c) => c.id === 'vim-quit-all')?.match).toBeUndefined()
   })
 })

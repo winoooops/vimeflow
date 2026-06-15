@@ -2,7 +2,7 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-15
 ref_count: 4
 ---
 
@@ -219,3 +219,12 @@ preserve their original Tauri-era paths.
 - **Finding:** `rename_path` shared the `resolve_existing_path` enforcement path with `delete_path` but had no tests proving it rejected paths outside home or symlink leaves; SECURITY.md coverage table mapped symlink-leaf refusal only to delete.
 - **Fix:** Added `rename_path_rejects_path_outside_home` and `rename_path_refuses_symlink_leaf` tests and updated the SECURITY.md coverage map.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 23. `:edit <relative-path>` resolved against the sidecar process cwd instead of the active pane cwd
+
+- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1315-1317
+- **Finding:** The vim `:edit` alias forwarded the raw relative path (e.g. `:edit src/App.tsx`) straight to `requestOpenFile`, which passed it to the filesystem IPC. The backend canonicalized the path relative to the Electron/sidecar process cwd rather than the active pane's cwd, so users in a project session opened the wrong file or a same-named file from the wrong directory.
+- **Fix:** Added an `activeCwdRef` mirroring the existing `requestOpenFileRef` pattern and, inside `openFileInEditorCommand`, prepended `activeCwdRef.current` to paths that are neither absolute nor `~`-prefixed (skipping the degenerate `.` cwd). This keeps absolute and home-relative paths untouched while anchoring workspace-relative edits to the active session directory.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
