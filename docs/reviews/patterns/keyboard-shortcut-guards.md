@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-06
+last_updated: 2026-06-15
 ref_count: 1
 ---
 
@@ -278,4 +278,13 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/components/SidebarToggle.tsx`
 - **Finding:** The toggle button always rendered `'Show sidebar  ⌘B'` / `'Hide sidebar  ⌘B'` as the `title` tooltip, regardless of platform. On Linux and Windows the actual shortcut is `Ctrl+⇧B`, so hovering the button showed the wrong hint.
 - **Fix:** Added an optional `shortcutHint?: string` prop to `SidebarToggleProps` (defaulting to `'⌘B'`) and threaded a platform-appropriate value (`preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'`) from `WorkspaceView` through `AgentStatusCard` and `IconRail`.
+- **Commit:** same commit as this entry
+
+### 20. Directional pane shortcut lacked the `isTerminalContainerActive` guard used by digit keys
+
+- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The new `Cmd/Ctrl+Shift+Arrow` directional handler registered at the document capture phase with `stopPropagation()` but only checked `event.shiftKey` before acting. It did not reuse the existing `isTerminalContainerActive` guard that the digit-key handler already used, so the shortcut fired when CodeMirror (in the dock) had focus and silently stole `Cmd+Shift+Arrow` text-selection shortcuts whenever a neighbor pane existed.
+- **Fix:** Added the same guard pattern used by the digit-key path: when `isTerminalContainerActive` is explicitly provided and `false`, return early before the `shiftKey` check so editor focus keeps the event.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

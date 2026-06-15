@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-08
+last_updated: 2026-06-15
 ref_count: 3
 ---
 
@@ -93,4 +93,13 @@ base data is technically "correct."
 - **File:** `electron/workspace-layout-controller.ts`
 - **Finding:** `tabsForPane` returned `pane.tabs` directly from the controller's retained repaired store. A caller that mutated the returned array or nested history entries could corrupt the in-memory restore source, so later writer fallbacks could persist caller-owned mutations instead of the repaired durable state.
 - **Fix:** Clone tab arrays and nested history entries before returning them from `tabsForPane`. Added a regression test that mutates the returned tabs and verifies a later lookup still reads the original repaired history.
+- **Commit:** same commit as this entry
+
+### 6. Directional pane shortcut used raw pane index instead of visible-slot index
+
+- **Source:** github-codex-connector | PR #460 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** When a session had more panes than the current layout capacity, `SplitView.selectVisiblePanes` rendered the active pane in the last visible slot, but the new directional shortcut passed the pane's original array index into `resolveDirectionalPane`. The grid only contains slots like `p0`/`p1`, so a pane beyond the prefix could not be found and the shortcut returned `null` even though the pane was clearly visible.
+- **Fix:** Moved `selectVisiblePanes` to a shared utility and computed the visible-pane mapping inside `usePaneShortcuts`. Directional resolution now uses the active pane's visible-slot index and maps the resulting visible-slot index back to the actual pane id via `visiblePanes[targetVisibleIndex].id`.
 - **Commit:** same commit as this entry

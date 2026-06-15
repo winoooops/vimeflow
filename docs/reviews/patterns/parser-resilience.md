@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-09
+last_updated: 2026-06-15
 ref_count: 7
 ---
 
@@ -201,4 +201,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/locator.rs` L763-765
 - **Finding:** `header_value` used `rest.find('"')?` after finding an opening quote for a header value. When a malformed occurrence had an opening quote but no closing quote, the `?` propagated `None` out of the entire function, abandoning any later well-formed occurrences of the same header.
 - **Fix:** Replaced the `?` with `let Some(end) = rest.find('"') else { continue; };` so an unterminated value skips to the next iteration, matching the existing `continue`-on-malformed logic for missing colon or opening quote.
+- **Commit:** same commit as this entry
+
+### 11. Slot-name parser assumed `p{N}` format and silently produced `NaN`
+
+- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/terminal/utils/resolveDirectionalPane.ts`
+- **Finding:** `resolveDirectionalPane` extracted pane indices with `Number(slot.slice(1))`, assuming every slot name in `layout.areas` was exactly `p{integer}`. A slot like `"main"` produced `Number("ain") = NaN`; `NaN < paneCount` is `false`, so the slot was silently skipped rather than flagged. Future layouts with different naming would get no diagnostic.
+- **Fix:** Added a `parseSlotIndex` helper that validates with `/^p(\d+)$/` and returns `null` for non-matching slots, making the implicit `p{N}` contract explicit. Both the neighbor-filter path and the candidate-index path now use the helper.
 - **Commit:** same commit as this entry

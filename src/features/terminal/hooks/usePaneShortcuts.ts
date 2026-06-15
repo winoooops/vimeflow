@@ -12,6 +12,7 @@ import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
 } from '../../workspace/containerIds'
+import { selectVisiblePanes } from '../utils/selectVisiblePanes'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -222,6 +223,20 @@ export const usePaneShortcuts = ({
       if (!event.shiftKey) {
         return
       }
+
+      // The digit-key handler already guards on the active container so
+      // pane shortcuts don't steal from the editor/dock. The arrow handler
+      // runs at the document capture phase with stopPropagation(), so it
+      // needs the same guard or it would silence CodeMirror's text-selection
+      // shortcuts (Cmd/Ctrl+Shift+Arrow) whenever a neighbor pane exists.
+      const isTerminalContainerActiveValue =
+        isTerminalContainerActiveRef.current
+      if (
+        isTerminalContainerActiveValue !== undefined &&
+        !isTerminalContainerActiveValue
+      ) {
+        return
+      }
       if (document.querySelector(DIALOG_SELECTOR)) {
         return
       }
@@ -229,23 +244,36 @@ export const usePaneShortcuts = ({
       if (shape === undefined) {
         return
       }
-      const activeIndex = activeSession.panes.findIndex((pane) => pane.active)
-      if (activeIndex === -1) {
+
+      // When the session has more panes than the layout capacity, SplitView
+      // renders the active pane in the last visible slot via
+      // selectVisiblePanes. Directional resolution must run against the
+      // visible slot grid, not the original pane array indices, or a pane
+      // beyond the layout prefix can end up at a slot that doesn't exist.
+      const visiblePanes = selectVisiblePanes(
+        activeSession.panes,
+        shape.capacity
+      )
+      const activeVisibleIndex = visiblePanes.findIndex((pane) => pane.active)
+      if (activeVisibleIndex === -1) {
         return
       }
 
-      const target = resolveDirectionalPane(
+      const targetVisibleIndex = resolveDirectionalPane(
         shape,
-        activeIndex,
-        activeSession.panes.length,
+        activeVisibleIndex,
+        visiblePanes.length,
         arrowDirection
       )
-      if (target === null) {
+      if (targetVisibleIndex === null) {
         return
       }
       event.preventDefault()
       event.stopPropagation()
-      setSessionActivePane(activeSession.id, activeSession.panes[target].id)
+      setSessionActivePane(
+        activeSession.id,
+        visiblePanes[targetVisibleIndex].id
+      )
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

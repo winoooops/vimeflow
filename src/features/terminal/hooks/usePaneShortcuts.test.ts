@@ -680,4 +680,59 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(setSessionActivePane).toHaveBeenCalledOnce()
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
+
+  test('vsplit over-capacity: active pane beyond prefix resolves against visible slots', () => {
+    // 3 panes in a 2-slot vsplit, active at index 2. SplitView renders
+    // [p0, p2] in slots p0/p1. The active pane is at visible slot 1, so
+    // ArrowLeft should move to visible slot 0 (pane p0) — not fail because
+    // p3 isn't in the grid.
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1', 'p2'], 2)],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    fire('ArrowLeft', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowLeft',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
+
+  test('Ctrl+Shift+Arrow passes through when terminal container is not active', () => {
+    const setSessionActivePane = vi.fn()
+    const dockElement = document.createElement('div')
+    dockElement.setAttribute('data-container-id', 'dock')
+    dockElement.setAttribute('tabindex', '-1')
+    document.body.appendChild(dockElement)
+    dockElement.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dockElement)
+  })
 })

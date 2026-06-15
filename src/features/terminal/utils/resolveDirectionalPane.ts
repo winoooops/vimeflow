@@ -21,6 +21,12 @@ const DIRECTION_DELTAS: Record<PaneDirection, Cell> = {
   down: { row: 1, col: 0 },
 }
 
+const parseSlotIndex = (slot: string): number | null => {
+  const match = /^p(\d+)$/.exec(slot)
+
+  return match === null ? null : Number.parseInt(match[1], 10)
+}
+
 const rayPositions = (
   grid: readonly (readonly string[])[],
   startRow: number,
@@ -77,7 +83,10 @@ export const resolveDirectionalPane = (
       if (slot === activeSlot) {
         return false
       }
-      const index = Number(slot.slice(1))
+      const index = parseSlotIndex(slot)
+      if (index === null) {
+        return false
+      }
 
       return index < paneCount
     })
@@ -87,11 +96,15 @@ export const resolveDirectionalPane = (
     }
 
     const slot = grid[neighbor.row][neighbor.col]
+    const neighborIndex = parseSlotIndex(slot)
+    if (neighborIndex === null) {
+      return acc
+    }
 
     return [
       ...acc,
       {
-        index: Number(slot.slice(1)),
+        index: neighborIndex,
         steps: Math.abs(neighbor.row - row) + Math.abs(neighbor.col - col),
         nRow: neighbor.row,
         nCol: neighbor.col,

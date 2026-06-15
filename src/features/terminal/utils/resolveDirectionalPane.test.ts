@@ -317,4 +317,20 @@ describe('resolveDirectionalPane', () => {
 
     expect(resolveDirectionalPane(layout, 0, 2, 'right')).toBe(1)
   })
+
+  test('silently skips non-p{N} slot names instead of producing NaN', () => {
+    // A future or synthetic layout that names slots differently must not
+    // produce NaN comparisons that silently exclude the slot; the function
+    // should just treat those slots as absent and continue scanning.
+    const layout: LayoutShape = {
+      id: 'single',
+      name: 'synthetic',
+      capacity: 1,
+      cols: '',
+      rows: '',
+      areas: [['p0', 'main', 'p1']],
+    }
+
+    expect(resolveDirectionalPane(layout, 0, 2, 'right')).toBe(1)
+  })
 })
