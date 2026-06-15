@@ -1,9 +1,6 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
-
-// The floating reopen tab carries its intent via the aria-label and sits at the
-// viewport edge, so suppress IconButton's built-in hover tooltip.
-const REOPEN_TOOLTIP_SUPPRESSED = true
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface CommitInfoPanelProps {
   commitHash: string
@@ -74,7 +71,7 @@ const CommitInfoPanel = ({
       label="Open commit info panel"
       size="sm"
       onClick={onToggle}
-      showTooltip={!REOPEN_TOOLTIP_SUPPRESSED}
+      showTooltip={TOOLTIP_SUPPRESSED} // aria-label already exposes intent at viewport edge
       className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high text-on-surface-variant text-lg rounded-none rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 ${
         isOpen
           ? 'opacity-0 pointer-events-none translate-x-full'

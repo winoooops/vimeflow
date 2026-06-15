@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { FileTree } from '../../../files/components/FileTree'
 import { contextMenuActions } from '../../../files/data/mockFileTree'
 import { useFileTree } from '../../../files/hooks/useFileTree'
@@ -267,10 +268,6 @@ export const FileExplorer = ({
 
   const isRoot = currentPath === '~' || currentPath === '/'
 
-  // The parent button delegates its tooltip to the outer wrapper Tooltip so it
-  // stays alive while the button is disabled at the filesystem root.
-  const disabledTooltipDelegated = true
-
   return (
     <div
       className="flex h-full min-h-0 flex-col px-4 pt-3"
@@ -303,7 +300,7 @@ export const FileExplorer = ({
               icon="arrow_upward"
               label="Go to parent directory"
               size="sm"
-              showTooltip={!disabledTooltipDelegated}
+              showTooltip={TOOLTIP_SUPPRESSED} // outer wrapper Tooltip owns the label
               onClick={navigateUp}
               disabled={isRoot}
               className="shrink-0"

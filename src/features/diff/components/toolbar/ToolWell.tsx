@@ -6,11 +6,7 @@ import {
 } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
-
-// Every well button is wrapped in its own explicit Tooltip (ComingSoonTooltip
-// for the placeholders, the action tooltip for the live buttons), so suppress
-// IconButton's built-in one to avoid a nested tooltip.
-const LABELLED_BY_OUTER_TOOLTIP = true
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Shared icon-button base for every button inside the tool-well (and the
 // discard-all button the parent renders into the `discardAllSlot`, so the
@@ -65,7 +61,7 @@ export const WellDisabledButton = forwardRef<
       label={label}
       size="md"
       aria-disabled="true"
-      showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={WELL_DISABLED_BUTTON_CLASSES}
       {...buttonProps}
     />
@@ -97,7 +93,7 @@ const WellButton = ({
       size="md"
       disabled={disabled}
       onClick={onClick}
-      showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
     />
   </Tooltip>

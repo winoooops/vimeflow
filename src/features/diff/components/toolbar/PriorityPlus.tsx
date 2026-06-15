@@ -9,6 +9,7 @@ import {
 import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
 // (= 12 px). Exported through index.ts so consumers and measurement logic keep
@@ -193,10 +194,6 @@ const OverflowMenu = ({
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 
-  // The explicit Tooltip already supplies the label, so suppress IconButton's
-  // built-in one to avoid a nested tooltip.
-  const labelledByOuterTooltip = true
-
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
@@ -205,8 +202,7 @@ const OverflowMenu = ({
           icon="more_horiz"
           label={`Show ${hiddenItems.length} more controls`}
           size="lg"
-          pressed={open}
-          showTooltip={!labelledByOuterTooltip}
+          showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already supplies the label
           onClick={(): void => setOpen((previous) => !previous)}
           aria-haspopup="dialog"
           aria-expanded={open}

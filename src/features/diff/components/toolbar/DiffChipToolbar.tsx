@@ -3,6 +3,7 @@ import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
@@ -239,10 +240,6 @@ export const DiffChipToolbar = ({
   const [discardAllAnchor, setDiscardAllAnchor] =
     useState<HTMLButtonElement | null>(null)
 
-  // The explicit Tooltip already wraps the discard-all span, so suppress
-  // IconButton's built-in one to avoid a nested tooltip.
-  const labelledByOuterTooltip = true
-
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
   // Shows the current focused index as `focusedHunkIndex + 1` so the counter
   // is consistent with PR3 once prev/next start mutating the index.
@@ -289,7 +286,7 @@ export const DiffChipToolbar = ({
             disabled={staging}
             aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
-            showTooltip={!labelledByOuterTooltip}
+            showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already wraps the discard-all span
             className={
               staging
                 ? WELL_DISABLED_BUTTON_CLASSES

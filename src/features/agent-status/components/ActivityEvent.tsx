@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
@@ -249,10 +250,6 @@ export const ActivityTooltipContent = ({
   const copyFeedback =
     copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
 
-  // This button lives inside the row's interactive tooltip content, so its own
-  // IconButton tooltip is suppressed to avoid a tooltip nested in a tooltip.
-  const suppressCopyTooltip = true
-
   const isRunning = event.status === 'running'
 
   const ago = computeAgo(event, now)
@@ -326,7 +323,7 @@ export const ActivityTooltipContent = ({
             icon={copyState === 'copied' ? 'check' : 'content_copy'}
             label={copyButtonLabel}
             size="sm"
-            showTooltip={!suppressCopyTooltip}
+            showTooltip={TOOLTIP_SUPPRESSED} // row tooltip already provides the label
             onClick={(): void => {
               void handleCopy()
             }}

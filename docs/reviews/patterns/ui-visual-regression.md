@@ -116,7 +116,6 @@ test case for the state that triggers the collision.
 - **Fix:** Replaced both `bg-surface-container-low` substring assertions (workspace root and sidebar) with exact jest-dom `toHaveClass('bg-surface-container-low')` checks, matching existing project test patterns.
 - **Commit:** same commit as this entry
 
-
 ### 10. Floating reopen tabs keep IconButton's all-corner radius alongside directional radius classes
 
 - **Source:** github-codex-connector | PR #454 round 1 | 2026-06-15
@@ -124,4 +123,13 @@ test case for the state that triggers the collision.
 - **File:** `src/features/diff/components/CommitInfoPanel.tsx`, `src/features/editor/components/ExplorerPane.tsx`
 - **Finding:** The migration from raw `<button>` elements to `IconButton` passed directional radius classes (`rounded-l-lg` and `rounded-r-lg`) via `className`. `IconButton`'s internal icon geometry contributes `rounded-chip`, and Tailwind's shorthand and side-specific radius utilities can coexist, so the flush edge of the collapsed panel tabs remained rounded instead of square.
 - **Fix:** Added `rounded-none` immediately before the directional radius class on both floating reopen `IconButton`s so the inherited all-corner rounding is removed and only the intended side radius remains.
+- **Commit:** same commit as this entry
+
+### 11. New-session button loses its custom corner radius during Button migration
+
+- **Source:** github-claude | PR #454 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/NewSessionButton.tsx`
+- **Finding:** The original raw button carried `rounded-[10px]` (10 px). The migrated `Button` uses the default `shape="pill" size="md"` compound variant, which resolves to `rounded-md` (6 px). The new `className` overrode height and padding but omitted a radius class, so `rounded-md` survived via tailwind-merge.
+- **Fix:** Added `rounded-[10px]` to the `className` override so the sidebar new-session button keeps its previous radius.
 - **Commit:** same commit as this entry

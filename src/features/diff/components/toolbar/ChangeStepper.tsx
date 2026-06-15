@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface ChangeStepperProps {
   // 1-based `N/N` hunk position string (or `0/0` when there are no hunks),
@@ -28,10 +29,6 @@ const VERTICAL_STEP_ARROW_CLASSES =
   'w-5 h-[13px] grid place-items-center rounded bg-transparent ' +
   'text-secondary/70 hover:text-secondary transition-colors ' +
   'disabled:opacity-40 disabled:pointer-events-none'
-
-// Each arrow is wrapped in its own explicit Tooltip, so suppress IconButton's
-// built-in one to avoid a nested tooltip.
-const LABELLED_BY_OUTER_TOOLTIP = true
 
 export const ChangeStepper = ({
   counterText,
@@ -68,7 +65,7 @@ export const ChangeStepper = ({
           size="sm"
           disabled={!navEnabled}
           onClick={onPrev}
-          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
         />
       </Tooltip>
@@ -79,7 +76,7 @@ export const ChangeStepper = ({
           size="sm"
           disabled={!navEnabled}
           onClick={onNext}
-          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
         />
       </Tooltip>

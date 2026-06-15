@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
@@ -19,10 +20,6 @@ export interface CardProps {
   onReorderDragStart?: () => void
   onReorderDragEnd?: () => void
 }
-
-// The kebab's inline menu is the disclosure affordance, so its IconButton
-// suppresses the built-in tooltip (named to satisfy react/jsx-boolean-value).
-const menuTriggerHasMenu = true
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
 const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
@@ -274,7 +271,7 @@ const CardComponent = ({
             size="sm"
             // The inline menu owns the disclosure affordance; a hover tooltip
             // duplicating the label would conflict with it.
-            showTooltip={!menuTriggerHasMenu}
+            showTooltip={TOOLTIP_SUPPRESSED} // inline menu is the disclosure affordance
             aria-expanded={menuOpen}
             aria-haspopup="menu"
             onClick={(e) => {

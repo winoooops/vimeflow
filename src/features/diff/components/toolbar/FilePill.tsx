@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface FilePillProps {
   // Basename + count are rendered on the lavender pill body. `fileName` is the
@@ -31,10 +32,6 @@ const GHOST_ARROW_CLASSES =
   'text-on-surface-muted hover:bg-surface-bright hover:text-primary-container ' +
   'transition-colors disabled:opacity-40 disabled:pointer-events-none'
 
-// Each arrow is wrapped in its own explicit Tooltip, so suppress IconButton's
-// built-in one to avoid a nested tooltip.
-const LABELLED_BY_OUTER_TOOLTIP = true
-
 export const FilePill = ({
   fileName,
   counterText,
@@ -55,7 +52,7 @@ export const FilePill = ({
           size="sm"
           disabled={!navEnabled}
           onClick={onPrev}
-          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}
         />
       </Tooltip>
@@ -94,7 +91,7 @@ export const FilePill = ({
           size="sm"
           disabled={!navEnabled}
           onClick={onNext}
-          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}
         />
       </Tooltip>

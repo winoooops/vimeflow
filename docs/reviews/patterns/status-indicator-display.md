@@ -69,7 +69,6 @@ colour/face tier.
   integration test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-
 ### 4. Burner align button shows out-of-sync amber while disabled for an in-progress align
 
 - **Source:** github-codex-connector | PR #454 round 1 | 2026-06-15

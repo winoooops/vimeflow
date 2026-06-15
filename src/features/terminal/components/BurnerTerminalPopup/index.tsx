@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { Body } from '../TerminalPane/Body'
 import type { BodyHandle } from '../TerminalPane/Body'
 import { AGENTS } from '../../../../agents/registry'
@@ -244,10 +245,6 @@ export const BurnerTerminalPopup = ({
     bufferedEvents: [],
   }
 
-  // Header buttons sit inside the z-[100] popup; the align button already wears a
-  // z-lifted Tooltip, so IconButton's own body-portalled tooltip is suppressed.
-  const inPopupTooltipSuppressed = true
-
   return (
     <div
       ref={overlayRef}
@@ -328,7 +325,7 @@ export const BurnerTerminalPopup = ({
                 <IconButton
                   icon="sync"
                   label="Align burner to pane directory"
-                  showTooltip={!inPopupTooltipSuppressed}
+                  showTooltip={TOOLTIP_SUPPRESSED} // popup already provides a z-lifted Tooltip
                   data-testid="burner-align"
                   onClick={handleAlign}
                   disabled={alignBusy}
@@ -344,7 +341,7 @@ export const BurnerTerminalPopup = ({
             <IconButton
               icon="close"
               label="Hide burner terminal"
-              showTooltip={!inPopupTooltipSuppressed}
+              showTooltip={TOOLTIP_SUPPRESSED} // popup already provides a z-lifted Tooltip
               data-testid="burner-hide"
               onClick={onHide}
               className="h-[26px] w-[26px] rounded-[7px]"

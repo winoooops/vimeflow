@@ -9,6 +9,7 @@ import {
 import { ReviewCommentComposer } from '../components/ReviewCommentComposer'
 import { ReviewCommentRow } from '../components/ReviewCommentRow'
 import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Dev-only interactive demo justifying the PR4 "gutter affordance" approach to
 // adding inline review comments (spec §7), matching the Codex inline-composer
@@ -35,10 +36,6 @@ const NEW_CONTENTS = `export function greet(name: string): string {
   return msg
 }
 `
-
-// The gutter "+" lives in Pierre's hover slot and surfaces its intent via the
-// aria-label, so suppress IconButton's built-in hover tooltip.
-const GUTTER_TOOLTIP_SUPPRESSED = true
 
 // Monotonic id source. A module counter keeps comment ids stable + unique
 // without reaching for Date.now()/Math.random() in render.
@@ -159,7 +156,7 @@ export const InlineCommentDemo = (): ReactElement => {
               icon="add"
               label="Add comment on this line"
               size="sm"
-              showTooltip={!GUTTER_TOOLTIP_SUPPRESSED}
+              showTooltip={TOOLTIP_SUPPRESSED} // hover slot aria-label already exposes intent
               className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
               onClick={(): void => {
                 const hovered = getHoveredLine()

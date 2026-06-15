@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { READING_STYLES } from '../data/readingStyles'
 import { useReadingStyle } from '../hooks/useReadingStyle'
-
-// The gear trigger surfaces its intent via the aria-label and opens a menu, so
-// suppress IconButton's built-in tooltip (it would overlap the open menu).
-const TRIGGER_TOOLTIP_SUPPRESSED = true
 
 /**
  * The ⚙ reading-style switcher for the dock header (rendered only for markdown
@@ -61,7 +58,7 @@ export const ReadingStyleMenu = (): ReactElement => {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        showTooltip={!TRIGGER_TOOLTIP_SUPPRESSED}
+        showTooltip={TOOLTIP_SUPPRESSED} // aria-label and open menu already expose intent
         className="h-6 w-6 cursor-pointer rounded-[5px] bg-transparent text-[16px] text-on-surface-muted hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
       />
 
