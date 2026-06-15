@@ -365,3 +365,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The prepend detector compared `feedEvents.length` to a stored count. When the capped activity feed replaced its oldest row (total length unchanged) or appended rows at the bottom, the detector produced false negatives/positives. The compensation amount also relied on total `scrollHeight` growth, which is zero when an equal-height row drops off the bottom.
 - **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` (with `CSS.escape` on the selector) and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 37. Batch prepends compensated by only the first inserted row height
+
+- **Source:** github-codex-connector (P2) | PR #464 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The round-1 fix computed `prependDelta = firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta`. When hot-loading delivered multiple new activity rows in one snapshot, the viewport adjusted by one row instead of the total inserted height, causing visible content jump and undermining scroll-stability.
+- **Fix:** Prefer total positive `scrollHeightDelta` for growing prepends and fall back to the measured first-row height only when the container does not grow. Added a regression test that stubs `offsetHeight` to a single-row value while growing `scrollHeight` by several rows' worth, asserting the viewport compensates by the full delta.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

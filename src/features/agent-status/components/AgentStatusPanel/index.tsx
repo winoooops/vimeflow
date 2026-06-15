@@ -202,7 +202,7 @@ export const AgentStatusPanel = ({
           scrollContainer.scrollHeight - previousMetrics.scrollHeight
 
         const prependDelta =
-          firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta
+          scrollHeightDelta > 0 ? scrollHeightDelta : firstRowHeight
 
         if (prependDelta > 0) {
           const nextScrollTop = previousMetrics.scrollTop + prependDelta
