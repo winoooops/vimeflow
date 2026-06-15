@@ -3,6 +3,8 @@ import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
 import { hasLivePane } from '../utils/sessionStatus'
 import { StatusDot } from './StatusDot'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface TabProps {
   session: Session
@@ -113,9 +115,8 @@ export const Tab = ({
           aria-label={`Status ${session.status}`}
         />
       )}
-      {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
-      <button
-        type="button"
+      <IconButton
+        icon="close"
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
         // reached via shortcut. Always tabIndex=-1.
         tabIndex={-1}
@@ -123,23 +124,22 @@ export const Tab = ({
         // classes is independent of AT visibility per WCAG 2.1.1.
         // Keyboard close via Delete/Backspace on the focused tab remains
         // the primary keyboard path.
-        aria-label={`Close ${session.name}`}
+        label={`Close ${session.name}`}
+        showTooltip={TOOLTIP_SUPPRESSED}
         data-testid="close-tab-button"
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
         }}
         className="
-          flex h-4 w-4 shrink-0 items-center justify-center rounded
+          h-4 w-4 rounded text-[11px]
           text-on-surface-variant/70 transition-opacity
           opacity-0 pointer-events-none
           group-hover:opacity-100 group-hover:pointer-events-auto
           group-focus-within:opacity-100 group-focus-within:pointer-events-auto
           hover:bg-on-surface/[0.06] hover:text-on-surface
         "
-      >
-        <span className="material-symbols-outlined text-[11px]">close</span>
-      </button>
+      />
     </div>
   )
 }

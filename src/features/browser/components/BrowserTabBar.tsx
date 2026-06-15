@@ -2,6 +2,7 @@ import { type MouseEvent, type ReactElement } from 'react'
 import type { BrowserPaneTab } from '../types'
 import { BROWSER_IDENTITY } from '../browserIdentity'
 import { BrowserTabFavicon } from './BrowserTabFavicon'
+import { IconButton } from '@/components/IconButton'
 
 export interface BrowserTabBarProps {
   tabs: BrowserPaneTab[]
@@ -89,60 +90,36 @@ export const BrowserTabBar = ({
                 </span>
               </button>
               {canCloseTabs ? (
-                /* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */
-                <button
-                  type="button"
-                  aria-label={`close browser tab ${title}`}
+                <IconButton
+                  icon="close"
+                  label={`close browser tab ${title}`}
                   onClick={handleClose}
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-syn-comment transition hover:bg-wash-soft hover:text-on-surface focus:outline-none focus-visible:opacity-100 group-hover:opacity-80 group-focus-within:opacity-80 ${
+                  className={`h-4 w-4 rounded-[4px] text-[11px] text-syn-comment hover:bg-wash-soft hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-80 group-focus-within:opacity-80 ${
                     tab.active ? 'opacity-80' : 'opacity-0'
                   }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="material-symbols-outlined text-[11px]"
-                  >
-                    close
-                  </span>
-                </button>
+                />
               ) : null}
             </div>
           )
         })}
 
-        {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
-        <button
-          type="button"
-          aria-label="new browser tab"
+        <IconButton
+          icon="add"
+          label="new browser tab"
           onClick={onNewTab}
-          className={ICON_BTN}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-[15px]"
-          >
-            add
-          </span>
-        </button>
+          className={`${ICON_BTN} text-[15px]`}
+        />
       </div>
 
       {onClosePane ? (
         <>
           <div className="h-[18px] w-px shrink-0 bg-outline-variant/40" />
-          {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
-          <button
-            type="button"
-            aria-label="close browser pane"
+          <IconButton
+            icon="close"
+            label="close browser pane"
             onClick={onClosePane}
-            className={ICON_BTN}
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[15px]"
-            >
-              close
-            </span>
-          </button>
+            className={`${ICON_BTN} text-[15px]`}
+          />
         </>
       ) : null}
     </div>

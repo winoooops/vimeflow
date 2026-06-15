@@ -404,7 +404,34 @@ Rules:
 - `variant` defaults to `'toolbar'`; `shape` is fixed `pill`.
 - Renders `BaseButton` with a leading icon (if any), the visible label, and an optional trailing caret. Forwards `ref` + `...rest`, so it serves as a `Menu` `trigger` (open tint via injected `aria-expanded`) or a `Popover` anchor (`pressed={open}`, consumer owns `open`) — active state is attribute-driven, same as `IconButton`.
 - `className` is for layout/positioning only.
-- **Out of scope (VIM-125):** grouped controls — tab strips, segmented controls, `Toggle` — and the bespoke `SidebarToggle` SVG glyph are not migrated to this family; they keep their `vimeflow/no-raw-icon-button` disables until that follow-up.
+
+### 5.13 `SegmentedControl` / `Toggle`
+
+Grouped selection primitives from VIM-125. `SegmentedControl` covers mutually-exclusive pickers (`SidebarTabs`, `DockSwitcher`, `DockTab`, `LayoutSwitcher`, `ViewModeToggle`, diff split/unified); `Toggle` covers chip-style booleans in the diff toolbar.
+
+```ts
+interface SegmentedControlOption<T extends string | number> {
+  value: T
+  label: string
+  ariaLabel?: string
+  icon?: string
+  tooltip?: ReactNode
+  shortcut?: ShortcutInput
+}
+
+interface ToggleProps {
+  label: string
+  value?: boolean
+  onChange: (next: boolean) => void
+}
+```
+
+Rules:
+
+- Import via `@/components/SegmentedControl` and `@/components/Toggle`; feature-local wrappers may exist only to preserve older prop shapes.
+- `SegmentedControl` uses `role="group"` + per-button `aria-pressed`; it implements roving `tabIndex` and arrow/Home/End key movement. Use `skipActiveReselect` when the active option must not fire callbacks (for example `LayoutSwitcher`).
+- Visual variants are `pill`, `dock`, `framed`, `toolbar`, `toolbarInline`, and `sidebar`; they are a `tailwind-variants` matrix, matching the Button substrate approach.
+- `IconButton` is still the right primitive for icon-only controls embedded inside tab strips. VIM-125 consumes the VIM-124 grouped-control ratchet: no `-- VIM-125: grouped control` disables should remain.
 
 ---
 

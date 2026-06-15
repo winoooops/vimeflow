@@ -9,6 +9,11 @@
 > buttons the AST rule cannot see (their `material-symbols-outlined` class comes from a helper such
 > as `DockTab`'s `tabIconClass()`, so no literal sits in the JSX). "Audited floor" = this inventory,
 > not the disable count.
+>
+> **VIM-125 update (2026-06-15):** the A2 + B1 grouped-control floor has been consumed on the
+> `feature/vim-125` stack: rule-flagged grouped icon buttons now use `IconButton`, helper-classed
+> grouped tabs now use `SegmentedControl`, and no `-- VIM-125: grouped control` suppressions remain
+> under `src/`.
 
 ## How this was produced
 
@@ -109,14 +114,14 @@ rg -n -U '<button[^>]*>(\s|[^<])*<span[^>]*material-symbols-outlined[^>]*>[^<]*<
 
 ### B3. row-menu-exception (icon **plus** text/input) — not an icon button, left raw, not migrated
 
-| `file:line`                                                 | Context                                                                                      |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `sessions/components/Card.tsx:43`                           | session-action menu item (icon + label)                                                      |
-| `sessions/components/Card.tsx:155`                          | card body button (icon + session text)                                                       |
-| `sessions/demo/ReorderMotionDemo.tsx`                       | demo card rows (icon + label)                                                                |
-| `terminal/components/TerminalPane/RestartAffordance.tsx:20` | restart row (icon + "Restart" label)                                                         |
-| `diff/components/ChangedFilesList.tsx:74`                   | changed-file row (status icon + path text)                                                   |
-| `diff/components/toolbar/Toggle.tsx:21`                     | chip toggle (icon + label, `aria-pressed`) — also grouped/segmented; stays raw as icon+label |
+| `file:line`                                                 | Context                                                                             |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `sessions/components/Card.tsx:43`                           | session-action menu item (icon + label)                                             |
+| `sessions/components/Card.tsx:155`                          | card body button (icon + session text)                                              |
+| `sessions/demo/ReorderMotionDemo.tsx`                       | demo card rows (icon + label)                                                       |
+| `terminal/components/TerminalPane/RestartAffordance.tsx:20` | restart row (icon + "Restart" label)                                                |
+| `diff/components/ChangedFilesList.tsx:74`                   | changed-file row (status icon + path text)                                          |
+| `diff/components/toolbar/Toggle.tsx:21`                     | chip toggle (icon + label, `aria-pressed`) — migrated to shared `Toggle` in VIM-125 |
 
 ### B4. not-a-button (Material Symbol on a `<span>`/chip) — out of scope entirely
 
@@ -139,6 +144,7 @@ rg -n -U '<button[^>]*>(\s|[^<])*<span[^>]*material-symbols-outlined[^>]*>[^<]*<
 | not-a-button (B4)                     | 2      | no                  | out of scope                              |
 | **Total audited**                     | **57** | 44 flagged          | —                                         |
 
-**Lint-disable set = 44** (A1 33 + A2 11) — a subset of the 57-entry audit. The VIM-124 floor is reached
-when every **migrate-now** (A1) and **toolbar-pill** (B2) entry — 36 total — is migrated away; the
-**deferred-grouped** entries (A2 + B1 = 13) are the precise VIM-125 backlog.
+**Lint-disable set = 44** (A1 33 + A2 11) — a subset of the 57-entry audit. The VIM-124 floor was reached
+when every **migrate-now** (A1) and **toolbar-pill** (B2) entry — 36 total — migrated away. The
+**deferred-grouped** entries (A2 + B1 = 13) were the precise VIM-125 backlog; on the VIM-125 stack they
+now resolve to `IconButton` / `SegmentedControl`, leaving no grouped-control raw-icon suppressions in `src/`.
