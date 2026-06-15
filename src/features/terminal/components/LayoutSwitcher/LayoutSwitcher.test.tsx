@@ -45,6 +45,38 @@ describe('LayoutSwitcher', () => {
     expect(onPick).not.toHaveBeenCalled()
   })
 
+  test('docks a trailing control inside the pillar after a hairline divider', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        onPick={vi.fn()}
+        trailing={
+          <button type="button" aria-label="Configure displayed layouts" />
+        }
+      />
+    )
+
+    const group = screen.getByRole('group')
+
+    const config = within(group).getByRole('button', {
+      name: 'Configure displayed layouts',
+    })
+    const divider = within(group).getByTestId('layout-switcher-divider')
+
+    // The divider is the element immediately before the trailing control,
+    // so it visually separates the pills from the docked button.
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(config.previousElementSibling).toBe(divider)
+  })
+
+  test('renders no divider when no trailing control is provided', () => {
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    expect(screen.queryByTestId('layout-switcher-divider')).toBeNull()
+    // Still just the 5 layout pills — no stray trailing button.
+    expect(screen.getAllByRole('button')).toHaveLength(5)
+  })
+
   test('exposes role="group" with an aria-label', () => {
     // `role="group"` was chosen (over "toolbar") because the picker
     // doesn't implement roving-tabindex / arrow-key navigation. The
@@ -53,6 +85,12 @@ describe('LayoutSwitcher', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
     expect(screen.getByRole('group')).toHaveAccessibleName('Pane layout')
+  })
+
+  test('cuts the layout pillar out of parent drag regions', () => {
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
   })
 
   // Layout buttons render the layout name only — no shortcut chip.

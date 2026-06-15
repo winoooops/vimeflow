@@ -117,7 +117,6 @@ describe('TerminalZone', () => {
     activeSessionId: 'sess-1',
     service: mockService,
     setSessionActivePane: vi.fn(),
-    setSessionLayout: vi.fn(),
     addPane: vi.fn(),
     removePane: vi.fn(),
   }
@@ -128,7 +127,7 @@ describe('TerminalZone', () => {
     const terminalContent = screen.getByTestId('terminal-content')
 
     expect(terminalContent).toBeInTheDocument()
-    // Dark background matching design spec (#121221)
+    // Dark background matching design spec (bg-surface token)
     expect(terminalContent).toHaveClass('bg-surface')
     expect(screen.getAllByTestId('split-view')).toHaveLength(2)
     // Should have TerminalPanes (mocked) - one for each session
@@ -162,14 +161,17 @@ describe('TerminalZone', () => {
     expect(screen.getByTestId('terminal-zone')).toHaveClass('opacity-[0.65]')
   })
 
-  test('isZoneFocused=false suppresses active terminal pane highlight', () => {
+  test('keeps the active pane highlight even when the zone is not focused', () => {
+    // The active pane highlight tracks "which pane is active" and must persist
+    // when focus moves to the dock — the zone still dims, but the highlight
+    // stays so the user never loses the active-pane reference.
     const isZoneFocused = false
 
     render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
 
     expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
       'data-show-focus-highlight',
-      'false'
+      'true'
     )
   })
 
@@ -344,7 +346,7 @@ describe('TerminalZone', () => {
 
     // Should show placeholder instead
     expect(
-      screen.getByText(/no active session.*click \+ in the session tab bar/i)
+      screen.getByText(/no active session.*click \+ in the sidebar/i)
     ).toBeInTheDocument()
   })
 
@@ -493,7 +495,6 @@ describe('TerminalZone', () => {
         activeSessionId="sess-vsplit"
         service={mockService}
         setSessionActivePane={vi.fn()}
-        setSessionLayout={vi.fn()}
         addPane={vi.fn()}
         removePane={vi.fn()}
       />
@@ -733,7 +734,7 @@ describe('TerminalZone', () => {
     ],
   })
 
-  test('mounts layout toolbar when sessions exist and not loading', () => {
+  test('renders no layout toolbar — the workspace top chrome owns layout controls (J3)', () => {
     render(
       <TerminalZone
         {...defaultProps}
@@ -742,48 +743,8 @@ describe('TerminalZone', () => {
       />
     )
 
-    expect(screen.getByTestId('layout-toolbar')).toBeInTheDocument()
-    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
-  })
-
-  test('hides layout toolbar when loading=true', () => {
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[]}
-        activeSessionId={null}
-        loading
-      />
-    )
-
     expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
-  })
-
-  test('hides layout toolbar when sessions is empty', () => {
-    render(
-      <TerminalZone {...defaultProps} sessions={[]} activeSessionId={null} />
-    )
-
-    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
-  })
-
-  test('clicking a layout button calls setSessionLayout with active session id', async () => {
-    const user = userEvent.setup()
-    const setSessionLayout = vi.fn()
-
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[makeToolbarSession('s1')]}
-        activeSessionId="s1"
-        setSessionLayout={setSessionLayout}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Vertical split' }))
-
-    expect(setSessionLayout).toHaveBeenCalledOnce()
-    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+    expect(screen.queryByTestId('layout-switcher')).not.toBeInTheDocument()
   })
 
   test('clicking the already-active split slot does NOT fire setSessionActivePane', async () => {

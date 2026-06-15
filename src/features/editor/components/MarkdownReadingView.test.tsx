@@ -1,8 +1,52 @@
-import { render, screen } from '@testing-library/react'
-import { describe, test, expect } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, test, expect, vi } from 'vitest'
 import { MarkdownReadingView } from './MarkdownReadingView'
 
+interface ClipboardMockControls {
+  restore: () => void
+  writeTextMock: ReturnType<typeof vi.fn>
+}
+
+const installClipboardMock = (): ClipboardMockControls => {
+  const original = window.navigator.clipboard
+  const writeTextMock = vi.fn((): Promise<void> => Promise.resolve())
+
+  Object.defineProperty(window.navigator, 'clipboard', {
+    value: { writeText: writeTextMock },
+    configurable: true,
+    writable: true,
+  })
+
+  return {
+    writeTextMock,
+    restore: (): void => {
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: original,
+        configurable: true,
+        writable: true,
+      })
+    },
+  }
+}
+
+const selectNodeContents = (node: Node): void => {
+  const selection = window.getSelection()
+
+  if (selection === null) {
+    return
+  }
+
+  const range = document.createRange()
+  range.selectNodeContents(node)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
 describe('MarkdownReadingView', () => {
+  afterEach(() => {
+    window.getSelection()?.removeAllRanges()
+  })
+
   test('renders a heading from markdown input', () => {
     render(<MarkdownReadingView content="# Hello" />)
 
@@ -131,5 +175,117 @@ describe('MarkdownReadingView', () => {
     const code = container.querySelector('pre code')
     expect(code).not.toBeNull()
     expect(code?.textContent).toContain('graph TD')
+  })
+
+  test('shows only reading-safe clipboard actions in the right-click menu', () => {
+    render(<MarkdownReadingView content="Copy **rendered** text" />)
+
+    const region = screen.getByRole('region', {
+      name: /markdown reading view/i,
+    })
+
+    fireEvent.contextMenu(region, { clientX: 40, clientY: 80 })
+
+    const menu = screen.getByRole('menu', { name: /context menu/i })
+    expect(
+      within(menu).getByRole('menuitem', { name: /^copy$/i })
+    ).toBeInTheDocument()
+
+    expect(
+      within(menu).getByRole('menuitem', { name: /select all/i })
+    ).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: /cut/i })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: /paste/i })).toBeNull()
+  })
+
+  test('copies the selected rendered text to the system clipboard', () => {
+    const clipboard = installClipboardMock()
+
+    try {
+      render(<MarkdownReadingView content="Copy **rendered** text" />)
+
+      const paragraph = screen.getByText(
+        (_text, element) =>
+          element?.tagName.toLowerCase() === 'p' &&
+          element.textContent === 'Copy rendered text'
+      )
+      selectNodeContents(paragraph)
+
+      const region = screen.getByRole('region', {
+        name: /markdown reading view/i,
+      })
+      fireEvent.contextMenu(region, { clientX: 40, clientY: 80 })
+      fireEvent.click(screen.getByRole('menuitem', { name: /^copy$/i }))
+
+      expect(clipboard.writeTextMock).toHaveBeenCalledWith('Copy rendered text')
+    } finally {
+      clipboard.restore()
+    }
+  })
+
+  test('falls back to execCommand copy when navigator.clipboard.writeText is unavailable', () => {
+    const originalClipboard = window.navigator.clipboard
+    const originalExecCommand = document.execCommand
+    const execCommandMock = vi.fn().mockReturnValue(true)
+
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {},
+      configurable: true,
+      writable: true,
+    })
+
+    Object.defineProperty(document, 'execCommand', {
+      value: execCommandMock,
+      configurable: true,
+      writable: true,
+    })
+
+    try {
+      render(<MarkdownReadingView content="Copy **rendered** text" />)
+
+      const paragraph = screen.getByText(
+        (_text, element) =>
+          element?.tagName.toLowerCase() === 'p' &&
+          element.textContent === 'Copy rendered text'
+      )
+      selectNodeContents(paragraph)
+
+      const region = screen.getByRole('region', {
+        name: /markdown reading view/i,
+      })
+      fireEvent.contextMenu(region, { clientX: 40, clientY: 80 })
+      fireEvent.click(screen.getByRole('menuitem', { name: /^copy$/i }))
+
+      expect(execCommandMock).toHaveBeenCalledWith('copy')
+    } finally {
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: originalClipboard,
+        configurable: true,
+        writable: true,
+      })
+
+      Object.defineProperty(document, 'execCommand', {
+        value: originalExecCommand,
+        configurable: true,
+        writable: true,
+      })
+    }
+  })
+
+  test('selects all rendered markdown content from the context menu', () => {
+    render(
+      <MarkdownReadingView content={'# Doc Title\n\nCopy **rendered** text'} />
+    )
+
+    const region = screen.getByRole('region', {
+      name: /markdown reading view/i,
+    })
+    fireEvent.contextMenu(region, { clientX: 40, clientY: 80 })
+    fireEvent.click(screen.getByRole('menuitem', { name: /select all/i }))
+
+    const selectedText = window.getSelection()?.toString() ?? ''
+    expect(selectedText).toContain('Doc Title')
+    expect(selectedText).toContain('Copy rendered text')
+    expect(region).toHaveFocus()
   })
 })

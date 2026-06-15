@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { test, expect, vi } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
+import { ctxTone } from '../utils/contextTone'
 
 const notRunning = false
 
@@ -25,8 +26,11 @@ test('renders glyph chip, context bucket, cache bucket, and running dot when run
   expect(screen.getByTestId('running-dot')).toBeInTheDocument()
 })
 
-test('context bucket tone shifts to coral above 90%', () => {
-  render(
+// The context bucket shares the continuous ctxTone sweep with the expanded
+// reservoir card so the context color agrees across collapsed + expanded
+// states — no more tiered token swaps.
+test('context bucket color follows the shared ctxTone sweep', () => {
+  const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={92}
@@ -37,15 +41,13 @@ test('context bucket tone shifts to coral above 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: '#ff94a5',
+    color: ctxTone(92).base,
   })
-})
 
-test('context bucket tone is warm coral between 75 and 90%', () => {
-  render(
+  rerender(
     <AgentStatusRail
       agent={AGENTS.claude}
-      contextUsedPercentage={80}
+      contextUsedPercentage={40}
       cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
@@ -53,7 +55,7 @@ test('context bucket tone is warm coral between 75 and 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: '#ffb4ab',
+    color: ctxTone(40).base,
   })
 })
 
@@ -97,7 +99,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#7defa1',
+    color: 'var(--color-success-muted)',
   })
 
   rerender(
@@ -111,7 +113,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#e2c7ff',
+    color: 'var(--color-primary)',
   })
 
   rerender(
@@ -125,7 +127,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#ff94a5',
+    color: 'var(--color-tertiary)',
   })
 })
 
@@ -174,4 +176,58 @@ test('rail is 44px wide', () => {
   )
 
   expect(screen.getByTestId('agent-status-rail')).toHaveStyle({ width: '44px' })
+})
+
+test('rail sits on the canvas surface token', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+    />
+  )
+
+  const rail = screen.getByTestId('agent-status-rail')
+
+  expect(rail.className).toContain('bg-surface')
+  expect(rail.className).not.toContain('bg-surface-container')
+})
+
+test('adds macOS drag coverage while keeping expand clickable', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+      reserveWindowControls
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).toHaveClass(
+    'vf-app-drag-region'
+  )
+
+  expect(
+    screen.getByRole('button', { name: /expand activity panel/i })
+  ).toHaveClass('vf-app-no-drag')
+})
+
+test('does not add rail drag coverage when native controls are not reserved', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-rail')).not.toHaveClass(
+    'vf-app-drag-region'
+  )
 })

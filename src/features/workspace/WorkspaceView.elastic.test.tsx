@@ -169,9 +169,8 @@ describe('WorkspaceView elastic resize size persistence', () => {
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
     expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
 
-    await user.click(
-      screen.getByRole('button', { name: /show panel docked bottom/i })
-    )
+    // Reopen via the bottom action bar's dock toggle (the peek bar is gone).
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
 
     await waitFor(() => {
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()

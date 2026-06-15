@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-09
-ref_count: 7
+last_updated: 2026-06-12
+ref_count: 8
 ---
 
 # Parser Resilience
@@ -201,4 +201,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/locator.rs` L763-765
 - **Finding:** `header_value` used `rest.find('"')?` after finding an opening quote for a header value. When a malformed occurrence had an opening quote but no closing quote, the `?` propagated `None` out of the entire function, abandoning any later well-formed occurrences of the same header.
 - **Fix:** Replaced the `?` with `let Some(end) = rest.find('"') else { continue; };` so an unterminated value skips to the next iteration, matching the existing `continue`-on-malformed logic for missing colon or opening quote.
+- **Commit:** same commit as this entry
+
+### 11. Lint guard regex misses white/black gradient stop utilities
+
+- **Source:** github-codex-connector | PR #424 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `eslint-rules/no-hardcoded-colors.js` L9
+- **Finding:** The new `no-hardcoded-colors` rule matched white/black utilities for `text`, `bg`, `border`, etc., but omitted the Tailwind gradient-stop prefixes `from`, `via`, and `to`. Class strings such as `from-white/5`, `via-black`, and `to-white/20` passed lint even though they are hardcoded colors, weakening the per-commit guard for the runtime theme migration.
+- **Fix:** Extended the white/black utility regex to include `from|via|to` and added invalid `RuleTester` cases for `from-white/5`, `via-black`, and `to-white/20`.
 - **Commit:** same commit as this entry

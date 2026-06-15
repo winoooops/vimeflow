@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
   if (active) {
@@ -53,9 +53,9 @@ export const HeaderActions = ({
             event.stopPropagation()
             onBurner()
           }}
-          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
+          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-wash-subtle ${
             burnerActive
-              ? 'bg-[#f0c674]/15 text-[#f0c674]'
+              ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
               : 'text-on-surface-muted bg-transparent'
           }`}
         >
@@ -80,7 +80,7 @@ export const HeaderActions = ({
           event.stopPropagation()
           onToggleCollapse()
         }}
-        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-white/5"
+        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-wash-subtle"
       >
         <span
           className="material-symbols-outlined text-[13px]"
@@ -100,7 +100,7 @@ export const HeaderActions = ({
             event.stopPropagation()
             onClose()
           }}
-          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-white/5"
+          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-wash-subtle"
         >
           <span
             className="material-symbols-outlined text-[13px]"

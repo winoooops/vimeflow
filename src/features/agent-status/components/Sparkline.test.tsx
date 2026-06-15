@@ -30,23 +30,25 @@ describe('Sparkline', () => {
   afterEach(() => vi.restoreAllMocks())
 
   test('renders "no data yet" when empty', () => {
-    render(<Sparkline data={[]} color="#7defa1" />)
+    render(<Sparkline data={[]} color="var(--color-success-muted)" />)
     expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
   })
 
   test('renders an svg with a line path when given data', () => {
-    render(<Sparkline data={[42, 51, 49, 75]} color="#7defa1" />)
+    render(
+      <Sparkline data={[42, 51, 49, 75]} color="var(--color-success-muted)" />
+    )
     const svg = screen.getByTestId('token-cache-sparkline')
     // eslint-disable-next-line testing-library/no-node-access
     expect(svg.querySelectorAll('path')).toHaveLength(2)
   })
 
   test('strokes with the provided tone color', () => {
-    render(<Sparkline data={[10, 90]} color="#ff94a5" />)
+    render(<Sparkline data={[10, 90]} color="var(--color-tertiary)" />)
     const svg = screen.getByTestId('token-cache-sparkline')
     // eslint-disable-next-line testing-library/no-node-access
     const line = svg.querySelectorAll('path')[1]
-    expect(line.getAttribute('stroke')).toBe('#ff94a5')
+    expect(line.getAttribute('stroke')).toBe('var(--color-tertiary)')
   })
 
   test('surfaces the hovered reading and clears it on leave', () => {
@@ -62,7 +64,9 @@ describe('Sparkline', () => {
       toJSON: () => ({}),
     } as DOMRect)
 
-    render(<Sparkline data={[42, 51, 49, 75]} color="#7defa1" />)
+    render(
+      <Sparkline data={[42, 51, 49, 75]} color="var(--color-success-muted)" />
+    )
     const svg = screen.getByTestId('token-cache-sparkline')
 
     expect(screen.queryByTestId('token-cache-sparkline-value')).toBeNull()

@@ -62,7 +62,7 @@ export const ChangedFilesList = ({
     </h2>
 
     {/* File List — scrollable with thin scrollbar */}
-    <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
       {files.map((file) => {
         const isActive =
           selectedFile?.path === file.path &&
@@ -97,10 +97,10 @@ export const ChangedFilesList = ({
             {/* Insertion/Deletion Counts */}
             <div className="flex items-center gap-2 font-code text-xs">
               {(file.insertions ?? 0) > 0 && (
-                <span className="text-[#a6e3a1]">+{file.insertions}</span>
+                <span className="text-vcs-added">+{file.insertions}</span>
               )}
               {(file.deletions ?? 0) > 0 && (
-                <span className="text-[#f38ba8]">-{file.deletions}</span>
+                <span className="text-vcs-deleted">-{file.deletions}</span>
               )}
             </div>
           </button>

@@ -38,10 +38,11 @@ describe('MockGitService', () => {
   })
 
   test('getStatus returns all changed files', async () => {
-    const files = await service.getStatus()
+    const response = await service.getStatus()
 
-    expect(files).toHaveLength(4)
-    expect(files).toEqual(mockChangedFiles)
+    expect(response.files).toHaveLength(4)
+    expect(response.files).toEqual(mockChangedFiles)
+    expect(response.repoRoot).toBe('')
   })
 
   test('getDiff returns GetGitDiffResponse for existing file', async () => {
@@ -293,13 +294,15 @@ describe('HttpGitService', () => {
     test('fetches status from /api/git/status', async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockChangedFiles),
+        json: () =>
+          Promise.resolve({ files: mockChangedFiles, repoRoot: '/repo' }),
       })
 
-      const files = await service.getStatus()
+      const response = await service.getStatus()
 
       expect(fetchMock).toHaveBeenCalledWith('/api/git/status')
-      expect(files).toEqual(mockChangedFiles)
+      expect(response.files).toEqual(mockChangedFiles)
+      expect(response.repoRoot).toBe('/repo')
     })
 
     test('throws error on failed request', async () => {
@@ -555,14 +558,18 @@ describe('DesktopGitService', () => {
 
   describe('getStatus', () => {
     test('calls invoke with git_status command and correct args', async () => {
-      invokeMock.mockResolvedValueOnce(mockChangedFiles)
+      invokeMock.mockResolvedValueOnce({
+        files: mockChangedFiles,
+        repoRoot: '/repo',
+      })
 
-      const files = await service.getStatus()
+      const response = await service.getStatus()
 
       expect(invokeMock).toHaveBeenCalledWith('git_status', {
         cwd: '/home/user/project',
       })
-      expect(files).toEqual(mockChangedFiles)
+      expect(response.files).toEqual(mockChangedFiles)
+      expect(response.repoRoot).toBe('/repo')
     })
 
     test('throws error on invoke failure', async () => {

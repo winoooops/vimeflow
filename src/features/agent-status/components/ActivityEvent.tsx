@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
@@ -92,7 +92,7 @@ const COPY_FEEDBACK_MS = 1500
 // Exported so the live-action card can wrap its own Tooltip in the identical
 // floating surface as the feed rows — keeps the two detail popovers in lockstep.
 export const ACTIVITY_CARD_SURFACE =
-  'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[rgba(74,68,79,0.45)] bg-[rgba(20,18,32,0.96)] font-sans shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(203,166,247,0.04)] backdrop-blur-[20px] backdrop-saturate-[150%]'
+  'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-outline-variant/45 bg-[color-mix(in_srgb,var(--color-surface-container)_96%,transparent)] font-sans shadow-[0_16px_48px_color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--color-primary-container)_4%,transparent)] backdrop-blur-[20px] backdrop-saturate-[150%]'
 
 type CopyState = 'idle' | 'copied' | 'failed'
 
@@ -121,24 +121,26 @@ interface ActivityTooltipContentProps {
 }
 
 const KIND_ACCENT: Record<ActivityEventKind, string> = {
-  bash: '#a8c8ff',
-  edit: '#e2c7ff',
-  write: '#e2c7ff',
-  read: '#8a8299',
-  grep: '#a8c8ff',
-  glob: '#a8c8ff',
-  meta: '#a8c8ff',
-  think: '#c39eee',
-  user: '#f0c674',
+  bash: 'var(--color-secondary)',
+  edit: 'var(--color-primary)',
+  write: 'var(--color-primary)',
+  read: 'var(--color-on-surface-muted)',
+  grep: 'var(--color-secondary)',
+  glob: 'var(--color-secondary)',
+  meta: 'var(--color-secondary)',
+  think: 'var(--color-secondary-dim)',
+  user: 'var(--color-agent-shell-accent)',
 }
 
 const Pip = ({ children }: { children: ReactNode }): ReactElement => (
-  <span className="inline-flex items-center gap-[3px] whitespace-nowrap font-mono text-[10px] text-[#8a8299]">
+  <span className="inline-flex items-center gap-[3px] whitespace-nowrap font-mono text-[10px] text-on-surface-muted">
     {children}
   </span>
 )
 
-const Dot = (): ReactElement => <span className="mr-px text-[#4a444f]">·</span>
+const Dot = (): ReactElement => (
+  <span className="mr-px text-outline-variant">·</span>
+)
 
 const CommandBlock = ({
   cmd,
@@ -147,14 +149,14 @@ const CommandBlock = ({
   cmd: string
   accent: string
 }): ReactElement => (
-  <pre className="relative m-0 max-h-[12rem] overflow-y-auto thin-scrollbar rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
+  <pre className="relative m-0 max-h-[12rem] overflow-y-auto rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-on-surface-variant">
     <span
       className="absolute left-[10px] top-2 text-sm"
       style={{ color: accent, opacity: 0.8 }}
     >
       $
     </span>
-    <span className="whitespace-pre-wrap break-all text-[#e3e0f7]">{cmd}</span>
+    <span className="whitespace-pre-wrap break-all text-on-surface">{cmd}</span>
   </pre>
 )
 
@@ -174,7 +176,7 @@ const FilePathChip = ({
   const file = sepIndex >= 0 ? path.slice(sepIndex + 1) : path
 
   return (
-    <div className="flex items-start gap-1.5 rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] px-2.5 py-2 font-mono text-[11.5px]">
+    <div className="flex items-start gap-1.5 rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] px-2.5 py-2 font-mono text-[11.5px]">
       <span
         className="material-symbols-outlined shrink-0 text-xs"
         style={{ color: accent, transform: 'translateY(2px)' }}
@@ -183,15 +185,15 @@ const FilePathChip = ({
         draft
       </span>
       <span className="min-w-0 break-all">
-        <span className="text-[#6c7086]">{dir}</span>
-        <span className="font-semibold text-[#e3e0f7]">{file}</span>
+        <span className="text-syn-comment">{dir}</span>
+        <span className="font-semibold text-on-surface">{file}</span>
       </span>
     </div>
   )
 }
 
 const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
-  <span className="inline-flex items-center justify-center rounded border border-[rgba(74,68,79,0.35)] bg-[rgba(13,13,28,0.5)] px-1 py-px font-mono text-[9.5px] text-[#6c7086]">
+  <span className="inline-flex items-center justify-center rounded border border-outline-variant/35 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_50%,transparent)] px-1 py-px font-mono text-[9.5px] text-syn-comment">
     {children}
   </span>
 )
@@ -285,8 +287,8 @@ export const ActivityTooltipContent = ({
         <div
           className="inline-flex h-5 items-center gap-[5px] rounded-[5px] border px-2 pl-1.5 font-mono text-[10px] font-semibold lowercase tracking-[0.06em]"
           style={{
-            backgroundColor: `${accent}1f`,
-            borderColor: `${accent}3d`,
+            backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
+            borderColor: `color-mix(in srgb, ${accent} 24%, transparent)`,
             color: accent,
           }}
         >
@@ -312,7 +314,7 @@ export const ActivityTooltipContent = ({
         <div className="flex shrink-0 items-center gap-2">
           <span
             aria-live="polite"
-            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8a8299]"
+            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted"
           >
             {copyFeedback}
           </span>
@@ -326,14 +328,14 @@ export const ActivityTooltipContent = ({
             style={{
               background:
                 copyState !== 'copied' && isHovered
-                  ? 'rgba(255,255,255,0.05)'
+                  ? 'var(--color-wash-subtle)'
                   : 'transparent',
               color:
                 copyState === 'copied'
-                  ? '#7defa1'
+                  ? 'var(--color-agent-codex-accent)'
                   : isHovered
-                    ? '#e2c7ff'
-                    : '#8a8299',
+                    ? 'var(--color-primary)'
+                    : 'var(--color-on-surface-muted)',
             }}
             onMouseEnter={(): void => setIsHovered(true)}
             onMouseLeave={(): void => setIsHovered(false)}
@@ -365,15 +367,17 @@ export const ActivityTooltipContent = ({
 
         {event.kind === 'think' ? (
           <div
-            className="border-l-2 pl-3 text-[13px] leading-[1.55] italic text-[#cdc3d1]"
-            style={{ borderColor: `${accent}66` }}
+            className="border-l-2 pl-3 text-[13px] leading-[1.55] italic text-on-surface-variant"
+            style={{
+              borderColor: `color-mix(in srgb, ${accent} 40%, transparent)`,
+            }}
           >
             {event.body}
           </div>
         ) : null}
 
         {event.kind === 'user' ? (
-          <div className="text-[13px] leading-[1.55] text-[#e3e0f7]">
+          <div className="text-[13px] leading-[1.55] text-on-surface">
             {event.body}
           </div>
         ) : null}
@@ -381,7 +385,7 @@ export const ActivityTooltipContent = ({
 
       {/* Footer */}
       {showFooter ? (
-        <div className="flex items-center gap-2 border-t border-[rgba(74,68,79,0.25)] bg-[rgba(13,13,28,0.6)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-[#6c7086]">
+        <div className="flex items-center gap-2 border-t border-outline-variant/25 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_60%,transparent)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-syn-comment">
           {event.kind === 'bash' && (
             <>
               <Kbd>↵</Kbd> rerun <Kbd>{modKey}</Kbd>
@@ -402,7 +406,7 @@ export const ActivityTooltipContent = ({
             </>
           )}
           <span className="flex-1" />
-          <span className="text-[#4a444f]">esc</span>
+          <span className="text-outline-variant">esc</span>
         </div>
       ) : null}
     </>

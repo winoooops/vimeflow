@@ -1,0 +1,76 @@
+/* Static, theme-independent variables (carried from docs/design/tokens.css,
+ * which no longer loads at runtime) + global scrollbar/selection rules.
+ * Color values are var() references — never literals (cssGuard.test.ts). */
+:root {
+  /* ── Type ── */
+  --font-display: 'Instrument Sans', 'Manrope', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Radius ── */
+  --radius-xl: 1.5rem;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+  --radius-full: 9999px;
+
+  /* ── Layout ── */
+  --rail-w: 48px;
+  --sidebar-w: 272px;
+  --sidebar-w-compact: 248px;
+  --activity-w: 320px;
+  --view-tabs-h: 40px;
+  --status-bar-h: 24px;
+
+  /* ── Motion ── */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 160ms;
+  --dur-base: 300ms;
+  --dur-entry: 220ms;
+  --dur-slow: 400ms;
+
+  /* ── Glass ── */
+  --glass-blur: 20px;
+  --glass-saturate: 150%;
+}
+
+::selection {
+  background: var(--color-selection);
+  color: var(--color-on-surface);
+}
+
+@layer base {
+  /* Global default: every scroll container — current and future, including
+   * xterm's viewport and CodeMirror's scroller — gets the thin themed
+   * scrollbar. `no-scrollbar` remains the only opt-out.
+   * `scrollbar-width`/`scrollbar-color` (CSS standard) and
+   * `::-webkit-scrollbar` (WebKit pseudo) both apply on WebKitGTK on
+   * Linux — the renderer paints two synced vertical tracks. Gate the
+   * standard properties to engines that lack the pseudo (Firefox,
+   * detected via `-moz-appearance: none`) so WebKit only sees the
+   * pseudo-element rules. */
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-scrollbar-thumb) transparent;
+    }
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-scrollbar-thumb);
+    border-radius: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-scrollbar-thumb-hover);
+  }
+}

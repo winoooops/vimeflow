@@ -49,7 +49,7 @@ export const FileTabs = ({
                 ${
                   isActive
                     ? 'bg-surface border-t-2 border-primary-container'
-                    : 'border-r border-outline/10 hover:bg-surface-variant/20'
+                    : 'border-r border-outline/10 hover:bg-surface-container-highest/20'
                 }
               `}
             >
@@ -86,7 +86,7 @@ export const FileTabs = ({
         <button
           onClick={onNewFile}
           aria-label="New file"
-          className="flex items-center justify-center px-3 h-full text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/20 transition-colors"
+          className="flex items-center justify-center px-3 h-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest/20 transition-colors"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
         </button>

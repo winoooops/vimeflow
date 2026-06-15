@@ -52,7 +52,7 @@ export const Header = ({
 
   const headerStyle = isFocused
     ? {
-        background: `linear-gradient(180deg, ${agent.accentDim}, rgba(13,13,28,0.0))`,
+        background: `linear-gradient(180deg, ${agent.accentDim}, color-mix(in srgb, var(--color-surface-container-lowest) 0%, transparent))`,
       }
     : { background: 'transparent' }
 

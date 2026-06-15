@@ -11,7 +11,7 @@ export interface NavigationItem {
   id: string
   name: string
   icon: string // Material Symbols icon name
-  color: string // Tailwind color class (e.g., 'bg-emerald-500')
+  color: string // Tailwind color class (e.g., 'bg-success')
   onClick: () => void
 }
 

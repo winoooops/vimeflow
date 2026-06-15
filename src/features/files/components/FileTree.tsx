@@ -16,6 +16,11 @@ interface FileTreeProps {
    */
   rootPath?: string
   onNodeSelect?: (node: FileNode, fullPath: string) => void
+  onContextMenuAction?: (
+    action: ContextMenuAction,
+    node: FileNode,
+    fullPath: string
+  ) => void | Promise<void>
 }
 
 /**
@@ -26,20 +31,27 @@ export const FileTree = ({
   contextMenuActions,
   rootPath = '~',
   onNodeSelect = undefined,
+  onContextMenuAction = undefined,
 }: FileTreeProps): ReactElement => {
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({
     visible: false,
     x: 0,
     y: 0,
     targetNode: null,
+    targetPath: null,
   })
 
-  const handleContextMenu = (event: MouseEvent, node: FileNode): void => {
+  const handleContextMenu = (
+    event: MouseEvent,
+    node: FileNode,
+    fullPath: string
+  ): void => {
     setContextMenuState({
       visible: true,
       x: event.clientX,
       y: event.clientY,
       targetNode: node,
+      targetPath: fullPath,
     })
   }
 
@@ -49,7 +61,20 @@ export const FileTree = ({
       x: 0,
       y: 0,
       targetNode: null,
+      targetPath: null,
     })
+  }
+
+  const handleContextMenuAction = (action: ContextMenuAction): void => {
+    if (!contextMenuState.targetNode || !contextMenuState.targetPath) {
+      return
+    }
+
+    void onContextMenuAction?.(
+      action,
+      contextMenuState.targetNode,
+      contextMenuState.targetPath
+    )
   }
 
   return (
@@ -73,6 +98,7 @@ export const FileTree = ({
         y={contextMenuState.y}
         actions={contextMenuActions}
         onClose={handleCloseContextMenu}
+        onAction={handleContextMenuAction}
       />
     </>
   )

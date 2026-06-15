@@ -1,0 +1,1504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vimeflow Main Stage Chrome Demo</title>
+    <style>
+      :root {
+        --surface: #121221;
+        --surface-lowest: #0d0d1c;
+        --surface-low: #1a1a2a;
+        --surface-container: #1e1e2e;
+        --surface-high: #292839;
+        --primary: #e2c7ff;
+        --primary-container: #cba6f7;
+        --success: #7defa1;
+        --coral: #ff94a5;
+        --text: #e3e0f7;
+        --text-soft: #cdc3d1;
+        --muted: #8a8299;
+        --outline: #4a444f;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, "Liberation Mono", monospace;
+        --body: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--surface-lowest);
+        color: var(--text);
+        font-family: var(--body);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .icon-button,
+      .ghost-button,
+      .layout-config-button,
+      .top-action-button,
+      .layout-pill,
+      .sidebar-toggle,
+      .new-session {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .app-shell {
+        display: flex;
+        height: 100vh;
+        min-width: 0;
+        overflow: hidden;
+        background: var(--surface-low);
+      }
+
+      .sidebar-collapsed .app-shell {
+        background: var(--surface-lowest);
+      }
+
+      .sidebar-shell {
+        position: relative;
+        z-index: 1;
+        width: 272px;
+        height: 100%;
+        overflow: hidden;
+        background: var(--surface-low);
+      }
+
+      .sidebar-inner {
+        width: 272px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background:
+          radial-gradient(
+            circle at 30% 8%,
+            rgba(203, 166, 247, 0.1),
+            transparent 28%
+          ),
+          var(--surface-low);
+      }
+
+      .sidebar-collapsed .sidebar-shell {
+        width: 0;
+      }
+
+      .sidebar-topbar {
+        height: 44px;
+        flex: 0 0 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        color: var(--muted);
+      }
+
+      .sidebar-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-soft);
+      }
+
+      .sidebar-logo {
+        width: 18px;
+        height: 18px;
+        border-radius: 6px;
+        background: linear-gradient(145deg, #e2c7ff, #7defa1);
+        box-shadow: 0 0 18px rgba(203, 166, 247, 0.22);
+      }
+
+      .sidebar-toggle {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 7px;
+        border: 1px solid rgba(74, 68, 79, 0.35);
+        background: rgba(13, 13, 28, 0.45);
+        color: var(--muted);
+        transition:
+          color 140ms ease,
+          background 140ms ease,
+          border-color 140ms ease;
+      }
+
+      .sidebar-toggle:hover {
+        border-color: rgba(203, 166, 247, 0.45);
+        background: rgba(226, 199, 255, 0.08);
+        color: var(--primary);
+      }
+
+      .status-card {
+        margin: 0 12px 10px;
+        padding: 12px;
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(80, 250, 123, 0.08), transparent 50%),
+          rgba(13, 13, 28, 0.46);
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-radius: 999px;
+        background: var(--success);
+        box-shadow:
+          0 0 0 3px rgba(125, 239, 161, 0.12),
+          0 0 9px rgba(125, 239, 161, 0.6);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+
+      .status-title,
+      .session-title,
+      .panel-title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status-title {
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .status-meta {
+        margin-top: 8px;
+        display: flex;
+        gap: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .sidebar-tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 12px 10px;
+      }
+
+      .sidebar-tab {
+        flex: 1;
+        height: 28px;
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13, 13, 28, 0.52);
+        color: var(--primary);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .new-session {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: rgba(226, 199, 255, 0.09);
+        color: var(--primary);
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .session-list {
+        min-height: 0;
+        flex: 1;
+        overflow: hidden;
+        padding: 0 10px 12px;
+      }
+
+      .session-card {
+        margin-bottom: 7px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(18, 18, 33, 0.68);
+      }
+
+      .session-card.active {
+        background:
+          linear-gradient(90deg, rgba(203, 166, 247, 0.16), transparent 62%),
+          rgba(18, 18, 33, 0.94);
+      }
+
+      .session-card.awaiting .dot {
+        background: var(--coral);
+        box-shadow:
+          0 0 0 3px rgba(255, 148, 165, 0.12),
+          0 0 9px rgba(255, 148, 165, 0.6);
+      }
+
+      .session-title {
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .session-subtitle {
+        margin-top: 5px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .floating-stage {
+        --stage-left-radius: 0px;
+        position: relative;
+        z-index: 2;
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        background: var(--surface-lowest);
+      }
+
+      body:not(.sidebar-collapsed) .floating-stage {
+        --stage-left-radius: 14px;
+        border-top-left-radius: var(--stage-left-radius);
+        border-bottom-left-radius: var(--stage-left-radius);
+      }
+
+      .main-stage {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        background: var(--surface);
+      }
+
+      .top-hover-zone {
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 40;
+        height: 44px;
+      }
+
+      .top-hover-zone:focus {
+        outline: none;
+      }
+
+      .top-pinned .top-hover-zone {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        flex: 0 0 44px;
+      }
+
+      .top-chrome {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        height: 44px;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid rgba(74, 68, 79, 0.25);
+        background: var(--surface-lowest);
+        opacity: 0;
+        padding: 0 14px;
+        transform: translateY(-5px);
+        transition:
+          opacity 140ms ease,
+          transform 160ms ease,
+          padding-left 180ms cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .top-hover-zone:hover .top-chrome,
+      .top-hover-zone:focus-within .top-chrome,
+      .top-pinned .top-chrome {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .sidebar-collapsed .top-chrome {
+        padding-left: 50px;
+      }
+
+      .floating-toggle {
+        position: absolute;
+        top: 8px;
+        left: 12px;
+        z-index: 30;
+        display: none;
+      }
+
+      .sidebar-collapsed .floating-toggle {
+        display: block;
+      }
+
+      .top-spacer {
+        flex: 1;
+        min-width: 10px;
+      }
+
+      .layout-switcher {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        border-radius: 7px;
+        background: rgba(30, 30, 46, 0.6);
+        padding: 2px;
+      }
+
+      .layout-pill {
+        display: inline-flex;
+        width: 26px;
+        height: 22px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .layout-pill.active {
+        background: rgba(203, 166, 247, 0.15);
+        color: var(--primary);
+        box-shadow: 0 0 0 1px rgba(203, 166, 247, 0.42);
+      }
+
+      .layout-glyph {
+        display: grid;
+        width: 14px;
+        height: 12px;
+        gap: 2px;
+      }
+
+      .layout-glyph span {
+        min-width: 0;
+        min-height: 0;
+        border-radius: 1px;
+        background: currentColor;
+        opacity: 0.9;
+      }
+
+      .glyph-single {
+        grid-template: "a" 1fr / 1fr;
+      }
+
+      .glyph-vsplit {
+        grid-template: "a b" 1fr / 1fr 1fr;
+      }
+
+      .glyph-hsplit {
+        grid-template: "a" 1fr "b" 1fr / 1fr;
+      }
+
+      .glyph-three {
+        grid-template: "a b" 1fr "a c" 1fr / 1.2fr 1fr;
+      }
+
+      .glyph-quad {
+        grid-template: "a b" 1fr "c d" 1fr / 1fr 1fr;
+      }
+
+      .top-identity {
+        display: none;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .agent-glyph {
+        display: inline-flex;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        background: rgba(203, 166, 247, 0.12);
+        color: var(--primary-container);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .active-title {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--text-soft);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .running-dot {
+        width: 5px;
+        height: 5px;
+        flex: 0 0 5px;
+        border-radius: 999px;
+        background: var(--success);
+        box-shadow: 0 0 6px var(--success);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+
+      .ghost-button {
+        height: 26px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 7px;
+        border: 1px solid rgba(74, 68, 79, 0.35);
+        background: transparent;
+        color: var(--muted);
+        padding: 0 10px;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+
+      .top-action-group {
+        display: inline-flex;
+        height: 28px;
+        align-items: center;
+        gap: 2px;
+        border: 1px solid rgba(74, 68, 79, 0.42);
+        border-radius: 8px;
+        background: transparent;
+        padding: 2px;
+      }
+
+      .layout-config-button,
+      .top-action-button {
+        display: inline-flex;
+        width: 24px;
+        height: 22px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--muted);
+        padding: 0;
+        transition:
+          background 140ms ease,
+          color 140ms ease;
+      }
+
+      .ghost-button:hover {
+        border-color: rgba(203, 166, 247, 0.45);
+        color: var(--primary);
+      }
+
+      .layout-config-button:hover,
+      .top-action-button:hover {
+        background: rgba(226, 199, 255, 0.08);
+        color: var(--primary);
+      }
+
+      .top-pinned .sticky-toggle {
+        color: var(--primary);
+      }
+
+      .single-mode .layout-switcher {
+        display: none;
+      }
+
+      .single-mode .top-identity {
+        display: inline-flex;
+      }
+
+      .content-stack {
+        display: flex;
+        min-height: 0;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+      }
+
+      .terminal-surface {
+        position: relative;
+        min-height: 0;
+        flex: 1;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+          var(--surface);
+        background-size: 100% 23px;
+        padding: 10px;
+      }
+
+      .terminal-grid {
+        display: grid;
+        height: 100%;
+        gap: 8px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+          "main sideA"
+          "main sideB";
+      }
+
+      .single-mode .terminal-grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        grid-template-areas: "main";
+      }
+
+      .pane {
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 7px;
+        background: rgba(13, 13, 28, 0.76);
+        box-shadow:
+          inset 0 0 0 1px rgba(74, 68, 79, 0.12),
+          0 16px 40px rgba(0, 0, 0, 0.18);
+      }
+
+      .pane-main {
+        grid-area: main;
+      }
+
+      .pane-side-a {
+        grid-area: sideA;
+      }
+
+      .pane-side-b {
+        grid-area: sideB;
+      }
+
+      .single-mode .pane-side-a,
+      .single-mode .pane-side-b {
+        display: none;
+      }
+
+      .pane-header {
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .pane-body {
+        padding: 7px 10px 10px;
+        color: var(--text-soft);
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.65;
+      }
+
+      .prompt {
+        color: var(--success);
+      }
+
+      .branch {
+        color: var(--primary-container);
+      }
+
+      .tool {
+        color: #a8c8ff;
+      }
+
+      .dock-panel {
+        height: 184px;
+        flex: 0 0 184px;
+        overflow: hidden;
+        background: var(--surface-container);
+      }
+
+      .dock-closed .dock-panel {
+        height: 30px;
+        flex-basis: 30px;
+      }
+
+      .dock-header {
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid rgba(74, 68, 79, 0.16);
+        padding: 0 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .dock-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .dock-open .dock-body {
+        display: grid;
+      }
+
+      .dock-body {
+        display: none;
+        height: calc(100% - 30px);
+        grid-template-columns: 42px minmax(0, 1fr);
+        color: var(--text-soft);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .gutter {
+        padding-top: 8px;
+        background: rgba(13, 13, 28, 0.42);
+        color: var(--muted);
+        text-align: right;
+      }
+
+      .gutter div {
+        padding: 0 8px 0 0;
+        line-height: 1.72;
+      }
+
+      .code {
+        padding: 8px 12px;
+        overflow: hidden;
+        line-height: 1.72;
+      }
+
+      .keyword {
+        color: var(--primary-container);
+      }
+
+      .string {
+        color: var(--success);
+      }
+
+      .bottom-bar {
+        display: flex;
+        height: 24px;
+        flex: 0 0 24px;
+        align-items: center;
+        gap: 14px;
+        border-top: 1px solid rgba(74, 68, 79, 0.2);
+        background: var(--surface-lowest);
+        color: var(--muted);
+        padding: 0 12px;
+        font-family: var(--mono);
+        font-size: 10px;
+        tab-size: 4;
+      }
+
+      .action-group,
+      .readouts,
+      .metric {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .action-group {
+        gap: 6px;
+      }
+
+      .icon-button {
+        display: inline-flex;
+        width: 22px;
+        height: 18px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        background: transparent;
+        color: #9b93ab;
+        transition:
+          color 140ms ease,
+          background 140ms ease;
+      }
+
+      .icon-button:hover {
+        background: rgba(226, 199, 255, 0.1);
+        color: var(--primary);
+      }
+
+      .dock-open .dock-toggle {
+        background: transparent;
+        color: var(--success);
+      }
+
+      .dock-open .dock-toggle:hover {
+        background: rgba(125, 239, 161, 0.08);
+      }
+
+      .bar-spacer {
+        min-width: 10px;
+        flex: 1;
+      }
+
+      .readouts {
+        min-width: 0;
+        justify-content: flex-end;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .metric {
+        gap: 4px;
+      }
+
+      .metric-strong {
+        color: var(--text-soft);
+      }
+
+      .metric-good {
+        color: var(--success);
+        font-weight: 700;
+      }
+
+      .metric-bad {
+        color: var(--coral);
+        font-weight: 700;
+      }
+
+      .activity-panel {
+        width: 292px;
+        flex: 0 0 292px;
+        overflow: hidden;
+        background:
+          radial-gradient(
+            circle at 10% 5%,
+            rgba(125, 239, 161, 0.08),
+            transparent 28%
+          ),
+          var(--surface-low);
+      }
+
+      .activity-header {
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(74, 68, 79, 0.16);
+        padding: 0 12px;
+      }
+
+      .panel-title {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-soft);
+      }
+
+      .activity-body {
+        padding: 12px;
+      }
+
+      .meter-card {
+        border-radius: 8px;
+        background: rgba(13, 13, 28, 0.48);
+        padding: 10px;
+      }
+
+      .meter-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .bar-track {
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(74, 68, 79, 0.34);
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        width: 64%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--success), var(--primary));
+      }
+
+      .timeline {
+        position: relative;
+        margin-top: 14px;
+        padding-left: 14px;
+      }
+
+      .timeline::before {
+        position: absolute;
+        top: 4px;
+        bottom: 4px;
+        left: 3px;
+        width: 1px;
+        content: "";
+        background: rgba(74, 68, 79, 0.4);
+      }
+
+      .event {
+        position: relative;
+        margin-bottom: 13px;
+        color: var(--text-soft);
+        font-size: 12px;
+      }
+
+      .event::before {
+        position: absolute;
+        top: 5px;
+        left: -14px;
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        content: "";
+        background: var(--primary-container);
+        box-shadow: 0 0 0 3px rgba(203, 166, 247, 0.12);
+      }
+
+      .event small {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+      }
+
+      .palette {
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        display: none;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 14vh;
+        background: rgba(13, 13, 28, 0.55);
+        backdrop-filter: blur(14px) saturate(120%);
+      }
+
+      .palette-open .palette {
+        display: flex;
+      }
+
+      .palette-card {
+        width: min(560px, calc(100vw - 36px));
+        overflow: hidden;
+        border-radius: 12px;
+        background: rgba(30, 30, 46, 0.96);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55);
+      }
+
+      .palette-input {
+        height: 46px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid rgba(74, 68, 79, 0.2);
+        padding: 0 14px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .palette-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        color: var(--text-soft);
+        font-size: 13px;
+      }
+
+      .palette-row:first-of-type {
+        background: rgba(226, 199, 255, 0.08);
+        color: var(--primary);
+      }
+
+      .mini-icon {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+      }
+
+      .mini-icon svg {
+        display: block;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+
+        50% {
+          opacity: 0.58;
+          transform: scale(0.85);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .activity-panel {
+          width: 224px;
+          flex-basis: 224px;
+        }
+
+      }
+
+      @media (max-width: 760px) {
+        .activity-panel {
+          display: none;
+        }
+
+        body:not(.sidebar-collapsed) .floating-stage {
+          --stage-left-radius: 10px;
+        }
+
+        .readouts {
+          gap: 5px;
+        }
+
+        .metric-duration,
+        .metric-cache-label,
+        .metric-turns {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="split-mode dock-open">
+    <div class="app-shell">
+      <aside class="sidebar-shell" aria-label="Sidebar">
+        <div class="sidebar-inner">
+          <div class="sidebar-topbar">
+            <div class="sidebar-brand">
+              <span class="sidebar-logo"></span>
+              <span>vimeflow</span>
+            </div>
+            <button
+              class="sidebar-toggle"
+              type="button"
+              aria-label="Hide sidebar"
+              data-toggle-sidebar
+              title="Hide sidebar"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <rect
+                  x="1.6"
+                  y="2.6"
+                  width="12.8"
+                  height="10.8"
+                  rx="2.4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <path
+                  d="M5.9 2.9V13.1"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <rect
+                  x="2.2"
+                  y="3.2"
+                  width="3.1"
+                  height="9.6"
+                  rx="1.4"
+                  fill="currentColor"
+                  fill-opacity="0.28"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <section class="status-card" aria-label="Active session status">
+            <div class="status-row">
+              <span class="dot"></span>
+              <span class="status-title">auth middleware refactor</span>
+            </div>
+            <div class="status-meta">
+              <span>running</span>
+              <span>18m</span>
+              <span>42 turns</span>
+            </div>
+          </section>
+
+          <div class="sidebar-tabs">
+            <div class="sidebar-tab">SESSIONS</div>
+            <button class="new-session" type="button" aria-label="New session">
+              +
+            </button>
+          </div>
+
+          <div class="session-list">
+            <article class="session-card active">
+              <div class="status-row">
+                <span class="dot"></span>
+                <span class="session-title">auth middleware refactor</span>
+              </div>
+              <div class="session-subtitle">
+                Reworking session restore and route guards
+              </div>
+            </article>
+            <article class="session-card awaiting">
+              <div class="status-row">
+                <span class="dot"></span>
+                <span class="session-title">browser pane polish</span>
+              </div>
+              <div class="session-subtitle">
+                Awaits approval for WebContentsView patch
+              </div>
+            </article>
+            <article class="session-card">
+              <div class="status-row">
+                <span class="dot" style="animation: none; opacity: 0.45"></span>
+                <span class="session-title">diff hunk navigation</span>
+              </div>
+              <div class="session-subtitle">
+                Done 7h ago with staged toolbar changes
+              </div>
+            </article>
+          </div>
+        </div>
+      </aside>
+
+      <div class="floating-stage">
+        <main class="main-stage" aria-label="Main workspace">
+          <div class="top-hover-zone" tabindex="0" aria-label="Reveal workspace controls">
+            <div class="top-chrome">
+              <div class="floating-toggle">
+                <button
+                  class="sidebar-toggle"
+                  type="button"
+                  aria-label="Show sidebar"
+                  data-toggle-sidebar
+                  title="Show sidebar"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="1.6"
+                      y="2.6"
+                      width="12.8"
+                      height="10.8"
+                      rx="2.4"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                    />
+                    <path
+                      d="M5.9 2.9V13.1"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              <div class="top-identity">
+                <span class="agent-glyph">&there4;</span>
+                <span class="active-title">auth middleware refactor</span>
+                <span class="running-dot"></span>
+              </div>
+
+              <span class="top-spacer"></span>
+
+              <div class="layout-switcher" role="group" aria-label="Pane layout">
+                <button class="layout-pill" type="button" aria-label="Single">
+                  <span class="layout-glyph glyph-single"><span></span></span>
+                </button>
+                <button
+                  class="layout-pill active"
+                  type="button"
+                  aria-label="Vertical split"
+                >
+                  <span class="layout-glyph glyph-vsplit"
+                    ><span></span><span></span
+                  ></span>
+                </button>
+                <button
+                  class="layout-pill"
+                  type="button"
+                  aria-label="Horizontal split"
+                >
+                  <span class="layout-glyph glyph-hsplit"
+                    ><span></span><span></span
+                  ></span>
+                </button>
+                <button
+                  class="layout-pill"
+                  type="button"
+                  aria-label="Main plus stack"
+                >
+                  <span class="layout-glyph glyph-three"
+                    ><span style="grid-area: a"></span
+                    ><span style="grid-area: b"></span
+                    ><span style="grid-area: c"></span
+                  ></span>
+                </button>
+                <button class="layout-pill" type="button" aria-label="Quad">
+                  <span class="layout-glyph glyph-quad"
+                    ><span></span><span></span><span></span><span></span
+                  ></span>
+                </button>
+              </div>
+
+              <span class="top-action-group" aria-label="Top chrome controls">
+                <button
+                  class="layout-config-button"
+                  type="button"
+                  aria-label="Configure displayed layouts"
+                  title="Configure displayed layouts"
+                >
+                  <span class="mini-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                        stroke="currentColor"
+                        stroke-width="1.35"
+                        stroke-linecap="round"
+                      />
+                      <circle cx="8" cy="4.5" r="1.6" stroke="currentColor" stroke-width="1.25" />
+                      <circle cx="10.7" cy="8" r="1.45" stroke="currentColor" stroke-width="1.25" />
+                      <circle cx="6.5" cy="11.5" r="1.55" stroke="currentColor" stroke-width="1.25" />
+                    </svg>
+                  </span>
+                </button>
+                <button
+                  class="top-action-button sticky-toggle"
+                  type="button"
+                  aria-label="Keep top banner visible"
+                  aria-pressed="false"
+                  title="Keep top banner visible"
+                  id="stickyTopButton"
+                >
+                  <span class="mini-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
+                        stroke="currentColor"
+                        stroke-width="1.35"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
+              </span>
+            </div>
+          </div>
+
+          <div class="content-stack">
+            <section class="terminal-surface" aria-label="Terminal canvas">
+              <div class="terminal-grid">
+                <article class="pane pane-main">
+                  <div class="pane-header">
+                    <span>CLAUDE CODE</span>
+                    <span>~/vimeflow</span>
+                  </div>
+                  <div class="pane-body">
+                    <div>
+                      <span class="prompt">~/vimeflow</span>
+                      <span class="branch"> git:(feat/main-stage)</span>
+                    </div>
+                    <div>&there4; Reading WorkspaceView shell boundaries</div>
+                    <div>
+                      <span class="tool">edit</span> src/features/workspace
+                    </div>
+                    <div>
+                      + stage wrapper + top chrome + bottom action bar
+                    </div>
+                    <div>&gt; awaiting visual approval</div>
+                  </div>
+                </article>
+                <article class="pane pane-side-a">
+                  <div class="pane-header">
+                    <span>CODEX</span>
+                    <span>tests</span>
+                  </div>
+                  <div class="pane-body">
+                    <div><span class="tool">vitest</span> WorkspaceView</div>
+                    <div>status bar actions: queued</div>
+                    <div>layout toolbar owner: pending</div>
+                  </div>
+                </article>
+                <article class="pane pane-side-b">
+                  <div class="pane-header">
+                    <span>SHELL</span>
+                    <span>git</span>
+                  </div>
+                  <div class="pane-body">
+                    <div>$ git status --short</div>
+                    <div>?? docs/design/main-stage-handoff/</div>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="dock-panel" aria-label="Editor and diff dock">
+              <div class="dock-header">
+                <span class="dock-title">
+                  <span class="mini-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M3 3.5H13M3 8H13M3 12.5H9"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </span>
+                  editor / diff
+                </span>
+                <span class="dock-closed-label">bottom</span>
+              </div>
+              <div class="dock-body">
+                <div class="gutter">
+                  <div>41</div>
+                  <div>42</div>
+                  <div>43</div>
+                  <div>44</div>
+                  <div>45</div>
+                </div>
+                <div class="code">
+                  <div>
+                    <span class="keyword">const</span> collapsed =
+                    sidebarCollapsed
+                  </div>
+                  <div>
+                    <span class="keyword">return</span>
+                    &lt;FloatingStage clipped={collapsed} /&gt;
+                  </div>
+                  <div>
+                    <span class="string">"#0d0d1c"</span> anchors both chrome
+                    bars
+                  </div>
+                  <div>shadow and radius stay conditional</div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <footer class="bottom-bar" aria-label="App status">
+            <span class="action-group">
+              <button
+                class="icon-button"
+                type="button"
+                aria-label="Open command palette"
+                id="paletteButton"
+                title="Command palette"
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M3 4.5L6 8L3 11.5M7.5 11.5H13"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.55"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <button
+                class="icon-button dock-toggle"
+                type="button"
+                aria-label="Toggle dock"
+                data-toggle-dock
+                title="Toggle dock"
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect
+                    x="2.2"
+                    y="2.8"
+                    width="11.6"
+                    height="10.4"
+                    rx="2"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                  />
+                  <path
+                    d="M2.6 9.5H13.4"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                  />
+                </svg>
+              </button>
+            </span>
+            <span class="bar-spacer"></span>
+            <span class="readouts">
+              <span class="metric metric-duration">
+                <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="5.8"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.35"
+                  />
+                  <path
+                    d="M8 4.8V8.2L10.2 9.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.35"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span class="metric-strong">18m</span>
+              </span>
+              <span>&middot;</span>
+              <span class="metric" aria-label="Context 64 percent">
+                <span aria-hidden="true">&#9786;</span>
+                <span class="metric-good">64%</span>
+              </span>
+              <span>&middot;</span>
+              <span class="metric">
+                <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M8.7 1.8L3.8 8.6H7L6.3 14.2L12.2 6.7H8.8L8.7 1.8Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                <span class="metric-good">82%</span>
+                <span class="metric-cache-label">cached</span>
+              </span>
+              <span>&middot;</span>
+              <span class="metric-turns">42 turns</span>
+              <span>&middot;</span>
+              <span class="metric-good">+1.2k</span>
+              <span class="metric-bad">-415</span>
+            </span>
+          </footer>
+        </main>
+
+        <aside class="activity-panel" aria-label="Agent activity">
+          <div class="activity-header">
+            <span class="panel-title">agent activity</span>
+            <span class="dot"></span>
+          </div>
+          <div class="activity-body">
+            <section class="meter-card">
+              <div class="meter-row">
+                <span>context</span>
+                <span>64%</span>
+              </div>
+              <div class="bar-track"><div class="bar-fill"></div></div>
+              <div class="meter-row" style="margin-top: 9px">
+                <span>cache</span>
+                <span>82%</span>
+              </div>
+            </section>
+            <div class="timeline">
+              <div class="event">
+                Updated WorkspaceView shell plan
+                <small>now</small>
+              </div>
+              <div class="event">
+                Read VIM-66 sidebar branch structure
+                <small>4m ago</small>
+              </div>
+              <div class="event">
+                Prepared main-stage demo reference
+                <small>9m ago</small>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="palette-card">
+        <div class="palette-input">:dock toggle</div>
+        <div class="palette-row">
+          <span>Open command palette action</span>
+          <span>enter</span>
+        </div>
+        <div class="palette-row">
+          <span>Show editor and diff dock</span>
+          <span>mod+e</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const body = document.body
+      const paletteButton = document.getElementById("paletteButton")
+      const stickyTopButton = document.getElementById("stickyTopButton")
+
+      const toggleSidebar = () => {
+        body.classList.toggle("sidebar-collapsed")
+      }
+
+      const toggleDock = () => {
+        body.classList.toggle("dock-open")
+        body.classList.toggle("dock-closed")
+      }
+
+      document.querySelectorAll("[data-toggle-sidebar]").forEach((button) => {
+        button.addEventListener("click", toggleSidebar)
+      })
+
+      document.querySelectorAll("[data-toggle-dock]").forEach((button) => {
+        button.addEventListener("click", toggleDock)
+      })
+
+      stickyTopButton.addEventListener("click", () => {
+        const pinned = body.classList.toggle("top-pinned")
+        stickyTopButton.setAttribute("aria-pressed", String(pinned))
+        stickyTopButton.title = pinned
+          ? "Auto-hide top banner"
+          : "Keep top banner visible"
+        stickyTopButton.setAttribute(
+          "aria-label",
+          pinned ? "Auto-hide top banner" : "Keep top banner visible"
+        )
+      })
+
+      paletteButton.addEventListener("click", () => {
+        body.classList.add("palette-open")
+      })
+
+      document.querySelector(".palette").addEventListener("click", (event) => {
+        if (event.target === event.currentTarget) {
+          body.classList.remove("palette-open")
+        }
+      })
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          body.classList.remove("palette-open")
+        }
+
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+          event.preventDefault()
+          toggleSidebar()
+        }
+      })
+    </script>
+  </body>
+</html>

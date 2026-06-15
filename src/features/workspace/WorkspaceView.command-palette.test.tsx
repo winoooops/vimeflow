@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -6,7 +6,6 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
-import { AGENTS } from '../../agents/registry'
 import type { TerminalZoneProps } from './components/TerminalZone'
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
@@ -51,10 +50,13 @@ vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
+vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
+  useBurnerTerminals: vi.fn(),
+}))
 
 // Mock child components to keep test focused on command dispatch while still
 // rendering sidebar chrome needed by WorkspaceView.
-vi.mock('../../components/sidebar/Sidebar', () => ({
+vi.mock('@/components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
   ),
@@ -264,6 +266,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      renamePath: vi.fn().mockResolvedValue(undefined),
+      deletePath: vi.fn().mockResolvedValue(undefined),
     })
 
     // Mock terminalService
@@ -293,6 +297,16 @@ describe('WorkspaceView - Command Palette Integration', () => {
       killEphemeralPtys: vi.fn(),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })
+
+    const { useBurnerTerminals } =
+      await import('../terminal/hooks/useBurnerTerminals')
+    vi.mocked(useBurnerTerminals).mockReturnValue({
+      renderNode: null,
+      toggle: vi.fn().mockResolvedValue(undefined),
+      runningByPane: new Map(),
+      activeByPane: new Map(),
+      hasVisibleBurner: false,
+    })
   })
 
   const openPalette = (): void => {
@@ -304,6 +318,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
       })
       document.dispatchEvent(event)
     })
+  }
+
+  const latestTerminalZoneProps = (): TerminalZoneProps => {
+    const call = terminalZonePropsSpy.mock.calls[
+      terminalZonePropsSpy.mock.calls.length - 1
+    ] as [TerminalZoneProps] | undefined
+    if (!call) {
+      throw new Error('TerminalZone was not rendered')
+    }
+
+    return call[0]
   }
 
   test(':new command creates a new session', async () => {
@@ -345,6 +370,34 @@ describe('WorkspaceView - Command Palette Integration', () => {
         removePane: mockSessionManager.removePane,
       })
     )
+  })
+
+  test('occludes browser panes while the command palette is open', async () => {
+    render(<WorkspaceView />)
+
+    expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(false)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(true)
+    })
+  })
+
+  test('occludes browser panes while a burner terminal popup is visible', async () => {
+    const { useBurnerTerminals } =
+      await import('../terminal/hooks/useBurnerTerminals')
+    vi.mocked(useBurnerTerminals).mockReturnValue({
+      renderNode: <div data-testid="burner-terminal-popup" />,
+      toggle: vi.fn().mockResolvedValue(undefined),
+      runningByPane: new Map(),
+      activeByPane: new Map(),
+      hasVisibleBurner: true,
+    })
+
+    render(<WorkspaceView />)
+
+    expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(true)
   })
 
   test('records detected agent type on the active session', async () => {
@@ -429,7 +482,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
-  test('does not apply stale agent status from another session to the active shell tab', async () => {
+  test('does not apply stale agent status from another session to the active shell session', async () => {
     mockSessions[1] = {
       ...mockSessions[1],
       agentType: 'generic',
@@ -459,8 +512,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    const activeTab = screen.getByRole('tab', { name: 'feature' })
-    expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
+    // The main session-tab strip is gone, so there is no per-tab agent glyph
+    // to inspect. The guard under test is purely that the stale claude-code
+    // status never re-stamps the active generic pane.
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 

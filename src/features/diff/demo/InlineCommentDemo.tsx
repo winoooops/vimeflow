@@ -131,7 +131,7 @@ export const InlineCommentDemo = (): ReactElement => {
           Enter. {feedback.totalAnnotations()} comment(s) in the batch.
         </p>
       </header>
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-auto px-4 pb-8">
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-8">
         <MultiFileDiff
           oldFile={{ name: DEMO_FILE, contents: OLD_CONTENTS }}
           newFile={{ name: DEMO_FILE, contents: NEW_CONTENTS }}

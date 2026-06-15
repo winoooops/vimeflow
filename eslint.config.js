@@ -1,5 +1,6 @@
 // For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
 import storybook from 'eslint-plugin-storybook'
+import noHardcodedColors from './eslint-rules/no-hardcoded-colors.js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import pluginReact from 'eslint-plugin-react'
@@ -238,6 +239,12 @@ export default defineConfig([
                 'const last = text.lastIndexOf(captured[2]); return last === -1 ? text : text.slice(0, last - 1) + text.slice(last + captured[2].length)',
             },
           },
+          {
+            regex:
+              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|sidebar/)',
+            message:
+              'Shared primitives are imported via the @/components/* alias.',
+          },
         ],
       ],
     },
@@ -263,6 +270,82 @@ export default defineConfig([
         'error',
         {
           configFile: './cspell.config.yaml',
+        },
+      ],
+    },
+  },
+
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/theme/**'],
+    plugins: {
+      vimeflow: { rules: { 'no-hardcoded-colors': noHardcodedColors } },
+    },
+    rules: {
+      'vimeflow/no-hardcoded-colors': 'error',
+    },
+  },
+
+  {
+    files: ['src/**/*.tsx'],
+    rules: {
+      'react/forbid-dom-props': [
+        'error',
+        {
+          forbid: [
+            {
+              propName: 'title',
+              message:
+                'Native title= renders an OS tooltip — wrap the element in Tooltip from @/components/Tooltip instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    // Ring 1 — @floating-ui/react is confined to base/floating + grandfathered Tooltip.
+    // Type imports are not exempt: base/floating re-exports the one type public primitives need.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/base/floating/**', 'src/components/Tooltip.tsx'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@floating-ui/react',
+              message:
+                'Use a primitive from @/components, or extend base/floating — do not hand-roll a floating surface.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    // Ring 2 — src/components/base/** is package-private to src/components/.
+    // Features (and App, hooks, lib, theme) must compose Dropdown/Menu/Popover instead.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/components/base',
+                '@/components/base/**',
+                '**/components/base',
+                '**/components/base/**',
+              ],
+              message:
+                'src/components/base is package-private — compose Dropdown/Menu/Popover instead.',
+            },
+          ],
         },
       ],
     },

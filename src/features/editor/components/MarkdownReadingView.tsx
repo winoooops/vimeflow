@@ -1,8 +1,12 @@
 /* eslint-disable react/require-default-props -- forwardRef component; optional props use default args (matches CodeEditor) */
 import {
   forwardRef,
+  useCallback,
   useMemo,
+  useRef,
+  useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactElement,
 } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -12,6 +16,9 @@ import rehypeSanitize from 'rehype-sanitize'
 import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 import { useReadingStyle } from '../hooks/useReadingStyle'
+import { writeClipboardText } from '../utils/clipboard'
+import type { ContextMenuAction } from '../types'
+import { ContextMenu } from './ContextMenu'
 import { markdownComponents } from './markdownComponents'
 import './MarkdownReadingView.css'
 
@@ -51,11 +58,29 @@ interface MarkdownReadingViewProps {
   isDirty?: boolean
 }
 
+interface ReadingViewMenuState {
+  visible: boolean
+  x: number
+  y: number
+}
+
+const CONTEXT_MENU_WIDTH = 192
+const CONTEXT_MENU_HEIGHT = 160
+
+const selectionEndpointIsInside = (
+  selection: globalThis.Selection,
+  node: HTMLElement
+): boolean =>
+  selection.anchorNode !== null &&
+  selection.focusNode !== null &&
+  node.contains(selection.anchorNode) &&
+  node.contains(selection.focusNode)
+
 /**
  * Read-only reading view for markdown files in the dock editor.
  *
  * Renders the buffer's markdown via `react-markdown` as a real React element
- * tree (no `dangerouslySetInnerHTML`), themed to the Obsidian Lens through the
+ * tree (no `dangerouslySetInnerHTML`), themed to The Lens through the
  * `markdownComponents` per-tag map + the scoped `MarkdownReadingView.css`.
  *
  * CRITICAL plugin order: `[rehypeSanitize, rehypeSlug, rehypeHighlight]`.
@@ -91,6 +116,15 @@ export const MarkdownReadingView = forwardRef<
   ref
 ): ReactElement {
   const { style } = useReadingStyle()
+  const contentRef = useRef<HTMLDivElement>(null)
+  const regionRef = useRef<HTMLDivElement>(null)
+  const selectedTextRef = useRef('')
+
+  const [contextMenu, setContextMenu] = useState<ReadingViewMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+  })
 
   const styleVars = {
     '--rv-font-size': `${style.fontPx}px`,
@@ -112,6 +146,113 @@ export const MarkdownReadingView = forwardRef<
     [content]
   )
 
+  const setRegionRefs = useCallback(
+    (node: HTMLDivElement | null): void => {
+      regionRef.current = node
+
+      if (typeof ref === 'function') {
+        ref(node)
+
+        return
+      }
+
+      if (ref !== null) {
+        ref.current = node
+      }
+    },
+    [ref]
+  )
+
+  const getSelectedRenderedText = useCallback((): string => {
+    const selection = window.getSelection()
+    const contentElement = contentRef.current
+    const selectedText = selection?.toString() ?? ''
+
+    if (
+      selection === null ||
+      contentElement === null ||
+      selectedText === '' ||
+      selection.isCollapsed ||
+      !selectionEndpointIsInside(selection, contentElement)
+    ) {
+      return ''
+    }
+
+    return selectedText
+  }, [])
+
+  const closeContextMenu = useCallback((): void => {
+    selectedTextRef.current = ''
+    setContextMenu({ visible: false, x: 0, y: 0 })
+  }, [])
+
+  const copySelection = useCallback((): void => {
+    const selectedText = selectedTextRef.current || getSelectedRenderedText()
+
+    if (selectedText === '') {
+      return
+    }
+
+    void writeClipboardText(selectedText)
+  }, [getSelectedRenderedText])
+
+  const selectAll = useCallback((): void => {
+    const contentElement = contentRef.current
+    const selection = window.getSelection()
+
+    if (contentElement === null || selection === null) {
+      return
+    }
+
+    const range = document.createRange()
+    range.selectNodeContents(contentElement)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    regionRef.current?.focus()
+  }, [])
+
+  const handleContextMenu = useCallback(
+    (event: MouseEvent<HTMLDivElement>): void => {
+      event.preventDefault()
+      event.stopPropagation()
+      selectedTextRef.current = getSelectedRenderedText()
+      event.currentTarget.focus()
+
+      const x = Math.max(
+        0,
+        Math.min(event.clientX, window.innerWidth - CONTEXT_MENU_WIDTH)
+      )
+
+      const y = Math.max(
+        0,
+        Math.min(event.clientY, window.innerHeight - CONTEXT_MENU_HEIGHT)
+      )
+
+      setContextMenu({
+        visible: true,
+        x,
+        y,
+      })
+    },
+    [getSelectedRenderedText]
+  )
+
+  const clipboardActions = useMemo<ContextMenuAction[]>(
+    () => [
+      {
+        label: 'Copy',
+        icon: 'content_copy',
+        onSelect: copySelection,
+      },
+      {
+        label: 'Select All',
+        icon: 'select_all',
+        onSelect: selectAll,
+      },
+    ],
+    [copySelection, selectAll]
+  )
+
   return (
     <div
       data-testid="markdown-reading-view"
@@ -119,13 +260,17 @@ export const MarkdownReadingView = forwardRef<
       className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden [container-type:inline-size]"
     >
       <div
-        ref={ref}
+        ref={setRegionRefs}
         role="region"
         aria-label="Markdown reading view"
         tabIndex={0}
-        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
+        className="min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
+        onContextMenu={handleContextMenu}
       >
-        <div className="mx-auto [font-size:var(--rv-font-size)] [line-height:var(--rv-line-height)] [max-width:var(--rv-measure)]">
+        <div
+          ref={contentRef}
+          className="mx-auto [font-size:var(--rv-font-size)] [line-height:var(--rv-line-height)] [max-width:var(--rv-measure)]"
+        >
           {rendered}
         </div>
       </div>
@@ -158,6 +303,14 @@ export const MarkdownReadingView = forwardRef<
           <span>Unsaved</span>
         </div>
       )}
+
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        actions={clipboardActions}
+        onClose={closeContextMenu}
+      />
     </div>
   )
 })

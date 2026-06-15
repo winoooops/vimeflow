@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import { CollapsibleSection } from './CollapsibleSection'
 import type { ActiveToolCall } from '../types'
 
@@ -20,18 +21,16 @@ export const ToolCallSummary = ({
       {sortedChips.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {sortedChips.map(([name, count]) => (
-            <span
-              key={name}
-              title={name}
-              className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-1"
-            >
-              <span className="truncate text-[10px] leading-none text-on-surface-variant">
-                {name}
+            <Tooltip key={name} content={name}>
+              <span className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-1">
+                <span className="truncate text-[10px] leading-none text-on-surface-variant">
+                  {name}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] font-semibold leading-none text-primary">
+                  {count}
+                </span>
               </span>
-              <span className="shrink-0 font-mono text-[10px] font-semibold leading-none text-primary">
-                {count}
-              </span>
-            </span>
+            </Tooltip>
           ))}
         </div>
       )}

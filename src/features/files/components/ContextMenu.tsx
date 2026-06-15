@@ -8,6 +8,7 @@ interface ContextMenuProps {
   y: number
   actions: ContextMenuAction[]
   onClose: () => void
+  onAction?: (action: ContextMenuAction) => void
 }
 
 /**
@@ -19,6 +20,7 @@ export const ContextMenu = ({
   y,
   actions,
   onClose,
+  onAction = undefined,
 }: ContextMenuProps): ReactElement | null => {
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -74,7 +76,7 @@ export const ContextMenu = ({
         return (
           <button
             key={action.label}
-            className={`flex items-center gap-3 px-4 py-2 text-sm w-full text-left cursor-pointer transition-colors ${
+            className={`flex items-center gap-3 px-4 py-2 text-[15px] w-full text-left cursor-pointer transition-colors ${
               action.variant === 'danger'
                 ? 'hover:bg-error/20 text-error'
                 : 'hover:bg-surface-bright/50 text-on-surface'
@@ -82,6 +84,7 @@ export const ContextMenu = ({
             role="menuitem"
             onClick={() => {
               onClose()
+              onAction?.(action)
             }}
           >
             <span

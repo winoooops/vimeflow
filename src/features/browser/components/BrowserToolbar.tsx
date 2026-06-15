@@ -17,7 +17,7 @@ export interface BrowserToolbarProps extends BrowserAddressBarProps {
 }
 
 const NAV_BTN =
-  'flex h-[27px] w-[27px] items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-white/[0.05] hover:text-[#4fc8d6] disabled:cursor-default disabled:text-outline-variant disabled:hover:bg-transparent disabled:hover:text-outline-variant focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4fc8d6]/45'
+  'flex h-[27px] w-[27px] items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-wash-subtle hover:text-agent-browser-accent disabled:cursor-default disabled:text-outline-variant disabled:hover:bg-transparent disabled:hover:text-outline-variant focus:outline-none focus-visible:ring-2 focus-visible:ring-agent-browser-accent/45'
 
 export const BrowserToolbar = ({
   onOpenExternal,

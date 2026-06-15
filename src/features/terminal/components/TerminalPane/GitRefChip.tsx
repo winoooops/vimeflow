@@ -1,6 +1,6 @@
 // cspell:ignore worktree
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface GitRefChipProps {
   /** Linked-worktree basename, or null when on the main checkout. */
@@ -64,9 +64,9 @@ export const GitRefChip = ({
     'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border max-w-[340px] overflow-hidden'
 
   // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
-  // worktree uses `text-error` (#ffb4ab — lighter coral), branch uses
-  // `text-tertiary` (#ff94a5 — deeper coral). Despite its name, `error` in
-  // tailwind.config.js is a coral shade, NOT Catppuccin red.
+  // worktree uses `text-error` (lighter coral), branch uses
+  // `text-tertiary` (deeper coral). Despite its name, the `error`
+  // theme token (src/theme/) is a coral shade, NOT Catppuccin red.
   const frameClasses = detached
     ? `${frameBase} bg-tertiary/[0.06] border-tertiary/25`
     : `${frameBase} bg-primary-container/[0.06] border-primary-container/20`

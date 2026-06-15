@@ -3,7 +3,7 @@ import type { Components } from 'react-markdown'
 
 /**
  * Per-tag `components` map for `react-markdown`, styling every rendered element
- * with the Obsidian Lens semantic Tailwind tokens (no raw hex). Headings use
+ * with The Lens semantic Tailwind tokens (no raw hex). Headings use
  * `font-headline` + `text-on-surface`; body copy uses `text-on-surface-variant`
  * + `font-body`; links use the `text-secondary` link role; inline code and code
  * blocks use `font-mono` on `bg-surface-container-lowest`; tables and rules use
@@ -195,7 +195,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'pre'>): ReactElement => (
     <pre
-      className="thin-scrollbar my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-[0.85em]"
+      className="my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-[0.85em]"
       {...props}
     />
   ),

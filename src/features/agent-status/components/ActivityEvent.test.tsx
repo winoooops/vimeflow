@@ -874,7 +874,7 @@ describe('ActivityEvent — structured tooltip', () => {
       name: 'EDIT activity details',
     })
     const dir = within(details).getByText('src/components/')
-    expect(dir).toHaveClass('text-[#6c7086]')
+    expect(dir).toHaveClass('text-syn-comment')
     const file = within(details).getByText('Button.tsx')
     expect(file).toHaveClass('font-semibold')
     // eslint-disable-next-line testing-library/no-node-access
@@ -901,7 +901,7 @@ describe('ActivityEvent — structured tooltip', () => {
       name: 'EDIT activity details',
     })
     const dir = within(details).getByText('C:\\repo\\src\\')
-    expect(dir).toHaveClass('text-[#6c7086]')
+    expect(dir).toHaveClass('text-syn-comment')
     const file = within(details).getByText('Button.tsx')
     expect(file).toHaveClass('font-semibold')
   })

@@ -508,6 +508,14 @@ fn every_production_method_returns_well_formed_response_frame() {
             "write_file",
             json!({"request": {"path": "/tmp/no-such-dir/out.txt", "content": ""}}),
         ),
+        (
+            "rename_path",
+            json!({"request": {"path": "/tmp/no-such-file-vimeflow-test", "newName": "renamed.txt"}}),
+        ),
+        (
+            "delete_path",
+            json!({"request": {"path": "/tmp/no-such-file-vimeflow-test"}}),
+        ),
         ("git_status", json!({"cwd": "/tmp/no-such-dir"})),
         ("git_branch", json!({"cwd": "/tmp/no-such-dir"})),
         (

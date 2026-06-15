@@ -57,6 +57,9 @@ words:
   - reqwest
   - chrono
 
+  # ESLint / AST
+  - quasis # ESTree TemplateElement nodes in a TemplateLiteral
+
   # React / TypeScript
   - vitest
   - tsx
@@ -74,6 +77,10 @@ words:
   - glassmorphism
   - catppuccin
   - Catppuccin
+  - flexoki
+  - Flexoki
+  - Steph # Flexoki author first name
+  - Ango # Flexoki author surname
   - wght # Material Symbols font-variation axis (weight)
   - topbar # data-testid token for the sidebar top-bar toggle
   - sparkline
@@ -140,6 +147,7 @@ words:
   - nowarn
   - worktree
   - worktrees
+  - revparse
 
 ignorePaths:
   - node_modules

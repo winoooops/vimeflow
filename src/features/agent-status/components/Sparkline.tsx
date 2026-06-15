@@ -115,7 +115,8 @@ export const Sparkline = ({ data, color }: SparklineProps): ReactElement => {
             transform: `translateX(${chipAnchor})`,
             fontFamily: JETBRAINS,
             color,
-            background: 'rgba(13,13,28,0.9)',
+            background:
+              'color-mix(in srgb, var(--color-surface-container-lowest) 90%, transparent)',
             border: `1px solid ${color}40`,
           }}
         >

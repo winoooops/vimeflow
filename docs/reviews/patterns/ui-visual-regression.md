@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-11
-ref_count: 0
+last_updated: 2026-06-13
+ref_count: 4
 ---
 
 # UI Visual Regression
@@ -43,3 +43,75 @@ test case for the state that triggers the collision.
   `#ff94a5`). Added a cold-cache test case asserting that cached and fresh
   stack styles differ.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Browser pane focus halo referenced an undefined `--color-scrim` token
+
+- **Source:** github-codex-connector | PR #424 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** The focused browser pane `boxShadow` used `color-mix(in srgb, var(--color-scrim) 35%, transparent)`, but the theme token set did not define `--color-scrim`. The unresolved variable invalidated the `box-shadow` declaration, so the focus halo was lost instead of themed.
+- **Fix:** Added `scrim` to `EFFECT_COLOR_TOKENS`, defined it in both Catppuccin (the default theme, slug `obsidian-lens`) and Flexoki themes, and synced `src/theme/theme.css` so `--color-scrim` resolves.
+- **Commit:** same commit as this entry
+
+### 3. Hard-coded context-menu height clips at high-DPI scaling
+
+- **Source:** github-claude | PR #428 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/MarkdownReadingView.tsx`
+- **Finding:** `CONTEXT_MENU_HEIGHT = 112` was used to clamp the context menu's Y coordinate before render. At 125–150% system DPI the effective rendered height exceeds the room reserved at the bottom edge, causing the menu to overflow the viewport. The fix shape is the same as other visual-regression issues: verify the component against the full display state matrix, not just the default 1x scale.
+- **Fix:** Increased the clamp constant from 112 to 160 px, reserving enough bottom margin for common HiDPI scales. Added a regression test for the clipboard fallback path; future work could measure the actual `offsetHeight` from the menu ref after render for pixel-perfect clamping.
+- **Commit:** same commit as this entry
+
+### 4. File tree git status badges use syntax tokens instead of VCS tokens
+
+- **Source:** github-claude | PR #424 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/FileTreeNode.tsx`
+- **Finding:** `getGitStatusColor` mapped every git status badge to `bg-syn-*` syntax tokens (`syn-class`, `syn-string`, `syn-tag`, `syn-operator`, `syn-keyword`) even though the same PR introduced dedicated `vcs-*` tokens. In Obsidian Lens the same status rendered in a visibly different shade in the file tree than in `ChangedFilesList`/`DiffLegend`.
+- **Fix:** Replaced the `bg-syn-*` classes with the matching `bg-vcs-modified`, `bg-vcs-added`, `bg-vcs-deleted`, `bg-vcs-renamed`, and `bg-vcs-untracked` classes, keeping the `text-surface-container` overlay.
+- **Commit:** same commit as this entry
+
+### 5. Right activity panel divider uses full-opacity outline token
+
+- **Source:** github-claude | PR #442 round 1 | 2026-06-13
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The new `border-l border-outline-variant` on the `activity-panel-shell` divider used the token at full opacity while every other workspace hairline uses an opacity modifier (`/25` or lower). This made the right panel edge read visibly heavier than the rest of the shell and broke the surface/hairline design contract.
+- **Fix:** Changed the divider class to `border-l border-outline-variant/25` to match the surrounding hairline convention.
+- **Commit:** same commit as this entry
+
+### 6. New right activity panel hairline lacks a visual regression test
+
+- **Source:** github-codex-connector | PR #442 round 2 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.visual.test.tsx`
+- **Finding:** The diff added `border-l border-outline-variant/25` to the `activity-panel-shell` divider, but `WorkspaceView.visual.test.tsx` only updated existing sidebar and top-chrome surface assertions and did not assert the new divider. Without a guard, a future class cleanup or token migration could silently remove or mistype the divider and recreate the visual regression the PR just fixed.
+- **Fix:** Added a focused assertion in the existing Surface Hierarchy block that `activity-panel-shell` includes both `border-l` and `border-outline-variant/25`.
+- **Commit:** same commit as this entry
+
+### 7. AgentStatusRail background token change is not guarded by its co-located test
+
+- **Source:** github-claude | PR #442 round 3 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusRail.tsx`
+- **Finding:** The diff changed `agent-status-rail` from `bg-surface-container` to `bg-surface`, but no co-located test asserted the new token. A future cleanup could silently revert the rail and recreate the visual regression, because the workspace-level visual assertion covers a different wrapper.
+- **Fix:** Added a focused `AgentStatusRail.test.tsx` assertion that the rail element's class list contains `bg-surface` and does not contain `bg-surface-container`.
+- **Commit:** same commit as this entry
+
+### 8. Workspace root backdrop token lacks a visual test guard
+
+- **Source:** github-claude | PR #442 round 3 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The root `workspace-view` div was given `bg-surface-container-low` to complete the surface hierarchy behind the rounded main-column edges, but no visual test asserted the class. Existing layout assertions queried the root element but checked only height and overflow.
+- **Fix:** Added a `WorkspaceView.visual.test.tsx` Surface Hierarchy assertion that `workspace-view` includes `bg-surface-container-low`.
+- **Commit:** same commit as this entry
+
+### 9. Workspace backdrop guard uses substring match that accepts the old token
+
+- **Source:** github-codex-connector | PR #442 round 4 | 2026-06-13
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.visual.test.tsx` L197-210
+- **Finding:** The new surface-container-low assertion used `className.toContain('bg-surface-container-low')`. Because `bg-surface-container-lowest` contains that substring, a future regression back to the old backdrop token would keep the visual test green. The workspace root has no stricter backup assertion.
+- **Fix:** Replaced both `bg-surface-container-low` substring assertions (workspace root and sidebar) with exact jest-dom `toHaveClass('bg-surface-container-low')` checks, matching existing project test patterns.
+- **Commit:** same commit as this entry

@@ -1,19 +1,8 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
-import {
-  FloatingPortal,
-  FloatingFocusManager,
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  useDismiss,
-  useFloating,
-  useInteractions,
-  useRole,
-} from '@floating-ui/react'
-import { Tooltip } from '../../../../components/Tooltip'
-import { Dropdown, type DropdownOption } from './Dropdown'
+import { Tooltip } from '@/components/Tooltip'
+import { Popover } from '@/components/Popover'
+import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
 import { ViewSettingsDropdown } from './ViewSettingsDropdown'
@@ -242,29 +231,12 @@ export const DiffChipToolbar = ({
   onDiscardFeedback = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
-  // button inside the tool-well; the floating content is the DiscardAllConfirm
-  // component rendered via FloatingPortal.
+  // button inside the tool-well; the confirm card renders on the shared Popover
+  // anchored to that button.
   const [discardAllOpen, setDiscardAllOpen] = useState(false)
 
-  const {
-    refs: discardAllRefs,
-    floatingStyles: discardAllStyles,
-    context: discardAllContext,
-  } = useFloating({
-    open: discardAllOpen,
-    onOpenChange: setDiscardAllOpen,
-    placement: 'bottom-end',
-    middleware: [offset(4), flip(), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate,
-  })
-
-  const discardAllDismiss = useDismiss(discardAllContext)
-  const discardAllRole = useRole(discardAllContext, { role: 'dialog' })
-
-  const {
-    getReferenceProps: getDiscardAllReferenceProps,
-    getFloatingProps: getDiscardAllFloatingProps,
-  } = useInteractions([discardAllDismiss, discardAllRole])
+  const [discardAllAnchor, setDiscardAllAnchor] =
+    useState<HTMLButtonElement | null>(null)
 
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
   // Shows the current focused index as `focusedHunkIndex + 1` so the counter
@@ -297,30 +269,29 @@ export const DiffChipToolbar = ({
   // onDiscardAll is provided; otherwise a coming-soon placeholder.
   //
   // Tooltip wraps the SPAN, not the button — the button owns the popover's
-  // floating ref, and Tooltip's cloneElement would clobber it. Disabled while
+  // anchor ref, and Tooltip's cloneElement would clobber it. Disabled while
   // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
       <Tooltip content="Discard all changes" disabled={discardAllOpen}>
         <span>
           <button
-            ref={discardAllRefs.setReference}
+            ref={setDiscardAllAnchor}
             type="button"
             disabled={staging}
             aria-label="discard all"
+            aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
             className={
               staging
                 ? WELL_DISABLED_BUTTON_CLASSES
                 : WELL_DANGER_BUTTON_CLASSES
             }
-            {...getDiscardAllReferenceProps({
-              onClick: (): void => {
-                if (!staging) {
-                  setDiscardAllOpen((prev) => !prev)
-                }
-              },
-            })}
+            onClick={(): void => {
+              if (!staging) {
+                setDiscardAllOpen((prev) => !prev)
+              }
+            }}
           >
             <span
               aria-hidden="true"
@@ -329,32 +300,25 @@ export const DiffChipToolbar = ({
               delete_sweep
             </span>
           </button>
-          {discardAllOpen ? (
-            <FloatingPortal>
-              <FloatingFocusManager
-                context={discardAllContext}
-                initialFocus={-1}
-              >
-                <div
-                  ref={discardAllRefs.setFloating}
-                  style={discardAllStyles}
-                  className="z-50 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl"
-                  {...getDiscardAllFloatingProps()}
-                >
-                  <DiscardAllConfirm
-                    fileName={selectedFileName}
-                    onConfirm={(): void => {
-                      setDiscardAllOpen(false)
-                      void onDiscardAll()
-                    }}
-                    onCancel={(): void => {
-                      setDiscardAllOpen(false)
-                    }}
-                  />
-                </div>
-              </FloatingFocusManager>
-            </FloatingPortal>
-          ) : null}
+          <Popover
+            anchor={discardAllAnchor}
+            open={discardAllOpen}
+            onOpenChange={setDiscardAllOpen}
+            placement="bottom-end"
+            middleware={{ ancestorScroll: false }}
+            aria-label="Discard all confirmation"
+          >
+            <DiscardAllConfirm
+              fileName={selectedFileName}
+              onConfirm={(): void => {
+                setDiscardAllOpen(false)
+                void onDiscardAll()
+              }}
+              onCancel={(): void => {
+                setDiscardAllOpen(false)
+              }}
+            />
+          </Popover>
         </span>
       </Tooltip>
     ) : (
@@ -459,7 +423,7 @@ export const DiffChipToolbar = ({
     <div
       role="toolbar"
       aria-label="Diff toolbar"
-      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15 shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15"
     >
       <div className="flex w-full items-center">
         <PriorityPlus
@@ -484,7 +448,7 @@ export const DiffChipToolbar = ({
               aria-label={`finish feedback (${feedbackCount})`}
               disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_rgba(203,166,247,0.22)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_color-mix(in_srgb,var(--color-primary-container)_22%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span
                 aria-hidden="true"

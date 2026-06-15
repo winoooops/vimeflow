@@ -34,6 +34,7 @@ interface AgentStatusPanelProps {
   status: SessionStatus
   onCollapse: () => void
   cacheHistory: number[]
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -53,6 +54,7 @@ export const AgentStatusPanel = ({
   status: sessionStatus,
   onCollapse,
   cacheHistory,
+  reserveWindowControls = false,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
@@ -129,7 +131,7 @@ export const AgentStatusPanel = ({
   return (
     <div
       data-testid="agent-status-panel"
-      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface-container"
+      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface"
       style={{
         width: `${PANEL_WIDTH_PX}px`,
       }}
@@ -138,6 +140,7 @@ export const AgentStatusPanel = ({
         agent={agent}
         status={sessionStatus}
         onCollapse={onCollapse}
+        reserveWindowControls={reserveWindowControls}
       />
 
       <div className="flex flex-col gap-2 p-2">
@@ -147,8 +150,6 @@ export const AgentStatusPanel = ({
             status.contextWindow?.contextWindowSize ??
             DEFAULT_CONTEXT_WINDOW_SIZE
           }
-          totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
-          totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
         />
         <TokenCache
           usage={status.contextWindow?.currentUsage ?? null}
@@ -156,11 +157,11 @@ export const AgentStatusPanel = ({
         />
       </div>
 
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip">
         <ToolCallSummary
           total={status.toolCalls.total}
           byType={status.toolCalls.byType}
-          active={status.toolCalls.active}
+          active={runningEvent === null ? status.toolCalls.active : null}
         />
         {runningEvent !== null && (
           <LiveActionCard

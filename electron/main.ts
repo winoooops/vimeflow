@@ -87,8 +87,10 @@ const BINARY_NAME =
 const macosWindowChromeOptions =
   process.platform === 'darwin'
     ? {
-        // Matches Tailwind bg-background token — update if
-        // tailwind.config.js colors.background changes.
+        // Matches the default theme's `ui.surface` token — update if
+        // src/theme/themes/obsidian-lens.ts changes. The main process
+        // can't read the renderer's persisted theme, so Flexoki users
+        // see a brief dark window on macOS launch (visual checklist).
         backgroundColor: '#121221',
         titleBarStyle: 'hiddenInset' as const,
         trafficLightPosition: { x: 16, y: 13 },

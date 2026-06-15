@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-11
+last_updated: 2026-06-15
 ref_count: 23
 ---
 
@@ -585,4 +585,39 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/components/panes/AppearancePane.tsx`
 - **Finding:** Each color-scheme card was a `<button>` whose selected state was indicated only by border/background CSS classes and an `aria-hidden` checkmark icon. Screen readers received no ARIA attribute communicating which scheme was currently active, so every button was announced identically.
 - **Fix:** Added `aria-pressed={isActive}` to each scheme button and added a co-located test asserting the pressed state for the default active scheme and an inactive scheme.
+
+### 47. Inert layout config button remains focusable and hover-styled
+
+- **Source:** github-claude | PR #433 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The layout-display config button in `LayoutSwitcher`'s trailing slot was fully styled as an interactive control (hover fill, focus styling, aria-label, title) but had no `onClick` handler, leaving keyboard and screen-reader users with a silent no-op activation path.
+- **Fix:** Added `disabled`, `aria-disabled="true"`, and `tabIndex={-1}` and muted opacity so the element is clearly non-interactive until the feature lands.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. Root-anchored sidebar toggle rendered last in DOM — focus order regression
+
+- **Source:** github-claude | PR #433 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The persistent `SidebarToggle` was absolutely positioned at the workspace root so it stayed visually fixed during sidebar collapse/expand animations, but it was rendered as the last child of the workspace root. Keyboard users therefore reached it only after tabbing through the main workspace, activity panel, overlays, and command palette — a WCAG focus-order regression relative to its visual position at the top-left boundary.
+- **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
+- **Commit:** _(see git blame / git log on this line)_
+
+### 49. FileExplorer rename/delete uses native blocking dialogs
+
+- **Source:** github-claude | PR #444 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
+- **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
+- **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 50. Pointer-leave handler schedules drift under reduced-motion and when already at rest
+
+- **Source:** github-claude + github-codex-connector | PR #457 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.ts`
+- **Finding:** `onLeave` called `ensureLoop()` unconditionally, so it scheduled a rAF frame even when `prefers-reduced-motion: reduce` was active, the water refs were null, or the loop was already at rest. Under reduced motion this could re-apply a cached `translate(...)` transform after `onMqlChange` had explicitly cleared it.
+- **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

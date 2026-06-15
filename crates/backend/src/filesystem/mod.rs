@@ -19,6 +19,7 @@
 //! See `SECURITY.md` for the full model.
 
 pub(crate) mod list;
+pub(crate) mod mutate;
 pub(crate) mod read;
 pub(crate) mod scope;
 pub(crate) mod types;

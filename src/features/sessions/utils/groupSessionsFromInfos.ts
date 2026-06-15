@@ -24,7 +24,7 @@ import type {
 } from '../workspaceLayoutBridge'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { sessionFromInfo } from './sessionFromInfo'
-import { deriveSessionStatus } from './sessionStatus'
+import { deriveShellSessionStatus } from './sessionStatus'
 import { tabName } from './tabName'
 
 const log = createLogger('sessions')
@@ -82,6 +82,7 @@ const buildPane = (
     id: paneId,
     ptyId: info.id,
     cwd: info.cwd,
+    shell: info.shell,
     agentType,
     status,
     active,
@@ -156,7 +157,7 @@ const buildGroupedSession = (
     id: workspaceId,
     projectId: 'proj-1',
     name: tabName(workspaceDirectory, fallbackIndex),
-    status: deriveSessionStatus(panes),
+    status: deriveShellSessionStatus(panes),
     workingDirectory: workspaceDirectory,
     agentType: activePane.agentType,
     layout,
@@ -328,7 +329,7 @@ const buildRestoredBrowserPane = (
   ptyId: `browser:${crypto.randomUUID()}`,
   cwd: workingDirectory,
   agentType: 'generic',
-  status: 'running',
+  status: 'idle',
   active,
   browserUrl: DEFAULT_BROWSER_URL,
 })
@@ -370,9 +371,7 @@ const buildStoreSession = (
     id: shape.id,
     projectId: shape.projectId,
     name: tabName(shape.workingDirectory, fallbackIndex),
-    // Full pane set (not shell-only) so a running browser keeps a session with
-    // placeholder shells `running`.
-    status: deriveSessionStatus(panes),
+    status: deriveShellSessionStatus(panes),
     workingDirectory: shape.workingDirectory,
     agentType: activePane.agentType,
     layout: toLayoutId(shape.layout),

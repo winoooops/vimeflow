@@ -248,13 +248,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(workspace).toHaveClass('h-screen')
     })
 
-    test('sidebar is transparent so it blends into the workspace surface', () => {
+    test('sidebar carries the distinct chrome tone, one step off the canvas', () => {
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar).toHaveClass('bg-transparent')
-      expect(sidebar).not.toHaveClass('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-surface-container-low')
+      expect(sidebar).not.toHaveClass('bg-transparent')
     })
   })
 

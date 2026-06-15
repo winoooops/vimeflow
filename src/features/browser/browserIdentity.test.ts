@@ -3,7 +3,7 @@ import { AGENTS } from '../../agents/registry'
 import { BROWSER_IDENTITY } from './browserIdentity'
 
 test('BROWSER_IDENTITY uses the reserved cyan WEB accent', () => {
-  expect(BROWSER_IDENTITY.accent).toBe('#4fc8d6')
+  expect(BROWSER_IDENTITY.accent).toBe('var(--color-agent-browser-accent)')
   expect(BROWSER_IDENTITY.short).toBe('WEB')
 })
 
