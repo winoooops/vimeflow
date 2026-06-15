@@ -156,65 +156,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Color Tokens: Catppuccin Mocha Palette', () => {
-    test('tailwind config has correct surface hierarchy tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Level 0 - Base
-      expect(colors.surface).toBe('#121221')
-      expect(colors.background).toBe('#121221')
-
-      // Level 0.5 - Deepest recessed
-      expect(colors['surface-container-lowest']).toBe('#0d0d1c')
-
-      // Level 1 - Navigation (Sidebar, Activity)
-      expect(colors['surface-container-low']).toBe('#1a1a2a')
-
-      // Level 2 - Content (Cards)
-      expect(colors['surface-container']).toBe('#1e1e2e')
-
-      // Level 2.5 - Elevated cards
-      expect(colors['surface-container-high']).toBe('#292839')
-
-      // Level 3 - Modals, inputs
-      expect(colors['surface-container-highest']).toBe('#333344')
-
-      // Hover state
-      expect(colors['surface-bright']).toBe('#383849')
-    })
-
-    test('tailwind config has correct primary tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors.primary).toBe('#e2c7ff')
-      expect(colors['primary-container']).toBe('#cba6f7')
-      expect(colors['primary-dim']).toBe('#d3b9f0')
-    })
-
-    test('tailwind config has correct semantic feedback tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Success (agent running status)
-      expect(colors.success).toBe('#50fa7b')
-      expect(colors['success-muted']).toBe('#7defa1')
-
-      // Warning
-      expect(colors.tertiary).toBe('#ff94a5')
-      expect(colors['tertiary-container']).toBe('#fd7e94')
-
-      // Error
-      expect(colors.error).toBe('#ffb4ab')
-      expect(colors['error-dim']).toBe('#d73357')
-    })
-
-    test('tailwind config has correct text tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors['on-surface']).toBe('#e3e0f7')
-      expect(colors['on-surface-variant']).toBe('#cdc3d1')
-      expect(colors['outline-variant']).toBe('#4a444f')
-    })
-  })
+  // Color token assertions moved to src/theme/themes/obsidian-lens.test.ts
 
   describe('Typography: Manrope + Inter + JetBrains Mono', () => {
     test('tailwind config has Manrope for headlines', () => {
@@ -237,7 +179,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Border Radius: Obsidian Lens Scale', () => {
+  describe('Border Radius: The Lens Scale', () => {
     test('tailwind config has correct border radius values', () => {
       const borderRadius = tailwindConfig.theme.extend.borderRadius
 
@@ -256,33 +198,57 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Sidebar is transparent so it inherits the workspace surface', () => {
+    // Zone hierarchy: the left sidebar is the one distinct chrome tone
+    // (surface-container-low — a step off the canvas; lighter than the canvas
+    // in dark, darker in light). Everything in the main column shares `surface`.
+    test('Workspace root carries the chrome backdrop tone (surface-container-low)', () => {
+      render(<WorkspaceView />)
+      const workspace = screen.getByTestId('workspace-view')
+
+      expect(workspace).toHaveClass('bg-surface-container-low')
+    })
+
+    test('Sidebar carries the distinct chrome tone (surface-container-low)', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-transparent')
-      expect(sidebar.className).not.toContain('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-surface-container-low')
+      expect(sidebar.className).not.toContain('bg-transparent')
     })
 
-    test('Terminal Zone content uses Level 0 surface (bg-surface)', () => {
+    test('Terminal Zone content uses the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const terminalContent = screen.getByTestId('terminal-content')
 
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('Top chrome bar sits on the canvas surface (in-flow, no glass)', () => {
       render(<WorkspaceView />)
-      const tabs = screen.getByTestId('session-tabs')
+      const chrome = screen.getByTestId('top-chrome')
 
-      expect(tabs.className).toContain('bg-surface-container-lowest')
+      // Always-visible in-flow bar on the canvas surface, no frosted glass
+      // (the auto-hide overlay that needed the blur was removed).
+      expect(chrome.className).toContain('bg-surface')
+      expect(chrome.className).not.toContain('glass-panel')
     })
 
-    test('Agent Status Panel uses surface-container background', () => {
+    test('Agent Status Panel shares the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const panel = screen.getByTestId('agent-status-panel')
 
-      expect(panel.className).toContain('bg-surface-container')
+      expect(panel.className).toContain('bg-surface')
+      expect(panel.className).not.toContain('bg-surface-container')
+    })
+
+    test('Activity panel shell has a subtle left hairline divider', () => {
+      render(<WorkspaceView />)
+      const activityPanelShell = screen.getByTestId('activity-panel-shell')
+
+      expect(activityPanelShell.className).toContain('border-l')
+      expect(activityPanelShell.className).toContain(
+        'border-outline-variant/25'
+      )
     })
   })
 
@@ -301,7 +267,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       // Bottom-docked DockPanel keeps its border on the edge facing terminal.
       expect(dockPanel.className).toContain('border-t')
-      expect(dockPanel.className).toContain('border-[rgba(74,68,79,0.3)]')
+      expect(dockPanel.className).toContain('border-outline-variant/30')
     })
 
     test('sidebar session cards have no visible borders', () => {
@@ -332,7 +298,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       // Active group header replaces the prior "Active Sessions" copy.
       expect(screen.getByTestId('session-group-active')).toBeInTheDocument()
 
-      expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('top-chrome')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()

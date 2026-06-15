@@ -1,21 +1,18 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
-  useCallback,
   useImperativeHandle,
   useRef,
   type PointerEvent,
   type ReactElement,
 } from 'react'
-import type { LayoutId, PaneKind, Session } from '../../sessions/types'
+import type { PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
-import { hasLivePane } from '../../sessions/utils/sessionStatus'
-import { LayoutSwitcher } from '../../terminal/components/LayoutSwitcher'
 import {
   SplitView,
   type SplitViewHandle,
@@ -57,7 +54,6 @@ export interface TerminalZoneProps {
     paneId: string,
     browserUrl: string
   ) => void
-  setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   addPane: (sessionId: string, kind?: PaneKind) => void
   removePane: (sessionId: string, paneId: string) => void
   areBrowserPanesOccluded?: boolean
@@ -88,7 +84,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       service,
       setSessionActivePane,
       updateBrowserPaneUrl = undefined,
-      setSessionLayout,
       addPane,
       removePane,
       areBrowserPanesOccluded = false,
@@ -141,34 +136,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       }
     }
 
-    const activeSession = sessions.find(
-      (session) => session.id === activeSessionId
-    )
-
-    const showToolbar =
-      !loading && sessions.length > 0 && activeSession !== undefined
-
-    // Memoised onPick so a future `React.memo(LayoutSwitcher)` would
-    // see a stable reference until the active session id changes.
-    // `setSessionLayout` is itself a stable `useCallback([])`, so the
-    // dep list collapses to `pickSessionId`. The callback is only
-    // mounted via `showToolbar === true`, which itself requires
-    // `activeSession !== undefined`, so the undefined branch is
-    // unreachable from the LayoutSwitcher mount site. The optional
-    // chain stays in for the TS-level narrowing; the `if (!pickSessionId)`
-    // bail satisfies the compiler without adding a non-null assertion.
-    const pickSessionId = activeSession?.id
-
-    const onPickLayout = useCallback(
-      (layoutId: LayoutId): void => {
-        if (!pickSessionId) {
-          return
-        }
-        setSessionLayout(pickSessionId, layoutId)
-      },
-      [pickSessionId, setSessionLayout]
-    )
-
     return (
       <div
         ref={outerDivRef}
@@ -183,31 +150,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
           onContainerFocus?.()
         }}
       >
-        {/*
-          The static keyboard-shortcut legend that used to live in
-          this toolbar (`Mod+1-4 pane · Mod+\ layout · Mod+e editor ·
-          Mod+g diff · Mod+b back`) was removed during the tooltip
-          rollout — three of the five shortcuts are now surfaced via
-          per-button tooltips (Mod+1-4 on pane slots, Mod+E on the
-          Editor tab, Mod+G on the Diff Viewer tab). The remaining
-          two — Mod+\ (cycle layout) and Mod+B (focus terminal from
-          dock) — currently have NO in-UI discovery surface. See
-          https://github.com/winoooops/vimeflow/issues/225 for the
-          follow-up that introduces a focus-aware status-bar or
-          adjacent-affordance pattern. Do NOT re-introduce a static
-          legend here without coordinating with that issue.
-        */}
-        {showToolbar ? (
-          <div
-            data-testid="layout-toolbar"
-            className="flex shrink-0 items-center gap-2 bg-surface px-3 py-2"
-          >
-            <LayoutSwitcher
-              activeLayoutId={activeSession.layout}
-              onPick={onPickLayout}
-            />
-          </div>
-        ) : null}
+        {/* Layout controls live in the workspace top chrome bar (main-stage
+            handoff J3) — TerminalZone renders no toolbar of its own. */}
 
         {/* Terminal content area — relative + absolute inner to give xterm explicit dimensions */}
         <div
@@ -220,37 +164,17 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
             </div>
           ) : sessions.length === 0 ? (
             <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
-              <p>
-                No active session. Click + in the session tab bar above to
-                create one.
-              </p>
+              <p>No active session. Click + in the sidebar to create one.</p>
             </div>
           ) : (
             // Render all sessions but hide inactive ones to keep PTY sessions alive.
             sessions.map((session) => {
               const isActive = session.id === activeSessionId
 
-              // SessionTabs.open keeps a tab for running/paused sessions OR
-              // the active session — completed/errored non-active sessions
-              // exist as panels here but have no corresponding tab id, so
-              // aria-labelledby would point at a non-existent element. Only
-              // wire the linkage when the panel actually has a visible tab
-              // (= isActive OR open status). Hidden panels stay aria-clean.
-              // Use the canonical `isOpenSessionStatus` predicate from the
-              // utility (same source as Sidebar's Active/Recent grouping)
-              // so a future non-open status (e.g. `suspended`) auto-flows
-              // into both visibility surfaces without TerminalZone needing
-              // a separate update.
-              const hasVisibleTab = isActive || hasLivePane(session.panes)
-
               return (
                 <div
                   key={session.id}
                   id={`session-panel-${session.id}`}
-                  role="tabpanel"
-                  aria-labelledby={
-                    hasVisibleTab ? `session-tab-${session.id}` : undefined
-                  }
                   data-testid="terminal-pane"
                   data-session-id={session.id}
                   className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
@@ -273,7 +197,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
-                    showPaneFocusHighlight={isZoneFocused}
+                    // The active pane keeps its highlight even when the dock
+                    // (or another container) has focus, so the user never
+                    // loses track of which pane is active. The zone still dims
+                    // to signal focus is elsewhere.
+                    showPaneFocusHighlight
                   />
                 </div>
               )

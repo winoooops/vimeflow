@@ -19,7 +19,9 @@ import {
 } from '@codemirror/state'
 import { history } from '@codemirror/commands'
 import { vim, Vim, getCM } from '@replit/codemirror-vim'
-import { catppuccinMocha } from '../theme/catppuccin'
+import { themeService } from '../../../theme'
+import { createEditorTheme } from '../theme/editorTheme'
+import { writeClipboardText, type ClipboardLike } from '../utils/clipboard'
 
 /**
  * Scroll the viewport to follow the cursor on any PURE-selection change
@@ -120,11 +122,6 @@ export interface UseCodeMirrorReturn {
   setContainer: (node: HTMLDivElement | null) => void
 }
 
-interface ClipboardLike {
-  readText?: () => Promise<string>
-  writeText?: (text: string) => Promise<void>
-}
-
 const selectedTextFromState = (state: EditorState): string =>
   state.selection.ranges
     .filter((range) => !range.empty)
@@ -143,54 +140,6 @@ const deletionForRange = (
   changes: { from: range.from, to: range.to, insert: '' },
   range: EditorSelection.cursor(range.from),
 })
-
-const writeViaTextarea = (text: string): boolean => {
-  const execCommand = (
-    document as unknown as {
-      execCommand?: (command: string) => boolean
-    }
-  ).execCommand
-  if (typeof execCommand !== 'function') {
-    return false
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  textarea.style.pointerEvents = 'none'
-  document.body.appendChild(textarea)
-  textarea.select()
-
-  try {
-    return execCommand.call(document, 'copy')
-  } catch {
-    return false
-  } finally {
-    document.body.removeChild(textarea)
-  }
-}
-
-const writeClipboardText = async (text: string): Promise<boolean> => {
-  if (text === '') {
-    return false
-  }
-
-  const clipboard = window.navigator.clipboard as ClipboardLike | undefined
-
-  try {
-    if (clipboard?.writeText === undefined) {
-      return writeViaTextarea(text)
-    }
-
-    await clipboard.writeText(text)
-
-    return true
-  } catch {
-    return writeViaTextarea(text)
-  }
-}
 
 const copySelectionFromView = async (view: EditorView): Promise<void> => {
   await writeClipboardText(selectedTextFromState(view.state))
@@ -378,12 +327,16 @@ export function useCodeMirror(
   }, [onChange])
 
   const languageCompartment = useRef(new Compartment())
+  const themeCompartment = useRef(new Compartment())
+  const themeUnsubscribeRef = useRef<(() => void) | null>(null)
   const viewRef = useRef<EditorView | null>(null)
 
   // Callback ref — triggers when the container div mounts/unmounts
   const setContainer = useCallback((node: HTMLDivElement | null) => {
     // Destroy existing view if container changes
     if (viewRef.current) {
+      themeUnsubscribeRef.current?.()
+      themeUnsubscribeRef.current = null
       vimSaveByView.delete(viewRef.current)
       viewRef.current.destroy()
       viewRef.current = null
@@ -406,7 +359,9 @@ export function useCodeMirror(
       // silent no-op — every user discovers it on their first typo.
       history(),
       drawSelection(),
-      catppuccinMocha,
+      themeCompartment.current.of(
+        createEditorTheme(themeService.current().kind)
+      ),
       languageCompartment.current.of([]),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged && onChangeRef.current) {
@@ -445,6 +400,14 @@ export function useCodeMirror(
     viewRef.current = view
     setEditorView(view)
 
+    themeUnsubscribeRef.current = themeService.subscribe((theme) => {
+      view.dispatch({
+        effects: themeCompartment.current.reconfigure(
+          createEditorTheme(theme.kind)
+        ),
+      })
+    })
+
     // Ensure proper layout measurement and focus after mount.
     // Guard against the view being destroyed before the frame fires
     // (hot reload, Strict Mode double-invoke, rapid tab switch) by
@@ -468,6 +431,8 @@ export function useCodeMirror(
   useEffect(
     () => (): void => {
       if (viewRef.current) {
+        themeUnsubscribeRef.current?.()
+        themeUnsubscribeRef.current = null
         vimSaveByView.delete(viewRef.current)
         viewRef.current.destroy()
         viewRef.current = null

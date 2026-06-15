@@ -8,3 +8,12 @@ export const linkedVim = (body) => {
   const closing = b.match(/\b(?:closes|fixes|resolves)\s+(VIM-\d+)\b/i)
   return (closing?.[1] || b.match(/\bVIM-\d+\b/i)?.[0])?.toUpperCase()
 }
+
+export const bodyWithLinearReference = (body, identifier) => {
+  const current = body || ''
+  const id = identifier?.toUpperCase()
+  if (!id || linkedVim(current)) return current
+  const trimmed = current.trimEnd()
+  const reference = `Refs ${id}`
+  return trimmed ? `${trimmed}\n\n${reference}\n` : `${reference}\n`
+}

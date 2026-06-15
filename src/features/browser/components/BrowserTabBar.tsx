@@ -12,7 +12,7 @@ export interface BrowserTabBarProps {
 }
 
 const ICON_BTN =
-  'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-on-surface-muted transition hover:bg-white/[0.05] hover:text-[#4fc8d6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4fc8d6]/45'
+  'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-on-surface-muted transition hover:bg-wash-subtle hover:text-[var(--color-agent-browser-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-agent-browser-accent)_45%,transparent)]'
 
 export const BrowserTabBar = ({
   tabs,
@@ -28,7 +28,7 @@ export const BrowserTabBar = ({
       className="flex h-[38px] shrink-0 items-center gap-[5px] px-2"
       style={{
         background:
-          'linear-gradient(180deg, rgba(79,200,214,0.05), transparent 70%), #121226',
+          'linear-gradient(180deg, color-mix(in srgb, var(--color-agent-browser-accent) 5%, transparent), transparent 70%), var(--color-browser-bar)',
       }}
     >
       <span
@@ -51,7 +51,7 @@ export const BrowserTabBar = ({
       <div
         role="tablist"
         aria-label="browser tabs"
-        className="thin-scrollbar flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
+        className="flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
       >
         {tabs.map((tab) => {
           const title = tab.title ?? tab.url
@@ -67,8 +67,8 @@ export const BrowserTabBar = ({
               data-testid="browser-tab"
               className={`group flex h-[27px] min-w-[96px] max-w-[210px] flex-1 items-center gap-2 rounded-lg border px-2 transition ${
                 tab.active
-                  ? 'border-white/10 bg-browser-tab-active shadow-[0_2px_8px_rgba(0,0,0,0.4)]'
-                  : 'border-transparent hover:bg-white/[0.04]'
+                  ? 'border-[color-mix(in_srgb,var(--color-on-surface)_10%,transparent)] bg-browser-tab-active shadow-[0_2px_8px_color-mix(in_srgb,var(--color-surface-container-lowest)_40%,transparent)]'
+                  : 'border-transparent hover:bg-wash-faint'
               }`}
             >
               <button
@@ -93,7 +93,7 @@ export const BrowserTabBar = ({
                   type="button"
                   aria-label={`close browser tab ${title}`}
                   onClick={handleClose}
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-syn-comment transition hover:bg-white/[0.08] hover:text-on-surface focus:outline-none focus-visible:opacity-100 group-hover:opacity-80 group-focus-within:opacity-80 ${
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-syn-comment transition hover:bg-wash-soft hover:text-on-surface focus:outline-none focus-visible:opacity-100 group-hover:opacity-80 group-focus-within:opacity-80 ${
                     tab.active ? 'opacity-80' : 'opacity-0'
                   }`}
                 >

@@ -149,7 +149,7 @@ const switchToFilesTab = async (user: User): Promise<void> => {
  */
 describe('WorkspaceView Integration Tests', () => {
   describe('Session switching updates terminal and activity', () => {
-    test('clicking session updates terminal zone tabs', async (): Promise<void> => {
+    test('clicking session moves the sidebar active highlight', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
@@ -179,18 +179,16 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      const firstSession = sessionButtons[1]
-      await user.click(firstSession)
+      const clickedSession = sessionButtons[1]
+      await user.click(clickedSession)
 
-      // SessionTabs (above the terminal zone) should reflect the click.
-      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
-        'tab'
-      )
-
-      const hasActiveTab = tabs.some(
-        (tab) => tab.getAttribute('aria-selected') === 'true'
-      )
-      expect(hasActiveTab).toBe(true)
+      // J2: the session-tab strip is gone — the sidebar's highlighted card
+      // is the surface that reflects the active session.
+      await waitFor(() => {
+        expect(clickedSession.closest('li')!.className).toContain(
+          'bg-primary-container/15'
+        )
+      })
       // Terminal zone is still mounted (sanity check) — its panes follow
       // activeSessionId via the same useSessionManager hook.
       expect(terminalZone).toBeInTheDocument()
@@ -244,10 +242,13 @@ describe('WorkspaceView Integration Tests', () => {
 
       await user.click(sessionButtons[0])
 
-      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
-        'tab'
+      // J2: no session-tab strip — the sidebar card highlight tracks the
+      // active session instead.
+
+      expect(sessionButtons[0].closest('li')!.className).toContain(
+        'bg-primary-container/15'
       )
-      expect(tabs.length).toBeGreaterThan(0)
+      expect(screen.queryByTestId('session-tabs')).toBeNull()
 
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
@@ -260,15 +261,15 @@ describe('WorkspaceView Integration Tests', () => {
 
       const dockPanel = screen.getByTestId('dock-panel')
 
-      // Editor should be active by default
-      const editorPanel = within(dockPanel).queryByTestId('editor-panel')
-      expect(editorPanel).toBeInTheDocument()
+      // Diff is the default tab now — the editor panel is not shown yet.
+      expect(
+        within(dockPanel).queryByTestId('editor-panel')
+      ).not.toBeInTheDocument()
 
-      // Click Editor tab explicitly to verify it works
+      // Click Editor tab to surface the editor.
       const editorTab = within(dockPanel).getByText('Editor')
       await user.click(editorTab)
 
-      // EditorPanel should still be visible
       expect(within(dockPanel).getByTestId('editor-panel')).toBeInTheDocument()
     })
 
@@ -327,9 +328,9 @@ describe('WorkspaceView Integration Tests', () => {
       // Diff tab should have active styling
       const diffButton = diffTab.closest('button')
       expect(diffButton).toHaveClass('rounded-md')
-      expect(diffButton).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-      expect(diffButton).toHaveClass('border-[rgba(203,166,247,0.3)]')
-      expect(diffButton).toHaveClass('text-[#e2c7ff]')
+      expect(diffButton).toHaveClass('bg-primary/[0.08]')
+      expect(diffButton).toHaveClass('border-primary-container/30')
+      expect(diffButton).toHaveClass('text-primary')
     })
   })
 
@@ -1087,7 +1088,7 @@ describe('WorkspaceView focus orchestration', () => {
     ).toBeNull()
   })
 
-  test('clicking dock claims dock focus: terminal dims, dock shows focus outline', async () => {
+  test('clicking dock claims dock focus: terminal dims (no competing dock outline)', async () => {
     render(<WorkspaceView />)
 
     await waitFor(() => {
@@ -1099,15 +1100,16 @@ describe('WorkspaceView focus orchestration', () => {
     dockPanel.focus() // simulate focus entering dock via onFocus
 
     await waitFor(() => {
-      // Terminal zone should dim when dock is active
+      // Terminal zone should dim when dock is active — this is the focus
+      // signal now that the dock no longer paints a bright focus outline (it
+      // competed with the active pane's agent-accent highlight).
       const terminalZone = screen.getByTestId('terminal-zone')
       expect(terminalZone.className).toContain('opacity-[0.65]')
     })
 
-    // Dock should show focus outline
     expect(
       dockPanel.querySelector('[data-testid="dock-focus-outline"]')
-    ).not.toBeNull()
+    ).toBeNull()
   })
 
   test('closing the dock returns container focus to terminal', async () => {

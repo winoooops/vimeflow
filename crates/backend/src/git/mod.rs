@@ -494,6 +494,17 @@ pub struct ChangedFile {
     pub deletions: Option<u32>,
 }
 
+/// Response payload for the `git_status` command.
+///
+/// Paths in `files` are repo-root-relative so the frontend can correlate them
+/// with diff requests regardless of which subdirectory `cwd` points to.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatusResponse {
+    pub files: Vec<ChangedFile>,
+    pub repo_root: String,
+}
+
 /// Parse `git diff --numstat -z` output into a path → (added, removed) map.
 ///
 /// Format (NUL-separated, LF-stripped inside records):
@@ -1079,11 +1090,11 @@ fn parse_hunk_range(range: &str) -> (u32, u32) {
 /// Get all files with git changes.
 // Git unit tests call the command name directly with plain args.
 #[cfg(test)]
-pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
+pub async fn git_status(cwd: String) -> Result<GitStatusResponse, String> {
     git_status_inner(cwd).await
 }
 
-pub(crate) async fn git_status_inner(cwd: String) -> Result<Vec<ChangedFile>, String> {
+pub(crate) async fn git_status_inner(cwd: String) -> Result<GitStatusResponse, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
     // Resolve repo toplevel — if not in a repo, return empty list
@@ -1099,7 +1110,10 @@ pub(crate) async fn git_status_inner(cwd: String) -> Result<Vec<ChangedFile>, St
 
     if !toplevel_output.status.success() {
         // Not a git repo — return empty list (no error state)
-        return Ok(vec![]);
+        return Ok(GitStatusResponse {
+            files: vec![],
+            repo_root: String::new(),
+        });
     }
 
     let toplevel_str = String::from_utf8_lossy(&toplevel_output.stdout);
@@ -1265,7 +1279,10 @@ pub(crate) async fn git_status_inner(cwd: String) -> Result<Vec<ChangedFile>, St
         }
     }
 
-    Ok(files)
+    Ok(GitStatusResponse {
+        files,
+        repo_root: canonical_toplevel.to_string_lossy().into_owned(),
+    })
 }
 
 /// Check whether a repo-relative file path is untracked under the given
@@ -2547,7 +2564,7 @@ copy to copy.txt
         let result = git_status(subdir_str).await;
 
         assert!(result.is_ok(), "git_status should succeed from subdir");
-        let files = result.unwrap();
+        let files = result.unwrap().files;
 
         // Should see root.txt even though we called from src/
         assert_eq!(files.len(), 1, "should return repo-level changes");
@@ -2565,7 +2582,7 @@ copy to copy.txt
         let result = git_status(non_repo).await;
 
         assert!(result.is_ok(), "non-repo should return Ok, not error");
-        let files = result.unwrap();
+        let files = result.unwrap().files;
         assert_eq!(files.len(), 0, "non-repo should return empty vec");
     }
 
@@ -2625,7 +2642,7 @@ copy to copy.txt
         let result = git_status(repo_str).await;
 
         assert!(result.is_ok(), "git_status should succeed");
-        let files = result.unwrap();
+        let files = result.unwrap().files;
 
         assert_eq!(files.len(), 2, "MM should produce two entries");
 
@@ -3086,7 +3103,7 @@ copy to copy.txt
         let result = git_status(repo_str).await;
 
         assert!(result.is_ok(), "git_status should succeed");
-        let files = result.unwrap();
+        let files = result.unwrap().files;
         let untracked_entry = files
             .iter()
             .find(|f| f.path == "fresh.txt")
@@ -3134,7 +3151,7 @@ copy to copy.txt
         let result = git_status(repo_str).await;
 
         assert!(result.is_ok(), "git_status should succeed");
-        let files = result.unwrap();
+        let files = result.unwrap().files;
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
 
         assert!(

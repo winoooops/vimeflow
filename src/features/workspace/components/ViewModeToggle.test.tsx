@@ -50,8 +50,8 @@ describe('ViewModeToggle', () => {
 
     const sourceButton = screen.getByRole('button', { name: /source/i })
     expect(sourceButton).toHaveClass('rounded-md')
-    expect(sourceButton).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-    expect(sourceButton).toHaveClass('border-[rgba(203,166,247,0.3)]')
-    expect(sourceButton).toHaveClass('text-[#e2c7ff]')
+    expect(sourceButton).toHaveClass('bg-primary/[0.08]')
+    expect(sourceButton).toHaveClass('border-primary-container/30')
+    expect(sourceButton).toHaveClass('text-primary')
   })
 })

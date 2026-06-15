@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-15
-ref_count: 3
+ref_count: 7
 ---
 
 # Derived State Consistency
@@ -95,7 +95,35 @@ base data is technically "correct."
 - **Fix:** Clone tab arrays and nested history entries before returning them from `tabsForPane`. Added a regression test that mutates the returned tabs and verifies a later lookup still reads the original repaired history.
 - **Commit:** same commit as this entry
 
-### 6. Directional pane shortcut used raw pane index instead of visible-slot index
+### 6. Theme child command labels exposed the internal kebab-case ID instead of the human-readable name
+
+- **Source:** github-claude | PR #424 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts` and `src/features/command-palette/data/defaultCommands.ts`
+- **Finding:** Both command trees mapped theme child entries with `label: theme.id`, so the command palette rendered `"obsidian-lens"` / `"flexoki"` as the primary text. `description` already used `theme.label` (`"Switch to Obsidian Lens"`), confirming the intended display value was available but misassigned.
+- **Fix:** Changed both sites to `label: theme.label` so users see the theme display name.
+- **Commit:** same commit as this entry
+
+### 7. Vite HMR fallback reverted a theme to its original import after editing the other theme
+
+- **Source:** github-claude | PR #424 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/theme/service.ts`
+- **Finding:** The `import.meta.hot.accept` callback rebuilt the `themes` array from the updated module exports, but when only one theme file changed Vite passed `undefined` for the other module. The fallback used the original static `obsidianLens` / `flexoki` imports, which were frozen at module load and did not reflect earlier HMR updates. Editing one theme, then the other, silently replaced the first edited theme with its initial values until reload.
+- **Fix:** Insert a `themes.find((t) => t.id === ...)` fallback between the new-module export and the original static import, so the live `themes` entry is preserved when a sibling theme file is the one that changed.
+- **Commit:** same commit as this entry
+
+### 8. `activate()` still receives stale `list.activeSessionId` after `activePtyId` is updated for restarted shell
+
+- **Source:** github-claude | PR #443 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L343-400
+- **Finding:** The restore effect correctly recomputes `activePtyId` when `restartPersistedActiveShell` spawns a replacement PTY for the persisted active shell. That updated value is passed to `reconstructWorkspace`, but the subsequent `activate()` call still used the original `list.activeSessionId`. In the graceful-quit restart path that original value is `null`, so callers that rely on the active-PTY activation branch (no `onActivePersisted` handler) fall back to the first session instead of selecting the restarted active shell.
+- **Fix:** Pass the updated `activePtyId` local to `activate()` instead of `list.activeSessionId`.
+- **Verification:** Added regression test that restarts a persisted active shell without an `onActivePersisted` handler and asserts `onActiveResolved` is called with the workspace session id.
+- **Commit:** same commit as this entry
+
+### 9. Directional pane shortcut used raw pane index instead of visible-slot index
 
 - **Source:** github-codex-connector | PR #460 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
@@ -104,7 +132,7 @@ base data is technically "correct."
 - **Fix:** Moved `selectVisiblePanes` to a shared utility and computed the visible-pane mapping inside `usePaneShortcuts`. Directional resolution now uses the active pane's visible-slot index and maps the resulting visible-slot index back to the actual pane id via `visiblePanes[targetVisibleIndex].id`.
 - **Commit:** same commit as this entry
 
-### 7. Vim leader directional chords resolved against raw pane indices instead of visible slots
+### 10. Vim leader directional chords resolved against raw pane indices instead of visible slots
 
 - **Source:** github-claude | PR #460 round 2 | 2026-06-15
 - **Severity:** HIGH

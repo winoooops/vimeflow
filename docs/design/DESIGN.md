@@ -1,12 +1,12 @@
 # Design System Specification
 
-## 1. Overview & Creative North Star: "The Obsidian Lens"
+## 1. Overview & Creative North Star: "The Lens"
 
-This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Obsidian Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
+This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
 
-By leveraging the Catppuccin Mocha palette, we move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
+The Lens ships two runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; a parallel **Flexoki** (light) theme applies the same surface logic in a warm paper palette. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
 
-**The Obsidian Terminal** is the workspace expression of this system — applying the Obsidian Lens aesthetic to a terminal-first CLI agent management interface. The same depth, glass, and editorial precision, now serving a command-line-native workflow.
+The **workspace expression** of this system applies The Lens aesthetic to a terminal-first CLI agent management interface — the same depth, glass, and editorial precision, now serving a command-line-native workflow.
 
 ---
 
@@ -16,23 +16,23 @@ The palette is rooted in deep purples and blues, punctuated by vibrant accents. 
 
 ### The "No-Line" Rule
 
-**Explicit Instruction:** Designers are prohibited from using 1px solid borders for sectioning. Structural boundaries must be defined solely through background color shifts.
+**Tonal-first.** Structural boundaries come from background color shifts, not 1px solid divider lines. Never draw a line to section content _within_ a single surface.
 
-- To separate a sidebar from the main stage, use `surface-container-low` against the `background` (`#121221`).
-- To define a code block, use `surface-container-highest` to create a natural "well" for the text to sit in.
-- **Ghost border fallback:** If accessibility requires a border, use `outline-variant` (#4a444f) at **15% opacity**. It should be felt, not seen.
+- To separate the sidebar (chrome) from the main canvas, use `surface-container-low` against `surface` — a tonal step, plus the canvas's rounded-left corner.
+- To define a code block / well, drop to a lower `surface-container-*` step for the text to sit in.
+- **Co-planar seam exception (sanctioned):** where two zones intentionally share _one_ surface and still need a divider — the canvas ↔ right-activity-panel seam, and the top-chrome / status-bar edges — use a **1px `outline-variant` hairline at ~20–25% alpha**. It is the same "felt, not seen" ghost border applied to a _seam_ rather than a _section_, and it is the only sanctioned line. (See `UNIFIED.md` §2.1.)
 
 ### Surface Hierarchy & Nesting
 
-Treat the UI as a physical stack of frosted glass.
+Treat the UI as a physical stack of frosted glass. Values below are the **Catppuccin** dark snapshot (`obsidian-lens.ts`); the runtime SSoT — including the **Flexoki** light theme (`flexoki.ts`) — is `src/theme/themes/*.ts`. See `UNIFIED.md` §2.1 for how these levels map onto the two-plane shell.
 
-- **Level 0 (Base):** `surface` (#121221) — The infinite depth. Terminal zone background.
-- **Level 0.5 (Recessed):** `surface-container-lowest` (#0d0d1c) — Deepest recessed areas, terminal tab bar.
-- **Level 1 (Navigation):** `surface-container-low` (#1a1a2a) — Sidebar, icon rail, agent activity panel.
-- **Level 2 (Content):** `surface-container` (#1e1e2e) — Cards, active workspace areas.
-- **Level 2.5 (Elevated):** `surface-container-high` (#292839) — Elevated cards, glassmorphism fills, active session highlight.
-- **Level 3 (Immediate):** `surface-container-highest` (#333344) — Popovers, modals, inputs.
-- **Hover state:** `surface-bright` (#383849) — Interactive element hover.
+- **Level 0 — Canvas:** `surface` (#121221) — the work plane: main canvas, terminal/SplitView, dock, the 44px top-chrome banner, the 24px status bar, **and** the right activity panel (all co-planar).
+- **Level 1 — Chrome:** `surface-container-low` (#1a1a2a) — the distinct-chrome plane: the left sidebar + the backdrop. One step off the canvas (lighter in dark, darker in light).
+- **Level 0.5 (Recessed):** `surface-container-lowest` (#0d0d1c) — deepest recessed wells (terminal pane footer, dock-tab strip).
+- **Level 2 (Content):** `surface-container` (#1e1e2e) — cards on either plane.
+- **Level 2.5 (Elevated):** `surface-container-high` (#292839) — elevated cards, glassmorphism fills, active-session highlight.
+- **Level 3 (Immediate):** `surface-container-highest` (#333344) — popovers, modals, inputs.
+- **Hover state:** `surface-bright` (#383849) — interactive element hover.
 
 ### The "Glass & Gradient" Rule
 
@@ -62,16 +62,16 @@ Beyond the core surface hierarchy, the system includes these semantic tokens:
 
 #### Core Surface Hierarchy
 
-| Token                       | Hex       | Usage                                        |
-| --------------------------- | --------- | -------------------------------------------- |
-| `surface` / `background`    | `#121221` | Level 0 — base, infinite depth               |
-| `surface-container-lowest`  | `#0d0d1c` | Deepest recessed areas                       |
-| `surface-container-low`     | `#1a1a2a` | Level 1 — sidebar, icon rail, activity panel |
-| `surface-container`         | `#1e1e2e` | Level 2 — cards, main content areas          |
-| `surface-container-high`    | `#292839` | Elevated cards, glassmorphism fills          |
-| `surface-container-highest` | `#333344` | Level 3 — popovers, modals, inputs           |
-| `surface-bright`            | `#383849` | Hover states                                 |
-| `surface-tint`              | `#e2c7ff` | Tinted overlays and focus rings              |
+| Token                       | Hex       | Usage                                                    |
+| --------------------------- | --------- | -------------------------------------------------------- |
+| `surface` / `background`    | `#121221` | Level 0 — base, infinite depth                           |
+| `surface-container-lowest`  | `#0d0d1c` | Deepest recessed areas                                   |
+| `surface-container-low`     | `#1a1a2a` | Level 1 — left sidebar + grid backdrop (distinct chrome) |
+| `surface-container`         | `#1e1e2e` | Level 2 — cards, main content areas                      |
+| `surface-container-high`    | `#292839` | Elevated cards, glassmorphism fills                      |
+| `surface-container-highest` | `#333344` | Level 3 — popovers, modals, inputs                       |
+| `surface-bright`            | `#383849` | Hover states                                             |
+| `surface-tint`              | `#e2c7ff` | Tinted overlays and focus rings                          |
 
 #### Primary & Secondary
 
@@ -97,11 +97,11 @@ Beyond the core surface hierarchy, the system includes these semantic tokens:
 
 #### Text & Borders
 
-| Token                | Hex       | Usage                                          |
-| -------------------- | --------- | ---------------------------------------------- |
-| `on-surface`         | `#e3e0f7` | Titles, active text                            |
-| `on-surface-variant` | `#cdc3d1` | Body text, secondary text (reduced eye strain) |
-| `outline-variant`    | `#4a444f` | Ghost borders (15% opacity only)               |
+| Token                | Hex       | Usage                                                                   |
+| -------------------- | --------- | ----------------------------------------------------------------------- |
+| `on-surface`         | `#e3e0f7` | Titles, active text                                                     |
+| `on-surface-variant` | `#cdc3d1` | Body text, secondary text (reduced eye strain)                          |
+| `outline-variant`    | `#4a444f` | Ghost hairline; ~15–25% alpha (incl. the sanctioned co-planar seam, §2) |
 
 ---
 
@@ -126,7 +126,7 @@ We pair the structural clarity of **Inter** with the geometric elegance of **Man
 In this system, depth is a feeling, not a feature. "Up" is "Brighter," not "Shadowier."
 
 - **The Layering Principle:** Instead of a shadow, place a `surface-container-lowest` card on a `surface-container-low` section. The subtle contrast creates a "recessed" premium look.
-- **Ambient Shadows:** For floating elements, use an extra-diffused shadow: `0px 10px 40px rgba(0, 0, 0, 0.4)`. If the shadow is the first thing you see, it's too dark.
+- **Ambient Shadows:** For _overlay_ floating elements (command palette, burner popup, tooltips, modals), use an extra-diffused shadow: `0px 10px 40px rgba(0, 0, 0, 0.4)` + glass. If the shadow is the first thing you see, it's too dark. The **main canvas uses no shadow** — it "floats" over the sidebar via the tonal step + its rounded-left corner alone (see `UNIFIED.md` §2.1).
 - **Roundedness Scale:**
   - Windows/Main Panels: `xl` (1.5rem)
   - Cards/Secondary Panels: `lg` (1rem)
@@ -142,22 +142,21 @@ In this system, depth is a feeling, not a feature. "Up" is "Brighter," not "Shad
 - **Primary Button:** Gradient fill (`primary` to `primary-container`), no border, `on-primary` text.
 - **Secondary Button:** `surface-container-highest` background, no border, `primary` text.
 - **Tertiary Button:** Transparent, underline on hover only.
-- **Icon Rail:** Project avatars (2-letter abbreviation, rounded-lg). Active = pill-shaped backlight using `primary-container` at 20% opacity.
 - **Tabs:** Active indicated by `border-b-2 border-primary` and weight shift. No full-width bottom lines.
 
 ### Layout: Current Workspace Shell
 
-1. **Icon Rail (Far Left, 48px):** `surface-container-low/80` + `backdrop-blur-xl`. Project avatars top, `+` and `⚙` bottom.
-2. **Sidebar (Left, 272px default, resizable):** `surface-container-low`. Sessions and Files tabs; file tree follows the active pane cwd.
-3. **Main Canvas (Center, flexible):** `surface`. Browser-style session tabs, layout switcher, and `SplitView` terminal canvas with `single`, `vsplit`, `hsplit`, `threeRight`, and `quad` layouts.
-4. **DockPanel (inside Main Canvas):** Editor / Diff surfaces, dockable bottom / top / left / right with elastic resizing.
-5. **Agent Activity (Right, auto/collapsible):** `surface-container-low`. Pinned status/context/usage. Collapsible sections for files, tools, tests, usage details, scoped to the active pane's PTY.
-6. **Status Bar (Bottom, 24px):** `surface-container-lowest`. Global status and command hints.
+The shell is **three zones** — no icon rail (removed in VIM-76). See `UNIFIED.md` §2 for the canonical layout.
+
+1. **Left Sidebar (272px, resizable, collapsible):** `surface-container-low` (chrome). Sessions + Files tabs; file tree follows the active pane cwd.
+2. **Main Canvas (center, flex):** `surface` (canvas). A 44px top-chrome (layout pills), the `SplitView` terminal canvas (`single`/`vsplit`/`hsplit`/`threeRight`/`quad`), and the dockable `DockPanel` (Editor / Diff). Rounded-left corners.
+3. **Right Activity Panel (280px ↔ 44px rail, collapsible):** `surface` (canvas, co-planar). Pinned status/context/cache + collapsible tools/files/tests/activity, scoped to the active pane's PTY.
+4. **Status Bar (bottom, 24px):** `surface` (canvas), inside the main column. Global readouts + the palette / dock action buttons.
 
 ### Session List Items
 
 - **Active:** `surface-container-high` background, left `2px border-primary` accent, `on-surface` bold name, `success` status dot with `animate-pulse`.
-- **Inactive:** Transparent background, `on-surface-variant` name, status in `secondary` (paused) or `on-surface-variant` (completed).
+- **Inactive:** Transparent background, `on-surface-variant` name; status shown as a text label + tone per the five-state contract (`completed` / `errored` / `idle`) — see `UNIFIED.md` §4. (No `paused` state exists.)
 
 ### Agent Activity Sections
 
@@ -203,16 +202,11 @@ In this system, depth is a feeling, not a feature. "Up" is "Brighter," not "Shad
 
 ### The Lens Blur
 
-When a modal or "Lens" view is triggered (Command Palette, full-width editor overlay), the background workspace blurs (`12px`) and shifts slightly toward the `primary-container` hue. This reinforces the "Obsidian Lens" metaphor.
+When a modal or "Lens" view is triggered (Command Palette, full-width editor overlay), the background workspace blurs (`12px`) and shifts slightly toward the `primary-container` hue. This reinforces The Lens metaphor.
 
 ### Status Indicators
 
-Agent session status uses animated indicators:
-
-- **Running:** `success` (#50fa7b) dot with `animate-pulse` and `shadow-[0_0_8px]` glow.
-- **Paused:** `secondary` (#a8c8ff) static dot.
-- **Completed:** `on-surface-variant` (#cdc3d1) hollow circle.
-- **Errored:** `error` (#ffb4ab) static dot.
+Agent session status uses the five-state `StatusDot` contract (`running` / `awaiting` / `completed` / `errored` / `idle`). **`UNIFIED.md` §4 is authoritative** — it carries the canonical `tokens.ts::stateToken` intent and the note on where the shipped component currently diverges (solid fills, glow only on `running`, uniform pulse).
 
 ### Context Window Smiley
 
@@ -247,35 +241,25 @@ The context window indicator uses emoji that degrades as context fills:
 
 ---
 
-## 9. Design Resources
+## 9. Themes & Design Resources
 
-**Google AI Studio project** — contains the original Stitch-generated HTML/CSS source for all screens:
-https://aistudio.google.com/apps/71779b0a-a865-421d-9e16-8d224a1a26a8?showPreview=true&showAssistant=true
+**Themes.** The Lens ships two runtime themes (`src/theme/themes/*.ts`), both exposing identical token keys so `bg-surface` etc. resolve per active theme:
 
-**Stitch MCP Server** — use to generate and iterate on UI components that match this design system:
+- **Catppuccin** (dark, default) — file/id `obsidian-lens` (legacy slug), `label: 'Catppuccin'`. Atmospheric dark on the Catppuccin Mocha palette; the hex tables above are its snapshot.
+- **Flexoki** (light) — file/id `flexoki`, `label: 'Flexoki'`. The same surface logic in a warm paper palette.
 
-```bash
-# Add the Stitch MCP server (requires STITCH_API_KEY in .env)
-claude mcp add stitch https://stitch.googleapis.com/mcp \
-  --transport http \
-  --scope project \
-  --header "X-Goog-Api-Key: \${STITCH_API_KEY}"
-```
+Color SSoT is `src/theme/themes/*.ts` — see `UNIFIED.md` §9 for the runtime mechanism.
 
-When building frontend features, agents should:
-
-1. Reference the Google AI Studio project and screen specs in `docs/design/` for the target layout
-2. Use the Stitch MCP server to generate components that match the design system
-3. Verify output against this document's rules (no-line, glassmorphism, token colors, etc.)
+**Historical — Google Stitch (first draft).** The original screen mockups were generated with Google Stitch (Google AI Studio) as a first draft. They are superseded and now live in `docs/design/archive/` for visual archaeology only. **Do not generate new UI from Stitch** — current work derives from `UNIFIED.md` §5 + the live components in `src/`.
 
 ---
 
 ## 10. Critical Design Rules (Quick Reference)
 
-1. **No-Line Rule** — No 1px solid borders for sectioning. Background color shifts only.
+1. **No-Line Rule** — Tonal shifts section content; the only sanctioned line is a 1px `outline-variant` ghost hairline on a _co-planar seam_ (see §2).
 2. **Glass & Gradient** — Glassmorphism on floating elements. CTA gradients at 135deg.
 3. **No Pure Black/White** — Never use `#000000` or `#FFFFFF`. Token system only.
 4. **No Sharp Corners** — Windows: `xl`, cards: `lg`, buttons: `md`, badges: `full`.
-5. **No Divider Lines** — Spacing separates, not borders or `<hr>`.
+5. **No Divider Lines for content** — Spacing separates list items, not borders or `<hr>` (the co-planar seam hairline is the one exception).
 6. **Ambient Shadows** — Extra-diffused: `0px 10px 40px rgba(0,0,0,0.4)`.
 7. **Negative Space** — If cluttered, increase padding, not lines.

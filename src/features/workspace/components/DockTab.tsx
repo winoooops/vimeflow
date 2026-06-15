@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export type DockTabType = 'editor' | 'diff'
 
@@ -15,17 +15,12 @@ interface DockTabProps {
   tab: DockTabType
   onTabChange: (next: DockTabType) => void
   selectedFilePath: string | null
-  collapseIconName:
-    | 'expand_more'
-    | 'expand_less'
-    | 'chevron_left'
-    | 'chevron_right'
   onClose: () => void
   compactActions?: boolean
   /**
    * Which side the compact actions dropdown opens toward.
    * 'left' = left-docks (opens rightward). 'right' = right-docks (opens leftward).
-   * Defaults to 'right'. Prefer over inferring from collapseIconName.
+   * Defaults to 'right'.
    */
   menuAlign?: 'left' | 'right'
   /** Slot rendered between the tab strip spacer and the file-path/close cluster. */
@@ -37,20 +32,19 @@ const tabButtonClass = (active: boolean, compact: boolean): string =>
     compact ? 'w-[30px] px-0' : 'gap-1.5 px-[11px]'
   } ${
     active
-      ? 'bg-[rgba(226,199,255,0.08)] border-[rgba(203,166,247,0.3)] text-[#e2c7ff]'
-      : 'bg-transparent border-transparent text-[#8a8299] hover:text-[#e2c7ff]'
+      ? 'bg-primary/[0.08] border-primary-container/30 text-primary'
+      : 'bg-transparent border-transparent text-on-surface-muted hover:text-primary'
   }`
 
 const tabIconClass = (active: boolean): string =>
   `material-symbols-outlined text-[12px] ${
-    active ? 'text-[#cba6f7]' : 'text-[#6c7086]'
+    active ? 'text-primary-container' : 'text-syn-comment'
   }`
 
 export const DockTab = ({
   tab,
   onTabChange,
   selectedFilePath,
-  collapseIconName,
   onClose,
   compactActions = false,
   menuAlign = 'right',
@@ -127,7 +121,7 @@ export const DockTab = ({
 
   return (
     <div
-      className="relative flex h-[34px] min-w-0 items-center gap-1 border-b border-[rgba(74,68,79,0.25)] bg-[#0d0d1c] px-2"
+      className="relative flex h-[34px] min-w-0 items-center gap-1 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
       onKeyDown={compactActions ? handleCompactKeyDown : undefined}
       onBlurCapture={
         compactActions
@@ -140,21 +134,6 @@ export const DockTab = ({
       }
     >
       <div className="flex min-w-0 shrink-0 gap-1">
-        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
-          <button
-            type="button"
-            aria-pressed={tab === 'editor'}
-            onClick={() => onTabChange('editor')}
-            className={tabButtonClass(tab === 'editor', compactActions)}
-            aria-label="Editor"
-          >
-            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
-              code
-            </span>
-            {!compactActions && <span>Editor</span>}
-          </button>
-        </Tooltip>
-
         <Tooltip
           content="Diff Viewer"
           shortcut={['Mod', 'G']}
@@ -171,6 +150,21 @@ export const DockTab = ({
               difference
             </span>
             {!compactActions && <span>Diff Viewer</span>}
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
+          <button
+            type="button"
+            aria-pressed={tab === 'editor'}
+            onClick={() => onTabChange('editor')}
+            className={tabButtonClass(tab === 'editor', compactActions)}
+            aria-label="Editor"
+          >
+            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
+              code
+            </span>
+            {!compactActions && <span>Editor</span>}
           </button>
         </Tooltip>
       </div>
@@ -195,7 +189,7 @@ export const DockTab = ({
                 e.stopPropagation()
               }}
               onClick={(): void => setActionsOpen((prev) => !prev)}
-              className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff] focus:bg-white/5 focus:text-[#e2c7ff] focus:outline-none"
+              className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
             >
               <span
                 className="material-symbols-outlined text-[16px]"
@@ -211,33 +205,38 @@ export const DockTab = ({
               ref={menuRef}
               id={actionsMenuId}
               data-testid="dock-actions-menu"
-              className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl`}
+              className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-lowest p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
               {/* stopPropagation so clicking the read-only path label does not
                   bubble to the container's onClick and close the menu */}
-              <span
-                className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
-                title={selectedFilePath ?? ''}
-                onClick={(e): void => e.stopPropagation()}
-              >
-                {displayPath}
-              </span>
+              <Tooltip content={selectedFilePath} placement="bottom">
+                <span
+                  className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
+                  onClick={(e): void => e.stopPropagation()}
+                >
+                  {displayPath}
+                </span>
+              </Tooltip>
 
               <div className="flex items-center justify-between gap-2">
                 {children}
-                <Tooltip content="Collapse panel" placement="bottom">
+                <Tooltip
+                  content="Collapse panel"
+                  shortcut={['Mod', '0']}
+                  placement="bottom"
+                >
                   <button
                     type="button"
                     aria-label="Collapse panel"
                     onClick={onClose}
-                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
+                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
                   >
                     <span
                       className="material-symbols-outlined text-[14px]"
                       aria-hidden="true"
                     >
-                      {collapseIconName}
+                      minimize
                     </span>
                   </button>
                 </Tooltip>
@@ -250,24 +249,27 @@ export const DockTab = ({
           {children && <div className="shrink-0">{children}</div>}
 
           <div className="ml-2 flex min-w-0 items-center gap-3">
-            <span
-              className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline"
-              title={selectedFilePath ?? ''}
+            <Tooltip content={selectedFilePath} placement="bottom">
+              <span className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline">
+                {displayPath}
+              </span>
+            </Tooltip>
+            <Tooltip
+              content="Collapse panel"
+              shortcut={['Mod', '0']}
+              placement="bottom"
             >
-              {displayPath}
-            </span>
-            <Tooltip content="Collapse panel" placement="bottom">
               <button
                 type="button"
                 aria-label="Collapse panel"
                 onClick={onClose}
-                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
+                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
               >
                 <span
                   className="material-symbols-outlined text-[14px]"
                   aria-hidden="true"
                 >
-                  {collapseIconName}
+                  minimize
                 </span>
               </button>
             </Tooltip>

@@ -1,10 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { FileTreeNode } from './FileTreeNode'
 import type { FileNode } from '../types'
 
 describe('FileTreeNode', () => {
   const mockOnContextMenu = vi.fn()
+
+  beforeEach(() => {
+    mockOnContextMenu.mockClear()
+  })
 
   test('renders file node', () => {
     const fileNode: FileNode = {
@@ -187,7 +191,35 @@ describe('FileTreeNode', () => {
     fireEvent.contextMenu(screen.getByText('test.ts'))
 
     expect(mockOnContextMenu).toHaveBeenCalledTimes(1)
-    expect(mockOnContextMenu).toHaveBeenCalledWith(expect.any(Object), fileNode)
+    expect(mockOnContextMenu).toHaveBeenCalledWith(
+      expect.any(Object),
+      fileNode,
+      'test.ts'
+    )
+  })
+
+  test('passes full path to onContextMenu for nested files', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    render(
+      <FileTreeNode
+        node={fileNode}
+        parentPath="~/src"
+        onContextMenu={mockOnContextMenu}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText('test.ts'))
+
+    expect(mockOnContextMenu).toHaveBeenCalledWith(
+      expect.any(Object),
+      fileNode,
+      '~/src/test.ts'
+    )
   })
 
   test('renders TypeScript file with description icon', () => {

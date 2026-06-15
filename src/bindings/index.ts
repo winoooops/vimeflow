@@ -30,6 +30,8 @@ export type { FileEntry } from './FileEntry'
 export type { EntryType } from './EntryType'
 export type { ReadFileRequest } from './ReadFileRequest'
 export type { WriteFileRequest } from './WriteFileRequest'
+export type { RenamePathRequest } from './RenamePathRequest'
+export type { DeletePathRequest } from './DeletePathRequest'
 
 // Agent types
 export type { AgentType } from './AgentType'

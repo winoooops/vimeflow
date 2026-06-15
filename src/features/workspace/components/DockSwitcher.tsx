@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export type DockPosition = 'top' | 'bottom' | 'left' | 'right'
 
@@ -19,7 +19,7 @@ export const DockSwitcher = ({
   position,
   onPick,
 }: DockSwitcherProps): ReactElement => (
-  <div className="inline-flex items-center gap-0.5 rounded-lg border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.6)] p-[3px]">
+  <div className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/30 bg-surface-container-lowest/60 p-[3px]">
     {OPTIONS.map((option) => {
       const active = option.id === position
 
@@ -36,8 +36,8 @@ export const DockSwitcher = ({
             onClick={() => onPick(option.id)}
             className={`inline-flex h-[22px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] border transition-colors ${
               active
-                ? 'bg-[rgba(203,166,247,0.15)] border-[rgba(203,166,247,0.45)] text-[#cba6f7]'
-                : 'border-transparent bg-transparent text-[#8a8299] hover:text-[#e2c7ff]'
+                ? 'bg-primary-container/15 border-primary-container/45 text-primary-container'
+                : 'border-transparent bg-transparent text-on-surface-muted hover:text-primary'
             }`}
           >
             <DockGlyph position={option.id} />

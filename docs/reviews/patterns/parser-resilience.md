@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-06-15
-ref_count: 7
+ref_count: 9
 ---
 
 # Parser Resilience
@@ -203,7 +203,16 @@ true` and drop the chunk.
 - **Fix:** Replaced the `?` with `let Some(end) = rest.find('"') else { continue; };` so an unterminated value skips to the next iteration, matching the existing `continue`-on-malformed logic for missing colon or opening quote.
 - **Commit:** same commit as this entry
 
-### 11. Slot-name parser assumed `p{N}` format and silently produced `NaN`
+### 11. Lint guard regex misses white/black gradient stop utilities
+
+- **Source:** github-codex-connector | PR #424 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `eslint-rules/no-hardcoded-colors.js` L9
+- **Finding:** The new `no-hardcoded-colors` rule matched white/black utilities for `text`, `bg`, `border`, etc., but omitted the Tailwind gradient-stop prefixes `from`, `via`, and `to`. Class strings such as `from-white/5`, `via-black`, and `to-white/20` passed lint even though they are hardcoded colors, weakening the per-commit guard for the runtime theme migration.
+- **Fix:** Extended the white/black utility regex to include `from|via|to` and added invalid `RuleTester` cases for `from-white/5`, `via-black`, and `to-white/20`.
+- **Commit:** same commit as this entry
+
+### 12. Slot-name parser assumed `p{N}` format and silently produced `NaN`
 
 - **Source:** github-claude | PR #460 round 1 | 2026-06-15
 - **Severity:** LOW

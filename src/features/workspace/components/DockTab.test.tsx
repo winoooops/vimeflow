@@ -10,7 +10,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="expand_more"
         onClose={vi.fn()}
       />
     )
@@ -28,16 +27,15 @@ describe('DockTab', () => {
         tab="diff"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="expand_more"
         onClose={vi.fn()}
       />
     )
 
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     expect(diffTab).toHaveClass('rounded-md')
-    expect(diffTab).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-    expect(diffTab).toHaveClass('border-[rgba(203,166,247,0.3)]')
-    expect(diffTab).toHaveClass('text-[#e2c7ff]')
+    expect(diffTab).toHaveClass('bg-primary/[0.08]')
+    expect(diffTab).toHaveClass('border-primary-container/30')
+    expect(diffTab).toHaveClass('text-primary')
   })
 
   test('clicking a tab calls onTabChange with the right id', async () => {
@@ -48,7 +46,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={onTabChange}
         selectedFilePath={null}
-        collapseIconName="expand_more"
         onClose={vi.fn()}
       />
     )
@@ -64,7 +61,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath="~/src/app.tsx"
-        collapseIconName="expand_more"
         onClose={vi.fn()}
       >
         <div>Switcher slot</div>
@@ -91,7 +87,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath="~/src/app.tsx"
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       >
@@ -120,7 +115,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       >
@@ -149,7 +143,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       >
@@ -173,7 +166,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="expand_more"
         onClose={onClose}
       />
     )
@@ -189,7 +181,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath="~/src/app.tsx"
-        collapseIconName="expand_more"
         onClose={vi.fn()}
       />
     )
@@ -198,19 +189,18 @@ describe('DockTab', () => {
     expect(screen.queryByText('~/src/app.tsx')).not.toBeInTheDocument()
   })
 
-  test('close button uses the icon name passed via collapseIconName', () => {
+  test('collapse button uses a minimize (window-style) icon', () => {
     render(
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
       />
     )
 
     const closeButton = screen.getByRole('button', { name: /collapse panel/i })
-    expect(within(closeButton).getByText('chevron_left')).toBeInTheDocument()
+    expect(within(closeButton).getByText('minimize')).toBeInTheDocument()
   })
 
   // F1: actionsOpen is cleared when compactActions transitions to false
@@ -222,7 +212,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       />
@@ -238,7 +227,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
       />
     )
@@ -253,7 +241,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       />
@@ -270,7 +257,6 @@ describe('DockTab', () => {
         tab="editor"
         onTabChange={vi.fn()}
         selectedFilePath={null}
-        collapseIconName="chevron_left"
         onClose={vi.fn()}
         compactActions
       />
@@ -297,7 +283,6 @@ describe('DockTab', () => {
           tab="diff"
           onTabChange={vi.fn()}
           selectedFilePath={null}
-          collapseIconName="expand_more"
           onClose={vi.fn()}
         />
       )
@@ -315,7 +300,6 @@ describe('DockTab', () => {
           tab="editor"
           onTabChange={vi.fn()}
           selectedFilePath={null}
-          collapseIconName="expand_more"
           onClose={vi.fn()}
         />
       )
@@ -326,14 +310,13 @@ describe('DockTab', () => {
       expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('G')
     })
 
-    test('Collapse panel tooltip is plain (no shortcut chip)', async () => {
+    test('Collapse panel tooltip shows the Mod+0 shortcut chip', async () => {
       const user = userEvent.setup()
       render(
         <DockTab
           tab="editor"
           onTabChange={vi.fn()}
           selectedFilePath={null}
-          collapseIconName="expand_more"
           onClose={vi.fn()}
         />
       )
@@ -341,7 +324,9 @@ describe('DockTab', () => {
       await user.hover(screen.getByRole('button', { name: /collapse panel/i }))
       const tip = await screen.findByRole('tooltip')
       expect(tip).toHaveTextContent('Collapse panel')
-      expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
+      // Shares the dock-toggle keybinding (Mod+0) advertised on the
+      // bottom-bar dock button.
+      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('0')
     })
 
     // Guards the `disabled={actionsOpen}` branch on the More button's
@@ -357,7 +342,6 @@ describe('DockTab', () => {
           tab="editor"
           onTabChange={vi.fn()}
           selectedFilePath={null}
-          collapseIconName="chevron_left"
           onClose={vi.fn()}
           compactActions
         >

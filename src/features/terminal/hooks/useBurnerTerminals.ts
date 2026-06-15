@@ -97,6 +97,12 @@ export interface UseBurnerTerminalsArgs {
    * pane is *now*, not the cwd it spawned at. Omitted ⇒ no align button.
    */
   livePaneCwds?: ReadonlyMap<string, string>
+  /**
+   * Live `${sessionId}:${paneId}` → structured agent cwd. When present for a
+   * pane, it wins over `livePaneCwds` so tool-call-driven worktree moves are
+   * the sync target even before the interactive shell's pwd catches up.
+   */
+  agentPaneCwds?: ReadonlyMap<string, string>
 }
 
 export interface UseBurnerTerminals {
@@ -120,6 +126,8 @@ export interface UseBurnerTerminals {
    * distinct from `runningByPane`, which only means a shell exists.
    */
   activeByPane: ReadonlyMap<string, boolean>
+  /** True while a burner popup is visibly open over the workspace. */
+  hasVisibleBurner: boolean
 }
 
 /**
@@ -138,6 +146,7 @@ export const useBurnerTerminals = ({
   livePaneKeys,
   dropAllForPty,
   livePaneCwds,
+  agentPaneCwds,
 }: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -157,6 +166,8 @@ export const useBurnerTerminals = ({
   // current cwd at click-time instead of capturing a stale render snapshot.
   const livePaneCwdsRef = useRef(livePaneCwds)
   livePaneCwdsRef.current = livePaneCwds
+  const agentPaneCwdsRef = useRef(agentPaneCwds)
+  agentPaneCwdsRef.current = agentPaneCwds
   // Keys whose in-flight spawn was invalidated because the pane left the live set
   // mid-spawn. Checked when the spawn resolves so the shell is reaped even when a
   // new pane has since reused the freed id (`nextFreePaneId` recycles ids).
@@ -204,14 +215,21 @@ export const useBurnerTerminals = ({
     [service, dropAllForPty]
   )
 
-  // Pull the host pane's live cwd into the burner shell — one-directional
-  // (VIM-81). A real `cd` (queues behind any running command, shows in history),
-  // resolved at call-time from the ref so it tracks the pane's current cwd. The
-  // burner's own `cd` still never moves the pane (no OSC 7 wiring on the popup).
+  const resolveAlignCwd = useCallback(
+    (key: string): string | undefined =>
+      agentPaneCwdsRef.current?.get(key) ?? livePaneCwdsRef.current?.get(key),
+    []
+  )
+
+  // Pull the target cwd into the burner shell — one-directional (VIM-81). A
+  // real `cd` (queues behind any running command, shows in history), resolved at
+  // call-time from refs so it prefers the active agent's structured worktree cwd
+  // while falling back to the host pane's current cwd. The burner's own `cd`
+  // still never moves the pane (no OSC 7 wiring on the popup).
   const alignCwd = useCallback(
     (key: string): void => {
       const entry = entriesRef.current.get(key)
-      const cwd = livePaneCwdsRef.current?.get(key)
+      const cwd = resolveAlignCwd(key)
       // Skip while a foreground command owns the shell (VIM-71 active cue): the
       // `cd` would be delivered to that program's stdin, not the shell prompt.
       // `active` is the last ~750ms poll, so a command started inside that window
@@ -242,7 +260,7 @@ export const useBurnerTerminals = ({
         }
       })()
     },
-    [service]
+    [resolveAlignCwd, service]
   )
 
   // Lazily spawn a pane's burner shell on first open. Idempotent + guarded.
@@ -522,7 +540,7 @@ export const useBurnerTerminals = ({
           Fragment,
           null,
           [...entries.entries()].map(([key, entry]): ReactNode => {
-            const hostCwd = livePaneCwds?.get(key)
+            const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
 
             return createElement(BurnerTerminalPopup, {
               // Keyed by pty so a re-spawned (post-exit) shell remounts a fresh
@@ -539,7 +557,7 @@ export const useBurnerTerminals = ({
               // macOS/Linux only: foreground detection is cfg(unix), so the
               // busy-guard is reliable on every platform we ship to.
               onAlignCwd:
-                livePaneCwds && entry.status === 'running'
+                (agentPaneCwds || livePaneCwds) && entry.status === 'running'
                   ? (): void => alignCwd(key)
                   : undefined,
               // ...and disable it while a foreground command owns the shell.
@@ -549,12 +567,18 @@ export const useBurnerTerminals = ({
               onCwdChange: (cwd: string): void => setBurnerCwd(key, cwd),
               outOfSync:
                 entry.status === 'running' &&
-                hostCwd !== undefined &&
-                normalizeCwd(entry.currentCwd) !== normalizeCwd(hostCwd),
+                targetCwd !== undefined &&
+                normalizeCwd(entry.currentCwd) !== normalizeCwd(targetCwd),
             })
           })
         )
       : null
 
-  return { renderNode, toggle, runningByPane, activeByPane }
+  return {
+    renderNode,
+    toggle,
+    runningByPane,
+    activeByPane,
+    hasVisibleBurner: visibleKey !== null,
+  }
 }

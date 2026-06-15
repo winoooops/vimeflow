@@ -98,6 +98,20 @@ describe('ContextMenu', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  test('calls onAction with clicked item', () => {
+    const onAction = vi.fn()
+    render(<ContextMenu {...defaultProps} onAction={onAction} />)
+
+    const copyPathButton = screen.getByRole('menuitem', {
+      name: /copy path/i,
+    })
+    fireEvent.click(copyPathButton)
+
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Copy Path' })
+    )
+  })
+
   test('closes menu on Escape key', () => {
     const onClose = vi.fn()
     render(<ContextMenu {...defaultProps} onClose={onClose} />)

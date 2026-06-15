@@ -140,7 +140,7 @@ export const UnsavedChangesDialog = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 backdrop-blur-sm bg-black/40"
+            className="absolute inset-0 backdrop-blur-sm bg-surface-container-lowest/40"
             onClick={handleCancelRequest}
           />
 
@@ -154,7 +154,7 @@ export const UnsavedChangesDialog = ({
               stiffness: 400,
               damping: 30,
             }}
-            className="relative w-full max-w-md mx-4 bg-[#1e1e2e]/90 glass-panel rounded-2xl border border-[#4a444f]/30 shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md mx-4 bg-surface-container/90 glass-panel rounded-2xl border border-outline-variant/30 shadow-2xl overflow-hidden"
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-surface-container-low/30">
@@ -195,7 +195,7 @@ export const UnsavedChangesDialog = ({
                 onClick={onSave}
                 disabled={isSaving}
                 aria-busy={isSaving}
-                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
+                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSaving ? 'Saving...' : 'Save'}
               </button>
@@ -206,7 +206,7 @@ export const UnsavedChangesDialog = ({
                 type="button"
                 onClick={onDiscard}
                 disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
+                className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Discard
               </button>
@@ -217,7 +217,7 @@ export const UnsavedChangesDialog = ({
                 type="button"
                 onClick={handleCancelRequest}
                 disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
+                className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>

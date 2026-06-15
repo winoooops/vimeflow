@@ -6,8 +6,8 @@ export const BROWSER_IDENTITY: PaneIdentity = {
   name: 'Web',
   short: 'WEB',
   glyph: '⊕',
-  accent: '#4fc8d6',
-  accentDim: 'rgb(79 200 214 / 0.16)',
-  accentSoft: 'rgb(79 200 214 / 0.30)',
-  onAccent: '#06232a',
+  accent: 'var(--color-agent-browser-accent)',
+  accentDim: 'var(--color-agent-browser-accent-dim)',
+  accentSoft: 'var(--color-agent-browser-accent-soft)',
+  onAccent: 'var(--color-agent-browser-on-accent)',
 }

@@ -23,7 +23,7 @@ import {
 } from '../TerminalPane'
 import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import { SplitDividers } from './SplitDividers'
 import { resolveGrid, DEFAULT_RATIOS, type LayoutRatios } from './resolveGrid'
 import { selectVisiblePanes } from '../../utils/selectVisiblePanes'

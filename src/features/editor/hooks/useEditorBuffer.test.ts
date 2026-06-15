@@ -11,6 +11,8 @@ describe('useEditorBuffer', () => {
       listDir: vi.fn(),
       readFile: vi.fn(),
       writeFile: vi.fn(),
+      renamePath: vi.fn(),
+      deletePath: vi.fn(),
     }
   })
 

@@ -7,6 +7,7 @@ import {
   type WorkspaceTab,
 } from './buildWorkspaceCommands'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
+import { themeService } from '../../../theme'
 
 describe('buildWorkspaceCommands - happy paths', () => {
   const mockSessions: WorkspaceTab[] = [
@@ -31,6 +32,35 @@ describe('buildWorkspaceCommands - happy paths', () => {
     renameAgentSession = vi.fn().mockResolvedValue(undefined)
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
+  })
+
+  test(':theme command lists registered themes and applies on execute', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const themeCmd = commands.find((c) => c.id === 'theme')
+    expect(themeCmd?.children?.map((c) => c.id)).toEqual([
+      'theme-obsidian-lens',
+      'theme-flexoki',
+    ])
+
+    themeCmd?.children?.find((c) => c.id === 'theme-flexoki')?.execute?.('')
+    expect(themeService.current().id).toBe('flexoki')
+
+    themeCmd?.children
+      ?.find((c) => c.id === 'theme-obsidian-lens')
+      ?.execute?.('')
+    expect(themeService.current().id).toBe('obsidian-lens')
   })
 
   test(':new command calls createSession', () => {

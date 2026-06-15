@@ -8,6 +8,7 @@ import { validateTitle } from '../../sessions/utils/sanitizeTitle'
 import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
+import { themeService } from '../../../theme'
 
 // Score a query against every alias form of a vim ex-command and return the
 // best match. The command-palette filter strips the leading ':' before calling
@@ -227,6 +228,25 @@ export const buildWorkspaceCommands = (
     : undefined
 
   const baseCommands: Command[] = [
+    // The workspace palette consumes THIS tree, not data/defaultCommands —
+    // the `:set theme` entry there is unreachable in-app. Reconciling the
+    // two trees is deferred to the upcoming command-palette refactor; until
+    // then `:theme` here is the live switch surface.
+    {
+      id: 'theme',
+      label: ':theme',
+      description: 'Switch color theme',
+      icon: 'palette',
+      children: themeService.list().map((theme) => ({
+        id: `theme-${theme.id}`,
+        label: theme.label,
+        description: `Switch to ${theme.label}`,
+        icon: 'palette',
+        execute: (): void => {
+          themeService.apply(theme.id)
+        },
+      })),
+    },
     {
       id: 'new',
       label: ':new',

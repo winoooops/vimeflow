@@ -9,15 +9,16 @@ import {
   useState,
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
+import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
-import { Tabs } from '../sessions/components/Tabs'
-import { Sidebar } from '../../components/sidebar/Sidebar'
+import { Sidebar } from '@/components/sidebar/Sidebar'
 import {
   SidebarTabs,
   type SidebarTabItem,
-} from '../../components/sidebar/SidebarTabs'
-import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
+} from '@/components/sidebar/SidebarTabs'
+import { StatusBar, type StatusBarSession } from '@/components/StatusBar'
+import { Tooltip } from '@/components/Tooltip'
 import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
@@ -26,7 +27,6 @@ import {
   TerminalZone,
   type TerminalZoneHandle,
 } from './components/TerminalZone'
-import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import {
@@ -43,10 +43,7 @@ import type { RateLimitsState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
-import {
-  COMMAND_PALETTE_SHORTCUT_KEYS,
-  useCommandPalette,
-} from '../command-palette/hooks/useCommandPalette'
+import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
 import { SettingsDialog, useSettingsDialog } from '../settings'
 import { useSettings } from '../settings/hooks/useSettings'
 import {
@@ -72,6 +69,7 @@ import {
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
+import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
@@ -186,6 +184,36 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
+
+const normalizePathForComparison = (path: string): string =>
+  path.replace(/\\/g, '/').replace(/\/+$/u, '')
+
+const relativePathFromCwd = (path: string, cwd: string): string | null => {
+  const normalizedPath = normalizePathForComparison(path)
+  const normalizedCwd = normalizePathForComparison(cwd)
+
+  if (normalizedCwd === '') {
+    return null
+  }
+
+  if (normalizedPath === normalizedCwd) {
+    return ''
+  }
+
+  if (normalizedCwd === '/') {
+    return normalizedPath.startsWith('/')
+      ? normalizedPath.replace(/^\/+/u, '')
+      : null
+  }
+
+  const cwdPrefix = `${normalizedCwd}/`
+
+  if (!normalizedPath.startsWith(cwdPrefix)) {
+    return null
+  }
+
+  return normalizedPath.slice(cwdPrefix.length)
+}
 
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
@@ -855,7 +883,7 @@ export const WorkspaceView = (): ReactElement => {
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
-  const [dockTab, setDockTab] = useState<DockTab>('editor')
+  const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
     TERMINAL_CONTAINER_ID
@@ -942,11 +970,41 @@ export const WorkspaceView = (): ReactElement => {
     [sessions]
   )
 
+  // Preferred burner sync targets from the active agent's structured cwd.
+  // This captures agent-driven worktree moves that may not be reflected in the
+  // host shell's pwd yet; `useBurnerTerminals` falls back to `livePaneCwds`.
+  const agentPaneCwds = useMemo(() => {
+    if (
+      !activeSessionId ||
+      !activePtyBackedPaneId ||
+      !activePtyBackedPanePtyId ||
+      !agentCwd ||
+      agentStatus.sessionId !== activePtyBackedPanePtyId ||
+      !agentIsActive ||
+      agentHasExited ||
+      !isActivePaneLive
+    ) {
+      return new Map<string, string>()
+    }
+
+    return new Map([[`${activeSessionId}:${activePtyBackedPaneId}`, agentCwd]])
+  }, [
+    activeSessionId,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
+    agentCwd,
+    agentHasExited,
+    agentIsActive,
+    agentStatus.sessionId,
+    isActivePaneLive,
+  ])
+
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    hasVisibleBurner,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -956,6 +1014,7 @@ export const WorkspaceView = (): ReactElement => {
     livePaneKeys,
     dropAllForPty,
     livePaneCwds,
+    agentPaneCwds,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo
@@ -1041,6 +1100,31 @@ export const WorkspaceView = (): ReactElement => {
     setIsDockOpen(false)
     claimTerminal()
   }, [claimTerminal])
+
+  // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
+  // forward to the same setSessionLayout the TerminalZone toolbar used, so
+  // pane add/remove, active-pane, and layout semantics are untouched.
+  const handlePickLayout = useCallback(
+    (layoutId: LayoutId): void => {
+      if (!activeSessionId) {
+        return
+      }
+      setSessionLayout(activeSessionId, layoutId)
+    },
+    [activeSessionId, setSessionLayout]
+  )
+
+  // Main-stage handoff J8: one bottom-bar affordance for both directions.
+  // Closing focuses the terminal (closeDock → claimTerminal); reopening
+  // restores the previous dock tab/position and focuses the dock (openDock).
+  const handleToggleDock = useCallback((): void => {
+    if (isDockOpen) {
+      closeDock()
+
+      return
+    }
+    openDock()
+  }, [closeDock, isDockOpen, openDock])
 
   const handleSetActiveSessionId = useCallback(
     (id: string): void => {
@@ -1148,6 +1232,11 @@ export const WorkspaceView = (): ReactElement => {
   // stale content and no feedback on Tauri IPC failures.
   const openFileSafely = useCallback(
     async (filePath: string): Promise<void> => {
+      // Opening a file shows it in the editor. The dock now defaults to the
+      // Diff tab, so surface the editor (and open the dock if collapsed) when
+      // a file is opened — otherwise the file would load behind the diff view.
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(filePath)
         setFileError(null)
@@ -1329,6 +1418,11 @@ export const WorkspaceView = (): ReactElement => {
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
+  useDockToggleShortcut({
+    onToggle: handleToggleDock,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
   useSidebarShortcut({
     onToggle: handleToggleSidebar,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
@@ -1460,6 +1554,63 @@ export const WorkspaceView = (): ReactElement => {
       requestOpenFile(node.id)
     },
     [requestOpenFile]
+  )
+
+  const handleFileViewDiff = useCallback(
+    (node: { id: string; type: 'file' | 'folder' }): void => {
+      if (node.type !== 'file') {
+        return
+      }
+
+      if (activeCwd === '.' || activeCwd === '~' || activeCwd.length === 0) {
+        setFileError('Cannot view diff without an active workspace directory')
+
+        return
+      }
+
+      // The backend normalizes git status/diff to the repository toplevel, so
+      // derive repo-root-relative paths when we know the toplevel. Fall back
+      // to cwd-relative for directories that are not inside a git repo.
+      const repoRoot =
+        gitStatus.filesCwd === activeCwd ? gitStatus.repoRoot : null
+
+      const relativePath =
+        repoRoot && repoRoot.length > 0
+          ? relativePathFromCwd(node.id, repoRoot)
+          : relativePathFromCwd(node.id, activeCwd)
+
+      if (!relativePath) {
+        setFileError(`Cannot view diff outside ${activeCwd}: ${node.id}`)
+
+        return
+      }
+
+      const statusFile =
+        gitStatus.filesCwd === activeCwd
+          ? gitStatus.files.find((file) => file.path === relativePath)
+          : undefined
+
+      if (gitStatus.filesCwd === activeCwd && !statusFile) {
+        setFileError(`No uncommitted changes found for ${relativePath}`)
+
+        return
+      }
+
+      setFileError(null)
+      setSelectedDiffFile({
+        path: relativePath,
+        staged: statusFile?.staged ?? false,
+        cwd: activeCwd,
+      })
+      openDock('diff')
+    },
+    [
+      activeCwd,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      openDock,
+    ]
   )
 
   // Open a test file from the activity panel. Delegates to requestOpenFile so
@@ -1688,6 +1839,7 @@ export const WorkspaceView = (): ReactElement => {
     showUnsavedDialog ||
     commandPalette.state.isOpen ||
     settingsDialog.isOpen ||
+    hasVisibleBurner ||
     paneRenameNode !== null ||
     fileError !== null ||
     infoMessage !== null
@@ -1754,7 +1906,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalService,
   ])
 
-  const dockOrPeek = isDockOpen ? (
+  const dockPanel = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
@@ -1794,9 +1946,9 @@ export const WorkspaceView = (): ReactElement => {
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
-  ) : (
-    <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
-  )
+  ) : // Closed dock renders nothing — the bottom action bar's dock toggle is
+  // the single reopen affordance (the old "show panel" peek bar is gone).
+  null
 
   const pendingSessionFilePath = pendingSessionRemovalId
     ? editorBuffer.getFilePathForScope(pendingSessionRemovalId)
@@ -1816,7 +1968,7 @@ export const WorkspaceView = (): ReactElement => {
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
-      className="relative grid h-screen grid-rows-1 overflow-hidden"
+      className="relative grid h-screen grid-rows-1 overflow-hidden bg-surface-container-low"
       style={
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
@@ -1842,13 +1994,38 @@ export const WorkspaceView = (): ReactElement => {
             shouldRestoreSidebarToggleFocusRef.current = true
             setCompactSidebarOpen(false)
           }}
-          className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
+          className="fixed inset-0 z-20 cursor-default bg-surface/55 backdrop-blur-[2px]"
         />
       )}
 
-      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
-          during animated desktop collapse. Compact viewports lift the same
-          shell above main content. */}
+      {/* Persistent sidebar toggle — anchored to the workspace root, which
+          never moves, so the control sits at one fixed coordinate in every
+          state. Parenting it to the sliding sidebar shell (open) or the main
+          column (collapsed) made it ride along as those containers animated,
+          so it visibly jumped on collapse/expand. A single root child with
+          absolute left/top stays put; ⌘B just flips its glyph. Placed before
+          the sidebar and main surfaces so focus order matches its visual
+          position; z-40 keeps it on top. */}
+      <div
+        data-testid="sidebar-toggle-fixed-shell"
+        className="vf-app-no-drag absolute z-40"
+        style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
+      >
+        <SidebarToggle
+          ref={sidebarToggleRef}
+          collapsed={isSidebarClosed}
+          onClick={handleToggleSidebar}
+          size={SIDEBAR_TOGGLE_SIZE}
+          variant="inset"
+          data-testid="sidebar-toggle-fixed"
+          shortcutHint={sidebarShortcutHint}
+        />
+      </div>
+
+      {/* Sidebar — the shell's panel clips during animated desktop collapse;
+          the toggle that controls it is a root-level child (above), so it does
+          not slide with the shell. Compact viewports lift the shell above main
+          content. */}
       <div
         data-testid="workspace-sidebar-shell"
         role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
@@ -1886,24 +2063,6 @@ export const WorkspaceView = (): ReactElement => {
             width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
           }}
         />
-        <div
-          data-testid="sidebar-toggle-anchor"
-          className="absolute z-30"
-          style={{
-            left: sidebarToggleLeft,
-            top: SIDEBAR_TOGGLE_TOP,
-          }}
-        >
-          <SidebarToggle
-            ref={sidebarToggleRef}
-            collapsed={isSidebarClosed}
-            onClick={handleToggleSidebar}
-            size={SIDEBAR_TOGGLE_SIZE}
-            variant="inset"
-            data-testid="sidebar-toggle-fixed"
-            shortcutHint={sidebarShortcutHint}
-          />
-        </div>
         <div
           aria-hidden={isSidebarClosed || undefined}
           inert={isSidebarClosed || undefined}
@@ -1974,6 +2133,7 @@ export const WorkspaceView = (): ReactElement => {
                     hidden={activeTab !== 'files'}
                     cwd={fileExplorerCwd}
                     onFileSelect={handleFileSelect}
+                    onViewDiff={handleFileViewDiff}
                   />
                 </div>
               }
@@ -2011,45 +2171,115 @@ export const WorkspaceView = (): ReactElement => {
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-      <div
+      <main
         ref={mainWorkspaceRef}
         data-testid="workspace-main"
-        className="relative flex flex-col overflow-hidden bg-background"
+        aria-label="Main workspace"
+        className="relative flex flex-col overflow-hidden bg-surface"
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
         style={{
           borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
           borderBottomLeftRadius:
             sidebarCollapsed || isCompactViewport ? 0 : 16,
-          // No elevation shadow on the sheet edge: the sidebar is transparent,
-          // so a leftward drop shadow would read as a dark gradient seam against
-          // it. The rounded corners alone carry the inset-sheet treatment.
+          // Tonal step + rounded left corners carry the left separation; no float shadow.
           transition: isDragging
             ? 'none'
             : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
           willChange: 'border-radius',
         }}
       >
-        <Tabs
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={handleSetActiveSessionId}
-          onClose={handleRemoveSession}
-          onNew={handleCreateSession}
-          leading={
-            isSidebarClosed ? (
-              <div
-                aria-hidden="true"
-                data-testid="sidebar-toggle-tabs-spacer"
-                style={{
-                  width: SIDEBAR_TOGGLE_SIZE,
-                  height: SIDEBAR_TOGGLE_SIZE,
-                }}
-              />
-            ) : undefined
-          }
-          reserveWindowControls={reserveWindowControls}
-        />
+        {/* Top chrome — an always-visible 44px in-flow bar (panes sit BELOW it,
+            so the root-anchored sidebar toggle, which floats over this bar's
+            left edge when collapsed, never overlaps pane content the way main's
+            session-tab strip behaved). Sits on the sheet surface + hairline
+            bottom rule. The old auto-hide/pin behavior was removed; its reusable
+            frosted-glass treatment now lives in <GlassSurface>. */}
+        <div
+          data-testid="top-chrome"
+          className={`relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px] ${
+            reserveWindowControls ? 'vf-app-drag-region' : ''
+          }`}
+        >
+          {reserveWindowControls && isSidebarClosed && (
+            <span
+              aria-hidden="true"
+              data-testid="top-chrome-sidebar-toggle-clearance"
+              className="vf-app-no-drag pointer-events-none absolute"
+              style={{
+                left: sidebarToggleLeft,
+                top: SIDEBAR_TOGGLE_TOP,
+                width: SIDEBAR_TOGGLE_SIZE,
+                height: SIDEBAR_TOGGLE_SIZE,
+              }}
+            />
+          )}
+          <span className="min-w-[10px] flex-1" />
+
+          {/* Pills render in every layout, with the layout-display config
+              button docked in the same pillar after a divider. */}
+          {activeSession && (
+            <LayoutSwitcher
+              activeLayoutId={activeSession.layout}
+              onPick={handlePickLayout}
+              trailing={
+                // Disabled controls swallow pointer events in Chromium, so the
+                // hover target is a wrapper span rather than the button itself.
+                <Tooltip
+                  content="Configure displayed layouts"
+                  placement="bottom"
+                >
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      aria-label="Configure displayed layouts"
+                      disabled
+                      aria-disabled="true"
+                      tabIndex={-1}
+                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                          stroke="currentColor"
+                          strokeWidth="1.35"
+                          strokeLinecap="round"
+                        />
+                        <circle
+                          cx="8"
+                          cy="4.5"
+                          r="1.6"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="10.7"
+                          cy="8"
+                          r="1.45"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="6.5"
+                          cy="11.5"
+                          r="1.55"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                </Tooltip>
+              }
+            />
+          )}
+        </div>
 
         <div
           ref={dockCanvasRef}
@@ -2057,7 +2287,7 @@ export const WorkspaceView = (): ReactElement => {
           className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           style={{ flexDirection: dockCanvasFlexDirection }}
         >
-          {dockBeforeTerminal ? dockOrPeek : null}
+          {dockBeforeTerminal ? dockPanel : null}
           <div
             data-testid="terminal-zone-wrapper"
             className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -2074,7 +2304,6 @@ export const WorkspaceView = (): ReactElement => {
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
               updateBrowserPaneUrl={updateBrowserPaneUrl}
-              setSessionLayout={setSessionLayout}
               addPane={addPane}
               removePane={removePane}
               areBrowserPanesOccluded={areBrowserPanesOccluded}
@@ -2087,7 +2316,7 @@ export const WorkspaceView = (): ReactElement => {
               runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
-          {!dockBeforeTerminal ? dockOrPeek : null}
+          {!dockBeforeTerminal ? dockPanel : null}
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
@@ -2126,16 +2355,17 @@ export const WorkspaceView = (): ReactElement => {
         <StatusBar
           session={statusBarSession}
           contextPct={statusBarContextPct}
-          paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
+          dockOpen={isDockOpen}
+          onToggleDock={handleToggleDock}
           burnerCount={runningBurnerPaneKeys.size}
         />
-      </div>
+      </main>
 
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
-          className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+          className="h-full shrink-0 overflow-hidden border-l border-outline-variant/25 transition-[width] duration-[220ms] ease-pane"
           style={{
             width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
           }}
@@ -2153,6 +2383,7 @@ export const WorkspaceView = (): ReactElement => {
               onExpand={() => {
                 handleActivityPanelCollapsed(false)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           ) : (
             <AgentStatusPanel
@@ -2167,6 +2398,7 @@ export const WorkspaceView = (): ReactElement => {
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           )}
         </div>

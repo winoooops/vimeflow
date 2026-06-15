@@ -174,12 +174,14 @@ const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 } = {}
 
 interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 }
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -187,10 +189,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
     agentStatus = undefined,
+    reserveWindowControls = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
     capturedAgentStatusPanelProps.agentStatus = agentStatus
+    capturedAgentStatusPanelProps.reserveWindowControls = reserveWindowControls
 
     // Render the panel testid so the existing zone-presence tests
     // (`getByTestId('agent-status-panel')`) keep passing without
@@ -249,6 +253,21 @@ const findObservedResizeObserver = (
   )
 
 describe('WorkspaceView', () => {
+  // Session switching/closing is sidebar-owned (the main session-tab strip
+  // was removed in the main-stage chrome). Close via the sidebar card menu.
+  const removeSessionViaSidebar = async (
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ): Promise<void> => {
+    const row = await screen.findByRole('button', { name })
+    await user.click(
+      within(row.closest('li')!).getByRole('button', {
+        name: 'Session actions',
+      })
+    )
+    await user.click(await screen.findByRole('button', { name: 'Remove' }))
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
@@ -260,6 +279,7 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    capturedAgentStatusPanelProps.reserveWindowControls = undefined
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -300,7 +320,7 @@ describe('WorkspaceView', () => {
     // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // DockPanel
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument() // DockPanel
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -344,51 +364,8 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
       'vf-app-drag-region'
     )
-  })
 
-  test('keeps collapsed macOS tab chrome clear of the fixed sidebar toggle', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'MacIntel',
-      configurable: true,
-    })
-
-    setSidebarCollapsed(true)
-
-    render(<WorkspaceView />)
-
-    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
-      'vf-app-no-drag'
-    )
-
-    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
-
-    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
-      'vf-app-drag-region'
-    )
-
-    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveClass(
-      'vf-app-drag-region'
-    )
-
-    expect(
-      screen.getByTestId('session-tabs-leading-upper-drag-region')
-    ).toHaveClass('vf-app-drag-region')
-
-    expect(
-      screen.getByTestId('session-tabs-leading-toggle-clearance')
-    ).toHaveClass('vf-app-no-drag')
-
-    expect(
-      screen.getByTestId('session-tabs-leading-lower-drag-region')
-    ).toHaveClass('vf-app-drag-region')
-
-    expect(screen.getByTestId('session-tabs-leading')).not.toHaveClass(
-      'vf-app-drag-region'
-    )
-
-    expect(screen.getByTestId('session-tabs-drag-region')).toHaveClass(
-      'vf-app-drag-region'
-    )
+    expect(capturedAgentStatusPanelProps.reserveWindowControls).toBe(true)
   })
 
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
@@ -659,9 +636,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    const activeTab = await screen.findByRole('tab', { name: 'session 1' })
+    const activeRow = await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+    await removeSessionViaSidebar(user, 'session 1')
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
 
@@ -671,7 +648,9 @@ describe('WorkspaceView', () => {
 
     expect(dialog).toHaveTextContent(/before closing this session/i)
     expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
-    expect(activeTab).toHaveAttribute('aria-selected', 'true')
+    expect(activeRow.closest('li')!.className).toContain(
+      'bg-primary-container/15'
+    )
     expect(releaseScope).not.toHaveBeenCalled()
   })
 
@@ -731,19 +710,18 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByRole('button', { name: 'first' }).closest('li')!.className
+      ).toContain('bg-primary-container/15')
     })
-    expect(screen.getByRole('tab', { name: 'second' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'second' })).toBeInTheDocument()
   })
 
   test('restores the original active session after discarding a dirty background close', async () => {
@@ -803,25 +781,21 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Discard' }))
 
     await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
     })
 
-    expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    expect(
+      screen.getByRole('button', { name: 'first' }).closest('li')!.className
+    ).toContain('bg-primary-container/15')
 
-    expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-      'aria-selected',
-      'false'
-    )
+    expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
     expect(releaseScope).toHaveBeenCalledWith('second')
   })
 
@@ -894,9 +868,9 @@ describe('WorkspaceView', () => {
     try {
       render(<WorkspaceView />)
 
-      await screen.findByRole('tab', { name: 'first' })
+      await screen.findByRole('button', { name: 'first' })
 
-      await user.click(screen.getByRole('button', { name: 'Close second' }))
+      await removeSessionViaSidebar(user, 'second')
 
       const dialog = await screen.findByRole('dialog', {
         name: /unsaved changes/i,
@@ -910,18 +884,14 @@ describe('WorkspaceView', () => {
       })
 
       await waitFor(() => {
-        expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
       })
 
-      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByRole('button', { name: 'first' }).closest('li')!.className
+      ).toContain('bg-primary-container/15')
 
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'false'
-      )
+      expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
       expect(releaseScope).toHaveBeenCalledWith('second')
     } finally {
       consoleWarn.mockRestore()
@@ -982,9 +952,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -1005,7 +975,7 @@ describe('WorkspaceView', () => {
     })
 
     await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
     })
   })
 
@@ -1060,18 +1030,16 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await removeSessionViaSidebar(user, 'first')
     await user.click(screen.getByRole('button', { name: 'Discard' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByRole('button', { name: 'third' }).closest('li')!.className
+      ).toContain('bg-primary-container/15')
     })
-    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
   })
 
   test('selects the next visible session after saving a dirty active-session close', async () => {
@@ -1126,9 +1094,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await removeSessionViaSidebar(user, 'first')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
@@ -1136,12 +1104,10 @@ describe('WorkspaceView', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByRole('button', { name: 'third' }).closest('li')!.className
+      ).toContain('bg-primary-container/15')
     })
-    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
   })
 
   test('releases an editor scope after a clean session is removed', async () => {
@@ -1165,9 +1131,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'session 1' })
+    await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+    await removeSessionViaSidebar(user, 'session 1')
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
     await waitFor(() => {
@@ -1228,16 +1194,13 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('SessionTabs reflects the active session selection', async () => {
+  test('no main session-tab strip — the sidebar reflects the active session', async () => {
     render(<WorkspaceView />)
 
-    await screen.findByRole('button', { name: 'session 1' })
+    const row = await screen.findByRole('button', { name: 'session 1' })
 
-    const tabs = within(screen.getByTestId('session-tabs')).getAllByRole('tab')
-    expect(tabs.length).toBeGreaterThan(0)
-    expect(
-      tabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
-    ).toBe(true)
+    expect(screen.queryByTestId('session-tabs')).toBeNull()
+    expect(row.closest('li')!.className).toContain('bg-primary-container/15')
   })
 
   test('renders AgentStatusPanel', () => {
@@ -1270,7 +1233,7 @@ describe('WorkspaceView', () => {
     })
     const listItem = firstSession.closest('li')!
     // Active row uses the flat lavender fill per the session-list handoff.
-    expect(listItem.className).toContain('bg-[rgba(203,166,247,0.13)]')
+    expect(listItem.className).toContain('bg-primary-container/15')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -1455,7 +1418,7 @@ describe('WorkspaceView', () => {
     render(<WorkspaceView />)
 
     // DockPanel should render with Editor tab active
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
     ).toBeInTheDocument()
@@ -1513,70 +1476,35 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('closed left dock renders DockPeekButton before TerminalZone', async () => {
+  test('closed dock renders no panel and no peek bar — bottom-bar toggle reopens it', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await user.click(screen.getByRole('button', { name: /dock: left/i }))
-    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-
-    const peek = screen.getByRole('button', {
-      name: /show panel docked left/i,
-    })
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-
-    expect(inner).toContainElement(peek)
-    expect(inner).toContainElement(terminal)
-
-    const children = Array.from(inner.children)
-    expect(children.indexOf(peek)).toBeLessThan(children.indexOf(terminal))
-  })
-
-  test('closed bottom dock renders DockPeekButton after TerminalZone', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
+    // Dock starts open.
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-    const peek = screen.getByLabelText('Show panel docked bottom')
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-    const children = Array.from(inner.children)
+    // Closed: the dock is gone and there is no "show panel" peek affordance —
+    // only the terminal remains. The bottom action bar's dock toggle is the
+    // single reopen control.
+    expect(screen.queryByTestId('dock-panel')).toBeNull()
+    expect(screen.queryByText(/show panel/i)).toBeNull()
+    expect(screen.getByTestId('terminal-zone-wrapper')).toBeInTheDocument()
 
-    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
-  })
+    const dockToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(dockToggle).toHaveAttribute('aria-pressed', 'false')
 
-  test('closed right dock renders DockPeekButton after TerminalZone', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
+    await user.click(dockToggle)
 
-    await user.click(screen.getByRole('button', { name: /dock: right/i }))
-    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-
-    const peek = screen.getByRole('button', {
-      name: /show panel docked right/i,
-    })
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-
-    const children = Array.from(inner.children)
-
-    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    expect(dockToggle).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('main workspace area uses flex-col layout', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-
-    // VIM-76: icon rail removed — 2nd grid child = main wrapper (after the
-    // sidebar wrapper, before the activity panel).
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
   })
@@ -1584,10 +1512,9 @@ describe('WorkspaceView', () => {
   test('main workspace uses a rounded sheet edge while the sidebar is visible', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
 
-    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace).toHaveClass('bg-surface')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
     // No drop shadow: it would read as a dark gradient seam against the
@@ -1612,7 +1539,7 @@ describe('WorkspaceView', () => {
       name: 'session 1',
     })
     expect(firstSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
@@ -1625,11 +1552,11 @@ describe('WorkspaceView', () => {
       name: 'session 2',
     })
     expect(secondSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     expect(firstSession.closest('li')!.className).not.toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
   })
 
@@ -1641,7 +1568,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
   })
 
   test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
@@ -1682,7 +1609,7 @@ describe('WorkspaceView', () => {
 
       const workspace = screen.getByTestId('workspace-view')
       const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       const handle = screen.getByTestId('sidebar-resize-handle')
 
       expect(sidebarShell.className).toContain('transition-[width]')
@@ -1755,14 +1682,17 @@ describe('WorkspaceView', () => {
     })
 
     expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
-    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('sidebar-top-bar-placeholder')
+    ).toBeInTheDocument()
+
     expect(
       screen.getByTestId('sidebar-top-bar-placeholder')
     ).toBeInTheDocument()
 
     const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
     const toggleSurface = screen.getByTestId('sidebar-toggle-slide-surface')
-    const mainWorkspace = workspace.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
 
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
@@ -1784,7 +1714,7 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
         createDomRect(1600, 900)
       )
@@ -1804,7 +1734,7 @@ describe('WorkspaceView', () => {
 
       expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
       expect(
-        screen.getByTestId('sidebar-toggle-tabs-spacer')
+        screen.getByTestId('sidebar-top-bar-placeholder')
       ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
@@ -1819,7 +1749,7 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
         createDomRect(900, 700)
       )
@@ -1845,7 +1775,7 @@ describe('WorkspaceView', () => {
 
       expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
       expect(
-        screen.getByTestId('sidebar-toggle-tabs-spacer')
+        screen.getByTestId('sidebar-top-bar-placeholder')
       ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
@@ -1893,24 +1823,23 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('mounts SessionTabs above terminal zone', () => {
+  test('mounts the top chrome above the terminal zone', () => {
     render(<WorkspaceView />)
 
-    const tabs = screen.getByTestId('session-tabs')
+    const chrome = screen.getByTestId('top-chrome')
     const terminal = screen.getByTestId('terminal-zone')
 
-    expect(tabs).toBeInTheDocument()
+    expect(chrome).toBeInTheDocument()
     expect(
-      tabs.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+      chrome.compareDocumentPosition(terminal) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 
   test('mounts StatusBar inside the main column (right of the sidebar)', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-    // VIM-76: icon rail removed — main column is the 2nd grid child.
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
     const statusBar = screen.getByTestId('status-bar')
 
     expect(statusBar).toBeInTheDocument()

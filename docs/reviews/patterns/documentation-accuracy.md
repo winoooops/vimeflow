@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-12
+last_updated: 2026-06-15
 ref_count: 26
 ---
 
@@ -827,4 +827,21 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/settings/store/settingsDefaults.ts` L4-4
 - **Finding:** Rust declares `CURRENT_APP_SETTINGS_VERSION: u32 = 1` in `crates/backend/src/settings/app_settings.rs:10`, and TypeScript hard-codes `version: 1` in `settingsDefaults.ts:4`. `AppSettingsCache::save()` rejects any settings whose version doesn't match the Rust constant. When the Rust constant is bumped for a schema migration, the TypeScript default must also be updated; if it isn't, all `save_app_settings` calls from fresh renderer sessions will be rejected with a version-mismatch error and `saveError` will be set immediately on first user edit.
 - **Fix:** Added a comment on the TypeScript constant referencing `CURRENT_APP_SETTINGS_VERSION` in `crates/backend/src/settings/app_settings.rs` so the coupling is visible at change time.
+
+### 86. Popover focus contract in UNIFIED.md mismatches implementation and tests
+
+- **Source:** github-claude | PR #450 round 3 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `docs/design/UNIFIED.md`
+- **Finding:** The Popover contract in `UNIFIED.md` §5.9 said focus is modal with `initialFocus: -1` and lands on the container on open, but `src/components/Popover.tsx` passes `focus={{ initialFocus: 0, modal: true }}` and `src/components/Popover.test.tsx` asserts focus lands on the first tabbable child. The mismatch creates a misleading public primitive contract that future consumers or tests may encode the wrong expectation against.
+- **Fix:** Updated the Popover focus rule to document `initialFocus: 0`, focus landing on the first tabbable child on open, and `modal: true` engaging the focus trap.
+- **Commit:** same commit as this entry
+
+### 87. Test alias comment mischaracterizes configured lint rule
+
+- **Source:** github-claude | PR #457 round 2 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.test.tsx`
+- **Finding:** `const INACTIVE = false // jsx-boolean-value wants false props omitted; alias it` described the rule as simply `jsx-boolean-value`, which is ambiguous because the rule only flags explicit `false` values when `assumeUndefinedIsFalse` is enabled. A future reader might delete the alias thinking the rule does not apply to `false`.
+- **Fix:** Updated the comment to name the fully configured rule: `react/jsx-boolean-value (assumeUndefinedIsFalse) flags explicit false props; alias it`.
 - **Commit:** same commit as this entry

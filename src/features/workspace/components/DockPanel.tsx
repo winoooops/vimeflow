@@ -33,7 +33,7 @@ import {
   KEYBOARD_STEP_PX,
   KEYBOARD_STEP_SHIFT_PX,
 } from '../panelConfig'
-import { ResizeHandle } from '../../../components/ResizeHandle'
+import { ResizeHandle } from '@/components/ResizeHandle'
 
 type TabType = 'editor' | 'diff'
 
@@ -244,9 +244,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? { height: `${verticalSize}px` }
       : { width: `${horizontalSize}px` }
 
-    // Border edge varies by position; color literals are kept static so
-    // Tailwind JIT can scan and emit both border-[#cba6f7] and
-    // border-[rgba(74,68,79,0.3)] in the production CSS bundle.
+    // Border edge varies by position; semantic token classes are kept static so
+    // Tailwind JIT can scan and emit both border-primary-container and
+    // border-outline-variant/30 in the production CSS bundle.
     const borderEdge =
       position === 'top'
         ? 'border-b'
@@ -256,18 +256,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             ? 'border-r'
             : 'border-l'
 
-    const borderClass = isFocused
-      ? `${borderEdge} border-[#cba6f7]`
-      : `${borderEdge} border-[rgba(74,68,79,0.3)]`
-
-    const collapseIconName =
-      position === 'top'
-        ? 'expand_less'
-        : position === 'bottom'
-          ? 'expand_more'
-          : position === 'left'
-            ? 'chevron_left'
-            : 'chevron_right'
+    // The dock keeps a neutral separator edge in BOTH focus states. The active
+    // terminal pane already owns the agent-accent focus highlight, and focusing
+    // the dock dims the panes, so a second bright outline here only competed
+    // with the pane highlight and made the focused surface ambiguous.
+    const borderClass = `${borderEdge} border-outline-variant/30`
 
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
 
@@ -322,25 +315,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         data-container-id={DOCK_CONTAINER_ID}
         aria-label={sectionAriaLabel}
         tabIndex={-1}
-        style={{
-          ...containerStyle,
-          boxShadow: isFocused
-            ? '0 0 0 1px #cba6f7 inset, 0 0 0 6px rgba(203,166,247,0.12)'
-            : undefined,
-          transition: 'box-shadow 220ms ease',
-        }}
+        style={containerStyle}
         onPointerDown={handlePointerDown}
         onFocus={onContainerFocus}
-        className={`relative z-30 flex shrink-0 flex-col bg-[#121221] focus:outline-none ${borderClass}`}
+        className={`relative z-30 flex shrink-0 flex-col bg-surface focus:outline-none ${borderClass}`}
       >
-        {isFocused ? (
-          <span
-            data-testid="dock-focus-outline"
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-40 border border-[#cba6f7]"
-          />
-        ) : null}
-
         {isVerticalDock ? (
           <ResizeHandle
             orientation="horizontal"
@@ -370,7 +349,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           tab={tab}
           onTabChange={onTabChange}
           selectedFilePath={selectedFilePath}
-          collapseIconName={collapseIconName}
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
