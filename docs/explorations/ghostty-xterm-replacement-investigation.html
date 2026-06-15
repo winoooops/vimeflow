@@ -1,0 +1,1060 @@
+<!doctype html>
+<!--
+  ========================================================================
+  REVIEW NOTE - for human and agent (Codex / Claude) reviewers
+  ========================================================================
+  This file is a STATIC, hand-authored exploration document. It holds no
+  application logic, no runtime imports, no external scripts, and no tests.
+  It is documentation: prose, inline CSS, and simple HTML diagrams only.
+
+  Please do not line-by-line review CSS/markup nits or treat it as part of
+  the app behavioral surface. To verify it, open it in a browser and confirm
+  that it renders. docs/explorations/*.html is Prettier-ignored.
+  ========================================================================
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Replacing xterm.js with Ghostty - Vimeflow Technical Investigation</title>
+    <style>
+      :root {
+        --base: #121221;
+        --mantle: #181825;
+        --surface: #1e1e2e;
+        --surface-high: #292839;
+        --surface-higher: #333344;
+        --text: #e3e0f7;
+        --muted: #a6adc8;
+        --faint: #7f849c;
+        --line: rgba(186, 194, 222, 0.18);
+        --green: #a6e3a1;
+        --yellow: #f9e2af;
+        --blue: #89b4fa;
+        --sapphire: #74c7ec;
+        --red: #f38ba8;
+        --peach: #fab387;
+        --mauve: #cba6f7;
+        --lavender: #b4befe;
+        --teal: #94e2d5;
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
+        --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-display: "Manrope", "Inter", system-ui, -apple-system, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            1200px 700px at 82% -14%,
+            rgba(116, 199, 236, 0.12),
+            transparent 62%
+          ),
+          radial-gradient(
+            900px 640px at -12% 12%,
+            rgba(203, 166, 247, 0.1),
+            transparent 58%
+          ),
+          linear-gradient(180deg, var(--mantle), var(--base) 42%, #0d0d18);
+        color: var(--text);
+        font-family: var(--font-body);
+        line-height: 1.62;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--sapphire);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code {
+        border-radius: 6px;
+        background: rgba(13, 13, 24, 0.78);
+        color: var(--lavender);
+        font-family: var(--font-mono);
+        font-size: 0.9em;
+        padding: 1px 6px;
+      }
+
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 58px 28px 100px;
+      }
+
+      .masthead {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 30px;
+        align-items: end;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 34px;
+        margin-bottom: 40px;
+      }
+
+      .eyebrow {
+        color: var(--teal);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.2em;
+        margin: 0 0 12px;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-display);
+        letter-spacing: -0.015em;
+        line-height: 1.12;
+      }
+
+      h1 {
+        font-size: clamp(2.2rem, 4.8vw, 4.4rem);
+        margin: 0 0 16px;
+      }
+
+      .dek {
+        color: var(--muted);
+        font-size: 1.08rem;
+        max-width: 72ch;
+        margin: 0;
+      }
+
+      .meta {
+        display: grid;
+        gap: 8px;
+      }
+
+      .chip {
+        align-items: center;
+        background: rgba(41, 40, 57, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        display: inline-flex;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        gap: 6px;
+        padding: 7px 12px;
+        width: fit-content;
+      }
+
+      .chip strong {
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .verdict {
+        background:
+          linear-gradient(
+            135deg,
+            rgba(166, 227, 161, 0.14),
+            rgba(137, 180, 250, 0.07)
+          ),
+          rgba(30, 30, 46, 0.78);
+        border: 1px solid rgba(166, 227, 161, 0.24);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        margin: 0 0 36px;
+        padding: 24px;
+      }
+
+      .verdict h2 {
+        color: var(--green);
+        font-size: 1.15rem;
+        margin: 0 0 8px;
+      }
+
+      .verdict p {
+        color: var(--muted);
+        margin: 8px 0 0;
+      }
+
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        margin: 0 0 44px;
+      }
+
+      .toc a {
+        background: rgba(41, 40, 57, 0.74);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 0.73rem;
+        padding: 7px 12px;
+      }
+
+      section {
+        margin: 0 0 54px;
+      }
+
+      h2 {
+        align-items: baseline;
+        color: var(--text);
+        display: flex;
+        font-size: 1.65rem;
+        gap: 12px;
+        margin: 0 0 8px;
+        scroll-margin-top: 18px;
+      }
+
+      h2 .num {
+        color: var(--mauve);
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+      }
+
+      h3 {
+        color: var(--text);
+        font-size: 1.05rem;
+        margin: 26px 0 8px;
+      }
+
+      p {
+        color: var(--muted);
+        margin: 8px 0;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .grid.cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        background: rgba(30, 30, 46, 0.78);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px;
+      }
+
+      .card h3 {
+        margin-top: 0;
+      }
+
+      .card p:last-child,
+      .card ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .tag {
+        border-radius: 999px;
+        display: inline-flex;
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        margin-bottom: 10px;
+        padding: 4px 9px;
+      }
+
+      .tag.good {
+        background: rgba(166, 227, 161, 0.13);
+        color: var(--green);
+      }
+
+      .tag.warn {
+        background: rgba(249, 226, 175, 0.13);
+        color: var(--yellow);
+      }
+
+      .tag.bad {
+        background: rgba(243, 139, 168, 0.12);
+        color: var(--red);
+      }
+
+      .tag.info {
+        background: rgba(116, 199, 236, 0.12);
+        color: var(--sapphire);
+      }
+
+      ul {
+        color: var(--muted);
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+
+      li {
+        margin: 5px 0;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin: 16px 0 0;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        padding: 11px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 0.73rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .matrix td:first-child,
+      .matrix th:first-child {
+        width: 22%;
+      }
+
+      .flow {
+        background: rgba(13, 13, 24, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        margin-top: 18px;
+        padding: 18px;
+      }
+
+      .node {
+        background: rgba(41, 40, 57, 0.8);
+        border: 1px solid rgba(186, 194, 222, 0.18);
+        border-radius: 12px;
+        min-height: 88px;
+        padding: 14px;
+      }
+
+      .node strong {
+        color: var(--text);
+        display: block;
+        font-size: 0.95rem;
+        margin-bottom: 5px;
+      }
+
+      .node span {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .arrow {
+        align-self: center;
+        color: var(--faint);
+        font-family: var(--font-mono);
+        font-size: 1rem;
+      }
+
+      .callout {
+        border-left: 3px solid var(--peach);
+        background: rgba(250, 179, 135, 0.08);
+        border-radius: 12px;
+        margin: 16px 0 0;
+        padding: 14px 16px;
+      }
+
+      .callout strong {
+        color: var(--peach);
+      }
+
+      .source-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .source-list a {
+        background: rgba(41, 40, 57, 0.62);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        display: block;
+        padding: 12px 14px;
+      }
+
+      .source-list strong {
+        color: var(--text);
+      }
+
+      .footnote {
+        color: var(--faint);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+      }
+
+      @media (max-width: 820px) {
+        .masthead,
+        .grid.cols-2,
+        .grid.cols-3,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          display: none;
+        }
+
+        .wrap {
+          padding: 38px 18px 78px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Vimeflow terminal architecture</p>
+          <h1>Replacing xterm.js with Ghostty</h1>
+          <p class="dek">
+            A technical investigation into whether Vimeflow should replace its
+            current browser terminal renderer with Ghostty, what would actually
+            have to change, and where the upside is real.
+          </p>
+        </div>
+        <div class="meta">
+          <span class="chip"><strong>Date</strong> 2026-06-15</span>
+          <span class="chip"><strong>Worktree</strong> docs/ghostty-terminal-investigation</span>
+          <span class="chip"><strong>Scope</strong> research note, no runtime changes</span>
+        </div>
+      </header>
+
+      <aside class="verdict" id="verdict">
+        <h2>Recommendation</h2>
+        <p>
+          Do not attempt a direct "swap xterm for Ghostty" inside the current
+          React terminal pane. Ghostty is not a drop-in web component, and
+          Vimeflow currently depends on many xterm.js browser APIs beyond text
+          rendering.
+        </p>
+        <p>
+          The credible path is a staged R&amp;D track: keep xterm.js as the
+          production pane, introduce a terminal-renderer adapter boundary, and
+          prototype <code>libghostty-vt</code> as a parser/state engine with raw
+          PTY bytes. Revisit a full replacement only after the API, renderer
+          story, packaging, and test harness prove out.
+        </p>
+      </aside>
+
+      <nav class="toc" aria-label="Table of contents">
+        <a href="#current">Current xterm contract</a>
+        <a href="#ghostty">What Ghostty offers</a>
+        <a href="#options">Integration options</a>
+        <a href="#implications">Implications</a>
+        <a href="#plan">Suggested plan</a>
+        <a href="#sources">Sources</a>
+      </nav>
+
+      <section id="current">
+        <h2><span class="num">01</span> Current xterm Contract</h2>
+        <p>
+          Vimeflow's terminal pane is not a thin "bytes in, pixels out" wrapper.
+          It uses xterm.js as a browser-native terminal emulator, parser, input
+          bridge, selection model, fit engine, and rendering surface.
+        </p>
+
+        <div class="flow" aria-label="Current terminal flow">
+          <div class="node">
+            <strong>Rust sidecar</strong>
+            <span>
+              <code>portable-pty</code>, ring buffer, byte offsets, IPC events,
+              session cache, burner foreground polling.
+            </span>
+          </div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">
+            <strong>Terminal service</strong>
+            <span>
+              <code>spawn_pty</code>, <code>write_pty</code>,
+              <code>resize_pty</code>, <code>pty-data</code>,
+              <code>pty-exit</code>, <code>pty-error</code>.
+            </span>
+          </div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">
+            <strong>xterm.js pane</strong>
+            <span>
+              Parser, buffer, WebGL/Canvas/DOM renderer, selection, keyboard
+              input, OSC 7 cwd, fit-to-grid.
+            </span>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Vimeflow surface</th>
+              <th>Current xterm dependency</th>
+              <th>Replacement consequence</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>TerminalPane/Body.tsx</code></td>
+              <td>
+                Creates <code>new Terminal()</code>, loads
+                <code>FitAddon</code>, tries WebGL, falls back to Canvas, then
+                DOM rendering.
+              </td>
+              <td>
+                A new engine must expose an equivalent lifecycle, dispose path,
+                renderer fallback story, and host element contract.
+              </td>
+            </tr>
+            <tr>
+              <td>Resize and layout</td>
+              <td>
+                <code>FitAddon.fit()</code> calculates columns and rows from a
+                hidden-or-visible browser container. <code>onResize</code>
+                forwards dimensions to the PTY.
+              </td>
+              <td>
+                Ghostty integration must own cell measurement, font loading,
+                hidden-pane behavior, and PTY resize dedupe.
+              </td>
+            </tr>
+            <tr>
+              <td>cwd tracking</td>
+              <td>
+                <code>terminal.parser.registerOscHandler(7)</code> parses OSC 7
+                from shell prompts and agent output.
+              </td>
+              <td>
+                Need an effect/callback path for OSC, plus stale-restore
+                suppression and the existing text-hint fallback.
+              </td>
+            </tr>
+            <tr>
+              <td>Restore and replay</td>
+              <td>
+                <code>Terminal.write(data, callback)</code> sequences historical
+                replay, buffered events, and live writes through cursor dedupe.
+              </td>
+              <td>
+                A Ghostty path should consume raw bytes, maintain equivalent
+                replay cursors, and provide a "processed" callback or event.
+              </td>
+            </tr>
+            <tr>
+              <td>Clipboard and selection</td>
+              <td>
+                <code>hasSelection()</code>, <code>getSelection()</code>,
+                <code>paste()</code>, <code>selectAll()</code>, and
+                <code>attachCustomKeyEventHandler()</code>.
+              </td>
+              <td>
+                Selection, copy-on-selection, context menu, and paste safety
+                must be rebuilt or bridged through libghostty selection APIs.
+              </td>
+            </tr>
+            <tr>
+              <td>Burner terminals</td>
+              <td>
+                Hidden xterm <code>Body</code> instances stay mounted so hide
+                does not lose scrollback or detach from live PTY output.
+              </td>
+              <td>
+                Replacement must support cheap hidden instances or introduce a
+                real snapshot API for remounting.
+              </td>
+            </tr>
+            <tr>
+              <td>Production build</td>
+              <td>
+                Vite uses Terser because esbuild mangles an xterm 6.0.0 pattern.
+              </td>
+              <td>
+                Removing xterm could delete that workaround, but any native or
+                WASM Ghostty path introduces its own build/packaging risks.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>Important low-level mismatch:</strong> Vimeflow currently
+          emits PTY output as lossy UTF-8 strings plus byte offsets. xterm.js can
+          accept strings or <code>Uint8Array</code>, and its decoder is stream
+          aware for byte input. <code>libghostty-vt</code> expects VT bytes, so
+          a serious prototype should add a raw-byte IPC path or a stream-aware
+          decode layer before changing the visible pane.
+        </div>
+      </section>
+
+      <section id="ghostty">
+        <h2><span class="num">02</span> What Ghostty Offers</h2>
+        <p>
+          Ghostty should be treated as three related but different things:
+          the standalone app, the emerging embeddable library family, and the
+          future full-renderer/widget story. Only the library path is relevant
+          to Vimeflow's integrated React workspace.
+        </p>
+
+        <div class="grid cols-3">
+          <article class="card">
+            <span class="tag info">Standalone app</span>
+            <h3>Fast native terminal</h3>
+            <p>
+              Ghostty is a native terminal emulator for macOS and Linux, using
+              Metal on macOS and OpenGL on Linux. Its own GUI has windows, tabs,
+              splits, native platform integration, and a separate terminfo entry.
+            </p>
+            <p>
+              This is excellent for end users, but it is not a React component
+              that can replace <code>&lt;Body /&gt;</code>.
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag good">Plausible R&amp;D path</span>
+            <h3><code>libghostty-vt</code></h3>
+            <p>
+              The current library exposes terminal state, VT stream processing,
+              scrollback, reflow on resize, render-state snapshots, formatter
+              APIs, key encoding, mouse encoding, paste utilities, and WASM
+              helpers.
+            </p>
+            <p>
+              This is the most interesting direction for Vimeflow, but its API
+              is explicitly unstable.
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag warn">Future path</span>
+            <h3>Renderer/widgets</h3>
+            <p>
+              Ghostty's roadmap mentions later libraries for input handling,
+              GPU rendering, GTK widgets, Swift frameworks, and full terminal
+              views.
+            </p>
+            <p>
+              Those would matter for a native embedded pane, but they are not
+              the low-risk path today.
+            </p>
+          </article>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Ghostty capability</th>
+              <th>Potential Vimeflow value</th>
+              <th>Current caveat</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Parser and terminal state</td>
+              <td>
+                More native-grade VT behavior, reflow, scrollback, state queries,
+                and modern protocol coverage.
+              </td>
+              <td>
+                Requires raw bytes and a new adapter boundary. The C API is new
+                and breaking changes are expected.
+              </td>
+            </tr>
+            <tr>
+              <td>Render state API</td>
+              <td>
+                Could drive a custom canvas/WebGL/DOM renderer with dirty-region
+                updates rather than relying on xterm's renderer.
+              </td>
+              <td>
+                Vimeflow would own the renderer, selection painting, IME details,
+                accessibility, and performance tuning.
+              </td>
+            </tr>
+            <tr>
+              <td>Formatter to plain/VT/HTML</td>
+              <td>
+                Useful for transcript capture, copy/export, debug snapshots, and
+                test fixtures even without replacing the live pane.
+              </td>
+              <td>
+                Not a replacement for interactive rendering.
+              </td>
+            </tr>
+            <tr>
+              <td>Key and mouse encoding</td>
+              <td>
+                Could reduce hand-rolled keyboard/mouse protocol code, including
+                Kitty keyboard and mouse modes.
+              </td>
+              <td>
+                Needs full DOM input mapping, IME handling, platform shortcuts,
+                and focus integration.
+              </td>
+            </tr>
+            <tr>
+              <td><code>xterm-ghostty</code> terminfo</td>
+              <td>
+                More accurate feature advertising if Vimeflow truly behaves like
+                Ghostty.
+              </td>
+              <td>
+                Do not set <code>TERM=xterm-ghostty</code> while xterm.js still
+                renders the pane. Current backend honestly advertises
+                <code>xterm-256color</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="options">
+        <h2><span class="num">03</span> Integration Options</h2>
+
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Pros</th>
+              <th>Cons</th>
+              <th>Fit for Vimeflow</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <strong>Keep xterm.js</strong><br />
+                production baseline
+              </td>
+              <td>
+                Minimal risk, existing tests remain valid, browser integration is
+                already solved, current UX surfaces keep working.
+              </td>
+              <td>
+                Keeps known browser renderer limitations and xterm-specific
+                workarounds.
+              </td>
+              <td>
+                Best default while the UI handoff migration is still active.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Use <code>libghostty-vt</code> as a companion</strong><br />
+                parser/state experiments
+              </td>
+              <td>
+                Lets Vimeflow evaluate correctness, raw-byte handling, HTML
+                snapshots, and state extraction without disrupting the live pane.
+              </td>
+              <td>
+                Requires a native/WASM build path and a stable adapter contract.
+              </td>
+              <td>
+                Strongest near-term R&amp;D option.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Replace renderer with libghostty-vt plus custom UI</strong><br />
+                canvas/WebGL/DOM renderer
+              </td>
+              <td>
+                Could remove xterm renderer quirks while keeping the React shell
+                and Vimeflow pane UX.
+              </td>
+              <td>
+                Vimeflow owns rendering, selection, accessibility, IME, scroll,
+                dirty-region painting, and test fixtures.
+              </td>
+              <td>
+                Feasible only as a major platform project.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Embed native Ghostty renderer/widget</strong><br />
+                AppKit/GTK/Metal/OpenGL
+              </td>
+              <td>
+                Maximum performance and closest to Ghostty's native experience.
+              </td>
+              <td>
+                Electron composes web views through <code>View</code> and
+                <code>WebContentsView</code>, not arbitrary AppKit/GTK terminal
+                widgets. Overlay, focus, z-order, accessibility, and packaging
+                become platform-specific.
+              </td>
+              <td>
+                Not a good match for the current Electron/React architecture.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Launch Ghostty externally</strong><br />
+                separate app/window
+              </td>
+              <td>
+                Quickest way to let a user run a Ghostty terminal at a workspace
+                cwd.
+              </td>
+              <td>
+                Loses integrated panes, agent observability, PTY replay, burner
+                lifecycle, command palette focus, and session persistence.
+              </td>
+              <td>
+                Useful as an "open in external terminal" feature, not as a
+                replacement.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="implications">
+        <h2><span class="num">04</span> Implications</h2>
+
+        <div class="grid cols-2">
+          <article class="card">
+            <span class="tag bad">High risk</span>
+            <h3>Frontend contract churn</h3>
+            <ul>
+              <li>Define a <code>TerminalViewAdapter</code> before any swap.</li>
+              <li>Move xterm-specific calls behind adapter methods.</li>
+              <li>
+                Preserve <code>focusTerminal</code>, selection, copy/paste,
+                context menu, hidden-pane fit, and OSC cwd callbacks.
+              </li>
+              <li>
+                Rework tests that currently mock <code>Terminal</code>,
+                <code>FitAddon</code>, <code>WebglAddon</code>, and
+                <code>CanvasAddon</code>.
+              </li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <span class="tag warn">Medium risk</span>
+            <h3>Backend byte semantics</h3>
+            <ul>
+              <li>
+                Replace lossy UTF-8 replay with stream-aware raw bytes or a
+                lossless byte transport.
+              </li>
+              <li>
+                Keep raw byte offsets as the source of replay dedupe truth.
+              </li>
+              <li>
+                Decide whether the renderer, sidecar, or both own terminal state.
+              </li>
+              <li>
+                Avoid setting <code>TERM=xterm-ghostty</code> until the behavior
+                actually matches Ghostty.
+              </li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <span class="tag warn">Medium risk</span>
+            <h3>Packaging and portability</h3>
+            <ul>
+              <li>Build Zig/C artifacts or WASM alongside the Rust sidecar.</li>
+              <li>Bundle artifacts for macOS and Linux in Electron Builder.</li>
+              <li>Plan for Windows separately: Ghostty GUI Windows support is not the current stable target.</li>
+              <li>Track ABI/API churn because <code>libghostty-vt</code> is not stable.</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <span class="tag good">Upside</span>
+            <h3>Where the payoff could be real</h3>
+            <ul>
+              <li>Better VT correctness and modern protocol support.</li>
+              <li>Cleaner terminal-state snapshots for restore, export, and testing.</li>
+              <li>Potentially fewer browser renderer workarounds in the long run.</li>
+              <li>Shared state engine for terminal, logs, transcripts, and agent-status parsing.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="callout">
+          <strong>Architecture warning:</strong> Vimeflow's sidecar is already
+          the PTY owner. Replacing xterm with Ghostty should not move PTY
+          lifecycle ownership into a second terminal app process. Keep the
+          sidecar as the process/session authority and evaluate Ghostty as an
+          emulator/rendering component only.
+        </div>
+      </section>
+
+      <section id="plan">
+        <h2><span class="num">05</span> Suggested Plan</h2>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Goal</th>
+              <th>Exit criteria</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>0. Baseline</strong></td>
+              <td>
+                Keep xterm production behavior. Add no user-facing Ghostty
+                dependency.
+              </td>
+              <td>
+                Document current xterm contracts and test fixtures. Fix the
+                deferred backend UTF-8 chunk-boundary issue independently.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>1. Adapter seam</strong></td>
+              <td>
+                Introduce an internal adapter around xterm without changing
+                behavior.
+              </td>
+              <td>
+                Existing terminal, burner, restore, clipboard, and resize tests
+                pass with xterm behind the adapter.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>2. Raw byte path</strong></td>
+              <td>
+                Preserve PTY bytes losslessly to the renderer or to a terminal
+                state engine.
+              </td>
+              <td>
+                Replay offsets remain correct for split multibyte sequences,
+                invalid UTF-8, and large agent output.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>3. Headless Ghostty prototype</strong></td>
+              <td>
+                Feed the same PTY stream into <code>libghostty-vt</code> in a
+                hidden/dev-only path.
+              </td>
+              <td>
+                Compare cursor position, scrollback, title/OSC effects, HTML
+                formatter output, resize reflow, and keyboard/mouse encoders.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>4. Visual prototype</strong></td>
+              <td>
+                Build a single-pane proof of concept using render-state snapshots
+                and a Vimeflow-owned renderer.
+              </td>
+              <td>
+                Handles nvim, tmux, Claude/Codex output, selection/copy, paste,
+                hidden/reveal, focus restore, and resize without regressions.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>5. Decision record</strong></td>
+              <td>
+                Decide whether Ghostty should replace xterm, augment it, or stay
+                external.
+              </td>
+              <td>
+                Quantified performance/correctness data, packaging plan, and a
+                rollback strategy.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sources">
+        <h2><span class="num">06</span> Sources</h2>
+        <p>
+          Sources were checked during this investigation on 2026-06-15. External
+          links prefer official project documentation and repository material.
+        </p>
+
+        <div class="source-list">
+          <a href="https://github.com/ghostty-org/ghostty">
+            <strong>Ghostty GitHub README</strong> - project status,
+            architecture, roadmap, <code>libghostty</code>, and performance notes.
+          </a>
+          <a href="https://ghostty.org/docs/about">
+            <strong>About Ghostty</strong> - native app architecture and
+            <code>libghostty</code> overview.
+          </a>
+          <a href="https://ghostty.org/docs/features">
+            <strong>Ghostty features</strong> - platform support, GPU rendering,
+            modern terminal features, and xterm compatibility stance.
+          </a>
+          <a href="https://ghostty.org/docs/help/terminfo">
+            <strong>Ghostty terminfo</strong> - <code>xterm-ghostty</code> TERM
+            behavior and compatibility rationale.
+          </a>
+          <a href="https://libghostty.tip.ghostty.org/">
+            <strong>libghostty-vt API reference</strong> - terminal state,
+            render state, formatter, key/mouse encoders, paste utilities, and
+            instability warning.
+          </a>
+          <a href="https://mitchellh.com/writing/libghostty-is-coming">
+            <strong>Libghostty Is Coming</strong> - roadmap context for
+            <code>libghostty-vt</code>, later renderer/input/widget libraries,
+            and API maturity.
+          </a>
+          <a href="https://github.com/xtermjs/xterm.js/">
+            <strong>xterm.js README</strong> - browser terminal component,
+            addons, PTY hookup model, Electron support, and feature set.
+          </a>
+          <a href="https://xtermjs.org/docs/api/terminal/classes/terminal/">
+            <strong>xterm.js Terminal API</strong> - <code>onData</code>,
+            <code>onResize</code>, parser, selection, paste, write callbacks,
+            and refresh APIs.
+          </a>
+          <a href="https://xtermjs.org/docs/guides/encoding/">
+            <strong>xterm.js encoding guide</strong> - string vs
+            <code>Uint8Array</code> input and stream-aware UTF-8 decoding.
+          </a>
+          <a href="https://www.electronjs.org/docs/latest/api/base-window">
+            <strong>Electron BaseWindow</strong> - multi-view composition through
+            Electron web views.
+          </a>
+          <a href="https://www.electronjs.org/docs/latest/api/web-contents-view">
+            <strong>Electron WebContentsView</strong> - the supported embedded
+            web-content view model.
+          </a>
+        </div>
+
+        <p class="footnote">
+          Local Vimeflow files reviewed include
+          <code>src/features/terminal/components/TerminalPane/Body.tsx</code>,
+          <code>src/features/terminal/hooks/useTerminal.ts</code>,
+          <code>src/features/terminal/hooks/useTerminalClipboard.ts</code>,
+          <code>src/features/terminal/hooks/useBurnerTerminals.ts</code>,
+          <code>src/features/terminal/services/desktopTerminalService.ts</code>,
+          <code>crates/backend/src/terminal/commands.rs</code>,
+          <code>crates/backend/src/terminal/state.rs</code>,
+          <code>vite.config.ts</code>, and the existing terminal decision docs.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

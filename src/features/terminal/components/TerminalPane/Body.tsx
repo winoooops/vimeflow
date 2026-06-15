@@ -10,13 +10,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
-import { CanvasAddon } from '@xterm/addon-canvas'
-// WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
-import { themeService } from '../../../../theme'
-import { toXtermTheme } from '../../theme/toXtermTheme'
 import {
   useTerminal,
   type RestoreData,
@@ -24,6 +17,12 @@ import {
 } from '../../hooks/useTerminal'
 import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
+import type {
+  TerminalFitController,
+  TerminalRendererHandle,
+  TerminalSurface,
+  TerminalViewportReader,
+} from '../../types'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
@@ -35,12 +34,8 @@ import {
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
-import {
-  TERMINAL_FONT_FAMILY,
-  TERMINAL_FONT_SIZE,
-  loadTerminalFonts,
-} from './terminalFont'
-import '@xterm/xterm/css/xterm.css'
+import { loadTerminalFonts } from './terminalFont'
+import { createTerminalInstance } from './terminalInstance'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
@@ -76,17 +71,21 @@ const logAgentCwdDebug = (
 //
 // What the cache actually serves:
 //   - the imperative `focusTerminal()` handle, which reads
-//     `terminalCache.get(sessionId)?.terminal.focus()` to focus xterm
+//     `terminalCache.get(sessionId)?.terminal.focus()` to focus the renderer
 //     without reaching into Body's internals;
 //   - tests + the existing public `clearTerminalCache` /
 //     `disposeTerminalSession` API surface (preserved per the step-4
 //     migration spec — external imports would break otherwise).
 //
 // New internal code should NOT add to the cache for "tab persistence"
-// reasons; xterm lifetime is scoped to Body's mount.
+// reasons; terminal renderer lifetime is scoped to Body's mount.
 export const terminalCache = new Map<
   string,
-  { terminal: Terminal; fitAddon: FitAddon }
+  {
+    terminal: TerminalSurface
+    fitController: TerminalFitController
+    viewportReader: TerminalViewportReader
+  }
 >()
 
 /**
@@ -114,7 +113,7 @@ export type BodyMode = 'attach' | 'spawn'
 export interface BodyProps {
   /**
    * Rust PTY handle. This is the value Rust IPC calls `sessionId`; in the
-   * pane model it flows from `pane.ptyId` and keys xterm cache entries.
+   * pane model it flows from `pane.ptyId` and keys terminal cache entries.
    */
   sessionId: string
 
@@ -179,12 +178,12 @@ export interface BodyProps {
   onPtyStatusChange?: (status: 'idle' | 'running' | 'exited' | 'error') => void
 
   /**
-   * Called when xterm gains or loses focus.
+   * Called when the terminal renderer gains or loses focus.
    */
   onFocusChange?: (focused: boolean) => void
 
   /**
-   * Defer expensive xterm fitting while surrounding layout is actively being
+   * Defer expensive terminal fitting while surrounding layout is actively being
    * dragged. The final size is fitted when this flips back to false.
    */
   deferFit?: boolean
@@ -212,8 +211,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   ref
 ): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [terminal, setTerminal] = useState<Terminal | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
+  const [terminal, setTerminal] = useState<TerminalSurface | null>(null)
+  const fitControllerRef = useRef<TerminalFitController | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
   const cancelScheduledFitRef = useRef<(() => void) | null>(null)
@@ -495,12 +494,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
     // Check if we already have a terminal for this session
     const cached = terminalCache.get(sessionId)
-    let newTerminal: Terminal
-    let fitAddon: FitAddon
-    // Renderer addons (at most one non-null) — kept in closure so cleanup disposes them before the terminal.
-    let webglAddon: WebglAddon | null = null
-    let webglContextLossDisposable: { dispose: () => void } | null = null
-    let canvasAddon: CanvasAddon | null = null
+    let newTerminal: TerminalSurface
+    let fitController: TerminalFitController
+    let rendererHandle: TerminalRendererHandle | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
     let disposed = false
@@ -512,7 +508,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       }
     }
 
-    const fitIfNeeded = (targetFitAddon: FitAddon, force = false): boolean => {
+    const fitIfNeeded = (
+      targetFitController: TerminalFitController,
+      force = false
+    ): boolean => {
       const width = node.offsetWidth
       const height = node.offsetHeight
 
@@ -530,12 +529,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       }
 
       lastFitSize = { width, height }
-      targetFitAddon.fit()
+      targetFitController.fit()
 
       return true
     }
 
-    const scheduleFit = (targetFitAddon: FitAddon): void => {
+    const scheduleFit = (targetFitController: TerminalFitController): void => {
       if (deferFitRef.current) {
         return
       }
@@ -549,12 +548,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         if (deferFitRef.current) {
           return
         }
-        fitIfNeeded(targetFitAddon)
+        fitIfNeeded(targetFitController)
       })
     }
 
     const flushFit = (
-      targetFitAddon: FitAddon,
+      targetFitController: TerminalFitController,
       options: { force?: boolean; afterFit?: () => void } = {}
     ): void => {
       cancelScheduledFit()
@@ -566,7 +565,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
             return
           }
           const width = node.offsetWidth
-          const didFit = fitIfNeeded(targetFitAddon, options.force ?? false)
+
+          const didFit = fitIfNeeded(
+            targetFitController,
+            options.force ?? false
+          )
+
           if (!didFit && width <= 0 && options.afterFit) {
             flushWithRetry()
 
@@ -581,12 +585,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       flushWithRetry()
     }
 
-    const fitInitialWhenReady = (targetFitAddon: FitAddon): boolean => {
+    const fitInitialWhenReady = (
+      targetFitController: TerminalFitController
+    ): boolean => {
       if (deferFitRef.current) {
         return false
       }
 
-      return fitIfNeeded(targetFitAddon, true)
+      return fitIfNeeded(targetFitController, true)
     }
 
     let didInitialFit = false
@@ -594,72 +600,34 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     if (cached) {
       // Reuse existing terminal from cache
       newTerminal = cached.terminal
-      fitAddon = cached.fitAddon
-      fitAddonRef.current = fitAddon
+      fitController = cached.fitController
+      fitControllerRef.current = fitController
 
       // Re-open terminal in the new container
       newTerminal.open(node)
 
       // Re-fit to new container — guard against hidden (display:none) containers
-      // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
+      // where offsetWidth is 0. Fitting at zero width tells the renderer cols≈1,
       // which causes the PTY to re-wrap scrollback into a narrow column.
-      didInitialFit = fitInitialWhenReady(fitAddon)
+      didInitialFit = fitInitialWhenReady(fitController)
     } else {
-      // Create new terminal instance
-      newTerminal = new Terminal({
-        cursorBlink: true,
-        fontSize: TERMINAL_FONT_SIZE,
-        fontFamily: TERMINAL_FONT_FAMILY,
-        theme: toXtermTheme(themeService.current().terminal),
-        scrollback: 10000,
-        allowProposedApi: true,
-      })
+      const created = createTerminalInstance()
+      newTerminal = created.terminal
+      fitController = created.fitController
+      fitControllerRef.current = fitController
 
-      // Create and load fit addon
-      fitAddon = new FitAddon()
-      newTerminal.loadAddon(fitAddon)
-      fitAddonRef.current = fitAddon
-
-      // Open terminal in container — WebglAddon requires open() to have been
-      // called first (it needs the canvas elements xterm creates in open()).
+      // Open terminal in container before adapter-specific renderer addons
+      // attach to DOM/canvas elements.
       newTerminal.open(node)
 
-      // Try WebGL first (fastest); fall back to Canvas2D if WebGL is
-      // unavailable. Both renderers honor customGlyphs. See the file-level
-      // comment for why this matters and what happens if both fail.
-      try {
-        const addon = new WebglAddon()
-        webglContextLossDisposable = addon.onContextLoss(() => {
-          addon.dispose()
-          webglAddon = null
-          webglContextLossDisposable = null
-          // Reattach Canvas2D so customGlyphs survives WebGL context loss.
-          try {
-            const fallback = new CanvasAddon()
-            newTerminal.loadAddon(fallback)
-            canvasAddon = fallback
-          } catch {
-            // Canvas2D also unavailable — xterm reverts to DOM rendering.
-          }
-        })
-        newTerminal.loadAddon(addon)
-        webglAddon = addon
-      } catch {
-        try {
-          const addon = new CanvasAddon()
-          newTerminal.loadAddon(addon)
-          canvasAddon = addon
-        } catch {
-          // Both renderer addons failed — xterm reverts to its DOM renderer.
-        }
-      }
+      rendererHandle = created.attachRenderer()
 
       // Fit terminal to container — guard against hidden (display:none) containers
-      didInitialFit = fitInitialWhenReady(fitAddon)
+      didInitialFit = fitInitialWhenReady(fitController)
 
       // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
-      // output both arrive through xterm's parser, so this stays pane-local.
-      newTerminal.parser.registerOscHandler(7, (data) => {
+      // output both arrive through the terminal parser, so this stays pane-local.
+      created.parser.registerOscHandler(7, (data) => {
         const previousCwd = agentCwdRef.current
 
         const path = parseOsc7Cwd(data, {
@@ -704,7 +672,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       })
 
       // Cache the terminal instance for this session
-      terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
+      terminalCache.set(sessionId, {
+        terminal: newTerminal,
+        fitController,
+        viewportReader: created.viewportReader,
+      })
     }
 
     const refreshAfterFontFit = (): void => {
@@ -731,7 +703,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       }
 
       pendingDeferredRefreshAfterFitRef.current = true
-      flushFit(fitAddon, {
+      flushFit(fitController, {
         force: true,
         afterFit: (): void => {
           clearPendingDeferredFit()
@@ -763,7 +735,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const flushDeferredFit = (): void => {
       if (pendingDeferredRefreshAfterFitRef.current) {
         pendingDeferredFitFlushRef.current = false
-        flushFit(fitAddon, {
+        flushFit(fitController, {
           force: true,
           afterFit: (): void => {
             clearPendingDeferredFit()
@@ -775,7 +747,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       }
 
       pendingDeferredFitFlushRef.current = false
-      flushFit(fitAddon)
+      flushFit(fitController)
     }
 
     const refreshAfterPendingInitialFit = (): void => {
@@ -810,8 +782,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     resizeRef.current(newTerminal.cols, newTerminal.rows)
 
     // Handle resize events - notify PTY of terminal size changes.
-    // The cols/rows from xterm's onResize event are already correct because
-    // fitAddon.fit() (the trigger upstream) has already computed and applied
+    // The cols/rows from the terminal's onResize event are already correct because
+    // fitController.fit() (the trigger upstream) has already computed and applied
     // them. Calling fit() again here would re-measure the container — pure
     // overhead during rapid sidebar drag / window resize. Just forward to PTY.
     let lastForwardedResize: { cols: number; rows: number } | null = null
@@ -848,7 +820,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     node.addEventListener('focusin', handleFocusIn)
     node.addEventListener('focusout', handleFocusOut)
 
-    // Root cause B (Claude + Codex consensus): xterm renders on a debounced
+    // Root cause B (Claude + Codex consensus): the terminal renders on a debounced
     // animation-frame loop and never forces a repaint when the OS window
     // regains focus or visibility. The browser throttles that loop while the
     // window is covered or unfocused, so rows that streamed in while we were
@@ -872,7 +844,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Guard: skip fit when container is hidden (display:none → width=0)
     // to avoid PTY scrollback re-wrapping at a narrow column count.
     const resizeObserver = new ResizeObserver(() => {
-      scheduleFit(fitAddon)
+      scheduleFit(fitController)
     })
     resizeObserver.observe(node)
 
@@ -897,23 +869,17 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       node.removeEventListener('focusout', handleFocusOut)
       window.removeEventListener('focus', repaintOnWindowVisible)
       document.removeEventListener('visibilitychange', repaintOnWindowVisible)
-      // Dispose the renderer addon (and any WebGL context-loss subscription)
-      // before the terminal itself — order matters: the addon holds
-      // references to the terminal's renderer state and must clean up while
-      // that state is still valid. At most one renderer addon is non-null.
-      webglContextLossDisposable?.dispose()
-      webglContextLossDisposable = null
-      webglAddon?.dispose()
-      webglAddon = null
-      canvasAddon?.dispose()
-      canvasAddon = null
+      // Renderer addons must dispose before the terminal itself; the handle
+      // owns that adapter-specific ordering.
+      rendererHandle?.dispose()
+      rendererHandle = null
       const entry = terminalCache.get(sessionId)
       if (entry) {
         entry.terminal.dispose()
         terminalCache.delete(sessionId)
       }
       setTerminal(null)
-      fitAddonRef.current = null
+      fitControllerRef.current = null
     }
   }, [sessionId])
 

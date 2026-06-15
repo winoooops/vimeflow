@@ -1,11 +1,11 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { Terminal } from '@xterm/xterm'
 import { useTerminal } from './useTerminal'
 import { MockTerminalService } from '../services/terminalService'
+import type { TerminalSurface } from '../types'
 
-// Mock xterm Terminal with test helpers
-interface MockTerminal extends Terminal {
+// Mock terminal surface with test helpers
+interface MockTerminal extends TerminalSurface {
   _mockTriggerData: (data: string) => void
   _mockFlushWrites: () => void
 }
@@ -112,7 +112,7 @@ describe('useTerminal', () => {
     expect(result.current.session).toBeNull()
   })
 
-  test('writes PTY data to xterm terminal', async () => {
+  test('writes PTY data to terminal surface', async () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
@@ -163,7 +163,7 @@ describe('useTerminal', () => {
     expect(onOutput).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
-  test('handles keyboard input from xterm', async () => {
+  test('handles keyboard input from terminal surface', async () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,

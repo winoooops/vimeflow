@@ -1,32 +1,28 @@
-import { afterEach, expect, test } from 'vitest'
-import type { Terminal } from '@xterm/xterm'
+import { afterEach, expect, test, vi } from 'vitest'
 import { themeService } from '../../../theme'
 import {
   clearTerminalCache,
   terminalCache,
 } from '../components/TerminalPane/Body'
+import type { TerminalSurface } from '../types'
 import { initTerminalThemeBridge } from './themeBridge'
-import { toXtermTheme } from './toXtermTheme'
 
 afterEach(() => {
   clearTerminalCache()
   themeService.apply('obsidian-lens')
 })
 
-test('live terminals get the new xterm theme on switch', () => {
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const fake = { options: { theme: {} }, dispose: (): void => {} }
+test('live terminals receive the new terminal theme on switch', () => {
+  const fake = { applyTheme: vi.fn(), dispose: vi.fn() }
   terminalCache.set('s1', {
-    terminal: fake as unknown as Terminal,
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    fitAddon: { fit: (): void => {} } as never,
+    terminal: fake as unknown as TerminalSurface,
+    fitController: { fit: vi.fn() },
+    viewportReader: { readVisibleText: vi.fn() },
   })
 
   const stop = initTerminalThemeBridge()
   themeService.apply('flexoki')
 
-  expect(fake.options.theme).toEqual(
-    toXtermTheme(themeService.current().terminal)
-  )
+  expect(fake.applyTheme).toHaveBeenCalledWith(themeService.current().terminal)
   stop()
 })

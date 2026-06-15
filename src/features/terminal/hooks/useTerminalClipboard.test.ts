@@ -1,10 +1,14 @@
 import { act, renderHook } from '@testing-library/react'
-import type { IDisposable, Terminal } from '@xterm/xterm'
 import { expect, test, vi } from 'vitest'
 import { useTerminalClipboard } from './useTerminalClipboard'
+import type { TerminalDisposable, TerminalSurface } from '../types'
+
+interface MockClipboardTerminal extends TerminalSurface {
+  clearSelection: () => void
+}
 
 interface MockTerminalControls {
-  terminal: Terminal
+  terminal: MockClipboardTerminal
   fireSelectionChange: (hasSelection: boolean) => void
   element: HTMLElement
 }
@@ -28,8 +32,8 @@ const createMockTerminal = (): MockTerminalControls => {
       selectionText = 'EVERYTHING'
     },
     paste: (): void => undefined,
-    attachCustomKeyEventHandler: vi.fn(),
-    onSelectionChange: (listener: () => void): IDisposable => {
+    attachKeyEventHandler: vi.fn(),
+    onSelectionChange: (listener: () => void): TerminalDisposable => {
       selectionListeners.add(listener)
 
       return {
@@ -38,7 +42,7 @@ const createMockTerminal = (): MockTerminalControls => {
         },
       }
     },
-  } as unknown as Terminal
+  } as unknown as MockClipboardTerminal
 
   return {
     terminal,
@@ -129,7 +133,7 @@ const flushMicrotasks = async (): Promise<void> => {
 }
 
 const captureKeyHandler = (mock: MockTerminalControls): AttachedHandler => {
-  const attachSpy = mock.terminal.attachCustomKeyEventHandler as unknown as {
+  const attachSpy = mock.terminal.attachKeyEventHandler as unknown as {
     mock: { calls: [AttachedHandler][] }
   }
   const calls = attachSpy.mock.calls
@@ -792,7 +796,7 @@ test('re-render with new onCopyError reference does not re-attach handlers', () 
   const mock = createMockTerminal()
 
   const attachSpy = mock.terminal
-    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+    .attachKeyEventHandler as unknown as ReturnType<typeof vi.fn>
 
   const { rerender } = renderHook(
     ({ onCopyError }: { onCopyError: () => void }) =>
@@ -810,7 +814,7 @@ test('unmount disposes onSelectionChange, restores default key handler, and remo
   const mock = createMockTerminal()
 
   const attachSpy = mock.terminal
-    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+    .attachKeyEventHandler as unknown as ReturnType<typeof vi.fn>
 
   const { result, unmount } = renderHook(() =>
     useTerminalClipboard({ terminal: mock.terminal })
@@ -837,11 +841,11 @@ test('unmount disposes onSelectionChange, restores default key handler, and remo
   expect(result.current.isOpen).toBe(false)
 })
 
-test('unmount tolerates a terminal whose attachCustomKeyEventHandler throws', () => {
+test('unmount tolerates a terminal whose key event handler registration throws', () => {
   const mock = createMockTerminal()
 
   const attachSpy = mock.terminal
-    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+    .attachKeyEventHandler as unknown as ReturnType<typeof vi.fn>
 
   const { unmount } = renderHook(() =>
     useTerminalClipboard({ terminal: mock.terminal })
@@ -860,13 +864,13 @@ test('changing terminal identity cleans up old terminal and attaches to new one'
   const second = createMockTerminal()
 
   const firstAttach = first.terminal
-    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+    .attachKeyEventHandler as unknown as ReturnType<typeof vi.fn>
 
   const secondAttach = second.terminal
-    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+    .attachKeyEventHandler as unknown as ReturnType<typeof vi.fn>
 
   const { rerender } = renderHook(
-    ({ terminal }: { terminal: Terminal }) =>
+    ({ terminal }: { terminal: TerminalSurface }) =>
       useTerminalClipboard({ terminal }),
     { initialProps: { terminal: first.terminal } }
   )
@@ -884,9 +888,9 @@ test('terminal === null after non-null resets isOpen/openAt/hasSelection', () =>
   const mock = createMockTerminal()
 
   const { result, rerender } = renderHook(
-    ({ terminal }: { terminal: Terminal | null }) =>
+    ({ terminal }: { terminal: TerminalSurface | null }) =>
       useTerminalClipboard({ terminal }),
-    { initialProps: { terminal: mock.terminal as Terminal | null } }
+    { initialProps: { terminal: mock.terminal as TerminalSurface | null } }
   )
 
   act(() => {

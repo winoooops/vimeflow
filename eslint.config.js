@@ -128,6 +128,29 @@ export default defineConfig([
     },
   },
   {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'src/test/**',
+      'src/features/terminal/components/TerminalPane/xtermInstance.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@xterm/*'],
+              message:
+                'Terminal renderer code must go through TerminalSurface/TerminalInstance; keep xterm imports inside xtermInstance.ts.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // The react-markdown component map pulls `node`/`className` out to drop
     // them before spreading `...props`; those discarded siblings are
     // intentional, not dead code. Scope the strip-and-spread relaxation to just
