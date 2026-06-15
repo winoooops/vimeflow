@@ -154,6 +154,7 @@ const startBoundsCapture = async (): Promise<void> => {
 const stopBoundsCapture = async (): Promise<void> => {
   await browser.execute(() => {
     window.__VIMEFLOW_E2E__?.stopBrowserPaneBoundsCapture()
+    window.__VIMEFLOW_E2E__?.clearBrowserPaneBoundsCaptures()
   })
 }
 

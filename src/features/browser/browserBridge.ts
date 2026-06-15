@@ -79,8 +79,6 @@ export const clearBrowserPaneBoundsCaptures = (): void => {
 
 export const stopBrowserPaneBoundsCapture = (): void => {
   browserPaneBoundsCaptureActive = false
-  browserPaneBoundsCaptures = []
-  browserPaneBoundsSequence = 0
 }
 
 export const getBrowserPaneBoundsCaptures = (): BrowserPaneBoundsCapture[] =>

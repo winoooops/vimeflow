@@ -1,22 +1,10 @@
+import type { BrowserPaneBoundsRequest } from '../features/browser/types'
+
 export {}
 
 declare global {
-  // Mirrors BrowserPaneBoundsCapture in src/features/browser/browserBridge.ts.
-  interface BrowserPaneBoundsCapture {
+  interface BrowserPaneBoundsCapture extends BrowserPaneBoundsRequest {
     sequence: number
-    sessionId: string
-    paneId: string
-    bounds: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }
-    visible: boolean
-    shortcutContext?: {
-      paneIds: string[]
-      activePaneId: string | null
-    }
   }
 
   interface Window {
