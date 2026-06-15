@@ -101,6 +101,8 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+import { OverlayStackProvider } from './overlays/OverlayStackProvider'
+import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
 
 const rateLimitPercentage = (
   limit: RateLimitsState['fiveHour'] | null | undefined
@@ -225,7 +227,7 @@ const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
 
 type DockTab = 'editor' | 'diff'
 
-export const WorkspaceView = (): ReactElement => {
+const WorkspaceViewContent = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
@@ -1913,6 +1915,14 @@ export const WorkspaceView = (): ReactElement => {
         } as CSSProperties
       }
     >
+      <WorkspaceOverlayRegistrations
+        commandPaletteOpen={commandPalette.state.isOpen}
+        unsavedChangesDialogOpen={showUnsavedDialog}
+        burnerTerminalOpen={hasVisibleBurner}
+        paneRenameOpen={paneRenameNode !== null}
+        dragOverlayOpen={terminalFitDeferred}
+        bannerOpen={fileError !== null || infoMessage !== null}
+      />
       {isCompactViewport && !isSidebarClosed && (
         <button
           type="button"
@@ -2235,7 +2245,11 @@ export const WorkspaceView = (): ReactElement => {
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
-          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+          <div
+            data-testid="workspace-banner-stack"
+            data-workspace-overlay-id="workspace-banners"
+            className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2"
+          >
             {/* File error banner — surfaces failures from direct file open
                 (openFileSafely) and vim :w saves (handleVimSave). Rendered at
                 the top of the main area so the user always sees what went wrong. */}
@@ -2337,7 +2351,12 @@ export const WorkspaceView = (): ReactElement => {
       />
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
-      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+      {isDragging && (
+        <div
+          data-testid="workspace-drag-overlay"
+          className="fixed inset-0 z-50 cursor-col-resize"
+        />
+      )}
 
       {paneRenameNode}
       {burnerTerminalNode}
@@ -2354,5 +2373,11 @@ export const WorkspaceView = (): ReactElement => {
     </div>
   )
 }
+
+export const WorkspaceView = (): ReactElement => (
+  <OverlayStackProvider>
+    <WorkspaceViewContent />
+  </OverlayStackProvider>
+)
 
 export default WorkspaceView

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import {
   type NativeSurfaceDescriptor,
   type NativeSurfaceState,
@@ -32,6 +32,7 @@ export const useNativeSurface = (
   latestDescriptorRef.current = descriptor
 
   const { id, owner, belowPlane } = descriptor
+  const [, setLayoutRevision] = useState(0)
 
   const getRect = useCallback(
     (): DOMRectReadOnly | null => latestDescriptorRef.current.getRect(),
@@ -67,6 +68,28 @@ export const useNativeSurface = (
   if (!areOcclusionStatesEqual(stateRef.current, nextState)) {
     stateRef.current = nextState
   }
+
+  // Intersecting overlays can mount or move during the same commit that
+  // re-rendered the native surface; re-check after layout so DOM rects are
+  // committed before BrowserPane visibility decisions settle. This intentionally
+  // runs after every commit because rect getter values can change even when
+  // descriptor identity and overlay membership stay stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const committedState = getNativeSurfaceState({
+      id,
+      owner,
+      belowPlane,
+      getRect,
+    })
+
+    if (areOcclusionStatesEqual(stateRef.current, committedState)) {
+      return
+    }
+
+    stateRef.current = committedState
+    setLayoutRevision((revision) => revision + 1)
+  })
 
   return stateRef.current
 }
