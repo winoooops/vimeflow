@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-12
+last_updated: 2026-06-15
 ref_count: 31
 ---
 
@@ -647,4 +647,13 @@ filesystem scope restrictions).
 - **File:** `src/features/settings/components/panes/GeneralPane.test.tsx` L56-70
 - **Finding:** The first `GeneralPane` test consolidated the original two pane-rendering tests but the `General Settings` sub-title assertion was inadvertently left out during consolidation. No runtime risk, but a future rename of the subtitle (e.g. during an i18n pass) would go undetected by the test suite.
 - **Fix:** Restored the missing assertion: `expect(screen.getByText('General Settings')).toBeInTheDocument()`.
+- **Commit:** same commit as this entry
+
+### 65. Test assertion on union-typed field called `.length` on a function branch, checking arity instead of shortcut count
+
+- **Source:** github-claude | PR #460 round 4 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/sections.test.ts` L76-82
+- **Finding:** `KEYMAP_GROUPS` bindings can declare `keys` as either `ShortcutInput[]` or `(isMac: boolean) => ShortcutInput[]`. The test `expect(b.keys.length).toBeGreaterThan(0)` calls `.length` directly on the union, which on a function returns the function's arity (always 1) rather than the resolved shortcut array length. A regression that empties the returned array would pass the suite silently.
+- **Fix:** Resolved the function branch before asserting: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
 - **Commit:** same commit as this entry
