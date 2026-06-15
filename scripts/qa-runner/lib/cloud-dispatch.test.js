@@ -365,6 +365,41 @@ describe('runSsmDispatch', () => {
     )
   })
 
+  test('prints an explicit signal when SSM fails with no command output', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-empty' } }),
+      },
+      {
+        stdout: JSON.stringify({
+          CommandId: 'cmd-empty',
+          Status: 'Failed',
+          ResponseCode: 1,
+          StandardOutputContent: '',
+          StandardErrorContent: '',
+        }),
+      },
+    ])
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-empty',
+      region: 'us-west-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '457' },
+      timeoutSeconds: 30,
+      stdout: { write: vi.fn() },
+      stderr,
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 1,
+    })
+
+    expect(result).toEqual({ code: 1, signal: null })
+    expect(stderr.write).toHaveBeenCalledWith(
+      'SSM command cmd-empty Failed (response 1) produced no output\n'
+    )
+  })
+
   test('keeps AWS CLI env separate from forwarded PR cycle env', async () => {
     const awsEnv = { AWS_PROFILE: 'qa-control', PATH: '/usr/bin' }
 

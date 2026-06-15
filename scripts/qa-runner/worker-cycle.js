@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { shouldRefreshRunner } from './lib/cloud-dispatch.js'
+import { cleanupQaWorktrees } from './lib/worktree-cleanup.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..')
@@ -130,6 +131,19 @@ const abortOnFailure = (label, result) => {
   )
 }
 
+const cleanupWorkerWorktrees = (repoRoot) => {
+  try {
+    cleanupQaWorktrees({
+      repoRoot,
+      log: (message) => process.stdout.write(`${message}\n`),
+    })
+  } catch (error) {
+    process.stderr.write(
+      `warning: worker worktree cleanup failed: ${error.message}\n`
+    )
+  }
+}
+
 const ensureCleanTrackedTree = (repoRoot) => {
   const status = spawnSync(
     'git',
@@ -169,13 +183,18 @@ export const main = () => {
   loadWorkerEnvFile()
   warnMissingWorkerEnv()
   const repoRoot = process.env.QA_WORKER_REPO || REPO_ROOT
-  refreshRunner(process.env, repoRoot)
+  cleanupWorkerWorktrees(repoRoot)
+  try {
+    refreshRunner(process.env, repoRoot)
 
-  const result = run('node', workerRunArgs(process.env), {
-    cwd: repoRoot,
-    env: process.env,
-  })
-  process.exitCode = result.status ?? 1
+    const result = run('node', workerRunArgs(process.env), {
+      cwd: repoRoot,
+      env: process.env,
+    })
+    process.exitCode = result.status ?? 1
+  } finally {
+    cleanupWorkerWorktrees(repoRoot)
+  }
 }
 
 if (

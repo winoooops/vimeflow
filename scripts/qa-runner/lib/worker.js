@@ -12,6 +12,7 @@
 // Single-pass: one cycle then return, never looping internally — that in-dispatch
 // looping was the root cause of kimi's multi-round timeouts.
 import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -31,11 +32,58 @@ import { fixerWorktreePath } from './fixer-worktree.js'
 import { linkedVimForPr } from './pr-utils.js'
 
 const WATCH = join(dirname(dirname(fileURLToPath(import.meta.url))), 'watch.js')
+const FAILURE_LOG_TAIL_BYTES = 128 * 1024
 
 const snapshotFailureText = (e) =>
   [e?.stderr?.toString?.(), e?.stdout?.toString?.(), e?.message]
     .filter(Boolean)
     .join('\n')
+
+const logPathFromText = (text) =>
+  String(text || '').match(/\blog: ([^)]+)/)?.[1] || null
+
+const failureLogTail = (path) => {
+  if (!path || !existsSync(path)) {
+    return ''
+  }
+  try {
+    const content = readFileSync(path, 'utf8')
+
+    return content.slice(-FAILURE_LOG_TAIL_BYTES)
+  } catch {
+    return ''
+  }
+}
+
+const tickFailureText = (tickResult) => {
+  const logPath = tickResult.logPath || logPathFromText(tickResult.exitReason)
+
+  return [tickResult.exitReason, failureLogTail(logPath)]
+    .filter(Boolean)
+    .join('\n')
+}
+
+export const workerInfraFailure = (tickResult) => {
+  const text = tickFailureText(tickResult)
+  if (/No space left on device|ENOSPC/i.test(text)) {
+    return {
+      category: 'worker_disk_full',
+      detail: 'worker disk full',
+    }
+  }
+  if (
+    /SSM command .* produced no output|document process failed unexpectedly|TargetNotConnected|DeliveryTimedOut|ExecutionTimedOut|Undeliverable/i.test(
+      text
+    )
+  ) {
+    return {
+      category: 'worker_ssm_unhealthy',
+      detail: 'worker SSM command failed before fixer output',
+    }
+  }
+
+  return null
+}
 
 export const isMissingPullRequestSnapshot = (e) =>
   /Could not resolve to a PullRequest/i.test(snapshotFailureText(e))
@@ -261,7 +309,7 @@ const normalizeTickResult = (result) => {
       (result.signal
         ? `watch.js terminated by ${result.signal}`
         : `watch.js exited ${result.code ?? -1}`),
-    logPath: result.logPath ?? null,
+    logPath: result.logPath ?? logPathFromText(result.exitReason) ?? null,
   }
 }
 
@@ -437,6 +485,27 @@ export const runOne = async (pr, reason, deps) => {
       events.emit({ type: 'dispatch_blocked', pr, detail }, after.vim)
 
       return 'blocked'
+    }
+    const infraFailure = workerInfraFailure(tickResult)
+    if (infraFailure) {
+      events.emit(
+        {
+          type: 'worker_infra_unhealthy',
+          pr,
+          sourceEvent: reason,
+          category: infraFailure.category,
+          detail: infraFailure.detail,
+          exitCode: code,
+          signal: tickResult.signal,
+          exitReason: tickResult.exitReason,
+          logPath: tickResult.logPath,
+          retryMode: reason === 'poll' ? 'next poll tick' : 'daemon backoff',
+          terminal: false,
+        },
+        after.vim
+      )
+
+      return 'retry'
     }
     if (code !== 1) {
       // Transient (2) or a failed spawn (-1) — NOT a fixer stall. Retry next cycle

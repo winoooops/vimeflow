@@ -382,6 +382,12 @@ const printInvocation = ({ invocation, stdout, stderr }) => {
       stderr.write('\n')
     }
   }
+  if (invocation.Status !== 'Success' && !out && !err) {
+    stderr.write(
+      `SSM command ${invocation.CommandId || 'unknown'} ${invocation.Status} ` +
+        `(response ${invocation.ResponseCode ?? 'unknown'}) produced no output\n`
+    )
+  }
 }
 
 const sendSsmWorkerCommand = ({

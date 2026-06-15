@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   decisionKey,
   decisionStorePath,
@@ -18,6 +20,7 @@ import {
   isMissingPullRequestSnapshot,
   runOne,
   watchArgs,
+  workerInfraFailure,
 } from './worker.js'
 
 const makeDeps = (overrides = {}) => ({
@@ -508,6 +511,62 @@ describe('runOne', () => {
     )
   })
 
+  test('signals worker infrastructure failure without incrementing fixer stalls', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qa-worker-failure-'))
+    const logPath = join(dir, 'pr-42.log')
+    writeFileSync(
+      logPath,
+      "fatal: cannot create directory at 'agents': No space left on device\n"
+    )
+
+    try {
+      const deps = makeDeps({
+        snapshotExec: openPrSnapshotExec(),
+        tickRunner: vi.fn(async () => ({
+          code: 1,
+          signal: null,
+          exitReason: `FIXER_EXIT #42: worker failed (exit 1; log: ${logPath})`,
+          logPath: null,
+        })),
+        state: {
+          has: vi.fn(() => true),
+          get: vi.fn(() => ({
+            roundCount: 1,
+            noopCount: 2,
+            lastHeadSha: 'abc123',
+            pausedAt: null,
+            pauseReason: null,
+          })),
+          forget: vi.fn(),
+          update: vi.fn(),
+        },
+      })
+
+      const outcome = await runOne(42, 'poll', deps)
+
+      expect(outcome).toBe('retry')
+      expect(deps.state.update).not.toHaveBeenCalled()
+      expect(deps.events.emit).toHaveBeenCalledWith(
+        {
+          type: 'worker_infra_unhealthy',
+          pr: 42,
+          sourceEvent: 'poll',
+          category: 'worker_disk_full',
+          detail: 'worker disk full',
+          exitCode: 1,
+          signal: null,
+          exitReason: `FIXER_EXIT #42: worker failed (exit 1; log: ${logPath})`,
+          logPath,
+          retryMode: 'next poll tick',
+          terminal: false,
+        },
+        'VIM-20'
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('pauses repeated fixer stalls with explicit exit context', async () => {
     const deps = makeDeps({
       snapshotExec: openPrSnapshotExec(),
@@ -558,5 +617,20 @@ describe('runOne', () => {
       },
       'VIM-20'
     )
+  })
+})
+
+describe('workerInfraFailure', () => {
+  test('classifies blank SSM failures as worker infrastructure failures', () => {
+    expect(
+      workerInfraFailure({
+        exitReason:
+          'SSM command cmd-123 Failed (response 1) produced no output',
+        logPath: null,
+      })
+    ).toEqual({
+      category: 'worker_ssm_unhealthy',
+      detail: 'worker SSM command failed before fixer output',
+    })
   })
 })
