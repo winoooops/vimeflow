@@ -9,6 +9,8 @@ interface UseAgentStatusHotLoadingOptions {
   visiblePtyIds: readonly string[]
 }
 
+export const MIN_AGENT_STATUS_REFRESH_MS = 320
+
 export const useAgentStatusHotLoading = ({
   activePtyId,
   visiblePtyIds,
@@ -33,6 +35,8 @@ export const useAgentStatusHotLoading = ({
     }
 
     let cancelled = false
+    let clearRefreshTimer: ReturnType<typeof setTimeout> | null = null
+    const startedAt = Date.now()
 
     setIsRefreshing(true)
 
@@ -43,9 +47,26 @@ export const useAgentStatusHotLoading = ({
         // A failed warm refresh should clear the subtle header affordance; the
         // live active-pane subscription remains the source of truth.
       } finally {
-        if (!cancelled && requestIdRef.current === requestId) {
-          setIsRefreshing(false)
+        const clearRefresh = (): void => {
+          if (!cancelled && requestIdRef.current === requestId) {
+            setIsRefreshing(false)
+          }
         }
+
+        if (cancelled || requestIdRef.current !== requestId) {
+          return
+        }
+
+        const elapsedMs = Date.now() - startedAt
+        const remainingMs = Math.max(0, MIN_AGENT_STATUS_REFRESH_MS - elapsedMs)
+
+        if (remainingMs === 0) {
+          clearRefresh()
+
+          return
+        }
+
+        clearRefreshTimer = setTimeout(clearRefresh, remainingMs)
       }
     }
 
@@ -53,6 +74,10 @@ export const useAgentStatusHotLoading = ({
 
     return (): void => {
       cancelled = true
+
+      if (clearRefreshTimer !== null) {
+        clearTimeout(clearRefreshTimer)
+      }
     }
   }, [refreshSignature])
 
