@@ -14,6 +14,7 @@ import {
 import { TERMINAL_FONT_FAMILY } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
+import type { TerminalFitController, TerminalSurface } from '../../types'
 import { obsidianLens } from '../../../../theme'
 
 // Shared mock service for tests that don't exercise service-specific behavior.
@@ -1285,7 +1286,7 @@ describe('Body', () => {
         resizeCallback([mockEntry], {} as ResizeObserver)
       }
 
-      // fitAddon.fit() should be called when container resizes
+      // fitController.fit() should be called when container resizes
       await waitFor(() => {
         expect(mockFitAddon.fit).toHaveBeenCalled()
       })
@@ -1646,7 +1647,7 @@ describe('Body', () => {
         resizeCallback([], {} as ResizeObserver)
       }
 
-      // fitAddon must NOT fire — this is the exact bug path that squashes scrollback
+      // fitController must NOT fire — this is the exact bug path that squashes scrollback
       expect(mockFitAddon.fit).not.toHaveBeenCalled()
 
       // Simulate tab becoming visible again: offsetWidth > 0
@@ -1659,7 +1660,7 @@ describe('Body', () => {
         resizeCallback([], {} as ResizeObserver)
       }
 
-      // fitAddon SHOULD fire now that the container has real dimensions
+      // fitController SHOULD fire now that the container has real dimensions
       await waitFor(() => {
         expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
       })
@@ -1680,8 +1681,9 @@ describe('Body', () => {
       }
 
       terminalCache.set('cached-session', {
-        terminal: cachedTerminal as unknown as Terminal,
-        fitAddon: cachedFitAddon as unknown as FitAddon,
+        terminal: cachedTerminal as unknown as TerminalSurface,
+        fitController: cachedFitAddon as unknown as TerminalFitController,
+        viewportReader: { readVisibleText: vi.fn() },
       })
 
       // Simulate hidden container (display:none → offsetWidth = 0)
@@ -1702,7 +1704,7 @@ describe('Body', () => {
           expect(cachedTerminal.open).toHaveBeenCalled()
         })
 
-        // fitAddon.fit must be suppressed on the reuse path when width is 0
+        // fitController.fit must be suppressed on the reuse path when width is 0
         expect(cachedFitAddon.fit).not.toHaveBeenCalled()
       } finally {
         offsetSpy.mockRestore()
@@ -1733,8 +1735,9 @@ describe('Body', () => {
       })
 
       terminalCache.set('cached-session', {
-        terminal: cachedTerminal as unknown as Terminal,
-        fitAddon: cachedFitAddon as unknown as FitAddon,
+        terminal: cachedTerminal as unknown as TerminalSurface,
+        fitController: cachedFitAddon as unknown as TerminalFitController,
+        viewportReader: { readVisibleText: vi.fn() },
       })
 
       const offsetWidthSpy = vi

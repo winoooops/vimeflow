@@ -5,42 +5,24 @@ import { terminalCache } from '../features/terminal/components/TerminalPane/Body
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
 
-interface MockLine {
-  translateToString: (trimRight: boolean) => string
+interface MockViewportReader {
+  readVisibleText: () => string
 }
 
-interface MockBuffer {
-  viewportY: number
-  getLine: (i: number) => MockLine | undefined
-}
+const makeMockEntry = (rows: readonly string[]): CacheEntry => {
+  const viewportReader: MockViewportReader = {
+    readVisibleText: (): string => {
+      const visibleRows = rows.map((row) => row.replace(/\s+$/, ''))
 
-interface MockTerminal {
-  rows: number
-  buffer: { active: MockBuffer }
-}
-
-const makeMockEntry = (rows: readonly string[], viewportY = 0): CacheEntry => {
-  const terminal: MockTerminal = {
-    rows: rows.length,
-    buffer: {
-      active: {
-        viewportY,
-        getLine: (i: number) => {
-          const text = rows[i - viewportY]
-          if (text === undefined) {
-            return undefined
-          }
-
-          return {
-            translateToString: (trimRight: boolean): string =>
-              trimRight ? text.replace(/\s+$/, '') : text,
-          }
-        },
-      },
+      return visibleRows.join('\n').replace(/\n+$/, '')
     },
   }
 
-  return { terminal, fitAddon: {} } as unknown as CacheEntry
+  return {
+    terminal: { dispose: (): void => undefined },
+    fitController: { fit: (): void => undefined },
+    viewportReader,
+  } as unknown as CacheEntry
 }
 
 /**
@@ -147,8 +129,8 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(slot!)).toBe('slot-buf')
   })
 
-  test('falls back to xterm buffer API when .xterm-rows is empty (canvas renderer path)', () => {
-    // Canvas/WebGL renderer leaves .xterm-rows empty. The fallback must reach into terminalCache by PTY id.
+  test('falls back to terminal surface text when .xterm-rows is empty (canvas renderer path)', () => {
+    // Canvas/WebGL renderers leave .xterm-rows empty. The fallback must reach into terminalCache by PTY id.
     const wrapper = buildSessionWrapper([''], 0)
     terminalCache.set('pty-0', makeMockEntry(['$ echo hi', 'hi', '$ '])!)
 
@@ -177,11 +159,9 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(inner!)).toBe('inner-pane-buf')
   })
 
-  test('respects viewportY so the fallback returns only the visible viewport, not scrollback', () => {
-    // viewportY=5, rows=2 → must return lines 5-6 only (round-1 F1 root cause).
+  test('uses cached terminal surface viewport text, not scrollback DOM', () => {
     const wrapper = buildSessionWrapper([''], 0)
-    const allRows = Array.from({ length: 7 }, (_, i) => `row-${i}`)
-    terminalCache.set('pty-0', makeMockEntry(allRows.slice(5, 7), 5)!)
+    terminalCache.set('pty-0', makeMockEntry(['row-5', 'row-6'])!)
 
     expect(readPaneBuffer(wrapper)).toBe('row-5\nrow-6')
   })

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Terminal } from '@xterm/xterm'
+import type { TerminalSurface } from '../types'
 
 export type ClipboardModifier = 'meta' | 'ctrl'
 
 export interface UseTerminalClipboardOptions {
-  terminal: Terminal | null
+  terminal: TerminalSurface | null
   preferModifier?: ClipboardModifier
   onCopyError?: (error: unknown) => void
   onPasteError?: (error: unknown) => void
@@ -255,7 +255,7 @@ export const useTerminalClipboard = ({
     }
 
     try {
-      terminal.attachCustomKeyEventHandler(handleKey)
+      terminal.attachKeyEventHandler(handleKey)
     } catch {
       /* terminal not ready; retrying is left to the next terminal identity */
     }
@@ -274,7 +274,7 @@ export const useTerminalClipboard = ({
       }
 
       try {
-        terminal.attachCustomKeyEventHandler((): boolean => true)
+        terminal.attachKeyEventHandler((): boolean => true)
       } catch {
         /* terminal already disposed */
       }

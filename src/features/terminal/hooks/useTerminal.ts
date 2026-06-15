@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { Terminal } from '@xterm/xterm'
 import type { ITerminalService } from '../services/terminalService'
-import type { TerminalSession } from '../types'
+import type { TerminalSession, TerminalSurface } from '../types'
 
 /**
  * Data required to restore a terminal session from snapshot + live events.
@@ -50,9 +49,9 @@ export type UseTerminalMode = 'attach' | 'spawn' | 'awaiting-restart'
 
 interface UseTerminalBaseOptions {
   /**
-   * xterm.js Terminal instance
+   * Terminal renderer surface.
    */
-  terminal: Terminal | null
+  terminal: TerminalSurface | null
 
   /**
    * Terminal service (MockTerminalService or DesktopTerminalService)
@@ -124,7 +123,7 @@ type RestoreLifecycleOptions =
       /**
        * Restore lifecycle callbacks must be provided as a pair. `onRestoreStart`
        * fires immediately before historical replay/buffered output is written to
-       * xterm; `onRestoreEnd` fires after the final restore write callback.
+       * terminal; `onRestoreEnd` fires after the final restore write callback.
        */
       onRestoreStart: () => void
       onRestoreEnd: () => void
@@ -160,12 +159,12 @@ export interface UseTerminalReturn {
 }
 
 /**
- * useTerminal hook - manages PTY lifecycle and xterm integration
+ * useTerminal hook - manages PTY lifecycle and terminal renderer integration
  *
  * Features:
  * - Spawns PTY on mount (or restores from snapshot)
- * - Listens to PTY data events and writes to xterm
- * - Handles keyboard input from xterm
+ * - Listens to PTY data events and writes to the terminal renderer
+ * - Handles keyboard input from the terminal renderer
  * - Handles PTY exit and error events
  * - Cleans up on unmount
  * - Supports replay + cursor dedupe for session restoration
@@ -249,7 +248,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   }, [onInput])
 
   const writeTerminalOutput = useCallback(
-    (targetTerminal: Terminal, data: string): void => {
+    (targetTerminal: TerminalSurface, data: string): void => {
       if (!onOutputRef.current) {
         targetTerminal.write(data)
 
@@ -631,7 +630,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     }
   }, [terminal, session, service, writeTerminalOutput])
 
-  // Handle keyboard input from xterm
+  // Handle keyboard input from the terminal renderer
   useEffect(() => {
     if (!terminal || !session) {
       return
