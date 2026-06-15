@@ -547,10 +547,20 @@ export const WorkspaceView = (): ReactElement => {
         return
       }
 
-      setAgentStatusReset((prev) => ({
-        ptyId,
-        generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
-      }))
+      // Only reset agent-status state when the active pane is actually running
+      // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
+      // syntactically identical to a Codex `/clear` command, and a false reset
+      // for a live Codex session would suppress same-run events until the next
+      // session boundary (Claude Code Review on PR #469).
+      if (
+        ptyId === activePtyBackedPanePtyId &&
+        agentStatus.agentType === 'codex'
+      ) {
+        setAgentStatusReset((prev) => ({
+          ptyId,
+          generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
+        }))
+      }
 
       for (const session of sessions) {
         const pane = session.panes.find((p) => p.ptyId === ptyId)
@@ -561,7 +571,12 @@ export const WorkspaceView = (): ReactElement => {
         }
       }
     },
-    [clearPaneCacheHistory, sessions]
+    [
+      activePtyBackedPanePtyId,
+      agentStatus.agentType,
+      clearPaneCacheHistory,
+      sessions,
+    ]
   )
 
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
