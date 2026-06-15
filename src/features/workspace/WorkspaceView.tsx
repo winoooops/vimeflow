@@ -72,6 +72,7 @@ import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
@@ -509,6 +510,19 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
   const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+
+  const visibleAgentStatusPtyIds = useMemo(
+    () =>
+      activeSession?.panes
+        .filter((pane) => isShellPane(pane))
+        .map((pane) => pane.ptyId) ?? [],
+    [activeSession?.panes]
+  )
+
+  useAgentStatusHotLoading({
+    activePtyId: activePtyBackedPanePtyId ?? null,
+    visiblePtyIds: visibleAgentStatusPtyIds,
+  })
 
   useCacheHistoryCollector({
     ptyId: activePtyBackedPanePtyId ?? null,

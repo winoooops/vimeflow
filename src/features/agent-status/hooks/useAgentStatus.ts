@@ -7,6 +7,10 @@ import {
   writeStatusSeenToolUseIds,
   writeStatusSnapshot,
 } from '../utils/statusSnapshotStore'
+import {
+  createDefaultAgentStatus,
+  mapDetectedAgentType,
+} from '../utils/agentStatusModel'
 import type {
   AgentCwdEvent,
   AgentDetectedEvent,
@@ -25,43 +29,12 @@ const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
 const EXIT_HOLD_MS = 5000
 
-const AGENT_TYPE_MAP = {
-  claudeCode: 'claude-code',
-  codex: 'codex',
-  aider: 'aider',
-  generic: 'generic',
-} as const
-
-const isKnownAgentType = (
-  value: string
-): value is keyof typeof AGENT_TYPE_MAP =>
-  Object.prototype.hasOwnProperty.call(AGENT_TYPE_MAP, value)
-
-const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
-  isActive: false,
-  agentExited: false,
-  agentType: null,
-  modelId: null,
-  modelDisplayName: null,
-  version: null,
-  sessionId,
-  agentSessionId: null,
-  cwd: null,
-  contextWindow: null,
-  cost: null,
-  rateLimits: null,
-  numTurns: 0,
-  toolCalls: { total: 0, byType: {}, active: null },
-  recentToolCalls: [],
-  testRun: null,
-})
-
 const createStatusForSession = (sessionId: string | null): AgentStatus => {
   if (sessionId === null) {
-    return createDefaultStatus(null)
+    return createDefaultAgentStatus(null)
   }
 
-  return readStatusSnapshot(sessionId) ?? createDefaultStatus(sessionId)
+  return readStatusSnapshot(sessionId) ?? createDefaultAgentStatus(sessionId)
 }
 
 const shouldTreatStatusAsDetected = (status: AgentStatus): boolean =>
@@ -260,12 +233,6 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           collapseTimeoutRef.current = null
         }
 
-        const agentKey = result.agentType as string
-
-        const mapped = isKnownAgentType(agentKey)
-          ? AGENT_TYPE_MAP[agentKey]
-          : 'generic'
-
         const detectedPid = result.pid
 
         const agentProcessChanged =
@@ -292,10 +259,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         setStatus((prev) =>
           prev.sessionId === sid
             ? {
-                ...(agentProcessChanged ? createDefaultStatus(sid) : prev),
+                ...(agentProcessChanged ? createDefaultAgentStatus(sid) : prev),
                 isActive: true,
                 agentExited: false,
-                agentType: mapped,
+                agentType: mapDetectedAgentType(result.agentType as string),
               }
             : prev
         )
@@ -398,7 +365,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
-            prev.sessionId === sid ? createDefaultStatus(sid) : prev
+            prev.sessionId === sid ? createDefaultAgentStatus(sid) : prev
           )
         }, EXIT_HOLD_MS)
       }
@@ -483,7 +450,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
             const base = agentSessionChanged
               ? {
-                  ...createDefaultStatus(prev.sessionId),
+                  ...createDefaultAgentStatus(prev.sessionId),
                   isActive: prev.isActive,
                   agentExited: prev.agentExited,
                   agentType: prev.agentType,
