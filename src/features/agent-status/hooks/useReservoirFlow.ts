@@ -1,88 +1,158 @@
 import { useEffect, type RefObject } from 'react'
 
-export interface ReservoirFlowRefs {
-  front: SVGGElement
-  back: SVGGElement
+export interface ReservoirSurfaceRefs {
+  /** The filled water body (surface down to a flat floor). */
+  fill: SVGPathElement
+  /** The bright crest line tracing the surface. */
+  meniscus: SVGPathElement
 }
 
-// Seamless wrap distance: the wave paths tile every tank width (the front 124u
-// and back 248u wavelengths both divide it), so a boost offset taken modulo
-// this is an invisible phase shift — the loop can freeze at any offset without
-// a visible jump.
-const WRAP = 248
-// Extra drift (user units / second) added at full hover intensity, on top of
-// the always-on CSS base drift. Tuned for a clear, obvious quickening on hover
-// (~2.2x the base 6s/9s drift), eased in and out. Front ripples gain more than
-// the broad back swell, preserving the parallax.
-const FRONT_BOOST = WRAP / 5
-const BACK_BOOST = WRAP / 7
-// Per-second easing of the hover intensity (0..1) so the speed ramps in and
-// out smoothly instead of stepping — the calm, natural feel of the old spring.
-const EASE_PER_SECOND = 5
-// Below this intensity, once the pointer has left, the boost is considered at
-// rest and the rAF loop stops (offsets freeze at an invisible phase).
-const REST_EPSILON = 0.002
+export interface ReservoirGeom {
+  /** Waterline y (user units) for the current fill. */
+  level: number
+  /** Tank height (user units) — the fill always closes flat to this floor. */
+  height: number
+}
 
 /**
- * Eases a small extra water drift in while the pointer is over `hoverRef` and
- * back out when it leaves, by translating the boost groups in `refsRef`. The
- * always-on calm drift lives in CSS; this only adds the hover quickening, so
- * the rAF loop runs solely during a hover and its ease-out. No-op (and never
- * schedules rAF) under `prefers-reduced-motion`.
+ * Hover "swell" flavor — how the water rises toward the cursor. Three are
+ * available; `soft-mound` is the default. A future user setting will let people
+ * pick among them (see Linear VIM-128); today the `WaterTank` `swell` prop just
+ * defaults and nothing wires it.
+ */
+export type SwellVariant = 'soft-mound' | 'trailing' | 'wide-lift'
+
+interface SwellPreset {
+  /** Gaussian half-width of the mound (user units). */
+  width: number
+  /** Peak rise under the cursor at full hover (user units). */
+  peakAmp: number
+  /** Per-second easing of the mound's horizontal follow (higher = snappier). */
+  followEase: number
+  /** Per-second easing of the rise/fall. */
+  ampEase: number
+}
+
+export const SWELL_PRESETS: Record<SwellVariant, SwellPreset> = {
+  // A single soft mound that follows the cursor closely (default).
+  'soft-mound': { width: 30, peakAmp: 8, followEase: 12, ampEase: 6 },
+  // The mound lags behind the cursor, giving a sense of mass / inertia.
+  trailing: { width: 30, peakAmp: 8, followEase: 4.5, ampEase: 6 },
+  // A broad, low rise instead of a focused peak — the calmest.
+  'wide-lift': { width: 64, peakAmp: 5, followEase: 9, ampEase: 5 },
+}
+
+const TANK_WIDTH = 248
+const TAU = Math.PI * 2
+// Two surface components summed into one waterline: fast front ripples + a
+// broad slow swell. Both wavelengths divide the width so the endpoints stay
+// equal (no seam) regardless of phase.
+const WL_FRONT = TANK_WIDTH / 2
+const WL_BACK = TANK_WIDTH
+const AMP_FRONT = 5
+const AMP_BACK = 7
+const STEP = 4
+// Base drift: phase advances ~0.7 rad/s — a calm, always-on flow.
+const BASE_RATE = 0.7
+const LEVEL_EASE_PER_SECOND = 4
+
+/**
+ * Builds the surface path. A Gaussian mound of height `swellAmp` centred at
+ * `swellX` (width `swellWidth`) lifts the waterline toward the cursor while the
+ * fill still closes flat to the floor (`height`). Exported so the component can
+ * paint a resting first frame.
+ */
+export const buildReservoirSurface = (
+  level: number,
+  height: number,
+  phase: number,
+  swellAmp: number,
+  swellX: number,
+  swellWidth: number
+): { fill: string; crest: string } => {
+  let crest = ''
+  for (let x = 0; x <= TANK_WIDTH; x += STEP) {
+    const mound = swellAmp * Math.exp(-Math.pow((x - swellX) / swellWidth, 2))
+
+    const y =
+      level +
+      Math.sin((x / WL_FRONT) * TAU + phase) * AMP_FRONT +
+      Math.sin((x / WL_BACK) * TAU + phase * 0.7 + 0.9) * AMP_BACK -
+      mound
+    crest += `${x === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(2)} `
+  }
+
+  return {
+    crest: crest.trim(),
+    fill: `${crest}L ${TANK_WIDTH} ${height} L 0 ${height} Z`,
+  }
+}
+
+/**
+ * Drives the reservoir's water: a calm always-on drift, plus a swell that rises
+ * toward the cursor while the pointer is over `hoverRef` (shape per `variant`).
+ * Redraws the surface each frame so the floor stays flat. The rAF loop runs only
+ * while `active`, and is a no-op under `prefers-reduced-motion` (the component
+ * paints a static resting surface).
  */
 export const useReservoirFlow = (
   hoverRef: RefObject<Element | null>,
-  refsRef: RefObject<ReservoirFlowRefs | null>
+  refsRef: RefObject<ReservoirSurfaceRefs | null>,
+  geomRef: RefObject<ReservoirGeom | null>,
+  active: boolean,
+  variant: SwellVariant = 'soft-mound'
 ): void => {
   useEffect(() => {
+    if (!active) {
+      return
+    }
     const hoverEl = hoverRef.current
     if (hoverEl === null) {
       return
     }
+    const preset = SWELL_PRESETS[variant]
     const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
 
-    let frontOffset = 0
-    let backOffset = 0
-    let intensity = 0
-    let targetIntensity = 0
+    let phase = 0
+    let amp = 0
+    let targetAmp = 0
+    let swellX = TANK_WIDTH / 2
+    let cursorX = TANK_WIDTH / 2
+    let curLevel = geomRef.current?.level ?? 0
     let rafId: number | null = null
     let lastT = 0
 
-    // Drive the boost via the SVG `transform` attribute (unambiguously user
-    // units) rather than CSS px, so the offset stays in the tank's coordinate
-    // space and wraps cleanly at one tank width.
-    const place = (el: SVGGElement, offset: number): void => {
-      el.setAttribute('transform', `translate(${(-offset).toFixed(2)} 0)`)
-    }
-
     const step = (t: number): void => {
       const refs = refsRef.current
-      if (refs === null) {
-        // The water was removed (e.g. the context reset to unknown) while the
-        // loop was running — stop instead of scheduling no-op frames forever.
-        intensity = 0
+      const geom = geomRef.current
+      if (refs === null || geom === null) {
         rafId = null
 
         return
       }
       const dt = Math.max(0, Math.min(0.05, (t - lastT) / 1000))
       lastT = t
-      intensity +=
-        (targetIntensity - intensity) * Math.min(1, dt * EASE_PER_SECOND)
-      frontOffset = (frontOffset + FRONT_BOOST * intensity * dt) % WRAP
-      backOffset = (backOffset + BACK_BOOST * intensity * dt) % WRAP
-      place(refs.front, frontOffset)
-      place(refs.back, backOffset)
+      amp += (targetAmp - amp) * Math.min(1, dt * preset.ampEase)
+      swellX += (cursorX - swellX) * Math.min(1, dt * preset.followEase)
+      curLevel +=
+        (geom.level - curLevel) * Math.min(1, dt * LEVEL_EASE_PER_SECOND)
+      phase += BASE_RATE * dt
 
-      if (targetIntensity === 0 && intensity < REST_EPSILON) {
-        rafId = null
+      const { fill, crest } = buildReservoirSurface(
+        curLevel,
+        geom.height,
+        phase,
+        amp,
+        swellX,
+        preset.width
+      )
+      refs.fill.setAttribute('d', fill)
+      refs.meniscus.setAttribute('d', crest)
 
-        return
-      }
       rafId = requestAnimationFrame(step)
     }
 
-    const ensureLoop = (): void => {
+    const start = (): void => {
       if (rafId !== null) {
         return
       }
@@ -98,43 +168,44 @@ export const useReservoirFlow = (
     }
 
     const onEnter = (): void => {
-      // Skip under reduced-motion, and when there is no water to drift (empty
-      // tank) so a hover doesn't spin the loop for nothing.
-      if (mql.matches || refsRef.current === null) {
+      if (mql.matches) {
         return
       }
-      targetIntensity = 1
-      ensureLoop()
+      targetAmp = preset.peakAmp
     }
 
     const onLeave = (): void => {
-      targetIntensity = 0
-      ensureLoop()
+      targetAmp = 0
+    }
+
+    const onMove = (e: Event): void => {
+      const r = hoverEl.getBoundingClientRect()
+      const x = ((e as MouseEvent).clientX - r.left) / r.width
+      cursorX = Math.max(0, Math.min(TANK_WIDTH, x * TANK_WIDTH))
     }
 
     const onMqlChange = (): void => {
-      if (!mql.matches) {
-        return
-      }
-      targetIntensity = 0
-      intensity = 0
-      stop()
-      const refs = refsRef.current
-      if (refs !== null) {
-        refs.front.removeAttribute('transform')
-        refs.back.removeAttribute('transform')
+      if (mql.matches) {
+        stop()
+      } else {
+        start()
       }
     }
 
     hoverEl.addEventListener('pointerenter', onEnter)
     hoverEl.addEventListener('pointerleave', onLeave)
+    hoverEl.addEventListener('pointermove', onMove)
     mql.addEventListener('change', onMqlChange)
+    if (!mql.matches) {
+      start()
+    }
 
     return (): void => {
       hoverEl.removeEventListener('pointerenter', onEnter)
       hoverEl.removeEventListener('pointerleave', onLeave)
+      hoverEl.removeEventListener('pointermove', onMove)
       mql.removeEventListener('change', onMqlChange)
       stop()
     }
-  }, [hoverRef, refsRef])
+  }, [hoverRef, refsRef, geomRef, active, variant])
 }

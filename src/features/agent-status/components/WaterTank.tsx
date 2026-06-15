@@ -6,7 +6,11 @@ import {
 } from '../utils/contextTone'
 import {
   useReservoirFlow,
-  type ReservoirFlowRefs,
+  buildReservoirSurface,
+  SWELL_PRESETS,
+  type ReservoirSurfaceRefs,
+  type ReservoirGeom,
+  type SwellVariant,
 } from '../hooks/useReservoirFlow'
 
 export interface WaterTankProps {
@@ -17,29 +21,19 @@ export interface WaterTankProps {
   height?: number
   /** When true (context unknown), render the empty tank with no water. */
   empty?: boolean
+  /**
+   * Hover-swell flavor — how the water rises toward the cursor. Three are
+   * available (see SWELL_PRESETS); defaults to `soft-mound`. A future user
+   * setting will choose this per preference — tracked in Linear VIM-128.
+   */
+  swell?: SwellVariant
 }
 
 // SVG is drawn in a fixed 248-wide user space and stretched to the container
-// (preserveAspectRatio="none"). Each wave path spans 3x the tank width: the CSS
-// keyframe (vf-tank-drift-*) drifts the outer group by exactly one tank
-// (translateX(-33.333%) of the 3x path under transform-box: fill-box) for a
-// calm, always-on, seamless loop, and a nested boost group adds an extra
-// hover-driven drift via useReservoirFlow. Three tiles (not two) give the
-// base + boost translate enough runway to never sample past the path's right
-// edge. Reduced-motion disables both layers.
+// (preserveAspectRatio="none"). The water surface is redrawn each frame by
+// useReservoirFlow: a calm drift plus a swell that rises toward the cursor on
+// hover. The fill always closes flat to the floor, so it reads as real water.
 const TANK_WIDTH = 248
-const WAVE_SPAN = TANK_WIDTH * 3
-// Wavelengths that divide the tank width evenly so each wave tiles without a
-// seam on loop (the handoff's back-wave length of 150 did not tile the 248px
-// translate). The back wave reads as a distinct, slower parallax layer: one
-// broad swell across the tank behind the front's two faster ripples.
-const WAVELENGTH_FRONT = TANK_WIDTH / 2 // 124 — two ripples across the tank
-const WAVELENGTH_BACK = TANK_WIDTH // 248 — one broad swell behind
-// Wave amplitudes (user units, of a 104 tank). Tall enough that the calm drift
-// reads as moving water rather than a flat fill — the front carries the bright
-// meniscus crest, the back is a broader, taller swell behind it.
-const AMP_FRONT = 5
-const AMP_BACK = 7
 
 /**
  * Y coordinate (in SVG user units) of the waterline for a given fill. A 2%
@@ -54,6 +48,7 @@ export const WaterTank = ({
   theme,
   height = 104,
   empty = false,
+  swell = 'soft-mound',
 }: WaterTankProps): ReactElement => {
   const tone = resolveContextTone(pct, theme)
   const chrome = tankChrome(theme)
@@ -63,40 +58,35 @@ export const WaterTank = ({
   const dryId = `tank-dry-${rid}`
   const clipId = `tank-clip-${rid}`
 
+  // Resting surface for the first paint / reduced-motion; the hook takes over
+  // the `d` attributes each frame once it starts. No swell at rest (amp 0).
+  const resting = buildReservoirSurface(
+    level,
+    height,
+    0,
+    0,
+    TANK_WIDTH / 2,
+    SWELL_PRESETS[swell].width
+  )
+
   const svgRef = useRef<SVGSVGElement>(null)
-  const frontRef = useRef<SVGGElement>(null)
-  const backRef = useRef<SVGGElement>(null)
-  const flowRefsRef = useRef<ReservoirFlowRefs | null>(null)
+  const fillRef = useRef<SVGPathElement>(null)
+  const meniscusRef = useRef<SVGPathElement>(null)
+  const flowRefsRef = useRef<ReservoirSurfaceRefs | null>(null)
+  const geomRef = useRef<ReservoirGeom | null>({ level, height })
+
+  // The hook reads the live waterline each frame (eased) without restarting on
+  // every pct change.
+  geomRef.current = { level, height }
 
   useEffect(() => {
     flowRefsRef.current =
-      frontRef.current !== null && backRef.current !== null
-        ? { front: frontRef.current, back: backRef.current }
+      fillRef.current !== null && meniscusRef.current !== null
+        ? { fill: fillRef.current, meniscus: meniscusRef.current }
         : null
   }, [empty])
 
-  useReservoirFlow(svgRef, flowRefsRef)
-
-  const wavePath = (
-    amplitude: number,
-    phase: number,
-    wavelength: number,
-    close = true
-  ): string => {
-    const yAt = (x: number): number =>
-      level + Math.sin((x / wavelength) * Math.PI * 2 + phase) * amplitude
-    const points: string[] = []
-    for (let x = 0; x < WAVE_SPAN; x += 6) {
-      points.push(`${x === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${yAt(x).toFixed(2)}`)
-    }
-    // Land the final point exactly on the span edge — a step of 6 doesn't
-    // divide 496, so without this the closed fill jumps from x=492 straight to
-    // the bottom corner, a slanted seam that scrolls into view on loop wrap.
-    points.push(`L ${WAVE_SPAN} ${yAt(WAVE_SPAN).toFixed(2)}`)
-    const d = points.join(' ')
-
-    return close ? `${d} L ${WAVE_SPAN} ${height} L 0 ${height} Z` : d
-  }
+  useReservoirFlow(svgRef, flowRefsRef, geomRef, !empty, swell)
 
   return (
     <svg
@@ -159,35 +149,22 @@ export const WaterTank = ({
 
         {!empty && (
           <>
-            {/* back wave — slow CSS drift; inner group takes the hover boost */}
-            <g data-testid="tank-wave-back" className="vf-tank-drift-b">
-              <g ref={backRef}>
-                <path
-                  d={wavePath(AMP_BACK, 0.9, WAVELENGTH_BACK)}
-                  fill={`url(#${fillId})`}
-                  opacity="0.5"
-                />
-              </g>
-            </g>
-            {/* front wave — the primary body + bright meniscus crest */}
-            <g data-testid="tank-wave-front" className="vf-tank-drift-a">
-              <g ref={frontRef}>
-                <path
-                  data-testid="tank-water"
-                  d={wavePath(AMP_FRONT, 2.4, WAVELENGTH_FRONT)}
-                  fill={`url(#${fillId})`}
-                />
-                <path
-                  data-testid="tank-meniscus"
-                  d={wavePath(AMP_FRONT, 2.4, WAVELENGTH_FRONT, false)}
-                  fill="none"
-                  stroke={tone.meniscus}
-                  strokeWidth="1.5"
-                  strokeOpacity="0.9"
-                  style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
-                />
-              </g>
-            </g>
+            <path
+              ref={fillRef}
+              data-testid="tank-water"
+              d={resting.fill}
+              fill={`url(#${fillId})`}
+            />
+            <path
+              ref={meniscusRef}
+              data-testid="tank-meniscus"
+              d={resting.crest}
+              fill="none"
+              stroke={tone.meniscus}
+              strokeWidth="1.5"
+              strokeOpacity="0.9"
+              style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
+            />
           </>
         )}
 

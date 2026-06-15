@@ -1,12 +1,23 @@
 import { render, screen } from '@testing-library/react'
 import { useEffect, useRef, type ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { useReservoirFlow, type ReservoirFlowRefs } from './useReservoirFlow'
+import {
+  useReservoirFlow,
+  buildReservoirSurface,
+  SWELL_PRESETS,
+  type ReservoirSurfaceRefs,
+  type ReservoirGeom,
+} from './useReservoirFlow'
 
-// jsdom lacks PointerEvent; dispatch a typed MouseEvent — the hook only keys
-// off the event type.
-const fire = (el: Element, type: 'pointerenter' | 'pointerleave'): void => {
-  el.dispatchEvent(new MouseEvent(type, { bubbles: true }))
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const INACTIVE = false // jsx-boolean-value wants false props omitted; alias it
+
+const fireEnter = (el: Element): void => {
+  el.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true }))
+}
+
+const fireMove = (el: Element, clientX: number): void => {
+  el.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX }))
 }
 
 const makeMql = (
@@ -15,26 +26,34 @@ const makeMql = (
   matches: boolean
   addEventListener: () => void
   removeEventListener: () => void
-} => ({
-  matches,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
+} => ({ matches, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+
+const makeRefs = (): ReservoirSurfaceRefs => ({
+  fill: document.createElementNS(SVG_NS, 'path'),
+  meniscus: document.createElementNS(SVG_NS, 'path'),
 })
 
-const makeRefs = (): ReservoirFlowRefs => ({
-  front: document.createElementNS('http://www.w3.org/2000/svg', 'g'),
-  back: document.createElementNS('http://www.w3.org/2000/svg', 'g'),
-})
-
-const txOffset = (el: SVGGElement): number => {
-  const m = /translate\((-?\d+(?:\.\d+)?) 0\)/.exec(
-    el.getAttribute('transform') ?? ''
-  )
-
-  return m === null ? 0 : parseFloat(m[1])
+// Make the hover element report a 248-wide box so clientX maps to user units.
+const mockBox = (el: Element): void => {
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 248,
+    height: 104,
+    right: 248,
+    bottom: 104,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect)
 }
 
-// Manual rAF clock so frames step deterministically.
+const yAt = (crest: string, x: number): number => {
+  const m = new RegExp(`[ML] ${x}\\.0 (-?\\d+(?:\\.\\d+)?)`).exec(crest)
+
+  return m === null ? NaN : parseFloat(m[1])
+}
+
 let now = 0
 let pending: FrameRequestCallback | null = null
 
@@ -44,6 +63,12 @@ const frame = (dtMs = 16): void => {
   pending = null
   if (cb !== null) {
     cb(now)
+  }
+}
+
+const runFrames = (n: number): void => {
+  for (let i = 0; i < n; i++) {
+    frame()
   }
 }
 
@@ -76,56 +101,80 @@ afterEach(() => {
 
 const Harness = ({
   refs,
+  active = true,
 }: {
-  refs: ReservoirFlowRefs | null
+  refs: ReservoirSurfaceRefs | null
+  active?: boolean
 }): ReactElement => {
   const hoverRef = useRef<HTMLDivElement>(null)
-  const refsRef = useRef<ReservoirFlowRefs | null>(refs)
-  // Keep current in sync so a rerender can drop the refs to null mid-hover
-  // (the tank emptying while the pointer is still over it).
+  const refsRef = useRef<ReservoirSurfaceRefs | null>(refs)
+  const geomRef = useRef<ReservoirGeom | null>({ level: 62, height: 104 })
   useEffect(() => {
     refsRef.current = refs
   }, [refs])
-  useReservoirFlow(hoverRef, refsRef)
+  useReservoirFlow(hoverRef, refsRef, geomRef, active)
 
   return <div ref={hoverRef} data-testid="hover" />
 }
 
-describe('useReservoirFlow', () => {
-  test('eases an extra leftward drift in while the pointer is over the tank', () => {
-    const refs = makeRefs()
-    render(<Harness refs={refs} />)
+describe('buildReservoirSurface', () => {
+  test('closes the fill flat to the floor', () => {
+    const { fill } = buildReservoirSurface(50, 104, 1.2, 8, 124, 30)
 
-    fire(screen.getByTestId('hover'), 'pointerenter')
-    for (let i = 0; i < 20; i++) {
-      frame()
-    }
-    const after20 = txOffset(refs.front)
-    expect(after20).toBeLessThan(0)
-
-    for (let i = 0; i < 10; i++) {
-      frame()
-    }
-    expect(txOffset(refs.front)).toBeLessThan(after20)
+    expect(fill.endsWith('L 248 104 L 0 104 Z')).toBe(true)
   })
 
-  test('eases back to rest and stops the loop after the pointer leaves', () => {
+  test('raises a mound under the swell centre', () => {
+    const { crest } = buildReservoirSurface(50, 104, 0, 8, 124, 30)
+
+    // surface at the mound centre sits higher (smaller y) than far away
+    expect(yAt(crest, 124)).toBeLessThan(yAt(crest, 0))
+  })
+})
+
+describe('SWELL_PRESETS', () => {
+  test('exposes the three selectable flavors', () => {
+    expect(Object.keys(SWELL_PRESETS)).toEqual([
+      'soft-mound',
+      'trailing',
+      'wide-lift',
+    ])
+  })
+})
+
+describe('useReservoirFlow', () => {
+  test('drifts the surface over time', () => {
     const refs = makeRefs()
     render(<Harness refs={refs} />)
 
-    fire(screen.getByTestId('hover'), 'pointerenter')
-    for (let i = 0; i < 10; i++) {
-      frame()
-    }
-    fire(screen.getByTestId('hover'), 'pointerleave')
-    for (let i = 0; i < 200; i++) {
-      frame()
-    }
+    runFrames(6)
+    const first = refs.fill.getAttribute('d')
+    runFrames(20)
 
-    expect(pending).toBeNull()
-    const frozen = refs.front.getAttribute('transform')
-    frame()
-    expect(refs.front.getAttribute('transform')).toBe(frozen)
+    expect(first).not.toBeNull()
+    expect(refs.fill.getAttribute('d')).not.toBe(first)
+  })
+
+  test('raises the surface under the cursor on hover', () => {
+    // Baseline (no hover) and the hover run share the same mocked clock, so the
+    // ambient phase is identical and only the swell differs.
+    const base = makeRefs()
+    const view = render(<Harness refs={base} />)
+    runFrames(40)
+    const baseY = yAt(base.meniscus.getAttribute('d') ?? '', 124)
+    view.unmount()
+
+    now = 0
+    pending = null
+    const hov = makeRefs()
+    render(<Harness refs={hov} />)
+    const hover = screen.getByTestId('hover')
+    mockBox(hover)
+    fireEnter(hover)
+    fireMove(hover, 124)
+    runFrames(40)
+
+    expect(yAt(hov.meniscus.getAttribute('d') ?? '', 124)).toBeLessThan(baseY)
   })
 
   test('does nothing under prefers-reduced-motion', () => {
@@ -133,25 +182,17 @@ describe('useReservoirFlow', () => {
     const refs = makeRefs()
     render(<Harness refs={refs} />)
 
-    fire(screen.getByTestId('hover'), 'pointerenter')
-
     expect(pending).toBeNull()
     frame()
-    expect(refs.front.getAttribute('transform')).toBeNull()
-    expect(refs.back.getAttribute('transform')).toBeNull()
+    expect(refs.fill.getAttribute('d')).toBeNull()
   })
 
-  test('stops the loop when the water refs disappear mid-hover', () => {
-    const { rerender } = render(<Harness refs={makeRefs()} />)
-
-    fire(screen.getByTestId('hover'), 'pointerenter')
-    for (let i = 0; i < 5; i++) {
-      frame()
-    }
+  test('stops the loop when the tank goes inactive (context unknown)', () => {
+    const { rerender } = render(<Harness refs={makeRefs()} active />)
+    runFrames(5)
     expect(pending).not.toBeNull()
 
-    rerender(<Harness refs={null} />)
-    frame()
+    rerender(<Harness refs={makeRefs()} active={INACTIVE} />)
 
     expect(pending).toBeNull()
   })
@@ -168,6 +209,6 @@ describe('useReservoirFlow', () => {
 
     const removed = removeSpy.mock.calls.map((c) => c[0])
     expect(removed).toContain('pointerenter')
-    expect(removed).toContain('pointerleave')
+    expect(removed).toContain('pointermove')
   })
 })

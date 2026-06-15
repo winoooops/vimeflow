@@ -31,11 +31,12 @@ describe('WaterTank', () => {
     expect(screen.queryByTestId('tank-water')).not.toBeInTheDocument()
   })
 
-  test('applies the slow base-drift classes', () => {
-    render(<WaterTank pct={56} theme="dark" />)
+  test('paints a resting surface that closes flat to the floor', () => {
+    render(<WaterTank pct={56} theme="dark" height={104} />)
 
-    expect(screen.getByTestId('tank-wave-front')).toHaveClass('vf-tank-drift-a')
-    expect(screen.getByTestId('tank-wave-back')).toHaveClass('vf-tank-drift-b')
+    expect(screen.getByTestId('tank-water').getAttribute('d')).toContain(
+      'L 248 104 L 0 104 Z'
+    )
   })
 
   test('honors a custom height in the viewBox', () => {

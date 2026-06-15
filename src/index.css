@@ -251,46 +251,6 @@
   }
 }
 
-/* Context reservoir (WaterTank) ambient drift. Each wave path is 3x the tank
-   width (744) and the keyframe drifts the group by exactly one tank width
-   (248 = -33.333% of 744) for a seamless loop. `transform-box: fill-box` makes
-   the percentage resolve against the 744px path, not the 248px viewBox —
-   without it the percentage is viewBox-relative and resets mid-wave. Three
-   tiles (not two) leave runway for the JS hover boost (useReservoirFlow) to
-   stack on top of this -248 drift without sampling past the path's right edge.
-   The base drift is deliberately slow and calm; the back wave reads as a
-   distinct, slower parallax layer (longer wavelength, slower speed, taller
-   amplitude, offset phase). Honors prefers-reduced-motion — the static filled
-   tank is fully legible. */
-@keyframes vfTankDrift {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-33.3333%);
-  }
-}
-
-.vf-tank-drift-a,
-.vf-tank-drift-b {
-  transform-box: fill-box;
-}
-
-.vf-tank-drift-a {
-  animation: vfTankDrift 6s linear infinite;
-}
-
-.vf-tank-drift-b {
-  animation: vfTankDrift 9s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vf-tank-drift-a,
-  .vf-tank-drift-b {
-    animation: none;
-  }
-}
-
 /* Diff viewer styling */
 .diff-added {
   background-color: var(--color-diff-added);
