@@ -9,6 +9,19 @@ import {
   stopBrowserPaneBoundsCapture,
 } from '../features/browser/browserBridge'
 
+type AssertExtends<Target, Source extends Target> = Source
+
+export type BrowserPaneBoundsCaptureE2eContract = [
+  AssertExtends<
+    BrowserPaneBoundsCapture,
+    ReturnType<typeof getBrowserPaneBoundsCaptures>[number]
+  >,
+  AssertExtends<
+    ReturnType<typeof getBrowserPaneBoundsCaptures>[number],
+    BrowserPaneBoundsCapture
+  >,
+]
+
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
