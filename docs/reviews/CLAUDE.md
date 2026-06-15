@@ -44,14 +44,15 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 15   | 2026-06-11   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 39       | 20   | 2026-06-15   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 2        | 1    | 2026-06-15   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 8        | 6    | 2026-06-13   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 8        | 7    | 2026-06-15   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
@@ -74,9 +75,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 40       | 12   | 2026-06-13   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 19       | 7    | 2026-06-06   |
-| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 15       | 3    | 2026-06-12   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 20       | 8    | 2026-06-15   |
+| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 16       | 3    | 2026-06-15   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
@@ -90,5 +91,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 3        | 1    | 2026-06-15   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |

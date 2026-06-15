@@ -57,7 +57,6 @@ export interface TerminalZoneProps {
   ) => void
   addPane: (sessionId: string, kind?: PaneKind) => void
   removePane: (sessionId: string, paneId: string) => void
-  areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
@@ -88,7 +87,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       updateBrowserPaneUrl = undefined,
       addPane,
       removePane,
-      areBrowserPanesOccluded = false,
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
@@ -198,7 +196,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onBurner={onBurner}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
-                    areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     // The active pane keeps its highlight even when the dock
                     // (or another container) has focus, so the user never
