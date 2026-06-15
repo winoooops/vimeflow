@@ -1,12 +1,12 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import { ContextBucket, compactTokens } from './ContextBucket'
-import type { ContextBucketProps } from './ContextBucket'
+import { ContextReservoirCard, compactTokens } from './ContextReservoirCard'
+import type { ContextReservoirCardProps } from './ContextReservoirCard'
 import { ctxTone } from '../utils/contextTone'
 
 // 56% of a 1M window → 560k current occupancy · 440k headroom, reconstructed
 // from the authoritative fill % so every figure agrees with the waterline.
-const defaultProps: ContextBucketProps = {
+const defaultProps: ContextReservoirCardProps = {
   usedPercentage: 56,
   contextWindowSize: 1_000_000,
 }
@@ -33,21 +33,29 @@ describe('compactTokens', () => {
   })
 })
 
-describe('ContextBucket header', () => {
+describe('ContextReservoirCard header', () => {
   test('shows the CONTEXT label', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByText('Context')).toBeInTheDocument()
   })
 
-  test('shows the rounded percentage', () => {
-    render(<ContextBucket {...defaultProps} usedPercentage={74} />)
+  test('exposes context usage as an accessible meter', () => {
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={74} />)
 
-    expect(screen.getByTestId('context-percentage')).toHaveTextContent('74%')
+    const meter = screen.getByRole('meter', { name: /context window usage/i })
+
+    expect(meter).toHaveAttribute('aria-valuenow', '74')
+    expect(meter).toHaveAttribute('aria-valuemin', '0')
+    expect(meter).toHaveAttribute('aria-valuemax', '100')
+    expect(meter).toHaveAttribute(
+      'aria-valuetext',
+      expect.stringContaining('74% used')
+    )
   })
 
   test('uses a water-drop identity glyph, not an emoji face', () => {
-    const { container } = render(<ContextBucket {...defaultProps} />)
+    const { container } = render(<ContextReservoirCard {...defaultProps} />)
 
     // eslint-disable-next-line testing-library/no-node-access, testing-library/no-container -- icon font span is aria-hidden
     const glyph = container.querySelector('.material-symbols-outlined')
@@ -57,62 +65,68 @@ describe('ContextBucket header', () => {
   })
 })
 
-describe('ContextBucket chrome', () => {
+describe('ContextReservoirCard chrome', () => {
   test('uses a default cursor so the read-only numbers do not look editable', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
-    expect(screen.getByTestId('context-bucket')).toHaveClass('cursor-default')
+    expect(screen.getByRole('meter')).toHaveClass('cursor-default')
   })
 })
 
-describe('ContextBucket continuous color', () => {
+describe('ContextReservoirCard continuous color', () => {
   test('percentage tone tracks the fill (no tiered jumps)', () => {
     const { rerender } = render(
-      <ContextBucket {...defaultProps} usedPercentage={30} />
+      <ContextReservoirCard {...defaultProps} usedPercentage={30} />
     )
-    const lowFill = screen.getByTestId('context-percentage').style.color
 
-    rerender(<ContextBucket {...defaultProps} usedPercentage={85} />)
-    const highFill = screen.getByTestId('context-percentage').style.color
+    const lowFill = within(screen.getByRole('meter')).getByText('30').style
+      .color
+
+    rerender(<ContextReservoirCard {...defaultProps} usedPercentage={85} />)
+
+    const highFill = within(screen.getByRole('meter')).getByText('85').style
+      .color
 
     expect(lowFill).not.toBe('')
     expect(lowFill).not.toBe(highFill)
   })
 
   test('percentage tone matches the shared ctxTone sweep in dark mode', () => {
-    render(<ContextBucket {...defaultProps} usedPercentage={30} />)
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={30} />)
 
-    expect(screen.getByTestId('context-percentage')).toHaveStyle({
+    expect(within(screen.getByRole('meter')).getByText('30')).toHaveStyle({
       color: ctxTone(30).base,
     })
   })
 })
 
-describe('ContextBucket tank + waterline', () => {
+describe('ContextReservoirCard tank + waterline', () => {
   test('renders the water tank with water when context is known', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByTestId('water-tank')).toBeInTheDocument()
     expect(screen.getByTestId('tank-water')).toBeInTheDocument()
   })
 
   test('rides a value pill on the waterline showing the used tokens', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByTestId('context-pill')).toHaveTextContent('560k')
   })
 
   test('top scale tick shows the window size, bottom shows zero', () => {
-    render(<ContextBucket {...defaultProps} contextWindowSize={200_000} />)
+    render(
+      <ContextReservoirCard {...defaultProps} contextWindowSize={200_000} />
+    )
 
     expect(screen.getByText('200k')).toBeInTheDocument()
     expect(screen.getByText('0')).toBeInTheDocument()
   })
 })
 
-describe('ContextBucket footer', () => {
+describe('ContextReservoirCard footer', () => {
   test('shows the used token count', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
       '560,000 tokens'
@@ -120,7 +134,7 @@ describe('ContextBucket footer', () => {
   })
 
   test('shows remaining headroom', () => {
-    render(<ContextBucket {...defaultProps} />)
+    render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByTestId('context-headroom')).toHaveTextContent(
       '440k left'
@@ -128,11 +142,14 @@ describe('ContextBucket footer', () => {
   })
 })
 
-describe('ContextBucket null state', () => {
-  test('renders dashes and an empty tank when context is unknown', () => {
-    render(<ContextBucket {...defaultProps} usedPercentage={null} />)
+describe('ContextReservoirCard null state', () => {
+  test('marks the meter unknown and renders dashes when context is unknown', () => {
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={null} />)
 
-    expect(screen.getByTestId('context-percentage')).toHaveTextContent('—')
+    expect(
+      screen.getByRole('meter', { name: /context window usage/i })
+    ).toHaveAttribute('aria-valuetext', 'Context usage unknown')
+
     expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
       '— tokens'
     )
@@ -140,7 +157,7 @@ describe('ContextBucket null state', () => {
   })
 
   test('omits the water and the value pill when context is unknown', () => {
-    render(<ContextBucket {...defaultProps} usedPercentage={null} />)
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={null} />)
 
     expect(screen.getByTestId('water-tank')).toBeInTheDocument()
     expect(screen.queryByTestId('tank-water')).not.toBeInTheDocument()
