@@ -6,6 +6,7 @@ import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { AgentStatus } from '../agent-status/types'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import type { FeedbackRepoRootRef } from '../diff/components/DiffPanelContent'
 import type {
   ReviewComment,
@@ -134,6 +135,10 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
       testRun: null,
     })
   ),
+}))
+
+vi.mock('../agent-status/hooks/useAgentStatusHotLoading', () => ({
+  useAgentStatusHotLoading: vi.fn(),
 }))
 
 vi.mock('../diff/hooks/useGitStatus', () => ({
@@ -287,6 +292,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // making test 3's assertion pass even if test 3's own render
     // computed `enabled: false`.
     vi.mocked(useAgentStatus).mockClear()
+    vi.mocked(useAgentStatusHotLoading).mockClear()
     vi.mocked(useGitStatus).mockClear()
   })
 
@@ -298,6 +304,17 @@ describe('WorkspaceView lifted-subscription contract', () => {
     await screen.findByTestId('agent-status-panel-mock')
 
     expect(capturedPanelProps.agentStatus).toBeDefined()
+  })
+
+  test('WorkspaceView hot-loads only visible PTY-backed panes in the active session', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(useAgentStatusHotLoading).toHaveBeenCalledWith({
+      activePtyId: 'sess-1',
+      visiblePtyIds: ['sess-1'],
+    })
   })
 
   test('AgentStatusCard and AgentStatusPanel both render from the single useAgentStatus subscription', async () => {

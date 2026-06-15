@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-13
+last_updated: 2026-06-15
 ref_count: 0
 ---
 
@@ -25,3 +25,12 @@ code and should be removed.
 - **Finding:** All entries in `contextMenuActions` carried explicit `id` fields, so the early `return action.id` made the subsequent `switch (action.label)` block unreachable. The dead code risked misleading maintainers into thinking new actions could rely on label matching.
 - **Fix:** Removed the unreachable `switch` fallback; `actionIdFor` now returns `action.id ?? null` directly.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 2. `clearAgentStatusRefreshCoordinator` exported but never called
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/utils/statusRefreshCoordinator.ts`
+- **Finding:** `clearAgentStatusRefreshCoordinator` was exported from the singleton module but had no call sites. Without a comment, a future refactor would likely delete it.
+- **Fix:** Added a comment documenting that the export is intentionally reserved for PR4 lifecycle hooks (session close / workspace teardown) and should not be wired to a `useEffect` cleanup today.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

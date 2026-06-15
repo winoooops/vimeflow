@@ -2,7 +2,7 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-06-09
+last_updated: 2026-06-15
 ref_count: 0
 ---
 
@@ -31,3 +31,12 @@ feature.
 - **Finding:** `latest_account_rate_limits` called `discover_db(&self.codex_home, "logs")` on every invocation. `discover_db` does `std::fs::read_dir(codex_home)`, then opens a read-only SQLite connection for each `.sqlite` file and queries `sqlite_master` to check if the target table exists. Over a busy session this accumulates repeated directory reads and SQLite open/close cycles for every decoded status event.
 - **Fix:** Added a `logs_db_cache: std::sync::OnceLock<PathBuf>` field to `CompositeLocator`. `latest_account_rate_limits` checks the cache first; on a miss it runs `discover_db`, stores the result only on success, and retries on subsequent calls if the earlier discovery returned `None`. This eliminates repeated filesystem I/O without changing per-call read-query behavior.
 - **Commit:** same commit as this entry
+
+### 2. Stale active snapshot returned when detection returns null
+
+- **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/utils/statusRefreshCoordinator.ts`
+- **Finding:** When `detect_agent_in_session` returned `null` for a pane with a cached active snapshot, the coordinator returned the stale snapshot unchanged. Switching back to that pane restored `isActive: true` until the primary polling hook caught up.
+- **Fix:** Changed the null-detection branch to write a default (inactive) snapshot instead of returning the previous one, so hot-loaded panes never display a dead agent as active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1,6 +1,6 @@
 # PR3 — Visible-Pane Hot Loading And Prefetch
 
-**Status:** draft
+**Status:** implemented in PR3
 **Scope:** bounded refresh orchestration
 **Depends on:** PR2
 
@@ -16,6 +16,22 @@ Warm the status snapshots for panes the user is likely to switch to next without
 - Deduplicate concurrent refreshes for the same pane.
 - Track request generation or abort signals so late responses from older pane selections are ignored.
 - Keep hidden sessions and non-visible historical panes out of prefetch for v1.
+
+## PR3 Implementation Notes
+
+- Added `statusRefreshCoordinator` as the small refresh coordinator API.
+- The coordinator runs bounded `detect_agent_in_session` refreshes and writes
+  pane-keyed warm snapshots; it does not replace the existing active
+  `useAgentStatus` live event subscription.
+- Active pane refresh is planned first, then visible sibling shell panes.
+- Refreshes are capped at four visible PTY-backed panes, matching the current
+  split layout ceiling.
+- In-flight refreshes for the same pane coalesce.
+- Late responses are applied only if the pane is still in the current visible
+  set, so old active-pane responses cannot warm hidden sessions.
+- Detection refreshes preserve existing rich snapshot fields such as context,
+  cost, tool calls, and tests; they only update the minimal active/detected
+  identity fields.
 
 ## Interface Guidance
 
