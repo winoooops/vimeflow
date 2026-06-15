@@ -56,17 +56,24 @@ export const useSidebarTabShortcut = ({
         return
       }
 
-      // Defer to whatever owns an open modal (command palette, unsaved-changes).
-      if (document.querySelector(DIALOG_SELECTOR)) {
-        return
-      }
-
       const target =
         event.target instanceof Element
           ? event.target
           : document.activeElement instanceof Element
             ? document.activeElement
             : document.body
+
+      // Defer to whatever owns an open modal (command palette, unsaved-changes),
+      // but allow the shortcut when the compact sidebar drawer is open — it has
+      // role="dialog" for a11y, yet the tab switch must still work inside it.
+      const openDialogs = document.querySelectorAll(DIALOG_SELECTOR)
+
+      const inSidebarDialog = !!target.closest(
+        '[role="dialog"][aria-label="Sidebar"]'
+      )
+      if (openDialogs.length > 0 && !inSidebarDialog) {
+        return
+      }
 
       const inTerminalZone = !!target.closest(
         `[data-container-id="${TERMINAL_CONTAINER_ID}"]`

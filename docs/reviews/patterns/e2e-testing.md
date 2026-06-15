@@ -2,7 +2,7 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-05-20
+last_updated: 2026-06-15
 ref_count: 7
 ---
 
@@ -218,3 +218,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** After computing `filePaths` from `listTypeScriptFiles(E2E_ROOT)`, the test immediately evaluates `expect(findings).toEqual([])`. If `tests/e2e` is empty, or if all e2e files are temporarily moved or renamed (e.g., during a directory restructure), `filePaths` is `[]`, `findings` is `[]`, and the assertion trivially passes — the guard silently grants a clean bill of health without having scanned a single file. The guard's stated purpose (preventing `browser.keys(...)` usage in e2e tests) evaporates silently.
 - **Fix:** Added `expect(filePaths.length).toBeGreaterThan(0)` immediately after computing `filePaths`, requiring the guard to scan at least one e2e TypeScript file before checking findings. This distinguishes "no violations found" from "no files scanned".
 - **Commit:** _(this cycle)_
+
+### 20. E2E helper targeted `button[title="close"]` after Tooltip replaced `title` with `aria-label`
+
+- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts` L135-140
+- **Finding:** `closeSettings` used `clickBySelector('[role="dialog"] button[title="close"]')`. After `SettingsDialog` wrapped the close control in the shared `Tooltip` component, the button no longer had a native `title` attribute; it exposed `aria-label="Close"` instead. The spec failed on the first `closeSettings` call before exercising any Vim-mode behavior.
+- **Fix:** Updated the selector to `button[aria-label="Close"]` so it matches the accessible label rendered by the Tooltip-wrapped control.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
