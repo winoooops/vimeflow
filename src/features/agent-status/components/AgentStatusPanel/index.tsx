@@ -130,9 +130,15 @@ const useRetainedBodyState = ({
   isRefreshing,
   snapshotKey,
 }: RetainedBodyStateOptions): RetainedBodyState => {
-  const lastRenderedSnapshotRef = useRef<AgentStatusPanelBodySnapshot | null>(
+  const lastStableSnapshotRef = useRef<AgentStatusPanelBodySnapshot | null>(
     null
   )
+
+  const heldRefreshSnapshotRef = useRef<AgentStatusPanelBodySnapshot | null>(
+    null
+  )
+
+  const previousSnapshotKeyRef = useRef<string | null>(snapshotKey)
 
   const snapshotsByKeyRef = useRef<Map<string, AgentStatusPanelBodySnapshot>>(
     new Map()
@@ -155,6 +161,7 @@ const useRetainedBodyState = ({
       : (snapshotsByKeyRef.current.get(snapshotKey) ?? null)
 
   const currentHasContent = hasBodyContent(currentSnapshot)
+  const snapshotKeyChanged = previousSnapshotKeyRef.current !== snapshotKey
 
   const targetHasRetainedContent =
     targetSnapshot !== null && hasBodyContent(targetSnapshot)
@@ -162,37 +169,64 @@ const useRetainedBodyState = ({
   const retainedTargetSnapshot = targetHasRetainedContent
     ? targetSnapshot
     : null
-  const lastRenderedSnapshot = lastRenderedSnapshotRef.current
+  const lastStableSnapshot = lastStableSnapshotRef.current
 
-  const lastRenderedHasContent =
-    lastRenderedSnapshot !== null && hasBodyContent(lastRenderedSnapshot)
+  const lastStableHasContent =
+    lastStableSnapshot !== null && hasBodyContent(lastStableSnapshot)
 
-  const retainedLastSnapshot = lastRenderedHasContent
-    ? lastRenderedSnapshot
-    : null
+  const retainedLastSnapshot = lastStableHasContent ? lastStableSnapshot : null
 
-  const phase: AgentStatusPanelBodyPhase =
-    isRefreshing && !currentHasContent
-      ? targetHasRetainedContent || lastRenderedHasContent
-        ? 'fetching'
-        : 'loading'
+  const switchFallbackSnapshot =
+    snapshotKeyChanged && !currentHasContent
+      ? (retainedTargetSnapshot ?? retainedLastSnapshot)
+      : null
+
+  const retainedRefreshSnapshot =
+    retainedTargetSnapshot ??
+    heldRefreshSnapshotRef.current ??
+    switchFallbackSnapshot
+
+  const shouldRetainDuringRefresh =
+    (isRefreshing || snapshotKeyChanged) &&
+    !currentHasContent &&
+    retainedRefreshSnapshot !== null
+
+  const phase: AgentStatusPanelBodyPhase = shouldRetainDuringRefresh
+    ? 'fetching'
+    : isRefreshing && !currentHasContent
+      ? 'loading'
       : isRefreshing
         ? 'fetching'
         : 'fresh'
 
-  const snapshot =
-    phase === 'loading'
-      ? currentSnapshot
-      : isRefreshing && !currentHasContent && retainedTargetSnapshot !== null
-        ? retainedTargetSnapshot
-        : isRefreshing && !currentHasContent && retainedLastSnapshot !== null
-          ? retainedLastSnapshot
-          : currentSnapshot
+  const snapshot = shouldRetainDuringRefresh
+    ? retainedRefreshSnapshot
+    : currentSnapshot
+
+  useLayoutEffect(() => {
+    if (switchFallbackSnapshot !== null) {
+      heldRefreshSnapshotRef.current = switchFallbackSnapshot
+    }
+  }, [switchFallbackSnapshot])
 
   useEffect(() => {
-    rememberBodySnapshot(snapshotsByKeyRef.current, currentSnapshot)
-    lastRenderedSnapshotRef.current = snapshot
-  }, [currentSnapshot, snapshot])
+    previousSnapshotKeyRef.current = snapshotKey
+
+    if (currentHasContent) {
+      rememberBodySnapshot(snapshotsByKeyRef.current, currentSnapshot)
+      lastStableSnapshotRef.current = currentSnapshot
+    }
+
+    if (!isRefreshing && !snapshotKeyChanged) {
+      heldRefreshSnapshotRef.current = null
+    }
+  }, [
+    currentHasContent,
+    currentSnapshot,
+    isRefreshing,
+    snapshotKey,
+    snapshotKeyChanged,
+  ])
 
   return { phase, snapshot }
 }
@@ -290,6 +324,7 @@ export const AgentStatusPanel = ({
   const bodySnapshotKey = bodyState.snapshot.snapshotKey
   const isBodyLoading = bodyState.phase === 'loading'
   const isBodyRefreshing = bodyState.phase === 'fetching'
+  const showsRefreshing = isRefreshing || isBodyRefreshing
   const events = useActivityEvents(status)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const programmaticScrollTopRef = useRef<number | null>(null)
@@ -497,7 +532,7 @@ export const AgentStatusPanel = ({
     >
       <AgentStatusPanelHeader
         agent={agent}
-        isRefreshing={isRefreshing}
+        isRefreshing={showsRefreshing}
         status={sessionStatus}
         onCollapse={onCollapse}
       />
@@ -505,7 +540,7 @@ export const AgentStatusPanel = ({
       <span className="sr-only" role="status" aria-live="polite">
         {isBodyLoading
           ? 'Loading agent status'
-          : isRefreshing
+          : showsRefreshing
             ? 'Fetching latest agent status'
             : ''}
       </span>

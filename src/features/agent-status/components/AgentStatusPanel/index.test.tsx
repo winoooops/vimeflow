@@ -945,6 +945,84 @@ describe('AgentStatusPanel', () => {
     ).toHaveAttribute('data-body-phase', 'fetching')
   })
 
+  test('keeps the last stable body during the pane-switch render before refresh starts', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cacheHistory={[75]}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('fetching latest')).toBeInTheDocument()
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fetching')
+  })
+
   test('releases the retained body after refresh settles', () => {
     const richStatus: AgentStatus = {
       ...activeAgentStatus,
