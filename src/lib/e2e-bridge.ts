@@ -2,6 +2,11 @@ import type { Terminal } from '@xterm/xterm'
 import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
+import {
+  clearBrowserPaneBoundsCaptures,
+  getBrowserPaneBoundsCaptures,
+  startBrowserPaneBoundsCapture,
+} from '../features/browser/browserBridge'
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
@@ -133,5 +138,8 @@ if (import.meta.env.VITE_E2E) {
     getActiveSessionIds: getAllPtySessionIds,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    startBrowserPaneBoundsCapture,
+    clearBrowserPaneBoundsCaptures,
+    getBrowserPaneBoundsCaptures,
   }
 }
