@@ -32,7 +32,7 @@ expands.
 - **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
 - **Finding:** `OverlayDescriptor.getRect` was optional for every `NativeOcclusionPolicy`. When `nativeOcclusion === 'intersects'`, `overlayOccludesNativeSurface` evaluated `rectsIntersect(overlay.getRect?.() ?? null, surface.getRect())`, which always returned `false` if `getRect` was omitted. A future consumer calling `registerOverlayDescriptor` directly with an `'intersects'` descriptor would silently get no native occlusion.
 - **Fix:** Changed `OverlayDescriptor` from a single interface with an optional `getRect` into a discriminated union where `'intersects'` requires `getRect` and `'none'` / `'global'` keep it optional. Updated `useOverlayRegistration` to preserve the union when forwarding descriptors to the provider.
-- **Commit:** _(this commit)
+- **Commit:** \_(this commit)
 
 ### 2. `areNativeSurfaceDescriptorsEqual` omits the `owner` field
 
@@ -41,4 +41,4 @@ expands.
 - **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
 - **Finding:** `areNativeSurfaceDescriptorsEqual` compared `id`, `belowPlane`, and `getRect` but not `owner`. Because `NativeSurfaceOwner` is currently a singleton (`'browser-pane'`), the omission has no visible effect today. Once a second owner is added, a re-registered surface whose `owner` changes while its other fields stay the same would be treated as unchanged, leaving stale owner metadata in `nativeSurfaces`.
 - **Fix:** Added `left.owner === right.owner` to `areNativeSurfaceDescriptorsEqual`, with the same `eslint-disable-next-line @typescript-eslint/no-unnecessary-condition` suppression already used for the singleton owner comparison in `useNativeSurface.ts`.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)_
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)\_
