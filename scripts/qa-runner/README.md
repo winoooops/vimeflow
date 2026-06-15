@@ -204,7 +204,7 @@ control host light and delegate only the expensive fixer pass to a burst-worker
 dispatcher:
 
 ```bash
-QA_MAX_PARALLEL=3 \
+QA_MAX_PARALLEL=2 \
 QA_TICK_RUNNER=local \
 QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node scripts/qa-runner/daemon.js
