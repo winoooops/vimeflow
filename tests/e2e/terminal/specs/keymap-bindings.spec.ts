@@ -15,8 +15,17 @@ interface KeyInit {
   key: string
   code?: string
   metaKey?: boolean
+  ctrlKey?: boolean
   shiftKey?: boolean
 }
+
+// The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
+// document-level pane shortcuts under test. Drive the events with the same
+// modifier the running binary expects so the suite passes on CI runners for
+// both platforms.
+const isMac = process.platform === 'darwin'
+const modInit = (): Pick<KeyInit, 'metaKey' | 'ctrlKey'> =>
+  isMac ? { metaKey: true } : { ctrlKey: true }
 
 const fireKey = async (init: KeyInit): Promise<void> => {
   await browser.execute((i: KeyInit) => {
@@ -33,23 +42,27 @@ const fireKey = async (init: KeyInit): Promise<void> => {
 // `⌘;` then the chord key, dispatched synchronously so the chord is seen while
 // the leader window is still open.
 const fireLeaderChord = async (chordKey: string): Promise<void> => {
-  await browser.execute((k: string) => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: ';',
-        metaKey: true,
-        bubbles: true,
-        cancelable: true,
-      })
-    )
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: k,
-        bubbles: true,
-        cancelable: true,
-      })
-    )
-  }, chordKey)
+  await browser.execute(
+    (k: string, useMeta: boolean) => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: ';',
+          ...(useMeta ? { metaKey: true } : { ctrlKey: true }),
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: k,
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    },
+    chordKey,
+    isMac
+  )
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
@@ -153,7 +166,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   })
 
   it('Cmd+; opens the command palette', async () => {
-    await fireKey({ key: ';', metaKey: true })
+    await fireKey({ key: ';', ...modInit() })
 
     const palette = await $(
       '[role="combobox"][aria-label="Command palette search"]'
@@ -199,7 +212,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   it('Cmd+\\ cycles the pane layout', async () => {
     const before = await currentLayout()
-    await fireKey({ key: '\\', code: 'Backslash', metaKey: true })
+    await fireKey({ key: '\\', code: 'Backslash', ...modInit() })
     await browser.waitUntil(async () => (await currentLayout()) !== before, {
       timeout: 8_000,
       timeoutMsg: `layout did not change from "${before}" on Cmd+\\`,
@@ -209,7 +222,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   it('Vim ex-command :vsplit (via palette) sets the vsplit layout', async () => {
     await setPreset('vim')
 
-    await fireKey({ key: ';', metaKey: true })
+    await fireKey({ key: ';', ...modInit() })
     const input = await $(
       '[role="combobox"][aria-label="Command palette search"]'
     )
@@ -252,7 +265,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
         fireKey({
           key: 'ArrowLeft',
           code: 'ArrowLeft',
-          metaKey: true,
+          ...modInit(),
           shiftKey: true,
         }),
       0,
@@ -265,7 +278,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
         fireKey({
           key: 'ArrowRight',
           code: 'ArrowRight',
-          metaKey: true,
+          ...modInit(),
           shiftKey: true,
         }),
       1,

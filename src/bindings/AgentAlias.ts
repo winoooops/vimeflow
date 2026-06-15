@@ -3,11 +3,4 @@
 /**
  * User-defined alias for launching a coding agent (or arbitrary shell command).
  */
-export type AgentAlias = {
-  id: string
-  alias: string
-  agent: string
-  model: string
-  extra: string
-  account: string | null
-}
+export type AgentAlias = { id: string, alias: string, agent: string, model: string, extra: string, account: string | null, };
