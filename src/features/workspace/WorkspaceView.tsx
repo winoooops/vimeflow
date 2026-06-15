@@ -53,6 +53,7 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
+import { useVimLeaderChords } from '../command-palette/hooks/useVimLeaderChords'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import {
@@ -1242,6 +1243,14 @@ export const WorkspaceView = (): ReactElement => {
     },
     [setSessionLayout]
   )
+
+  useVimLeaderChords({
+    keymapPreset: settings.keymapPreset,
+    activeSession,
+    setSessionActivePane,
+    closeActivePane: closeActivePaneCommand,
+    setActiveSessionLayout: setActiveSessionLayoutCommand,
+  })
 
   const workspaceCommands = useMemo(
     () =>
