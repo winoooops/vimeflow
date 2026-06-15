@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-} from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename, join } from 'node:path'
 
@@ -161,10 +155,67 @@ export const cleanupQaWorktrees = ({
   return summary
 }
 
-export const worktreeDiskUsage = (path) => {
-  if (!existsSync(path)) {
+export const parseDfPkOutput = (output, path) => {
+  const line = String(output || '')
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .at(-1)
+  if (!line) {
     return null
   }
 
-  return statSync(path).size
+  const columns = line.trim().split(/\s+/)
+  if (columns.length < 6) {
+    return null
+  }
+
+  const [filesystem, totalKbRaw, usedKbRaw, availableKbRaw, capacityRaw] =
+    columns
+  const totalKb = Number(totalKbRaw)
+  const usedKb = Number(usedKbRaw)
+  const availableKb = Number(availableKbRaw)
+  const capacityPercent = Number(String(capacityRaw).replace(/%$/, ''))
+
+  if (
+    !Number.isFinite(totalKb) ||
+    !Number.isFinite(usedKb) ||
+    !Number.isFinite(availableKb) ||
+    !Number.isFinite(capacityPercent) ||
+    totalKb <= 0
+  ) {
+    return null
+  }
+
+  return {
+    path,
+    filesystem,
+    totalKb,
+    usedKb,
+    availableKb,
+    capacityPercent,
+    freePercent: Math.round((availableKb / totalKb) * 1000) / 10,
+    mount: columns.slice(5).join(' '),
+  }
+}
+
+export const worktreeDiskUsage = (
+  path,
+  { exec = execFileSync, exists = existsSync } = {}
+) => {
+  if (!path || !exists(path)) {
+    return null
+  }
+
+  try {
+    return parseDfPkOutput(
+      exec('df', ['-Pk', path], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+      path
+    )
+  } catch {
+    return null
+  }
 }

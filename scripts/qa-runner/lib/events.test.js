@@ -66,4 +66,27 @@ describe('formatLinearEventComment', () => {
 
     expect(body).toBeNull()
   })
+
+  test('formats worker infrastructure failures for Linear visibility', () => {
+    const body = formatLinearEventComment({
+      type: 'worker_infra_unhealthy',
+      pr: 42,
+      sourceEvent: 'poll',
+      category: 'worker_disk_low',
+      detail: 'worker disk free space below cleanup threshold',
+      exitCode: 2,
+      signal: null,
+      exitReason:
+        'QA_WORKER_DISK_LOW free=10% used=90% available=1GiB total=10GiB minFree=15% path=/repo mount=/ cleanup did not free enough space or the volume is too small',
+      logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+      retryMode: 'next poll tick',
+      terminal: false,
+    })
+
+    expect(body).toContain('## QA runner cycle exit: RETRY')
+    expect(body).toContain('| Category | worker_disk_low |')
+    expect(body).toContain('worker disk free space below cleanup threshold')
+    expect(body).toContain('QA_WORKER_DISK_LOW free=10%')
+    expect(body).toContain('without incrementing the fixer failure streak')
+  })
 })

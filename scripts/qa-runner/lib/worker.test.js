@@ -621,6 +621,19 @@ describe('runOne', () => {
 })
 
 describe('workerInfraFailure', () => {
+  test('classifies post-cleanup low disk as worker infrastructure', () => {
+    expect(
+      workerInfraFailure({
+        exitReason:
+          'FIXER_EXIT #42: QA_WORKER_DISK_LOW free=10% used=90% minFree=15% path=/repo (exit 2; log: /repo/scripts/qa-runner/logs/pr-42.log)',
+        logPath: null,
+      })
+    ).toEqual({
+      category: 'worker_disk_low',
+      detail: 'worker disk free space below cleanup threshold',
+    })
+  })
+
   test('classifies blank SSM failures as worker infrastructure failures', () => {
     expect(
       workerInfraFailure({

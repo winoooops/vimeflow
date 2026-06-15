@@ -69,6 +69,7 @@ const LINEAR_COMMENT = {
   progress: (e) =>
     `✅ Fix pushed for #${e.pr} (round ${e.round}). Re-review pending.`,
   error: (e) => (e.category === 'transient' ? formatCycleExitComment(e) : null),
+  worker_infra_unhealthy: formatCycleExitComment,
   dispatch_blocked: (e) =>
     [
       '## QA runner dispatch blocked',

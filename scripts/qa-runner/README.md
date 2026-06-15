@@ -224,6 +224,7 @@ The command receives the fixer contract through environment variables:
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
 | `QA_WORKER_KEEP_ALIVE`        | `1` when the daemon owns burst-worker stop through its idle timer   |
+| `QA_WORKER_MIN_FREE_PERCENT`  | Minimum worker filesystem free percentage after cleanup, default 15 |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
 | `QA_LINEAR_PARENT_COMMENT_ID` | Active `NEEDS_FIX` Linear comment id for fixer status replies       |
 
@@ -280,6 +281,12 @@ supports:
 - `QA_WORKER_IDLE_STOP_SECONDS=2100` controls the daemon's idle-stop grace
   period after a keep-alive run drains the queue. The default keeps the worker
   warm through slow CI/Claude review rounds before stopping it.
+- `QA_WORKER_MIN_FREE_PERCENT=15` controls the worker disk health gate. The
+  worker removes stale `.claude/worktrees/qa-pr-*`, matching git metadata, and
+  stale PR locks before and after each fixer pass. If free space is still below
+  the threshold, it exits with `QA_WORKER_DISK_LOW`; the daemon records a
+  `worker_infra_unhealthy` retry event and posts the details to Linear without
+  incrementing the fixer failure streak.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
 contract into one `run.js <PR> --push` fixer pass. It never arms approval; the

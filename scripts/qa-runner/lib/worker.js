@@ -71,6 +71,12 @@ export const workerInfraFailure = (tickResult) => {
       detail: 'worker disk full',
     }
   }
+  if (/QA_WORKER_DISK_LOW|worker disk .*low/i.test(text)) {
+    return {
+      category: 'worker_disk_low',
+      detail: 'worker disk free space below cleanup threshold',
+    }
+  }
   if (
     /SSM command .* produced no output|document process failed unexpectedly|TargetNotConnected|DeliveryTimedOut|ExecutionTimedOut|Undeliverable/i.test(
       text

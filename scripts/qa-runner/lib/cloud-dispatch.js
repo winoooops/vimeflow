@@ -14,6 +14,7 @@ export const CYCLE_ENV_KEYS = [
   'QA_WORKER_KEEP_ALIVE',
   'QA_WORKER_REFRESH_RUNNER',
   'QA_WORKER_REF',
+  'QA_WORKER_MIN_FREE_PERCENT',
   // Legacy alias consumed by worker-cycle; pass-through only, not SSM-sourced.
   'QA_RUNNER_REF',
 ]

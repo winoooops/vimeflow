@@ -8,11 +8,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { shouldRefreshRunner } from './lib/cloud-dispatch.js'
-import { cleanupQaWorktrees } from './lib/worktree-cleanup.js'
+import {
+  cleanupQaWorktrees,
+  worktreeDiskUsage,
+} from './lib/worktree-cleanup.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..')
 const DEFAULT_WORKER_ENV_FILE = '/etc/vimeflow/qa-runner/worker.env'
+const DEFAULT_MIN_FREE_PERCENT = 15
 
 const stripMatchingOuterQuotes = (value) => {
   const trimmed = value.trim()
@@ -131,6 +135,61 @@ const abortOnFailure = (label, result) => {
   )
 }
 
+const gb = (kb) => Math.round((kb / 1024 / 1024) * 10) / 10
+
+export const workerMinFreePercent = (env = process.env) => {
+  const raw = env.QA_WORKER_MIN_FREE_PERCENT
+  if (raw == null || raw === '') {
+    return DEFAULT_MIN_FREE_PERCENT
+  }
+
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0 || value >= 100) {
+    throw new Error('QA_WORKER_MIN_FREE_PERCENT must be between 0 and 99')
+  }
+
+  return value
+}
+
+export const workerDiskStatus = (
+  repoRoot,
+  { env = process.env, diskUsage = worktreeDiskUsage } = {}
+) => {
+  const minFreePercent = workerMinFreePercent(env)
+  const disk = diskUsage(repoRoot)
+  if (!disk) {
+    return { ok: true, disk: null, minFreePercent }
+  }
+
+  return {
+    ok: disk.freePercent >= minFreePercent,
+    disk,
+    minFreePercent,
+  }
+}
+
+export const workerDiskLowMessage = ({ disk, minFreePercent }) =>
+  [
+    'QA_WORKER_DISK_LOW',
+    `free=${disk.freePercent}%`,
+    `used=${disk.capacityPercent}%`,
+    `available=${gb(disk.availableKb)}GiB`,
+    `total=${gb(disk.totalKb)}GiB`,
+    `minFree=${minFreePercent}%`,
+    `path=${disk.path}`,
+    `mount=${disk.mount || 'unknown'}`,
+    'cleanup did not free enough space or the volume is too small',
+  ].join(' ')
+
+export const assertWorkerDiskRoom = (repoRoot, opts = {}) => {
+  const status = workerDiskStatus(repoRoot, opts)
+  if (!status.ok) {
+    throw new Error(workerDiskLowMessage(status))
+  }
+
+  return status
+}
+
 const cleanupWorkerWorktrees = (repoRoot) => {
   try {
     cleanupQaWorktrees({
@@ -184,17 +243,26 @@ export const main = () => {
   warnMissingWorkerEnv()
   const repoRoot = process.env.QA_WORKER_REPO || REPO_ROOT
   cleanupWorkerWorktrees(repoRoot)
+  assertWorkerDiskRoom(repoRoot)
+  let exitCode = 1
   try {
     refreshRunner(process.env, repoRoot)
+    assertWorkerDiskRoom(repoRoot)
 
     const result = run('node', workerRunArgs(process.env), {
       cwd: repoRoot,
       env: process.env,
     })
-    process.exitCode = result.status ?? 1
+    exitCode = result.status ?? 1
   } finally {
     cleanupWorkerWorktrees(repoRoot)
+    const diskStatus = workerDiskStatus(repoRoot)
+    if (!diskStatus.ok) {
+      process.stderr.write(`${workerDiskLowMessage(diskStatus)}\n`)
+      exitCode = 2
+    }
   }
+  process.exitCode = exitCode
 }
 
 if (

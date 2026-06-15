@@ -3,9 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  assertWorkerDiskRoom,
   loadWorkerEnvFile,
   warnMissingWorkerEnv,
   workerConfigFromEnv,
+  workerDiskLowMessage,
+  workerDiskStatus,
+  workerMinFreePercent,
   workerRunArgs,
 } from './worker-cycle.js'
 
@@ -250,5 +254,49 @@ describe('workerRunArgs', () => {
 
   test('requires the PR number', () => {
     expect(() => workerRunArgs({})).toThrow('QA_PR is required')
+  })
+})
+
+describe('worker disk health', () => {
+  const lowDisk = {
+    path: '/repo',
+    filesystem: '/dev/root',
+    totalKb: 10 * 1024 * 1024,
+    usedKb: 9 * 1024 * 1024,
+    availableKb: 1024 * 1024,
+    capacityPercent: 90,
+    freePercent: 10,
+    mount: '/',
+  }
+
+  test('defaults to requiring 15 percent free space', () => {
+    expect(workerMinFreePercent({})).toBe(15)
+  })
+
+  test('allows overriding the free-space threshold', () => {
+    expect(workerMinFreePercent({ QA_WORKER_MIN_FREE_PERCENT: '25' })).toBe(25)
+  })
+
+  test('rejects invalid free-space thresholds', () => {
+    expect(() =>
+      workerMinFreePercent({ QA_WORKER_MIN_FREE_PERCENT: '100' })
+    ).toThrow('QA_WORKER_MIN_FREE_PERCENT')
+  })
+
+  test('reports low worker disk after cleanup with a machine-readable signal', () => {
+    const status = workerDiskStatus('/repo', {
+      env: { QA_WORKER_MIN_FREE_PERCENT: '15' },
+      diskUsage: () => lowDisk,
+    })
+
+    expect(status.ok).toBe(false)
+    expect(workerDiskLowMessage(status)).toContain('QA_WORKER_DISK_LOW')
+    expect(workerDiskLowMessage(status)).toContain('free=10%')
+    expect(() =>
+      assertWorkerDiskRoom('/repo', {
+        env: { QA_WORKER_MIN_FREE_PERCENT: '15' },
+        diskUsage: () => lowDisk,
+      })
+    ).toThrow(/QA_WORKER_DISK_LOW/)
   })
 })

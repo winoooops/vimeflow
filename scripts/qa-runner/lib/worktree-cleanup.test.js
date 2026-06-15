@@ -9,7 +9,12 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { cleanupQaWorktrees, qaPrFromWorktreeName } from './worktree-cleanup.js'
+import {
+  cleanupQaWorktrees,
+  parseDfPkOutput,
+  qaPrFromWorktreeName,
+  worktreeDiskUsage,
+} from './worktree-cleanup.js'
 
 let tmp
 
@@ -131,5 +136,39 @@ describe('cleanupQaWorktrees', () => {
     expect(existsSync(join(repoRoot, '.git', 'worktrees', 'qa-pr-43'))).toBe(
       true
     )
+  })
+})
+
+describe('worktreeDiskUsage', () => {
+  test('parses POSIX df output into percentage and capacity fields', () => {
+    expect(
+      parseDfPkOutput(
+        [
+          'Filesystem 1024-blocks Used Available Capacity Mounted on',
+          '/dev/root 52416636 6291456 46125180 12% /',
+        ].join('\n'),
+        '/repo'
+      )
+    ).toEqual({
+      path: '/repo',
+      filesystem: '/dev/root',
+      totalKb: 52416636,
+      usedKb: 6291456,
+      availableKb: 46125180,
+      capacityPercent: 12,
+      freePercent: 88,
+      mount: '/',
+    })
+  })
+
+  test('returns null when disk usage cannot be read', () => {
+    expect(
+      worktreeDiskUsage('/repo', {
+        exists: () => true,
+        exec: () => {
+          throw new Error('df failed')
+        },
+      })
+    ).toBeNull()
   })
 })

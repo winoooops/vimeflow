@@ -44,6 +44,7 @@ describe('cycleEnv', () => {
         QA_WORKER_REFRESH_RUNNER: '1',
         QA_WORKER_REF: 'main',
         QA_WORKER_KEEP_ALIVE: '1',
+        QA_WORKER_MIN_FREE_PERCENT: '20',
         QA_RUNNER_REF: 'main',
         QA_APPROVE: '1',
         QA_WORKER_INSTANCE_ID: 'i-123',
@@ -54,6 +55,7 @@ describe('cycleEnv', () => {
       QA_WORKER_KEEP_ALIVE: '1',
       QA_WORKER_REFRESH_RUNNER: '1',
       QA_WORKER_REF: 'main',
+      QA_WORKER_MIN_FREE_PERCENT: '20',
       QA_RUNNER_REF: 'main',
     })
   })
