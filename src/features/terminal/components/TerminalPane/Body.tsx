@@ -630,13 +630,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           // agent/tool output both arrive through the renderer parser, so this
           // stays pane-local while remaining adapter-neutral.
           parserEventDisposable = created.parser.onEvent((event) => {
-            if (event.identifier !== 7) {
-              return
-            }
-
             const previousCwd = agentCwdRef.current
 
-            const path = parseOsc7Cwd(event.data, {
+            const path = parseOsc7Cwd(event.uri, {
               preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
             })
 
@@ -654,7 +650,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
             logAgentCwdDebug('osc7', {
               sessionId,
-              raw: event.data,
+              raw: event.uri,
               previousCwd,
               nextCwd: path,
               changed: path !== null && path !== previousCwd,

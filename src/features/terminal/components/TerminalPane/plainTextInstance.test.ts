@@ -143,9 +143,9 @@ describe('plainTextInstance', () => {
     })
 
     expect(parserEventHandler).toHaveBeenCalledWith({
-      type: 'osc',
-      identifier: 7,
-      data: 'file://localhost/tmp/plain-text-project',
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/plain-text-project',
       output: {
         offsetStart: 12,
         byteLen: new TextEncoder().encode(text).length,
@@ -168,17 +168,17 @@ describe('plainTextInstance', () => {
 
     expect(firstHandler).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'osc',
-        identifier: 7,
-        data: 'file://localhost/tmp/plain-text-project',
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://localhost/tmp/plain-text-project',
       })
     )
 
     expect(secondHandler).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'osc',
-        identifier: 7,
-        data: 'file://localhost/tmp/plain-text-project',
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://localhost/tmp/plain-text-project',
       })
     )
 

@@ -492,9 +492,9 @@ class PlainTextTerminalModel {
         }
 
         this.emitParserEvent({
-          type: 'osc',
-          identifier: numericIdentifier,
-          data: payload,
+          type: 'cwd',
+          source: 'osc7',
+          uri: payload,
           output: this.currentOutputContext,
         })
 

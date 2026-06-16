@@ -2052,9 +2052,9 @@ describe('Body', () => {
         .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
       parserEventHandler?.({
-        type: 'osc',
-        identifier: 7,
-        data: 'file://localhost/home/user/projects',
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://localhost/home/user/projects',
         output: { offsetStart: 0, byteLen: 41, phase: 'live' },
       })
 
@@ -2115,9 +2115,9 @@ describe('Body', () => {
         .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
       parserEventHandler?.({
-        type: 'osc',
-        identifier: 7,
-        data: 'file://server/share/project',
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://server/share/project',
         output: { offsetStart: 0, byteLen: 27, phase: 'live' },
       })
 
@@ -2178,9 +2178,9 @@ describe('Body', () => {
         .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
       parserEventHandler?.({
-        type: 'osc',
-        identifier: 7,
-        data: '/tmp',
+        type: 'cwd',
+        source: 'osc7',
+        uri: '/tmp',
         output: { offsetStart: 0, byteLen: 4, phase: 'live' },
       })
 
