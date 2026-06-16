@@ -22,7 +22,22 @@ const setElementSize = (
   })
 }
 
+const createdTerminals = new Set<ReturnType<typeof createPlainTextTerminal>>()
+
+const createTrackedPlainTextTerminal = (): ReturnType<
+  typeof createPlainTextTerminal
+> => {
+  const created = createPlainTextTerminal()
+  createdTerminals.add(created)
+
+  return created
+}
+
 afterEach(() => {
+  createdTerminals.forEach((created) => {
+    created.terminal.dispose()
+  })
+  createdTerminals.clear()
   window.getSelection()?.removeAllRanges()
   document.body.innerHTML = ''
   themeService.apply('obsidian-lens')
@@ -38,7 +53,7 @@ describe('plainTextInstance', () => {
   })
 
   test('opens in a container and reports fitted dimensions', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const resizeHandler = vi.fn()
     const container = document.createElement('div')
 
@@ -60,7 +75,7 @@ describe('plainTextInstance', () => {
   })
 
   test('writes frontend string chunks into the viewport reader', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const callback = vi.fn()
     const container = document.createElement('div')
 
@@ -73,7 +88,7 @@ describe('plainTextInstance', () => {
   })
 
   test('consumes registered OSC handlers without rendering control sequences', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const oscHandler = vi.fn((): boolean => true)
     const container = document.createElement('div')
 
@@ -90,8 +105,25 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
+  test('renders OSC sequences when registered handlers decline them', () => {
+    const created = createTrackedPlainTextTerminal()
+    const oscHandler = vi.fn((): boolean => false)
+    const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
+
+    created.parser.registerOscHandler(7, oscHandler)
+    created.terminal.write(`before ${sequence}after`)
+
+    expect(oscHandler).toHaveBeenCalledWith(
+      'file://localhost/tmp/plain-text-project'
+    )
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      `before ${sequence}after`
+    )
+  })
+
   test('stops invoking disposed OSC handlers', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const oscHandler = vi.fn((): boolean => true)
     const disposable = created.parser.registerOscHandler(7, oscHandler)
 
@@ -102,7 +134,7 @@ describe('plainTextInstance', () => {
   })
 
   test('emits pasted text and keyboard input through onData', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const dataHandler = vi.fn()
     const container = document.createElement('div')
 
@@ -120,8 +152,42 @@ describe('plainTextInstance', () => {
     expect(dataHandler).toHaveBeenCalledWith('\r')
   })
 
+  test('emits ctrl-letter keyboard input as control sequences', () => {
+    const created = createTrackedPlainTextTerminal()
+    const dataHandler = vi.fn()
+    const container = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    created.terminal.open(container)
+    created.terminal.onData(dataHandler)
+
+    const input = created.terminal.element?.querySelector('textarea')
+
+    const interrupt = new KeyboardEvent('keydown', {
+      key: 'c',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+
+    const eof = new KeyboardEvent('keydown', {
+      key: 'd',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+
+    input?.dispatchEvent(interrupt)
+    input?.dispatchEvent(eof)
+
+    expect(dataHandler).toHaveBeenCalledWith('\x03')
+    expect(dataHandler).toHaveBeenCalledWith('\x04')
+    expect(interrupt.defaultPrevented).toBe(true)
+    expect(eof.defaultPrevented).toBe(true)
+  })
+
   test('ignores selections that leave the renderer root', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const container = document.createElement('div')
     const sibling = document.createElement('div')
 
@@ -152,7 +218,7 @@ describe('plainTextInstance', () => {
   })
 
   test('notifies selection listeners for native renderer selections', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const listener = vi.fn()
     const container = document.createElement('div')
 
@@ -199,7 +265,7 @@ describe('plainTextInstance', () => {
   })
 
   test('honors renderer key handlers before emitting input', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const dataHandler = vi.fn()
     const keyHandler = vi.fn((): boolean => false)
     const container = document.createElement('div')
@@ -219,7 +285,7 @@ describe('plainTextInstance', () => {
   })
 
   test('applies terminal theme colors', () => {
-    const created = createPlainTextTerminal()
+    const created = createTrackedPlainTextTerminal()
     const theme = themeService.current().terminal
 
     const terminalTheme = {

@@ -35,6 +35,20 @@ const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['PageDown', '\x1b[6~'],
 ])
 
+const getControlKeyData = (key: string): string | null => {
+  if (key.length !== 1) {
+    return null
+  }
+
+  const upperKey = key.toUpperCase()
+
+  if (upperKey < 'A' || upperKey > 'Z') {
+    return null
+  }
+
+  return String.fromCharCode(upperKey.charCodeAt(0) - 64)
+}
+
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
@@ -65,8 +79,12 @@ const readContainedSelection = (root: HTMLElement): string => {
 }
 
 const getKeyboardData = (event: KeyboardEvent): string | null => {
-  if (event.metaKey || event.ctrlKey || event.altKey) {
+  if (event.metaKey || event.altKey) {
     return null
+  }
+
+  if (event.ctrlKey) {
+    return getControlKeyData(event.key)
   }
 
   if (event.key === 'Enter') {
@@ -422,11 +440,10 @@ class PlainTextTerminalModel {
 
     return data.replace(
       oscSequencePattern,
-      (_sequence, identifier: string, payload: string): string => {
+      (sequence, identifier: string, payload: string): string => {
         const handler = this.oscHandlers.get(Number(identifier))
-        handler?.(payload)
 
-        return ''
+        return handler?.(payload) === false ? sequence : ''
       }
     )
   }
