@@ -87,6 +87,18 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('ignores writes after dispose while preserving the callback', () => {
+    const created = createTrackedPlainTextTerminal()
+    const callback = vi.fn()
+
+    created.terminal.write('before')
+    created.terminal.dispose()
+    created.terminal.write('after', callback)
+
+    expect(created.viewportReader.readVisibleText()).toBe('before')
+    expect(callback).toHaveBeenCalledOnce()
+  })
+
   test('retains recent output when scrollback exceeds the line limit', () => {
     const created = createTrackedPlainTextTerminal()
 
@@ -120,6 +132,47 @@ describe('plainTextInstance', () => {
       'file://localhost/tmp/plain-text-project'
     )
     expect(created.viewportReader.readVisibleText()).toBe('before after')
+  })
+
+  test('tries stacked OSC handlers in reverse registration order', () => {
+    const created = createTrackedPlainTextTerminal()
+    const firstHandler = vi.fn((): boolean => true)
+    const secondHandler = vi.fn((): boolean => false)
+
+    created.parser.registerOscHandler(7, firstHandler)
+    created.parser.registerOscHandler(7, secondHandler)
+    created.terminal.write(
+      'before \x1b]7;file://localhost/tmp/plain-text-project\x07after'
+    )
+
+    expect(secondHandler).toHaveBeenCalledWith(
+      'file://localhost/tmp/plain-text-project'
+    )
+
+    expect(firstHandler).toHaveBeenCalledWith(
+      'file://localhost/tmp/plain-text-project'
+    )
+
+    expect(secondHandler.mock.invocationCallOrder[0]).toBeLessThan(
+      firstHandler.mock.invocationCallOrder[0]
+    )
+    expect(created.viewportReader.readVisibleText()).toBe('before after')
+  })
+
+  test('stops stacked OSC handling after the newest handler consumes', () => {
+    const created = createTrackedPlainTextTerminal()
+    const firstHandler = vi.fn((): boolean => true)
+    const secondHandler = vi.fn((): boolean => true)
+
+    created.parser.registerOscHandler(7, firstHandler)
+    created.parser.registerOscHandler(7, secondHandler)
+    created.terminal.write('\x1b]7;file://localhost/tmp/plain-text-project\x07')
+
+    expect(secondHandler).toHaveBeenCalledWith(
+      'file://localhost/tmp/plain-text-project'
+    )
+    expect(firstHandler).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe('')
   })
 
   test('renders OSC sequences when registered handlers decline them', () => {

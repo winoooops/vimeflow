@@ -36,6 +36,12 @@ const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['PageDown', '\x1b[6~'],
 ])
 
+type OscHandler = (data: string) => boolean
+
+interface OscHandlerRegistration {
+  readonly handler: OscHandler
+}
+
 const getControlKeyData = (key: string): string | null => {
   if (key.length !== 1) {
     return null
@@ -229,6 +235,12 @@ class PlainTextTerminalSurface implements TerminalSurface {
   }
 
   write(data: string, callback?: () => void): void {
+    if (this.disposed) {
+      callback?.()
+
+      return
+    }
+
     const visibleData = this.transformOutput(data)
 
     if (visibleData.length > 0) {
@@ -417,7 +429,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
 }
 
 class PlainTextTerminalModel {
-  private readonly oscHandlers = new Map<number, (data: string) => boolean>()
+  private readonly oscHandlers = new Map<number, OscHandlerRegistration[]>()
   readonly terminal = new PlainTextTerminalSurface((data) =>
     this.consumeControlSequences(data)
   )
@@ -425,14 +437,31 @@ class PlainTextTerminalModel {
   readonly parser: TerminalParser = {
     registerOscHandler: (
       identifier: number,
-      handler: (data: string) => boolean
+      handler: OscHandler
     ): TerminalDisposable => {
-      this.oscHandlers.set(identifier, handler)
+      const registration = { handler }
+      const registrations = this.oscHandlers.get(identifier) ?? []
+
+      this.oscHandlers.set(identifier, [...registrations, registration])
 
       return createDisposable((): void => {
-        if (this.oscHandlers.get(identifier) === handler) {
-          this.oscHandlers.delete(identifier)
+        const currentRegistrations = this.oscHandlers.get(identifier)
+
+        if (!currentRegistrations) {
+          return
         }
+
+        const nextRegistrations = currentRegistrations.filter(
+          (currentRegistration) => currentRegistration !== registration
+        )
+
+        if (nextRegistrations.length === 0) {
+          this.oscHandlers.delete(identifier)
+
+          return
+        }
+
+        this.oscHandlers.set(identifier, nextRegistrations)
       })
     },
   }
@@ -457,13 +486,15 @@ class PlainTextTerminalModel {
     return data.replace(
       oscSequencePattern,
       (sequence, identifier: string, payload: string): string => {
-        const handler = this.oscHandlers.get(Number(identifier))
+        const registrations = this.oscHandlers.get(Number(identifier)) ?? []
 
-        if (!handler) {
-          return sequence
+        for (const registration of registrations.slice().reverse()) {
+          if (registration.handler(payload)) {
+            return ''
+          }
         }
 
-        return handler(payload) === false ? sequence : ''
+        return sequence
       }
     )
   }
