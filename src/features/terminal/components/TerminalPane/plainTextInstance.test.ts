@@ -23,6 +23,7 @@ const setElementSize = (
 }
 
 afterEach(() => {
+  window.getSelection()?.removeAllRanges()
   document.body.innerHTML = ''
   themeService.apply('obsidian-lens')
   vi.clearAllMocks()
@@ -148,6 +149,48 @@ describe('plainTextInstance', () => {
 
     expect(created.terminal.hasSelection()).toBe(false)
     expect(created.terminal.getSelection()).toBe('')
+  })
+
+  test('notifies selection listeners for native renderer selections', () => {
+    const created = createPlainTextTerminal()
+    const listener = vi.fn()
+    const container = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    document.body.append(container)
+    created.terminal.open(container)
+    created.terminal.write('inside terminal')
+    created.terminal.onSelectionChange(listener)
+
+    const outputText =
+      created.terminal.element?.querySelector('pre')?.firstChild
+
+    if (!outputText) {
+      throw new Error('selection test requires terminal text node')
+    }
+
+    const range = document.createRange()
+    range.setStart(outputText, 0)
+    range.setEnd(outputText, 'inside'.length)
+
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+
+    expect(listener).toHaveBeenCalledOnce()
+
+    selection?.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
+
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    created.terminal.dispose()
+    document.dispatchEvent(new Event('selectionchange'))
+
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   test('honors renderer key handlers before emitting input', () => {

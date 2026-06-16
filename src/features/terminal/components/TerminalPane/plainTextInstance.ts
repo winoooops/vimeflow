@@ -106,6 +106,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
   private outputText = ''
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
+  private hasContainedSelection = false
   private disposed = false
 
   constructor(private readonly transformOutput: (data: string) => string) {
@@ -144,6 +145,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
 
     this.input.setAttribute('aria-label', 'Terminal input')
     this.root.addEventListener('mousedown', this.handlePointerDown)
+    document.addEventListener('selectionchange', this.handleSelectionChange)
     this.input.addEventListener('keydown', this.handleKeyDown)
     this.input.addEventListener('paste', this.handlePaste)
     this.applyTheme(themeService.current().terminal)
@@ -183,6 +185,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
   dispose(): void {
     this.disposed = true
     this.root.removeEventListener('mousedown', this.handlePointerDown)
+    document.removeEventListener('selectionchange', this.handleSelectionChange)
     this.input.removeEventListener('keydown', this.handleKeyDown)
     this.input.removeEventListener('paste', this.handlePaste)
     this.dataHandlers.clear()
@@ -251,6 +254,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
+    this.hasContainedSelection = true
     this.notifySelectionChange()
   }
 
@@ -309,6 +313,17 @@ class PlainTextTerminalSurface implements TerminalSurface {
 
   private readonly handlePointerDown = (): void => {
     this.focus()
+  }
+
+  private readonly handleSelectionChange = (): void => {
+    const hasSelection = readContainedSelection(this.root).length > 0
+
+    if (hasSelection === this.hasContainedSelection) {
+      return
+    }
+
+    this.hasContainedSelection = hasSelection
+    this.notifySelectionChange()
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
