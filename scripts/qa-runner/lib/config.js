@@ -70,7 +70,7 @@ export const loadConfig = () => {
     ),
     linearCreateIssues: bool(
       env.QA_LINEAR_CREATE_ISSUES,
-      bool(file.linearCreateIssues, false)
+      bool(file.linearCreateIssues, true)
     ),
     triggerPhrase:
       env.QA_TRIGGER_PHRASE || file.triggerPhrase || '/upsource-review',

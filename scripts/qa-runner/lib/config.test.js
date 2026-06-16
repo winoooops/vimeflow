@@ -38,6 +38,18 @@ describe('loadConfig', () => {
     expect(loadConfig().maxParallel).toBe(3)
   })
 
+  test('creates missing Linear issues by default', () => {
+    delete process.env.QA_LINEAR_CREATE_ISSUES
+
+    expect(loadConfig().linearCreateIssues).toBe(true)
+  })
+
+  test('allows disabling missing Linear issue creation through env', () => {
+    process.env.QA_LINEAR_CREATE_ISSUES = '0'
+
+    expect(loadConfig().linearCreateIssues).toBe(false)
+  })
+
   test('allows overriding burst worker idle stop delay through env', () => {
     process.env.QA_WORKER_IDLE_STOP_SECONDS = '3'
 

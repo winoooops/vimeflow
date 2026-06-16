@@ -13,8 +13,8 @@
   "maxCiReruns": 3,
   "workerIdleStopSeconds": 2100,
   "linearDecisionComments": true,
-  "linearCreateIssues": false,
+  "linearCreateIssues": true,
   "triggerPhrase": "/upsource-review",
   "trustedSenders": [],
-  "comment": "Copy to config.json (gitignored) to override. SECRETS are env-only: GITHUB_WEBHOOK_SECRET (webhook HMAC), bot tokens in bot.env/orchestrator.env, Linear in linear*.env. label opts a PR into daemon work; approveLabel only arms approval for already eligible PRs. trustedSenders = GitHub logins allowed to trigger a fix via a PR comment; env QA_TRUSTED_SENDERS (comma-separated) overrides it. linearDecisionComments posts deduped Linear comments explaining each state-machine decision. linearCreateIssues is opt-in because it creates Linear issues for PRs without VIM links."
+  "comment": "Copy to config.json (gitignored) to override. SECRETS are env-only: GITHUB_WEBHOOK_SECRET (webhook HMAC), bot tokens in bot.env/orchestrator.env, Linear in linear*.env. label opts a PR into daemon work; approveLabel only arms approval for already eligible PRs. trustedSenders = GitHub logins allowed to trigger a fix via a PR comment; env QA_TRUSTED_SENDERS (comma-separated) overrides it. linearDecisionComments posts deduped Linear comments explaining each state-machine decision. linearCreateIssues creates Linear issues for PRs without VIM links, then backfills the PR body and posts a PR comment."
 }
