@@ -479,6 +479,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     let newTerminal: TerminalSurface | null = null
     let newTerminalOutput: TerminalOutputWriter | null = null
     let fitController: TerminalFitController | null = null
+    let parserEventDisposable: TerminalDisposable | null = null
     let rendererHandle: TerminalRendererHandle | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
@@ -628,7 +629,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           // Subscribe to parser events for cwd tracking. Shell prompts and
           // agent/tool output both arrive through the renderer parser, so this
           // stays pane-local while remaining adapter-neutral.
-          created.parser.onEvent((event) => {
+          parserEventDisposable = created.parser.onEvent((event) => {
             if (event.identifier !== 7) {
               return
             }
@@ -875,6 +876,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           return
         }
 
+        parserEventDisposable?.dispose()
+        parserEventDisposable = null
+
         rendererHandle?.dispose()
         rendererHandle = null
 
@@ -918,6 +922,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       removeFocusListeners = null
       removeVisibilityListeners?.()
       removeVisibilityListeners = null
+      parserEventDisposable?.dispose()
+      parserEventDisposable = null
       // Renderer addons must dispose before the terminal itself; the handle
       // owns that adapter-specific ordering.
       rendererHandle?.dispose()

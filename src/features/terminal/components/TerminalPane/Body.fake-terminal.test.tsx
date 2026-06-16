@@ -31,6 +31,7 @@ interface FakeTerminalControls {
   instance: TerminalInstance
   terminal: TerminalSurface
   parser: TerminalParser
+  parserEventDisposable: TerminalDisposable
   rendererHandle: TerminalRendererHandle
   viewportReader: TerminalViewportReader
   emitOsc: (identifier: number, data: string) => void
@@ -43,6 +44,18 @@ const createDisposable = (): TerminalDisposable => ({
 const createFakeTerminalInstance = (): FakeTerminalControls => {
   const element = document.createElement('div')
   const parserEventHandlers = new Set<TerminalParserEventHandler>()
+  let subscribedParserEventHandler: TerminalParserEventHandler | null = null
+
+  const parserEventDisposable: TerminalDisposable = {
+    dispose: vi.fn((): void => {
+      if (subscribedParserEventHandler === null) {
+        return
+      }
+
+      parserEventHandlers.delete(subscribedParserEventHandler)
+      subscribedParserEventHandler = null
+    }),
+  }
 
   const terminal: TerminalSurface = {
     cols: 120,
@@ -72,12 +85,9 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
     onEvent: vi.fn(
       (handler: TerminalParserEventHandler): TerminalDisposable => {
         parserEventHandlers.add(handler)
+        subscribedParserEventHandler = handler
 
-        return {
-          dispose: vi.fn(() => {
-            parserEventHandlers.delete(handler)
-          }),
-        }
+        return parserEventDisposable
       }
     ),
   }
@@ -109,6 +119,7 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
     instance,
     terminal,
     parser,
+    parserEventDisposable,
     rendererHandle,
     viewportReader,
     emitOsc: (identifier, data): void => {
@@ -198,6 +209,7 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
 
   unmount()
 
+  expect(fake.parserEventDisposable.dispose).toHaveBeenCalledOnce()
   expect(fake.rendererHandle.dispose).toHaveBeenCalledOnce()
   expect(fake.terminal.dispose).toHaveBeenCalledOnce()
 })
