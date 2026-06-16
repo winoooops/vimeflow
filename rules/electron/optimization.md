@@ -209,3 +209,35 @@ sidecar boots and restores a PTY session. Remaining unpacked bulk is the Electro
 runtime itself (~200MB Chromium binary), which compresses into the AppImage.
 macOS pass (DMG measurement + confirming the same yml fields apply) pending on the
 `feat/electron-optimization` dev branch.
+
+### 2026-06-16 — after macOS packaging fixes (`perf/electron-macos-packaging`)
+
+Baseline measured on Apple Silicon macOS by temporarily removing the Linux
+optimization fields from `electron-builder.yml` and workspace `Cargo.toml`, then
+rebuilding `npm run electron:build:mac:arm64`. Optimized build uses the same
+`!node_modules/**`, `[profile.release]`, and English-only locale settings as the
+Linux pass, with both `en-US` and `en` kept so Linux retains `en-US.pak` while
+macOS retains `en.lproj/locale.pak`.
+
+| Artifact                        | Before     | After     | Δ    |
+| ------------------------------- | ---------- | --------- | ---- |
+| DMG                             | 144MB      | 107MB     | −26% |
+| mac-arm64 app bundle            | 369MB      | 250MB     | −32% |
+| app.asar                        | 85MB       | 16MB      | −81% |
+| asar node_modules entries       | 7112       | 0         | —    |
+| localized `*.lproj/locale.pak`s | 220 / 48MB | 1 / 560KB | —    |
+| all `.pak` files                | 223 / 55MB | 4 / 7.4MB | −87% |
+| sidecar (vimeflow-backend)      | 7.6MB      | 5.7MB     | −25% |
+
+Verified: optimized macOS asar contains zero `node_modules` entries, and the
+app bundle keeps exactly one localized Chromium locale payload at
+`en.lproj/locale.pak` with no locale-resource warnings during packaged launch.
+The packaged smoke drove the app over CDP and confirmed the workspace/sidebar/
+terminal zone rendered, the file explorer populated via IPC, diff and editor
+panels opened, the preload/backend bridge was available, and the Rust sidecar
+spawned a PTY that echoed `__VIMEFLOW_PACKAGED_SMOKE__`.
+
+Validation passed: `npm run electron:build:mac:arm64` (including
+`npm run type-check`), `npm run lint`, `npm run test`,
+`cargo test --release --manifest-path crates/backend/Cargo.toml`, the packaged
+CDP smoke, and pre-push `npm run test`.

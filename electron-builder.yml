@@ -17,9 +17,10 @@ files:
   # re-include only that package explicitly; see the "node_modules trap" section.
   - '!node_modules/**'
 
-# English-only UI; drop the other Chromium locale paks
+# English-only UI; keep Linux's en-US.pak and macOS's en.lproj/locale.pak.
 electronLanguages:
   - en-US
+  - en
 
 extraResources:
   - from: target/release/vimeflow-backend
