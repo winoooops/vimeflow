@@ -119,6 +119,37 @@ describe('plainTextInstance', () => {
     expect(dataHandler).toHaveBeenCalledWith('\r')
   })
 
+  test('ignores selections that leave the renderer root', () => {
+    const created = createPlainTextTerminal()
+    const container = document.createElement('div')
+    const sibling = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    document.body.append(container, sibling)
+    created.terminal.open(container)
+    created.terminal.write('inside terminal')
+    sibling.textContent = 'outside pane'
+
+    const outputText =
+      created.terminal.element?.querySelector('pre')?.firstChild
+    const siblingText = sibling.firstChild
+
+    if (!outputText || !siblingText) {
+      throw new Error('selection test requires terminal and sibling text nodes')
+    }
+
+    const range = document.createRange()
+    range.setStart(outputText, 0)
+    range.setEnd(siblingText, 'outside pane'.length)
+
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+
+    expect(created.terminal.hasSelection()).toBe(false)
+    expect(created.terminal.getSelection()).toBe('')
+  })
+
   test('honors renderer key handlers before emitting input', () => {
     const created = createPlainTextTerminal()
     const dataHandler = vi.fn()

@@ -54,8 +54,10 @@ const readContainedSelection = (root: HTMLElement): string => {
   const focusNode = selection.focusNode
 
   if (
-    (!anchorNode || !root.contains(anchorNode)) &&
-    (!focusNode || !root.contains(focusNode))
+    !anchorNode ||
+    !root.contains(anchorNode) ||
+    !focusNode ||
+    !root.contains(focusNode)
   ) {
     return ''
   }
