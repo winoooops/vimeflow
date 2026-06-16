@@ -1,9 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { themeService } from '../../../theme'
-import {
-  clearTerminalCache,
-  terminalCache,
-} from '../components/TerminalPane/Body'
+import { clearTerminalCache, terminalCache } from '../terminalRegistry'
 import type { TerminalSurface } from '../types'
 import { initTerminalThemeBridge } from './themeBridge'
 

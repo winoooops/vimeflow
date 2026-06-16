@@ -21,8 +21,12 @@ import type {
   TerminalFitController,
   TerminalRendererHandle,
   TerminalSurface,
-  TerminalViewportReader,
 } from '../../types'
+import {
+  terminalCache,
+  clearTerminalCache,
+  disposeTerminalSession,
+} from '../../terminalRegistry'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
@@ -59,54 +63,7 @@ const logAgentCwdDebug = (
   console.info(`[vimeflow:terminal-cwd] ${event} ${JSON.stringify(details)}`)
 }
 
-// Module-level cache of terminal instances per sessionId.
-//
-// HISTORICAL NOTE (corrected 2026-05-09): the original comment claimed
-// this cache "allows terminals to persist when switching between
-// sessions". That's not what makes tab switching work today —
-// `TerminalZone` always-renders inactive panes and hides them via
-// CSS `display: none` rather than unmount/remount, so Body never
-// unmounts on a tab switch and the cache hit/miss branch in the mount
-// effect is not the persistence mechanism. Body's stable mount is.
-//
-// What the cache actually serves:
-//   - the imperative `focusTerminal()` handle, which reads
-//     `terminalCache.get(sessionId)?.terminal.focus()` to focus the renderer
-//     without reaching into Body's internals;
-//   - tests + the existing public `clearTerminalCache` /
-//     `disposeTerminalSession` API surface (preserved per the step-4
-//     migration spec — external imports would break otherwise).
-//
-// New internal code should NOT add to the cache for "tab persistence"
-// reasons; terminal renderer lifetime is scoped to Body's mount.
-export const terminalCache = new Map<
-  string,
-  {
-    terminal: TerminalSurface
-    fitController: TerminalFitController
-    viewportReader: TerminalViewportReader
-  }
->()
-
-/**
- * Clear terminal cache (for testing only)
- */
-export const clearTerminalCache = (): void => {
-  terminalCache.forEach(({ terminal }) => terminal.dispose())
-  terminalCache.clear()
-}
-
-/**
- * Dispose and remove a single session's terminal from cache.
- * Call when a session is permanently closed (not just hidden).
- */
-export const disposeTerminalSession = (sessionId: string): void => {
-  const cached = terminalCache.get(sessionId)
-  if (cached) {
-    cached.terminal.dispose()
-    terminalCache.delete(sessionId)
-  }
-}
+export { clearTerminalCache, disposeTerminalSession, terminalCache }
 
 export type BodyMode = 'attach' | 'spawn'
 
