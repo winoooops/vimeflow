@@ -4,7 +4,11 @@ import type {
   TerminalFitController,
   TerminalInstance,
   TerminalKeyEventHandler,
+  TerminalOutputChunk,
   TerminalOutputWriter,
+  TerminalParserEvent,
+  TerminalParserEventHandler,
+  TerminalParserOutputContext,
   TerminalParser,
   TerminalRendererAdapter,
   TerminalRendererHandle,
@@ -38,12 +42,6 @@ const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['PageDown', '\x1b[6~'],
 ])
 
-type OscHandler = (data: string) => boolean
-
-interface OscHandlerRegistration {
-  readonly handler: OscHandler
-}
-
 const getControlKeyData = (key: string): string | null => {
   if (key.length !== 1) {
     return null
@@ -74,6 +72,14 @@ const trimScrollbackLines = (text: string): string => {
 
   return lines.slice(-MAX_SCROLLBACK_LINES).join('\n')
 }
+
+const outputContextFromChunk = (
+  chunk: TerminalOutputChunk
+): TerminalParserOutputContext => ({
+  offsetStart: chunk.offsetStart,
+  byteLen: chunk.byteLen,
+  phase: chunk.phase,
+})
 
 const readContainedSelection = (root: HTMLElement): string => {
   const selection = window.getSelection()
@@ -431,46 +437,31 @@ class PlainTextTerminalSurface implements TerminalSurface {
 }
 
 class PlainTextTerminalModel {
-  private readonly oscHandlers = new Map<number, OscHandlerRegistration[]>()
+  private readonly parserEventHandlers = new Set<TerminalParserEventHandler>()
+  private currentOutputContext: TerminalParserOutputContext | null = null
   readonly terminal = new PlainTextTerminalSurface((data) =>
     this.consumeControlSequences(data)
   )
 
   readonly parser: TerminalParser = {
-    registerOscHandler: (
-      identifier: number,
-      handler: OscHandler
-    ): TerminalDisposable => {
-      const registration = { handler }
-      const registrations = this.oscHandlers.get(identifier) ?? []
-
-      this.oscHandlers.set(identifier, [...registrations, registration])
+    onEvent: (handler): TerminalDisposable => {
+      this.parserEventHandlers.add(handler)
 
       return createDisposable((): void => {
-        const currentRegistrations = this.oscHandlers.get(identifier)
-
-        if (!currentRegistrations) {
-          return
-        }
-
-        const nextRegistrations = currentRegistrations.filter(
-          (currentRegistration) => currentRegistration !== registration
-        )
-
-        if (nextRegistrations.length === 0) {
-          this.oscHandlers.delete(identifier)
-
-          return
-        }
-
-        this.oscHandlers.set(identifier, nextRegistrations)
+        this.parserEventHandlers.delete(handler)
       })
     },
   }
 
   readonly output: TerminalOutputWriter = {
     writeOutput: (chunk, callback): void => {
-      this.terminal.write(chunk.text, callback)
+      this.currentOutputContext = outputContextFromChunk(chunk)
+
+      try {
+        this.terminal.write(chunk.text, callback)
+      } finally {
+        this.currentOutputContext = null
+      }
     },
   }
 
@@ -494,17 +485,28 @@ class PlainTextTerminalModel {
     return data.replace(
       oscSequencePattern,
       (sequence, identifier: string, payload: string): string => {
-        const registrations = this.oscHandlers.get(Number(identifier)) ?? []
+        const numericIdentifier = Number(identifier)
 
-        for (const registration of registrations.slice().reverse()) {
-          if (registration.handler(payload)) {
-            return ''
-          }
+        if (numericIdentifier !== 7 || this.parserEventHandlers.size === 0) {
+          return sequence
         }
 
-        return sequence
+        this.emitParserEvent({
+          type: 'osc',
+          identifier: numericIdentifier,
+          data: payload,
+          output: this.currentOutputContext,
+        })
+
+        return ''
       }
     )
+  }
+
+  private emitParserEvent(event: TerminalParserEvent): void {
+    this.parserEventHandlers.forEach((handler) => {
+      handler(event)
+    })
   }
 }
 

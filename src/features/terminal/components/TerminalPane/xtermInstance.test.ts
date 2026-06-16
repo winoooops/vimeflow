@@ -153,6 +153,8 @@ describe('xtermInstance', () => {
       'visible one\nvisible two'
     )
 
+    const parserEventHandler = vi.fn()
+    created.parser.onEvent(parserEventHandler)
     const writeCallback = vi.fn()
     created.output.writeOutput(
       {
@@ -163,7 +165,6 @@ describe('xtermInstance', () => {
       },
       writeCallback
     )
-    created.parser.registerOscHandler(7, () => true)
 
     created.terminal.open(container)
     created.terminal.applyTheme(obsidianLens.terminal)
@@ -172,7 +173,34 @@ describe('xtermInstance', () => {
       7,
       expect.any(Function)
     )
-    expect(terminal.write).toHaveBeenCalledWith('chunk output', writeCallback)
+
+    const oscHandler = terminal.parser.registerOscHandler.mock.calls[0]?.[1] as
+      | ((data: string) => boolean)
+      | undefined
+    oscHandler?.('file://localhost/tmp/xterm')
+
+    expect(parserEventHandler).toHaveBeenCalledWith({
+      type: 'osc',
+      identifier: 7,
+      data: 'file://localhost/tmp/xterm',
+      output: {
+        offsetStart: 8,
+        byteLen: 12,
+        phase: 'live',
+      },
+    })
+
+    expect(terminal.write).toHaveBeenCalledWith(
+      'chunk output',
+      expect.any(Function)
+    )
+
+    const writeCompletion = terminal.write.mock.calls[0]?.[1] as
+      | (() => void)
+      | undefined
+    writeCompletion?.()
+
+    expect(writeCallback).toHaveBeenCalledOnce()
     expect(terminal.open).toHaveBeenCalledWith(container)
     expect(terminal.options.theme).toEqual(
       expect.objectContaining({

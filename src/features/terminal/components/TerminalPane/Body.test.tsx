@@ -16,6 +16,7 @@ import type {
   TerminalInstance,
   TerminalOutputChunk,
   TerminalParser,
+  TerminalParserEvent,
   TerminalRendererHandle,
   TerminalSurface,
   TerminalViewportReader,
@@ -93,7 +94,7 @@ type MockFitController = TerminalFitController & {
 }
 
 type MockParser = TerminalParser & {
-  registerOscHandler: ReturnType<typeof vi.fn>
+  onEvent: ReturnType<typeof vi.fn>
 }
 
 type MockViewportReader = TerminalViewportReader & {
@@ -143,7 +144,7 @@ const createMockTerminalControls = (): MockTerminalControls => {
   }
 
   const parser: MockParser = {
-    registerOscHandler: vi.fn((): TerminalDisposable => createDisposable()),
+    onEvent: vi.fn((): TerminalDisposable => createDisposable()),
   }
 
   const fitController: MockFitController = {
@@ -2044,18 +2045,18 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockParser.registerOscHandler).toHaveBeenCalledWith(
-          7,
-          expect.any(Function)
-        )
+        expect(mockParser.onEvent).toHaveBeenCalledWith(expect.any(Function))
       })
 
-      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
-        .calls[0]?.[1]
+      const parserEventHandler = vi.mocked(mockParser.onEvent).mock
+        .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
-      ;(oscHandler as ((data: string) => void) | undefined)?.(
-        'file://localhost/home/user/projects'
-      )
+      parserEventHandler?.({
+        type: 'osc',
+        identifier: 7,
+        data: 'file://localhost/home/user/projects',
+        output: { offsetStart: 0, byteLen: 41, phase: 'live' },
+      })
 
       await waitFor(() => {
         expect(onCwdChange).toHaveBeenCalledWith('/home/user/projects')
@@ -2107,18 +2108,18 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockParser.registerOscHandler).toHaveBeenCalledWith(
-          7,
-          expect.any(Function)
-        )
+        expect(mockParser.onEvent).toHaveBeenCalledWith(expect.any(Function))
       })
 
-      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
-        .calls[0]?.[1]
+      const parserEventHandler = vi.mocked(mockParser.onEvent).mock
+        .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
-      ;(oscHandler as ((data: string) => void) | undefined)?.(
-        'file://server/share/project'
-      )
+      parserEventHandler?.({
+        type: 'osc',
+        identifier: 7,
+        data: 'file://server/share/project',
+        output: { offsetStart: 0, byteLen: 27, phase: 'live' },
+      })
 
       await waitFor(() => {
         expect(onCwdChange).toHaveBeenCalledWith('//server/share/project')
@@ -2170,13 +2171,18 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockParser.registerOscHandler).toHaveBeenCalled()
+        expect(mockParser.onEvent).toHaveBeenCalled()
       })
 
-      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
-        .calls[0]?.[1]
+      const parserEventHandler = vi.mocked(mockParser.onEvent).mock
+        .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
 
-      ;(oscHandler as ((data: string) => void) | undefined)?.('/tmp')
+      parserEventHandler?.({
+        type: 'osc',
+        identifier: 7,
+        data: '/tmp',
+        output: { offsetStart: 0, byteLen: 4, phase: 'live' },
+      })
 
       await waitFor(() => {
         expect(onCwdChange).toHaveBeenCalledWith('/tmp')

@@ -232,6 +232,13 @@ export interface TerminalOutputChunk {
   readonly phase: TerminalOutputPhase
 }
 
+/** Output metadata attached to parser events when a renderer can provide it. */
+export interface TerminalParserOutputContext {
+  readonly offsetStart: number | null
+  readonly byteLen: number | null
+  readonly phase: TerminalOutputPhase
+}
+
 /** Renderer-level keyboard event hook. Return false to stop the terminal. */
 export type TerminalKeyEventHandler = (event: KeyboardEvent) => boolean
 
@@ -272,12 +279,20 @@ export interface TerminalRendererHandle {
   dispose: () => void
 }
 
+/** Parser event emitted from terminal control sequences. */
+export interface TerminalParserEvent {
+  readonly type: 'osc'
+  readonly identifier: number
+  readonly data: string
+  readonly output: TerminalParserOutputContext | null
+}
+
+/** Handler for semantic parser events. */
+export type TerminalParserEventHandler = (event: TerminalParserEvent) => void
+
 /** Parser hooks emitted from terminal control sequences. */
 export interface TerminalParser {
-  registerOscHandler: (
-    identifier: number,
-    handler: (data: string) => boolean
-  ) => TerminalDisposable
+  onEvent: (handler: TerminalParserEventHandler) => TerminalDisposable
 }
 
 /** Reads the currently visible terminal text for automation and diagnostics. */

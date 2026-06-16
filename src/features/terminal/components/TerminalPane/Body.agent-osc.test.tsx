@@ -10,6 +10,8 @@ import type {
   TerminalDisposable,
   TerminalInstance,
   TerminalOutputChunk,
+  TerminalParserEventHandler,
+  TerminalParserOutputContext,
   TerminalParser,
   TerminalRendererHandle,
   TerminalSurface,
@@ -22,7 +24,6 @@ vi.mock('./terminalInstance', () => ({
 
 type DataCallback = Parameters<ITerminalService['onData']>[0]
 type ExitCallback = Parameters<ITerminalService['onExit']>[0]
-type OscHandler = (data: string) => boolean
 
 let deferWriteCallbacks = false
 let skipOscParsing = false
@@ -76,17 +77,22 @@ class FakeTerminal implements TerminalSurface {
     }
   )
   readonly parser: TerminalParser = {
-    registerOscHandler: vi.fn(
-      (identifier: number, handler: OscHandler): TerminalDisposable => {
-        this.oscHandlers.set(identifier, handler)
+    onEvent: vi.fn(
+      (handler: TerminalParserEventHandler): TerminalDisposable => {
+        this.parserEventHandlers.add(handler)
 
-        return { dispose: vi.fn() }
+        return {
+          dispose: vi.fn(() => {
+            this.parserEventHandlers.delete(handler)
+          }),
+        }
       }
     ),
   }
 
-  private readonly oscHandlers = new Map<number, OscHandler>()
+  private readonly parserEventHandlers = new Set<TerminalParserEventHandler>()
   private readonly inputHandlers = new Set<(data: string) => void>()
+  private outputContext: TerminalParserOutputContext | null = null
   private oscBuffer = ''
 
   readonly write = vi.fn((data: string, callback?: () => void): void => {
@@ -99,6 +105,20 @@ class FakeTerminal implements TerminalSurface {
 
     callback?.()
   })
+
+  writeOutput(chunk: TerminalOutputChunk, callback?: () => void): void {
+    this.outputContext = {
+      offsetStart: chunk.offsetStart,
+      byteLen: chunk.byteLen,
+      phase: chunk.phase,
+    }
+
+    try {
+      this.write(chunk.text, callback)
+    } finally {
+      this.outputContext = null
+    }
+  }
 
   emitInput(data: string): void {
     this.inputHandlers.forEach((handler) => {
@@ -116,8 +136,19 @@ class FakeTerminal implements TerminalSurface {
     let lastMatchEnd = 0
 
     for (const match of this.oscBuffer.matchAll(oscPattern)) {
-      const handler = this.oscHandlers.get(Number(match[1]))
-      handler?.(match[2] ?? '')
+      const identifier = Number(match[1])
+
+      if (identifier === 7) {
+        this.parserEventHandlers.forEach((handler) => {
+          handler({
+            type: 'osc',
+            identifier,
+            data: match[2] ?? '',
+            output: this.outputContext,
+          })
+        })
+      }
+
       lastMatchEnd = (match.index ?? 0) + match[0].length
     }
 
@@ -147,7 +178,7 @@ const createFakeTerminalInstance = (): TerminalInstance => {
     output: {
       writeOutput: vi.fn(
         (chunk: TerminalOutputChunk, callback?: () => void): void => {
-          terminal.write(chunk.text, callback)
+          terminal.writeOutput(chunk, callback)
         }
       ),
     },

@@ -12,6 +12,7 @@ import type {
   TerminalDisposable,
   TerminalInstance,
   TerminalOutputChunk,
+  TerminalParserEventHandler,
   TerminalParser,
   TerminalRendererHandle,
   TerminalSurface,
@@ -30,9 +31,10 @@ interface FakeTerminalControls {
   instance: TerminalInstance
   terminal: TerminalSurface
   parser: TerminalParser
+  parserEventDisposable: TerminalDisposable
   rendererHandle: TerminalRendererHandle
   viewportReader: TerminalViewportReader
-  emitOsc: (identifier: number, data: string) => boolean | undefined
+  emitOsc: (identifier: number, data: string) => void
 }
 
 const createDisposable = (): TerminalDisposable => ({
@@ -41,7 +43,19 @@ const createDisposable = (): TerminalDisposable => ({
 
 const createFakeTerminalInstance = (): FakeTerminalControls => {
   const element = document.createElement('div')
-  const oscHandlers = new Map<number, (data: string) => boolean>()
+  const parserEventHandlers = new Set<TerminalParserEventHandler>()
+  let subscribedParserEventHandler: TerminalParserEventHandler | null = null
+
+  const parserEventDisposable: TerminalDisposable = {
+    dispose: vi.fn((): void => {
+      if (subscribedParserEventHandler === null) {
+        return
+      }
+
+      parserEventHandlers.delete(subscribedParserEventHandler)
+      subscribedParserEventHandler = null
+    }),
+  }
 
   const terminal: TerminalSurface = {
     cols: 120,
@@ -68,14 +82,12 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
   }
 
   const parser: TerminalParser = {
-    registerOscHandler: vi.fn(
-      (
-        identifier: number,
-        handler: (data: string) => boolean
-      ): TerminalDisposable => {
-        oscHandlers.set(identifier, handler)
+    onEvent: vi.fn(
+      (handler: TerminalParserEventHandler): TerminalDisposable => {
+        parserEventHandlers.add(handler)
+        subscribedParserEventHandler = handler
 
-        return createDisposable()
+        return parserEventDisposable
       }
     ),
   }
@@ -107,10 +119,19 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
     instance,
     terminal,
     parser,
+    parserEventDisposable,
     rendererHandle,
     viewportReader,
-    emitOsc: (identifier, data): boolean | undefined =>
-      oscHandlers.get(identifier)?.(data),
+    emitOsc: (identifier, data): void => {
+      parserEventHandlers.forEach((handler) => {
+        handler({
+          type: 'osc',
+          identifier,
+          data,
+          output: { offsetStart: 0, byteLen: data.length, phase: 'live' },
+        })
+      })
+    },
   }
 }
 
@@ -172,10 +193,7 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
   })
 
   expect(fake.instance.attachRenderer).toHaveBeenCalledOnce()
-  expect(fake.parser.registerOscHandler).toHaveBeenCalledWith(
-    7,
-    expect.any(Function)
-  )
+  expect(fake.parser.onEvent).toHaveBeenCalledWith(expect.any(Function))
 
   expect(useTerminal).toHaveBeenCalledWith(
     expect.objectContaining({ terminal: fake.terminal })
@@ -186,11 +204,12 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
     TERMINAL_FOCUS_SCOPE_VALUE
   )
 
-  expect(fake.emitOsc(7, 'file://localhost/tmp/fake-project')).toBe(true)
+  fake.emitOsc(7, 'file://localhost/tmp/fake-project')
   expect(onCwdChange).toHaveBeenCalledWith('/tmp/fake-project')
 
   unmount()
 
+  expect(fake.parserEventDisposable.dispose).toHaveBeenCalledOnce()
   expect(fake.rendererHandle.dispose).toHaveBeenCalledOnce()
   expect(fake.terminal.dispose).toHaveBeenCalledOnce()
 })

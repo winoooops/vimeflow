@@ -60,7 +60,7 @@ const createTerminalInstance = (): TerminalInstance => ({
     writeOutput: vi.fn(),
   },
   parser: {
-    registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
+    onEvent: vi.fn(() => ({ dispose: vi.fn() })),
   },
   viewportReader: {
     readVisibleText: vi.fn((): string => ''),
