@@ -8,10 +8,22 @@ import {
   registerTerminalRendererAdapter,
   setTerminalRendererAdapter,
 } from './terminalRendererRegistry'
+import { plainTextTerminalRenderer } from './plainTextInstance'
 import { xtermTerminalRenderer } from './xtermInstance'
 
 const xtermRendererMocks = vi.hoisted(() => ({
   createInstance: vi.fn(),
+}))
+
+const plainTextRendererMocks = vi.hoisted(() => ({
+  createInstance: vi.fn(),
+}))
+
+vi.mock('./plainTextInstance', () => ({
+  plainTextTerminalRenderer: {
+    id: 'plain-text',
+    createInstance: plainTextRendererMocks.createInstance,
+  },
 }))
 
 vi.mock('./xtermInstance', () => ({
@@ -108,6 +120,18 @@ describe('terminalRendererRegistry', () => {
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
   })
 
+  test('creates instances through the bundled plain-text renderer when selected', () => {
+    const instance = createTerminalInstance()
+    plainTextRendererMocks.createInstance.mockReturnValue(instance)
+
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'plain-text')
+
+    expect(getTerminalRendererAdapter()).toBe(plainTextTerminalRenderer)
+    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(plainTextRendererMocks.createInstance).toHaveBeenCalledOnce()
+    expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
   test('keeps xterm as the default when environment selection is blank', () => {
     const instance = createTerminalInstance()
     const customRenderer = createTerminalRendererAdapter('custom', instance)
@@ -185,5 +209,9 @@ describe('terminalRendererRegistry', () => {
     expect(() => setTerminalRendererAdapter('custom')).toThrow(
       'Unknown terminal renderer adapter: custom'
     )
+
+    setTerminalRendererAdapter('plain-text')
+
+    expect(getTerminalRendererAdapter()).toBe(plainTextTerminalRenderer)
   })
 })

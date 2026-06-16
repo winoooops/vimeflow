@@ -1,8 +1,10 @@
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
+import { plainTextTerminalRenderer } from './plainTextInstance'
 import { xtermTerminalRenderer } from './xtermInstance'
 
 const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
   [xtermTerminalRenderer.id, xtermTerminalRenderer],
+  [plainTextTerminalRenderer.id, plainTextTerminalRenderer],
 ])
 
 let activeTerminalRendererId = xtermTerminalRenderer.id
@@ -87,6 +89,10 @@ export const createConfiguredTerminalInstance = (): TerminalInstance => {
 export const _resetTerminalRendererRegistryForTest = (): void => {
   terminalRendererAdapters.clear()
   terminalRendererAdapters.set(xtermTerminalRenderer.id, xtermTerminalRenderer)
+  terminalRendererAdapters.set(
+    plainTextTerminalRenderer.id,
+    plainTextTerminalRenderer
+  )
   activeTerminalRendererId = xtermTerminalRenderer.id
   hasConfiguredTerminalRendererFromEnvironment = false
 }
