@@ -14,6 +14,8 @@
 
 **Conventions (repo):** no semicolons, single quotes, trailing commas es5; arrow-function components; explicit return types on exported fns; `test()` not `it()`; co-located `*.test.ts(x)`; no hardcoded colors; conventional commits (`feat|fix|refactor|test|chore`). Run from the worktree root.
 
+**Commit messages:** the per-task `git commit -m` lines below show the subject only; per the repo git-workflow rule, end each message with the standard trailer `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` (and, if a codex review touched the change, its connector trailer per the upsource-review flow).
+
 ---
 
 ## File Structure
@@ -319,7 +321,7 @@ git commit -m "feat(keymap): pure eventMatchesChord matcher (exact/tolerant poli
 - Create: `src/features/keymap/catalog.ts`
 - Test: `src/features/keymap/catalog.test.ts`
 
-The catalog is the single source of truth for the Keymap pane and the registry. PR1 authors **every** currently-displayed row as a descriptor: the two migrated commands are `rebindable: true`; all others are `rebindable: false` (display-only — their hooks migrate in PR2, the leader in SP3). Defaults for the migrated commands MUST equal today's hardcoded combos (a test asserts this in Task 5; here we assert the catalog is well-formed).
+The catalog is the source of truth for the Keymap pane's **modifier-based** rows and the registry. PR1 authors every currently-displayed modifier-combo row as a descriptor: the two migrated commands are `rebindable: true`; the rest are `rebindable: false` (display-only — their hooks migrate in PR2, the leader in SP3). The **Diff (when focused)** zone is bare context-local keys (`j`/`k`/`Enter`/…) with vim-style lowercase display and no platform-modifier drift; it keeps rendering from `KEYMAP_GROUPS`' Diff zone in PR1 (Task 11) — the same exception §6.4 grants the Vim ex-command rows — and folds into the catalog later if a bare-key display model is added. Defaults for the migrated commands MUST equal today's hardcoded combos (a test asserts this in Task 5; here we assert the catalog is well-formed).
 
 - [ ] **Step 1: Write the failing test** (`src/features/keymap/catalog.test.ts`)
 
@@ -739,14 +741,28 @@ describe('resolveBindings', () => {
     expect(tokenOf(overrides, 'focus-pane-2')).toBe('Mod+Digit1')
   })
 
-  test('a genuine collision reverts the offending override(s), keeping defaults', () => {
-    // Both target Mod+Digit3 → conflict; reverted to their own defaults.
+  test('both overrides onto a key that is also another default revert to their own defaults', () => {
+    // Both target Mod+Digit3, which is focus-pane-3’s default → each collides
+    // with that fixed default independently, so BOTH revert.
     const overrides: CustomKeybindings = {
       'focus-pane-1': 'Mod+Digit3',
       'focus-pane-2': 'Mod+Digit3',
     }
     expect(tokenOf(overrides, 'focus-pane-1')).toBe('Mod+Digit1')
     expect(tokenOf(overrides, 'focus-pane-2')).toBe('Mod+Digit2')
+  })
+
+  test('two overrides onto the same FREE key: catalog-order first one loses, the other keeps it', () => {
+    // Mod+KeyK is no command’s default. resolveBindings reverts to a fixpoint,
+    // catalog order: focus-pane-1 reverts (collides with focus-pane-2), then
+    // focus-pane-2 no longer collides and keeps the key. The result is always
+    // conflict-free and deterministic.
+    const overrides: CustomKeybindings = {
+      'focus-pane-1': 'Mod+KeyK',
+      'focus-pane-2': 'Mod+KeyK',
+    }
+    expect(tokenOf(overrides, 'focus-pane-1')).toBe('Mod+Digit1') // reverted
+    expect(tokenOf(overrides, 'focus-pane-2')).toBe('Mod+KeyK') // survivor
   })
 })
 ```
@@ -1585,8 +1601,8 @@ import {
   type ShortcutInput,
 } from '../../../../lib/formatShortcut'
 import { useSettings } from '../../hooks/useSettings'
-import { VIM_KEYMAP_GROUPS } from '../../sections'
-import { CATALOG, type CommandDescriptor } from '../../../keymap/catalog'
+import { KEYMAP_GROUPS, VIM_KEYMAP_GROUPS } from '../../sections'
+import { CATALOG } from '../../../keymap/catalog'
 import { chordToShortcutInput } from '../../../keymap/displayKey'
 import { useKeybindings } from '../../../keymap/useKeybindings'
 import type { KeymapBinding, KeymapGroup, KeymapKeys } from '../../types'
@@ -1622,7 +1638,7 @@ export const KeymapPane = (): ReactElement => {
   const { bindingFor } = useKeybindings()
   const showVim = settings.keymapPreset === 'vim'
 
-  const commandRow = (cmd: CommandDescriptor, last: boolean): ReactElement => (
+  const commandRow = (cmd: (typeof CATALOG)[number], last: boolean): ReactElement => (
     <div key={cmd.id} className={rowClass(last)}>
       {labelCell(cmd.label)}
       <span className="flex gap-1">
@@ -1631,7 +1647,7 @@ export const KeymapPane = (): ReactElement => {
     </div>
   )
 
-  const vimGroup = (group: KeymapGroup): ReactElement =>
+  const staticGroup = (group: KeymapGroup): ReactElement =>
     groupShell(
       group.zone,
       group.bindings.map((b: KeymapBinding, i) => (
@@ -1674,7 +1690,9 @@ export const KeymapPane = (): ReactElement => {
         )
       })}
 
-      {showVim && VIM_KEYMAP_GROUPS.map(vimGroup)}
+      {KEYMAP_GROUPS.filter((group) => group.zone === 'Diff (when focused)').map(staticGroup)}
+
+      {showVim && VIM_KEYMAP_GROUPS.map(staticGroup)}
 
       <p className="font-body text-xs text-on-surface-muted">
         More actions are available in the {formatShortcut(['Mod', ';'])} command palette.
@@ -1708,7 +1726,7 @@ git commit -m "feat(settings): render Keymap pane from the keybinding catalog"
 Proves the full path settings → `useKeybindings` → hook: a persisted override changes the live shortcut. Drive `usePaneShortcuts` with the REAL `matches` from `useKeybindings`, sourced from a `SettingsContext` holding an override.
 
 ```tsx
-import { describe, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { SettingsContext } from '../settings/SettingsProvider'
@@ -1738,12 +1756,17 @@ test('persisted override changes the live shortcut (focus-pane-2 → Mod+KeyL)',
     { wrapper }
   )
 
-  document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL', metaKey: true }))
+  // jsdom is non-mac → useKeybindings resolves Mod to ctrl, so the override
+  // 'Mod+KeyL' matches Ctrl+KeyL. The OLD default (Mod+Digit2) must no longer fire.
+  document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL', ctrlKey: true }))
   expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1') // rebound combo focuses pane 2
+  setSessionActivePane.mockClear()
+  document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', ctrlKey: true }))
+  expect(setSessionActivePane).not.toHaveBeenCalled() // old default no longer bound
 })
 ```
 
-Run: `npx vitest run src/features/keymap/acceptance.test.tsx` → PASS. (jsdom is non-mac, so `superKey='ctrl'`; if the test asserts `metaKey`, set `code:'KeyL', ctrlKey:true` instead, or mock `isMacPlatform` to true. Pick one and keep the event modifiers consistent with the resolved `superKey`.)
+Run: `npx vitest run src/features/keymap/acceptance.test.tsx` → PASS. (The test uses `ctrlKey` because jsdom is non-mac, so `useKeybindings` resolves `Mod`→`ctrl`.)
 
 - [ ] **Step 2: Run the full gate suite**
 
