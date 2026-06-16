@@ -22,6 +22,7 @@ const EXIT_HOLD_MS = 5000
 const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
   codex: 'codex',
+  kimi: 'kimi',
   aider: 'aider',
   generic: 'generic',
 } as const
@@ -44,6 +45,7 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  usageFetched: false,
   numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
@@ -593,6 +595,7 @@ export const useAgentStatus = (
                       : {}),
                   }
                 : base.rateLimits,
+              usageFetched: p.usageFetched,
             }
           })
         }

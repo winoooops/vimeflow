@@ -315,6 +315,8 @@ impl CodexFoldState {
             context_window,
             cost,
             rate_limits,
+            // Network-fetched-usage is a kimi-only concept.
+            usage_fetched: false,
         }
     }
 }

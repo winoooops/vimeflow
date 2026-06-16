@@ -1458,13 +1458,41 @@ const WorkspaceViewContent = (): ReactElement => {
     'No session'
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
-  const sidebarCardFiveHourPct = rateLimitPercentage(
-    agentStatus.rateLimits?.fiveHour
-  )
+  // kimi gates its (network-fetched) plan usage behind consent; the card
+  // renders the gate instead of the bars. `usageFetched` is the backend's
+  // explicit "a real /usages fetch landed" signal, so the gate tells LOADING
+  // from a genuine zero-usage ON without guessing from the zeroed default.
+  const sidebarCardIsKimi = agentStatus.agentType === 'kimi'
+  const sidebarCardHasUsageData = agentStatus.usageFetched ?? false
 
-  const sidebarCardWeekPct = rateLimitPercentage(
-    agentStatus.rateLimits?.sevenDay
-  )
+  // Non-kimi bars use `rateLimitPercentage` (a zeroed/placeholder window reads
+  // as absent). For kimi, `usageFetched` proves a fetch landed, not that every
+  // window came back — `/usages` can be weekly-only, and the required backend
+  // `five_hour` field then holds a `resetsAt: 0` placeholder. Each window keeps
+  // its own presence check (`resetsAt > 0` for 5-hour, `!== undefined` for the
+  // optional weekly) so a weekly-only fetch never fabricates a 0% 5-hour bar; a
+  // present window shows its percentage as-is, 0% included.
+  const kimiWindowPct = (
+    limit: RateLimitsState['fiveHour'] | undefined,
+    present: boolean
+  ): number | null =>
+    present && limit ? Math.round(limit.usedPercentage) : null
+
+  const sidebarCardFiveHourPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.fiveHour,
+        sidebarCardHasUsageData &&
+          (agentStatus.rateLimits?.fiveHour.resetsAt ?? 0) > 0
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.fiveHour)
+
+  const sidebarCardWeekPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.sevenDay,
+        sidebarCardHasUsageData &&
+          agentStatus.rateLimits?.sevenDay !== undefined
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.sevenDay)
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -2094,6 +2122,8 @@ const WorkspaceViewContent = (): ReactElement => {
                   turns={sidebarCardTurns}
                   fiveHourPct={sidebarCardFiveHourPct}
                   weekPct={sidebarCardWeekPct}
+                  isKimi={sidebarCardIsKimi}
+                  hasUsageData={sidebarCardHasUsageData}
                   shellName={activePtyBackedPane?.shell ?? null}
                 />
               }

@@ -497,6 +497,32 @@ describe('useAgentStatus', () => {
     expect(result.current.contextWindow).toBeNull()
   })
 
+  test('maps usageFetched from the agent-status event', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    expect(result.current.usageFetched).toBe(false)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        agentSessionId: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        usageFetched: true,
+      })
+    })
+
+    expect(result.current.usageFetched).toBe(true)
+  })
+
   test('accumulates tool call counts by type', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

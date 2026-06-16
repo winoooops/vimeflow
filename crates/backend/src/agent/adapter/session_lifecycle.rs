@@ -23,10 +23,12 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::bindings::AgentBindings;
-use crate::agent::adapter::types::LocatedStatusSource;
+use super::kimi::{KIMI_BIND_RETRY_INTERVAL_MS, KIMI_BIND_RETRY_MAX_ATTEMPTS};
 use super::{base, resolve_bind_inputs, AttachContext};
+use crate::agent::adapter::types::LocatedStatusSource;
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
@@ -62,8 +64,8 @@ mod tests {
     use crate::agent::adapter::traits::StatusSourceLocator;
     use crate::agent::adapter::types::LocatedStatusSource;
     use crate::agent::types::AgentType;
-    use crate::runtime::FakeEventSink;
     use crate::runtime::EventSink;
+    use crate::runtime::FakeEventSink;
     use crate::terminal::PtyState;
     use tempfile::TempDir;
 
@@ -83,7 +85,11 @@ mod tests {
     fn write_claude_status(cwd: &std::path::Path, sid: &str) {
         let dir = cwd.join(".vimeflow").join("sessions").join(sid);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("status.json"), r#"{"session_id":"sid","model":{}}"#).unwrap();
+        std::fs::write(
+            dir.join("status.json"),
+            r#"{"session_id":"sid","model":{}}"#,
+        )
+        .unwrap();
     }
 
     fn seeded_fixture(sid: &str) -> (tempfile::TempDir, TranscriptState, AgentWatcherState) {
@@ -228,6 +234,59 @@ mod tests {
         assert_eq!(located.trust_root, tmp.path());
     }
 
+    #[test]
+    #[ignore = "live diagnostic: needs a running kimi; KIMI_LIVE_PID=<pid> cargo test --lib kimi_live_attach_diag -- --ignored --nocapture"]
+    fn kimi_live_attach_diag() {
+        let agent_pid: u32 = std::env::var("KIMI_LIVE_PID")
+            .expect("set KIMI_LIVE_PID")
+            .parse()
+            .expect("KIMI_LIVE_PID must be u32");
+        let stale_cwd = std::env::var("KIMI_STALE_CWD").unwrap_or_else(|_| "/home/will".to_string());
+        if let Ok(shell_pid) = std::env::var("KIMI_SHELL_PID") {
+            let sp: u32 = shell_pid.parse().expect("KIMI_SHELL_PID must be u32");
+            eprintln!(
+                "[diag] detect_agent(shell_pid={}) = {:?}",
+                sp,
+                crate::agent::detector::detect_agent(sp)
+            );
+        }
+        let sid = "live-diag".to_string();
+        let spec = crate::agent::config::spec_for(AgentType::Kimi);
+        let ctx = AttachContext {
+            session_id: sid.clone(),
+            initial_cwd: PathBuf::from(&stale_cwd),
+            shell_pid: 1,
+            agent_pid,
+            pty_start: SystemTime::now(),
+            agent_type: AgentType::Kimi,
+            provider_home: spec.provider_home(),
+            proc_root: crate::agent::config::default_proc_root(),
+        };
+        eprintln!(
+            "[diag] ctx agent_pid={} stale_cwd={} provider_home={:?} proc_root={:?}",
+            agent_pid, stale_cwd, ctx.provider_home, ctx.proc_root
+        );
+        let bindings = AgentBindings::for_attach(&ctx).expect("for_attach kimi");
+        eprintln!("[diag] for_attach OK agent_type={:?}", bindings.agent_type);
+        match bindings.locator.locate(PathBuf::from(&stale_cwd).as_path(), &sid) {
+            Ok(located) => {
+                eprintln!(
+                    "[diag] LOCATE OK status_path={} trust_root={}",
+                    located.status_path.display(),
+                    located.trust_root.display()
+                );
+                let contents =
+                    std::fs::read_to_string(&located.status_path).expect("read located status_path");
+                eprintln!("[diag] wire bytes={}", contents.len());
+                match bindings.decoder.decode(Some(&sid), &contents) {
+                    Ok(snap) => eprintln!("[diag] DECODE OK {:?}", snap),
+                    Err(e) => eprintln!("[diag] DECODE ERR {}", e),
+                }
+            }
+            Err(e) => eprintln!("[diag] LOCATE ERR {}", e),
+        }
+    }
+
     struct ErrLocator;
 
     impl StatusSourceLocator for ErrLocator {
@@ -359,7 +418,9 @@ mod tests {
             Arc::new(FakeEventSink::new()),
         );
 
-        let trusted = lifecycle.ensure_trust(located).expect("ensure_trust should pass");
+        let trusted = lifecycle
+            .ensure_trust(located)
+            .expect("ensure_trust should pass");
         let handle = lifecycle
             .spawn_watch(bindings, trusted, sid.clone())
             .expect("spawn_watch should return a handle");
@@ -412,12 +473,8 @@ mod tests {
         let transcript_state = TranscriptState::new();
         let watcher_state = AgentWatcherState::new();
 
-        let lifecycle = SessionLifecycle::new(
-            pty_state,
-            watcher_state.clone(),
-            transcript_state,
-            events,
-        );
+        let lifecycle =
+            SessionLifecycle::new(pty_state, watcher_state.clone(), transcript_state, events);
         lifecycle
             .start_inner_for_test(sid.clone(), bindings, tmp.path().to_path_buf())
             .await
@@ -525,11 +582,7 @@ impl SessionLifecycle {
         }
     }
 
-    fn resolve_attach<F>(
-        &self,
-        sid: &SessionId,
-        detect: F,
-    ) -> Result<AttachContext, String>
+    fn resolve_attach<F>(&self, sid: &SessionId, detect: F) -> Result<AttachContext, String>
     where
         F: FnOnce(u32) -> Option<(AgentType, u32)>,
     {
@@ -547,6 +600,56 @@ impl SessionLifecycle {
         sid: &str,
     ) -> Result<LocatedStatusSource, String> {
         bindings.locator.locate(cwd, sid)
+    }
+
+    /// Async wrapper around [`Self::locate`].
+    ///
+    /// All locator work is dispatched through `tokio::task::spawn_blocking`
+    /// because `StatusSourceLocator::locate` performs filesystem I/O. For
+    /// kimi, the retry loop lives here (outside the blocking closure) so the
+    /// inter-attempt delay is `tokio::time::sleep`, which yields the async
+    /// task instead of parking a blocking-pool thread (PR #447 review F1).
+    /// Other agents either have their own internal retry inside `locate`
+    /// (codex) or are infallible (claude), so they get a single blocking
+    /// locate call.
+    async fn locate_async(
+        &self,
+        bindings: &AgentBindings,
+        cwd: &Path,
+        sid: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        let lc = self.clone();
+        let bindings = bindings.clone();
+        let cwd = cwd.to_path_buf();
+        let sid = sid.to_string();
+
+        if bindings.agent_type != AgentType::Kimi {
+            return tokio::task::spawn_blocking(move || lc.locate(&bindings, &cwd, &sid))
+                .await
+                .map_err(|e| format!("locate task panicked: {}", e))?;
+        }
+
+        let mut last_err = String::from("kimi locate retry exhausted");
+        for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {
+            let lc = lc.clone();
+            let bindings = bindings.clone();
+            let cwd = cwd.clone();
+            let sid = sid.clone();
+            match tokio::task::spawn_blocking(move || lc.locate(&bindings, &cwd, &sid))
+                .await
+                .map_err(|e| format!("locate task panicked: {}", e))?
+            {
+                Ok(located) => return Ok(located),
+                Err(e) => {
+                    last_err = e;
+                    if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
+                        tokio::time::sleep(Duration::from_millis(KIMI_BIND_RETRY_INTERVAL_MS))
+                            .await;
+                    }
+                }
+            }
+        }
+        Err(last_err)
     }
 
     fn ensure_trust(&self, located: LocatedStatusSource) -> Result<TrustedLocatedSource, String> {
@@ -599,8 +702,7 @@ impl SessionLifecycle {
             sid,
             located,
             move || {
-                watcher_state
-                    .quiesce_existing(&sid_for_quiesce, &transcript_state_for_quiesce);
+                watcher_state.quiesce_existing(&sid_for_quiesce, &transcript_state_for_quiesce);
             },
         )
     }
@@ -623,7 +725,27 @@ impl SessionLifecycle {
     /// `insert`'s own `_displaced` drop already handles atomic replace).
     /// `AttachError` is mapped to `String` at this boundary.
     pub(crate) async fn start(&self, session_id: String) -> Result<(), String> {
-        let attach = self.resolve_attach(&session_id, detect_agent)?;
+        crate::debug::debug_log("agent-attach", &format!("start session={}", session_id));
+        let attach = match self.resolve_attach(&session_id, detect_agent) {
+            Ok(attach) => attach,
+            Err(e) => {
+                crate::debug::debug_log(
+                    "agent-attach",
+                    &format!("resolve_attach ERR session={}: {}", session_id, e),
+                );
+                return Err(e);
+            }
+        };
+        crate::debug::debug_log(
+            "agent-attach",
+            &format!(
+                "detected session={} agent={:?} agent_pid={} cwd={}",
+                session_id,
+                attach.agent_type,
+                attach.agent_pid,
+                attach.initial_cwd.display()
+            ),
+        );
         let bindings = self.bind_services(&attach)?;
         let cwd = attach.initial_cwd.clone();
         self.run_watch_sequence(session_id, bindings, cwd).await
@@ -674,9 +796,14 @@ impl SessionLifecycle {
         bindings: AgentBindings,
         cwd: std::path::PathBuf,
     ) -> Result<(), String> {
+        // Locate outside the long-running spawn_blocking closure so kimi's
+        // retry delay can be an async `tokio::time::sleep` that yields the
+        // task. The actual filesystem work still runs on the blocking pool
+        // (see `locate_async`).
+        let located = self.locate_async(&bindings, &cwd, &session_id).await?;
+
         let lc = self.clone();
         tokio::task::spawn_blocking(move || {
-            let located = lc.locate(&bindings, &cwd, &session_id)?;
             let trusted = lc.ensure_trust(located)?;
 
             log::debug!(
@@ -691,6 +818,15 @@ impl SessionLifecycle {
                 session_id,
                 trusted.status_path().display(),
                 lc.watcher_state.active_count(),
+            );
+
+            crate::debug::debug_log(
+                "agent-attach",
+                &format!(
+                    "watch session={} path={}",
+                    session_id,
+                    trusted.status_path().display()
+                ),
             );
 
             // Capture the agent type before `spawn_watch` consumes `bindings`,
