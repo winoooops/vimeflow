@@ -33,6 +33,7 @@ export interface TerminalZoneProps {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+  onCommandSubmit?: (ptyId: string, command: string) => void
   /**
    * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
    */
@@ -56,7 +57,6 @@ export interface TerminalZoneProps {
   ) => void
   addPane: (sessionId: string, kind?: PaneKind) => void
   removePane: (sessionId: string, paneId: string) => void
-  areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
@@ -79,6 +79,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onSessionCwdChange = undefined,
       loading = false,
       onPaneReady = undefined,
+      onCommandSubmit = undefined,
       onSessionRestart = undefined,
       deferTerminalFit = false,
       service,
@@ -86,7 +87,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       updateBrowserPaneUrl = undefined,
       addPane,
       removePane,
-      areBrowserPanesOccluded = false,
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
@@ -186,6 +186,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     isActive={isActive}
                     onSessionCwdChange={onSessionCwdChange}
                     onPaneReady={onPaneReady}
+                    onCommandSubmit={onCommandSubmit}
                     onSessionRestart={onSessionRestart}
                     onSetActivePane={setSessionActivePane}
                     onBrowserPaneUrlChange={updateBrowserPaneUrl}
@@ -195,7 +196,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onBurner={onBurner}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
-                    areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     // The active pane keeps its highlight even when the dock
                     // (or another container) has focus, so the user never

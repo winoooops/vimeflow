@@ -3,7 +3,7 @@ import { Tooltip } from '@/components/Tooltip'
 import type { CostState, RateLimitsState } from '../types'
 import { BudgetMetrics } from './BudgetMetrics'
 
-type AgentType = 'claude-code' | 'codex' | 'aider' | 'generic'
+type AgentType = 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
 type StatusType = 'running' | 'awaiting' | 'idle' | 'completed' | 'errored'
 
 interface ActiveStatusCardProps {
@@ -28,6 +28,7 @@ export type StatusCardProps = ActiveStatusCardProps | IdleStatusCardProps
 const agentNames: Record<AgentType, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
+  kimi: 'Kimi',
   aider: 'Aider',
   generic: 'Agent',
 }

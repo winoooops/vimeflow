@@ -170,12 +170,14 @@ const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 } = {}
 
 interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 }
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -183,10 +185,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
     agentStatus = undefined,
+    reserveWindowControls = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
     capturedAgentStatusPanelProps.agentStatus = agentStatus
+    capturedAgentStatusPanelProps.reserveWindowControls = reserveWindowControls
 
     // Render the panel testid so the existing zone-presence tests
     // (`getByTestId('agent-status-panel')`) keep passing without
@@ -194,6 +198,18 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     return <div data-testid="agent-status-panel" />
   },
   PANEL_WIDTH_PX: 280,
+}))
+
+// Only kimi cards instantiate the consent gate, so a global consent=ON keeps
+// the claude rate-limit tests untouched while letting the kimi card reach its
+// ON state (peach bars) for the weekly-only regression below.
+vi.mock('../agent-status/hooks/useKimiUsageConsent', () => ({
+  useKimiUsageConsent: vi.fn(() => ({
+    consent: true,
+    setConsent: vi.fn(),
+    refresh: vi.fn(),
+    persistError: false,
+  })),
 }))
 
 const makeAgentStatus = (
@@ -271,6 +287,7 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    capturedAgentStatusPanelProps.reserveWindowControls = undefined
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -355,13 +372,9 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
       'vf-app-drag-region'
     )
-  })
 
-  // The main-stage chrome removes the session-tab strip, which previously
-  // carried the macOS window-drag regions. Per the merge decision we keep
-  // main's SidebarTopBar drag region (covered by SidebarTopBar.test) and do
-  // not re-home the drag region onto the auto-hide top chrome, so the old
-  // "collapsed macOS tab chrome" test no longer applies.
+    expect(capturedAgentStatusPanelProps.reserveWindowControls).toBe(true)
+  })
 
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
@@ -2163,6 +2176,38 @@ describe('WorkspaceView', () => {
 
     expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
     expect(screen.getByText('0%')).toBeInTheDocument()
+  })
+
+  test('a weekly-only kimi fetch renders no fabricated 5-hour bar', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          agentType: sessionId === null ? null : 'kimi',
+          modelDisplayName: sessionId === null ? null : 'k2.7',
+          usageFetched: sessionId !== null,
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  // Weekly came back; the absent 5-hour window is the backend's
+                  // required-field placeholder (resetsAt 0) — it must not show
+                  // as a fabricated 0% bar just because the fetch landed.
+                  fiveHour: { usedPercentage: 0, resetsAt: 0 },
+                  sevenDay: {
+                    usedPercentage: 40,
+                    resetsAt: 1_776_086_400_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('Weekly Usage')).toBeInTheDocument()
+    expect(screen.getByText('40%')).toBeInTheDocument()
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
   })
 
   test('mirrors agentStatus.cwd into the active pane.cwd', async () => {

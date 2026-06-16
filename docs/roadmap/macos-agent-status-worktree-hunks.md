@@ -23,6 +23,10 @@ step complete.
 - [x] Confirmed Codex status source is Codex-owned:
       `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, resolved primarily through
       schema-discovered SQLite DBs under `~/.codex`.
+- [x] Confirmed Kimi Code status source is Kimi-owned:
+      `~/.kimi-code/session_index.jsonl` resolves the active cwd to a session
+      directory, and `agents/main/wire.jsonl` is both the status and transcript
+      source. The detector must match both `kimi` and `kimi-code`.
 - [x] Confirmed Codex Linux implementation has `/proc` fast paths:
       resume argv and open rollout fd discovery. These are not portable to macOS
       without a Darwin process source or a non-proc fallback.
@@ -41,16 +45,16 @@ step complete.
       `PtyState::get_pid` and calls `detector::detect_agent`.
 - [x] Process-tree walk:
       the detector checks the PTY root and all descendants, then maps argv[0]
-      binary names: `claude` -> `ClaudeCode`, `codex` -> `Codex`, `aider` ->
-      `Aider`.
+      binary names: `claude` -> `ClaudeCode`, `codex` -> `Codex`, `kimi` /
+      `kimi-code` -> `Kimi`, and `aider` -> `Aider`.
 - [x] Watcher start:
       after detection succeeds, `useAgentStatus` invokes `start_agent_watcher`.
       The backend re-detects server-side in `resolve_bind_inputs` so the frontend
       cannot spoof the agent type.
 - [x] Adapter selection:
-      `<dyn AgentAdapter>::for_attach(agent_type, agent_pid, pty_start)` returns
-      `ClaudeCodeAdapter` for Claude, `CodexAdapter::new(agent_pid, pty_start)` for
-      Codex, and `NoOpAdapter` for unsupported agents.
+      `AgentBindings::for_attach` returns `ClaudeCodeAdapter` for Claude Code,
+      `CodexAdapter` for Codex CLI, `KimiAdapter` for Kimi Code, and `NoOpAdapter`
+      for unsupported agents.
 - [x] Shared watcher runtime:
       `base::start_for` resolves a provider `StatusSource`, validates it under the
       provider trust root, reads it inline, watches it through notify plus polling,
@@ -84,6 +88,13 @@ step complete.
       folds `session_meta`, `turn_context`, and `event_msg`; transcript parsing
       emits tool calls, test runs, turns, `agent-cwd`, and title sync from
       `session_index.jsonl`.
+- [x] Kimi Code transcript source:
+      `agents/main/wire.jsonl` is both status source and transcript source.
+      Status parsing folds `metadata`, `config.update`, and `usage.record`;
+      transcript parsing emits turns, lifecycle, tool calls, cwd, and sub-agent
+      activity from sibling `agents/<subagent>/wire.jsonl` files. Kimi plan-usage
+      fetching is opt-in because it calls the Kimi API with the user's configured
+      credential.
 - [x] Pane header worktree reflection:
       transcript `agent-cwd` updates `agentStatus.cwd`; `WorkspaceView` mirrors it
       into `pane.cwd` only while the agent is active; `TerminalPane` then runs
@@ -118,6 +129,10 @@ step complete.
       ignores `turn_context.cwd` because observed Codex rollouts pin it to the
       session-start cwd; mid-session worktree movement comes from
       `response_item.payload.arguments.workdir` for `exec_command`.
+- [x] Kimi Code session binding: Linux can use proc-derived process context when
+      available; macOS falls back to `~/.kimi-code/session_index.jsonl` and the
+      cwd hash bucket. Two same-cwd Kimi sessions can still be ambiguous on macOS
+      without a stronger Darwin process source.
 - [x] Claude bridge path parsing: Linux and macOS share the
       `<pty spawn cwd>/.vimeflow/sessions/<sid>/status.json` bridge path. The
       macOS risk is not a different Claude root; it is whether the PTY spawn path

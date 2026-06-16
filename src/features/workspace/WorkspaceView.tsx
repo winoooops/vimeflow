@@ -101,6 +101,8 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+import { OverlayStackProvider } from './overlays/OverlayStackProvider'
+import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
 
 const rateLimitPercentage = (
   limit: RateLimitsState['fiveHour'] | null | undefined
@@ -225,7 +227,7 @@ const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
 
 type DockTab = 'editor' | 'diff'
 
-export const WorkspaceView = (): ReactElement => {
+const WorkspaceViewContent = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
@@ -256,6 +258,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     appendPaneCacheReading,
+    clearPaneCacheHistory,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -508,10 +511,28 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPaneId = activePtyBackedPane?.id
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
-  const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+  const [agentStatusReset, setAgentStatusReset] = useState<{
+    ptyId: string
+    generation: number
+  } | null>(null)
+
+  const agentStatusResetGeneration =
+    agentStatusReset !== null &&
+    agentStatusReset.ptyId === activePtyBackedPanePtyId
+      ? agentStatusReset.generation
+      : 0
+
+  const agentStatus = useAgentStatus(
+    activePtyBackedPanePtyId ?? null,
+    agentStatusResetGeneration
+  )
 
   useCacheHistoryCollector({
     ptyId: activePtyBackedPanePtyId ?? null,
+    runId:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? agentStatus.agentSessionId
+        : null,
     sessionId: activeSessionId,
     paneId: activePtyBackedPaneId ?? null,
     usage:
@@ -519,7 +540,46 @@ export const WorkspaceView = (): ReactElement => {
         ? (agentStatus.contextWindow?.currentUsage ?? null)
         : null,
     onReading: appendPaneCacheReading,
+    onReset: clearPaneCacheHistory,
   })
+
+  const handleTerminalCommandSubmit = useCallback(
+    (ptyId: string, command: string): void => {
+      if (command !== '/clear') {
+        return
+      }
+
+      // Only reset agent-status state when the active pane is actually running
+      // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
+      // syntactically identical to a Codex `/clear` command, and a false reset
+      // for a live Codex session would suppress same-run events until the next
+      // session boundary (Claude Code Review on PR #469).
+      if (
+        ptyId === activePtyBackedPanePtyId &&
+        agentStatus.agentType === 'codex'
+      ) {
+        setAgentStatusReset((prev) => ({
+          ptyId,
+          generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
+        }))
+      }
+
+      for (const session of sessions) {
+        const pane = session.panes.find((p) => p.ptyId === ptyId)
+        if (pane) {
+          clearPaneCacheHistory(session.id, pane.id)
+
+          return
+        }
+      }
+    },
+    [
+      activePtyBackedPanePtyId,
+      agentStatus.agentType,
+      clearPaneCacheHistory,
+      sessions,
+    ]
+  )
 
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
@@ -1398,13 +1458,41 @@ export const WorkspaceView = (): ReactElement => {
     'No session'
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
-  const sidebarCardFiveHourPct = rateLimitPercentage(
-    agentStatus.rateLimits?.fiveHour
-  )
+  // kimi gates its (network-fetched) plan usage behind consent; the card
+  // renders the gate instead of the bars. `usageFetched` is the backend's
+  // explicit "a real /usages fetch landed" signal, so the gate tells LOADING
+  // from a genuine zero-usage ON without guessing from the zeroed default.
+  const sidebarCardIsKimi = agentStatus.agentType === 'kimi'
+  const sidebarCardHasUsageData = agentStatus.usageFetched ?? false
 
-  const sidebarCardWeekPct = rateLimitPercentage(
-    agentStatus.rateLimits?.sevenDay
-  )
+  // Non-kimi bars use `rateLimitPercentage` (a zeroed/placeholder window reads
+  // as absent). For kimi, `usageFetched` proves a fetch landed, not that every
+  // window came back — `/usages` can be weekly-only, and the required backend
+  // `five_hour` field then holds a `resetsAt: 0` placeholder. Each window keeps
+  // its own presence check (`resetsAt > 0` for 5-hour, `!== undefined` for the
+  // optional weekly) so a weekly-only fetch never fabricates a 0% 5-hour bar; a
+  // present window shows its percentage as-is, 0% included.
+  const kimiWindowPct = (
+    limit: RateLimitsState['fiveHour'] | undefined,
+    present: boolean
+  ): number | null =>
+    present && limit ? Math.round(limit.usedPercentage) : null
+
+  const sidebarCardFiveHourPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.fiveHour,
+        sidebarCardHasUsageData &&
+          (agentStatus.rateLimits?.fiveHour.resetsAt ?? 0) > 0
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.fiveHour)
+
+  const sidebarCardWeekPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.sevenDay,
+        sidebarCardHasUsageData &&
+          agentStatus.rateLimits?.sevenDay !== undefined
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.sevenDay)
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -1764,15 +1852,6 @@ export const WorkspaceView = (): ReactElement => {
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
 
-  const areBrowserPanesOccluded =
-    terminalFitDeferred ||
-    showUnsavedDialog ||
-    commandPalette.state.isOpen ||
-    hasVisibleBurner ||
-    paneRenameNode !== null ||
-    fileError !== null ||
-    infoMessage !== null
-
   const feedbackDispatch = useMemo(() => {
     // Inline-review feedback dispatches to the single CONNECTED (active) pane —
     // the one whose diff is on screen. We gate the candidate on LIVE agent
@@ -1913,6 +1992,17 @@ export const WorkspaceView = (): ReactElement => {
         } as CSSProperties
       }
     >
+      <WorkspaceOverlayRegistrations
+        commandPaletteOpen={commandPalette.state.isOpen}
+        unsavedChangesDialogOpen={showUnsavedDialog}
+        burnerTerminalOpen={hasVisibleBurner}
+        paneRenameOpen={paneRenameNode !== null}
+        dragOverlayOpen={isDragging}
+        dockDragOverlayOpen={
+          verticalDockElastic.isDragging || horizontalDockElastic.isDragging
+        }
+        bannerOpen={fileError !== null || infoMessage !== null}
+      />
       {isCompactViewport && !isSidebarClosed && (
         <button
           type="button"
@@ -1936,7 +2026,8 @@ export const WorkspaceView = (): ReactElement => {
           the sidebar and main surfaces so focus order matches its visual
           position; z-40 keeps it on top. */}
       <div
-        className="absolute z-40"
+        data-testid="sidebar-toggle-fixed-shell"
+        className="vf-app-no-drag absolute z-40"
         style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
       >
         <SidebarToggle
@@ -2031,6 +2122,8 @@ export const WorkspaceView = (): ReactElement => {
                   turns={sidebarCardTurns}
                   fiveHourPct={sidebarCardFiveHourPct}
                   weekPct={sidebarCardWeekPct}
+                  isKimi={sidebarCardIsKimi}
+                  hasUsageData={sidebarCardHasUsageData}
                   shellName={activePtyBackedPane?.shell ?? null}
                 />
               }
@@ -2127,8 +2220,23 @@ export const WorkspaceView = (): ReactElement => {
             frosted-glass treatment now lives in <GlassSurface>. */}
         <div
           data-testid="top-chrome"
-          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px]"
+          className={`relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px] ${
+            reserveWindowControls ? 'vf-app-drag-region' : ''
+          }`}
         >
+          {reserveWindowControls && isSidebarClosed && (
+            <span
+              aria-hidden="true"
+              data-testid="top-chrome-sidebar-toggle-clearance"
+              className="vf-app-no-drag pointer-events-none absolute"
+              style={{
+                left: sidebarToggleLeft,
+                top: SIDEBAR_TOGGLE_TOP,
+                width: SIDEBAR_TOGGLE_SIZE,
+                height: SIDEBAR_TOGGLE_SIZE,
+              }}
+            />
+          )}
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -2215,13 +2323,13 @@ export const WorkspaceView = (): ReactElement => {
               deferTerminalFit={terminalFitDeferred}
               loading={loading}
               onPaneReady={notifyPaneReady}
+              onCommandSubmit={handleTerminalCommandSubmit}
               onSessionRestart={restartSession}
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
               updateBrowserPaneUrl={updateBrowserPaneUrl}
               addPane={addPane}
               removePane={removePane}
-              areBrowserPanesOccluded={areBrowserPanesOccluded}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
@@ -2235,7 +2343,11 @@ export const WorkspaceView = (): ReactElement => {
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
-          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+          <div
+            data-testid="workspace-banner-stack"
+            data-workspace-overlay-id="workspace-banners"
+            className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2"
+          >
             {/* File error banner — surfaces failures from direct file open
                 (openFileSafely) and vim :w saves (handleVimSave). Rendered at
                 the top of the main area so the user always sees what went wrong. */}
@@ -2298,6 +2410,7 @@ export const WorkspaceView = (): ReactElement => {
               onExpand={() => {
                 handleActivityPanelCollapsed(false)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           ) : (
             <AgentStatusPanel
@@ -2312,6 +2425,7 @@ export const WorkspaceView = (): ReactElement => {
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           )}
         </div>
@@ -2337,7 +2451,12 @@ export const WorkspaceView = (): ReactElement => {
       />
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
-      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+      {isDragging && (
+        <div
+          data-testid="workspace-drag-overlay"
+          className="fixed inset-0 z-50 cursor-col-resize"
+        />
+      )}
 
       {paneRenameNode}
       {burnerTerminalNode}
@@ -2354,5 +2473,11 @@ export const WorkspaceView = (): ReactElement => {
     </div>
   )
 }
+
+export const WorkspaceView = (): ReactElement => (
+  <OverlayStackProvider>
+    <WorkspaceViewContent />
+  </OverlayStackProvider>
+)
 
 export default WorkspaceView

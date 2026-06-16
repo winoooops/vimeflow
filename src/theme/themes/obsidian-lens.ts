@@ -147,5 +147,11 @@ export const obsidianLens: ThemeDefinition = {
       accentSoft: 'rgb(79 200 214 / 0.3)',
       onAccent: '#06232a',
     },
+    kimi: {
+      accent: '#fab387',
+      accentDim: 'rgb(250 179 135 / 0.16)',
+      accentSoft: 'rgb(250 179 135 / 0.32)',
+      onAccent: '#2a1608',
+    },
   },
 }

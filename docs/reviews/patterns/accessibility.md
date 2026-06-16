@@ -533,7 +533,25 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 50. Disclosure button receives both `aria-pressed` and `aria-expanded`
+### 50. Pointer-leave handler schedules drift under reduced-motion and when already at rest
+
+- **Source:** github-claude + github-codex-connector | PR #457 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.ts`
+- **Finding:** `onLeave` called `ensureLoop()` unconditionally, so it scheduled a rAF frame even when `prefers-reduced-motion: reduce` was active, the water refs were null, or the loop was already at rest. Under reduced motion this could re-apply a cached `translate(...)` transform after `onMqlChange` had explicitly cleared it.
+- **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Meter reports unknown context usage as 0%
+
+- **Source:** github-codex-connector | PR #462 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** When `usedPercentage` was `null` (context window not yet known), the card still derived `aria-valuenow` from `effectivePct` (`pct ?? 0`), exposing a 0% meter value while the visible UI and `aria-valuetext` announced the usage as unknown. Screen-reader users could confuse an initial/unknown state with a genuinely empty context window.
+- **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Disclosure button receives both `aria-pressed` and `aria-expanded`
 
 - **Source:** github-claude | PR #454 round 2 | 2026-06-15
 - **Severity:** HIGH
@@ -542,7 +560,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
 - **Commit:** same commit as this entry
 
-### 51. SegmentedControl unmatched value is visually coerced to the first option
+### 53. SegmentedControl unmatched value is visually coerced to the first option
 
 - **Source:** github-codex-connector | PR #461 round 2 | 2026-06-15
 - **Severity:** LOW

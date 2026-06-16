@@ -35,6 +35,7 @@ export interface SplitViewProps {
   isActive: boolean
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
+  onCommandSubmit?: (ptyId: string, command: string) => void
   onSessionRestart?: (sessionId: string) => void
   onSetActivePane?: (sessionId: string, paneId: string) => void
   onBrowserPaneUrlChange?: (
@@ -51,7 +52,6 @@ export interface SplitViewProps {
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
-  areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
 }
@@ -104,6 +104,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       isActive,
       onSessionCwdChange = undefined,
       onPaneReady = undefined,
+      onCommandSubmit = undefined,
       onSessionRestart = undefined,
       onSetActivePane = undefined,
       onBrowserPaneUrlChange = undefined,
@@ -113,7 +114,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
-      areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
     }: SplitViewProps,
@@ -323,7 +323,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           session={session}
                           pane={pane}
                           isActive={isActive}
-                          isOccluded={areBrowserPanesOccluded}
                           onClose={closeHandler}
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
@@ -342,6 +341,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                             onSessionCwdChange?.(session.id, pane.id, cwd)
                           }
                           onPaneReady={onPaneReady}
+                          onCommandSubmit={onCommandSubmit}
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
                           onBurner={onBurner}

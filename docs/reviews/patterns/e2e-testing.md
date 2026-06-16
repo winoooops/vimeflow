@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-05-20
-ref_count: 7
+last_updated: 2026-06-15
+ref_count: 8
 ---
 
 # E2E Testing
@@ -218,3 +218,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** After computing `filePaths` from `listTypeScriptFiles(E2E_ROOT)`, the test immediately evaluates `expect(findings).toEqual([])`. If `tests/e2e` is empty, or if all e2e files are temporarily moved or renamed (e.g., during a directory restructure), `filePaths` is `[]`, `findings` is `[]`, and the assertion trivially passes — the guard silently grants a clean bill of health without having scanned a single file. The guard's stated purpose (preventing `browser.keys(...)` usage in e2e tests) evaporates silently.
 - **Fix:** Added `expect(filePaths.length).toBeGreaterThan(0)` immediately after computing `filePaths`, requiring the guard to scan at least one e2e TypeScript file before checking findings. This distinguishes "no violations found" from "no files scanned".
 - **Commit:** _(this cycle)_
+
+### 20. Per-test Mocha timeout shorter than the sum of nested helper waits
+
+- **Source:** github-codex-connector | PR #472 round 2 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts` L302
+- **Finding:** The core WDIO config keeps Mocha's per-test timeout at 30s, but the browser overlay spec can legitimately spend more than that across sequential helper waits: 20s for the terminal, 10s for the split slot, 15s for the browser pane, 15s for CDP registration, plus the command-palette and bounds-capture waits. On a cold CI run Mocha aborted the test with a generic timeout even though the helper-specific budgets were still in progress, hiding the real bottleneck.
+- **Fix:** Chained `.timeout(60_000)` on the `it(…)` call — the Mocha `Runnable.prototype.timeout()` API — in the browser overlay spec, giving the sequential waits enough headroom while leaving the project-wide 30s default in place for faster specs. This keeps the timeout local to the one spec that needs it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

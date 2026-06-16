@@ -19,11 +19,13 @@
 //!   `adapter_for_transcript_state: Arc<dyn AgentAdapter>` field that
 //!   B' carried only because `start_or_replace` still took the façade.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::claude_code::ClaudeCodeAdapter;
 use super::codex::{default_codex_home, CodexAdapter, CompositeLocator};
 use super::error::AttachError;
+use super::kimi::{default_kimi_home, KimiAdapter, KimiLocator};
 use super::traits::{
     StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
 };
@@ -58,6 +60,7 @@ use crate::agent::types::AgentType;
 /// - `streamer` — handed to `TranscriptState::start_or_replace` (B''
 ///   migrated this off `Arc<dyn AgentAdapter>`; the façade `Arc` is
 ///   gone with no transitional field surviving).
+#[derive(Clone)]
 pub(crate) struct AgentBindings {
     pub(crate) agent_type: AgentType,
     pub(crate) locator: Arc<dyn StatusSourceLocator>,
@@ -115,10 +118,7 @@ impl AgentBindings {
                 // structural fix (PR #261 cycle 11 F31) shares one
                 // `CompositeLocator`; B'' (this step) then consumes the
                 // streamer view directly in `start_or_replace`.
-                let codex_home = ctx
-                    .provider_home
-                    .clone()
-                    .unwrap_or_else(default_codex_home);
+                let codex_home = ctx.provider_home.clone().unwrap_or_else(default_codex_home);
                 // `ctx.proc_root` carries `Some("/proc")` on Linux,
                 // `None` on non-Linux, and `Some(tempdir)` in test
                 // harnesses that inject a fake `/proc`. Pass the
@@ -159,9 +159,53 @@ impl AgentBindings {
                     streamer: adapter,
                 })
             }
+            AgentType::Kimi => {
+                // kimi-code's locator reads `<kimi_home>/session_index.jsonl`
+                // to resolve the attach cwd to a `wire.jsonl`. `$KIMI_CODE_HOME`
+                // is authoritative (kimi-code reads it to override its home);
+                // then the typed `provider_home`; then `default_kimi_home`.
+                let kimi_home = std::env::var_os("KIMI_CODE_HOME")
+                    // Ignore an empty `$KIMI_CODE_HOME` so it doesn't root at "" (matches `default_kimi_home`).
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| ctx.provider_home.clone())
+                    .unwrap_or_else(default_kimi_home);
+                super::kimi::kdbg(&format!(
+                    "ATTACH kimi: agent_pid={} initial_cwd={} provider_home={:?} proc_root={:?} home={}",
+                    ctx.agent_pid,
+                    ctx.initial_cwd.display(),
+                    ctx.provider_home,
+                    ctx.proc_root,
+                    kimi_home.display()
+                ));
+                log::info!(
+                    "kimi adapter: locator initialized (kimi_home={}, pid={})",
+                    kimi_home.display(),
+                    ctx.agent_pid,
+                );
+                // Pass pid + pty_start + proc_root so the locator can read
+                // the kimi process's own fds / environ (proc-fd, proc-environ);
+                // `kimi_home` stays the env/provider/default fallback home.
+                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::new(
+                    kimi_home,
+                    ctx.agent_pid,
+                    ctx.pty_start,
+                    ctx.proc_root.clone(),
+                ));
+                let locator: Arc<dyn StatusSourceLocator> = kimi_locator.clone();
+                let adapter: Arc<KimiAdapter> = Arc::new(KimiAdapter::with_locator(kimi_locator));
+                Ok(Self {
+                    agent_type: ctx.agent_type,
+                    locator,
+                    decoder: adapter.clone(),
+                    transcript_paths: adapter.clone(),
+                    validator: adapter.clone(),
+                    streamer: adapter,
+                })
+            }
             other => {
                 // NoOp adapter for Aider / Generic — covers every
-                // non-Claude / non-Codex variant. `UnsupportedAgent`
+                // non-Claude / non-Codex / non-Kimi variant. `UnsupportedAgent`
                 // is reserved per the acceptance enum for a future
                 // refusal mode; today's behavior matches the
                 // pre-B' `<dyn AgentAdapter>::for_attach` (always
@@ -213,6 +257,19 @@ mod tests {
         }
     }
 
+    fn kimi_ctx(home: Option<PathBuf>) -> AttachContext {
+        AttachContext {
+            session_id: "sid".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Kimi,
+            provider_home: home,
+            proc_root: None,
+        }
+    }
+
     fn aider_ctx() -> AttachContext {
         AttachContext {
             session_id: "sid".to_string(),
@@ -238,8 +295,65 @@ mod tests {
             .expect("codex binds");
         assert_eq!(codex.agent_type, AgentType::Codex);
 
+        let kimi = AgentBindings::for_attach(&kimi_ctx(Some(PathBuf::from("/home/u/.kimi-code"))))
+            .expect("kimi binds");
+        assert_eq!(kimi.agent_type, AgentType::Kimi);
+
         let noop = AgentBindings::for_attach(&aider_ctx()).expect("noop binds aider");
         assert_eq!(noop.agent_type, AgentType::Aider);
+    }
+
+    /// Kimi `for_attach` with `provider_home == None` falls back to
+    /// `default_kimi_home()` (which itself honors `$KIMI_CODE_HOME`)
+    /// rather than failing, matching the Codex fallback contract.
+    #[test]
+    fn for_attach_kimi_without_provider_home_falls_back_to_default_home() {
+        let bindings =
+            AgentBindings::for_attach(&kimi_ctx(None)).expect("kimi falls back to default home");
+        assert_eq!(bindings.agent_type, AgentType::Kimi);
+    }
+
+    /// `$KIMI_CODE_HOME` is authoritative over `ctx.provider_home`: with a
+    /// session laid out under the env home and a bogus provider_home, the
+    /// built locator resolves under the env home (proving the override
+    /// reached the locator, not provider_home).
+    #[test]
+    fn for_attach_kimi_env_home_overrides_provider_home() {
+        let env_home = tempfile::tempdir().expect("env home");
+        let work = tempfile::tempdir().expect("work dir");
+        let session_dir = env_home
+            .path()
+            .join("sessions")
+            .join("wd_x")
+            .join("session_env");
+        let wire = session_dir.join("agents").join("main").join("wire.jsonl");
+        std::fs::create_dir_all(wire.parent().expect("wire parent")).expect("mkdir wire");
+        std::fs::write(&wire, b"{\"type\":\"metadata\"}\n").expect("write wire");
+        std::fs::write(
+            env_home.path().join("session_index.jsonl"),
+            format!(
+                "{{\"sessionId\":\"session_env\",\"sessionDir\":\"{}\",\"workDir\":\"{}\"}}\n",
+                session_dir.display(),
+                work.path().display(),
+            ),
+        )
+        .expect("write index");
+
+        // Guard serializes env mutation + restores the prior value on drop.
+        let _guard = crate::agent::adapter::KimiHomeEnvGuard::acquire();
+        std::env::set_var("KIMI_CODE_HOME", env_home.path());
+        let bindings = AgentBindings::for_attach(&kimi_ctx(Some(PathBuf::from("/bogus/provider"))))
+            .expect("kimi binds");
+        let located = bindings
+            .locator
+            .locate(work.path(), "pty-1")
+            .expect("locate under env home");
+
+        assert!(
+            located.status_path.starts_with(env_home.path()),
+            "status_path must resolve under $KIMI_CODE_HOME, got {}",
+            located.status_path.display(),
+        );
     }
 
     // NOTE: the B' shared-`Arc` regression test

@@ -100,6 +100,7 @@ export const AGENT_IDS = [
   'gemini',
   'shell',
   'browser',
+  'kimi',
 ] as const
 
 export const AGENT_ACCENT_FIELDS = [

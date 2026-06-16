@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-12
+last_updated: 2026-06-15
 ref_count: 3
 ---
 
@@ -134,3 +134,21 @@ The discipline:
 - **Finding:** Cycle 4's initial fix for #9 above moved the production Codex init log into `CompositeLocator::new`, since both `CodexAdapter::new` and `CodexAdapter::with_home` reach that constructor. But `AgentBindings::for_attach` for the Codex arm constructs `CompositeLocator::new` TWICE per attach — once for `bindings.locator` (the outer locator used by watcher*runtime) and once inside `CodexAdapter::with_home` (the adapter's internal locator for the transitional `adapter_for_transcript_state`). That meant every production attach emitted two identical init lines, weakening the observability F11 was trying to restore. Local codex verify caught this as a new LOW finding \_introduced by the F11 fix itself* before push.
 - **Fix:** Moved the log up one more level to `AgentBindings::for_attach` (single attach-once site, one log per attach regardless of how many CompositeLocator instances are constructed downstream). Reverted the log from `CompositeLocator::new`. Updated comments in both `CodexAdapter::new` and `CompositeLocator::new` to point at the actual log site. Lesson: when picking a logging site, count the call sites that reach it per logical operation, not just the number of constructors. "Shared constructor" sounds like the right place but isn't if any caller path traverses it more than once. Audit the call graph from the user-facing event (here: "Codex attach") to every emit site. Pre-push codex verify (the local layer) caught this in the same cycle that introduced it — keeping the verify gate before push paid for itself.
 - **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_
+
+### 12. Capture recorded before bridge delivers the call produces phantom E2E captures
+
+- **Source:** github-claude | PR #472 round 2 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/browser/browserBridge.ts` `setBrowserPaneBounds`
+- **Finding:** `browserPaneBoundsCaptures.push(cloneBoundsCapture(request))` ran unconditionally when capture was active, before `bridge()?.setBounds(request)` was awaited. `bridge()` reads `window.vimeflow?.browserPane` live, so if the preload bridge disappeared after `startBrowserPaneBoundsCapture` returned `true`, the optional chain no-ops silently while a capture entry was already recorded. `waitForBoundsCapture` in the E2E spec could then match a phantom capture that never crossed the IPC boundary, making the test appear to pass while the native hide/restore path was broken.
+- **Fix:** Snapshot `bridge()` once at the top of `setBrowserPaneBounds` and return early when it is `undefined`; record the capture only after `await bri.setBounds(request)` succeeds. This gates capture on the same reference used for the IPC call and ensures the logged event represents an actual forwarded request. Added a regression test that starts capture, removes the bridge, calls `setBrowserPaneBounds`, and asserts no capture is recorded.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Capture bounds only after setBounds succeeds so the E2E log proves the native path ran
+
+- **Source:** github-codex-connector | PR #472 round 2 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/browserBridge.ts` `setBrowserPaneBounds` L134
+- **Finding:** Because the capture was recorded before `bridge()?.setBounds(request)` was awaited, the WDIO smoke test could observe hidden/restored captures even when the preload/main `setBounds` IPC rejected, was miswired, or became unavailable after capture started. `waitForBoundsCapture` only reads the renderer-side log, so a broken native path could still let the test pass without proving the WebContentsView was actually hidden or restored.
+- **Fix:** Same structural change as #12: await `bri.setBounds(request)` first, then push to `browserPaneBoundsCaptures` only when capture is active. The promise resolving from the bridge is the acknowledgement that the request reached the main process; capture is now a post-success observability record rather than a pre-forward intent log.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

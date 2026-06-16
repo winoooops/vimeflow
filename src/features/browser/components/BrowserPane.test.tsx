@@ -2,10 +2,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Mock } from 'vitest'
+import type { ReactElement } from 'react'
 import type { BrowserPaneCreateResult } from '../types'
 import type { Pane, Session } from '../../sessions/types'
 import { emptyActivity } from '../../sessions/constants'
-import { BrowserPane } from './BrowserPane'
+import { BrowserPane, type BrowserPaneProps } from './BrowserPane'
+import { OverlayStackProvider } from '../../workspace/overlays/OverlayStackProvider'
+import { useOverlayRegistration } from '../../workspace/overlays/useOverlayRegistration'
 
 const bridgeMocks = vi.hoisted(() => ({
   activateBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
@@ -101,6 +104,37 @@ const singleTab: BrowserPaneCreateResult = {
   navState: { canGoBack: false, canGoForward: false, isLoading: false },
 }
 
+const inactive = false
+
+interface OverlayProbeProps {
+  isOpen: boolean
+}
+
+const OverlayProbe = ({ isOpen }: OverlayProbeProps): ReactElement | null => {
+  useOverlayRegistration({
+    id: 'test-overlay',
+    plane: 'palette',
+    isOpen,
+    nativeOcclusion: 'global',
+  })
+
+  return null
+}
+
+interface BrowserPaneHarnessProps extends BrowserPaneProps {
+  overlayOpen?: boolean
+}
+
+const BrowserPaneHarness = ({
+  overlayOpen = false,
+  ...props
+}: BrowserPaneHarnessProps): ReactElement => (
+  <OverlayStackProvider>
+    <OverlayProbe isOpen={overlayOpen} />
+    <BrowserPane {...props} />
+  </OverlayStackProvider>
+)
+
 interface UrlEvent {
   sessionId: string
   paneId: string
@@ -191,7 +225,7 @@ describe('BrowserPane', () => {
   }
 
   test('applies bounds only after the native browser pane is created', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
 
     await waitFor(() => {
       expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
@@ -211,7 +245,12 @@ describe('BrowserPane', () => {
 
   test('marks the native browser pane invisible while occluded, then restores it', async () => {
     const { rerender } = render(
-      <BrowserPane session={session} pane={browserPane} isActive isOccluded />
+      <BrowserPaneHarness
+        session={session}
+        pane={browserPane}
+        isActive
+        overlayOpen
+      />
     )
 
     await waitFor(() => {
@@ -227,7 +266,9 @@ describe('BrowserPane', () => {
       visible: false,
     })
 
-    rerender(<BrowserPane session={session} pane={browserPane} isActive />)
+    rerender(
+      <BrowserPaneHarness session={session} pane={browserPane} isActive />
+    )
 
     await waitFor(() => {
       expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
@@ -240,9 +281,32 @@ describe('BrowserPane', () => {
     })
   })
 
+  test('keeps the native browser pane invisible when the session panel is inactive', async () => {
+    render(
+      <BrowserPaneHarness
+        session={session}
+        pane={browserPane}
+        isActive={inactive}
+      />
+    )
+
+    await waitFor(() => {
+      expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
+    })
+    await settle()
+
+    expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+      sessionId: 'session-1',
+      paneId: 'p1',
+      bounds: { x: 10, y: 20, width: 640, height: 360 },
+      shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+      visible: false,
+    })
+  })
+
   test('the focus border uses the cyan WEB accent only when the pane is active', () => {
     const { rerender } = render(
-      <BrowserPane session={session} pane={browserPane} isActive />
+      <BrowserPaneHarness session={session} pane={browserPane} isActive />
     )
     // accent is now a CSS var reference; jsdom preserves var() in style strings.
     expect(screen.getByTestId('browser-pane').style.border).toContain(
@@ -250,7 +314,7 @@ describe('BrowserPane', () => {
     )
 
     rerender(
-      <BrowserPane
+      <BrowserPaneHarness
         session={session}
         pane={{ ...browserPane, active: false }}
         isActive
@@ -264,7 +328,7 @@ describe('BrowserPane', () => {
 
   test('the address bar is a display button until it is edited', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     expect(screen.queryByLabelText('browser address')).toBeNull()
@@ -274,7 +338,7 @@ describe('BrowserPane', () => {
 
   test('submitting the address normalizes and navigates', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const input = await beginEdit(user)
@@ -290,7 +354,7 @@ describe('BrowserPane', () => {
   })
 
   test('a nav-state event lights up back and toggles reload to stop', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     act(() =>
@@ -309,7 +373,7 @@ describe('BrowserPane', () => {
   })
 
   test('a nav-state event for a different pane is ignored', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     act(() =>
@@ -327,7 +391,7 @@ describe('BrowserPane', () => {
   })
 
   test('a tabs-changed event with a favicon updates the tab icon', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     act(() =>
@@ -353,7 +417,7 @@ describe('BrowserPane', () => {
   })
 
   test('the load bar shows when nav-state reports loading', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     act(() =>
@@ -372,7 +436,7 @@ describe('BrowserPane', () => {
 
   test('back and reload dispatch nav-action through the bridge', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     act(() =>
@@ -403,7 +467,7 @@ describe('BrowserPane', () => {
   })
 
   test('the create-result navState seeds the toolbar', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
 
     act(() =>
       resolveCreate({
@@ -420,7 +484,7 @@ describe('BrowserPane', () => {
   })
 
   test('a live nav-state event before create resolves is not clobbered by the seed', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
 
     // Live event arrives before createBrowserPane resolves.
     act(() =>
@@ -443,7 +507,7 @@ describe('BrowserPane', () => {
 
   test('the draft survives native url events while editing', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const input = await beginEdit(user)
@@ -475,7 +539,7 @@ describe('BrowserPane', () => {
 
   test('blur cancels editing and reverts the display to the committed URL', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const input = await beginEdit(user)
@@ -510,7 +574,7 @@ describe('BrowserPane', () => {
 
   test('the display follows redirects after a submit (not editing)', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const input = await beginEdit(user)
@@ -542,7 +606,7 @@ describe('BrowserPane', () => {
   })
 
   test('Cmd/Ctrl+L from the chrome enters address edit', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await waitFor(() => {
       expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
     })
@@ -556,7 +620,7 @@ describe('BrowserPane', () => {
   })
 
   test('a focus-address event enters edit only for the matching pane', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await waitFor(() => {
       expect(bridgeMocks.onBrowserPaneFocusAddress).toHaveBeenCalled()
     })
@@ -576,7 +640,7 @@ describe('BrowserPane', () => {
 
   test('open-external calls the bridge with the derived pane ref', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     await user.click(
@@ -593,7 +657,7 @@ describe('BrowserPane', () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
     render(
-      <BrowserPane
+      <BrowserPaneHarness
         session={session}
         pane={browserPane}
         isActive
@@ -608,7 +672,7 @@ describe('BrowserPane', () => {
 
   test('tab activate / new / close call the bridge with the derived pane ref', async () => {
     const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
 
     act(() =>
       resolveCreate({
@@ -662,7 +726,7 @@ describe('BrowserPane', () => {
   })
 
   test('a tabs-changed event updates the tab strip', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const callback = bridgeMocks.onBrowserPaneTabsChange.mock
@@ -694,7 +758,7 @@ describe('BrowserPane', () => {
   })
 
   test('an empty tabs-changed event during teardown does not crash', async () => {
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
     await settle()
 
     const callback = bridgeMocks.onBrowserPaneTabsChange.mock

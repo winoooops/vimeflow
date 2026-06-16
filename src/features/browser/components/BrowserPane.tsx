@@ -38,6 +38,7 @@ import type {
 import { DEFAULT_BROWSER_URL } from '../types'
 import { BrowserTabBar } from './BrowserTabBar'
 import { BrowserToolbar } from './BrowserToolbar'
+import { useNativeSurface } from '../../workspace/overlays/useNativeSurface'
 
 const LOCAL_DEV_HOST_PATTERN =
   /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?::\d+)?(?:[/?#]|$)/i
@@ -46,7 +47,6 @@ export interface BrowserPaneProps {
   session: Session
   pane: Pane
   isActive: boolean
-  isOccluded?: boolean
   onClose?: (sessionId: string, paneId: string) => void
   onRequestActive?: (sessionId: string, paneId: string) => void
   onRequestFocus?: () => void
@@ -77,7 +77,6 @@ export const BrowserPane = ({
   session,
   pane,
   isActive,
-  isOccluded = false,
   onClose = undefined,
   onRequestActive = undefined,
   onRequestFocus = undefined,
@@ -88,10 +87,8 @@ export const BrowserPane = ({
   const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
   const initialUrlRef = useRef(url)
   const isActiveRef = useRef(isActive)
-  const isOccludedRef = useRef(isOccluded)
   const nativePaneReadyRef = useRef(false)
   const wasPaneActiveRef = useRef<boolean | undefined>(undefined)
-  const wasOccludedRef = useRef(isOccluded)
   const suppressNextNativeFocusRef = useRef(false)
   const lastBoundsKeyRef = useRef<string | null>(null)
   const onUrlChangeRef = useRef(onUrlChange)
@@ -119,6 +116,16 @@ export const BrowserPane = ({
     { id: 'tab-0', url, title: null, active: true, favicon: null },
   ])
   const browserSessionId = browserSessionIdForSession(session)
+
+  const nativeSurface = useNativeSurface({
+    id: `browser-pane:${browserSessionId}:${pane.id}`,
+    owner: 'browser-pane',
+    belowPlane: 'pane-chrome',
+    getRect: () => contentRef.current?.getBoundingClientRect() ?? null,
+  })
+  const isOccluded = nativeSurface.occluded
+  const isOccludedRef = useRef(isOccluded)
+  const wasOccludedRef = useRef(isOccluded)
 
   const paneIds = useMemo(
     () => session.panes.map((sessionPane) => sessionPane.id),

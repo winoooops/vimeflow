@@ -439,6 +439,24 @@ describe('reconstructWorkspace', () => {
     expect(sessions[0].agentType).toBe('codex')
   })
 
+  // A persisted `agentType: 'kimi'` must survive restore (not coerce to
+  // 'generic'), so the kimi accent/glyph holds across an app restart.
+  test('preserves a persisted kimi agentType through restore', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-kimi',
+        panes: [
+          shellShape({ ptyId: 'pty-kimi', agentType: 'kimi', active: true }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions[0].panes[0].agentType).toBe('kimi')
+    expect(sessions[0].agentType).toBe('kimi')
+  })
+
   // Browser-only session: no PTY exists; the store is the sole source.
   test('builds a browser-only session from a browser pane shape', () => {
     const store = storeOf([

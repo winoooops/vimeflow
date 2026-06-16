@@ -121,8 +121,13 @@ describe('AgentStatusPanel', () => {
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
     )
 
-    expect(screen.getByText(/CURRENT CONTEXT/)).toBeInTheDocument()
-    expect(screen.getByTestId('context-percentage')).toHaveTextContent('\u2014')
+    expect(
+      screen.getByRole('meter', { name: /context window usage/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('meter', { name: /context window usage/i })
+    ).toHaveAttribute('aria-valuetext', 'Context usage unknown')
     expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
     expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
   })
@@ -326,7 +331,7 @@ describe('AgentStatusPanel', () => {
     expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
   })
 
-  test('mounts TokenCache between ContextBucket and the scrollable region', () => {
+  test('mounts TokenCache between ContextReservoirCard and the scrollable region', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -351,7 +356,10 @@ describe('AgentStatusPanel', () => {
 
     const panel = screen.getByTestId('agent-status-panel')
     const tokenCache = screen.getByTestId('token-cache')
-    const context = screen.getByText(/CURRENT CONTEXT/)
+
+    const context = screen.getByRole('meter', {
+      name: /context window usage/i,
+    })
 
     /* eslint-disable testing-library/no-node-access */
     const scrollable = panel.querySelector('.overflow-y-auto')

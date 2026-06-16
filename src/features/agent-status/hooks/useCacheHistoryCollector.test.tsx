@@ -16,10 +16,12 @@ describe('useCacheHistoryCollector', () => {
 
     const props = {
       ptyId: 'p',
+      runId: 'run-1',
       sessionId: 's',
       paneId: 'p0',
       usage: usage(7500, 1800, 700),
       onReading,
+      onReset: vi.fn(),
     }
 
     const { rerender } = renderHook((p) => useCacheHistoryCollector(p), {
@@ -35,10 +37,12 @@ describe('useCacheHistoryCollector', () => {
     renderHook(() =>
       useCacheHistoryCollector({
         ptyId: 'p',
+        runId: 'run-1',
         sessionId: 's',
         paneId: 'p0',
         usage: null,
         onReading,
+        onReset: vi.fn(),
       })
     )
     expect(onReading).not.toHaveBeenCalled()
@@ -48,10 +52,12 @@ describe('useCacheHistoryCollector', () => {
     const onReading = vi.fn()
 
     const base = {
+      runId: 'run-1',
       sessionId: 's',
       paneId: 'p0',
       usage: usage(7500, 1800, 700),
       onReading,
+      onReset: vi.fn(),
     }
 
     const { rerender } = renderHook((p) => useCacheHistoryCollector(p), {
@@ -59,5 +65,37 @@ describe('useCacheHistoryCollector', () => {
     })
     rerender({ ...base, ptyId: 'q' })
     expect(onReading).toHaveBeenCalledTimes(2)
+  })
+
+  test('resets without appending a stale duplicate when runId changes on the same ptyId', () => {
+    const onReading = vi.fn()
+    const onReset = vi.fn()
+
+    const base = {
+      ptyId: 'p',
+      sessionId: 's',
+      paneId: 'p0',
+      usage: usage(7500, 1800, 700),
+      onReading,
+      onReset,
+    }
+
+    const { rerender } = renderHook((p) => useCacheHistoryCollector(p), {
+      initialProps: { ...base, runId: 'run-1' },
+    })
+
+    rerender({ ...base, runId: 'run-2' })
+
+    expect(onReset).toHaveBeenCalledWith('s', 'p0')
+    expect(onReading).toHaveBeenCalledTimes(1)
+
+    rerender({
+      ...base,
+      runId: 'run-2',
+      usage: usage(4000, 1000, 5000),
+    })
+
+    expect(onReading).toHaveBeenCalledTimes(2)
+    expect(onReading).toHaveBeenLastCalledWith('s', 'p0', 40)
   })
 })

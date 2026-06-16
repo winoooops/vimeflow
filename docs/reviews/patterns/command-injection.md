@@ -98,3 +98,12 @@ Beyond the general "no template-string shell commands" rule:
 - **Finding:** Round-1's regex tightening (#6) used `/^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/` — slash valid in BOTH the first-character class and the trailing class. Slash is a valid internal ref separator (`feature/cleanup`, `refs/heads/main`) but `git check-ref-format` rejects it as the leading character. So a value like `/foo/bar` passed our allowlist, reached `git diff /foo/bar -- file`, and bubbled up as a 500 from the outer error handler instead of falling through to the working-tree path. No file-read vector (git treats it as a tree-ish, not a filesystem path), but the error semantics are wrong: the user sees "internal server error" when the actual outcome should be "ignored, falling back to working-tree". Same finding-class as #4 (validation considered the obvious vectors but missed a related one).
 - **Fix:** Narrowed the first-character class to `[a-zA-Z0-9_]` (no `/`). Slash remains in the trailing class so internal-separator paths still pass. Test added asserting `/foo/bar` falls through to the working-tree path. The lesson: when an allowlist regex has a "first character" vs "rest" split, the first class is almost always strictly narrower — the underlying spec usually has a "must start with" rule that's stricter than its "may contain" rule.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 6. Avoid executing KIMI_CODE_HOME/bin/kimi for version discovery
+
+- **Source:** github-codex-connector | PR #477 round 1 | 2026-06-16
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/usage_fetch.rs`
+- **Finding:** version_from_kimi_binary spawned <effective_home>/bin/kimi --version when metadata was missing; effective_home is derived from the attached process's KIMI_CODE_HOME, which can point to a writable directory containing an arbitrary executable, causing Vimeflow to run attacker-controlled code during a usage fetch.
+- **Fix:** Removed the binary-execution fallback; version discovery is now metadata-only and falls back to FALLBACK_VERSION instead of executing a file from a user-controlled path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

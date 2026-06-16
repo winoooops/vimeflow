@@ -3,7 +3,7 @@ id: filesystem-scope
 category: security
 created: 2026-04-09
 last_updated: 2026-06-13
-ref_count: 4
+ref_count: 5
 ---
 
 # Filesystem Scope
@@ -219,3 +219,12 @@ preserve their original Tauri-era paths.
 - **Finding:** `rename_path` shared the `resolve_existing_path` enforcement path with `delete_path` but had no tests proving it rejected paths outside home or symlink leaves; SECURITY.md coverage table mapped symlink-leaf refusal only to delete.
 - **Fix:** Added `rename_path_rejects_path_outside_home` and `rename_path_refuses_symlink_leaf` tests and updated the SECURITY.md coverage map.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 23. Kimi index `session_dir` selected without path-under-home guard on macOS
+
+- **Source:** github-claude | PR #447 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `try_resolve_from_index` validated `session_dir` only when reading `created_at` metadata, then allowed the macOS fallback (`process_start = None`) to select the longest matching `workDir` regardless of whether its `sessionDir` was missing, outside the Kimi home, or traversing `..`. The winning untrusted path reached `status_path` construction, failed downstream trust checks, and left the agent-status panel blank.
+- **Fix:** Filter index candidates before they enter the match vector: require `session_dir` to be present and canonically resolve under `home` via `path_under`. Carry the validated `session_dir` forward so `status_path` is built from the trusted value and malformed rows can no longer shadow valid sessions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

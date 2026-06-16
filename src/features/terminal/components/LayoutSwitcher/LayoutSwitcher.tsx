@@ -29,7 +29,7 @@ export const LayoutSwitcher = ({
     data-testid="layout-switcher"
     role="group"
     aria-label="Pane layout"
-    className="inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
+    className="vf-app-no-drag inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
   >
     <SegmentedControl
       aria-label="Pane layout"
