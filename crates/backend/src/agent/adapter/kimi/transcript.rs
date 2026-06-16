@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
 use super::KimiLocator;
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
-use crate::agent::adapter::types::{stamp_snapshot, ValidateTranscriptError};
+use crate::agent::adapter::types::{stamp_snapshot, StatusSnapshot, ValidateTranscriptError};
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle,
 };
@@ -184,32 +184,82 @@ fn session_id_from_dir(session_dir: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Maximum mtime of `state.json` and every known agent wire in `session_dir`.
+/// Cheap metadata walk used to skip the full transcript reparse on idle polls
+/// when none of the source files have changed.
+fn session_source_mtime(session_dir: &Path) -> Option<SystemTime> {
+    let state_path = session_dir.join("state.json");
+    let mut max_mtime = std::fs::metadata(&state_path)
+        .and_then(|m| m.modified())
+        .ok()?;
+    let wires = super::parser::read_agent_wires(session_dir)?;
+    for wire in &wires {
+        if let Ok(m) = std::fs::metadata(&wire.wire) {
+            if let Ok(mtime) = m.modified() {
+                if mtime > max_mtime {
+                    max_mtime = mtime;
+                }
+            }
+        }
+    }
+    Some(max_mtime)
+}
+
 /// Re-aggregate the session status and emit `agent-status` when it changed.
 /// The shared watcher only re-decodes on MAIN-wire writes, so during
 /// delegated work (sub-agent-only token writes) the supervisor is what keeps
 /// the context/token metrics live. Deduped on a cheap token + rate-limit
 /// signature.
+///
+/// `last_snapshot` / `last_mtime` cache the previous parse so idle polls do
+/// not re-read and re-parse the full `wire.jsonl` files when nothing has
+/// changed; the cheaper rate-limit merge still runs every poll so a pending
+/// plan-usage fetch still lands as soon as it arrives.
 fn emit_session_status(
     events: &dyn EventSink,
     session_id: &str,
     session_dir: &Path,
     locator: &KimiLocator,
     last: &mut Option<StatusSignature>,
+    last_snapshot: &mut Option<StatusSnapshot>,
+    last_turn_count: &mut Option<u64>,
+    last_mtime: &mut Option<SystemTime>,
 ) {
-    let Some(mut snapshot) = super::parser::parse_session_aggregate(session_dir) else {
-        return;
+    let current_mtime = session_source_mtime(session_dir);
+    let sources_changed = match (&current_mtime, &*last_mtime) {
+        (Some(cur), Some(last)) => cur != last,
+        _ => true,
     };
-    // Drive the turn-debounced usage fetch from this poll, so an idle session —
-    // or consent just enabled on an idle pane — still fetches without a fresh
-    // prompt. Count SETTLED turns (consumption recorded) so the fetch reflects
-    // the turn that just finished, not the one just started; gate the (full
-    // main-wire parse) count behind consent so the default opt-out path pays
-    // nothing; while OFF, only re-arm the catch-up.
+
+    let (mut snapshot, settled_turn_count) = if sources_changed || last_snapshot.is_none() {
+        let Some(snapshot) = super::parser::parse_session_aggregate(session_dir) else {
+            return;
+        };
+        // Count SETTLED turns only when the source files actually changed — the
+        // count is expensive (full main-wire parse) and unchanged files guarantee
+        // an unchanged count. Cache it alongside the snapshot for idle polls.
+        let settled_turn_count = if locator.usage_consented() {
+            super::parser::main_settled_turn_count(session_dir)
+        } else {
+            0
+        };
+        *last_snapshot = Some(snapshot.clone());
+        *last_turn_count = Some(settled_turn_count);
+        *last_mtime = current_mtime;
+        (snapshot, settled_turn_count)
+    } else {
+        (
+            last_snapshot.clone().unwrap(),
+            last_turn_count.unwrap_or(0),
+        )
+    };
+
+    // Drive the turn-debounced usage fetch every poll so an idle session — or
+    // consent just enabled on an idle pane — still fetches without a fresh
+    // prompt. Gate the (full main-wire parse) count behind consent so the default
+    // opt-out path pays nothing; while OFF, only re-arm the catch-up.
     if locator.usage_consented() {
-        locator.maybe_refresh_usage(
-            super::parser::main_settled_turn_count(session_dir),
-            &snapshot.version,
-        );
+        locator.maybe_refresh_usage(settled_turn_count, &snapshot.version);
     } else {
         locator.disarm_usage();
     }
@@ -302,6 +352,9 @@ fn run_session_supervisor(
     let mut children: ChildTailers = HashMap::new();
     let mut agent_session_id = session_id_from_dir(&session_dir);
     let mut last_status: Option<StatusSignature> = None;
+    let mut last_status_snapshot: Option<StatusSnapshot> = None;
+    let mut last_status_turn_count: Option<u64> = None;
+    let mut last_status_mtime: Option<SystemTime> = None;
     // Track the refresh generation so a UI-requested refresh forces one fetch
     // (the start value is already covered by the attach catch-up).
     let mut acted_refresh_gen = crate::agent::kimi_usage_consent::refresh_gen();
@@ -324,6 +377,9 @@ fn run_session_supervisor(
                     main_wire = next_main_wire;
                     agent_session_id = session_id_from_dir(&session_dir);
                     last_status = None;
+                    last_status_snapshot = None;
+                    last_status_turn_count = None;
+                    last_status_mtime = None;
                     locator.disarm_usage();
                 }
             }
@@ -385,6 +441,9 @@ fn run_session_supervisor(
             &session_dir,
             locator.as_ref(),
             &mut last_status,
+            &mut last_status_snapshot,
+            &mut last_status_turn_count,
+            &mut last_status_mtime,
         );
 
         // Poll for newly-spawned sub-agents; check stop on a short tick so
@@ -1087,7 +1146,16 @@ mod tests {
         // Consent ON: the fetched limits are merged into the emitted status.
         crate::agent::kimi_usage_consent::set_for_test(true);
         let sink = Arc::new(FakeEventSink::new());
-        emit_session_status(sink.as_ref(), "sid", &session, locator.as_ref(), &mut None);
+        emit_session_status(
+            sink.as_ref(),
+            "sid",
+            &session,
+            locator.as_ref(),
+            &mut None,
+            &mut None,
+            &mut None,
+            &mut None,
+        );
         let status = sink
             .recorded()
             .into_iter()
@@ -1105,6 +1173,9 @@ mod tests {
             "sid",
             &session,
             locator.as_ref(),
+            &mut None,
+            &mut None,
+            &mut None,
             &mut None,
         );
         let status_off = sink_off
@@ -1160,12 +1231,18 @@ mod tests {
         // Consent OFF: no merge → usage_fetched=false; records the signature.
         crate::agent::kimi_usage_consent::set_for_test(false);
         let sink_off = Arc::new(FakeEventSink::new());
+        let mut last_snapshot = None;
+        let mut last_turn_count = None;
+        let mut last_mtime = None;
         emit_session_status(
             sink_off.as_ref(),
             "sid",
             &session,
             locator.as_ref(),
             &mut last,
+            &mut last_snapshot,
+            &mut last_turn_count,
+            &mut last_mtime,
         );
 
         // Consent ON: same zero values, but usage_fetched flips true — the
@@ -1178,6 +1255,9 @@ mod tests {
             &session,
             locator.as_ref(),
             &mut last,
+            &mut last_snapshot,
+            &mut last_turn_count,
+            &mut last_mtime,
         );
         let status = sink_on
             .recorded()
