@@ -273,6 +273,7 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
                     );
                 }
             }
+            emit_replay_in_flight_tool_calls(&self.session_id, &self.events, &self.in_flight);
         }
         self.emitter.finish_replay();
     }
@@ -375,7 +376,16 @@ fn process_line(
 
     match record_type {
         CodexRecordType::ResponseItem => {
-            process_response_item(&dto, &payload, session_id, cwd, events, emitter, in_flight);
+            process_response_item(
+                &dto,
+                &payload,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                replay_done,
+            );
         }
         CodexRecordType::EventMsg => {
             process_event_msg(
@@ -394,15 +404,31 @@ fn process_response_item(
     events: &Arc<dyn EventSink>,
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
+    replay_done: bool,
 ) {
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
     match payload.payload_type() {
         CodexPayloadType::FunctionCall => {
-            start_function_call(payload, session_id, cwd, events, in_flight, &timestamp);
+            start_function_call(
+                payload,
+                session_id,
+                cwd,
+                events,
+                in_flight,
+                &timestamp,
+                replay_done,
+            );
         }
         CodexPayloadType::CustomToolCall => {
-            start_custom_tool_call(payload, session_id, events, in_flight, &timestamp);
+            start_custom_tool_call(
+                payload,
+                session_id,
+                events,
+                in_flight,
+                &timestamp,
+                replay_done,
+            );
         }
         CodexPayloadType::FunctionCallOutput => {
             process_output_completion(
@@ -486,6 +512,7 @@ fn start_function_call(
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -515,19 +542,21 @@ fn start_function_call(
         },
     );
 
-    emit_tool_call(
-        events,
-        AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: call_id.to_string(),
-            tool,
-            args,
-            status: ToolCallStatus::Running,
-            timestamp: timestamp.to_string(),
-            duration_ms: 0,
-            is_test_file: false,
-        },
-    );
+    if replay_done {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.to_string(),
+                tool,
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.to_string(),
+                duration_ms: 0,
+                is_test_file: false,
+            },
+        );
+    }
 }
 
 fn start_custom_tool_call(
@@ -536,6 +565,7 @@ fn start_custom_tool_call(
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -561,19 +591,21 @@ fn start_custom_tool_call(
         },
     );
 
-    emit_tool_call(
-        events,
-        AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: call_id.to_string(),
-            tool,
-            args,
-            status: ToolCallStatus::Running,
-            timestamp: timestamp.to_string(),
-            duration_ms: 0,
-            is_test_file,
-        },
-    );
+    if replay_done {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.to_string(),
+                tool,
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.to_string(),
+                duration_ms: 0,
+                is_test_file,
+            },
+        );
+    }
 }
 
 fn process_output_completion(
@@ -833,6 +865,28 @@ fn flush_in_flight_tool_calls(
     }
 }
 
+fn emit_replay_in_flight_tool_calls(
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    in_flight: &InFlightToolCalls,
+) {
+    for (call_id, call) in in_flight {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.clone(),
+                tool: call.tool.clone(),
+                args: call.args.clone(),
+                status: ToolCallStatus::Running,
+                timestamp: call.started_at_iso.clone(),
+                duration_ms: 0,
+                is_test_file: call.is_test_file,
+            },
+        );
+    }
+}
+
 fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
     if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
@@ -982,6 +1036,14 @@ mod tests {
             .collect()
     }
 
+    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
     #[test]
     fn codex_replay_flushes_only_the_settled_phase_once() {
         let sink = Arc::new(FakeEventSink::new());
@@ -1015,6 +1077,45 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
+
+    #[test]
+    fn codex_replay_does_not_emit_running_for_settled_tool_calls() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"call_exec"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_exec","output":"Process exited with code 0"}}"#,
+        );
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "call_exec");
+        assert_eq!(payloads[0]["status"], "done");
+    }
+
+    #[test]
+    fn codex_replay_emits_running_for_unsettled_tool_call_at_catch_up() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"call_exec"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "call_exec");
+        assert_eq!(payloads[0]["status"], "running");
     }
 
     fn write_rollout(path: &Path, lines: &[Value]) {
@@ -1175,8 +1276,8 @@ mod tests {
         // each event type the assertions below count so the tail has
         // demonstrably emitted all of them before we stop and snapshot.
         assert!(
-            sink.wait_for_count("agent-tool-call", 4, Duration::from_secs(5)),
-            "expected 4 agent-tool-call events within 5s",
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "expected 2 replay-settled agent-tool-call events within 5s",
         );
         assert!(
             sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
@@ -1194,17 +1295,13 @@ mod tests {
             .filter(|(event, _)| event == "agent-tool-call")
             .map(|(_, payload)| payload.clone())
             .collect();
-        assert_eq!(tool_call_payloads.len(), 4);
+        assert_eq!(tool_call_payloads.len(), 2);
         assert_eq!(tool_call_payloads[0]["toolUseId"], "call_exec");
-        assert_eq!(tool_call_payloads[0]["status"], "running");
-        assert_eq!(tool_call_payloads[1]["toolUseId"], "call_exec");
+        assert_eq!(tool_call_payloads[0]["status"], "done");
+        assert_eq!(tool_call_payloads[0]["durationMs"], 1250);
+        assert_eq!(tool_call_payloads[1]["toolUseId"], "call_patch");
         assert_eq!(tool_call_payloads[1]["status"], "done");
-        assert_eq!(tool_call_payloads[1]["durationMs"], 1250);
-        assert_eq!(tool_call_payloads[2]["toolUseId"], "call_patch");
-        assert_eq!(tool_call_payloads[2]["status"], "running");
-        assert_eq!(tool_call_payloads[3]["toolUseId"], "call_patch");
-        assert_eq!(tool_call_payloads[3]["status"], "done");
-        assert_eq!(tool_call_payloads[3]["isTestFile"], true);
+        assert_eq!(tool_call_payloads[1]["isTestFile"], true);
 
         let turn_payloads: Vec<Value> = recorded
             .iter()
