@@ -123,12 +123,6 @@ export const flexoki: ThemeDefinition = {
       accentSoft: 'rgb(102 128 11 / 0.28)',
       onAccent: '#fffcf0',
     },
-    gemini: {
-      accent: '#205ea6',
-      accentDim: 'rgb(32 94 166 / 0.14)',
-      accentSoft: 'rgb(32 94 166 / 0.28)',
-      onAccent: '#fffcf0',
-    },
     shell: {
       accent: '#ad8301',
       accentDim: 'rgb(173 131 1 / 0.14)',

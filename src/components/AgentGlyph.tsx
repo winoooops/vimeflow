@@ -17,5 +17,5 @@ export const AgentGlyph = ({
     return <Icon size={size} aria-hidden />
   }
 
-  return <>{agent.glyph}</>
+  return <span aria-hidden>{agent.glyph}</span>
 }

@@ -7,15 +7,9 @@ import {
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = [
-  'claude',
-  'codex',
-  'gemini',
-  'kimi',
-  'shell',
-]
+const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'kimi', 'shell']
 
-test('AGENTS keys are claude, codex, gemini, shell', () => {
+test('AGENTS keys are claude, codex, kimi, shell', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
 })
 
@@ -47,13 +41,6 @@ test('codex is mint', () => {
   expect(AGENTS.codex.short).toBe('CODEX')
   expect(AGENTS.codex.glyph).toBe('◇')
   expect(AGENTS.codex.model).toBe('gpt-5-codex')
-})
-
-test('gemini is azure', () => {
-  expect(AGENTS.gemini.accent).toBe('var(--color-agent-gemini-accent)')
-  expect(AGENTS.gemini.short).toBe('GEMINI')
-  expect(AGENTS.gemini.glyph).toBe('✦')
-  expect(AGENTS.gemini.model).toBe('gemini-2.5')
 })
 
 test('shell is yellow with null model and title-cased name', () => {
@@ -112,6 +99,5 @@ test('supported agents carry a brand Icon; others fall back to their glyph', () 
   expect(AGENTS.claude.Icon).toBeDefined()
   expect(AGENTS.codex.Icon).toBeDefined()
   expect(AGENTS.kimi.Icon).toBeDefined()
-  expect(AGENTS.gemini.Icon).toBeUndefined()
   expect(AGENTS.shell.Icon).toBeUndefined()
 })

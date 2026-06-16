@@ -43,18 +43,6 @@ export const AGENTS = {
     accentSoft: 'var(--color-agent-codex-accent-soft)',
     onAccent: 'var(--color-agent-codex-on-accent)',
   },
-  gemini: {
-    id: 'gemini',
-    name: 'Gemini CLI',
-    short: 'GEMINI',
-    glyph: '✦',
-    Icon: undefined,
-    model: 'gemini-2.5',
-    accent: 'var(--color-agent-gemini-accent)',
-    accentDim: 'var(--color-agent-gemini-accent-dim)',
-    accentSoft: 'var(--color-agent-gemini-accent-soft)',
-    onAccent: 'var(--color-agent-gemini-on-accent)',
-  },
   kimi: {
     id: 'kimi',
     name: 'Kimi',
