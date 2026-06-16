@@ -12,6 +12,7 @@ use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Instant;
 
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
@@ -44,6 +45,7 @@ struct InFlightToolCall {
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
+type ChildTailers = HashMap<PathBuf, (Arc<AtomicBool>, JoinHandle<()>)>;
 
 /// Dedupe key for supervisor `agent-status` refreshes: the token metrics that
 /// move the context display, plus the effective rate-limit values so a
@@ -135,16 +137,7 @@ pub(super) fn start_tailing(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
-    // `transcript_path` is `<session>/agents/main/wire.jsonl`; three up is the
-    // session dir, which lets the supervisor follow EVERY `agents/*/wire.jsonl`
-    // so a sub-agent's tool calls / turns surface alongside main's.
-    let session_dir = transcript_path
-        .parent()
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .map(Path::to_path_buf);
-
-    let Some(session_dir) = session_dir else {
+    let Some(session_dir) = session_dir_from_wire(&transcript_path) else {
         // No resolvable session dir — tail the single wire (legacy path).
         let file = open_wire(&transcript_path)?;
         let decoder = KimiTranscriptDecoder::new(events, session_id, String::new(), String::new());
@@ -170,6 +163,15 @@ pub(super) fn start_tailing(
         );
     });
     Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+/// `wire.jsonl` path is `<session>/agents/<agent-id>/wire.jsonl`; three up is
+/// the session dir, which lets the supervisor follow every sibling agent wire.
+fn session_dir_from_wire(wire: &Path) -> Option<PathBuf> {
+    wire.parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
 }
 
 /// kimi's `session_*` id from a session dir (its final path component); empty
@@ -292,19 +294,41 @@ fn run_session_supervisor(
     // wire must be canonicalized too or symlinked session/home layouts can
     // cause the same physical file to appear as two PathBuf values and get
     // tailed twice (duplicate events + inflated turn counts).
-    let main_wire = fs::canonicalize(&main_wire).unwrap_or(main_wire);
+    let mut main_wire = fs::canonicalize(&main_wire).unwrap_or(main_wire);
+    let mut session_dir = session_dir_from_wire(&main_wire).unwrap_or(session_dir);
 
     // Keyed by wire path so the always-tailed main wire is never double-spawned
     // when `state.json` lists it too.
-    let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
-        HashMap::new();
-    let agent_session_id = session_id_from_dir(&session_dir);
+    let mut children: ChildTailers = HashMap::new();
+    let mut agent_session_id = session_id_from_dir(&session_dir);
     let mut last_status: Option<StatusSignature> = None;
     // Track the refresh generation so a UI-requested refresh forces one fetch
     // (the start value is already covered by the attach catch-up).
     let mut acted_refresh_gen = crate::agent::kimi_usage_consent::refresh_gen();
 
     loop {
+        if let Some(located) = locator.refresh_located_source() {
+            let next_main_wire = fs::canonicalize(&located.status_path)
+                .unwrap_or_else(|_| located.status_path.clone());
+            if let Some(next_session_dir) = session_dir_from_wire(&next_main_wire) {
+                let changed = next_main_wire != main_wire || next_session_dir != session_dir;
+                if changed {
+                    super::kdbg(&format!(
+                        "SUPERVISOR switch session old={} new={} main_wire={}",
+                        session_dir.display(),
+                        next_session_dir.display(),
+                        next_main_wire.display()
+                    ));
+                    stop_child_tailers(&mut children);
+                    session_dir = next_session_dir;
+                    main_wire = next_main_wire;
+                    agent_session_id = session_id_from_dir(&session_dir);
+                    last_status = None;
+                    locator.disarm_usage();
+                }
+            }
+        }
+
         // Always tail the main wire; add sub-agent wires as `state.json`
         // reveals them (a `/init`-style delegation spawns `agent-0`
         // mid-session). When there is no `state.json`, only main is tailed.
@@ -375,7 +399,11 @@ fn run_session_supervisor(
         }
     }
 
-    for (_, (child_stop, join)) in children {
+    stop_child_tailers(&mut children);
+}
+
+fn stop_child_tailers(children: &mut ChildTailers) {
+    for (_, (child_stop, join)) in children.drain() {
         child_stop.store(true, Ordering::Relaxed);
         let _ = join.join();
     }
@@ -677,9 +705,10 @@ fn days_to_date(days_since_epoch: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::adapter::traits::StatusSourceLocator as _;
     use crate::runtime::FakeEventSink;
-    use serde_json::Value;
-    use std::time::Duration;
+    use serde_json::{json, Value};
+    use std::time::{Duration, Instant, SystemTime};
 
     fn fixture_path() -> PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -756,6 +785,88 @@ mod tests {
         ))
     }
 
+    fn session_under(kimi_home: &Path, session_id: &str) -> PathBuf {
+        kimi_home
+            .join("sessions")
+            .join("wd_project_deadbeef0000")
+            .join(session_id)
+    }
+
+    fn write_main_session(session: &Path, raw: &str) -> PathBuf {
+        let main_dir = session.join("agents").join("main");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+        let wire = main_dir.join("wire.jsonl");
+        std::fs::write(&wire, raw).expect("main wire");
+        std::fs::write(
+            session.join("state.json"),
+            json!({
+                "agents": {
+                    "main": {
+                        "homedir": main_dir.to_string_lossy(),
+                        "type": "main",
+                    },
+                },
+            })
+            .to_string(),
+        )
+        .expect("state.json");
+        wire
+    }
+
+    fn write_session_index(kimi_home: &Path, entries: &[(&str, &Path, &Path)]) {
+        let raw = entries
+            .iter()
+            .map(|(session_id, session_dir, work_dir)| {
+                json!({
+                    "sessionId": session_id,
+                    "sessionDir": session_dir.to_string_lossy(),
+                    "workDir": work_dir.to_string_lossy(),
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(kimi_home.join("session_index.jsonl"), format!("{raw}\n"))
+            .expect("session index");
+    }
+
+    fn set_mtime(path: &Path, time: SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open for mtime")
+            .set_modified(time)
+            .expect("set mtime");
+    }
+
+    fn set_session_activity(session: &Path, time: SystemTime) {
+        set_mtime(&session.join("state.json"), time);
+        set_mtime(
+            &session.join("agents").join("main").join("wire.jsonl"),
+            time,
+        );
+    }
+
+    fn wait_for_agent_status_session(
+        sink: &FakeEventSink,
+        agent_session_id: &str,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let found = sink.recorded().into_iter().any(|(name, payload)| {
+                name == "agent-status" && payload["agentSessionId"] == agent_session_id
+            });
+            if found {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     #[test]
     fn fixture_replays_one_user_turn_and_paired_tool_call() {
         let sink = Arc::new(FakeEventSink::new());
@@ -764,8 +875,14 @@ mod tests {
         let transcript_path = tmp.path().join("wire.jsonl");
         std::fs::copy(fixture_path(), &transcript_path).expect("copy fixture");
 
-        let handle = start_tailing(sink.clone(), "sid-kimi".to_string(), transcript_path, None, test_locator())
-            .expect("tailing starts");
+        let handle = start_tailing(
+            sink.clone(),
+            "sid-kimi".to_string(),
+            transcript_path,
+            None,
+            test_locator(),
+        )
+        .expect("tailing starts");
 
         assert!(
             sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
@@ -800,11 +917,7 @@ mod tests {
     fn supervisor_surfaces_sub_agent_tool_calls() {
         let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("tempdir");
-        let session = tmp
-            .path()
-            .join("sessions")
-            .join("wd_x")
-            .join("session_y");
+        let session = tmp.path().join("sessions").join("wd_x").join("session_y");
         let main_dir = session.join("agents").join("main");
         let sub_dir = session.join("agents").join("agent-0");
         std::fs::create_dir_all(&main_dir).expect("main dir");
@@ -833,8 +946,14 @@ mod tests {
         .expect("state.json");
 
         let main_wire = main_dir.join("wire.jsonl");
-        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None, test_locator())
-            .expect("tailing starts");
+        let handle = start_tailing(
+            sink.clone(),
+            "sid".to_string(),
+            main_wire,
+            None,
+            test_locator(),
+        )
+        .expect("tailing starts");
 
         assert!(
             sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
@@ -852,6 +971,77 @@ mod tests {
         assert_eq!(calls[0]["toolUseId"], "agent-0:t1");
         assert_eq!(calls[0]["tool"], "Read");
         assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
+        assert_eq!(calls[1]["status"], "done");
+    }
+
+    #[test]
+    fn supervisor_switches_when_kimi_creates_new_main_session_after_attach() {
+        let sink = Arc::new(FakeEventSink::new());
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let old_session = session_under(kimi_home.path(), "session_old");
+        let old_wire = write_main_session(
+            &old_session,
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n",
+        );
+        let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let new_time = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+        set_session_activity(&old_session, old_time);
+        write_session_index(
+            kimi_home.path(),
+            &[("session_old", &old_session, work.path())],
+        );
+
+        let locator = Arc::new(KimiLocator::new(
+            kimi_home.path().to_path_buf(),
+            4242,
+            SystemTime::UNIX_EPOCH,
+            None,
+        ));
+        let located = locator.locate(work.path(), "pty").expect("initial locate");
+        assert_eq!(located.status_path, old_wire);
+
+        let handle = start_tailing(
+            sink.clone(),
+            "sid".to_string(),
+            old_wire,
+            Some(work.path().to_path_buf()),
+            locator,
+        )
+        .expect("tailing starts");
+
+        let new_session = session_under(kimi_home.path(), "session_new");
+        write_main_session(
+            &new_session,
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n\
+             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+             {\"type\":\"context.append_loop_event\",\"time\":1781345364384,\"event\":{\"type\":\"tool.call\",\"toolCallId\":\"new-tool\",\"name\":\"Glob\",\"args\":{\"path\":\"src\"}}}\n\
+             {\"type\":\"context.append_loop_event\",\"time\":1781345364999,\"event\":{\"type\":\"tool.result\",\"toolCallId\":\"new-tool\"}}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":10,\"output\":2,\"inputCacheRead\":20,\"inputCacheCreation\":0}}\n",
+        );
+        set_session_activity(&new_session, new_time);
+        write_session_index(
+            kimi_home.path(),
+            &[
+                ("session_old", &old_session, work.path()),
+                ("session_new", &new_session, work.path()),
+            ],
+        );
+
+        assert!(
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "new session START + DONE must surface after supervisor switch",
+        );
+        assert!(
+            wait_for_agent_status_session(&sink, "session_new", Duration::from_secs(5)),
+            "status must carry the new kimi session id after supervisor switch",
+        );
+        handle.stop();
+
+        let calls = tool_call_events(&sink);
+        assert_eq!(calls[0]["toolUseId"], "new-tool");
+        assert_eq!(calls[0]["tool"], "Glob");
+        assert_eq!(calls[1]["toolUseId"], "new-tool");
         assert_eq!(calls[1]["status"], "done");
     }
 
@@ -910,7 +1100,13 @@ mod tests {
         // Consent OFF: no merge, so the bars fall back to the zeroed default.
         crate::agent::kimi_usage_consent::set_for_test(false);
         let sink_off = Arc::new(FakeEventSink::new());
-        emit_session_status(sink_off.as_ref(), "sid", &session, locator.as_ref(), &mut None);
+        emit_session_status(
+            sink_off.as_ref(),
+            "sid",
+            &session,
+            locator.as_ref(),
+            &mut None,
+        );
         let status_off = sink_off
             .recorded()
             .into_iter()
@@ -964,13 +1160,25 @@ mod tests {
         // Consent OFF: no merge → usage_fetched=false; records the signature.
         crate::agent::kimi_usage_consent::set_for_test(false);
         let sink_off = Arc::new(FakeEventSink::new());
-        emit_session_status(sink_off.as_ref(), "sid", &session, locator.as_ref(), &mut last);
+        emit_session_status(
+            sink_off.as_ref(),
+            "sid",
+            &session,
+            locator.as_ref(),
+            &mut last,
+        );
 
         // Consent ON: same zero values, but usage_fetched flips true — the
         // dedupe must NOT suppress this emit.
         crate::agent::kimi_usage_consent::set_for_test(true);
         let sink_on = Arc::new(FakeEventSink::new());
-        emit_session_status(sink_on.as_ref(), "sid", &session, locator.as_ref(), &mut last);
+        emit_session_status(
+            sink_on.as_ref(),
+            "sid",
+            &session,
+            locator.as_ref(),
+            &mut last,
+        );
         let status = sink_on
             .recorded()
             .into_iter()
@@ -987,11 +1195,7 @@ mod tests {
     fn supervisor_does_not_double_tail_main_wire_through_symlink() {
         let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("tempdir");
-        let session = tmp
-            .path()
-            .join("sessions")
-            .join("wd_x")
-            .join("session_y");
+        let session = tmp.path().join("sessions").join("wd_x").join("session_y");
         let main_dir = session.join("agents").join("main");
         std::fs::create_dir_all(&main_dir).expect("main dir");
 
@@ -1015,8 +1219,14 @@ mod tests {
         .expect("state.json");
 
         let main_wire = link_dir.join("agents").join("main").join("wire.jsonl");
-        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None, test_locator())
-            .expect("tailing starts");
+        let handle = start_tailing(
+            sink.clone(),
+            "sid".to_string(),
+            main_wire,
+            None,
+            test_locator(),
+        )
+        .expect("tailing starts");
 
         assert!(
             sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
@@ -1067,7 +1277,8 @@ mod tests {
     #[test]
     fn tool_call_timestamp_derives_from_wire_time_not_now() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         // Mirrors the fixture's tool.call envelope `time` (epoch-ms).
         decoder.decode_line(
             r#"{"type":"context.append_loop_event","time":1781345364384,"event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
@@ -1083,7 +1294,8 @@ mod tests {
     #[test]
     fn injection_turn_prompt_does_not_count() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         decoder.decode_line(
             r#"{"type":"turn.prompt","input":[{"type":"text","text":"x"}],"origin":{"kind":"injection","variant":"permission_mode"}}"#,
         );
@@ -1093,7 +1305,8 @@ mod tests {
     #[test]
     fn tool_call_dedups_by_id() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         let start = r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"},"display":{"path":"/tmp/a"}}}"#;
         decoder.decode_line(start);
         decoder.decode_line(start);
