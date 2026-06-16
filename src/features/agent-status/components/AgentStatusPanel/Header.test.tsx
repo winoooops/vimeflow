@@ -12,7 +12,11 @@ test('renders agent glyph, short label, and a status dot', () => {
       onCollapse={() => undefined}
     />
   )
-  expect(screen.getByText('∴')).toBeInTheDocument()
+  const glyphChip = screen.getByTestId('agent-glyph-chip')
+  // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+  const brandMark = glyphChip.querySelector('svg')
+
+  expect(brandMark).toBeInTheDocument()
   expect(screen.getByText('CLAUDE')).toBeInTheDocument()
   expect(screen.getByTestId('status-dot')).toBeInTheDocument()
 })

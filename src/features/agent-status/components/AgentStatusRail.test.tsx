@@ -18,7 +18,11 @@ test('renders glyph chip, context meter, cache meter, and running dot when runni
     />
   )
 
-  expect(screen.getByText('∴')).toBeInTheDocument()
+  const glyphChip = screen.getByTestId('agent-glyph-chip')
+  // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+  const brandMark = glyphChip.querySelector('svg')
+
+  expect(brandMark).toBeInTheDocument()
   expect(screen.getByRole('meter', { name: 'CTX' })).toHaveAttribute(
     'aria-valuenow',
     '42'
