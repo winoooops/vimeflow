@@ -6,7 +6,7 @@ vi.mock('./terminalRendererRegistry', () => ({
   createConfiguredTerminalInstance: vi.fn(),
 }))
 
-test('creates the configured terminal renderer instance', () => {
+test('creates the configured terminal renderer instance', async () => {
   const instance = {
     terminal: {},
     parser: {},
@@ -14,7 +14,9 @@ test('creates the configured terminal renderer instance', () => {
     fitController: {},
     attachRenderer: vi.fn(),
   }
-  vi.mocked(createConfiguredTerminalInstance).mockReturnValue(instance as never)
+  vi.mocked(createConfiguredTerminalInstance).mockResolvedValue(
+    instance as never
+  )
 
-  expect(createTerminalInstance()).toBe(instance)
+  await expect(createTerminalInstance()).resolves.toBe(instance)
 })

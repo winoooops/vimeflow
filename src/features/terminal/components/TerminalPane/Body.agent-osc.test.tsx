@@ -271,8 +271,8 @@ describe('Body agent-emitted OSC 7', () => {
     skipOscParsing = false
     pendingWriteCallbacks.length = 0
     createdTerminals.length = 0
-    vi.mocked(createTerminalInstance).mockImplementation(
-      createFakeTerminalInstance
+    vi.mocked(createTerminalInstance).mockImplementation(() =>
+      Promise.resolve(createFakeTerminalInstance())
     )
   })
 

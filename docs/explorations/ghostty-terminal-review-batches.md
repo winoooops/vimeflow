@@ -122,11 +122,47 @@ Spike finding:
   `String::from_utf8_lossy`, so renderer work alone cannot preserve arbitrary
   terminal bytes across chunk boundaries.
 
-Why this comes last:
+Why this is separate:
 
 The earlier batches make the app less xterm-shaped without claiming Ghostty
 support. A Ghostty adapter should start only after the generic contracts, focus
 ownership, E2E reads, and keyboard behavior are reviewed.
+
+## Batch 6: Lazy Experimental Renderer Loading
+
+Branch: `codex/ghostty-lazy-plain-text-renderer`
+
+Scope:
+
+- Keep xterm statically registered as the production default.
+- Move the `plain-text` prototype behind env-gated dynamic loading so the
+  default xterm path does not statically import the spike implementation.
+- Promote configured terminal creation to an async boundary so env-selected
+  experimental adapters can be loaded without top-level await.
+- Add registry tests that prove the default path does not load
+  `plainTextInstance`.
+
+Why this is separate:
+
+This is packaging and experiment-boundary work. It should not be reviewed
+together with adapter behavior, PTY transport, or a real Ghostty prototype.
+
+## Roadmap After Batch 6
+
+1. **Raw PTY byte transport design.** Decide how frontend renderers receive
+   byte-preserving output. The backend currently decodes PTY chunks with
+   `String::from_utf8_lossy`, which is acceptable for xterm's current string
+   path but not enough for a serious `libghostty-vt` parser.
+2. **Parser ownership decision.** Decide whether OSC parsing remains in the
+   frontend renderer adapter or becomes backend/native parser output events.
+   Keep cwd tracking tests as the compatibility contract.
+3. **Ghostty/libghostty-vt feasibility spike.** Add an opt-in prototype that
+   consumes the byte transport and reports parser/viewport state through the
+   existing `TerminalParser` and `TerminalViewportReader` contracts.
+4. **Production-readiness hardening.** Only after the prototype proves the
+   contract, evaluate selection rendering, IME, keyboard modifier fidelity,
+   accessibility, performance under long-running output, packaging size, and
+   platform support.
 
 ## Non-goals For These Batches
 

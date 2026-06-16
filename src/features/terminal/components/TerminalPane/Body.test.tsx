@@ -216,7 +216,7 @@ describe('Body', () => {
     }
 
     // Setup mocks
-    vi.mocked(createTerminalInstance).mockReturnValue(
+    vi.mocked(createTerminalInstance).mockResolvedValue(
       mockTerminalControls.instance
     )
     vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
@@ -687,6 +687,8 @@ describe('Body', () => {
 
   test('clears pending deferred terminal font refresh when switching sessions', async () => {
     let resolveFonts: () => void = (): void => undefined
+    const firstTerminalControls = createMockTerminalControls()
+    const secondTerminalControls = createMockTerminalControls()
 
     const fontsLoaded = new Promise<FontFace[]>((resolve) => {
       resolveFonts = (): void => resolve([])
@@ -699,6 +701,10 @@ describe('Body', () => {
       configurable: true,
       value: { load },
     })
+
+    vi.mocked(createTerminalInstance)
+      .mockResolvedValueOnce(firstTerminalControls.instance)
+      .mockResolvedValueOnce(secondTerminalControls.instance)
 
     const offsetWidthSpy = vi
       .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
@@ -727,8 +733,8 @@ describe('Body', () => {
         await fontsLoaded
       })
 
-      mockFitController.fit.mockClear()
-      mockTerminal.refresh.mockClear()
+      firstTerminalControls.fitController.fit.mockClear()
+      firstTerminalControls.terminal.refresh.mockClear()
 
       rerender(
         <Body
@@ -738,8 +744,10 @@ describe('Body', () => {
         />
       )
 
-      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
-      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+      await waitFor(() => {
+        expect(secondTerminalControls.fitController.fit).toHaveBeenCalled()
+      })
+      expect(firstTerminalControls.terminal.refresh).not.toHaveBeenCalled()
     } finally {
       Object.defineProperty(document, 'fonts', {
         configurable: true,
@@ -1418,8 +1426,8 @@ describe('Body', () => {
       const frameCallbacks: FrameRequestCallback[] = []
 
       vi.mocked(createTerminalInstance)
-        .mockImplementationOnce(() => firstTerminalControls.instance)
-        .mockImplementationOnce(() => secondTerminalControls.instance)
+        .mockResolvedValueOnce(firstTerminalControls.instance)
+        .mockResolvedValueOnce(secondTerminalControls.instance)
 
       const offsetWidthSpy = vi
         .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
@@ -1751,8 +1759,8 @@ describe('Body', () => {
       const secondTerminalControls = createMockTerminalControls()
 
       vi.mocked(createTerminalInstance)
-        .mockImplementationOnce(() => firstTerminalControls.instance)
-        .mockImplementationOnce(() => secondTerminalControls.instance)
+        .mockResolvedValueOnce(firstTerminalControls.instance)
+        .mockResolvedValueOnce(secondTerminalControls.instance)
 
       // Render with session A
       const { rerender } = render(

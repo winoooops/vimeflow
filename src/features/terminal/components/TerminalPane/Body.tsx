@@ -18,6 +18,7 @@ import {
 import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
 import type {
+  TerminalDisposable,
   TerminalFitController,
   TerminalRendererHandle,
   TerminalSurface,
@@ -452,11 +453,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
     // Check if we already have a terminal for this session
     const cached = terminalCache.get(sessionId)
-    let newTerminal: TerminalSurface
-    let fitController: TerminalFitController
+    let newTerminal: TerminalSurface | null = null
+    let fitController: TerminalFitController | null = null
     let rendererHandle: TerminalRendererHandle | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
+    let resizeDisposable: TerminalDisposable | null = null
+    let resizeObserver: ResizeObserver | null = null
+    let removeFocusListeners: (() => void) | null = null
+    let removeVisibilityListeners: (() => void) | null = null
     let disposed = false
 
     const cancelScheduledFit = (): void => {
@@ -553,261 +558,283 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return fitIfNeeded(targetFitController, true)
     }
 
-    let didInitialFit = false
+    const startTerminal = async (): Promise<void> => {
+      let didInitialFit = false
 
-    if (cached) {
-      // Reuse existing terminal from cache
-      newTerminal = cached.terminal
-      fitController = cached.fitController
-      fitControllerRef.current = fitController
+      if (cached) {
+        // Reuse existing terminal from cache
+        newTerminal = cached.terminal
+        fitController = cached.fitController
+        fitControllerRef.current = fitController
 
-      // Re-open terminal in the new container
-      newTerminal.open(node)
+        // Re-open terminal in the new container
+        newTerminal.open(node)
 
-      // Re-fit to new container — guard against hidden (display:none) containers
-      // where offsetWidth is 0. Fitting at zero width tells the renderer cols≈1,
-      // which causes the PTY to re-wrap scrollback into a narrow column.
-      didInitialFit = fitInitialWhenReady(fitController)
-    } else {
-      const created = createTerminalInstance()
-      newTerminal = created.terminal
-      fitController = created.fitController
-      fitControllerRef.current = fitController
+        // Re-fit to new container — guard against hidden (display:none) containers
+        // where offsetWidth is 0. Fitting at zero width tells the renderer cols≈1,
+        // which causes the PTY to re-wrap scrollback into a narrow column.
+        didInitialFit = fitInitialWhenReady(fitController)
+      } else {
+        const created = await createTerminalInstance()
 
-      // Open terminal in container before adapter-specific renderer addons
-      // attach to DOM/canvas elements.
-      newTerminal.open(node)
+        if (disposed) {
+          created.terminal.dispose()
 
-      rendererHandle = created.attachRenderer()
+          return
+        }
 
-      // Fit terminal to container — guard against hidden (display:none) containers
-      didInitialFit = fitInitialWhenReady(fitController)
+        newTerminal = created.terminal
+        fitController = created.fitController
+        fitControllerRef.current = fitController
 
-      // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
-      // output both arrive through the terminal parser, so this stays pane-local.
-      created.parser.registerOscHandler(7, (data) => {
-        const previousCwd = agentCwdRef.current
+        // Open terminal in container before adapter-specific renderer addons
+        // attach to DOM/canvas elements.
+        newTerminal.open(node)
 
-        const path = parseOsc7Cwd(data, {
-          preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
-        })
+        rendererHandle = created.attachRenderer()
 
-        const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
+        // Fit terminal to container — guard against hidden (display:none) containers
+        didInitialFit = fitInitialWhenReady(fitController)
 
-        const shouldIgnore =
-          path !== null &&
-          !shouldSuppressRestoreOsc7 &&
-          shouldIgnoreStaleOsc7Cwd(
-            agentCwdRef.current,
-            path,
-            agentCwdSourceRef.current
-          )
+        // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
+        // output both arrive through the terminal parser, so this stays pane-local.
+        created.parser.registerOscHandler(7, (data) => {
+          const previousCwd = agentCwdRef.current
 
-        logAgentCwdDebug('osc7', {
-          sessionId,
-          raw: data,
-          previousCwd,
-          nextCwd: path,
-          changed: path !== null && path !== previousCwd,
-          ignored: shouldIgnore || shouldSuppressRestoreOsc7,
-        })
+          const path = parseOsc7Cwd(data, {
+            preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
+          })
 
-        if (shouldSuppressRestoreOsc7) {
+          const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
+
+          const shouldIgnore =
+            path !== null &&
+            !shouldSuppressRestoreOsc7 &&
+            shouldIgnoreStaleOsc7Cwd(
+              agentCwdRef.current,
+              path,
+              agentCwdSourceRef.current
+            )
+
+          logAgentCwdDebug('osc7', {
+            sessionId,
+            raw: data,
+            previousCwd,
+            nextCwd: path,
+            changed: path !== null && path !== previousCwd,
+            ignored: shouldIgnore || shouldSuppressRestoreOsc7,
+          })
+
+          if (shouldSuppressRestoreOsc7) {
+            return true
+          }
+
+          if (path && path === agentCwdRef.current) {
+            agentCwdSourceRef.current = 'osc7'
+          } else if (path && !shouldIgnore) {
+            agentCwdOutputBufferRef.current = ''
+            agentCwdHintContextRef.current = ''
+            agentCwdRef.current = path
+            agentCwdSourceRef.current = 'osc7'
+            onCwdChangeRef.current?.(path)
+          }
+
           return true
-        }
+        })
 
-        if (path && path === agentCwdRef.current) {
-          agentCwdSourceRef.current = 'osc7'
-        } else if (path && !shouldIgnore) {
-          agentCwdOutputBufferRef.current = ''
-          agentCwdHintContextRef.current = ''
-          agentCwdRef.current = path
-          agentCwdSourceRef.current = 'osc7'
-          onCwdChangeRef.current?.(path)
-        }
-
-        return true
-      })
-
-      // Cache the terminal instance for this session
-      terminalCache.set(sessionId, {
-        terminal: newTerminal,
-        fitController,
-        viewportReader: created.viewportReader,
-      })
-    }
-
-    const refreshAfterFontFit = (): void => {
-      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
-    }
-
-    const clearPendingDeferredFit = (): void => {
-      pendingDeferredFitFlushRef.current = false
-      pendingDeferredRefreshAfterFitRef.current = false
-    }
-
-    const refitAfterTerminalFontsSettle = (): void => {
-      if (disposed) {
-        return
+        // Cache the terminal instance for this session
+        terminalCache.set(sessionId, {
+          terminal: newTerminal,
+          fitController,
+          viewportReader: created.viewportReader,
+        })
       }
 
-      lastFitSize = null
+      const terminalForSetup = newTerminal
+      const fitControllerForSetup = fitController
 
-      if (deferFitRef.current) {
-        pendingDeferredFitFlushRef.current = true
-        pendingDeferredRefreshAfterFitRef.current = true
-
-        return
+      const refreshAfterFontFit = (): void => {
+        terminalForSetup.refresh(0, Math.max(terminalForSetup.rows - 1, 0))
       }
 
-      pendingDeferredRefreshAfterFitRef.current = true
-      flushFit(fitController, {
-        force: true,
-        afterFit: (): void => {
-          clearPendingDeferredFit()
-          refreshAfterFontFit()
-        },
-      })
-    }
-
-    const refitWhenTerminalFontsSettle = async (): Promise<void> => {
-      const terminalFontsLoaded = loadTerminalFonts()
-
-      if (!terminalFontsLoaded) {
-        return
-      }
-
-      try {
-        await terminalFontsLoaded
-      } catch {
-        // Fall back to the available system stack, then remeasure whatever loaded.
-      }
-
-      refitAfterTerminalFontsSettle()
-    }
-
-    if (!cached) {
-      void refitWhenTerminalFontsSettle()
-    }
-
-    const flushDeferredFit = (): void => {
-      if (pendingDeferredRefreshAfterFitRef.current) {
+      const clearPendingDeferredFit = (): void => {
         pendingDeferredFitFlushRef.current = false
-        flushFit(fitController, {
+        pendingDeferredRefreshAfterFitRef.current = false
+      }
+
+      const refitAfterTerminalFontsSettle = (): void => {
+        if (disposed) {
+          return
+        }
+
+        lastFitSize = null
+
+        if (deferFitRef.current) {
+          pendingDeferredFitFlushRef.current = true
+          pendingDeferredRefreshAfterFitRef.current = true
+
+          return
+        }
+
+        pendingDeferredRefreshAfterFitRef.current = true
+        flushFit(fitControllerForSetup, {
           force: true,
           afterFit: (): void => {
             clearPendingDeferredFit()
             refreshAfterFontFit()
           },
         })
-
-        return
       }
 
-      pendingDeferredFitFlushRef.current = false
-      flushFit(fitController)
-    }
+      const refitWhenTerminalFontsSettle = async (): Promise<void> => {
+        const terminalFontsLoaded = loadTerminalFonts()
 
-    const refreshAfterPendingInitialFit = (): void => {
-      if (!pendingDeferredRefreshAfterFitRef.current) {
+        if (!terminalFontsLoaded) {
+          return
+        }
+
+        try {
+          await terminalFontsLoaded
+        } catch {
+          // Fall back to the available system stack, then remeasure whatever loaded.
+        }
+
+        refitAfterTerminalFontsSettle()
+      }
+
+      if (!cached) {
+        void refitWhenTerminalFontsSettle()
+      }
+
+      const flushDeferredFit = (): void => {
+        if (pendingDeferredRefreshAfterFitRef.current) {
+          pendingDeferredFitFlushRef.current = false
+          flushFit(fitControllerForSetup, {
+            force: true,
+            afterFit: (): void => {
+              clearPendingDeferredFit()
+              refreshAfterFontFit()
+            },
+          })
+
+          return
+        }
+
         pendingDeferredFitFlushRef.current = false
-
-        return
+        flushFit(fitControllerForSetup)
       }
 
-      clearPendingDeferredFit()
-      refreshAfterFontFit()
-    }
+      const refreshAfterPendingInitialFit = (): void => {
+        if (!pendingDeferredRefreshAfterFitRef.current) {
+          pendingDeferredFitFlushRef.current = false
 
-    cancelScheduledFitRef.current = cancelScheduledFit
-    flushFitRef.current = flushDeferredFit
-    flushFitSessionIdRef.current = sessionId
+          return
+        }
 
-    if (
-      (pendingDeferredFitFlushRef.current ||
-        pendingDeferredRefreshAfterFitRef.current) &&
-      !deferFitRef.current
-    ) {
-      if (!didInitialFit) {
-        flushDeferredFit()
-      } else {
-        refreshAfterPendingInitialFit()
+        clearPendingDeferredFit()
+        refreshAfterFontFit()
       }
-    }
 
-    // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
-    // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
-    resizeRef.current(newTerminal.cols, newTerminal.rows)
-
-    // Handle resize events - notify PTY of terminal size changes.
-    // The cols/rows from the terminal's onResize event are already correct because
-    // fitController.fit() (the trigger upstream) has already computed and applied
-    // them. Calling fit() again here would re-measure the container — pure
-    // overhead during rapid sidebar drag / window resize. Just forward to PTY.
-    let lastForwardedResize: { cols: number; rows: number } | null = null
-
-    const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
-      // Guard: don't forward resize when container is hidden (display:none).
-      // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
-      const width = containerRef.current?.offsetWidth ?? 0
-      if (width <= 0) {
-        return
-      }
+      cancelScheduledFitRef.current = cancelScheduledFit
+      flushFitRef.current = flushDeferredFit
+      flushFitSessionIdRef.current = sessionId
 
       if (
-        lastForwardedResize?.cols === cols &&
-        lastForwardedResize.rows === rows
+        (pendingDeferredFitFlushRef.current ||
+          pendingDeferredRefreshAfterFitRef.current) &&
+        !deferFitRef.current
       ) {
-        return
+        if (!didInitialFit) {
+          flushDeferredFit()
+        } else {
+          refreshAfterPendingInitialFit()
+        }
       }
 
-      lastForwardedResize = { cols, rows }
+      // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
+      // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
+      resizeRef.current(terminalForSetup.cols, terminalForSetup.rows)
 
-      // Notify PTY service of size change using ref (stable across renders)
-      resizeRef.current(cols, rows)
-    })
+      // Handle resize events - notify PTY of terminal size changes.
+      // The cols/rows from the terminal's onResize event are already correct because
+      // fitController.fit() (the trigger upstream) has already computed and applied
+      // them. Calling fit() again here would re-measure the container — pure
+      // overhead during rapid sidebar drag / window resize. Just forward to PTY.
+      let lastForwardedResize: { cols: number; rows: number } | null = null
 
-    const handleFocusIn = (): void => {
-      onFocusChangeRef.current?.(true)
-    }
+      resizeDisposable = terminalForSetup.onResize(({ cols, rows }) => {
+        // Guard: don't forward resize when container is hidden (display:none).
+        // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
+        const width = containerRef.current?.offsetWidth ?? 0
+        if (width <= 0) {
+          return
+        }
 
-    const handleFocusOut = (): void => {
-      onFocusChangeRef.current?.(false)
-    }
+        if (
+          lastForwardedResize?.cols === cols &&
+          lastForwardedResize.rows === rows
+        ) {
+          return
+        }
 
-    node.addEventListener('focusin', handleFocusIn)
-    node.addEventListener('focusout', handleFocusOut)
+        lastForwardedResize = { cols, rows }
 
-    // Root cause B (Claude + Codex consensus): the terminal renders on a debounced
-    // animation-frame loop and never forces a repaint when the OS window
-    // regains focus or visibility. The browser throttles that loop while the
-    // window is covered or unfocused, so rows that streamed in while we were
-    // away stay stale until something forces a repaint (the buffer is correct
-    // — a text selection fixes only the pixels). Repaint on focus/visibility
-    // recovery to flush them.
-    const repaintOnWindowVisible = (): void => {
-      if (document.visibilityState !== 'visible') {
-        return
+        // Notify PTY service of size change using ref (stable across renders)
+        resizeRef.current(cols, rows)
+      })
+
+      const handleFocusIn = (): void => {
+        onFocusChangeRef.current?.(true)
       }
 
-      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
+      const handleFocusOut = (): void => {
+        onFocusChangeRef.current?.(false)
+      }
+
+      node.addEventListener('focusin', handleFocusIn)
+      node.addEventListener('focusout', handleFocusOut)
+      removeFocusListeners = (): void => {
+        node.removeEventListener('focusin', handleFocusIn)
+        node.removeEventListener('focusout', handleFocusOut)
+      }
+
+      // Root cause B (Claude + Codex consensus): the terminal renders on a debounced
+      // animation-frame loop and never forces a repaint when the OS window
+      // regains focus or visibility. The browser throttles that loop while the
+      // window is covered or unfocused, so rows that streamed in while we were
+      // away stay stale until something forces a repaint (the buffer is correct
+      // — a text selection fixes only the pixels). Repaint on focus/visibility
+      // recovery to flush them.
+      const repaintOnWindowVisible = (): void => {
+        if (document.visibilityState !== 'visible') {
+          return
+        }
+
+        terminalForSetup.refresh(0, Math.max(terminalForSetup.rows - 1, 0))
+      }
+
+      window.addEventListener('focus', repaintOnWindowVisible)
+      document.addEventListener('visibilitychange', repaintOnWindowVisible)
+      removeVisibilityListeners = (): void => {
+        window.removeEventListener('focus', repaintOnWindowVisible)
+        document.removeEventListener('visibilitychange', repaintOnWindowVisible)
+      }
+
+      // P2 Fix: Add ResizeObserver to detect container size changes
+      // When the container resizes (e.g., window resize, panel collapse),
+      // fit the terminal which will trigger the onResize event above.
+      // Guard: skip fit when container is hidden (display:none → width=0)
+      // to avoid PTY scrollback re-wrapping at a narrow column count.
+      resizeObserver = new ResizeObserver(() => {
+        scheduleFit(fitControllerForSetup)
+      })
+      resizeObserver.observe(node)
+
+      // Store terminal in state to trigger useTerminal hook
+      setTerminal(terminalForSetup)
     }
 
-    window.addEventListener('focus', repaintOnWindowVisible)
-    document.addEventListener('visibilitychange', repaintOnWindowVisible)
-
-    // P2 Fix: Add ResizeObserver to detect container size changes
-    // When the container resizes (e.g., window resize, panel collapse),
-    // fit the terminal which will trigger the onResize event above.
-    // Guard: skip fit when container is hidden (display:none → width=0)
-    // to avoid PTY scrollback re-wrapping at a narrow column count.
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleFit(fitController)
-    })
-    resizeObserver.observe(node)
-
-    // Store terminal in state to trigger useTerminal hook
-    setTerminal(newTerminal)
+    void startTerminal()
 
     // Cleanup: disconnect observers and dispose terminal from cache
     // When Body unmounts, the session is closed — free resources
@@ -821,12 +848,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         flushFitRef.current = null
         flushFitSessionIdRef.current = null
       }
-      resizeObserver.disconnect()
-      resizeDisposable.dispose()
-      node.removeEventListener('focusin', handleFocusIn)
-      node.removeEventListener('focusout', handleFocusOut)
-      window.removeEventListener('focus', repaintOnWindowVisible)
-      document.removeEventListener('visibilitychange', repaintOnWindowVisible)
+      resizeObserver?.disconnect()
+      resizeObserver = null
+      resizeDisposable?.dispose()
+      resizeDisposable = null
+      removeFocusListeners?.()
+      removeFocusListeners = null
+      removeVisibilityListeners?.()
+      removeVisibilityListeners = null
       // Renderer addons must dispose before the terminal itself; the handle
       // owns that adapter-specific ordering.
       rendererHandle?.dispose()
@@ -835,7 +864,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       if (entry) {
         entry.terminal.dispose()
         terminalCache.delete(sessionId)
+      } else {
+        newTerminal?.dispose()
       }
+      newTerminal = null
+      fitController = null
       setTerminal(null)
       fitControllerRef.current = null
     }

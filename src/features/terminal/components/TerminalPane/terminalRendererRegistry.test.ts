@@ -1,15 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
-import {
-  _resetTerminalRendererRegistryForTest,
-  configureTerminalRendererFromEnvironment,
-  createConfiguredTerminalInstance,
-  getTerminalRendererAdapter,
-  registerTerminalRendererAdapter,
-  setTerminalRendererAdapter,
-} from './terminalRendererRegistry'
-import { plainTextTerminalRenderer } from './plainTextInstance'
-import { xtermTerminalRenderer } from './xtermInstance'
+
+type TerminalRendererRegistryModule =
+  typeof import('./terminalRendererRegistry')
 
 const xtermRendererMocks = vi.hoisted(() => ({
   createInstance: vi.fn(),
@@ -17,14 +10,19 @@ const xtermRendererMocks = vi.hoisted(() => ({
 
 const plainTextRendererMocks = vi.hoisted(() => ({
   createInstance: vi.fn(),
+  moduleLoaded: vi.fn(),
 }))
 
-vi.mock('./plainTextInstance', () => ({
-  plainTextTerminalRenderer: {
-    id: 'plain-text',
-    createInstance: plainTextRendererMocks.createInstance,
-  },
-}))
+vi.mock('./plainTextInstance', () => {
+  plainTextRendererMocks.moduleLoaded()
+
+  return {
+    plainTextTerminalRenderer: {
+      id: 'plain-text',
+      createInstance: plainTextRendererMocks.createInstance,
+    },
+  }
+})
 
 vi.mock('./xtermInstance', () => ({
   xtermTerminalRenderer: {
@@ -32,6 +30,10 @@ vi.mock('./xtermInstance', () => ({
     createInstance: xtermRendererMocks.createInstance,
   },
 }))
+
+const importTerminalRendererRegistry =
+  async (): Promise<TerminalRendererRegistryModule> =>
+    import('./terminalRendererRegistry')
 
 const createTerminalInstance = (): TerminalInstance => ({
   terminal: {
@@ -76,142 +78,190 @@ const createTerminalRendererAdapter = (
 
 describe('terminalRendererRegistry', () => {
   afterEach(() => {
-    _resetTerminalRendererRegistryForTest()
     vi.unstubAllEnvs()
+    vi.resetModules()
     vi.clearAllMocks()
   })
 
-  test('uses the xterm renderer adapter by default', () => {
+  test('uses the xterm renderer adapter by default without loading the plain-text module', async () => {
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
+
     xtermRendererMocks.createInstance.mockReturnValue(instance)
 
-    expect(getTerminalRendererAdapter()).toBe(xtermTerminalRenderer)
-    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'xterm' })
+    )
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
     expect(xtermRendererMocks.createInstance).toHaveBeenCalledOnce()
+    expect(plainTextRendererMocks.moduleLoaded).not.toHaveBeenCalled()
   })
 
-  test('creates instances through a registered non-xterm renderer adapter', () => {
+  test('does not expose the bundled plain-text renderer on the default path', async () => {
+    const registry = await importTerminalRendererRegistry()
+
+    expect(() => registry.setTerminalRendererAdapter('plain-text')).toThrow(
+      'Unknown terminal renderer adapter: plain-text'
+    )
+    expect(plainTextRendererMocks.moduleLoaded).not.toHaveBeenCalled()
+  })
+
+  test('creates instances through a registered non-xterm renderer adapter', async () => {
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const customRenderer = createTerminalRendererAdapter('custom', instance)
 
-    registerTerminalRendererAdapter(customRenderer)
-    setTerminalRendererAdapter('custom')
+    registry.registerTerminalRendererAdapter(customRenderer)
+    registry.setTerminalRendererAdapter('custom')
 
-    expect(getTerminalRendererAdapter()).toEqual(
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
       expect.objectContaining({ id: 'custom' })
     )
-    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
     expect(customRenderer.createInstance).toHaveBeenCalledOnce()
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
   })
 
-  test('creates instances through the renderer selected by environment', () => {
-    const instance = createTerminalInstance()
-    const customRenderer = createTerminalRendererAdapter('custom', instance)
-
-    registerTerminalRendererAdapter(customRenderer)
+  test('creates instances through the renderer selected by environment', async () => {
     vi.stubEnv('VITE_TERMINAL_RENDERER', 'custom')
 
-    expect(getTerminalRendererAdapter()).toEqual(
+    const registry = await importTerminalRendererRegistry()
+    const instance = createTerminalInstance()
+    const customRenderer = createTerminalRendererAdapter('custom', instance)
+
+    registry.registerTerminalRendererAdapter(customRenderer)
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
       expect.objectContaining({ id: 'custom' })
     )
-    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
     expect(customRenderer.createInstance).toHaveBeenCalledOnce()
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
   })
 
-  test('creates instances through the bundled plain-text renderer when selected', () => {
+  test('loads the bundled plain-text renderer only when selected by environment', async () => {
     const instance = createTerminalInstance()
-    plainTextRendererMocks.createInstance.mockReturnValue(instance)
 
+    plainTextRendererMocks.createInstance.mockReturnValue(instance)
     vi.stubEnv('VITE_TERMINAL_RENDERER', 'plain-text')
 
-    expect(getTerminalRendererAdapter()).toBe(plainTextTerminalRenderer)
-    expect(createConfiguredTerminalInstance()).toBe(instance)
+    const registry = await importTerminalRendererRegistry()
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'plain-text' })
+    )
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
+    expect(plainTextRendererMocks.moduleLoaded).toHaveBeenCalledOnce()
     expect(plainTextRendererMocks.createInstance).toHaveBeenCalledOnce()
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
   })
 
-  test('keeps xterm as the default when environment selection is blank', () => {
+  test('keeps xterm as the default when environment selection is blank', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', ' ')
+
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const customRenderer = createTerminalRendererAdapter('custom', instance)
 
     xtermRendererMocks.createInstance.mockReturnValue(instance)
-    registerTerminalRendererAdapter(customRenderer)
-    setTerminalRendererAdapter('xterm')
-    vi.stubEnv('VITE_TERMINAL_RENDERER', ' ')
+    registry.registerTerminalRendererAdapter(customRenderer)
+    registry.setTerminalRendererAdapter('xterm')
 
-    expect(createConfiguredTerminalInstance()).toBe(instance)
-    expect(getTerminalRendererAdapter()).toBe(xtermTerminalRenderer)
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'xterm' })
+    )
     expect(customRenderer.createInstance).not.toHaveBeenCalled()
     expect(xtermRendererMocks.createInstance).toHaveBeenCalledOnce()
   })
 
-  test('rejects unknown environment renderer selection', () => {
+  test('rejects unknown environment renderer selection', async () => {
     vi.stubEnv('VITE_TERMINAL_RENDERER', 'missing')
 
-    expect(() => createConfiguredTerminalInstance()).toThrow(
+    const registry = await importTerminalRendererRegistry()
+
+    await expect(registry.createConfiguredTerminalInstance()).rejects.toThrow(
       'Unknown terminal renderer adapter: missing'
     )
   })
 
-  test('allows explicit environment configuration after adapter registration', () => {
+  test('allows explicit environment configuration after adapter registration', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', ' custom ')
+
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const customRenderer = createTerminalRendererAdapter(' custom ', instance)
 
-    registerTerminalRendererAdapter(customRenderer)
-    vi.stubEnv('VITE_TERMINAL_RENDERER', ' custom ')
+    registry.registerTerminalRendererAdapter(customRenderer)
 
-    configureTerminalRendererFromEnvironment()
+    await registry.configureTerminalRendererFromEnvironment()
 
-    expect(getTerminalRendererAdapter()).toEqual(
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
       expect.objectContaining({ id: 'custom' })
     )
   })
 
-  test('rejects unknown renderer adapters', () => {
-    expect(() => setTerminalRendererAdapter('missing')).toThrow(
+  test('rejects unknown renderer adapters', async () => {
+    const registry = await importTerminalRendererRegistry()
+
+    expect(() => registry.setTerminalRendererAdapter('missing')).toThrow(
       'Unknown terminal renderer adapter: missing'
     )
   })
 
-  test('normalizes registered renderer adapter ids', () => {
+  test('normalizes registered renderer adapter ids', async () => {
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const renderer = createTerminalRendererAdapter(' custom ', instance)
 
-    registerTerminalRendererAdapter(renderer)
-    setTerminalRendererAdapter('custom')
+    registry.registerTerminalRendererAdapter(renderer)
+    registry.setTerminalRendererAdapter('custom')
 
-    expect(getTerminalRendererAdapter()).toEqual(
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
       expect.objectContaining({ id: 'custom' })
     )
   })
 
-  test('rejects empty renderer adapter ids', () => {
+  test('rejects empty renderer adapter ids', async () => {
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const renderer = createTerminalRendererAdapter(' ', instance)
 
-    expect(() => registerTerminalRendererAdapter(renderer)).toThrow(
+    expect(() => registry.registerTerminalRendererAdapter(renderer)).toThrow(
       'Terminal renderer adapter id is required'
     )
   })
 
-  test('resets to the default renderer adapter', () => {
+  test('resets to the default renderer adapter', async () => {
+    const registry = await importTerminalRendererRegistry()
     const instance = createTerminalInstance()
     const customRenderer = createTerminalRendererAdapter('custom', instance)
 
-    registerTerminalRendererAdapter(customRenderer)
-    setTerminalRendererAdapter('custom')
+    registry.registerTerminalRendererAdapter(customRenderer)
+    registry.setTerminalRendererAdapter('custom')
 
-    _resetTerminalRendererRegistryForTest()
+    registry._resetTerminalRendererRegistryForTest()
 
-    expect(getTerminalRendererAdapter()).toBe(xtermTerminalRenderer)
-    expect(() => setTerminalRendererAdapter('custom')).toThrow(
-      'Unknown terminal renderer adapter: custom'
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'xterm' })
     )
 
-    setTerminalRendererAdapter('plain-text')
+    expect(() => registry.setTerminalRendererAdapter('custom')).toThrow(
+      'Unknown terminal renderer adapter: custom'
+    )
+  })
 
-    expect(getTerminalRendererAdapter()).toBe(plainTextTerminalRenderer)
+  test('retains environment-loaded bundled adapters after reset', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'plain-text')
+
+    const registry = await importTerminalRendererRegistry()
+
+    await registry.configureTerminalRendererFromEnvironment()
+    registry._resetTerminalRendererRegistryForTest()
+    registry.setTerminalRendererAdapter('plain-text')
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'plain-text' })
+    )
   })
 })
