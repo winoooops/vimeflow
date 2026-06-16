@@ -248,7 +248,8 @@ export class DesktopTerminalService implements ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      bytesBase64?: string
     ) => void
   ): Promise<() => void> {
     // Push the callback BEFORE awaiting so that any callbacks already queued
