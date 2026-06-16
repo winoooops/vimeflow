@@ -19,6 +19,25 @@ interface LiveActionCardProps {
 const SECTION_LABEL =
   'mb-2 px-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted'
 
+const LIVE_ACTION_SLOT = 'px-4 pb-3 pt-3.5'
+
+const LIVE_ACTION_CARD =
+  'min-h-[72px] rounded-lg border px-3 py-2.5 outline-none transition-colors'
+
+export const LiveActionPlaceholderCard = (): ReactElement => (
+  <div
+    data-testid="live-action-placeholder-slot"
+    className={LIVE_ACTION_SLOT}
+    aria-hidden="true"
+  >
+    <div className={SECTION_LABEL}>&nbsp;</div>
+    <div
+      data-testid="live-action-placeholder-card"
+      className={`${LIVE_ACTION_CARD} border-outline-variant/[0.08] bg-surface-container/30`}
+    />
+  </div>
+)
+
 export const LiveActionCard = ({
   event,
   now,
@@ -53,7 +72,7 @@ export const LiveActionCard = ({
       aria-label={`${verb} ${pathLabel ?? event.body}`}
       onClick={interactive ? onActivate : undefined}
       onKeyDown={handleKeyDown}
-      className={`rounded-lg border border-primary-container/20 bg-surface-container-high px-3 py-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary-container/50 ${
+      className={`${LIVE_ACTION_CARD} border-primary-container/20 bg-surface-container-high focus-visible:ring-2 focus-visible:ring-primary-container/50 ${
         interactive
           ? 'cursor-pointer hover:border-primary-container/40 hover:bg-surface-container-highest'
           : ''
@@ -100,7 +119,7 @@ export const LiveActionCard = ({
   )
 
   return (
-    <div className="px-4 pb-3 pt-3.5">
+    <div className={LIVE_ACTION_SLOT}>
       <div className={SECTION_LABEL}>NOW</div>
       <Tooltip
         content={<ActivityTooltipContent event={event} now={now} />}

@@ -1,7 +1,7 @@
 import { describe, test, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { LiveActionCard } from './LiveActionCard'
+import { LiveActionCard, LiveActionPlaceholderCard } from './LiveActionCard'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
 const now = new Date('2026-04-22T12:00:00Z')
@@ -79,6 +79,19 @@ describe('LiveActionCard — presentation', () => {
     render(<LiveActionCard event={runningEvent()} now={now} />)
 
     expect(screen.getByText(/^running\s+18s$/)).toBeInTheDocument()
+  })
+})
+
+describe('LiveActionPlaceholderCard — presentation', () => {
+  test('reserves the live-action footprint without showing active status', () => {
+    render(<LiveActionPlaceholderCard />)
+
+    expect(
+      screen.getByTestId('live-action-placeholder-card')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
   })
 })
 

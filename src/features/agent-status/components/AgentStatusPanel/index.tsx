@@ -17,7 +17,7 @@ import { ToolCallSummary } from '../ToolCallSummary'
 import { FilesChanged } from '../FilesChanged'
 import { TestResults } from '../TestResults'
 import { ActivityFeed } from '../ActivityFeed'
-import { LiveActionCard } from '../LiveActionCard'
+import { LiveActionCard, LiveActionPlaceholderCard } from '../LiveActionCard'
 import { useActivityEvents } from '../../hooks/useActivityEvents'
 import { matchChangedFile } from '../../utils/matchChangedFile'
 import {
@@ -601,6 +601,7 @@ export const AgentStatusPanel = ({
                   onActivate={canActivate ? handleLiveActivate : undefined}
                 />
               )}
+              {runningEvent === null && <LiveActionPlaceholderCard />}
               <ActivityFeed events={feedEvents} />
               <FilesChanged
                 files={effectiveFiles}

@@ -1287,6 +1287,9 @@ describe('AgentStatusPanel — live action card', () => {
 
     expect(screen.getByText('NOW')).toBeInTheDocument()
     expect(screen.getByText('LIVE')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('live-action-placeholder-card')
+    ).not.toBeInTheDocument()
   })
 
   test('does not duplicate a running exec_command in Tool Calls and NOW', () => {
@@ -1318,7 +1321,7 @@ describe('AgentStatusPanel — live action card', () => {
     ).toHaveLength(1)
   })
 
-  test('omits the live card when no tool call is active', () => {
+  test('reserves the live-action slot when no tool call is active', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1329,6 +1332,10 @@ describe('AgentStatusPanel — live action card', () => {
 
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('live-action-placeholder-card')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument()
   })
 
   test('moves a completed exec_command into activity history', () => {
@@ -1360,6 +1367,10 @@ describe('AgentStatusPanel — live action card', () => {
 
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).toBeNull()
+    expect(
+      screen.getByTestId('live-action-placeholder-card')
+    ).toBeInTheDocument()
+
     expect(
       screen.getByRole('button', { name: /activity\s*1/i })
     ).toBeInTheDocument()
@@ -1421,6 +1432,10 @@ describe('AgentStatusPanel — live action card', () => {
 
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('live-action-placeholder-card')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /activity\s*1/i })
     ).toBeInTheDocument()
