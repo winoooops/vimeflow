@@ -1443,7 +1443,7 @@ export const WorkspaceView = (): ReactElement => {
     activeSessionId,
     setSessionActivePane,
     setSessionLayout,
-    preferModifier,
+    matches,
     onTerminalZoneFocus: claimTerminal,
     isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
   })
