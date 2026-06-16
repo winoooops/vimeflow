@@ -103,12 +103,24 @@ Scope:
 Selection contract:
 
 - The app still defaults to the registered `xterm` renderer.
+- `plain-text` is a selectable prototype adapter that exercises the renderer
+  contract without importing xterm.
 - A non-empty `VITE_TERMINAL_RENDERER` value must match a registered renderer
   adapter id.
 - Unknown renderer ids fail during terminal instance creation instead of
   silently falling back to xterm.
 - This selector does not claim Ghostty support by itself; it only creates the
   reviewed switch needed before a real Ghostty adapter can be added.
+
+Spike finding:
+
+- The prototype consumes the current frontend string chunks and can satisfy the
+  existing `TerminalSurface`/`TerminalParser`/`TerminalViewportReader`
+  contracts for basic pane lifecycle tests.
+- A real Ghostty adapter still needs a separate byte-preserving PTY transport
+  design. The backend currently emits decoded strings with
+  `String::from_utf8_lossy`, so renderer work alone cannot preserve arbitrary
+  terminal bytes across chunk boundaries.
 
 Why this comes last:
 
