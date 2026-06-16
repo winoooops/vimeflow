@@ -1,6 +1,12 @@
 import type { Chord } from './chord'
 
-export type BindingContext = 'global' | 'terminal' | 'editor' | 'diff' | 'dock'
+export type BindingContext =
+  | 'global'
+  | 'terminal'
+  | 'editor'
+  | 'diff'
+  | 'dock'
+  | 'browser'
 
 export interface CommandDescriptor {
   readonly id: string
@@ -10,6 +16,8 @@ export interface CommandDescriptor {
   readonly matchPolicy: 'exact' | 'tolerant'
   readonly defaultCombo: Chord | ((isMac: boolean) => Chord)
   readonly rebindable: boolean
+  readonly preserveStoredOverrides?: boolean
+  readonly intentionalShadow?: boolean
 }
 
 const c = (
@@ -125,6 +133,27 @@ export const CATALOG = [
     defaultCombo: c('Semicolon', 'Mod'),
   },
   {
+    id: 'settings',
+    label: 'Open settings',
+    group: 'Global',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: false,
+    preserveStoredOverrides: true,
+    defaultCombo: c('Comma', 'Mod'),
+  },
+  {
+    id: 'settings-control',
+    label: 'Open settings (Control)',
+    group: 'Reserved',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: false,
+    preserveStoredOverrides: true,
+    intentionalShadow: true,
+    defaultCombo: c('Comma', 'Ctrl'),
+  },
+  {
     id: 'new-session',
     label: 'New terminal session',
     group: 'Global',
@@ -238,6 +267,18 @@ export const CATALOG = [
     matchPolicy: 'exact',
     rebindable: false,
     defaultCombo: c('KeyC', 'Ctrl'),
+  },
+
+  // ── Browser (display-only; browser chrome owns address-bar focus) ──
+  {
+    id: 'browser-location',
+    label: 'Focus browser address bar',
+    group: 'Browser',
+    context: 'browser',
+    matchPolicy: 'exact',
+    rebindable: false,
+    preserveStoredOverrides: true,
+    defaultCombo: c('KeyL', 'Mod'),
   },
 ] as const satisfies readonly CommandDescriptor[]
 

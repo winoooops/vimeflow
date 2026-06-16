@@ -1,5 +1,7 @@
 export * from './catalog'
 
+export * from './capture'
+
 export * from './chord'
 
 export * from './conflicts'

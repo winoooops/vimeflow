@@ -1,6 +1,25 @@
 import { describe, expect, test } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import { useSettingsDialog } from './useSettingsDialog'
+
+const dispatchFromRecorder = (init: KeyboardEventInit): void => {
+  const recorder = document.createElement('button')
+  recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+  document.body.append(recorder)
+
+  try {
+    recorder.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      })
+    )
+  } finally {
+    recorder.remove()
+  }
+}
 
 describe('useSettingsDialog', () => {
   test('initial state is closed', () => {
@@ -94,5 +113,22 @@ describe('useSettingsDialog', () => {
     })
 
     expect(result.current.isOpen).toBe(false)
+  })
+
+  test('keymap recorder events do not toggle or close the dialog', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => {
+      dispatchFromRecorder({ ctrlKey: true, key: ',' })
+    })
+
+    expect(result.current.isOpen).toBe(false)
+
+    act(() => result.current.open())
+    act(() => {
+      dispatchFromRecorder({ key: 'Escape' })
+    })
+
+    expect(result.current.isOpen).toBe(true)
   })
 })

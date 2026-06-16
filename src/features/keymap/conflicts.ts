@@ -78,6 +78,9 @@ export const overrideCollides = (
       continue
     }
     const other = getCommand(otherId)
+    if (other.preserveStoredOverrides) {
+      continue
+    }
     if (
       contextsOverlap(me.context, other.context) &&
       chordsOverlap(
@@ -107,6 +110,13 @@ export const detectConflicts = (
       const b = getCommand(ids[j])
       const ca = resolved.get(ids[i])!
       const cb = resolved.get(ids[j])!
+      if (
+        !a.rebindable &&
+        !b.rebindable &&
+        (a.intentionalShadow || b.intentionalShadow)
+      ) {
+        continue
+      }
       if (
         !contextsOverlap(a.context, b.context) ||
         !chordsOverlap(ca, a.matchPolicy, cb, b.matchPolicy, superKey)

@@ -43,6 +43,12 @@ describe('resolveBindings', () => {
     )
   })
 
+  test('stored overrides are preserved when they hit new-binding-only reservations', () => {
+    expect(tokenOf({ 'focus-pane-2': 'Mod+KeyL' }, 'focus-pane-2')).toBe(
+      'Mod+KeyL'
+    )
+  })
+
   test('override on a rebindable:false command is ignored', () => {
     expect(tokenOf({ palette: 'Mod+KeyP' }, 'palette')).toBe('Mod+Semicolon')
   })

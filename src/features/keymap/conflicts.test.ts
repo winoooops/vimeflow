@@ -59,7 +59,9 @@ describe('chordsOverlap', () => {
 describe('contextsOverlap', () => {
   test('global overlaps everything; surfaces are mutually exclusive', () => {
     expect(contextsOverlap('global', 'terminal')).toBe(true)
+    expect(contextsOverlap('global', 'browser')).toBe(true)
     expect(contextsOverlap('terminal', 'dock')).toBe(false)
+    expect(contextsOverlap('browser', 'terminal')).toBe(false)
     expect(contextsOverlap('diff', 'diff')).toBe(true)
   })
 })
@@ -84,5 +86,25 @@ describe('detectConflicts', () => {
       ['focus-pane-2', c('Digit2', 'Mod')],
     ])
     expect(detectConflicts(resolved, 'meta')).toHaveLength(0)
+  })
+
+  test('does not report intentionally overlapping fixed reservations', () => {
+    const resolved = new Map<CommandId, Chord>([
+      ['settings', c('Comma', 'Mod')],
+      ['settings-control', c('Comma', 'Ctrl')],
+    ])
+
+    expect(detectConflicts(resolved, 'ctrl')).toHaveLength(0)
+  })
+
+  test('reports accidental fixed command overlaps outside reserved shadows', () => {
+    const resolved = new Map<CommandId, Chord>([
+      ['palette', c('KeyN', 'Mod')],
+      ['new-session', c('KeyN', 'Mod')],
+    ])
+    const conflicts = detectConflicts(resolved, 'meta')
+
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0].commandIds.sort()).toEqual(['new-session', 'palette'])
   })
 })

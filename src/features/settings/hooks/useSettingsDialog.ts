@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import type { UseSettingsDialogReturn } from '../types'
 
 export const useSettingsDialog = (): UseSettingsDialogReturn => {
@@ -16,6 +17,10 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key === ',') {
         event.preventDefault()
         handlersRef.current.toggle()

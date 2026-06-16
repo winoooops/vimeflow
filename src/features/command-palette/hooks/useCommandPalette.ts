@@ -22,6 +22,7 @@ import {
   COMMAND_PALETTE_SHORTCUT_KEYS,
   isCommandPaletteToggle,
 } from '../shortcutConfig'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 
 const LEADER_WINDOW_MS = 500
 
@@ -342,6 +343,10 @@ export const useCommandPalette = (
     // the follow-up chord key (NOT intercepted) still reaches handleKeyDown
     // below and routes through chordRegistry / usePaneRenameChord.
     const handlePaletteShortcut = (): void => {
+      if (isKeymapCaptureTarget(document.activeElement)) {
+        return
+      }
+
       if (!isEnabledRef.current) {
         handlersRef.current.close()
 
@@ -365,6 +370,10 @@ export const useCommandPalette = (
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       if (isCommandPaletteToggle(event) && event.repeat) {
         fullyConsumeEvent(event)
 

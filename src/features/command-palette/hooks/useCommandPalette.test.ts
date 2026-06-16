@@ -7,6 +7,7 @@ import {
 import type { Command } from '../registry/types'
 import * as chordRegistry from '../chordRegistry'
 import type { BackendApi } from '../../../lib/backend'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
@@ -232,6 +233,7 @@ describe('useCommandPalette', () => {
         bubbles: true,
         cancelable: true,
       })
+
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
 
@@ -467,6 +469,40 @@ describe('useCommandPalette', () => {
       expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
+    test('Ctrl+; from the keymap recorder is left for capture mode', () => {
+      const { result } = renderHook(() => useCommandPalette())
+      const recorder = document.createElement('button')
+      recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+      document.body.append(recorder)
+
+      try {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+        const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+        const stopImmediatePropagationSpy = vi.spyOn(
+          event,
+          'stopImmediatePropagation'
+        )
+
+        act(() => {
+          recorder.dispatchEvent(event)
+        })
+
+        expect(result.current.state.isOpen).toBe(false)
+        expect(preventDefaultSpy).not.toHaveBeenCalled()
+        expect(stopPropagationSpy).not.toHaveBeenCalled()
+        expect(stopImmediatePropagationSpy).not.toHaveBeenCalled()
+      } finally {
+        recorder.remove()
+      }
+    })
+
     test('Ctrl+; trigger overrides later document-level global shortcuts', async () => {
       const { result } = renderHook(() => useCommandPalette())
       const globalShortcut = vi.fn()
@@ -533,6 +569,42 @@ describe('useCommandPalette', () => {
         unmount()
         expect(unlisten).toHaveBeenCalledOnce()
       } finally {
+        delete window.vimeflow
+      }
+    })
+
+    test('Electron shortcut toggle is left for focused keymap recorder', () => {
+      let toggleFromMain: (() => void) | null = null
+      const unlisten = vi.fn()
+
+      window.vimeflow = {
+        invoke: vi.fn(),
+        listen: vi.fn(),
+        onCommandPaletteToggle: (callback: () => void): (() => void) => {
+          toggleFromMain = callback
+
+          return unlisten
+        },
+      } as unknown as BackendApi
+
+      const recorder = document.createElement('button')
+      recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+      document.body.append(recorder)
+      recorder.focus()
+
+      const { result, unmount } = renderHook(() => useCommandPalette())
+
+      try {
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        expect(result.current.state.isOpen).toBe(false)
+
+        unmount()
+        expect(unlisten).toHaveBeenCalledOnce()
+      } finally {
+        recorder.remove()
         delete window.vimeflow
       }
     })
