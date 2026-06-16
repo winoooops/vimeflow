@@ -22,7 +22,6 @@ const MIN_COLS = 2
 const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
-const OSC_SEQUENCE_PATTERN = /\x1b\](\d+);([^\x07\x1b]*)(?:\x07|\x1b\\)/g
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -106,7 +105,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
   private outputText = ''
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
-  private hasContainedSelection = false
+  private lastSelectionText = ''
   private disposed = false
 
   constructor(private readonly transformOutput: (data: string) => string) {
@@ -254,7 +253,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
-    this.hasContainedSelection = true
+    this.lastSelectionText = readContainedSelection(this.root)
     this.notifySelectionChange()
   }
 
@@ -316,13 +315,13 @@ class PlainTextTerminalSurface implements TerminalSurface {
   }
 
   private readonly handleSelectionChange = (): void => {
-    const hasSelection = readContainedSelection(this.root).length > 0
+    const selectionText = readContainedSelection(this.root)
 
-    if (hasSelection === this.hasContainedSelection) {
+    if (selectionText === this.lastSelectionText) {
       return
     }
 
-    this.hasContainedSelection = hasSelection
+    this.lastSelectionText = selectionText
     this.notifySelectionChange()
   }
 
@@ -419,8 +418,10 @@ class PlainTextTerminalModel {
   }
 
   private consumeControlSequences(data: string): string {
+    const oscSequencePattern = /\x1b\](\d+);([^\x07\x1b]*)(?:\x07|\x1b\\)/g
+
     return data.replace(
-      OSC_SEQUENCE_PATTERN,
+      oscSequencePattern,
       (_sequence, identifier: string, payload: string): string => {
         const handler = this.oscHandlers.get(Number(identifier))
         handler?.(payload)

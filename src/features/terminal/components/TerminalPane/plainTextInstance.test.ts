@@ -180,17 +180,22 @@ describe('plainTextInstance', () => {
 
     expect(listener).toHaveBeenCalledOnce()
 
-    selection?.removeAllRanges()
+    range.setEnd(outputText, 'inside terminal'.length)
     document.dispatchEvent(new Event('selectionchange'))
 
     expect(listener).toHaveBeenCalledTimes(2)
+
+    selection?.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
+
+    expect(listener).toHaveBeenCalledTimes(3)
 
     selection?.removeAllRanges()
     selection?.addRange(range)
     created.terminal.dispose()
     document.dispatchEvent(new Event('selectionchange'))
 
-    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledTimes(3)
   })
 
   test('honors renderer key handlers before emitting input', () => {
