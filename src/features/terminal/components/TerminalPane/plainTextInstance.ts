@@ -22,6 +22,7 @@ const MIN_COLS = 2
 const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
+const MAX_SCROLLBACK_LINES = 10_000
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -55,6 +56,16 @@ const createDisposable = (dispose: () => void): TerminalDisposable => ({
 
 const normalizeDisplayText = (data: string): string =>
   data.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+const trimScrollbackLines = (text: string): string => {
+  const lines = text.split('\n')
+
+  if (lines.length <= MAX_SCROLLBACK_LINES) {
+    return text
+  }
+
+  return lines.slice(-MAX_SCROLLBACK_LINES).join('\n')
+}
 
 const readContainedSelection = (root: HTMLElement): string => {
   const selection = window.getSelection()
@@ -221,7 +232,9 @@ class PlainTextTerminalSurface implements TerminalSurface {
     const visibleData = this.transformOutput(data)
 
     if (visibleData.length > 0) {
-      this.outputText = `${this.outputText}${normalizeDisplayText(visibleData)}`
+      this.outputText = trimScrollbackLines(
+        `${this.outputText}${normalizeDisplayText(visibleData)}`
+      )
       this.renderOutput()
     }
 

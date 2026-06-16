@@ -87,6 +87,23 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('retains recent output when scrollback exceeds the line limit', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    const scrollbackText = Array.from(
+      { length: 10_005 },
+      (_, index) => `line-${index}`
+    ).join('\n')
+
+    created.terminal.write(scrollbackText)
+
+    const lines = created.viewportReader.readVisibleText().split('\n')
+
+    expect(lines).toHaveLength(10_000)
+    expect(lines[0]).toBe('line-5')
+    expect(lines[lines.length - 1]).toBe('line-10004')
+  })
+
   test('consumes registered OSC handlers without rendering control sequences', () => {
     const created = createTrackedPlainTextTerminal()
     const oscHandler = vi.fn((): boolean => true)
