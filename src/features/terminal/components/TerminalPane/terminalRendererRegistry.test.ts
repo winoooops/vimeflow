@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
 import {
   _resetTerminalRendererRegistryForTest,
+  configureTerminalRendererFromEnvironment,
   createConfiguredTerminalInstance,
   getTerminalRendererAdapter,
   registerTerminalRendererAdapter,
@@ -64,6 +65,7 @@ const createTerminalRendererAdapter = (
 describe('terminalRendererRegistry', () => {
   afterEach(() => {
     _resetTerminalRendererRegistryForTest()
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
   })
 
@@ -89,6 +91,58 @@ describe('terminalRendererRegistry', () => {
     expect(createConfiguredTerminalInstance()).toBe(instance)
     expect(customRenderer.createInstance).toHaveBeenCalledOnce()
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
+  test('creates instances through the renderer selected by environment', () => {
+    const instance = createTerminalInstance()
+    const customRenderer = createTerminalRendererAdapter('custom', instance)
+
+    registerTerminalRendererAdapter(customRenderer)
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'custom')
+
+    expect(getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'custom' })
+    )
+    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(customRenderer.createInstance).toHaveBeenCalledOnce()
+    expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
+  test('keeps xterm as the default when environment selection is blank', () => {
+    const instance = createTerminalInstance()
+    const customRenderer = createTerminalRendererAdapter('custom', instance)
+
+    xtermRendererMocks.createInstance.mockReturnValue(instance)
+    registerTerminalRendererAdapter(customRenderer)
+    setTerminalRendererAdapter('xterm')
+    vi.stubEnv('VITE_TERMINAL_RENDERER', ' ')
+
+    expect(createConfiguredTerminalInstance()).toBe(instance)
+    expect(getTerminalRendererAdapter()).toBe(xtermTerminalRenderer)
+    expect(customRenderer.createInstance).not.toHaveBeenCalled()
+    expect(xtermRendererMocks.createInstance).toHaveBeenCalledOnce()
+  })
+
+  test('rejects unknown environment renderer selection', () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'missing')
+
+    expect(() => createConfiguredTerminalInstance()).toThrow(
+      'Unknown terminal renderer adapter: missing'
+    )
+  })
+
+  test('allows explicit environment configuration after adapter registration', () => {
+    const instance = createTerminalInstance()
+    const customRenderer = createTerminalRendererAdapter(' custom ', instance)
+
+    registerTerminalRendererAdapter(customRenderer)
+    vi.stubEnv('VITE_TERMINAL_RENDERER', ' custom ')
+
+    configureTerminalRendererFromEnvironment()
+
+    expect(getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'custom' })
+    )
   })
 
   test('rejects unknown renderer adapters', () => {

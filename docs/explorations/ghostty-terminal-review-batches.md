@@ -94,10 +94,21 @@ changes are mostly comments and fixtures, they deserve a small review surface.
 
 Scope:
 
-- Add an explicit opt-in renderer selection path.
+- Add an explicit opt-in renderer selection path via
+  `VITE_TERMINAL_RENDERER`.
 - Prototype a second adapter only behind that selection path.
 - Decide whether the prototype consumes frontend string chunks or requires a
   raw-byte PTY path first.
+
+Selection contract:
+
+- The app still defaults to the registered `xterm` renderer.
+- A non-empty `VITE_TERMINAL_RENDERER` value must match a registered renderer
+  adapter id.
+- Unknown renderer ids fail during terminal instance creation instead of
+  silently falling back to xterm.
+- This selector does not claim Ghostty support by itself; it only creates the
+  reviewed switch needed before a real Ghostty adapter can be added.
 
 Why this comes last:
 
