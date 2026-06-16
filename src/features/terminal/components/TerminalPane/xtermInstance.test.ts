@@ -213,6 +213,30 @@ describe('xtermInstance', () => {
     expect(canvasAddon.dispose).toHaveBeenCalledTimes(1)
   })
 
+  test('keeps DOM renderer when WebGL and Canvas construction fail', () => {
+    const terminal = createRawTerminal()
+    const fitAddon = { fit: vi.fn() }
+
+    vi.mocked(Terminal).mockImplementation(() => terminal as never)
+    vi.mocked(FitAddon).mockImplementation(() => fitAddon as never)
+    vi.mocked(WebglAddon).mockImplementation(() => {
+      throw new Error('no webgl')
+    })
+
+    vi.mocked(CanvasAddon).mockImplementation(() => {
+      throw new Error('no canvas')
+    })
+
+    const renderer = createXtermTerminal().attachRenderer()
+
+    expect(WebglAddon).toHaveBeenCalledTimes(1)
+    expect(CanvasAddon).toHaveBeenCalledTimes(1)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+    expect(terminal.loadAddon).toHaveBeenCalledWith(fitAddon)
+
+    expect(() => renderer.dispose()).not.toThrow()
+  })
+
   test('falls back to Canvas renderer on WebGL context loss', () => {
     const terminal = createRawTerminal()
     const fitAddon = { fit: vi.fn() }
@@ -248,5 +272,38 @@ describe('xtermInstance', () => {
 
     expect(contextLossDisposable.dispose).not.toHaveBeenCalled()
     expect(canvasAddon.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps DOM renderer when Canvas fails after WebGL context loss', () => {
+    const terminal = createRawTerminal()
+    const fitAddon = { fit: vi.fn() }
+    let onContextLoss = (): void => {
+      throw new Error('context loss handler was not registered')
+    }
+
+    const webglAddon = {
+      dispose: vi.fn(),
+      onContextLoss: vi.fn((callback: () => void) => {
+        onContextLoss = callback
+
+        return { dispose: vi.fn() }
+      }),
+    }
+
+    vi.mocked(Terminal).mockImplementation(() => terminal as never)
+    vi.mocked(FitAddon).mockImplementation(() => fitAddon as never)
+    vi.mocked(WebglAddon).mockImplementation(() => webglAddon as never)
+    vi.mocked(CanvasAddon).mockImplementation(() => {
+      throw new Error('no canvas')
+    })
+
+    createXtermTerminal().attachRenderer()
+
+    expect(() => onContextLoss()).not.toThrow()
+    expect(webglAddon.dispose).toHaveBeenCalledTimes(1)
+    expect(CanvasAddon).toHaveBeenCalledTimes(1)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+    expect(terminal.loadAddon).toHaveBeenNthCalledWith(1, fitAddon)
+    expect(terminal.loadAddon).toHaveBeenNthCalledWith(2, webglAddon)
   })
 })

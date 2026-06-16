@@ -2,28 +2,21 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, render, waitFor } from '@testing-library/react'
 import { type ReactElement, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
-import { CanvasAddon } from '@xterm/addon-canvas'
 import { Body, clearTerminalCache } from './Body'
+import { createTerminalInstance } from './terminalInstance'
 import type { RestoreData } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
+import type {
+  TerminalDisposable,
+  TerminalInstance,
+  TerminalParser,
+  TerminalRendererHandle,
+  TerminalSurface,
+  TerminalViewportReader,
+} from '../../types'
 
-vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn(),
-}))
-
-vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn(),
-}))
-
-vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: vi.fn(),
-}))
-
-vi.mock('@xterm/addon-canvas', () => ({
-  CanvasAddon: vi.fn(),
+vi.mock('./terminalInstance', () => ({
+  createTerminalInstance: vi.fn(),
 }))
 
 type DataCallback = Parameters<ITerminalService['onData']>[0]
@@ -47,19 +40,31 @@ const flushPendingWriteCallbacks = (): void => {
   })
 }
 
-class FakeTerminal {
+class FakeTerminal implements TerminalSurface {
   readonly cols = 80
   readonly rows = 24
+  readonly element = document.createElement('div')
   readonly open = vi.fn()
-  readonly loadAddon = vi.fn()
   readonly dispose = vi.fn()
   readonly focus = vi.fn()
   readonly clear = vi.fn()
-  readonly onResize = vi.fn((): { dispose: () => void } => ({
-    dispose: vi.fn(),
-  }))
+  readonly refresh = vi.fn()
+  readonly hasSelection = vi.fn((): boolean => false)
+  readonly getSelection = vi.fn((): string => '')
+  readonly paste = vi.fn()
+  readonly selectAll = vi.fn()
+  readonly onSelectionChange = vi.fn(
+    (): TerminalDisposable => ({ dispose: vi.fn() })
+  )
+  readonly attachKeyEventHandler = vi.fn()
+  readonly applyTheme = vi.fn()
+  readonly onResize = vi.fn(
+    (): TerminalDisposable => ({
+      dispose: vi.fn(),
+    })
+  )
   readonly onData = vi.fn(
-    (handler: (data: string) => void): { dispose: () => void } => {
+    (handler: (data: string) => void): TerminalDisposable => {
       this.inputHandlers.add(handler)
 
       return {
@@ -69,9 +74,9 @@ class FakeTerminal {
       }
     }
   )
-  readonly parser = {
+  readonly parser: TerminalParser = {
     registerOscHandler: vi.fn(
-      (identifier: number, handler: OscHandler): { dispose: () => void } => {
+      (identifier: number, handler: OscHandler): TerminalDisposable => {
         this.oscHandlers.set(identifier, handler)
 
         return { dispose: vi.fn() }
@@ -119,6 +124,29 @@ class FakeTerminal {
     const partialOscStart = remaining.lastIndexOf('\x1b]')
     this.oscBuffer =
       partialOscStart === -1 ? '' : remaining.slice(partialOscStart)
+  }
+}
+
+const createdTerminals: FakeTerminal[] = []
+
+const createFakeTerminalInstance = (): TerminalInstance => {
+  const terminal = new FakeTerminal()
+  createdTerminals.push(terminal)
+
+  const viewportReader: TerminalViewportReader = {
+    readVisibleText: vi.fn((): string => ''),
+  }
+
+  const rendererHandle: TerminalRendererHandle = {
+    dispose: vi.fn(),
+  }
+
+  return {
+    terminal,
+    parser: terminal.parser,
+    viewportReader,
+    fitController: { fit: vi.fn() },
+    attachRenderer: vi.fn((): TerminalRendererHandle => rendererHandle),
   }
 }
 
@@ -202,14 +230,13 @@ const bufferedEvent = (
 })
 
 const getLatestTerminal = (): FakeTerminal => {
-  const results = vi.mocked(Terminal).mock.results
-  const terminal = results[results.length - 1]?.value
+  const terminal = createdTerminals[createdTerminals.length - 1]
 
   if (!terminal) {
     throw new Error('Expected terminal to be created')
   }
 
-  return terminal as FakeTerminal
+  return terminal
 }
 
 const StatefulBody = ({
@@ -243,23 +270,9 @@ describe('Body agent-emitted OSC 7', () => {
     deferWriteCallbacks = false
     skipOscParsing = false
     pendingWriteCallbacks.length = 0
-    vi.mocked(Terminal).mockImplementation(() => new FakeTerminal() as never)
-    vi.mocked(FitAddon).mockImplementation(
-      () =>
-        ({
-          fit: vi.fn(),
-        }) as never
-    )
-
-    vi.mocked(WebglAddon).mockImplementation(() => {
-      throw new Error('WebGL unavailable in this test')
-    })
-
-    vi.mocked(CanvasAddon).mockImplementation(
-      () =>
-        ({
-          dispose: vi.fn(),
-        }) as never
+    createdTerminals.length = 0
+    vi.mocked(createTerminalInstance).mockImplementation(
+      createFakeTerminalInstance
     )
   })
 
@@ -267,6 +280,7 @@ describe('Body agent-emitted OSC 7', () => {
     deferWriteCallbacks = false
     skipOscParsing = false
     pendingWriteCallbacks.length = 0
+    createdTerminals.length = 0
     vi.clearAllMocks()
     clearTerminalCache()
   })
