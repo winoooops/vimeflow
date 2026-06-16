@@ -241,7 +241,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         <Header
           agent={agent}
           session={session}
-          pipStatus={pipStatus}
           worktreeName={worktreeName}
           branch={branch}
           cwd={pane.cwd}
@@ -290,7 +289,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
         <Footer
           agent={agent}
-          pipStatus={pipStatus}
           isFocused={isFocusHighlightVisible}
           isIdle={isIdle}
           onClickFocus={handleContainerClick}

@@ -7,7 +7,6 @@ import {
 } from 'react'
 import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
-import type { SessionStatus } from '../../../sessions/types'
 import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
 import { ToolCallSummary } from '../ToolCallSummary'
@@ -31,7 +30,6 @@ interface AgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   gitStatus?: UseGitStatusReturn
   agent: Agent
-  status: SessionStatus
   onCollapse: () => void
   cacheHistory: number[]
   reserveWindowControls?: boolean
@@ -51,7 +49,6 @@ export const AgentStatusPanel = ({
   onOpenFile = undefined,
   gitStatus = undefined,
   agent,
-  status: sessionStatus,
   onCollapse,
   cacheHistory,
   reserveWindowControls = false,
@@ -138,7 +135,6 @@ export const AgentStatusPanel = ({
     >
       <AgentStatusPanelHeader
         agent={agent}
-        status={sessionStatus}
         onCollapse={onCollapse}
         reserveWindowControls={reserveWindowControls}
       />

@@ -1,19 +1,15 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../../agents/registry'
-import type { SessionStatus } from '../../../sessions/types'
-import { StatusDot } from '../../../sessions/components/StatusDot'
 
 export interface AgentStatusPanelHeaderProps {
   agent: Agent
-  status: SessionStatus
   onCollapse: () => void
   reserveWindowControls?: boolean
 }
 
 export const AgentStatusPanelHeader = ({
   agent,
-  status,
   onCollapse,
   reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
@@ -37,7 +33,6 @@ export const AgentStatusPanelHeader = ({
       <span className="font-headline text-[13px] font-semibold text-on-surface">
         {agent.short}
       </span>
-      <StatusDot status={status} size={6} aria-label={`agent ${status}`} />
     </div>
     <IconButton
       icon="chevron_right"

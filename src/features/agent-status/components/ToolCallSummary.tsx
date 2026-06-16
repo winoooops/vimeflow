@@ -41,7 +41,6 @@ export const ToolCallSummary = ({
           className="rounded border-l-2 border-success bg-success/[0.06] px-3 py-2"
         >
           <div className="flex items-center gap-2">
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
             <span className="text-[9px] text-success">Running</span>
             <span className="font-mono text-[9px] text-on-surface-variant">
               {active.tool}

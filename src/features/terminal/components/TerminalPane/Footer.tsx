@@ -1,11 +1,8 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
-import { StatusDot } from '../../../sessions/components/StatusDot'
-import type { SessionStatus } from '../../../sessions/types'
 
 export interface FooterProps {
   agent: Agent
-  pipStatus: SessionStatus
   isFocused: boolean
   isIdle: boolean
   onClickFocus: () => void
@@ -29,7 +26,6 @@ const derivePlaceholder = (
 
 export const Footer = ({
   agent,
-  pipStatus,
   isFocused,
   isIdle,
   onClickFocus,
@@ -42,7 +38,6 @@ export const Footer = ({
       data-testid="terminal-pane-footer"
       className="flex shrink-0 items-center gap-2 border-t border-outline-variant/20 bg-surface-container-lowest/55 px-3.5 py-1.5 font-mono text-[11px]"
     >
-      <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
       <button
         type="button"
         aria-label="Focus terminal"

@@ -388,7 +388,6 @@ describe('AgentStatusPanel', () => {
         agentStatus={inactiveAgentStatus}
         cwd="/home/x"
         agent={AGENTS.claude}
-        status="idle"
         onCollapse={onCollapse}
       />
     )
