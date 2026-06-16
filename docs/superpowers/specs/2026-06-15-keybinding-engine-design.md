@@ -75,8 +75,8 @@ here):
   still 100% data-driven. Alternatives — B (central keydown router) and C (hybrid) — were
   rejected because generalizing the heterogeneous guards (terminal-active, dock/CodeMirror,
   out-of-range pane, layout capacity) into a router is the high-risk part SP1 exists to avoid.
-  Full reasoning + citations: `docs/design/keymap-engine/dispatch-decision.zh.html` and
-  `registry-role.zh.html`.
+  Full reasoning + citations: `docs/decisions/2026-06-15-keymap-engine-dispatch-model.zh.html`
+  and `docs/decisions/2026-06-15-keymap-engine-registry-role.zh.html`.
 - **D2 — Subset-first migration.** SP1's first PR migrates **`usePaneShortcuts`** (the complex
   archetype: one capture-phase listener serving several **granular** commands —
   `focus-pane-1..4`, `cycle-layout`, `focus-pane-left/down/up/right` — matched via
@@ -109,8 +109,7 @@ here):
 ## 4. Prior art (verified)
 
 A deep-research pass over Zed and VS Code (primary sources: VS Code `main` source + docs, Zed
-source + gpui rustdoc; 25/25 extracted claims survived 3-vote adversarial verification, June
-2026) grounds this model:
+source + gpui rustdoc; 25/25 extracted claims survived 3-vote adversarial verification, June 2026) grounds this model:
 
 - **Binding data is kept separate from the handler.** VS Code's `KeybindingsRegistry` stores
   `{ command: string, key, when }`; its `CommandsRegistry` separately stores
@@ -125,7 +124,8 @@ source + gpui rustdoc; 25/25 extracted claims survived 3-vote adversarial verifi
   SQLite for other state. → D3.
 
 These docs capture the full comparison + citations:
-`docs/design/keymap-engine/dispatch-decision.zh.html`, `registry-role.zh.html`.
+`docs/decisions/2026-06-15-keymap-engine-dispatch-model.zh.html`,
+`docs/decisions/2026-06-15-keymap-engine-registry-role.zh.html`.
 
 ---
 
@@ -144,7 +144,7 @@ A chord is one physical key plus its modifier set. SP1 supports a **single** cho
 ```ts
 type Mod = 'Mod' | 'Ctrl' | 'Shift' | 'Alt' // 'Mod' = platform super: ⌘ on macOS, Ctrl elsewhere
 interface Chord {
-  code: string           // KeyboardEvent.code — physical key (layout-safe; guards finding #27)
+  code: string // KeyboardEvent.code — physical key (layout-safe; guards finding #27)
   mods: ReadonlySet<Mod> // e.g. {'Mod'}, {'Mod','Shift'}, {'Ctrl'}
 }
 ```
@@ -198,18 +198,20 @@ A static array of descriptors — one per rebindable (or display-only) action.
 type BindingContext = 'global' | 'terminal' | 'editor' | 'diff' | 'dock'
 
 interface CommandDescriptor {
-  id: string                                        // unique within CATALOG: 'focus-pane-1', 'dock-toggle', 'palette', …
-  label: string                                     // shown in the Keymap pane
-  group: string                                     // display grouping: 'Global' | 'Panes & Layout' | …
-  context: BindingContext                           // conflict scoping (D6)
-  matchPolicy: 'exact' | 'tolerant'                 // unlisted Shift/Alt: 'exact' forbids (default) · 'tolerant' ignores (§5.1)
+  id: string // unique within CATALOG: 'focus-pane-1', 'dock-toggle', 'palette', …
+  label: string // shown in the Keymap pane
+  group: string // display grouping: 'Global' | 'Panes & Layout' | …
+  context: BindingContext // conflict scoping (D6)
+  matchPolicy: 'exact' | 'tolerant' // unlisted Shift/Alt: 'exact' forbids (default) · 'tolerant' ignores (§5.1)
   defaultCombo: Chord | ((isMac: boolean) => Chord) // platform-aware, mirrors today's keys:(isMac)=>…
-  rebindable: boolean                               // true ⟺ hook migrated (registry-wired); false ⇒ display-only
+  rebindable: boolean // true ⟺ hook migrated (registry-wired); false ⇒ display-only
 }
 
 // CommandId is the literal union of the catalog's ids (CATALOG declared `as const`), so a typo or
 // unknown id is a compile error and `bindingFor(id)` is total — every id has a descriptor → a default.
-const CATALOG = [/* …descriptors… */] as const
+const CATALOG = [
+  /* …descriptors… */
+] as const
 type CommandId = (typeof CATALOG)[number]['id']
 ```
 
@@ -326,7 +328,12 @@ per-hook swap (§6.2).
 
 ```ts
 type PlatformSuper = 'meta' | 'ctrl' // resolved 'Mod' (WorkspaceView already derives this as preferModifier)
-function eventMatchesChord(event, chord: Chord, superKey: PlatformSuper, policy: 'exact' | 'tolerant' = 'exact'): boolean
+function eventMatchesChord(
+  event,
+  chord: Chord,
+  superKey: PlatformSuper,
+  policy: 'exact' | 'tolerant' = 'exact'
+): boolean
 ```
 
 Returns true iff **all** hold:
@@ -367,7 +374,9 @@ if (!matches(event, 'dock-toggle')) return // matches = eventMatchesChord(event,
 today, then asks the registry per command instead of hardcoding `Digit([1-4])` / `Backslash` / arrows:
 
 ```ts
-if (matches(event, 'focus-pane-1')) { /* …existing pane-1 guards + action… */ }
+if (matches(event, 'focus-pane-1')) {
+  /* …existing pane-1 guards + action… */
+}
 // focus-pane-2..4, cycle-layout, focus-pane-left/down/up/right — each its own bindingFor(id),
 // each keeping its existing dialog / terminal-active / out-of-range / capacity guards + return.
 ```
@@ -403,13 +412,15 @@ so they never actually clash.
 
 ```ts
 interface Keybindings {
-  bindingFor: (id: CommandId) => Chord                              // resolved default ⊕ override (memoized)
-  matches: (event: KeyboardEvent, id: CommandId) => boolean        // eventMatchesChord(event, bindingFor(id), superKey, policyFor(id))
+  bindingFor: (id: CommandId) => Chord // resolved default ⊕ override (memoized)
+  matches: (event: KeyboardEvent, id: CommandId) => boolean // eventMatchesChord(event, bindingFor(id), superKey, policyFor(id))
   setUserBinding: (id: CommandId, chord: Chord) => SetBindingResult // validate → persist via update()
-  resetBinding: (id: CommandId) => void                            // drops the override
-  conflicts: Conflict[]                                            // detectConflicts(...) memoized (for SP2)
+  resetBinding: (id: CommandId) => void // drops the override
+  conflicts: Conflict[] // detectConflicts(...) memoized (for SP2)
 }
-type SetBindingResult = { ok: true } | { ok: false; reason: 'invalid-super' | 'reserved' | 'conflict' }
+type SetBindingResult =
+  | { ok: true }
+  | { ok: false; reason: 'invalid-super' | 'reserved' | 'conflict' }
 function useKeybindings(): Keybindings
 ```
 
@@ -479,9 +490,10 @@ fn lenient_string_map<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String,
 }
 ```
 
-  `AppSettingsCache::load` already parses the whole file as JSON before field deserialization, so the
-  field value is always a valid JSON token when `lenient_string_map` runs — the function is **total**
-  (never `Err`). A malformed entry drops/skips; the durable file is never wiped.
+`AppSettingsCache::load` already parses the whole file as JSON before field deserialization, so the
+field value is always a valid JSON token when `lenient_string_map` runs — the function is **total**
+(never `Err`). A malformed entry drops/skips; the durable file is never wiped.
+
 - `impl Default for AppSettings` adds `custom_keybindings: HashMap::new()`.
 - Test fixtures gain the field: `custom_settings()` (a sample map), `default_values_match_ui_precedent`
   (empty default), `serializes_camel_case_fields` (`"customKeybindings"`), `partial_file_defaults_…`
@@ -562,11 +574,11 @@ changes the live shortcut," persisted through the settings round-trip.
 plain-text `Part of VIM-136` — SP1 does **not** close the umbrella issue):
 
 - **PR1 — engine core + first migration.** `src/features/keymap/{chord,catalog,resolve,conflicts}.ts`
-  + `eventMatchesChord` + `useKeybindings` (all tested); Rust `custom_keybindings` field + lenient
-  deserializer + fixtures + `generate:bindings` (+ prettier on `src/bindings/`); `DEFAULT_SETTINGS`
-  mirror; migrate **`usePaneShortcuts`** (removing the shared super gate) + **`useDockToggleShortcut`**,
-  flipping their commands to `rebindable:true`; `KeymapPane` renders from the catalog. Ships the
-  headline acceptance for the subset.
+  - `eventMatchesChord` + `useKeybindings` (all tested); Rust `custom_keybindings` field + lenient
+    deserializer + fixtures + `generate:bindings` (+ prettier on `src/bindings/`); `DEFAULT_SETTINGS`
+    mirror; migrate **`usePaneShortcuts`** (removing the shared super gate) + **`useDockToggleShortcut`**,
+    flipping their commands to `rebindable:true`; `KeymapPane` renders from the catalog. Ships the
+    headline acceptance for the subset.
 - **PR2 — remaining workspace hooks.** Migrate `useNewSessionShortcut`, `useSidebarShortcut`,
   `useSidebarTabShortcut`, `useSessionNavShortcut`, `useDockShortcuts` (⌘E/⌘G only — its `b` reclaim
   stays hardcoded, §6.2), `useBurnerToggleShortcut`
@@ -584,7 +596,7 @@ plain-text `Part of VIM-136` — SP1 does **not** close the umbrella issue):
   `lint && format:check && type-check` before pushing, not just `eslint src`.
 - **Durability** (a bad override wiping `settings.json`) → the total lenient deserializer (§7.1) + test.
 - **Terminal-safety** (an override stealing a bare key) → `setUserBinding`'s `'invalid-super'` rejection
-  + `resolveBindings` dropping super-less / both-super overrides via the shared predicate (§5.3, §6.2).
+  - `resolveBindings` dropping super-less / both-super overrides via the shared predicate (§5.3, §6.2).
 
 **Forward-compat — how SP2/3/4 drop in:**
 
