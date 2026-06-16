@@ -57,6 +57,17 @@ describe('useKeybindings', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  test("setUserBinding rejects display-only commands as 'reserved'", () => {
+    const { result, update } = renderKeybindings()
+    expect(
+      result.current.setUserBinding('palette', {
+        code: 'KeyP',
+        mods: new Set(['Mod']),
+      })
+    ).toEqual({ ok: false, reason: 'reserved' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
   test("setUserBinding rejects a rebindable-vs-rebindable collision as 'conflict'", () => {
     const { result, update } = renderKeybindings()
 

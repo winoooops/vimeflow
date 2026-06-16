@@ -57,6 +57,9 @@ export const useKeybindings = (): Keybindings => {
         return { ok: false, reason: 'invalid-super' }
       }
       const me = getCommand(id)
+      if (!me.rebindable) {
+        return { ok: false, reason: 'reserved' }
+      }
       for (const [otherId, otherChord] of resolved) {
         if (otherId === id) {
           continue
