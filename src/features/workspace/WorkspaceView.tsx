@@ -82,11 +82,7 @@ import { lineDelta } from '../sessions/utils/lineDelta'
 import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type {
-  LayoutId,
-  SessionCloseResult,
-  SessionStatus,
-} from '../sessions/types'
+import type { LayoutId, SessionCloseResult } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -587,16 +583,6 @@ const WorkspaceViewContent = (): ReactElement => {
     () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
     [agentStatus.agentType]
   )
-
-  // Source the header status from the active pane's lifecycle, not from the
-  // agent's `isActive` flag. After a PTY exits, `agentStatus.isActive` flips
-  // to false and the `running` → `paused` ternary would silently mislabel
-  // terminal states (`completed`, `errored`) as paused, complete with a
-  // pulsing dot. The pane's own `status` is the source of truth for
-  // running/paused/completed/errored — agent activity stays an orthogonal
-  // signal that the "live" pulse next to the agent chip already reflects.
-  const activityPanelStatus: SessionStatus =
-    activePtyBackedPane?.status ?? 'idle'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -2406,7 +2392,6 @@ const WorkspaceViewContent = (): ReactElement => {
               cacheHitPercentage={cacheHitPercentage(
                 agentStatus.contextWindow?.currentUsage
               )}
-              isRunning={agentStatus.isActive}
               onExpand={() => {
                 handleActivityPanelCollapsed(false)
               }}
@@ -2421,7 +2406,6 @@ const WorkspaceViewContent = (): ReactElement => {
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
-              status={activityPanelStatus}
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}

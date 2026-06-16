@@ -307,27 +307,6 @@ describe('ActivityEvent — bash status pill', () => {
 })
 
 describe('ActivityEvent — running state', () => {
-  test('renders animated dot with role="status" for running events', () => {
-    render(
-      <ActivityEvent
-        event={{
-          id: 'active-Edit',
-          kind: 'edit',
-          tool: 'Edit',
-          body: 'src/foo.ts',
-          timestamp: '2026-04-22T11:59:52Z', // 8s before now
-          status: 'running',
-          durationMs: null,
-        }}
-        now={now}
-      />
-    )
-    const dot = screen.getByRole('status', { name: 'running' })
-
-    expect(dot).toHaveClass('animate-pulse')
-    expect(dot).toHaveClass('bg-success')
-  })
-
   test('running timestamp reads "running Xs" computed from startedAt', () => {
     render(
       <ActivityEvent

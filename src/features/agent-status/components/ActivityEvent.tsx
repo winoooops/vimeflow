@@ -461,7 +461,6 @@ export const ActivityEvent = ({
   const symbol = KIND_ICON[event.kind]
   const colorClass = KIND_COLOR[event.kind]
   const label = getLabel(event)
-  const isRunning = event.status === 'running'
 
   const timestampText = computeAgo(event, now)
 
@@ -491,13 +490,6 @@ export const ActivityEvent = ({
           >
             {symbol}
           </span>
-          {isRunning && (
-            <span
-              role="status"
-              aria-label="running"
-              className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-success animate-pulse"
-            />
-          )}
         </div>
 
         <div className="flex-1 min-w-0">

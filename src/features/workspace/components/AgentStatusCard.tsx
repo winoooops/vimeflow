@@ -144,7 +144,6 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
           No active agent
         </div>
         <div className="mt-1 flex items-center gap-1.5">
-          <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
           <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
             Idle · {shellName} shell
           </span>

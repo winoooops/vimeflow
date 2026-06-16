@@ -8,7 +8,6 @@ export interface AgentStatusRailProps {
   agent: Agent
   contextUsedPercentage: number | null
   cacheHitPercentage: number | null
-  isRunning: boolean
   onExpand: () => void
   reserveWindowControls?: boolean
 }
@@ -44,7 +43,6 @@ export const AgentStatusRail = ({
   agent,
   contextUsedPercentage,
   cacheHitPercentage,
-  isRunning,
   onExpand,
   reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
@@ -101,17 +99,6 @@ export const AgentStatusRail = ({
       )}
 
       <span className="flex-1" />
-
-      {isRunning && (
-        <span
-          data-testid="running-dot"
-          className="h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
-          style={{
-            background: agent.accent,
-            boxShadow: `0 0 10px ${agent.accent}`,
-          }}
-        />
-      )}
     </aside>
   )
 }

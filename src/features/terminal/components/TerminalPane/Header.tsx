@@ -1,8 +1,7 @@
 // cspell:ignore worktree
 import { useEffect, useRef, type ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
-import { StatusDot } from '../../../sessions/components/StatusDot'
-import type { Session, SessionStatus } from '../../../sessions/types'
+import type { Session } from '../../../sessions/types'
 import { register, unregister } from '../../paneHeaderRefs'
 import { HeaderActions } from './HeaderActions'
 import { HeaderMetadata } from './HeaderMetadata'
@@ -10,7 +9,6 @@ import { HeaderMetadata } from './HeaderMetadata'
 export interface HeaderProps {
   agent: Agent
   session: Session
-  pipStatus: SessionStatus
   worktreeName: string | null
   branch: string | null
   cwd?: string
@@ -31,7 +29,6 @@ export interface HeaderProps {
 export const Header = ({
   agent,
   session,
-  pipStatus,
   worktreeName,
   branch,
   cwd = undefined,
@@ -88,7 +85,6 @@ export const Header = ({
         <span>{agent.short}</span>
       </div>
 
-      <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
       <span ref={titleRef} className="min-w-0 truncate text-on-surface">
         {paneUserLabel ?? paneAgentTitle ?? session.name}
       </span>

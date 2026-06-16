@@ -2,7 +2,6 @@ import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
 import { hasLivePane } from '../utils/sessionStatus'
-import { StatusDot } from './StatusDot'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
@@ -108,13 +107,6 @@ export const Tab = ({
       >
         {session.name}
       </span>
-      {hasLivePane(session.panes) && (
-        <StatusDot
-          status={session.status}
-          size={5}
-          aria-label={`Status ${session.status}`}
-        />
-      )}
       <IconButton
         icon="close"
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
