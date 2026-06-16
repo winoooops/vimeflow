@@ -3,6 +3,10 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { emptyActivity } from '../../sessions/constants'
 import type { LayoutId, Session } from '../../sessions/types'
+import {
+  TERMINAL_FOCUS_SCOPE_ATTRIBUTE,
+  TERMINAL_FOCUS_SCOPE_VALUE,
+} from '../terminalFocusScope'
 import { usePaneShortcuts } from './usePaneShortcuts'
 
 const makeSession = (
@@ -432,11 +436,16 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     document.body.removeChild(dialog)
   })
 
-  test('Ctrl+1 on active pane inside xterm helper textarea passes through', () => {
+  test('Ctrl+1 on active pane inside terminal focus scope passes through', () => {
     const onTerminalZoneFocus = vi.fn()
+    const scope = document.createElement('div')
+    scope.setAttribute(
+      TERMINAL_FOCUS_SCOPE_ATTRIBUTE,
+      TERMINAL_FOCUS_SCOPE_VALUE
+    )
     const textarea = document.createElement('textarea')
-    textarea.className = 'xterm-helper-textarea'
-    document.body.appendChild(textarea)
+    scope.appendChild(textarea)
+    document.body.appendChild(scope)
     textarea.focus()
 
     renderHook(() =>
@@ -455,10 +464,10 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(onTerminalZoneFocus).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
 
-    document.body.removeChild(textarea)
+    document.body.removeChild(scope)
   })
 
-  test('Ctrl+1 on active pane outside xterm reclaims terminal focus', () => {
+  test('Ctrl+1 on active pane outside terminal focus scope reclaims terminal focus', () => {
     const onTerminalZoneFocus = vi.fn()
     blurActiveElement()
 

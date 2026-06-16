@@ -27,6 +27,7 @@ import {
   clearTerminalCache,
   disposeTerminalSession,
 } from '../../terminalRegistry'
+import { TERMINAL_FOCUS_SCOPE_VALUE } from '../../terminalFocusScope'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
@@ -856,6 +857,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         ref={containerRef}
         data-testid="terminal-pane"
         data-pty-id={sessionId}
+        data-terminal-focus-scope={TERMINAL_FOCUS_SCOPE_VALUE}
         className="h-full w-full"
       />
       <TerminalContextMenu
