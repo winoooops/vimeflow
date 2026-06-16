@@ -1,6 +1,6 @@
 import type { ThemeDefinition } from '../types'
 
-/* The Obsidian Lens — the current rendered appearance, collected from
+/* Catppuccin (obsidian-lens) — the current rendered appearance, collected from
  * tailwind.config.js (ui), index.css + docs tokens.css (effects),
  * terminal/theme/catppuccin-mocha.ts (terminal), agents/registry.ts +
  * browser/browserIdentity.ts (agents). This file is the single source
@@ -146,6 +146,12 @@ export const obsidianLens: ThemeDefinition = {
       accentDim: 'rgb(79 200 214 / 0.16)',
       accentSoft: 'rgb(79 200 214 / 0.3)',
       onAccent: '#06232a',
+    },
+    kimi: {
+      accent: '#fab387',
+      accentDim: 'rgb(250 179 135 / 0.16)',
+      accentSoft: 'rgb(250 179 135 / 0.32)',
+      onAccent: '#2a1608',
     },
   },
 }

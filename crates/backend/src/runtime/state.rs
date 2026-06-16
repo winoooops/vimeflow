@@ -44,6 +44,9 @@ pub struct BackendState {
     transcripts: TranscriptState,
     git: GitWatcherState,
     events: Arc<dyn EventSink>,
+    // Durable kimi plan-usage consent file. The in-memory flag is the
+    // app-global `agent::kimi_usage_consent`; this is where it persists.
+    kimi_usage_consent_path: PathBuf,
     #[cfg(any(test, feature = "e2e-test"))]
     _test_cache_dir: Option<tempfile::TempDir>,
 }
@@ -52,6 +55,7 @@ impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
+        let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
             pty: PtyState::new(),
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
@@ -60,6 +64,7 @@ impl BackendState {
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
             events,
+            kimi_usage_consent_path,
             #[cfg(any(test, feature = "e2e-test"))]
             _test_cache_dir: None,
         }
@@ -246,6 +251,32 @@ impl BackendState {
         request: crate::terminal::types::SetWorkspaceSessionsRequest,
     ) -> Result<(), String> {
         crate::terminal::commands::set_workspace_sessions_inner(&self.sessions, request)
+    }
+
+    /// Load the persisted kimi plan-usage consent flag into memory. Main-
+    /// invoked at startup (not renderer), like `load_workspace_layout`.
+    pub fn load_kimi_usage_consent(&self) {
+        crate::agent::kimi_usage_consent::load_into_memory(&self.kimi_usage_consent_path);
+    }
+
+    /// Set + persist the kimi plan-usage consent flag. The fetch path only
+    /// calls `/usages` while this is ON; an error means the opt-in was not
+    /// durably stored, so the caller can surface it rather than show it as on.
+    pub fn set_kimi_usage_consent(&self, enabled: bool) -> Result<(), String> {
+        crate::agent::kimi_usage_consent::set_and_persist(&self.kimi_usage_consent_path, enabled)
+            .map_err(|e| format!("persist kimi usage consent: {e}"))
+    }
+
+    /// The current kimi plan-usage consent flag, for the renderer to render the
+    /// gate's initial state.
+    pub fn get_kimi_usage_consent(&self) -> bool {
+        crate::agent::kimi_usage_consent::usage_consent_enabled()
+    }
+
+    /// Request a one-shot plan-usage refresh on every live kimi session — the UI
+    /// "Retry" path, which re-attempts a failed fetch without a new turn.
+    pub fn refresh_kimi_usage(&self) {
+        crate::agent::kimi_usage_consent::request_refresh()
     }
 
     pub fn list_dir(
@@ -526,6 +557,27 @@ mod tests {
         let (state, sink) = BackendState::with_fake_sink();
         assert!(Arc::strong_count(&state) >= 1);
         assert_eq!(sink.recorded().len(), 0);
+    }
+
+    /// The consent IPC round-trips through `BackendState`: set persists +
+    /// flips the global, get reflects it, and a fresh load from the same
+    /// app-data dir recovers it. Serialized against the global consent flag.
+    #[test]
+    fn kimi_usage_consent_set_get_and_reload() {
+        let _guard = crate::agent::kimi_usage_consent::test_serial_guard();
+        let (state, _sink) = BackendState::with_fake_sink();
+        assert!(!state.get_kimi_usage_consent(), "default OFF");
+
+        state.set_kimi_usage_consent(true).expect("persist on");
+        assert!(state.get_kimi_usage_consent(), "set reflects in get");
+
+        // Reloading the same app-data dir (e.g. next launch) recovers ON;
+        // file-independent recovery is proven in the consent module's tests.
+        state.load_kimi_usage_consent();
+        assert!(state.get_kimi_usage_consent(), "reload keeps persisted true");
+
+        state.set_kimi_usage_consent(false).expect("persist off");
+        assert!(!state.get_kimi_usage_consent());
     }
 
     #[test]

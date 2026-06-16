@@ -7,7 +7,13 @@ import {
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'shell']
+const ALL_AGENTS: readonly AgentId[] = [
+  'claude',
+  'codex',
+  'gemini',
+  'kimi',
+  'shell',
+]
 
 test('AGENTS keys are claude, codex, gemini, shell', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
@@ -66,6 +72,17 @@ test('agentTypeToRegistryKey maps codex to codex', () => {
   expect(agentTypeToRegistryKey('codex')).toBe('codex')
 })
 
+test('kimi is peach with model k2.7', () => {
+  expect(AGENTS.kimi.accent).toBe('var(--color-agent-kimi-accent)')
+  expect(AGENTS.kimi.short).toBe('KIMI')
+  expect(AGENTS.kimi.glyph).toBe('☾')
+  expect(AGENTS.kimi.model).toBe('k2.7')
+})
+
+test('agentTypeToRegistryKey maps kimi to kimi', () => {
+  expect(agentTypeToRegistryKey('kimi')).toBe('kimi')
+})
+
 test.each(['aider', 'generic', null] as const)(
   'agentTypeToRegistryKey maps %s to shell',
   (agentType) => {
@@ -94,6 +111,7 @@ test('agentStatusToSessionStatus reports idle when not isActive', () => {
 test('supported agents carry a brand Icon; others fall back to their glyph', () => {
   expect(AGENTS.claude.Icon).toBeDefined()
   expect(AGENTS.codex.Icon).toBeDefined()
+  expect(AGENTS.kimi.Icon).toBeDefined()
   expect(AGENTS.gemini.Icon).toBeUndefined()
   expect(AGENTS.shell.Icon).toBeUndefined()
 })

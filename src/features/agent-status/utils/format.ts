@@ -1,4 +1,4 @@
-// Not consolidated with ContextBucket's M-aware formatter — would change that component's display.
+// Not consolidated with ContextReservoirCard's M-aware formatter — would change that component's display.
 export const formatTokens = (n: number): string => {
   if (n < 1000) {
     return String(n)

@@ -1,12 +1,12 @@
 # Design System Specification
 
-## 1. Overview & Creative North Star: "The Obsidian Lens"
+## 1. Overview & Creative North Star: "The Lens"
 
-This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Obsidian Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
+This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
 
-By leveraging the Catppuccin Mocha palette, we move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
+The Lens ships two runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; a parallel **Flexoki** (light) theme applies the same surface logic in a warm paper palette. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
 
-**The Obsidian Terminal** is the workspace expression of this system — applying the Obsidian Lens aesthetic to a terminal-first CLI agent management interface. The same depth, glass, and editorial precision, now serving a command-line-native workflow.
+The **workspace expression** of this system applies The Lens aesthetic to a terminal-first CLI agent management interface — the same depth, glass, and editorial precision, now serving a command-line-native workflow.
 
 ---
 
@@ -24,7 +24,7 @@ The palette is rooted in deep purples and blues, punctuated by vibrant accents. 
 
 ### Surface Hierarchy & Nesting
 
-Treat the UI as a physical stack of frosted glass. Values below are the `obsidian-lens` (dark) snapshot; the runtime SSoT — including the `flexoki` light theme — is `src/theme/themes/*.ts`. See `UNIFIED.md` §2.1 for how these levels map onto the two-plane shell.
+Treat the UI as a physical stack of frosted glass. Values below are the **Catppuccin** dark snapshot (`obsidian-lens.ts`); the runtime SSoT — including the **Flexoki** light theme (`flexoki.ts`) — is `src/theme/themes/*.ts`. See `UNIFIED.md` §2.1 for how these levels map onto the two-plane shell.
 
 - **Level 0 — Canvas:** `surface` (#121221) — the work plane: main canvas, terminal/SplitView, dock, the 44px top-chrome banner, the 24px status bar, **and** the right activity panel (all co-planar).
 - **Level 1 — Chrome:** `surface-container-low` (#1a1a2a) — the distinct-chrome plane: the left sidebar + the backdrop. One step off the canvas (lighter in dark, darker in light).
@@ -202,7 +202,7 @@ The shell is **three zones** — no icon rail (removed in VIM-76). See `UNIFIED.
 
 ### The Lens Blur
 
-When a modal or "Lens" view is triggered (Command Palette, full-width editor overlay), the background workspace blurs (`12px`) and shifts slightly toward the `primary-container` hue. This reinforces the "Obsidian Lens" metaphor.
+When a modal or "Lens" view is triggered (Command Palette, full-width editor overlay), the background workspace blurs (`12px`) and shifts slightly toward the `primary-container` hue. This reinforces The Lens metaphor.
 
 ### Status Indicators
 
@@ -241,22 +241,16 @@ The context window indicator uses emoji that degrades as context fills:
 
 ---
 
-## 9. Design Resources
+## 9. Themes & Design Resources
 
-**Google AI Studio project** — contains the original Stitch-generated HTML/CSS source for all screens:
-https://aistudio.google.com/apps/71779b0a-a865-421d-9e16-8d224a1a26a8?showPreview=true&showAssistant=true
+**Themes.** The Lens ships two runtime themes (`src/theme/themes/*.ts`), both exposing identical token keys so `bg-surface` etc. resolve per active theme:
 
-**Stitch MCP Server** — use to generate and iterate on UI components that match this design system:
+- **Catppuccin** (dark, default) — file/id `obsidian-lens` (legacy slug), `label: 'Catppuccin'`. Atmospheric dark on the Catppuccin Mocha palette; the hex tables above are its snapshot.
+- **Flexoki** (light) — file/id `flexoki`, `label: 'Flexoki'`. The same surface logic in a warm paper palette.
 
-```bash
-# Add the Stitch MCP server (requires STITCH_API_KEY in .env)
-claude mcp add stitch https://stitch.googleapis.com/mcp \
-  --transport http \
-  --scope project \
-  --header "X-Goog-Api-Key: \${STITCH_API_KEY}"
-```
+Color SSoT is `src/theme/themes/*.ts` — see `UNIFIED.md` §9 for the runtime mechanism.
 
-> **Historical.** The Google AI Studio project and the Stitch MCP produced the original screen mockups, which now live in `docs/design/archive/` (superseded). Current work derives from `UNIFIED.md` §5 + the live components in `src/` — not from Stitch generation. Keep these resources only for visual archaeology.
+**Historical — Google Stitch (first draft).** The original screen mockups were generated with Google Stitch (Google AI Studio) as a first draft. They are superseded and now live in `docs/design/archive/` for visual archaeology only. **Do not generate new UI from Stitch** — current work derives from `UNIFIED.md` §5 + the live components in `src/`.
 
 ---
 

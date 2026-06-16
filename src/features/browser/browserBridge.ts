@@ -17,11 +17,19 @@ import type {
   BrowserPaneNavStateChangedEvent,
 } from './types'
 
+export interface BrowserPaneBoundsCapture extends BrowserPaneBoundsRequest {
+  sequence: number
+}
+
 type BrowserCapableWindow = Window & {
   vimeflow?: {
     browserPane?: BrowserPaneBridge
   }
 }
+
+let browserPaneBoundsCaptureActive = false
+let browserPaneBoundsCaptures: BrowserPaneBoundsCapture[] = []
+let browserPaneBoundsSequence = 0
 
 const bridge = (): BrowserPaneBridge | undefined => {
   if (typeof window === 'undefined') {
@@ -30,6 +38,69 @@ const bridge = (): BrowserPaneBridge | undefined => {
 
   return (window as BrowserCapableWindow).vimeflow?.browserPane
 }
+
+const cloneBoundsCapture = (
+  request: BrowserPaneBoundsRequest
+): BrowserPaneBoundsCapture => {
+  const capture: BrowserPaneBoundsCapture = {
+    sequence: browserPaneBoundsSequence,
+    sessionId: request.sessionId,
+    paneId: request.paneId,
+    bounds: { ...request.bounds },
+    visible: request.visible,
+  }
+  browserPaneBoundsSequence += 1
+
+  if (request.shortcutContext) {
+    capture.shortcutContext = {
+      paneIds: [...request.shortcutContext.paneIds],
+      activePaneId: request.shortcutContext.activePaneId,
+    }
+  }
+
+  return capture
+}
+
+export const startBrowserPaneBoundsCapture = (): boolean => {
+  if (!bridge()) {
+    return false
+  }
+
+  if (browserPaneBoundsCaptureActive) {
+    return true
+  }
+
+  browserPaneBoundsCaptureActive = true
+  browserPaneBoundsCaptures = []
+  browserPaneBoundsSequence = 0
+
+  return true
+}
+
+export const clearBrowserPaneBoundsCaptures = (): void => {
+  browserPaneBoundsCaptures = []
+}
+
+export const stopBrowserPaneBoundsCapture = (): void => {
+  browserPaneBoundsCaptureActive = false
+}
+
+export const getBrowserPaneBoundsCaptures = (): BrowserPaneBoundsCapture[] =>
+  browserPaneBoundsCaptures.map((capture) => {
+    const nextCapture: BrowserPaneBoundsCapture = {
+      ...capture,
+      bounds: { ...capture.bounds },
+    }
+
+    if (capture.shortcutContext) {
+      nextCapture.shortcutContext = {
+        paneIds: [...capture.shortcutContext.paneIds],
+        activePaneId: capture.shortcutContext.activePaneId,
+      }
+    }
+
+    return nextCapture
+  })
 
 export const createBrowserPane = async (
   request: BrowserPaneCreateRequest
@@ -59,7 +130,16 @@ export const createBrowserPane = async (
 export const setBrowserPaneBounds = async (
   request: BrowserPaneBoundsRequest
 ): Promise<void> => {
-  await bridge()?.setBounds(request)
+  const bri = bridge()
+  if (!bri) {
+    return
+  }
+
+  await bri.setBounds(request)
+
+  if (browserPaneBoundsCaptureActive) {
+    browserPaneBoundsCaptures.push(cloneBoundsCapture(request))
+  }
 }
 
 export const navigateBrowserPane = async (

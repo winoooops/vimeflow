@@ -22,6 +22,7 @@ const EXIT_HOLD_MS = 5000
 const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
   codex: 'codex',
+  kimi: 'kimi',
   aider: 'aider',
   generic: 'generic',
 } as const
@@ -44,11 +45,41 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  usageFetched: false,
   numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
   testRun: null,
 })
+
+const createRunResetStatus = (
+  prev: AgentStatus,
+  sessionId: string | null
+): AgentStatus => ({
+  ...createDefaultStatus(sessionId),
+  isActive: prev.isActive,
+  agentExited: prev.agentExited,
+  agentType: prev.agentType,
+  modelId: prev.modelId,
+  modelDisplayName: prev.modelDisplayName,
+  version: prev.version,
+  cwd: prev.cwd,
+})
+
+const statusTokenTotal = (
+  contextWindow: AgentStatus['contextWindow']
+): number | null =>
+  contextWindow === null
+    ? null
+    : contextWindow.totalInputTokens + contextWindow.totalOutputTokens
+
+const eventTokenTotal = (
+  contextWindow: AgentStatusEvent['contextWindow']
+): number | null =>
+  contextWindow === null
+    ? null
+    : Number(contextWindow.totalInputTokens) +
+      Number(contextWindow.totalOutputTokens)
 
 /**
  * Stop all agent watchers for a given session (best-effort, logs on failure).
@@ -76,11 +107,18 @@ const stopWatchers = async (
   }
 }
 
-export const useAgentStatus = (sessionId: string | null): AgentStatus => {
+export const useAgentStatus = (
+  sessionId: string | null,
+  resetGeneration = 0
+): AgentStatus => {
   const [status, setStatus] = useState<AgentStatus>(() =>
     createDefaultStatus(sessionId)
   )
   const prevSessionIdRef = useRef<string | null>(sessionId)
+  const prevResetGenerationRef = useRef(resetGeneration)
+  const locallyResetAgentSessionIdRef = useRef<string | null>(null)
+  const locallyResetTokenTotalRef = useRef<number | null>(null)
+  const locallyResetRunScopedEventsRef = useRef(false)
 
   // Two refs with distinct semantics — DO NOT collapse them. Collapsing
   // them was the source of the F1 panel-stuck bug Codex flagged twice
@@ -147,6 +185,28 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // fire before the event listeners below are attached.
   const listenersReadyRef = useRef(false)
 
+  useEffect(() => {
+    if (prevResetGenerationRef.current === resetGeneration) {
+      return
+    }
+
+    prevResetGenerationRef.current = resetGeneration
+    if (collapseTimeoutRef.current) {
+      clearTimeout(collapseTimeoutRef.current)
+      collapseTimeoutRef.current = null
+    }
+
+    setStatus((prev) => {
+      if (prev.agentSessionId !== null) {
+        locallyResetAgentSessionIdRef.current = prev.agentSessionId
+        locallyResetTokenTotalRef.current = statusTokenTotal(prev.contextWindow)
+      }
+      locallyResetRunScopedEventsRef.current = true
+
+      return createRunResetStatus(prev, sessionId)
+    })
+  }, [resetGeneration, sessionId])
+
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
@@ -169,6 +229,9 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       watcherStartGenerationRef.current += 1
       knownPtyIdRef.current = undefined
       detectedAgentPidRef.current = null
+      locallyResetAgentSessionIdRef.current = null
+      locallyResetTokenTotalRef.current = null
+      locallyResetRunScopedEventsRef.current = false
       listenersReadyRef.current = false
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
@@ -415,6 +478,46 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           const p = payload
 
           setStatus((prev) => {
+            const locallyResetAgentSessionId =
+              locallyResetAgentSessionIdRef.current
+            if (
+              locallyResetAgentSessionId !== null &&
+              p.agentSessionId === locallyResetAgentSessionId
+            ) {
+              const priorTokenTotal = locallyResetTokenTotalRef.current
+              const nextTokenTotal = eventTokenTotal(p.contextWindow)
+              if (priorTokenTotal === null) {
+                return prev
+              }
+
+              if (
+                nextTokenTotal !== null &&
+                nextTokenTotal >= priorTokenTotal
+              ) {
+                return prev
+              }
+
+              if (nextTokenTotal === null) {
+                return prev
+              }
+
+              locallyResetAgentSessionIdRef.current = null
+              locallyResetTokenTotalRef.current = null
+            }
+
+            if (
+              locallyResetAgentSessionId !== null &&
+              p.agentSessionId !== locallyResetAgentSessionId
+            ) {
+              locallyResetAgentSessionIdRef.current = null
+              locallyResetTokenTotalRef.current = null
+              locallyResetRunScopedEventsRef.current = false
+            }
+
+            if (locallyResetAgentSessionIdRef.current === null) {
+              locallyResetRunScopedEventsRef.current = false
+            }
+
             const base =
               p.agentSessionId !== null &&
               prev.agentSessionId !== null &&
@@ -492,6 +595,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
                       : {}),
                   }
                 : base.rateLimits,
+              usageFetched: p.usageFetched,
             }
           })
         }
@@ -504,6 +608,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         (payload) => {
           const ptyId = getPtySessionId(sessionId)
           if (payload.sessionId !== ptyId) {
+            return
+          }
+
+          if (locallyResetRunScopedEventsRef.current) {
             return
           }
 
@@ -573,6 +681,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             return
           }
 
+          if (locallyResetRunScopedEventsRef.current) {
+            return
+          }
+
           // numTurns is u32 in the Rust binding — fits safely in JS number,
           // no Number() coercion needed (those are reserved for u64/i64
           // fields where serde-json may emit values past Number.MAX_SAFE_INTEGER).
@@ -616,6 +728,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         'test-run',
         (payload) => {
           if (payload.sessionId !== resolvePtyId()) {
+            return
+          }
+
+          if (locallyResetRunScopedEventsRef.current) {
             return
           }
 

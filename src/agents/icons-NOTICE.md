@@ -2,9 +2,9 @@
 
 # Agent brand icon attribution
 
-The agent brand marks in `brandIcons.tsx` — Claude Code and Codex (OpenAI) —
-are vendored (mono variant) from **@lobehub/icons** (Lobe Icons), used under the
-MIT License.
+The agent brand marks in `brandIcons.tsx` — Claude Code, Codex (OpenAI), and
+Kimi (Moonshot AI) — are vendored (mono variant) from **@lobehub/icons** (Lobe
+Icons), used under the MIT License.
 
 - Source: https://github.com/lobehub/lobe-icons
 - SPDX-License-Identifier: MIT
@@ -37,7 +37,7 @@ SOFTWARE.
 
 ## Trademarks
 
-The brand names and logos depicted (OpenAI / Codex, Anthropic / Claude) are
-trademarks of their respective owners. They are used here nominatively, solely
-to identify the corresponding agent integration, and do not imply affiliation
-with or endorsement by those owners.
+The brand names and logos depicted (OpenAI / Codex, Anthropic / Claude,
+Moonshot AI / Kimi) are trademarks of their respective owners. They are used
+here nominatively, solely to identify the corresponding agent integration, and
+do not imply affiliation with or endorsement by those owners.

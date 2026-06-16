@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-12
+last_updated: 2026-06-15
 ref_count: 3
 ---
 
@@ -176,4 +176,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/editor/hooks/useCodeMirror.ts` L175-193
 - **Finding:** `writeClipboardText` and its private `writeViaTextarea` fallback were defined inside `useCodeMirror.ts`, a module dense with CodeMirror view/state, Vim-mode wiring, and React hook concerns. The helper has zero imports from `@codemirror/*` and is a general-purpose DOM clipboard writer; `MarkdownReadingView.tsx` already needed to call it, forcing a cross-module import from an unrelated hook file. Future maintainers looking for clipboard fallback logic are unlikely to check a CodeMirror hook first, and refactors of `useCodeMirror.ts` risk silently breaking the reading view's copy path.
 - **Fix:** Promoted the helper to `src/features/editor/utils/clipboard.ts`, exported `ClipboardLike` from the same module, and added the required co-located `clipboard.test.ts`. Updated `useCodeMirror.ts` and `MarkdownReadingView.tsx` to import from the new utility module. The move keeps the hook focused on CodeMirror integration and places the clipboard abstraction next to `readingStyleStore.ts`, the existing stateless utility in `src/features/editor/utils/`.
+- **Commit:** same commit as this entry
+
+### 16. `BrowserPaneBoundsCapture` re-declared in `e2e.d.ts` instead of imported from canonical source
+
+- **Source:** github-claude | PR #472 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/types/e2e.d.ts` L6-9
+- **Finding:** `src/types/e2e.d.ts` re-declared `BrowserPaneBoundsCapture` as a global ambient interface that independently extended `BrowserPaneBoundsRequest` with `sequence: number`. The canonical type already existed as a named export in `src/features/browser/browserBridge.ts`. TypeScript could not enforce that the two declarations stayed in sync; a required field added to the module type would silently leave the global type stale.
+- **Fix:** Replaced the ambient interface block with a global type alias that imports the canonical `BrowserPaneBoundsCapture` from `../features/browser/browserBridge` (aliased to avoid naming collision). E2E specs continue to consume the type globally while the renderer-side type remains the single source of truth.
 - **Commit:** same commit as this entry

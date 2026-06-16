@@ -165,10 +165,7 @@ mod tests {
         assert_ne!(attach.shell_pid, attach.agent_pid);
         assert_eq!(attach.pty_start, SystemTime::UNIX_EPOCH);
         assert_eq!(attach.agent_type, AgentType::ClaudeCode);
-        assert_eq!(
-            attach.provider_home,
-            Some(PathBuf::from("/home/u/.claude"))
-        );
+        assert_eq!(attach.provider_home, Some(PathBuf::from("/home/u/.claude")));
         assert_eq!(attach.proc_root, Some(PathBuf::from("/proc")));
     }
 

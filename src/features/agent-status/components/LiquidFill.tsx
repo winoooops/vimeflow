@@ -41,9 +41,9 @@ const buildWavePath = (
   // seam at every iteration.
   const cycles = 4
   // Scale segment count with width so each segment stays around 1.5 px wide.
-  // Rail Bucket (width=44) → 48 segments (~0.9 px each); ContextBucket
-  // (width=400 at a 200 px gauge) → ~267 segments (~1.5 px each). The cap
-  // at 48 keeps small buckets smooth; the linear scaling keeps wide
+  // The rail meter (width=44) → 48 segments (~0.9 px each); a wider gauge
+  // (e.g. width=400 at a 200 px gauge) → ~267 segments (~1.5 px each). The
+  // cap at 48 keeps small gauges smooth; the linear scaling keeps wide
   // gauges from looking polygonal.
   const segments = Math.max(48, Math.ceil(width / 1.5))
   const step = width / segments
@@ -84,7 +84,7 @@ const applyBaseFloorClamp = (
 /**
  * Returns the y coordinate (in SVG user units) of the solid-fill body's
  * top edge for a given container size and percentage. Exported for
- * geometry assertions in consumer tests (e.g. ContextBucket.test.tsx).
+ * geometry assertions in consumer tests (e.g. LiquidFill.test.tsx).
  */
 export const computeBaseFloor = (w: number, h: number, pct: number): number => {
   const clamped = Math.max(0, Math.min(100, pct))

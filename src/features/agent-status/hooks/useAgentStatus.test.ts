@@ -497,6 +497,32 @@ describe('useAgentStatus', () => {
     expect(result.current.contextWindow).toBeNull()
   })
 
+  test('maps usageFetched from the agent-status event', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    expect(result.current.usageFetched).toBe(false)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        agentSessionId: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        usageFetched: true,
+      })
+    })
+
+    expect(result.current.usageFetched).toBe(true)
+  })
+
   test('accumulates tool call counts by type', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
@@ -1111,6 +1137,382 @@ describe('useAgentStatus', () => {
     expect(result.current.contextWindow).toBeNull()
     expect(result.current.cost).toBeNull()
     expect(result.current.toolCalls.total).toBe(0)
+  })
+
+  test('resetGeneration clears run-scoped state and ignores stale same-run status', async () => {
+    const { result, rerender } = renderHook(
+      ({ resetGeneration }: { resetGeneration: number }) =>
+        useAgentStatus('session-1', resetGeneration),
+      { initialProps: { resetGeneration: 0 } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        tool: 'exec_command',
+        args: 'npm run lint',
+        status: 'done',
+        durationMs: 100,
+        timestamp: '2026-06-15T12:00:00Z',
+        toolUseId: 'call-1',
+        isTestFile: false,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 3,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(80)
+    expect(result.current.recentToolCalls).toHaveLength(1)
+    expect(result.current.numTurns).toBe(3)
+
+    rerender({ resetGeneration: 1 })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.modelId).toBe('gpt-5.5')
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.recentToolCalls).toEqual([])
+    expect(result.current.numTurns).toBe(0)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'old-running-call',
+        tool: 'exec_command',
+        args: 'aws ssm get-command-invocation',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 9,
+      })
+    })
+
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(0)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 1,
+          remainingPercentage: 99,
+          contextWindowSize: 258000,
+          totalInputTokens: 10,
+          totalOutputTokens: 1,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(1)
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'new-running-call',
+        tool: 'exec_command',
+        args: 'npm test',
+        status: 'running',
+        timestamp: '2026-06-15T12:02:00Z',
+        durationMs: null,
+      })
+    })
+
+    expect(result.current.toolCalls.active?.toolUseId).toBe('new-running-call')
+  })
+
+  test('resetGeneration with null contextWindow suppresses same-run status until new session boundary', async () => {
+    const { result, rerender } = renderHook(
+      ({ resetGeneration }: { resetGeneration: number }) =>
+        useAgentStatus('session-1', resetGeneration),
+      { initialProps: { resetGeneration: 0 } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    // Establish a run with a known agentSessionId but no contextWindow snapshot.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow).toBeNull()
+
+    // Trigger the local reset before any token total is known.
+    rerender({ resetGeneration: 1 })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+
+    // A stale same-run status event with a non-null contextWindow must not
+    // repopulate the cleared sidebar, because freshness is undecidable when
+    // the pre-reset snapshot lacked a token total.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+
+    // Run-scoped events must stay suppressed for the same session.
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'stale-running-call',
+        tool: 'exec_command',
+        args: 'aws ssm get-command-invocation',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 9,
+      })
+    })
+
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(0)
+
+    // A fresh session boundary clears the suppression latch and allows updates.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-new',
+        contextWindow: {
+          usedPercentage: 1,
+          remainingPercentage: 99,
+          contextWindowSize: 258000,
+          totalInputTokens: 10,
+          totalOutputTokens: 1,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow?.usedPercentage).toBe(1)
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'fresh-running-call',
+        tool: 'exec_command',
+        args: 'npm test',
+        status: 'running',
+        timestamp: '2026-06-15T12:02:00Z',
+        durationMs: null,
+      })
+    })
+
+    expect(result.current.toolCalls.active?.toolUseId).toBe(
+      'fresh-running-call'
+    )
+  })
+
+  test('double resetGeneration preserves the stale same-run suppression latch', async () => {
+    const { result, rerender } = renderHook(
+      ({ resetGeneration }: { resetGeneration: number }) =>
+        useAgentStatus('session-1', resetGeneration),
+      { initialProps: { resetGeneration: 0 } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(80)
+
+    rerender({ resetGeneration: 1 })
+    expect(result.current.agentSessionId).toBeNull()
+
+    rerender({ resetGeneration: 2 })
+    expect(result.current.agentSessionId).toBeNull()
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 81,
+          remainingPercentage: 19,
+          contextWindowSize: 258000,
+          totalInputTokens: 9100,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'stale-running-call-after-double-clear',
+        tool: 'exec_command',
+        args: 'npm run lint',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 10,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(0)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-new',
+        contextWindow: {
+          usedPercentage: 1,
+          remainingPercentage: 99,
+          contextWindowSize: 258000,
+          totalInputTokens: 10,
+          totalOutputTokens: 1,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow?.usedPercentage).toBe(1)
   })
 
   test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {

@@ -51,3 +51,36 @@ test('gradient wash uses agent.accentDim in inline style', () => {
     /var\(--color-agent-codex-accent-dim\)/
   )
 })
+
+test('adds macOS drag coverage while keeping collapse clickable', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      status="running"
+      onCollapse={() => undefined}
+      reserveWindowControls
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-panel-header')).toHaveClass(
+    'vf-app-drag-region'
+  )
+
+  expect(
+    screen.getByRole('button', { name: /collapse activity panel/i })
+  ).toHaveClass('vf-app-no-drag')
+})
+
+test('does not add drag coverage when native controls are not reserved', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      status="running"
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-panel-header')).not.toHaveClass(
+    'vf-app-drag-region'
+  )
+})

@@ -300,6 +300,45 @@ describe('useSessionManager', () => {
     ).toEqual([75])
   })
 
+  test('clearPaneCacheHistory clears pane cacheHistory and deletes its persisted key', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.appendPaneCacheReading('pty-1', 'p0', 75)
+    })
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([75])
+
+    act(() => {
+      result.current.clearPaneCacheHistory('pty-1', 'p0')
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).toBeNull()
+  })
+
   test('removeSession deletes the pane cacheHistory key for the killed pty', async () => {
     window.localStorage.clear()
     const service = createMockService()

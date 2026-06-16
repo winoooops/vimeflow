@@ -2,6 +2,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
+import { KimiUsageGate } from '../../agent-status/components/KimiUsageGate'
 import { parseModelTitle } from '../utils/parseModelTitle'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
@@ -26,6 +27,11 @@ export interface AgentStatusCardProps {
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
   weekPct?: number | null
+  /** True when the active agent is kimi — renders the consent-gated usage gate. */
+  isKimi?: boolean
+  /** The backend `usageFetched` signal — true once a real kimi `/usages` fetch
+   * has landed; lets the gate tell ON (incl. genuine 0%) from LOADING. */
+  hasUsageData?: boolean
   /** Resolved shell path/name for pure shell panes, e.g. `/bin/zsh`. */
   shellName?: string | null
 }
@@ -180,6 +186,8 @@ export const AgentStatusCard = ({
   contextPct = null,
   fiveHourPct = null,
   weekPct = null,
+  isKimi = false,
+  hasUsageData = false,
   shellName = null,
 }: AgentStatusCardProps): ReactElement => {
   const hasUsage = fiveHourPct !== null || weekPct !== null
@@ -238,24 +246,32 @@ export const AgentStatusCard = ({
             className="mt-[9px] flex flex-col justify-center"
             style={{ height: CARD_BODY_H }}
           >
-            {hasUsage && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 9,
-                }}
-              >
-                {fiveHourPct !== null && (
-                  <RateLimitBar
-                    label="5-hour Session"
-                    percentage={fiveHourPct}
-                  />
-                )}
-                {weekPct !== null && (
-                  <RateLimitBar label="Weekly Usage" percentage={weekPct} />
-                )}
-              </div>
+            {isKimi ? (
+              <KimiUsageGate
+                fiveHourPct={fiveHourPct}
+                weekPct={weekPct}
+                hasUsageData={hasUsageData}
+              />
+            ) : (
+              hasUsage && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 9,
+                  }}
+                >
+                  {fiveHourPct !== null && (
+                    <RateLimitBar
+                      label="5-hour Session"
+                      percentage={fiveHourPct}
+                    />
+                  )}
+                  {weekPct !== null && (
+                    <RateLimitBar label="Weekly Usage" percentage={weekPct} />
+                  )}
+                </div>
+              )
             )}
           </div>
         </>

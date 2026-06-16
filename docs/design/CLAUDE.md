@@ -24,16 +24,16 @@ list. **When any value conflicts with another doc, `UNIFIED.md` wins.**
 
 ### `DESIGN.md` — foundation
 
-The design-system philosophy: "The Obsidian Lens", color/surface theory,
+The design-system philosophy: "The Lens", color/surface theory,
 typography scale, elevation principles, do's/don'ts. Foundational — `UNIFIED.md`
-extends rather than contradicts it. (Its hex tables are the `obsidian-lens`
-dark snapshot; see tokens below for the runtime source.)
+extends rather than contradicts it. (Its hex tables are the **Catppuccin**
+dark snapshot [`obsidian-lens.ts`]; see tokens below for the runtime source.)
 
 ### `src/theme/themes/*.ts` — runtime token SSoT
 
 The live color/shadow values. The system is **multi-theme** at runtime:
-`obsidian-lens` (dark) + `flexoki` (light), applied as CSS variables. This is
-the source of truth for any color value.
+**Catppuccin** (dark, `obsidian-lens.ts`) + **Flexoki** (light, `flexoki.ts`),
+applied as CSS variables. This is the source of truth for any color value.
 
 ### `tokens.css` / `tokens.ts` — non-color scales + state contract
 
@@ -44,8 +44,8 @@ tables are a historical snapshot — use `src/theme` for color.
 
 ### `archive/` — historical handoffs & mockups (reference only)
 
-Every superseded design handoff, migration brief, Stitch `code.html` mockup,
-and runnable prototype. They predate/drifted from the shipped app (4/5-zone +
+Every superseded design handoff, migration brief, first-draft Stitch `code.html`
+mockup, and runnable prototype. They predate/drifted from the shipped app (4/5-zone +
 icon rail, pre-#442 tokens, dark-only hex, screens that no longer exist). Their
 still-valid contracts have been folded into `UNIFIED.md`. **Do not derive new
 work from `archive/`** — see `archive/README.md`. Slated for deletion in a

@@ -172,7 +172,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Border Radius: Obsidian Lens Scale', () => {
+  describe('Border Radius: The Lens Scale', () => {
     test('tailwind config has correct border radius values', () => {
       const borderRadius = tailwindConfig.theme.extend.borderRadius
 

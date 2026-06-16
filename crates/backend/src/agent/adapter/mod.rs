@@ -10,6 +10,7 @@ mod bindings;
 pub mod claude_code;
 pub mod codex;
 mod error;
+pub mod kimi;
 mod serde_helpers;
 mod session_lifecycle;
 mod traits;
@@ -297,11 +298,50 @@ pub(crate) async fn stop_agent_watcher_inner(
 }
 
 #[cfg(test)]
+use once_cell::sync::Lazy;
+#[cfg(test)]
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+#[cfg(test)]
+use std::ffi::OsString;
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
 #[cfg(test)]
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
+
+// Serializes every test that mutates the process-wide `KIMI_CODE_HOME`.
+#[cfg(test)]
+static KIMI_HOME_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// RAII guard: locks `KIMI_HOME_ENV_LOCK` so `KIMI_CODE_HOME`-mutating tests
+/// serialize, snapshots the prior value, and restores it on drop.
+#[cfg(test)]
+pub(crate) struct KimiHomeEnvGuard {
+    _lock: MutexGuard<'static, ()>,
+    prev: Option<OsString>,
+}
+
+#[cfg(test)]
+impl KimiHomeEnvGuard {
+    pub(crate) fn acquire() -> Self {
+        let lock = KIMI_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Self {
+            _lock: lock,
+            prev: std::env::var_os("KIMI_CODE_HOME"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for KimiHomeEnvGuard {
+    fn drop(&mut self) {
+        match self.prev.take() {
+            Some(v) => std::env::set_var("KIMI_CODE_HOME", v),
+            None => std::env::remove_var("KIMI_CODE_HOME"),
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
@@ -437,8 +477,7 @@ mod noop_tests {
             provider_home: Some(PathBuf::from("/home/u/.codex")),
             proc_root: None,
         };
-        let bindings =
-            bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
+        let bindings = bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
         assert!(matches!(bindings.agent_type, AgentType::Codex));
 
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
