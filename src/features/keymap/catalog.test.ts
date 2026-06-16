@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { CATALOG, getCommand, type CommandId } from './catalog'
 import { exactlyOneSuper } from './chord'
+import { resolveDefault } from './resolve'
 
 describe('CATALOG', () => {
   test('ids are unique', () => {
@@ -30,11 +31,7 @@ describe('CATALOG', () => {
 
   test('every rebindable default has exactly one super (terminal-safety)', () => {
     for (const cmd of CATALOG.filter((c) => c.rebindable)) {
-      const def =
-        typeof cmd.defaultCombo === 'function'
-          ? cmd.defaultCombo(true)
-          : cmd.defaultCombo
-      expect(exactlyOneSuper(def)).toBe(true)
+      expect(exactlyOneSuper(resolveDefault(cmd, true))).toBe(true)
     }
   })
 

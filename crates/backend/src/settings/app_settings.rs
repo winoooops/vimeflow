@@ -1,7 +1,8 @@
 //! Durable app-wide settings store (`app_data_dir/settings.json`).
 //! Survives graceful quit and is never wiped by `clear_all` — it holds user
 //! preferences, not ephemeral session state.
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -28,6 +29,29 @@ pub struct AppSettings {
     pub mono_font: String,
     pub keymap_preset: String,
     pub agent_shim_enabled: bool,
+    #[serde(default, deserialize_with = "lenient_string_map")]
+    pub custom_keybindings: HashMap<String, String>,
+}
+
+/// Tolerant deserializer for `custom_keybindings` (spec §7). A malformed entry
+/// must never fail the whole-struct load and wipe the durable settings file. The
+/// file is already valid JSON by the time this runs, so `Value::deserialize`
+/// never errors — a wrong-shaped value yields an empty map, and non-string
+/// entries are dropped rather than rejected.
+fn lenient_string_map<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+            .collect(),
+        _ => HashMap::new(),
+    })
 }
 
 impl Default for AppSettings {
@@ -47,6 +71,7 @@ impl Default for AppSettings {
             mono_font: "jetbrains".into(),
             keymap_preset: "vimeflow".into(),
             agent_shim_enabled: true,
+            custom_keybindings: HashMap::new(),
         }
     }
 }
@@ -150,6 +175,10 @@ mod tests {
             mono_font: "iosevka".into(),
             keymap_preset: "vim".into(),
             agent_shim_enabled: false,
+            custom_keybindings: HashMap::from([(
+                "dock-toggle".to_string(),
+                "Mod+KeyK".to_string(),
+            )]),
         }
     }
 
@@ -170,6 +199,7 @@ mod tests {
         assert_eq!(s.mono_font, "jetbrains");
         assert_eq!(s.keymap_preset, "vimeflow");
         assert!(s.agent_shim_enabled);
+        assert!(s.custom_keybindings.is_empty());
     }
 
     #[test]
@@ -193,6 +223,7 @@ mod tests {
             json.contains("\"keymapPreset\":\"vimeflow\""),
             "json: {json}"
         );
+        assert!(json.contains("\"customKeybindings\":{}"), "json: {json}");
     }
 
     #[test]
@@ -253,6 +284,27 @@ mod tests {
         assert!(loaded.use_system_path_prompts);
         assert_eq!(loaded.density, "comfortable");
         assert_eq!(loaded.keymap_preset, "vimeflow");
+        assert!(loaded.custom_keybindings.is_empty());
+    }
+
+    #[test]
+    fn lenient_custom_keybindings_drops_bad_entries_without_failing_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        // A non-string value for one entry must NOT fail the whole-struct load.
+        fs::write(
+            &path,
+            r#"{"version":1,"closeWithNoTabs":"close","customKeybindings":{"dock-toggle":"Mod+KeyK","bad":5}}"#,
+        )
+        .unwrap();
+
+        let loaded = AppSettingsCache::new(path).load();
+        assert_eq!(loaded.close_with_no_tabs, "close"); // other settings survived
+        assert_eq!(
+            loaded.custom_keybindings.get("dock-toggle").map(String::as_str),
+            Some("Mod+KeyK")
+        );
+        assert!(!loaded.custom_keybindings.contains_key("bad")); // non-string dropped
     }
 
     #[test]
