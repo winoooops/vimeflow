@@ -62,12 +62,13 @@ import {
   clearDispatchBlocker,
   writeDispatchBlocker,
 } from './lib/dispatch-blocker.js'
+import { postLinearIssueGithubComment } from './lib/github-pr-comments.js'
 import { parseLinearCommentId } from './lib/linear-status.js'
 import { orchestratorTool } from './lib/orchestrator-tools.js'
 import {
   backfillPrRef,
   linkedVim,
-  readLinkedIssueCache,
+  readLinkedIssueCacheRecord,
   writeLinkedIssueCache,
 } from './lib/pr-utils.js'
 import {
@@ -293,6 +294,39 @@ const ensurePrRef = (pr, ctx, identifier) => {
   }
 }
 
+const ensureLinearIssuePrComment = (pr, ctx, issue) => {
+  const identifier = issue?.identifier || issue
+  if (!identifier) {
+    return
+  }
+
+  const posted = postLinearIssueGithubComment(
+    {
+      owner: ctx.owner,
+      name: ctx.name,
+      pr: pr.number,
+      identifier,
+      url: issue?.url || null,
+      env: botProcessEnv(ctx.orchBot),
+    },
+    { gh }
+  )
+  if (posted.skipped) {
+    return
+  }
+  if (posted.ok) {
+    out(
+      `           ↳ GitHub #${pr.number}: linked Linear ${identifier} comment posted`
+    )
+
+    return
+  }
+
+  out(
+    `           ↳ GitHub #${pr.number}: linked Linear ${identifier} comment skipped (${posted.reason || 'gh failed'})`
+  )
+}
+
 const resolveLinkedIssue = async (pr, view, ctx) => {
   // A magic word in the body/branch → Linear's native link already fires.
   const inText = linkedVim(view.body, pr.headRefName)
@@ -300,22 +334,23 @@ const resolveLinkedIssue = async (pr, view, ctx) => {
     return inText
   }
 
-  const cached = readLinkedIssueCache(pr.number)
+  const cached = readLinkedIssueCacheRecord(pr.number)
 
   // Backfilling the PR body is a WRITE, so it is gated on the linearCreateIssues
   // opt-in — report-only / non-create ticks just resolve the cached link without
   // touching GitHub.
   if (!ctx.linearCreateIssues) {
-    return cached
+    return cached?.identifier || null
   }
 
   // A cached orchestrator-created issue: re-assert its `Refs` in the PR body
   // (idempotent; self-heals a back-link that failed on an earlier create-enabled
   // tick, which the cache alone would otherwise mask forever).
-  if (cached) {
-    ensurePrRef(pr, ctx, cached)
+  if (cached?.identifier) {
+    ensurePrRef(pr, ctx, cached.identifier)
+    ensureLinearIssuePrComment(pr, ctx, cached)
 
-    return cached
+    return cached.identifier
   }
 
   const tool = orchestratorTool('create_linear_issue_for_pr')
@@ -336,6 +371,7 @@ const resolveLinkedIssue = async (pr, view, ctx) => {
       `           ↳ Linear ${identifier}: created for unlinked PR #${pr.number}`
     )
     ensurePrRef(pr, ctx, identifier)
+    ensureLinearIssuePrComment(pr, ctx, issue)
 
     return identifier
   } catch (e) {

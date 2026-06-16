@@ -6,6 +6,7 @@ import {
   backfillPrRef,
   linkedVim,
   linkedVimForPr,
+  readLinkedIssueCacheRecord,
   writeLinkedIssueCache,
 } from './pr-utils.js'
 
@@ -75,6 +76,23 @@ describe('linked issue cache', () => {
         cacheFile: file,
       })
     ).toBe('VIM-42')
+  })
+
+  test('reads cached issue metadata for follow-up GitHub comments', () => {
+    const file = makeStore()
+    writeLinkedIssueCache(
+      330,
+      {
+        identifier: 'VIM-43',
+        url: 'https://linear.app/vimeflow/issue/VIM-43/test',
+      },
+      file
+    )
+
+    expect(readLinkedIssueCacheRecord(330, file)).toEqual({
+      identifier: 'VIM-43',
+      url: 'https://linear.app/vimeflow/issue/VIM-43/test',
+    })
   })
 })
 

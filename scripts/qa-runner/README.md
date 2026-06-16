@@ -304,8 +304,9 @@ Decision comments can be disabled with `QA_LINEAR_DECISION_COMMENTS=0` or
 If `QA_LINEAR_CREATE_ISSUES=1` / `linearCreateIssues: true` is enabled, an
 eligible PR with no `VIM-N` in the body or branch name gets a new Linear issue
 created through the orchestrator tool `create_linear_issue_for_pr`. The issue
-description links back to the GitHub PR, and the runner caches the PR→issue
-mapping for future comments.
+description links back to the GitHub PR, the runner caches the PR→issue mapping
+for future comments, and the orchestrator GitHub identity posts one deduped PR
+comment with the created Linear issue link.
 
 When the fixer completes a live `/lifeline:upsource-review` cycle, `run.js` posts
 a structured fixer comment with the PR, branch, pushed head, Kimi exit, stop mode,

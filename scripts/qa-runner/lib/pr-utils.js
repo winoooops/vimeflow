@@ -29,18 +29,30 @@ export const linkedVim = (...texts) => {
 export const linkedIssueStorePath = (pr) =>
   join(STATE_DIR, `linear-pr-${pr}.json`)
 
-export const readLinkedIssueCache = (pr, file = linkedIssueStorePath(pr)) => {
+export const readLinkedIssueCacheRecord = (
+  pr,
+  file = linkedIssueStorePath(pr)
+) => {
   if (!existsSync(file)) {
     return null
   }
   try {
     const data = JSON.parse(readFileSync(file, 'utf8'))
+    const identifier = data.identifier || null
 
-    return data.identifier || null
+    return identifier
+      ? {
+          identifier,
+          url: data.url || null,
+        }
+      : null
   } catch {
     return null
   }
 }
+
+export const readLinkedIssueCache = (pr, file = linkedIssueStorePath(pr)) =>
+  readLinkedIssueCacheRecord(pr, file)?.identifier || null
 
 export const writeLinkedIssueCache = (
   pr,
