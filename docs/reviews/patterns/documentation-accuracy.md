@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 ref_count: 26
 ---
 
@@ -819,3 +819,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `const INACTIVE = false // jsx-boolean-value wants false props omitted; alias it` described the rule as simply `jsx-boolean-value`, which is ambiguous because the rule only flags explicit `false` values when `assumeUndefinedIsFalse` is enabled. A future reader might delete the alias thinking the rule does not apply to `false`.
 - **Fix:** Updated the comment to name the fully configured rule: `react/jsx-boolean-value (assumeUndefinedIsFalse) flags explicit false props; alias it`.
 - **Commit:** same commit as this entry
+
+### 88. Chinese README uses inconsistent translated term for "agent observability"
+
+- **Source:** github-human | PR #492 round 1 | 2026-06-16
+- **Severity:** HUMAN
+- **File:** `README.zh-CN.md`
+- **Finding:** The line read `代理可观测性：Claude Code、Codex CLI 和 Kimi Code`; the reviewer requested the term be rendered as `agent可观测性` to keep the English product term consistent with the bilingual docs.
+- **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

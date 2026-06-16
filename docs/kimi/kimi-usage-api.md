@@ -1,10 +1,11 @@
 # Kimi usage API — exploration (VIM-122)
 
 Goal: fill the agent-status card's **5h / weekly usage** (`rate_limits`) for kimi,
-like Claude Code and Codex. Kimi writes **no** usage data to its on-disk session
-state, so — unlike Claude/Codex which read it from their own status/rollout files —
-kimi needs a **network call**. This documents the endpoint, auth, and shape found by
-inspecting the (unstripped) kimi-code binary and a live probe.
+alongside the Claude Code and Codex CLI adapters. Kimi writes **no** usage data to
+its on-disk session state, so — unlike Claude Code and Codex CLI, which read it
+from their own status/rollout files — kimi needs a **network call**. This
+documents the endpoint, auth, and shape found by inspecting the (unstripped)
+kimi-code binary and a live probe.
 
 ## Endpoint
 
