@@ -167,16 +167,23 @@ parseChord("Ctrl+Backquote")                          → {code:'Backquote', mod
 `settings.json` value degrades to "use default" instead of throwing (mirrors the `keymapPreset`
 unknown-value → non-vim degradation).
 
-**Matching policy — `mods` are _required_, not _exclusive_.** A chord's `mods` are the modifiers
-that must be **present**. Matching (`eventMatchesChord`, §6) additionally **forbids the opposite
-super** (`'Mod'` present ⇒ the platform super is down _and_ its counterpart is up — e.g. on macOS
-`metaKey && !ctrlKey`), but **tolerates extra `Shift`/`Alt`** not listed in `mods`. This preserves
-today's behavior: `usePaneShortcuts` and `useDockToggleShortcut` deliberately accept `Shift`/`AltGr`
-on the physical digit/backslash keys so non-US layouts (AZERTY/QWERTZ, which reach those keys via a
-modifier) keep working. A command that must _require_ `Shift` (e.g. directional focus,
-`{'Mod','Shift'}`) lists it in `mods`; a command that must _forbid_ a specific extra modifier relies
-on its hosting hook's own extra guard — consult-only keeps every hook's bespoke checks (§6), so the
-shared matcher only encodes the common case.
+**Matching policy — required mods + a per-command `Shift`/`Alt` rule.** A chord's `mods` are the
+modifiers that must be **present**, and matching always **forbids any super not required** (`'Mod'`
+⇒ platform super down + counterpart up; literal `'Ctrl'` ⇒ `ctrlKey && !metaKey`). What differs per
+command is how _unlisted_ `Shift`/`Alt` are treated — a `matchPolicy` on the descriptor (§5.2):
+
+- **`'exact'` (default):** an unlisted `Shift`/`Alt` that is **down forbids the match**. This is what
+  most hooks already do — `useNewSessionShortcut` (`⌘N` rejects Shift), `useBurnerToggleShortcut`
+  ("exactly `` Ctrl+` ``"), `useDockShortcuts` (`⌘E/⌘G` reject Shift/Alt), `useSidebarShortcut`,
+  `useSessionNavShortcut`. It lets `⌘N` and `⌘⇧N` stay distinct.
+- **`'tolerant'`:** unlisted `Shift`/`Alt` are **ignored**. Only the layout-sensitive physical keys
+  need this — `usePaneShortcuts` (digits, `Backslash`) and `useDockToggleShortcut` (`Digit0`) accept
+  `Shift`/`AltGr` so AZERTY/QWERTZ (which reach those keys via a modifier) keep working.
+
+A command that _requires_ `Shift` (e.g. directional focus, `{'Mod','Shift'}`) lists it in `mods` under
+either policy. Each migrated command's policy is set to **reproduce its current hook's behavior** (the
+behavior-preservation test asserts this, §8); consult-only also keeps every hook's bespoke guards (§6),
+so the shared matcher only needs the common case.
 
 **Super exclusivity.** A chord has **at most one super** — `'Mod'` _xor_ literal `'Ctrl'`; they map to
 mutually-exclusive `metaKey`/`ctrlKey` requirements (§6.1), so a `{'Mod','Ctrl'}` chord is
@@ -195,6 +202,7 @@ interface CommandDescriptor {
   label: string                                     // shown in the Keymap pane
   group: string                                     // display grouping: 'Global' | 'Panes & Layout' | …
   context: BindingContext                           // conflict scoping (D6)
+  matchPolicy: 'exact' | 'tolerant'                 // unlisted Shift/Alt: 'exact' forbids (default) · 'tolerant' ignores (§5.1)
   defaultCombo: Chord | ((isMac: boolean) => Chord) // platform-aware, mirrors today's keys:(isMac)=>…
   rebindable: boolean                               // true ⟺ hook migrated (registry-wired); false ⇒ display-only
 }
@@ -242,31 +250,29 @@ resolveDefault(cmd, isMac): Chord // unwrap Chord | ((isMac)=>Chord)
 exactlyOneSuper(chord): boolean                // 'Mod' xor literal 'Ctrl' (terminal-safety + §5.1)
 overrideCollides(chord, id, resolved): boolean // shares (super, code) with another command, contexts overlap (§5.4)
 
-// resolveBindings is catalog-aware so it defensively drops any override a hand-edit slipped past
-// setUserBinding (unparseable / not-exactly-one-super / colliding) — keeping dispatch sound:
+// resolveBindings validates the FINAL candidate set (not each override against partial state), so a
+// clean A↔B swap keeps BOTH overrides while hand-edited invalid/colliding entries are neutralised:
 function resolveBindings(catalog, overrides, isMac): Map<CommandId, Chord> {
-  const resolved = new Map(catalog.map((c) => [c.id, resolveDefault(c, isMac)])) // defaults first
-  for (const c of catalog) {
-    const token = c.rebindable ? overrides[c.id] : undefined
-    const chord = token != null ? parseChord(token) : null
-    if (chord && exactlyOneSuper(chord) && !overrideCollides(chord, c.id, resolved)) {
-      resolved.set(c.id, chord) // apply only a valid, non-colliding override; else keep the default
-    }
+  const resolved = new Map(catalog.map((c) => [c.id, resolveDefault(c, isMac)])) // 1. defaults
+  for (const c of catalog) {                                                     // 2. apply every
+    const chord = c.rebindable && overrides[c.id] != null ? parseChord(overrides[c.id]) : null
+    if (chord && exactlyOneSuper(chord)) resolved.set(c.id, chord)               //    structurally-valid override
   }
-  return resolved
-}
+  return dropResidualConflicts(catalog, resolved, isMac) // 3. revert commands still colliding (catalog
+}                                                        //    order; fixed rebindable:false reservations win)
 resolveBinding(cmd, overrides, isMac): Chord // = resolveBindings(...).get(cmd.id)
 ```
 
 - An override is a single concrete token captured on the user's machine; absent ⇒ default.
 - Defaults are **never mutated**; an override is additive and is dropped by `resetBinding` (§6.3). A
   `rebindable:false` command **ignores** any stored override.
-- **Read-boundary enforcement (defends against hand-edits).** `resolveBindings` applies an override
-  only if it parses, has **exactly one super** (`exactlyOneSuper`), and does **not** collide with a
-  fixed reservation or another command (`overrideCollides`); otherwise it keeps the default. So a
-  hand-edited super-less / both-super / leader-shadowing override in `settings.json` is silently
-  **neutralised**, not honoured — the terminal-safety (§6.2) and leader-reservation (§5.2) guarantees
-  hold even when `setUserBinding` is bypassed.
+- **Read-boundary enforcement (defends against hand-edits).** `resolveBindings` applies every
+  structurally-valid override (parses + **exactly one super**, `exactlyOneSuper`), then validates the
+  **final candidate set**, reverting only commands still in a conflict (catalog order; fixed
+  `rebindable:false` reservations always win). Validating the final set — not each override against
+  partial state — lets a clean A↔B **swap** keep both overrides, while a hand-edited super-less /
+  both-super / leader-shadowing / colliding override is silently **neutralised**. So terminal-safety
+  (§6.2) and leader-reservation (§5.2) hold even when `setUserBinding` is bypassed.
 - A malformed or unknown-`CommandId` override is ignored (forward / back-compat — §7).
 - The Rust `customKeybindings` field uses **tolerant field-level deserialization** (§7) so a
   malformed hand-edited entry drops only that entry — it can **not** fail the whole-struct load and
@@ -280,14 +286,16 @@ interface Conflict { key: string; commandIds: CommandId[]; contexts: BindingCont
 detectConflicts(catalog, overrides, isMac): Conflict[]
 ```
 
-- **Conflict key = `(super, code)`, _not_ the full token.** `super` is `'meta' | 'ctrl' | 'none'`
-  (`'Mod'` → the platform super; literal `'Ctrl'` → `'ctrl'`; a bare key → `'none'`). Group by
-  `super + code`, deliberately **ignoring `Shift`/`Alt`**: under the lenient matching policy (§5.1)
-  extra `Shift`/`Alt` are tolerated, so any two commands on the same physical key + super share a
-  matchable event (e.g. `Mod+Shift+1` fires both `{'Mod'}+Digit1` and `{'Mod','Shift'}+Digit1`);
-  grouping by exact token would miss real collisions. Equivalently, two chords overlap ⟺ same `code`
-  **and** same `super`. _Consequence:_ `Shift`/`Alt` cannot distinguish two commands on the same
-  key + super (an accepted cost of layout-safe matching; the current catalog has no such pair).
+- **Conflict key = `(super, code)` + a policy-aware `Shift`/`Alt` overlap.** `super` is
+  `'meta' | 'ctrl' | 'none'` (`'Mod'` → platform super; literal `'Ctrl'` → `'ctrl'`; bare key →
+  `'none'`). Two resolved bindings on the same `(super, code)` overlap iff some `Shift`/`Alt`
+  assignment matches **both** under their `matchPolicy` (§5.1): an `'exact'` command fixes each
+  modifier (listed ⇒ down, unlisted ⇒ up) to a single value; a `'tolerant'` command leaves unlisted
+  `Shift`/`Alt` free. **Overlap ⟺ same `(super, code)` AND the `Shift` value-sets intersect AND the
+  `Alt` value-sets intersect.** So two `'tolerant'` commands on the same key+super always overlap
+  (`{'Mod'}+Digit1` vs `{'Mod','Shift'}+Digit1`); two `'exact'` commands differing only by `Shift` do
+  **not** (`⌘N` vs `⌘⇧N`); an `'exact'` vs `'tolerant'` overlap iff the exact one's fixed values fall
+  in the tolerant one's free set.
 - On Linux `Mod+B` and literal `Ctrl+B` collide (both → `'ctrl'`); on macOS they do not (`'meta'` vs
   `'ctrl'`). The `'none'` bucket holds only **display-only bare-key** rows (diff `j`/`k`, etc.); since
   every rebindable override must keep a super (terminal-safety, §6.2), **no user override can enter
@@ -318,7 +326,7 @@ per-hook swap (§6.2).
 
 ```ts
 type PlatformSuper = 'meta' | 'ctrl' // resolved 'Mod' (WorkspaceView already derives this as preferModifier)
-function eventMatchesChord(event: KeyboardEvent, chord: Chord, superKey: PlatformSuper): boolean
+function eventMatchesChord(event, chord: Chord, superKey: PlatformSuper, policy: 'exact' | 'tolerant' = 'exact'): boolean
 ```
 
 Returns true iff **all** hold:
@@ -330,9 +338,9 @@ Returns true iff **all** hold:
    `'Ctrl'` ⇒ `event.ctrlKey && !event.metaKey` (e.g. the burner `` Ctrl+` ``); no super in `mods`
    (bare key) ⇒ both up. Extra `Ctrl`/`Meta` are therefore **forbidden** — only `Shift`/`Alt` are
    tolerated.
-3. **`Shift` / `Alt`:** for each — if listed in `chord.mods` it **must be down**; if **not** listed,
-   its state is **ignored** (tolerated either way). This is the layout-safe policy of §5.1, which the
-   digit/backslash hooks depend on for AZERTY/QWERTZ.
+3. **`Shift` / `Alt` (per `policy`):** a listed modifier **must be down**; an **unlisted** one is
+   **forbidden if down** when `policy==='exact'` (the default — `⌘N` ≠ `⌘⇧N`) and **ignored** when
+   `policy==='tolerant'` (digits / `Backslash` / `Digit0`, for AZERTY/QWERTZ). See §5.1.
 
 This is the single home for the `⌘-only` / opposite-super / `event.code` logic currently duplicated
 across hooks (guards-pattern classes 1, 4, 6). It is exhaustively unit-tested (§8) and is the only
@@ -351,7 +359,7 @@ listener lifecycle, and every per-branch `return` (finding #29).
 // before:  if (event.code !== 'Digit0') return
 //          const isMeta = modKey === '⌘'; const expected = isMeta ? event.metaKey : event.ctrlKey; …
 // after:
-if (!eventMatchesChord(event, bindingFor('dock-toggle'), superKey)) return
+if (!matches(event, 'dock-toggle')) return // matches = eventMatchesChord(event, bindingFor(id), superKey, policyFor(id))
 // …unchanged: DIALOG_SELECTOR guard → preventDefault/stopPropagation → onToggle()
 ```
 
@@ -359,7 +367,7 @@ if (!eventMatchesChord(event, bindingFor('dock-toggle'), superKey)) return
 today, then asks the registry per command instead of hardcoding `Digit([1-4])` / `Backslash` / arrows:
 
 ```ts
-if (eventMatchesChord(event, bindingFor('focus-pane-1'), superKey)) { /* …existing pane-1 guards + action… */ }
+if (matches(event, 'focus-pane-1')) { /* …existing pane-1 guards + action… */ }
 // focus-pane-2..4, cycle-layout, focus-pane-left/down/up/right — each its own bindingFor(id),
 // each keeping its existing dialog / terminal-active / out-of-range / capacity guards + return.
 ```
@@ -383,11 +391,20 @@ and the read boundary `resolveBindings` independently drops any such override th
 shared `exactlyOneSuper` predicate, §5.3). Moving the super match into the matcher therefore never
 opens a path to steal a bare key from the terminal.
 
+**Out of scope: internal focus-handoff keys.** `useDockShortcuts`'s `b` branch (dock→terminal reclaim)
+is **not** a catalog command and stays hardcoded. It is a context-gated overload — on macOS it shares
+`⌘B` with the global sidebar toggle, firing only when the dock is focused (the sidebar's `⌘B` fires
+otherwise). Consult-only has no central context-dispatch to arbitrate such a shared key, so SP1 keeps
+the reclaim internal — only `⌘E`/`⌘G` from `useDockShortcuts` become rebindable. The narrow cost: a
+user override onto `⌘B` isn't flagged against the hardcoded reclaim, but the two are context-disjoint
+so they never actually clash.
+
 ### 6.3 React access layer — `useKeybindings`
 
 ```ts
 interface Keybindings {
   bindingFor: (id: CommandId) => Chord                              // resolved default ⊕ override (memoized)
+  matches: (event: KeyboardEvent, id: CommandId) => boolean        // eventMatchesChord(event, bindingFor(id), superKey, policyFor(id))
   setUserBinding: (id: CommandId, chord: Chord) => SetBindingResult // validate → persist via update()
   resetBinding: (id: CommandId) => void                            // drops the override
   conflicts: Conflict[]                                            // detectConflicts(...) memoized (for SP2)
@@ -410,10 +427,10 @@ function useKeybindings(): Keybindings
   surfaces I/O failures (same contract as every other pane). `resetBinding` drops the override. SP1
   wires + tests these; the only SP1 callers are tests + (later) SP2's UI — **no SP1 surface mutates
   bindings.**
-- **Injection:** `WorkspaceView` calls `useKeybindings()` once and threads `bindingFor` (and
-  `superKey`) into `usePaneShortcuts` / `useDockToggleShortcut` via their existing options objects —
-  mirroring how `preferModifier` is derived once and passed down. The hooks stay context-free and
-  unit-testable by passing a fake `bindingFor`.
+- **Injection:** `WorkspaceView` calls `useKeybindings()` once and threads `matches` into
+  `usePaneShortcuts` / `useDockToggleShortcut` via their existing options objects — mirroring how
+  `preferModifier` is derived once and passed down. The hooks stay context-free and unit-testable by
+  passing a fake `matches`.
 
 ### 6.4 Display derives from the catalog
 
@@ -502,13 +519,16 @@ exhaustively table-tested; hooks/components use Testing Library; Rust uses `#[te
   malformed / empty / extra-`+`; canonical mod ordering is stable.
 - `resolve.ts` — default when no override; valid override wins for `rebindable:true`; override
   **ignored** for `rebindable:false`; malformed / **super-less** / **both-super** / **colliding**
-  override → default (the read-boundary predicate, §5.3); `(isMac)=>Chord` defaults unwrap per platform.
+  override → default (read-boundary predicate, §5.3); a valid **A↔B swap keeps both** (final-set
+  validation); `(isMac)=>Chord` defaults unwrap per platform.
 - `conflicts.ts` — table-driven: same `(super, code)` → conflict iff contexts overlap; `'Mod'` vs
   literal `'Ctrl'` collide on Linux not macOS; the `'none'` bucket never collides with a super
-  override; `{'Mod'}+Digit1` vs `{'Mod','Shift'}+Digit1` **is** flagged.
-- `eventMatchesChord` — required super down + opposite/extra super up (forbidden); literal `Ctrl`;
-  required `Shift`/`Alt` enforced; **extra `Shift`/`Alt` tolerated** (AZERTY/QWERTZ); `event.code`
-  not `event.key` (a Cyrillic `event.key` with `code:'KeyB'` still matches).
+  override; two `'tolerant'` `{'Mod'}+Digit1` vs `{'Mod','Shift'}+Digit1` **is** flagged; two `'exact'`
+  `⌘N` vs `⌘⇧N` is **not**; `'exact'` vs `'tolerant'` follows the value-set rule (§5.4).
+- `eventMatchesChord` — required super down + any non-required super up (forbidden); literal `Ctrl`;
+  listed `Shift`/`Alt` enforced; **unlisted `Shift`/`Alt` forbidden under `'exact'`, tolerated under
+  `'tolerant'`** (AZERTY/QWERTZ); `event.code` not `event.key` (a Cyrillic `event.key` with
+  `code:'KeyB'` still matches).
 
 **Catalog invariants:** ids unique; `CommandId` union compiles; and the **behavior-preservation
 table** — for every migrated command, `resolveDefault(cmd, isMac)` equals today's hardcoded combo (the
@@ -548,8 +568,10 @@ plain-text `Part of VIM-136` — SP1 does **not** close the umbrella issue):
   flipping their commands to `rebindable:true`; `KeymapPane` renders from the catalog. Ships the
   headline acceptance for the subset.
 - **PR2 — remaining workspace hooks.** Migrate `useNewSessionShortcut`, `useSidebarShortcut`,
-  `useSidebarTabShortcut`, `useSessionNavShortcut`, `useDockShortcuts` (⌘E/⌘G), `useBurnerToggleShortcut`
-  → catalog entries + `rebindable:true` (splittable if large). Terminal copy/paste/interrupt and diff
+  `useSidebarTabShortcut`, `useSessionNavShortcut`, `useDockShortcuts` (⌘E/⌘G only — its `b` reclaim
+  stays hardcoded, §6.2), `useBurnerToggleShortcut`
+  → catalog entries + `rebindable:true`, each with its `matchPolicy` set to reproduce today's
+  behavior (most are `'exact'`; splittable if large). Terminal copy/paste/interrupt and diff
   `j/k/…` stay **display-only** catalog rows (owned by xterm / the diff surface). The `⌘;` leader stays
   `rebindable:false` (SP3).
 
