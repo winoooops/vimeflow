@@ -1,21 +1,24 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
-import { CanvasAddon } from '@xterm/addon-canvas'
 import {
   Body,
   clearTerminalCache,
   terminalCache,
   type BodyHandle,
 } from './Body'
-import { TERMINAL_FONT_FAMILY } from './terminalFont'
+import { createTerminalInstance } from './terminalInstance'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
-import type { TerminalFitController, TerminalSurface } from '../../types'
-import { obsidianLens } from '../../../../theme'
+import type {
+  TerminalDisposable,
+  TerminalFitController,
+  TerminalInstance,
+  TerminalParser,
+  TerminalRendererHandle,
+  TerminalSurface,
+  TerminalViewportReader,
+} from '../../types'
 
 // Shared mock service for tests that don't exercise service-specific behavior.
 // Round 4 Finding 1 made `service` a required prop on Body (the
@@ -57,25 +60,8 @@ const createDefaultMockService = (): ITerminalService =>
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }) as ITerminalService
 
-// Mock xterm modules
-vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn(),
-}))
-
-vi.mock('@xterm/addon-fit', () => ({
-  FitAddon: vi.fn(),
-}))
-
-// Throws by default — mirrors jsdom's missing WebGL2 context.
-vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: vi.fn().mockImplementation(() => {
-    throw new Error('WebGL2 context unavailable')
-  }),
-}))
-
-// Succeeds by default — pairs with the throwing WebglAddon to exercise the WebGL→Canvas2D fallback.
-vi.mock('@xterm/addon-canvas', () => ({
-  CanvasAddon: vi.fn(),
+vi.mock('./terminalInstance', () => ({
+  createTerminalInstance: vi.fn(),
 }))
 
 // Mock useTerminal hook
@@ -83,21 +69,117 @@ vi.mock('../../hooks/useTerminal', () => ({
   useTerminal: vi.fn(),
 }))
 
-describe('Body', () => {
-  let mockTerminal: {
-    open: ReturnType<typeof vi.fn>
-    loadAddon: ReturnType<typeof vi.fn>
-    dispose: ReturnType<typeof vi.fn>
-    focus: ReturnType<typeof vi.fn>
-    onResize: ReturnType<typeof vi.fn>
-    parser: { registerOscHandler: ReturnType<typeof vi.fn> }
-    refresh: ReturnType<typeof vi.fn>
-    cols: number
-    rows: number
-    options: Record<string, unknown>
+type MockTerminalSurface = TerminalSurface & {
+  open: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
+  dispose: ReturnType<typeof vi.fn>
+  clear: ReturnType<typeof vi.fn>
+  write: ReturnType<typeof vi.fn>
+  refresh: ReturnType<typeof vi.fn>
+  onData: ReturnType<typeof vi.fn>
+  onResize: ReturnType<typeof vi.fn>
+  hasSelection: ReturnType<typeof vi.fn>
+  getSelection: ReturnType<typeof vi.fn>
+  paste: ReturnType<typeof vi.fn>
+  selectAll: ReturnType<typeof vi.fn>
+  onSelectionChange: ReturnType<typeof vi.fn>
+  attachKeyEventHandler: ReturnType<typeof vi.fn>
+  applyTheme: ReturnType<typeof vi.fn>
+}
+
+type MockFitController = TerminalFitController & {
+  fit: ReturnType<typeof vi.fn>
+}
+
+type MockParser = TerminalParser & {
+  registerOscHandler: ReturnType<typeof vi.fn>
+}
+
+type MockViewportReader = TerminalViewportReader & {
+  readVisibleText: ReturnType<typeof vi.fn>
+}
+
+type MockRendererHandle = TerminalRendererHandle & {
+  dispose: ReturnType<typeof vi.fn>
+}
+
+interface MockTerminalControls {
+  instance: TerminalInstance
+  terminal: MockTerminalSurface
+  parser: MockParser
+  fitController: MockFitController
+  viewportReader: MockViewportReader
+  rendererHandle: MockRendererHandle
+}
+
+const createDisposable = (): TerminalDisposable => ({
+  dispose: vi.fn(),
+})
+
+const createMockTerminalControls = (): MockTerminalControls => {
+  const terminal: MockTerminalSurface = {
+    cols: 80,
+    rows: 24,
+    element: document.createElement('div'),
+    open: vi.fn(),
+    focus: vi.fn(),
+    dispose: vi.fn(),
+    clear: vi.fn(),
+    write: vi.fn((data: string, callback?: () => void): void => {
+      void data
+      callback?.()
+    }),
+    refresh: vi.fn(),
+    onData: vi.fn((): TerminalDisposable => createDisposable()),
+    onResize: vi.fn((): TerminalDisposable => createDisposable()),
+    hasSelection: vi.fn((): boolean => false),
+    getSelection: vi.fn((): string => ''),
+    paste: vi.fn(),
+    selectAll: vi.fn(),
+    onSelectionChange: vi.fn((): TerminalDisposable => createDisposable()),
+    attachKeyEventHandler: vi.fn(),
+    applyTheme: vi.fn(),
   }
-  let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
-  let mockCanvasAddon: { dispose: ReturnType<typeof vi.fn> }
+
+  const parser: MockParser = {
+    registerOscHandler: vi.fn((): TerminalDisposable => createDisposable()),
+  }
+
+  const fitController: MockFitController = {
+    fit: vi.fn(),
+  }
+
+  const viewportReader: MockViewportReader = {
+    readVisibleText: vi.fn((): string => ''),
+  }
+
+  const rendererHandle: MockRendererHandle = {
+    dispose: vi.fn(),
+  }
+
+  const instance: TerminalInstance = {
+    terminal,
+    parser,
+    viewportReader,
+    fitController,
+    attachRenderer: vi.fn((): TerminalRendererHandle => rendererHandle),
+  }
+
+  return {
+    instance,
+    terminal,
+    parser,
+    fitController,
+    viewportReader,
+    rendererHandle,
+  }
+}
+
+describe('Body', () => {
+  let mockTerminalControls: MockTerminalControls
+  let mockTerminal: MockTerminalSurface
+  let mockParser: MockParser
+  let mockFitController: MockFitController
   let mockUseTerminal: UseTerminalReturn
   let defaultMockService: ITerminalService
 
@@ -110,31 +192,10 @@ describe('Body', () => {
       disconnect: vi.fn(),
     }))
 
-    // Mock terminal instance
-    mockTerminal = {
-      open: vi.fn(),
-      loadAddon: vi.fn(),
-      dispose: vi.fn(),
-      focus: vi.fn(),
-      onResize: vi.fn(() => ({ dispose: vi.fn() })),
-      parser: {
-        registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
-      },
-      refresh: vi.fn(),
-      cols: 80,
-      rows: 24,
-      options: {},
-    }
-
-    // Mock fit addon
-    mockFitAddon = {
-      fit: vi.fn(),
-    }
-
-    // Mock Canvas2D addon — the default fallback when WebGL throws.
-    mockCanvasAddon = {
-      dispose: vi.fn(),
-    }
+    mockTerminalControls = createMockTerminalControls()
+    mockTerminal = mockTerminalControls.terminal
+    mockParser = mockTerminalControls.parser
+    mockFitController = mockTerminalControls.fitController
 
     // Mock useTerminal hook return value
     mockUseTerminal = {
@@ -155,9 +216,9 @@ describe('Body', () => {
     }
 
     // Setup mocks
-    vi.mocked(Terminal).mockImplementation(() => mockTerminal as never)
-    vi.mocked(FitAddon).mockImplementation(() => mockFitAddon as never)
-    vi.mocked(CanvasAddon).mockImplementation(() => mockCanvasAddon as never)
+    vi.mocked(createTerminalInstance).mockReturnValue(
+      mockTerminalControls.instance
+    )
     vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
   })
 
@@ -179,7 +240,7 @@ describe('Body', () => {
     expect(container).toBeInTheDocument()
   })
 
-  test('scopes xterm scrollbar styling to the terminal pane body', () => {
+  test('scopes terminal scrollbar styling to the terminal pane body', () => {
     render(
       <Body
         sessionId="test-session"
@@ -193,7 +254,7 @@ describe('Body', () => {
     )
   })
 
-  test('initializes xterm terminal on mount', async () => {
+  test('creates terminal instance on mount', async () => {
     render(
       <Body
         sessionId="test-session"
@@ -203,35 +264,9 @@ describe('Body', () => {
     )
 
     await waitFor(() => {
-      expect(Terminal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cursorBlink: true,
-          fontSize: 14,
-          fontFamily: TERMINAL_FONT_FAMILY,
-        })
-      )
-    })
-  })
-
-  test('applies Catppuccin Mocha theme', async () => {
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(Terminal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          theme: expect.objectContaining({
-            background: obsidianLens.terminal.background,
-            foreground: obsidianLens.terminal.foreground,
-            cursor: obsidianLens.terminal.cursor,
-          }),
-        })
-      )
+      expect(createTerminalInstance).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.open).toHaveBeenCalledWith(expect.any(HTMLElement))
+      expect(mockTerminalControls.instance.attachRenderer).toHaveBeenCalled()
     })
   })
 
@@ -349,7 +384,7 @@ describe('Body', () => {
         expect(load).toHaveBeenCalledTimes(2)
       })
 
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
 
       await act(async () => {
         resolveFonts()
@@ -364,7 +399,7 @@ describe('Body', () => {
         frameCallbacks[0](16)
       })
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -432,7 +467,7 @@ describe('Body', () => {
         expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
       })
 
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
       mockTerminal.refresh.mockClear()
 
       act(() => {
@@ -441,7 +476,7 @@ describe('Body', () => {
 
       // First flush attempt retries because width is still zero (hidden pane).
       expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
       expect(mockTerminal.refresh).not.toHaveBeenCalled()
 
       fontContainerWidth = 800
@@ -450,7 +485,7 @@ describe('Body', () => {
         frameCallbacks[1](32)
       })
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -516,7 +551,7 @@ describe('Body', () => {
 
       expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
 
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
       mockTerminal.refresh.mockClear()
 
       rerender(
@@ -533,7 +568,7 @@ describe('Body', () => {
         frameCallbacks[0](16)
       })
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -620,7 +655,7 @@ describe('Body', () => {
         frameCallbacks[0](16)
       })
 
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
       expect(mockTerminal.refresh).not.toHaveBeenCalled()
 
       rerender(
@@ -637,7 +672,7 @@ describe('Body', () => {
         frameCallbacks[1](32)
       })
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -692,7 +727,7 @@ describe('Body', () => {
         await fontsLoaded
       })
 
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
       mockTerminal.refresh.mockClear()
 
       rerender(
@@ -703,7 +738,7 @@ describe('Body', () => {
         />
       )
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).not.toHaveBeenCalled()
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -760,7 +795,7 @@ describe('Body', () => {
         expect(load).toHaveBeenCalledTimes(2)
       })
 
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
       mockTerminal.refresh.mockClear()
 
       await act(async () => {
@@ -783,7 +818,7 @@ describe('Body', () => {
         frameCallbacks[0](16)
       })
 
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
       expect(mockTerminal.refresh).not.toHaveBeenCalled()
 
       rerender(
@@ -800,7 +835,7 @@ describe('Body', () => {
         frameCallbacks[1](32)
       })
 
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
     } finally {
       Object.defineProperty(document, 'fonts', {
@@ -811,159 +846,6 @@ describe('Body', () => {
       offsetWidthSpy.mockRestore()
       offsetHeightSpy.mockRestore()
     }
-  })
-
-  test('loads fit addon', async () => {
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(FitAddon).toHaveBeenCalled()
-      expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
-    })
-  })
-
-  test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
-    // WebglAddon throws (top-level mock); Body.tsx must load CanvasAddon instead so customGlyphs stays active.
-    expect(() => {
-      render(
-        <Body
-          sessionId="test-session"
-          cwd="/home/user"
-          service={defaultMockService}
-        />
-      )
-    }).not.toThrow()
-
-    await waitFor(() => {
-      expect(WebglAddon).toHaveBeenCalled()
-      expect(CanvasAddon).toHaveBeenCalled()
-      expect(mockTerminal.open).toHaveBeenCalled()
-    })
-
-    // The throwing WebglAddon must NOT reach loadAddon; CanvasAddon (the
-    // working fallback) must reach it alongside FitAddon.
-    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
-    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockCanvasAddon)
-    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
-    expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
-  })
-
-  test('falls through to DOM renderer when both WebGL and Canvas2D throw', async () => {
-    // No GPU AND no 2D context — Body.tsx must mount without crashing; xterm reverts to DOM rendering.
-    vi.mocked(CanvasAddon).mockImplementationOnce(() => {
-      throw new Error('2D canvas context unavailable')
-    })
-
-    expect(() => {
-      render(
-        <Body
-          sessionId="test-session"
-          cwd="/home/user"
-          service={defaultMockService}
-        />
-      )
-    }).not.toThrow()
-
-    await waitFor(() => {
-      expect(WebglAddon).toHaveBeenCalled()
-      expect(CanvasAddon).toHaveBeenCalled()
-      expect(mockTerminal.open).toHaveBeenCalled()
-    })
-
-    // Only FitAddon was actually loaded — both renderer addons threw.
-    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1)
-    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
-    expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
-  })
-
-  test('reattaches Canvas2D when WebGL context is lost at runtime', async () => {
-    // GPU drops the WebGL2 context post-mount; the registered onContextLoss
-    // handler must dispose the WebGL addon and load CanvasAddon so block
-    // chars keep rendering via customGlyphs instead of falling to DOM.
-    let capturedHandler: (() => void) | null = null
-    const webglDispose = vi.fn()
-    const contextLossDispose = vi.fn()
-    vi.mocked(WebglAddon).mockImplementationOnce(
-      () =>
-        ({
-          onContextLoss: (cb: () => void) => {
-            capturedHandler = cb
-
-            return { dispose: contextLossDispose }
-          },
-          dispose: webglDispose,
-        }) as unknown as WebglAddon
-    )
-
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(WebglAddon).toHaveBeenCalledTimes(1)
-      expect(capturedHandler).not.toBeNull()
-    })
-
-    // Pre-loss: FitAddon + WebGL addon loaded; CanvasAddon NOT yet constructed.
-    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
-    expect(CanvasAddon).not.toHaveBeenCalled()
-
-    // Simulate GPU context loss — invoke the captured handler.
-    capturedHandler!()
-
-    // Post-loss: WebGL addon disposed, CanvasAddon constructed and loaded.
-    expect(webglDispose).toHaveBeenCalledTimes(1)
-    expect(CanvasAddon).toHaveBeenCalledTimes(1)
-    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(3)
-    expect(mockTerminal.loadAddon).toHaveBeenLastCalledWith(mockCanvasAddon)
-  })
-
-  test('reverts to DOM renderer when both WebGL context loss AND Canvas2D fallback fail', async () => {
-    // Worst-case runtime path: GPU drops mid-session AND the headless build can't make a 2D context.
-    let capturedHandler: (() => void) | null = null
-    vi.mocked(WebglAddon).mockImplementationOnce(
-      () =>
-        ({
-          onContextLoss: (cb: () => void) => {
-            capturedHandler = cb
-
-            return { dispose: vi.fn() }
-          },
-          dispose: vi.fn(),
-        }) as unknown as WebglAddon
-    )
-
-    vi.mocked(CanvasAddon).mockImplementationOnce(() => {
-      throw new Error('2D canvas context unavailable')
-    })
-
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(capturedHandler).not.toBeNull()
-    })
-
-    expect(() => capturedHandler!()).not.toThrow()
-    expect(CanvasAddon).toHaveBeenCalledTimes(1)
-    // CanvasAddon threw → only FitAddon + the original WebGL load reached loadAddon.
-    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
-    expect(mockTerminal.loadAddon).not.toHaveBeenCalledWith(mockCanvasAddon)
   })
 
   test('opens terminal in container', async () => {
@@ -994,7 +876,7 @@ describe('Body', () => {
     )
 
     await waitFor(() => {
-      expect(mockFitAddon.fit).toHaveBeenCalled()
+      expect(mockFitController.fit).toHaveBeenCalled()
     })
 
     offsetSpy.mockRestore()
@@ -1107,7 +989,7 @@ describe('Body', () => {
     })
   })
 
-  test('useImperativeHandle exposes focusTerminal that focuses cached xterm', async () => {
+  test('useImperativeHandle exposes focusTerminal that focuses cached terminal', async () => {
     const ref = createRef<BodyHandle>()
 
     render(
@@ -1177,7 +1059,7 @@ describe('Body', () => {
       })
     })
 
-    test('connects xterm data events to PTY write', async () => {
+    test('connects terminal data events to PTY write', async () => {
       render(
         <Body
           sessionId="test-session"
@@ -1191,7 +1073,7 @@ describe('Body', () => {
       })
     })
 
-    test('connects PTY data events to xterm write', async () => {
+    test('connects PTY data events to terminal write', async () => {
       render(
         <Body
           sessionId="test-session"
@@ -1253,7 +1135,7 @@ describe('Body', () => {
       })
 
       // Clear fit calls from initial render
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
 
       // Simulate container resize
       const container = screen.getByTestId('terminal-pane')
@@ -1288,7 +1170,7 @@ describe('Body', () => {
 
       // fitController.fit() should be called when container resizes
       await waitFor(() => {
-        expect(mockFitAddon.fit).toHaveBeenCalled()
+        expect(mockFitController.fit).toHaveBeenCalled()
       })
     })
 
@@ -1331,7 +1213,7 @@ describe('Body', () => {
           expect(mockObserve).toHaveBeenCalled()
         })
 
-        mockFitAddon.fit.mockClear()
+        mockFitController.fit.mockClear()
 
         const container = screen.getByTestId('terminal-pane')
         Object.defineProperty(container, 'offsetWidth', {
@@ -1351,13 +1233,13 @@ describe('Body', () => {
         })
 
         expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
-        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+        expect(mockFitController.fit).not.toHaveBeenCalled()
 
         act(() => {
           frameCallbacks[0](16)
         })
 
-        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+        expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       } finally {
         requestAnimationFrameSpy.mockRestore()
       }
@@ -1411,8 +1293,8 @@ describe('Body', () => {
           expect(mockObserve).toHaveBeenCalled()
         })
 
-        expect(mockFitAddon.fit).not.toHaveBeenCalled()
-        mockFitAddon.fit.mockClear()
+        expect(mockFitController.fit).not.toHaveBeenCalled()
+        mockFitController.fit.mockClear()
 
         const container = screen.getByTestId('terminal-pane')
         Object.defineProperty(container, 'offsetWidth', {
@@ -1431,7 +1313,7 @@ describe('Body', () => {
         })
 
         expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
-        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+        expect(mockFitController.fit).not.toHaveBeenCalled()
 
         rerender(
           <Body
@@ -1447,7 +1329,7 @@ describe('Body', () => {
           frameCallbacks[0](16)
         })
 
-        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+        expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       } finally {
         requestAnimationFrameSpy.mockRestore()
         offsetWidthSpy.mockRestore()
@@ -1499,7 +1381,7 @@ describe('Body', () => {
           configurable: true,
         })
 
-        mockFitAddon.fit.mockClear()
+        mockFitController.fit.mockClear()
 
         rerender(
           <Body
@@ -1524,20 +1406,20 @@ describe('Body', () => {
           frameCallbacks[0](16)
         })
 
-        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+        expect(mockFitController.fit).not.toHaveBeenCalled()
       } finally {
         requestAnimationFrameSpy.mockRestore()
       }
     })
 
     test('fits the new session instead of flushing the old session when drag ends during session switch', async () => {
-      const firstFitAddon = { fit: vi.fn() }
-      const secondFitAddon = { fit: vi.fn() }
+      const firstTerminalControls = createMockTerminalControls()
+      const secondTerminalControls = createMockTerminalControls()
       const frameCallbacks: FrameRequestCallback[] = []
 
-      vi.mocked(FitAddon)
-        .mockImplementationOnce(() => firstFitAddon as never)
-        .mockImplementationOnce(() => secondFitAddon as never)
+      vi.mocked(createTerminalInstance)
+        .mockImplementationOnce(() => firstTerminalControls.instance)
+        .mockImplementationOnce(() => secondTerminalControls.instance)
 
       const offsetWidthSpy = vi
         .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
@@ -1564,10 +1446,10 @@ describe('Body', () => {
         )
 
         await waitFor(() => {
-          expect(FitAddon).toHaveBeenCalledTimes(1)
+          expect(createTerminalInstance).toHaveBeenCalledTimes(1)
         })
 
-        expect(firstFitAddon.fit).not.toHaveBeenCalled()
+        expect(firstTerminalControls.fitController.fit).not.toHaveBeenCalled()
 
         const requestAnimationFrameSpy = vi
           .spyOn(window, 'requestAnimationFrame')
@@ -1587,12 +1469,14 @@ describe('Body', () => {
           )
 
           await waitFor(() => {
-            expect(FitAddon).toHaveBeenCalledTimes(2)
+            expect(createTerminalInstance).toHaveBeenCalledTimes(2)
           })
 
           expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
-          expect(firstFitAddon.fit).not.toHaveBeenCalled()
-          expect(secondFitAddon.fit).toHaveBeenCalledTimes(1)
+          expect(firstTerminalControls.fitController.fit).not.toHaveBeenCalled()
+          expect(
+            secondTerminalControls.fitController.fit
+          ).toHaveBeenCalledTimes(1)
         } finally {
           requestAnimationFrameSpy.mockRestore()
         }
@@ -1633,7 +1517,7 @@ describe('Body', () => {
       })
 
       // Clear fit calls from initial render
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
 
       const container = screen.getByTestId('terminal-pane')
 
@@ -1648,7 +1532,7 @@ describe('Body', () => {
       }
 
       // fitController must NOT fire — this is the exact bug path that squashes scrollback
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
 
       // Simulate tab becoming visible again: offsetWidth > 0
       Object.defineProperty(container, 'offsetWidth', {
@@ -1662,13 +1546,13 @@ describe('Body', () => {
 
       // fitController SHOULD fire now that the container has real dimensions
       await waitFor(() => {
-        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+        expect(mockFitController.fit).toHaveBeenCalledTimes(1)
       })
     })
 
     test('regression #81: cached terminal reuse skips fit in zero-width container', async () => {
       // Seed the module-level cache to force the reuse branch
-      const cachedFitAddon = { fit: vi.fn() }
+      const cachedFitController = { fit: vi.fn() }
 
       const cachedTerminal = {
         open: vi.fn(),
@@ -1682,7 +1566,7 @@ describe('Body', () => {
 
       terminalCache.set('cached-session', {
         terminal: cachedTerminal as unknown as TerminalSurface,
-        fitController: cachedFitAddon as unknown as TerminalFitController,
+        fitController: cachedFitController as unknown as TerminalFitController,
         viewportReader: { readVisibleText: vi.fn() },
       })
 
@@ -1705,7 +1589,7 @@ describe('Body', () => {
         })
 
         // fitController.fit must be suppressed on the reuse path when width is 0
-        expect(cachedFitAddon.fit).not.toHaveBeenCalled()
+        expect(cachedFitController.fit).not.toHaveBeenCalled()
       } finally {
         offsetSpy.mockRestore()
         terminalCache.delete('cached-session')
@@ -1714,7 +1598,7 @@ describe('Body', () => {
 
     test('caches terminals skip font settle refit when reused', async () => {
       // Seed the module-level cache to force the reuse branch
-      const cachedFitAddon = { fit: vi.fn() }
+      const cachedFitController = { fit: vi.fn() }
 
       const cachedTerminal = {
         open: vi.fn(),
@@ -1736,7 +1620,7 @@ describe('Body', () => {
 
       terminalCache.set('cached-session', {
         terminal: cachedTerminal as unknown as TerminalSurface,
-        fitController: cachedFitAddon as unknown as TerminalFitController,
+        fitController: cachedFitController as unknown as TerminalFitController,
         viewportReader: { readVisibleText: vi.fn() },
       })
 
@@ -1789,7 +1673,7 @@ describe('Body', () => {
       })
 
       // Clear mocks from initial render
-      mockFitAddon.fit.mockClear()
+      mockFitController.fit.mockClear()
       vi.mocked(mockUseTerminal.resize).mockClear()
 
       const container = screen.getByTestId('terminal-pane')
@@ -1810,7 +1694,7 @@ describe('Body', () => {
       // called inside onResize at all (PR #190 review: the cols/rows
       // delivered by onResize are already the result of an upstream fit(),
       // so re-fitting here is circular).
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
       expect(mockUseTerminal.resize).not.toHaveBeenCalled()
 
       // Visible tab path: container width > 0
@@ -1821,13 +1705,13 @@ describe('Body', () => {
 
       onResizeCallback({ cols: 80, rows: 24 })
 
-      // PTY resize fires; fit() does NOT (handler forwards xterm's
+      // PTY resize fires; fit() does NOT (handler forwards the terminal's
       // already-fitted dimensions to the PTY without re-measuring).
-      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockFitController.fit).not.toHaveBeenCalled()
       expect(mockUseTerminal.resize).toHaveBeenCalledTimes(1)
     })
 
-    test('does not forward duplicate xterm resize dimensions to PTY', async () => {
+    test('does not forward duplicate terminal resize dimensions to PTY', async () => {
       render(
         <Body
           sessionId="test-session"
@@ -1863,6 +1747,13 @@ describe('Body', () => {
     })
 
     test('P2: disposes old session terminal when switching to different sessionId', async () => {
+      const firstTerminalControls = createMockTerminalControls()
+      const secondTerminalControls = createMockTerminalControls()
+
+      vi.mocked(createTerminalInstance)
+        .mockImplementationOnce(() => firstTerminalControls.instance)
+        .mockImplementationOnce(() => secondTerminalControls.instance)
+
       // Render with session A
       const { rerender } = render(
         <Body
@@ -1873,14 +1764,13 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockTerminal.open).toHaveBeenCalled()
+        expect(firstTerminalControls.terminal.open).toHaveBeenCalled()
       })
 
-      const firstTerminal = mockTerminal
+      const firstTerminal = firstTerminalControls.terminal
 
       // Clear mocks to detect new calls
-      vi.mocked(Terminal).mockClear()
-      vi.mocked(FitAddon).mockClear()
+      vi.mocked(createTerminalInstance).mockClear()
 
       // Switch to session B (cleanup effect disposes session A terminal)
       rerender(
@@ -1893,7 +1783,7 @@ describe('Body', () => {
 
       // Wait for new terminal to be created
       await waitFor(() => {
-        expect(Terminal).toHaveBeenCalled()
+        expect(createTerminalInstance).toHaveBeenCalledTimes(1)
       })
 
       // First terminal should be disposed to prevent memory leaks
@@ -1958,7 +1848,7 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(Terminal).toHaveBeenCalledTimes(1)
+        expect(createTerminalInstance).toHaveBeenCalledTimes(1)
       })
 
       // Update mockUseTerminal to return a new resize callback (simulating session change)
@@ -1968,8 +1858,8 @@ describe('Body', () => {
       }
       vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
 
-      // Clear Terminal mock to count new calls
-      vi.mocked(Terminal).mockClear()
+      // Clear factory mock to count new calls
+      vi.mocked(createTerminalInstance).mockClear()
 
       // Trigger re-render (this would happen when resize callback changes)
       rerender(
@@ -1983,8 +1873,8 @@ describe('Body', () => {
       // Wait a bit to ensure effect would run if it was going to
       await new Promise((resolve) => setTimeout(resolve, 50))
 
-      // Terminal should NOT be recreated
-      expect(Terminal).not.toHaveBeenCalled()
+      // Terminal instance should NOT be recreated
+      expect(createTerminalInstance).not.toHaveBeenCalled()
     })
 
     test('P2: re-sends PTY resize after session becomes running', async () => {
@@ -2113,13 +2003,13 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalledWith(
+        expect(mockParser.registerOscHandler).toHaveBeenCalledWith(
           7,
           expect.any(Function)
         )
       })
 
-      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
         .calls[0]?.[1]
 
       ;(oscHandler as ((data: string) => void) | undefined)?.(
@@ -2176,13 +2066,13 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalledWith(
+        expect(mockParser.registerOscHandler).toHaveBeenCalledWith(
           7,
           expect.any(Function)
         )
       })
 
-      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
         .calls[0]?.[1]
 
       ;(oscHandler as ((data: string) => void) | undefined)?.(
@@ -2239,10 +2129,10 @@ describe('Body', () => {
       )
 
       await waitFor(() => {
-        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalled()
+        expect(mockParser.registerOscHandler).toHaveBeenCalled()
       })
 
-      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+      const oscHandler = vi.mocked(mockParser.registerOscHandler).mock
         .calls[0]?.[1]
 
       ;(oscHandler as ((data: string) => void) | undefined)?.('/tmp')
