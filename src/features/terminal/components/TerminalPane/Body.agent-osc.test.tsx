@@ -9,6 +9,7 @@ import type { ITerminalService } from '../../services/terminalService'
 import type {
   TerminalDisposable,
   TerminalInstance,
+  TerminalOutputChunk,
   TerminalParser,
   TerminalRendererHandle,
   TerminalSurface,
@@ -143,6 +144,13 @@ const createFakeTerminalInstance = (): TerminalInstance => {
 
   return {
     terminal,
+    output: {
+      writeOutput: vi.fn(
+        (chunk: TerminalOutputChunk, callback?: () => void): void => {
+          terminal.write(chunk.text, callback)
+        }
+      ),
+    },
     parser: terminal.parser,
     viewportReader,
     fitController: { fit: vi.fn() },

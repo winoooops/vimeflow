@@ -20,6 +20,7 @@ import { type ITerminalService } from '../../services/terminalService'
 import type {
   TerminalDisposable,
   TerminalFitController,
+  TerminalOutputWriter,
   TerminalRendererHandle,
   TerminalSurface,
 } from '../../types'
@@ -180,6 +181,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const containerRef = useRef<HTMLDivElement>(null)
 
   const [terminal, setTerminal] = useState<TerminalSurface | null>(null)
+
+  const [terminalOutput, setTerminalOutput] =
+    useState<TerminalOutputWriter | null>(null)
 
   const [terminalStartupError, setTerminalStartupError] = useState<
     string | null
@@ -358,6 +362,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     status,
   } = useTerminal({
     terminal,
+    output: terminalOutput,
     service,
     cwd,
     shell,
@@ -468,6 +473,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Check if we already have a terminal for this session
     const cached = terminalCache.get(sessionId)
     let newTerminal: TerminalSurface | null = null
+    let newTerminalOutput: TerminalOutputWriter | null = null
     let fitController: TerminalFitController | null = null
     let rendererHandle: TerminalRendererHandle | null = null
     let fitFrameId: number | null = null
@@ -581,6 +587,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         if (cached) {
           // Reuse existing terminal from cache
           newTerminal = cached.terminal
+          newTerminalOutput = cached.output
           fitController = cached.fitController
           fitControllerRef.current = fitController
 
@@ -601,6 +608,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           }
 
           newTerminal = created.terminal
+          newTerminalOutput = created.output
           fitController = created.fitController
           fitControllerRef.current = fitController
 
@@ -662,6 +670,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           // Cache the terminal instance for this session
           terminalCache.set(sessionId, {
             terminal: newTerminal,
+            output: newTerminalOutput,
             fitController,
             viewportReader: created.viewportReader,
           })
@@ -852,6 +861,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
         // Store terminal in state to trigger useTerminal hook
         setTerminal(terminalForSetup)
+        setTerminalOutput(newTerminalOutput)
       } catch (error) {
         if (disposed) {
           return
@@ -869,9 +879,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         }
 
         newTerminal = null
+        newTerminalOutput = null
         fitController = null
         fitControllerRef.current = null
         setTerminal(null)
+        setTerminalOutput(null)
         setTerminalStartupError(terminalStartupErrorMessage(error))
       }
     }
@@ -910,8 +922,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         newTerminal?.dispose()
       }
       newTerminal = null
+      newTerminalOutput = null
       fitController = null
       setTerminal(null)
+      setTerminalOutput(null)
       fitControllerRef.current = null
     }
   }, [sessionId])

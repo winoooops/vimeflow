@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { ITerminalService } from '../services/terminalService'
-import type { TerminalSession, TerminalSurface } from '../types'
+import type {
+  TerminalOutputChunk,
+  TerminalOutputWriter,
+  TerminalSession,
+  TerminalSurface,
+} from '../types'
 
 /**
  * Data required to restore a terminal session from snapshot + live events.
@@ -52,6 +57,11 @@ interface UseTerminalBaseOptions {
    * Terminal renderer surface.
    */
   terminal: TerminalSurface | null
+
+  /**
+   * Renderer-owned PTY output writer.
+   */
+  output: TerminalOutputWriter | null
 
   /**
    * Terminal service (MockTerminalService or DesktopTerminalService)
@@ -172,6 +182,7 @@ export interface UseTerminalReturn {
 export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   const {
     terminal,
+    output,
     service,
     cwd,
     shell,
@@ -247,16 +258,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onInputRef.current = onInput
   }, [onInput])
 
-  const writeTerminalOutput = useCallback(
-    (targetTerminal: TerminalSurface, data: string): void => {
+  const writeLiveTerminalOutput = useCallback(
+    (targetOutput: TerminalOutputWriter, chunk: TerminalOutputChunk): void => {
       if (!onOutputRef.current) {
-        targetTerminal.write(data)
+        targetOutput.writeOutput(chunk)
 
         return
       }
 
-      targetTerminal.write(data, () => {
-        onOutputRef.current?.(data)
+      targetOutput.writeOutput(chunk, () => {
+        onOutputRef.current?.(chunk.text)
       })
     },
     []
@@ -285,7 +296,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // the first fake unmount sets this to false and it never resets)
     isMountedRef.current = true
 
-    if (!terminal) {
+    if (!terminal || !output) {
       return
     }
 
@@ -342,16 +353,30 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           }
         }
 
-        const restoredOutputParts = [
-          restore.replayData,
-          ...restoredBufferedEvents.map((event) => event.data),
+        const restoredOutputChunks: TerminalOutputChunk[] = [
+          ...(restore.replayData.length > 0
+            ? [
+                {
+                  text: restore.replayData,
+                  offsetStart: null,
+                  byteLen: null,
+                  phase: 'restore' as const,
+                },
+              ]
+            : []),
+          ...restoredBufferedEvents.map(
+            (event): TerminalOutputChunk => ({
+              text: event.data,
+              offsetStart: event.offsetStart,
+              byteLen: event.byteLen,
+              phase: 'restore',
+            })
+          ),
         ]
 
-        const restoredOutput = restoredOutputParts.join('')
-
-        const restoredOutputChunks = restoredOutputParts.filter(
-          (data) => data.length > 0
-        )
+        const restoredOutput = restoredOutputChunks
+          .map((chunk) => chunk.text)
+          .join('')
 
         const restoreStart = onRestoreStartRef.current
         const restoreEnd = onRestoreEndRef.current
@@ -372,15 +397,15 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         }
 
         if (restoredOutputChunks.length > 0) {
-          restoredOutputChunks.forEach((data, index) => {
+          restoredOutputChunks.forEach((chunk, index) => {
             const isLastChunk = index === restoredOutputChunks.length - 1
             if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
-              terminal.write(data, finishRestore)
+              output.writeOutput(chunk, finishRestore)
 
               return
             }
 
-            terminal.write(data)
+            output.writeOutput(chunk)
           })
         } else {
           finishRestore()
@@ -489,11 +514,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
     // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
     // Including it would cause infinite loops as object identity changes.
-  }, [terminal, service, shell, env, writeTerminalOutput])
+  }, [terminal, output, service, shell, env, writeLiveTerminalOutput])
 
   // Listen to PTY data events
   useEffect(() => {
-    if (!terminal || !session) {
+    if (!terminal || !output || !session) {
       return
     }
 
@@ -507,7 +532,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
-          writeTerminalOutput(terminal, data)
+          writeLiveTerminalOutput(output, {
+            text: data,
+            offsetStart,
+            byteLen,
+            phase: 'live',
+          })
           // Advance the cursor by the producer's raw byte count, not by the
           // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
           // U+FFFD = 3 bytes when re-encoded) would otherwise drift the
@@ -628,7 +658,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       unsubscribeExit?.()
       unsubscribeError?.()
     }
-  }, [terminal, session, service, writeTerminalOutput])
+  }, [terminal, output, session, service, writeLiveTerminalOutput])
 
   // Handle keyboard input from the terminal renderer
   useEffect(() => {

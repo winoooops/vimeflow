@@ -153,6 +153,16 @@ describe('xtermInstance', () => {
       'visible one\nvisible two'
     )
 
+    const writeCallback = vi.fn()
+    created.output.writeOutput(
+      {
+        text: 'chunk output',
+        offsetStart: 8,
+        byteLen: 12,
+        phase: 'live',
+      },
+      writeCallback
+    )
     created.parser.registerOscHandler(7, () => true)
 
     created.terminal.open(container)
@@ -162,6 +172,7 @@ describe('xtermInstance', () => {
       7,
       expect.any(Function)
     )
+    expect(terminal.write).toHaveBeenCalledWith('chunk output', writeCallback)
     expect(terminal.open).toHaveBeenCalledWith(container)
     expect(terminal.options.theme).toEqual(
       expect.objectContaining({

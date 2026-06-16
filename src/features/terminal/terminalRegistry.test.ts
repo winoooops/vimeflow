@@ -27,6 +27,7 @@ const createEntry = (): TerminalRegistryEntry => ({
     attachKeyEventHandler: vi.fn(),
     applyTheme: vi.fn(),
   },
+  output: { writeOutput: vi.fn() },
   fitController: { fit: vi.fn() },
   viewportReader: { readVisibleText: vi.fn((): string => '') },
 })

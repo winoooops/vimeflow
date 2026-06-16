@@ -9,6 +9,7 @@ vi.mock('./terminalRendererRegistry', () => ({
 test('creates the configured terminal renderer instance', async () => {
   const instance = {
     terminal: {},
+    output: {},
     parser: {},
     viewportReader: {},
     fitController: {},

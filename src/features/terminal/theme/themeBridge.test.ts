@@ -13,6 +13,7 @@ test('live terminals receive the new terminal theme on switch', () => {
   const fake = { applyTheme: vi.fn(), dispose: vi.fn() }
   terminalCache.set('s1', {
     terminal: fake as unknown as TerminalSurface,
+    output: { writeOutput: vi.fn() },
     fitController: { fit: vi.fn() },
     viewportReader: { readVisibleText: vi.fn() },
   })

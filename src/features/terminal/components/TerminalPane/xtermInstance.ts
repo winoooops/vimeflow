@@ -5,6 +5,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { themeService } from '../../../../theme'
 import type {
   TerminalInstance,
+  TerminalOutputWriter,
   TerminalParser,
   TerminalRendererHandle,
   TerminalRendererAdapter,
@@ -31,6 +32,7 @@ export const createXtermTerminal = (): TerminalInstance => {
 
   return {
     terminal: createTerminalSurface(terminal),
+    output: createTerminalOutputWriter(terminal),
     parser: createTerminalParser(terminal),
     viewportReader: createTerminalViewportReader(terminal),
     fitController: fitAddon,
@@ -89,6 +91,14 @@ const createTerminalSurface = (terminal: Terminal): TerminalSurface => ({
   },
   applyTheme: (theme: TerminalTheme): void => {
     terminal.options.theme = toXtermTheme(theme)
+  },
+})
+
+const createTerminalOutputWriter = (
+  terminal: Terminal
+): TerminalOutputWriter => ({
+  writeOutput: (chunk, callback): void => {
+    terminal.write(chunk.text, callback)
   },
 })
 

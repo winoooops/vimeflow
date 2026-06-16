@@ -56,6 +56,9 @@ const createTerminalInstance = (): TerminalInstance => ({
     attachKeyEventHandler: vi.fn(),
     applyTheme: vi.fn(),
   },
+  output: {
+    writeOutput: vi.fn(),
+  },
   parser: {
     registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
   },

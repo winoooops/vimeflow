@@ -4,6 +4,7 @@ import type {
   TerminalFitController,
   TerminalInstance,
   TerminalKeyEventHandler,
+  TerminalOutputWriter,
   TerminalParser,
   TerminalRendererAdapter,
   TerminalRendererHandle,
@@ -467,6 +468,12 @@ class PlainTextTerminalModel {
     },
   }
 
+  readonly output: TerminalOutputWriter = {
+    writeOutput: (chunk, callback): void => {
+      this.terminal.write(chunk.text, callback)
+    },
+  }
+
   readonly viewportReader: TerminalViewportReader = {
     readVisibleText: (): string => this.terminal.readVisibleText(),
   }
@@ -506,6 +513,7 @@ export const createPlainTextTerminal = (): TerminalInstance => {
 
   return {
     terminal: model.terminal,
+    output: model.output,
     parser: model.parser,
     viewportReader: model.viewportReader,
     fitController: model.fitController,

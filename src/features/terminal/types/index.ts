@@ -215,6 +215,23 @@ export interface TerminalSize {
   rows: number
 }
 
+/** Source phase for output written into a terminal renderer. */
+export type TerminalOutputPhase = 'live' | 'restore'
+
+/** PTY output chunk delivered to a renderer-owned parser/writer. */
+export interface TerminalOutputChunk {
+  /** UTF-8 decoded text payload used by the current xterm-compatible path. */
+  readonly text: string
+  /** Optional raw byte payload for future byte-preserving renderer adapters. */
+  readonly bytesBase64?: string
+  /** Producer byte offset for this chunk, if known. */
+  readonly offsetStart: number | null
+  /** Producer byte length for this chunk, if known. */
+  readonly byteLen: number | null
+  /** Whether this chunk is live output or historical restore replay. */
+  readonly phase: TerminalOutputPhase
+}
+
 /** Renderer-level keyboard event hook. Return false to stop the terminal. */
 export type TerminalKeyEventHandler = (event: KeyboardEvent) => boolean
 
@@ -245,6 +262,11 @@ export interface TerminalFitController {
   fit: () => void
 }
 
+/** Adapter-owned writer for PTY output chunks. */
+export interface TerminalOutputWriter {
+  writeOutput: (chunk: TerminalOutputChunk, callback?: () => void) => void
+}
+
 /** Renderer addon handle owned by the terminal adapter. */
 export interface TerminalRendererHandle {
   dispose: () => void
@@ -266,6 +288,7 @@ export interface TerminalViewportReader {
 /** Complete terminal renderer instance created for a pane. */
 export interface TerminalInstance {
   terminal: TerminalSurface
+  output: TerminalOutputWriter
   parser: TerminalParser
   viewportReader: TerminalViewportReader
   fitController: TerminalFitController
