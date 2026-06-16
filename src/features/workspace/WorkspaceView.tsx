@@ -70,6 +70,7 @@ import {
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
+import { useKeybindings } from '../keymap/useKeybindings'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
@@ -1433,6 +1434,10 @@ export const WorkspaceView = (): ReactElement => {
     enabled: !showUnsavedDialog && !settingsDialog.isOpen,
   })
 
+  // Keybinding registry matcher — threaded into the migrated shortcut hooks so a
+  // persisted override changes the live shortcut (VIM-136 SP1).
+  const { matches } = useKeybindings()
+
   usePaneShortcuts({
     sessions,
     activeSessionId,
@@ -1452,7 +1457,7 @@ export const WorkspaceView = (): ReactElement => {
 
   useDockToggleShortcut({
     onToggle: handleToggleDock,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
 
   useSidebarShortcut({
