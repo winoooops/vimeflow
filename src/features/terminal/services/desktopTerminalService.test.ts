@@ -215,6 +215,22 @@ describe('DesktopTerminalService', () => {
       expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0, 11)
     })
 
+    test('onData forwards optional raw bytes payload', async () => {
+      const callback = vi.fn()
+      await service.onData(callback)
+      await mockSpawnAndInit(service)
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: '��',
+        bytesBase64: '//4=',
+        offsetStart: 0,
+        byteLen: 2,
+      })
+
+      expect(callback).toHaveBeenCalledWith('sess-1', '��', 0, 2, '//4=')
+    })
+
     test('onExit delivers pty-exit events to callback', async () => {
       const callback = vi.fn()
       await service.onExit(callback)

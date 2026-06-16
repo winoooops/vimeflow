@@ -1,3 +1,4 @@
+// cspell:ignore QlVGRkVSRUQ
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useTerminal } from './useTerminal'
@@ -159,6 +160,37 @@ describe('useTerminal', () => {
       phase: 'live',
     })
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
+  })
+
+  test('writes PTY raw bytes payload to terminal output chunks', async () => {
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        output: mockOutput,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    mockService.emit('data', {
+      sessionId: result.current.session!.id,
+      data: '��',
+      offsetStart: 0,
+      byteLen: 2,
+      bytesBase64: '//4=',
+    })
+
+    expect(mockOutput.writeOutput).toHaveBeenCalledWith({
+      text: '��',
+      bytesBase64: '//4=',
+      offsetStart: 0,
+      byteLen: 2,
+      phase: 'live',
+    })
   })
 
   test('reports accepted PTY output chunks', async () => {
@@ -705,7 +737,14 @@ describe('useTerminal', () => {
             pid: 1234,
             replayData: 'REPLAY',
             replayEndOffset: 50,
-            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
+            bufferedEvents: [
+              {
+                data: 'BUFFERED',
+                offsetStart: 50,
+                byteLen: 8,
+                bytesBase64: 'QlVGRkVSRUQ=',
+              },
+            ],
           },
           onOutput,
           onRestoreOutput,
@@ -720,6 +759,17 @@ describe('useTerminal', () => {
       expect(writes[0]).toBe('REPLAY')
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
+      expect(mockOutput.writeOutput).toHaveBeenNthCalledWith(
+        2,
+        {
+          text: 'BUFFERED',
+          bytesBase64: 'QlVGRkVSRUQ=',
+          offsetStart: 50,
+          byteLen: 8,
+          phase: 'restore',
+        },
+        expect.any(Function)
+      )
       expect(onOutput).not.toHaveBeenCalled()
 
       expect(onRestoreOutput).not.toHaveBeenCalled()

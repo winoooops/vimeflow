@@ -153,12 +153,14 @@ describe('Terminal Types', () => {
       const event: PTYDataEvent = {
         sessionId: 'session-1',
         data: 'hello world\n',
+        bytesBase64: 'aGVsbG8gd29ybGQK',
         offsetStart: 0n,
         byteLen: 12n,
       }
 
       expect(event.sessionId).toBe('session-1')
       expect(event.data).toBe('hello world\n')
+      expect(event.bytesBase64).toBe('aGVsbG8gd29ybGQK')
       expect(event.offsetStart).toBe(0n)
       expect(event.byteLen).toBe(12n)
     })

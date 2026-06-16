@@ -22,7 +22,12 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
+  bufferedEvents: {
+    data: string
+    offsetStart: number
+    byteLen: number
+    bytesBase64?: string
+  }[]
 }
 
 /**
@@ -34,7 +39,12 @@ export interface RestoreData {
  */
 export type NotifyPaneReady = (
   ptyId: string,
-  handler: (data: string, offsetStart: number, byteLen: number) => void
+  handler: (
+    data: string,
+    offsetStart: number,
+    byteLen: number,
+    bytesBase64?: string
+  ) => void
 ) => () => void
 
 /**
@@ -369,6 +379,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
             .map(
               (event): TerminalOutputChunk => ({
                 text: event.data,
+                ...(event.bytesBase64 === undefined
+                  ? {}
+                  : { bytesBase64: event.bytesBase64 }),
                 offsetStart: event.offsetStart,
                 byteLen: event.byteLen,
                 phase: 'restore',
@@ -528,7 +541,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       eventSessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      bytesBase64?: string
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         // Cursor dedupe: drop events whose offset predates what we've
@@ -536,6 +550,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         if (offsetStart >= cursorRef.current) {
           writeLiveTerminalOutput(output, {
             text: data,
+            ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
             offsetStart,
             byteLen,
             phase: 'live',
@@ -559,9 +574,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const handleDataForDrain = (
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      bytesBase64?: string
     ): void => {
-      handleData(session.id, data, offsetStart, byteLen)
+      handleData(session.id, data, offsetStart, byteLen, bytesBase64)
     }
 
     const handleExit = (eventSessionId: string, code: number | null): void => {
