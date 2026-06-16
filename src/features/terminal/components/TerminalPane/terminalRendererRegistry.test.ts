@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
 
@@ -13,6 +14,11 @@ const plainTextRendererMocks = vi.hoisted(() => ({
   moduleLoaded: vi.fn(),
 }))
 
+const ghosttyRendererMocks = vi.hoisted(() => ({
+  createInstance: vi.fn(),
+  moduleLoaded: vi.fn(),
+}))
+
 vi.mock('./plainTextInstance', () => {
   plainTextRendererMocks.moduleLoaded()
 
@@ -20,6 +26,17 @@ vi.mock('./plainTextInstance', () => {
     plainTextTerminalRenderer: {
       id: 'plain-text',
       createInstance: plainTextRendererMocks.createInstance,
+    },
+  }
+})
+
+vi.mock('./ghosttyInstance', () => {
+  ghosttyRendererMocks.moduleLoaded()
+
+  return {
+    ghosttyTerminalRenderer: {
+      id: 'ghostty',
+      createInstance: ghosttyRendererMocks.createInstance,
     },
   }
 })
@@ -159,6 +176,24 @@ describe('terminalRendererRegistry', () => {
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
   })
 
+  test('loads the bundled ghostty renderer only when selected by environment', async () => {
+    const instance = createTerminalInstance()
+
+    ghosttyRendererMocks.createInstance.mockReturnValue(instance)
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+
+    const registry = await importTerminalRendererRegistry()
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'ghostty' })
+    )
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
+    expect(ghosttyRendererMocks.moduleLoaded).toHaveBeenCalledOnce()
+    expect(ghosttyRendererMocks.createInstance).toHaveBeenCalledOnce()
+    expect(plainTextRendererMocks.moduleLoaded).not.toHaveBeenCalled()
+    expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
   test('keeps xterm as the default when environment selection is blank', async () => {
     vi.stubEnv('VITE_TERMINAL_RENDERER', ' ')
 
@@ -265,6 +300,20 @@ describe('terminalRendererRegistry', () => {
 
     expect(await registry.getTerminalRendererAdapter()).toEqual(
       expect.objectContaining({ id: 'plain-text' })
+    )
+  })
+
+  test('retains the environment-loaded ghostty adapter after reset', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+
+    const registry = await importTerminalRendererRegistry()
+
+    await registry.configureTerminalRendererFromEnvironment()
+    registry._resetTerminalRendererRegistryForTest()
+    registry.setTerminalRendererAdapter('ghostty')
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'ghostty' })
     )
   })
 })
