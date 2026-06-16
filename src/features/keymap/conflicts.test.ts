@@ -5,7 +5,7 @@ import type { CommandId } from './catalog'
 
 const c = (
   code: string,
-  ...mods: Array<'Mod' | 'Ctrl' | 'Shift' | 'Alt'>
+  ...mods: ('Mod' | 'Ctrl' | 'Shift' | 'Alt')[]
 ): Chord => ({ code, mods: new Set(mods) })
 
 describe('chordsOverlap', () => {
@@ -35,10 +35,23 @@ describe('chordsOverlap', () => {
 
   test('Mod vs literal Ctrl collide on Linux (ctrl) but not macOS (meta vs ctrl)', () => {
     expect(
-      chordsOverlap(c('KeyB', 'Mod'), 'exact', c('KeyB', 'Ctrl'), 'exact', 'ctrl')
+      chordsOverlap(
+        c('KeyB', 'Mod'),
+        'exact',
+        c('KeyB', 'Ctrl'),
+        'exact',
+        'ctrl'
+      )
     ).toBe(true)
+
     expect(
-      chordsOverlap(c('KeyB', 'Mod'), 'exact', c('KeyB', 'Ctrl'), 'exact', 'meta')
+      chordsOverlap(
+        c('KeyB', 'Mod'),
+        'exact',
+        c('KeyB', 'Ctrl'),
+        'exact',
+        'meta'
+      )
     ).toBe(false)
   })
 })
@@ -59,7 +72,10 @@ describe('detectConflicts', () => {
     ])
     const conflicts = detectConflicts(resolved, 'meta')
     expect(conflicts).toHaveLength(1)
-    expect(conflicts[0].commandIds.sort()).toEqual(['dock-toggle', 'focus-pane-1'])
+    expect(conflicts[0].commandIds.sort()).toEqual([
+      'dock-toggle',
+      'focus-pane-1',
+    ])
   })
 
   test('no conflict when keys differ', () => {

@@ -24,7 +24,10 @@ export const resolveBindings = (
   superKey: PlatformSuper
 ): Map<CommandId, Chord> => {
   const resolved = new Map<CommandId, Chord>(
-    CATALOG.map((cmd): [CommandId, Chord] => [cmd.id, resolveDefault(cmd, isMac)])
+    CATALOG.map((cmd): [CommandId, Chord] => [
+      cmd.id,
+      resolveDefault(cmd, isMac),
+    ])
   )
 
   for (const cmd of CATALOG) {

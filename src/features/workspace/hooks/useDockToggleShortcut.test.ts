@@ -84,6 +84,7 @@ describe('useDockToggleShortcut', () => {
 
   test('detaches its listener on unmount', () => {
     const onToggle = vi.fn()
+
     const { unmount } = renderHook(() =>
       useDockToggleShortcut({ onToggle, matches: matchesFor('Digit0') })
     )

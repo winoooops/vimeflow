@@ -25,6 +25,7 @@ describe('chordToShortcutInput', () => {
     expect(
       formatShortcut(chordToShortcutInput(c('KeyC', 'Mod')), { isMac: true })
     ).toBe('⌘C')
+
     expect(
       formatShortcut(chordToShortcutInput(c('KeyB', 'Mod', 'Shift')), {
         isMac: false,

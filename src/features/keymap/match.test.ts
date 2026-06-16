@@ -35,6 +35,7 @@ describe('eventMatchesChord — super', () => {
     expect(
       matches('Ctrl+Backquote', ev('Backquote', { ctrl: true }), 'meta')
     ).toBe(true)
+
     expect(
       matches(
         'Ctrl+Backquote',
@@ -58,6 +59,7 @@ describe('eventMatchesChord — Shift/Alt by policy', () => {
         'meta'
       )
     ).toBe(true)
+
     expect(
       matches('Mod+Shift+ArrowLeft', ev('ArrowLeft', { meta: true }), 'meta')
     ).toBe(false)
@@ -67,6 +69,7 @@ describe('eventMatchesChord — Shift/Alt by policy', () => {
     expect(
       matches('Mod+KeyN', ev('KeyN', { meta: true, shift: true }), 'meta')
     ).toBe(false)
+
     expect(
       matches('Mod+KeyN', ev('KeyN', { meta: true, alt: true }), 'meta')
     ).toBe(false)
@@ -82,6 +85,7 @@ describe('eventMatchesChord — Shift/Alt by policy', () => {
         'tolerant'
       )
     ).toBe(true)
+
     expect(
       matches(
         'Mod+Digit1',

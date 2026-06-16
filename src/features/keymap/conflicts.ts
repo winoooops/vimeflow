@@ -80,7 +80,13 @@ export const overrideCollides = (
     const other = getCommand(otherId)
     if (
       contextsOverlap(me.context, other.context) &&
-      chordsOverlap(chord, me.matchPolicy, otherChord, other.matchPolicy, superKey)
+      chordsOverlap(
+        chord,
+        me.matchPolicy,
+        otherChord,
+        other.matchPolicy,
+        superKey
+      )
     ) {
       return true
     }

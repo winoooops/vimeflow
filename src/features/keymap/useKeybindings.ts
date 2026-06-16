@@ -72,7 +72,10 @@ export const useKeybindings = (): Keybindings => {
             superKey
           )
         ) {
-          return { ok: false, reason: other.rebindable ? 'conflict' : 'reserved' }
+          return {
+            ok: false,
+            reason: other.rebindable ? 'conflict' : 'reserved',
+          }
         }
       }
       update({ customKeybindings: { ...overrides, [id]: formatChord(chord) } })

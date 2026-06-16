@@ -14,6 +14,7 @@ const renderKeybindings = (
 } => {
   const update = vi.fn()
   const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
   const wrapper = ({ children }: { children: ReactNode }): ReactNode =>
     createElement(
       SettingsContext.Provider,
@@ -58,6 +59,7 @@ describe('useKeybindings', () => {
 
   test("setUserBinding rejects a rebindable-vs-rebindable collision as 'conflict'", () => {
     const { result, update } = renderKeybindings()
+
     const outcome = result.current.setUserBinding('dock-toggle', {
       code: 'Digit1',
       mods: new Set(['Mod']),
@@ -74,6 +76,7 @@ describe('useKeybindings', () => {
         mods: new Set(['Mod']),
       })
     ).toEqual({ ok: true })
+
     expect(update).toHaveBeenCalledWith({
       customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
     })

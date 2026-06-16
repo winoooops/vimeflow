@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { resolveBindings, resolveDefault, type CustomKeybindings } from './resolve'
+import {
+  resolveBindings,
+  resolveDefault,
+  type CustomKeybindings,
+} from './resolve'
 import { CATALOG, type CommandId } from './catalog'
 import { formatChord } from './chord'
 
@@ -34,7 +38,9 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
 
 describe('resolveBindings', () => {
   test('a valid override on a rebindable command wins', () => {
-    expect(tokenOf({ 'dock-toggle': 'Mod+KeyK' }, 'dock-toggle')).toBe('Mod+KeyK')
+    expect(tokenOf({ 'dock-toggle': 'Mod+KeyK' }, 'dock-toggle')).toBe(
+      'Mod+KeyK'
+    )
   })
 
   test('override on a rebindable:false command is ignored', () => {
@@ -42,9 +48,17 @@ describe('resolveBindings', () => {
   })
 
   test('super-less / both-super / malformed overrides fall back to default', () => {
-    expect(tokenOf({ 'dock-toggle': 'Digit0' }, 'dock-toggle')).toBe('Mod+Digit0') // no super
-    expect(tokenOf({ 'dock-toggle': 'Mod+Ctrl+Digit0' }, 'dock-toggle')).toBe('Mod+Digit0') // both supers
-    expect(tokenOf({ 'dock-toggle': 'garbage' }, 'dock-toggle')).toBe('Mod+Digit0') // unparseable
+    expect(tokenOf({ 'dock-toggle': 'Digit0' }, 'dock-toggle')).toBe(
+      'Mod+Digit0'
+    ) // no super
+
+    expect(tokenOf({ 'dock-toggle': 'Mod+Ctrl+Digit0' }, 'dock-toggle')).toBe(
+      'Mod+Digit0'
+    ) // both supers
+
+    expect(tokenOf({ 'dock-toggle': 'garbage' }, 'dock-toggle')).toBe(
+      'Mod+Digit0'
+    ) // unparseable
   })
 
   test('a clean A↔B swap keeps BOTH overrides (final-set validation)', () => {
