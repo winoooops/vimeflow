@@ -228,7 +228,10 @@ class PlainTextTerminalSurface implements TerminalSurface {
     callback?.()
   }
 
-  refresh(): void {
+  refresh(start: number, end: number): void {
+    void start
+    void end
+
     this.renderOutput()
   }
 
@@ -443,7 +446,11 @@ class PlainTextTerminalModel {
       (sequence, identifier: string, payload: string): string => {
         const handler = this.oscHandlers.get(Number(identifier))
 
-        return handler?.(payload) === false ? sequence : ''
+        if (!handler) {
+          return sequence
+        }
+
+        return handler(payload) === false ? sequence : ''
       }
     )
   }

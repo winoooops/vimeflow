@@ -125,12 +125,14 @@ describe('plainTextInstance', () => {
   test('stops invoking disposed OSC handlers', () => {
     const created = createTrackedPlainTextTerminal()
     const oscHandler = vi.fn((): boolean => true)
+    const sequence = '\x1b]7;file://localhost/tmp/ignored\x07'
     const disposable = created.parser.registerOscHandler(7, oscHandler)
 
     disposable.dispose()
-    created.terminal.write('\x1b]7;file://localhost/tmp/ignored\x07')
+    created.terminal.write(sequence)
 
     expect(oscHandler).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe(sequence)
   })
 
   test('emits pasted text and keyboard input through onData', () => {
