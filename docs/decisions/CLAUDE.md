@@ -12,6 +12,7 @@ This file is an index. Each linked record is self-contained. Read only what you 
 
 | Date       | Decision                                                                                             | Status                                                        |
 | ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 2026-06-16 | [Ghostty PTY parser boundary](./2026-06-16-ghostty-pty-parser-boundary.zh.html)                      | Accepted for spike PR1                                        |
 | 2026-05-27 | [Terminal rendering: keep WebGL, fix the four real causes](./2026-05-27-terminal-rendering-fixes.md) | Accepted (3 of 4 shipped; backend UTF-8 chunk-split deferred) |
 | 2026-05-23 | [Diff renderer: `@pierre/diffs`](./2026-05-23-pierre-diffs-renderer.md)                              | Accepted (spike validated, integration pending)               |
 | 2026-05-16 | [In-repo skill symlinks for `/lifeline:*`](./2026-05-16-in-repo-skills-setup.md)                     | Accepted                                                      |

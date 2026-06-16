@@ -1,0 +1,788 @@
+<!doctype html>
+<!--
+  ========================================================================
+  REVIEW NOTE - for human and agent (Codex / Claude) reviewers
+  ========================================================================
+  This file is a STATIC, hand-authored decision document. It holds no
+  application logic, no runtime imports, no external scripts, and no tests.
+  It is documentation: prose, inline CSS, and simple HTML diagrams only.
+
+  Please do not line-by-line review CSS/markup nits or treat it as part of
+  the app behavioral surface. To verify it, open it in a browser and confirm
+  that it renders.
+  ========================================================================
+-->
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghostty PTY Parser 决策：Adapter 拥有 Parser，应用消费事件</title>
+    <style>
+      :root {
+        --base: #11131a;
+        --panel: #1a1d25;
+        --panel-high: #232834;
+        --text: #eceff4;
+        --muted: #b8c0cc;
+        --faint: #8590a0;
+        --line: rgba(216, 222, 233, 0.16);
+        --blue: #8aadf4;
+        --cyan: #91d7e3;
+        --green: #a6da95;
+        --yellow: #eed49f;
+        --red: #ed8796;
+        --purple: #c6a0f6;
+        --peach: #f5a97f;
+        --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+        --sans:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            920px 520px at 92% -8%,
+            rgba(145, 215, 227, 0.12),
+            transparent 58%
+          ),
+          radial-gradient(
+            760px 520px at 4% 8%,
+            rgba(198, 160, 246, 0.1),
+            transparent 62%
+          ),
+          linear-gradient(180deg, #161923, var(--base) 48%, #0d0f14);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.72;
+      }
+
+      a {
+        color: var(--cyan);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code {
+        border-radius: 6px;
+        background: rgba(8, 10, 14, 0.72);
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 0.92em;
+        padding: 1px 6px;
+      }
+
+      pre {
+        background: rgba(8, 10, 14, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        line-height: 1.58;
+        margin: 14px 0 0;
+        overflow-x: auto;
+        padding: 16px;
+      }
+
+      .wrap {
+        margin: 0 auto;
+        max-width: 1120px;
+        padding: 56px 28px 92px;
+      }
+
+      .hero {
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        gap: 28px;
+        grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+        margin-bottom: 36px;
+        padding-bottom: 34px;
+      }
+
+      .eyebrow {
+        color: var(--green);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        letter-spacing: 0.18em;
+        margin: 0 0 12px;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.16;
+        margin-top: 0;
+      }
+
+      h1 {
+        font-size: clamp(2.1rem, 5vw, 4.3rem);
+        margin-bottom: 16px;
+      }
+
+      h2 {
+        align-items: baseline;
+        display: flex;
+        font-size: 1.65rem;
+        gap: 10px;
+        margin-bottom: 12px;
+        scroll-margin-top: 20px;
+      }
+
+      h2 .num {
+        color: var(--purple);
+        font-family: var(--mono);
+        font-size: 0.86rem;
+      }
+
+      h3 {
+        color: var(--cyan);
+        font-size: 1.05rem;
+        margin-bottom: 8px;
+      }
+
+      p {
+        color: var(--muted);
+        margin: 0 0 14px;
+      }
+
+      .dek {
+        color: var(--muted);
+        font-size: 1.08rem;
+        max-width: 74ch;
+      }
+
+      .meta {
+        align-content: end;
+        display: grid;
+        gap: 10px;
+      }
+
+      .chip {
+        align-items: center;
+        background: rgba(35, 40, 52, 0.76);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        display: inline-flex;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        gap: 7px;
+        padding: 8px 12px;
+        width: fit-content;
+      }
+
+      .chip strong {
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .callout {
+        background:
+          linear-gradient(
+            135deg,
+            rgba(166, 218, 149, 0.13),
+            rgba(138, 173, 244, 0.07)
+          ),
+          rgba(26, 29, 37, 0.82);
+        border: 1px solid rgba(166, 218, 149, 0.24);
+        border-radius: 14px;
+        margin: 0 0 36px;
+        padding: 22px;
+      }
+
+      .callout strong {
+        color: var(--green);
+      }
+
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 46px;
+      }
+
+      .toc a {
+        background: rgba(35, 40, 52, 0.76);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        padding: 7px 11px;
+      }
+
+      section {
+        margin-bottom: 52px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card,
+      .wide-card {
+        background: rgba(26, 29, 37, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px;
+      }
+
+      .wide-card {
+        margin-top: 16px;
+      }
+
+      .card p:last-child,
+      .wide-card p:last-child {
+        margin-bottom: 0;
+      }
+
+      .tag {
+        border-radius: 999px;
+        display: inline-flex;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        margin-bottom: 10px;
+        padding: 5px 9px;
+      }
+
+      .tag.blue {
+        background: rgba(138, 173, 244, 0.12);
+        color: var(--blue);
+      }
+
+      .tag.green {
+        background: rgba(166, 218, 149, 0.12);
+        color: var(--green);
+      }
+
+      .tag.yellow {
+        background: rgba(238, 212, 159, 0.12);
+        color: var(--yellow);
+      }
+
+      .tag.red {
+        background: rgba(237, 135, 150, 0.12);
+        color: var(--red);
+      }
+
+      .flow {
+        background: rgba(12, 14, 19, 0.68);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        margin: 18px 0;
+        padding: 14px;
+      }
+
+      .flow-step {
+        background: rgba(35, 40, 52, 0.78);
+        border: 1px solid rgba(216, 222, 233, 0.1);
+        border-radius: 10px;
+        min-height: 114px;
+        padding: 13px;
+      }
+
+      .flow-step b {
+        color: var(--text);
+        display: block;
+        font-size: 0.93rem;
+        margin-bottom: 8px;
+      }
+
+      .flow-step span {
+        color: var(--faint);
+        display: block;
+        font-size: 0.86rem;
+      }
+
+      table {
+        border-collapse: collapse;
+        margin-top: 16px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        padding: 13px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font-size: 0.88rem;
+      }
+
+      ul,
+      ol {
+        color: var(--muted);
+        margin: 8px 0 0;
+        padding-left: 22px;
+      }
+
+      li {
+        margin-bottom: 8px;
+      }
+
+      .decision {
+        border-left: 3px solid var(--peach);
+        padding-left: 16px;
+      }
+
+      .foot {
+        border-top: 1px solid var(--line);
+        color: var(--faint);
+        font-size: 0.88rem;
+        padding-top: 24px;
+      }
+
+      @media (max-width: 860px) {
+        .hero,
+        .grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .wrap {
+          padding: 36px 18px 70px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Ghostty terminal investigation</p>
+          <h1>Ghostty PTY Parser 决策：Adapter 拥有 Parser，应用消费事件</h1>
+          <p class="dek">
+            这份决策记录下一阶段 Ghostty spike 的前置架构选择：parser 归
+            renderer adapter 所有，但应用层只消费统一事件；PTY 输出统一成 output
+            chunk，adapter 内部决定使用 string write 还是 byte write。
+          </p>
+        </div>
+        <aside class="meta">
+          <span class="chip"><strong>日期</strong> 2026-06-16</span>
+          <span class="chip"
+            ><strong>分支</strong> codex/ghostty-lazy-plain-text-renderer</span
+          >
+          <span class="chip"><strong>状态</strong> Accepted for spike PR1</span>
+        </aside>
+      </header>
+
+      <div class="callout">
+        <p>
+          <strong>决策：</strong>采用 Option A+。Parser 留在 renderer adapter
+          内部，xterm adapter 继续使用 string write，Ghostty adapter 可以使用
+          byte write；应用层不再记忆不同 adapter 的写入机制，只把
+          <code>TerminalOutputChunk</code> 交给 parser adapter，并监听统一的
+          <code>TerminalParserEvent</code>。
+        </p>
+      </div>
+
+      <nav class="toc" aria-label="目录">
+        <a href="#current">当前链路</a>
+        <a href="#decision">决策</a>
+        <a href="#why-bytes">为什么 PTY 字节重要</a>
+        <a href="#parser">Parser 责任边界</a>
+        <a href="#observability">OSC 7 与 agent observability</a>
+        <a href="#options">方案回顾</a>
+        <a href="#spike">Ghostty spike 路线</a>
+        <a href="#questions">术语与开放问题</a>
+      </nav>
+
+      <section id="current">
+        <h2><span class="num">01</span> 当前链路是什么样</h2>
+        <p>
+          当前系统已经有一个比较清晰的 terminal service 边界，但输出数据仍然以
+          <code>string</code> 为主。后端 live 输出和 restore replay 都会把 PTY
+          读到的 bytes 通过 <code>String::from_utf8_lossy</code> 转成字符串。
+          前端再通过 <code>pty-data</code> 事件收到
+          <code>data</code>、<code>offsetStart</code>、<code>byteLen</code>。
+        </p>
+
+        <div class="flow" aria-label="当前 PTY 到 renderer 的链路">
+          <div class="flow-step">
+            <b>PTY</b>
+            <span>shell/agent 进程输出原始 bytes</span>
+          </div>
+          <div class="flow-step">
+            <b>Rust backend</b>
+            <span><code>String::from_utf8_lossy</code> 生成字符串</span>
+          </div>
+          <div class="flow-step">
+            <b>IPC event</b>
+            <span><code>pty-data</code> 携带 string + byte offset</span>
+          </div>
+          <div class="flow-step">
+            <b>useTerminal</b>
+            <span>写入 <code>TerminalSurface.write(data)</code></span>
+          </div>
+          <div class="flow-step">
+            <b>Renderer parser</b>
+            <span>xterm/plain-text parser 触发 OSC 7 等 handler</span>
+          </div>
+        </div>
+
+        <p>
+          这里有一个很重要的好消息：<code>offsetStart</code> 和
+          <code>byteLen</code> 已经存在。这说明 restore/dedupe 的 cursor 已经是
+          byte-aware 的。坏消息是 payload 本身仍然不是 byte-preserving。
+        </p>
+      </section>
+
+      <section id="decision">
+        <h2><span class="num">02</span> 已接受的决策：Option A+</h2>
+        <p>
+          我们选择“parser 属于 renderer adapter，但 app 只依赖 generic parser
+          contract”。这保留 xterm 和 Ghostty 各自 parser 的真实行为，同时避免
+          <code>Body</code>、<code>useTerminal</code>、session manager
+          这些上层代码知道 “哪个 adapter 要 string、哪个 adapter 要 bytes”。
+        </p>
+
+        <pre><code>type TerminalOutputChunk = {
+  text: string
+  bytesBase64?: string
+  offsetStart: number
+  byteLen: number
+  phase: 'live' | 'restore'
+}
+
+type TerminalParserEvent =
+  | {
+      type: 'cwd'
+      source: 'osc7'
+      uri: string
+      path: string
+      phase: 'live' | 'restore'
+      offsetStart: number
+    }
+
+interface TerminalParserAdapter {
+  readonly id: string
+  readonly capabilities: {
+    acceptsText: boolean
+    acceptsBytes: boolean
+  }
+
+  writeOutput(chunk: TerminalOutputChunk): void
+  onEvent(handler: (event: TerminalParserEvent) =&gt; void): TerminalDisposable
+}</code></pre>
+
+        <div class="wide-card decision">
+          <h3>边界要求</h3>
+          <ul>
+            <li>
+              xterm adapter 从 <code>TerminalOutputChunk.text</code> 写入 xterm
+              parser。
+            </li>
+            <li>
+              Ghostty adapter 优先从
+              <code>TerminalOutputChunk.bytesBase64</code>
+              还原 bytes，再写入 Ghostty/libghostty-vt parser。
+            </li>
+            <li>
+              上层只处理 <code>TerminalParserEvent</code>，不直接注册
+              <code>registerOscHandler(7)</code>。
+            </li>
+            <li>
+              Ghostty spike 必须继续挂在显式 feature flag / renderer selector
+              后面。
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="why-bytes">
+        <h2><span class="num">03</span> 为什么 Ghostty 需要认真对待 bytes</h2>
+        <div class="grid">
+          <article class="card">
+            <span class="tag red">Lossy decode</span>
+            <h3>无效 UTF-8 会被替换</h3>
+            <p>
+              <code>from_utf8_lossy</code> 会把非法字节替换成 U+FFFD。 对 xterm
+              当前字符串路径来说通常够用，但对一个严肃的 terminal parser
+              来说，这已经丢失了输入事实。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag yellow">Chunk boundary</span>
+            <h3>多字节字符可能跨 read 边界</h3>
+            <p>
+              PTY read 的切分不等于 UTF-8 字符边界，也不等于 escape sequence
+              边界。逐 chunk lossy decode 会让 parser 无法还原原始流。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag blue">Native parser</span>
+            <h3>Ghostty/libghostty-vt 更像 byte parser</h3>
+            <p>
+              如果 spike 的目标是评估 Ghostty 的 terminal state machine，
+              它应该尽量吃原始 bytes，而不是吃已经被前端协议塑形过的字符串。
+            </p>
+          </article>
+        </div>
+
+        <div class="wide-card decision">
+          <h3>工程判断</h3>
+          <p>
+            当前 string pipe 可以继续服务 xterm 默认路径，但 Ghostty spike
+            应该被视为一个新的 transport contract 验证点。也就是说：
+            <code>xterm</code> 可以暂时从 byte chunk 解码成 string， 但
+            <code>ghostty</code> adapter 不应该被迫接受 lossy string。
+          </p>
+        </div>
+      </section>
+
+      <section id="parser">
+        <h2><span class="num">04</span> Parser 到底归谁管</h2>
+        <p>
+          现在应用层最明显的 parser 依赖是 OSC 7：renderer 实例暴露
+          <code>parser.registerOscHandler(7, ...)</code>，<code>Body.tsx</code>
+          在 handler 中解析 cwd、做 stale guard、restore suppression，并更新
+          pane 的 cwd 状态。
+        </p>
+        <p>
+          这说明 parser 不只是“渲染内部细节”。它已经在为应用层提供语义事件。
+          如果 Ghostty 也有自己的 parser，那么我们必须回答：
+          应用层应该监听谁产生的 OSC/cwd/title/hyperlink 事件？
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>责任</th>
+              <th>现在的位置</th>
+              <th>Ghostty 风险</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>字节流解析</td>
+              <td>xterm 或 plain-text renderer 内部</td>
+              <td>不同 renderer 可能对同一 stream 产生不同语义</td>
+            </tr>
+            <tr>
+              <td>OSC 7 cwd 提取</td>
+              <td><code>Body.tsx</code> 注册 parser handler 后处理</td>
+              <td>restore replay 和 live output 容易混在一起</td>
+            </tr>
+            <tr>
+              <td>Viewport/test buffer</td>
+              <td><code>TerminalViewportReader</code> contract</td>
+              <td>Ghostty 的 viewport 需要映射到现有 E2E 读取契约</td>
+            </tr>
+            <tr>
+              <td>渲染</td>
+              <td>xterm addon/canvas/DOM 或 plain-text DOM</td>
+              <td>Ghostty 可能需要 native surface，而不是普通 DOM writer</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="observability">
+        <h2>
+          <span class="num">05</span> OSC 7 与 agent observability 的真实关系
+        </h2>
+        <p>
+          这里必须分清两个 cwd 通道。它们都重要，但语义不同，不能在 Ghostty
+          spike 中混成一个状态源。
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>通道</th>
+              <th>来源</th>
+              <th>当前消费者</th>
+              <th>必须保护的结构</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Pane live cwd</td>
+              <td>Terminal output 中的 OSC 7，以及 agent text hint fallback</td>
+              <td>
+                <code>Body.tsx</code> → <code>onCwdChange</code> →
+                <code>updatePaneCwd</code> → backend PTY cwd cache
+              </td>
+              <td>
+                <code>Session.panes[].cwd</code
+                >、<code>update_session_cwd</code>、 git header、burner
+                align、workspace restore
+              </td>
+            </tr>
+            <tr>
+              <td>Agent observed cwd</td>
+              <td>
+                Backend transcript watcher 发出的 <code>agent-cwd</code> event
+              </td>
+              <td><code>useAgentStatus</code> 和 agent status panel</td>
+              <td>
+                <code>AgentStatus.cwd</code>，来自 Claude/Codex transcript
+                的结构化 cwd/workdir
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="wide-card decision">
+          <h3>OSC 7 优先级</h3>
+          <p>
+            PR1 的最高优先级是保护 pane cwd 的现有数据路径。新的 parser event
+            只是把 <code>registerOscHandler(7)</code> 变成 generic
+            <code>{ type: 'cwd', source: 'osc7' }</code> 事件；它不能改变
+            <code>Session.panes[].cwd</code> 的存储位置，也不能替代
+            <code>agent-cwd</code> 这个 observability 通道。
+          </p>
+        </div>
+      </section>
+
+      <section id="options">
+        <h2><span class="num">06</span> 方案回顾</h2>
+        <div class="grid">
+          <article class="card">
+            <span class="tag blue">A</span>
+            <h3>接受：Parser 留在 renderer adapter</h3>
+            <p>
+              xterm 用 xterm parser，Ghostty 用 Ghostty parser。adapter 负责把
+              OSC/cwd/title 等事件翻译成统一的前端事件。
+            </p>
+            <p>
+              这就是我们接受的方向，但补上 output chunk 和 parser event
+              contract， 所以更准确地叫 Option A+。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag green">B</span>
+            <h3>Parser 下沉到 backend/native</h3>
+            <p>
+              后端保留原始 bytes，并由一个 native parser 统一产出语义事件。 前端
+              renderer 只负责画面。
+            </p>
+            <p>
+              优点是语义来源单一，restore/cache 更可控。缺点是会和 xterm 内部
+              parser 重复，短期改动面也最大。
+            </p>
+          </article>
+          <article class="card">
+            <span class="tag yellow">C</span>
+            <h3>并入 A+：先做 split contract</h3>
+            <p>
+              先定义 byte transport 和 parser event contract。parser 可以暂时由
+              renderer adapter 提供，但应用层只消费统一事件。
+            </p>
+            <p>
+              这个 contract 不作为单独方案推进，而是作为 Option A 的必要护栏。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="spike">
+        <h2><span class="num">07</span> 建议的 Ghostty spike 路线</h2>
+        <ol>
+          <li>
+            <strong>定义输出包：</strong>增加类似
+            <code>TerminalOutputChunk</code> 的结构，至少包含
+            <code>offsetStart</code>、<code>byteLen</code>、当前兼容用
+            <code>text</code>，以及实验用 <code>bytesBase64</code> 或等价 byte
+            payload。
+          </li>
+          <li>
+            <strong>保留兼容层：</strong>xterm adapter 继续走 string write，
+            但它应该从统一 output chunk 中取 text。这样默认行为不变。
+          </li>
+          <li>
+            <strong>建立 parser event bus：</strong>把 OSC 7 这类语义抽成
+            <code>TerminalParserEvent</code>，例如
+            <code>{ type: 'cwd', source: 'osc7', path, uri, phase }</code>。
+            <code>phase</code> 必须区分 live 和 restore replay。
+          </li>
+          <li>
+            <strong>实现 Ghostty adapter spike：</strong>只在
+            <code>VITE_TERMINAL_RENDERER=ghostty</code> 之类的 opt-in 路径启用。
+            第一版目标不是替换 UI，而是验证 bytes 能进入 Ghostty
+            parser，并能产出 viewport snapshot 与 parser events。
+          </li>
+          <li>
+            <strong>补 contract tests：</strong>用跨 chunk OSC、多字节
+            UTF-8、非法 bytes、 restore replay OSC 这几类 fixture
+            证明新边界可靠。
+          </li>
+        </ol>
+      </section>
+
+      <section id="questions">
+        <h2><span class="num">08</span> 术语与开放问题</h2>
+        <div class="wide-card">
+          <ul>
+            <li>
+              <strong>byte-preserving</strong> 指传输层不丢原始 bytes。PTY
+              读到什么 bytes，Ghostty parser 就能拿到同样的 bytes。 这是 PR1
+              需要保护的能力。
+            </li>
+            <li>
+              <strong>byte-perfect</strong> 更强，表示最终 terminal
+              state、viewport、 restore、render 都和真实 terminal
+              完全一致。Ghostty spike 第一阶段不承诺这个，只先保证 parser 输入
+              byte-preserving。
+            </li>
+            <li>
+              <code>bytesBase64</code> 只是 IPC 初版方案，不是 terminal 语义。
+              因为当前 IPC event 是 JSON/string，base64 是最小改动的 raw bytes
+              容器。它有性能成本；如果 Ghostty 路径高吞吐有问题，再换 binary
+              transport。
+            </li>
+            <li>
+              <strong>restore replay</strong> 指 app 重新 attach 一个已有 PTY
+              时，把历史输出写回 terminal 以恢复
+              scrollback。历史输出里可能包含旧 OSC 7；所以 parser event 必须携带
+              <code>phase: 'restore'</code>，避免旧 cwd 污染 live pane cwd。
+            </li>
+            <li>
+              OSC 7/cwd 第一阶段由 adapter 发 normalized event，不下沉到
+              backend。 这样可以保护 xterm 默认路径，并让 Ghostty spike
+              独立验证自己的 parser。
+            </li>
+            <li>
+              Ghostty adapter 的最小成功标准是什么？建议定义为：能吃 raw
+              bytes、能产出 cwd event、能提供 viewport reader、不会影响默认
+              xterm bundle。
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <p>
+          相关代码入口：
+          <code>crates/backend/src/terminal/commands.rs</code>,
+          <code>src/features/terminal/services/terminalService.ts</code>,
+          <code>src/features/terminal/hooks/useTerminal.ts</code>,
+          <code>src/features/terminal/components/TerminalPane/Body.tsx</code>,
+          <code
+            >src/features/terminal/components/TerminalPane/terminalRendererRegistry.ts</code
+          >.
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -12,9 +12,10 @@ import type {
   TerminalTheme,
   TerminalViewportReader,
 } from '../../types'
+import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
-export const PLAIN_TEXT_TERMINAL_RENDERER_ID = 'plain-text'
+export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24

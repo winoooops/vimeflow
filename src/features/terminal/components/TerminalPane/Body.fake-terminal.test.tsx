@@ -147,7 +147,7 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
     resize: vi.fn(),
   }
 
-  vi.mocked(createTerminalInstance).mockReturnValue(fake.instance)
+  vi.mocked(createTerminalInstance).mockResolvedValue(fake.instance)
   vi.mocked(useTerminal).mockReturnValue(useTerminalReturn)
 
   const { unmount } = render(
