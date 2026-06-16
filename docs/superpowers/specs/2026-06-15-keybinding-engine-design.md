@@ -598,3 +598,5 @@ plain-text `Part of VIM-136` — SP1 does **not** close the umbrella issue):
   leader.
 - **SP4 (presets)** models VS Code / JetBrains / Custom as **named `CustomKeybindings` sets** layered by
   the existing resolver (Zed's `base_keymap` shape) — no engine change.
+
+<!-- codex-reviewed: 2026-06-16T04:05:18Z -->
