@@ -643,6 +643,40 @@ describe('useTerminal', () => {
       expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
     })
 
+    test('ignores empty buffered restore events', async () => {
+      const onRestoreStart = vi.fn()
+      const onRestoreOutput = vi.fn()
+      const onRestoreEnd = vi.fn()
+
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          output: mockOutput,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [{ data: '', offsetStart: 0, byteLen: 0 }],
+          },
+          onRestoreStart,
+          onRestoreOutput,
+          onRestoreEnd,
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      expect(mockOutput.writeOutput).not.toHaveBeenCalled()
+      expect(onRestoreStart).not.toHaveBeenCalled()
+      expect(onRestoreOutput).toHaveBeenCalledWith('')
+      expect(onRestoreEnd).not.toHaveBeenCalled()
+    })
+
     test('reports restored output after the final restore write callback', async () => {
       const writes: string[] = []
       const writeCallbacks: (() => void)[] = []

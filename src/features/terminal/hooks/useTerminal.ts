@@ -364,14 +364,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
                 },
               ]
             : []),
-          ...restoredBufferedEvents.map(
-            (event): TerminalOutputChunk => ({
-              text: event.data,
-              offsetStart: event.offsetStart,
-              byteLen: event.byteLen,
-              phase: 'restore',
-            })
-          ),
+          ...restoredBufferedEvents
+            .filter((event) => event.data.length > 0)
+            .map(
+              (event): TerminalOutputChunk => ({
+                text: event.data,
+                offsetStart: event.offsetStart,
+                byteLen: event.byteLen,
+                phase: 'restore',
+              })
+            ),
         ]
 
         const restoredOutput = restoredOutputChunks
