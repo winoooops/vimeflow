@@ -634,6 +634,19 @@ describe('workerInfraFailure', () => {
     })
   })
 
+  test('classifies agent usage quota exhaustion as worker capacity', () => {
+    expect(
+      workerInfraFailure({
+        exitReason:
+          "provider.api_error: 403 You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+        logPath: null,
+      })
+    ).toEqual({
+      category: 'worker_agent_quota_exhausted',
+      detail: 'worker agent usage quota exhausted',
+    })
+  })
+
   test('classifies blank SSM failures as worker infrastructure failures', () => {
     expect(
       workerInfraFailure({

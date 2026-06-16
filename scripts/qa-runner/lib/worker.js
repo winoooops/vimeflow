@@ -65,6 +65,16 @@ const tickFailureText = (tickResult) => {
 
 export const workerInfraFailure = (tickResult) => {
   const text = tickFailureText(tickResult)
+  if (
+    /provider\.api_error.*(?:403|429)|(?:usage|rate) limit|quota(?: will be)? refreshed|quota-upgrade/i.test(
+      text
+    )
+  ) {
+    return {
+      category: 'worker_agent_quota_exhausted',
+      detail: 'worker agent usage quota exhausted',
+    }
+  }
   if (/No space left on device|ENOSPC/i.test(text)) {
     return {
       category: 'worker_disk_full',
