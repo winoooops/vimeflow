@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="build/icon.png" alt="Vimeflow logo" width="128" />
+
 **A terminal-first workspace for AI coding agents**
 
 English | [简体中文](./README.zh-CN.md)

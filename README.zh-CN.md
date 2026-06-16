@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="build/icon.png" alt="Vimeflow 标志" width="128" />
+
 **面向 AI 编码代理的终端优先工作空间**
 
 [English](./README.md) | 简体中文
