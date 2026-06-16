@@ -19,6 +19,7 @@ use super::usage::parse_usage_payload;
 // last cached value simply stays until the next turn retries.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+const FALLBACK_VERSION: &str = "0.0.0";
 
 // The managed-provider table key in config.toml. The file also holds
 // `providers."<other>"` entries (web search / fetch) with different keys.
@@ -69,7 +70,8 @@ fn oauth_token(home: &Path) -> Option<String> {
         .strip_prefix("managed:")
         .unwrap_or(MANAGED_PROVIDER);
     let path = home.join("credentials").join(format!("{profile}.json"));
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     for field in ["access_token", "accessToken", "token", "bearer"] {
         if let Some(token) = json.get(field).and_then(|value| value.as_str()) {
             let token = token.trim();
@@ -86,13 +88,66 @@ fn oauth_token(home: &Path) -> Option<String> {
 /// — usage is best-effort and never blocks the local status path.
 pub(super) fn fetch_rate_limits(home: &Path, version: &str) -> Option<RateLimits> {
     let endpoint = resolve_usage_endpoint(home)?;
-    match http_get_usages(&endpoint, version) {
+    let user_agent_version = usage_user_agent_version(home, version);
+    match http_get_usages(&endpoint, &user_agent_version) {
         Ok(body) => parse_usage_payload(&body),
         Err(reason) => {
             log::warn!("kimi usage fetch failed: {reason}");
             None
         }
     }
+}
+
+fn usage_user_agent_version(home: &Path, transcript_version: &str) -> String {
+    clean_version(transcript_version)
+        .or_else(|| version_from_update_metadata(home))
+        .unwrap_or_else(|| FALLBACK_VERSION.to_string())
+}
+
+fn clean_version(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    raw.split_whitespace()
+        .find_map(|token| {
+            let token = token.trim_start_matches('v').trim_matches(|ch: char| {
+                !(ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+            });
+            token.chars().any(|ch| ch.is_ascii_digit()).then_some(token)
+        })
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+}
+
+fn version_from_update_metadata(home: &Path) -> Option<String> {
+    let install = read_json(&home.join("updates").join("install.json"));
+    if let Some(version) = install.as_ref().and_then(|root| {
+        string_at(root, &["active", "version"])
+            .or_else(|| string_at(root, &["lastSuccess", "version"]))
+            .or_else(|| string_at(root, &["version"]))
+    }) {
+        if let Some(version) = clean_version(version) {
+            return Some(version);
+        }
+    }
+
+    let latest = read_json(&home.join("updates").join("latest.json"));
+    latest.as_ref().and_then(|root| {
+        string_at(root, &["latest"])
+            .or_else(|| string_at(root, &["manifest", "version"]))
+            .and_then(clean_version)
+    })
+}
+
+fn read_json(path: &Path) -> Option<serde_json::Value> {
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
+fn string_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+        .and_then(serde_json::Value::as_str)
 }
 
 /// `${base_url}/usages` — the endpoint is a `.../v1` base, plural `usages`.
@@ -231,5 +286,51 @@ base_url = "https://api.kimi.com/coding/v1"
             usages_url("https://api.kimi.com/coding/v1/"),
             "https://api.kimi.com/coding/v1/usages"
         );
+    }
+
+    #[test]
+    fn user_agent_version_prefers_transcript_version() {
+        let home = tempfile::tempdir().expect("home");
+        std::fs::create_dir_all(home.path().join("updates")).expect("updates");
+        std::fs::write(
+            home.path().join("updates").join("install.json"),
+            r#"{"lastSuccess":{"version":"0.15.0"}}"#,
+        )
+        .expect("install metadata");
+
+        assert_eq!(usage_user_agent_version(home.path(), " 0.14.2 "), "0.14.2");
+    }
+
+    #[test]
+    fn user_agent_version_falls_back_to_install_metadata() {
+        let home = tempfile::tempdir().expect("home");
+        std::fs::create_dir_all(home.path().join("updates")).expect("updates");
+        std::fs::write(
+            home.path().join("updates").join("install.json"),
+            r#"{"lastSuccess":{"version":"0.15.0"}}"#,
+        )
+        .expect("install metadata");
+
+        assert_eq!(usage_user_agent_version(home.path(), ""), "0.15.0");
+    }
+
+    #[test]
+    fn user_agent_version_falls_back_to_latest_metadata() {
+        let home = tempfile::tempdir().expect("home");
+        std::fs::create_dir_all(home.path().join("updates")).expect("updates");
+        std::fs::write(
+            home.path().join("updates").join("latest.json"),
+            r#"{"latest":"0.16.0","manifest":{"version":"0.16.0"}}"#,
+        )
+        .expect("latest metadata");
+
+        assert_eq!(usage_user_agent_version(home.path(), ""), "0.16.0");
+    }
+
+    #[test]
+    fn user_agent_version_keeps_kimi_shaped_default_when_everything_is_missing() {
+        let home = tempfile::tempdir().expect("home");
+
+        assert_eq!(usage_user_agent_version(home.path(), ""), FALLBACK_VERSION);
     }
 }

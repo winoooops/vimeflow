@@ -47,7 +47,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 15   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 15       | 12   | 2026-06-16   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 8        | 6    | 2026-06-13   |
@@ -62,7 +62,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 22   | 2026-06-08   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
-| [Command Injection](patterns/command-injection.md)                                                   | security           | 7        | 3    | 2026-05-02   |
+| [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
