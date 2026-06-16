@@ -8,9 +8,8 @@
 //! providers with their OWN keys, so resolution is section-scoped. Response
 //! PII (`userId` / `region` / `membership`) and the token are never logged.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Duration;
 
 use crate::agent::types::RateLimits;
 
@@ -20,7 +19,6 @@ use super::usage::parse_usage_payload;
 // last cached value simply stays until the next turn retries.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
-const VERSION_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const FALLBACK_VERSION: &str = "0.0.0";
 
 // The managed-provider table key in config.toml. The file also holds
@@ -103,7 +101,6 @@ pub(super) fn fetch_rate_limits(home: &Path, version: &str) -> Option<RateLimits
 fn usage_user_agent_version(home: &Path, transcript_version: &str) -> String {
     clean_version(transcript_version)
         .or_else(|| version_from_update_metadata(home))
-        .or_else(|| version_from_kimi_binary(home))
         .unwrap_or_else(|| FALLBACK_VERSION.to_string())
 }
 
@@ -151,53 +148,6 @@ fn string_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str>
     path.iter()
         .try_fold(value, |current, key| current.get(*key))
         .and_then(serde_json::Value::as_str)
-}
-
-fn version_from_kimi_binary(home: &Path) -> Option<String> {
-    kimi_binary_candidates(home)
-        .into_iter()
-        .find_map(|path| version_from_command(&path))
-}
-
-fn kimi_binary_candidates(home: &Path) -> Vec<PathBuf> {
-    #[cfg(not(windows))]
-    {
-        vec![home.join("bin").join("kimi")]
-    }
-    #[cfg(windows)]
-    {
-        let mut candidates = vec![home.join("bin").join("kimi")];
-        candidates.push(home.join("bin").join("kimi.exe"));
-        candidates
-    }
-}
-
-fn version_from_command(path: &Path) -> Option<String> {
-    if !path.is_file() {
-        return None;
-    }
-    let mut child = Command::new(path)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + VERSION_COMMAND_TIMEOUT;
-    loop {
-        if child.try_wait().ok()?.is_some() {
-            let output = child.wait_with_output().ok()?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return clean_version(&stdout).or_else(|| clean_version(&stderr));
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
 }
 
 /// `${base_url}/usages` — the endpoint is a `.../v1` base, plural `usages`.
@@ -375,23 +325,6 @@ base_url = "https://api.kimi.com/coding/v1"
         .expect("latest metadata");
 
         assert_eq!(usage_user_agent_version(home.path(), ""), "0.16.0");
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn user_agent_version_falls_back_to_kimi_binary() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let home = tempfile::tempdir().expect("home");
-        let bin_dir = home.path().join("bin");
-        std::fs::create_dir_all(&bin_dir).expect("bin dir");
-        let kimi = bin_dir.join("kimi");
-        std::fs::write(&kimi, "#!/bin/sh\necho 0.17.0\n").expect("kimi shim");
-        let mut perms = std::fs::metadata(&kimi).expect("metadata").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&kimi, perms).expect("chmod");
-
-        assert_eq!(usage_user_agent_version(home.path(), ""), "0.17.0");
     }
 
     #[test]
