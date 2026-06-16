@@ -124,92 +124,91 @@ describe('plainTextInstance', () => {
     expect(lines[lines.length - 1]).toBe('line-10004')
   })
 
-  test('consumes registered OSC handlers without rendering control sequences', () => {
+  test('emits parser events without rendering consumed OSC sequences', () => {
     const created = createTrackedPlainTextTerminal()
-    const oscHandler = vi.fn((): boolean => true)
+    const parserEventHandler = vi.fn()
     const container = document.createElement('div')
+
+    const text =
+      'before \x1b]7;file://localhost/tmp/plain-text-project\x07after'
 
     setElementSize(container, 640, 360)
     created.terminal.open(container)
-    created.parser.registerOscHandler(7, oscHandler)
-    created.terminal.write(
-      'before \x1b]7;file://localhost/tmp/plain-text-project\x07after'
-    )
+    created.parser.onEvent(parserEventHandler)
+    created.output.writeOutput({
+      text,
+      offsetStart: 12,
+      byteLen: new TextEncoder().encode(text).length,
+      phase: 'live',
+    })
 
-    expect(oscHandler).toHaveBeenCalledWith(
-      'file://localhost/tmp/plain-text-project'
-    )
+    expect(parserEventHandler).toHaveBeenCalledWith({
+      type: 'osc',
+      identifier: 7,
+      data: 'file://localhost/tmp/plain-text-project',
+      output: {
+        offsetStart: 12,
+        byteLen: new TextEncoder().encode(text).length,
+        phase: 'live',
+      },
+    })
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('tries stacked OSC handlers in reverse registration order', () => {
+  test('notifies parser event subscribers in registration order', () => {
     const created = createTrackedPlainTextTerminal()
-    const firstHandler = vi.fn((): boolean => true)
-    const secondHandler = vi.fn((): boolean => false)
+    const firstHandler = vi.fn()
+    const secondHandler = vi.fn()
 
-    created.parser.registerOscHandler(7, firstHandler)
-    created.parser.registerOscHandler(7, secondHandler)
+    created.parser.onEvent(firstHandler)
+    created.parser.onEvent(secondHandler)
     created.terminal.write(
       'before \x1b]7;file://localhost/tmp/plain-text-project\x07after'
-    )
-
-    expect(secondHandler).toHaveBeenCalledWith(
-      'file://localhost/tmp/plain-text-project'
     )
 
     expect(firstHandler).toHaveBeenCalledWith(
-      'file://localhost/tmp/plain-text-project'
+      expect.objectContaining({
+        type: 'osc',
+        identifier: 7,
+        data: 'file://localhost/tmp/plain-text-project',
+      })
     )
 
-    expect(secondHandler.mock.invocationCallOrder[0]).toBeLessThan(
-      firstHandler.mock.invocationCallOrder[0]
+    expect(secondHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'osc',
+        identifier: 7,
+        data: 'file://localhost/tmp/plain-text-project',
+      })
+    )
+
+    expect(firstHandler.mock.invocationCallOrder[0]).toBeLessThan(
+      secondHandler.mock.invocationCallOrder[0]
     )
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('stops stacked OSC handling after the newest handler consumes', () => {
+  test('renders OSC sequences when no parser event subscribers exist', () => {
     const created = createTrackedPlainTextTerminal()
-    const firstHandler = vi.fn((): boolean => true)
-    const secondHandler = vi.fn((): boolean => true)
-
-    created.parser.registerOscHandler(7, firstHandler)
-    created.parser.registerOscHandler(7, secondHandler)
-    created.terminal.write('\x1b]7;file://localhost/tmp/plain-text-project\x07')
-
-    expect(secondHandler).toHaveBeenCalledWith(
-      'file://localhost/tmp/plain-text-project'
-    )
-    expect(firstHandler).not.toHaveBeenCalled()
-    expect(created.viewportReader.readVisibleText()).toBe('')
-  })
-
-  test('renders OSC sequences when registered handlers decline them', () => {
-    const created = createTrackedPlainTextTerminal()
-    const oscHandler = vi.fn((): boolean => false)
     const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
 
-    created.parser.registerOscHandler(7, oscHandler)
     created.terminal.write(`before ${sequence}after`)
-
-    expect(oscHandler).toHaveBeenCalledWith(
-      'file://localhost/tmp/plain-text-project'
-    )
 
     expect(created.viewportReader.readVisibleText()).toBe(
       `before ${sequence}after`
     )
   })
 
-  test('stops invoking disposed OSC handlers', () => {
+  test('stops invoking disposed parser event handlers', () => {
     const created = createTrackedPlainTextTerminal()
-    const oscHandler = vi.fn((): boolean => true)
-    const sequence = '\x1b]7;file://localhost/tmp/ignored\x07'
-    const disposable = created.parser.registerOscHandler(7, oscHandler)
+    const parserEventHandler = vi.fn()
+    const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
+    const disposable = created.parser.onEvent(parserEventHandler)
 
     disposable.dispose()
     created.terminal.write(sequence)
 
-    expect(oscHandler).not.toHaveBeenCalled()
+    expect(parserEventHandler).not.toHaveBeenCalled()
     expect(created.viewportReader.readVisibleText()).toBe(sequence)
   })
 

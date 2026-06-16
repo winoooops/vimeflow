@@ -5,7 +5,11 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { themeService } from '../../../../theme'
 import type {
   TerminalInstance,
+  TerminalOutputChunk,
   TerminalOutputWriter,
+  TerminalParserEvent,
+  TerminalParserEventHandler,
+  TerminalParserOutputContext,
   TerminalParser,
   TerminalRendererHandle,
   TerminalRendererAdapter,
@@ -29,11 +33,12 @@ export const createXtermTerminal = (): TerminalInstance => {
 
   const fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
+  const outputContext = createTerminalOutputContext()
 
   return {
     terminal: createTerminalSurface(terminal),
-    output: createTerminalOutputWriter(terminal),
-    parser: createTerminalParser(terminal),
+    output: createTerminalOutputWriter(terminal, outputContext),
+    parser: createTerminalParser(terminal, outputContext),
     viewportReader: createTerminalViewportReader(terminal),
     fitController: fitAddon,
     attachRenderer: () => attachXtermRenderer(terminal),
@@ -94,20 +99,116 @@ const createTerminalSurface = (terminal: Terminal): TerminalSurface => ({
   },
 })
 
+interface TerminalOutputContextTracker {
+  readonly current: () => TerminalParserOutputContext | null
+  readonly push: (chunk: TerminalOutputChunk) => void
+  readonly finish: (chunk: TerminalOutputChunk) => void
+}
+
+const outputContextFromChunk = (
+  chunk: TerminalOutputChunk
+): TerminalParserOutputContext => ({
+  offsetStart: chunk.offsetStart,
+  byteLen: chunk.byteLen,
+  phase: chunk.phase,
+})
+
+const createTerminalOutputContext = (): TerminalOutputContextTracker => {
+  const pendingChunks: TerminalOutputChunk[] = []
+  let activeChunk: TerminalOutputChunk | null = null
+
+  const activateNext = (): void => {
+    activeChunk = pendingChunks[0] ?? null
+  }
+
+  return {
+    current: (): TerminalParserOutputContext | null =>
+      activeChunk ? outputContextFromChunk(activeChunk) : null,
+    push: (chunk): void => {
+      pendingChunks.push(chunk)
+
+      activeChunk ??= chunk
+    },
+    finish: (chunk): void => {
+      const index = pendingChunks.indexOf(chunk)
+
+      if (index !== -1) {
+        pendingChunks.splice(index, 1)
+      }
+
+      if (activeChunk === chunk) {
+        activateNext()
+      }
+    },
+  }
+}
+
 const createTerminalOutputWriter = (
-  terminal: Terminal
+  terminal: Terminal,
+  outputContext: TerminalOutputContextTracker
 ): TerminalOutputWriter => ({
   writeOutput: (chunk, callback): void => {
-    terminal.write(chunk.text, callback)
+    outputContext.push(chunk)
+    terminal.write(chunk.text, () => {
+      outputContext.finish(chunk)
+      callback?.()
+    })
   },
 })
 
-const createTerminalParser = (terminal: Terminal): TerminalParser => ({
-  registerOscHandler: (
-    identifier: number,
-    handler: (data: string) => boolean
-  ) => terminal.parser.registerOscHandler(identifier, handler),
-})
+const createTerminalParser = (
+  terminal: Terminal,
+  outputContext: TerminalOutputContextTracker
+): TerminalParser => {
+  const handlers = new Set<TerminalParserEventHandler>()
+  let osc7Disposable: { dispose: () => void } | null = null
+
+  const emit = (event: TerminalParserEvent): void => {
+    handlers.forEach((handler) => {
+      handler(event)
+    })
+  }
+
+  const ensureOsc7Handler = (): void => {
+    if (osc7Disposable) {
+      return
+    }
+
+    osc7Disposable = terminal.parser.registerOscHandler(7, (data) => {
+      emit({
+        type: 'osc',
+        identifier: 7,
+        data,
+        output: outputContext.current(),
+      })
+
+      return true
+    })
+  }
+
+  const removeOsc7HandlerIfIdle = (): void => {
+    if (handlers.size > 0) {
+      return
+    }
+
+    osc7Disposable?.dispose()
+    osc7Disposable = null
+  }
+
+  return {
+    onEvent: (handler): { dispose: () => void } => {
+      handlers.add(handler)
+      ensureOsc7Handler()
+
+      return {
+        dispose: (): void => {
+          handlers.delete(handler)
+          removeOsc7HandlerIfIdle()
+        },
+      }
+    },
+  }
+}
 
 const createTerminalViewportReader = (
   terminal: Terminal

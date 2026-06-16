@@ -21,6 +21,7 @@ import type {
   TerminalDisposable,
   TerminalFitController,
   TerminalOutputWriter,
+  TerminalParserEvent,
   TerminalRendererHandle,
   TerminalSurface,
 } from '../../types'
@@ -73,6 +74,9 @@ const terminalStartupErrorMessage = (error: unknown): string => {
 
   return 'Unknown terminal startup error'
 }
+
+const isRestoreParserEvent = (event: TerminalParserEvent): boolean =>
+  event.output?.phase === 'restore'
 
 export { clearTerminalCache, disposeTerminalSession, terminalCache }
 
@@ -621,16 +625,22 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           // Fit terminal to container — guard against hidden (display:none) containers
           didInitialFit = fitInitialWhenReady(fitController)
 
-          // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
-          // output both arrive through the terminal parser, so this stays pane-local.
-          created.parser.registerOscHandler(7, (data) => {
+          // Subscribe to parser events for cwd tracking. Shell prompts and
+          // agent/tool output both arrive through the renderer parser, so this
+          // stays pane-local while remaining adapter-neutral.
+          created.parser.onEvent((event) => {
+            if (event.identifier !== 7) {
+              return
+            }
+
             const previousCwd = agentCwdRef.current
 
-            const path = parseOsc7Cwd(data, {
+            const path = parseOsc7Cwd(event.data, {
               preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
             })
 
-            const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
+            const shouldSuppressRestoreOsc7 =
+              isRestoreParserEvent(event) || isRestoringOutputRef.current
 
             const shouldIgnore =
               path !== null &&
@@ -643,7 +653,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
             logAgentCwdDebug('osc7', {
               sessionId,
-              raw: data,
+              raw: event.data,
               previousCwd,
               nextCwd: path,
               changed: path !== null && path !== previousCwd,
@@ -651,7 +661,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
             })
 
             if (shouldSuppressRestoreOsc7) {
-              return true
+              return
             }
 
             if (path && path === agentCwdRef.current) {
@@ -663,8 +673,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
               agentCwdSourceRef.current = 'osc7'
               onCwdChangeRef.current?.(path)
             }
-
-            return true
           })
 
           // Cache the terminal instance for this session
