@@ -2,6 +2,8 @@ import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/terminalRegistry'
 
+const LEGACY_XTERM_ROWS_SELECTOR = '.xterm-rows'
+
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
@@ -28,13 +30,42 @@ const findActivePane = (): HTMLElement | null => {
   return Array.from(panes).find(isVisible) ?? null
 }
 
+const readCachedViewportText = (scope: HTMLElement): string => {
+  const cacheKey = resolveCacheKey(scope)
+  if (!cacheKey) {
+    return ''
+  }
+
+  const entry = terminalCache.get(cacheKey)
+  if (!entry) {
+    return ''
+  }
+
+  const surfaceText = entry.viewportReader.readVisibleText()
+  if (surfaceText.trim().length === 0) {
+    return ''
+  }
+
+  return surfaceText
+}
+
+// Compatibility fallback for the old xterm DOM renderer path. New renderer
+// adapters should expose visible text through TerminalViewportReader; this
+// selector remains only so existing automation can still read text before Body
+// has cached a terminal instance, or when a legacy DOM-rendered xterm is under
+// the queried scope.
+const readLegacyXtermDomRowsText = (scope: HTMLElement): string => {
+  const rows = scope.querySelector<HTMLElement>(LEGACY_XTERM_ROWS_SELECTOR)
+
+  return rows?.textContent ?? ''
+}
+
 // Multi-pane sessions (post-5b): the session-level wrapper contains a
 // SplitView with N inner TerminalPanes. Prefer the focused pane's renderer
 // (the active pane has `data-focused="true"` on its inner wrapper) so callers
 // reading by session id always get the active pane's buffer instead of whichever
-// pane happens to be first in DOM. Falls back to the first terminal DOM rows for
-// single-pane sessions and for the defensive case where no inner wrapper has
-// `data-focused`.
+// pane happens to be first in DOM. TerminalViewportReader is the primary text
+// source; `.xterm-rows` is only a legacy DOM fallback.
 //
 // Exported for unit testing — production callers go through
 // `readVisibleTerminalBuffer` / `readTerminalBufferForSession`.
@@ -51,24 +82,12 @@ export const readPaneBuffer = (container: HTMLElement): string => {
   )
   const scope = focusedWrapper ?? container
 
-  const cacheKey = resolveCacheKey(scope)
-  if (cacheKey) {
-    const entry = terminalCache.get(cacheKey)
-    if (entry) {
-      const surfaceText = entry.viewportReader.readVisibleText()
-      if (surfaceText.trim().length > 0) {
-        return surfaceText
-      }
-    }
+  const cachedViewportText = readCachedViewportText(scope)
+  if (cachedViewportText) {
+    return cachedViewportText
   }
 
-  const rows = scope.querySelector<HTMLElement>('.xterm-rows')
-  const domText = rows?.textContent ?? ''
-  if (domText.trim().length > 0) {
-    return domText
-  }
-
-  return domText
+  return readLegacyXtermDomRowsText(scope)
 }
 
 const readVisibleTerminalBuffer = (): string => {
