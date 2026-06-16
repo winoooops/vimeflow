@@ -199,6 +199,49 @@ describe('statusRefreshCoordinator', () => {
     })
   })
 
+  test('does not preserve stale active tool calls when detection warms a pane', async () => {
+    const staleRunningStatus: AgentStatus = {
+      ...createDefaultAgentStatus('pty-a'),
+      toolCalls: {
+        total: 12,
+        byType: { exec_command: 12 },
+        active: {
+          tool: 'exec_command',
+          args: 'nl -ba scripts/qa-runner/lib/worker-instance.mjs',
+          startedAt: '2026-06-15T19:50:00Z',
+          toolUseId: 'call-stale',
+        },
+      },
+    }
+
+    let storedStatus = staleRunningStatus
+
+    const coordinator = createAgentStatusRefreshCoordinator({
+      detectAgent: () => Promise.resolve(createDetectedEvent('pty-a', 'codex')),
+      readStatus: () => storedStatus,
+      writeStatus: (_ptyId, status) => {
+        storedStatus = status
+
+        return {
+          status,
+          scrollTop: 0,
+          updatedAt: 1,
+        }
+      },
+    })
+
+    await coordinator.refreshVisiblePanes({
+      activePtyId: 'pty-a',
+      visiblePtyIds: ['pty-a'],
+    })
+
+    expect(storedStatus.toolCalls).toEqual({
+      total: 12,
+      byType: { exec_command: 12 },
+      active: null,
+    })
+  })
+
   test('writes a default snapshot when detection returns null for a previously active pane', async () => {
     const previousStatus: AgentStatus = {
       ...createDefaultAgentStatus('pty-a'),

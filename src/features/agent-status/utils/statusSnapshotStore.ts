@@ -119,6 +119,20 @@ const mergeToolCalls = (
   }
 }
 
+const stripActiveToolCall = (status: AgentStatus): AgentStatus => {
+  if (status.toolCalls.active === null) {
+    return status
+  }
+
+  return {
+    ...status,
+    toolCalls: {
+      ...status.toolCalls,
+      active: null,
+    },
+  }
+}
+
 export const mergeAgentStatusSnapshot = (
   previous: AgentStatus,
   next: AgentStatus
@@ -216,7 +230,7 @@ export const createAgentStatusSnapshotStore = (
     }
 
     return {
-      status: entry.status,
+      status: stripActiveToolCall(entry.status),
       scrollTop: scrollAnchors.get(key) ?? 0,
       updatedAt: entry.updatedAt,
     }
@@ -228,10 +242,15 @@ export const createAgentStatusSnapshotStore = (
   ): AgentStatusSnapshot => {
     const previous = statuses.get(key)
 
+    const nextSnapshotStatus = stripActiveToolCall(status)
+
+    const previousSnapshotStatus =
+      previous === undefined ? undefined : stripActiveToolCall(previous.status)
+
     const nextStatus =
-      previous === undefined
-        ? status
-        : mergeAgentStatusSnapshot(previous.status, status)
+      previousSnapshotStatus === undefined
+        ? nextSnapshotStatus
+        : mergeAgentStatusSnapshot(previousSnapshotStatus, nextSnapshotStatus)
 
     const updatedAt = now()
 

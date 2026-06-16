@@ -1369,6 +1369,63 @@ describe('AgentStatusPanel — live action card', () => {
     )
   })
 
+  test('removes the NOW card when a running exec_command completes', () => {
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 0,
+            byType: {},
+            active: {
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              startedAt: '2026-04-22T11:59:42Z',
+              toolUseId: 'cmd-1',
+            },
+          },
+          recentToolCalls: [],
+        }}
+      />
+    )
+
+    expect(screen.getByTestId('live-action-card')).toBeInTheDocument()
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 1,
+            byType: { exec_command: 1 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'cmd-1',
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              status: 'done',
+              durationMs: 500,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
+  })
+
   test('does not also list the running action in the activity feed', () => {
     render(
       <AgentStatusPanel
