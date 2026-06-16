@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 ref_count: 26
 ---
 
@@ -844,4 +844,31 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/agent-status/hooks/useReservoirFlow.test.tsx`
 - **Finding:** `const INACTIVE = false // jsx-boolean-value wants false props omitted; alias it` described the rule as simply `jsx-boolean-value`, which is ambiguous because the rule only flags explicit `false` values when `assumeUndefinedIsFalse` is enabled. A future reader might delete the alias thinking the rule does not apply to `false`.
 - **Fix:** Updated the comment to name the fully configured rule: `react/jsx-boolean-value (assumeUndefinedIsFalse) flags explicit false props; alias it`.
+- **Commit:** same commit as this entry
+
+### 88. Spec status header still reads "Drafting" post codex-review
+
+- **Source:** github-claude | PR #491 round 1 | 2026-06-16
+- **Severity:** LOW
+- **File:** `docs/superpowers/specs/2026-06-15-keybinding-engine-design.md`
+- **Finding:** The **Status:** field said "Drafting... Pending per-section + whole-spec codex review" while the footer already carried `<!-- codex-reviewed: 2026-06-16T04:05:18Z -->` and the decision record marked the spec Accepted. A reader scanning only the header would believe review was still pending.
+- **Fix:** Updated the status header to "Accepted (codex-reviewed 2026-06-16T04:05:18Z; TDD implementation pending in `feature/vim-136`)".
+- **Commit:** same commit as this entry
+
+### 89. `detectConflicts` signature in spec §5.4 mismatches plan's Task 4 impl
+
+- **Source:** github-claude | PR #491 round 1 | 2026-06-16
+- **Severity:** MEDIUM
+- **File:** `docs/superpowers/specs/2026-06-15-keybinding-engine-design.md`
+- **Finding:** Spec §5.4 declared `detectConflicts(catalog, overrides, isMac): Conflict[]` but the plan implements `detectConflicts(resolved, superKey)`. An SP2 implementer calling the spec signature would hit TypeScript errors or runtime failures, and the catalog-driven signature would create a `conflicts.ts → resolve.ts → conflicts.ts` circular import.
+- **Fix:** Updated the pseudocode signature to `detectConflicts(resolved: Map<CommandId, Chord>, superKey: PlatformSuper): Conflict[]` and added a note that the caller pre-resolves to avoid the circular import.
+- **Commit:** same commit as this entry
+
+### 90. Plan instructs the wrong commit-message trailer for Codex-assisted commits
+
+- **Source:** github-codex-connector | PR #491 round 1 | 2026-06-16
+- **Severity:** P2 / MEDIUM
+- **File:** `docs/superpowers/plans/2026-06-15-keybinding-engine-pr1.md`
+- **Finding:** The plan told workers to end each task commit with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` (and possibly a connector trailer), which conflicts with `rules/common/git-workflow.md`. That rule requires exactly `Co-Authored-By: codex <codex@openai.com>` and notes Claude attribution is disabled.
+- **Fix:** Replaced the trailer instruction with the exact repo-required trailer `Co-Authored-By: codex <codex@openai.com>`.
 - **Commit:** same commit as this entry

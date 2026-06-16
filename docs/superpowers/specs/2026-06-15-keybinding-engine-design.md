@@ -1,8 +1,7 @@
 # Keybinding Engine — Design (VIM-136 / SP1)
 
-**Status:** Drafting (model + scope + decisions locked with the user 2026-06-15).
-Pending per-section + whole-spec codex review, then TDD implementation in worktree
-`feature/vim-136` (off `feat/settings`).
+**Status:** Accepted (codex-reviewed 2026-06-16T04:05:18Z; TDD implementation pending in
+`feature/vim-136`).
 
 **Linear:** VIM-136 (Keymap customization engine — per-binding rebinding, import/export,
 custom leader). This spec covers **SP1 of 4: the engine only.** SP2 (editing UI), SP3
@@ -285,8 +284,12 @@ resolveBinding(cmd, overrides, isMac): Chord // = resolveBindings(...).get(cmd.i
 
 ```ts
 interface Conflict { key: string; commandIds: CommandId[]; contexts: BindingContext[] }
-detectConflicts(catalog, overrides, isMac): Conflict[]
+detectConflicts(resolved: Map<CommandId, Chord>, superKey: PlatformSuper): Conflict[]
 ```
+
+> The caller resolves bindings first (`resolveBindings`) and passes the resulting `Map` — this
+> avoids a circular import since `resolve.ts` already imports `overrideCollides` from
+> `conflicts.ts`.
 
 - **Conflict key = `(super, code)` + a policy-aware `Shift`/`Alt` overlap.** `super` is
   `'meta' | 'ctrl' | 'none'` (`'Mod'` → platform super; literal `'Ctrl'` → `'ctrl'`; bare key →

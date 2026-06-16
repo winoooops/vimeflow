@@ -14,7 +14,7 @@
 
 **Conventions (repo):** no semicolons, single quotes, trailing commas es5; arrow-function components; explicit return types on exported fns; `test()` not `it()`; co-located `*.test.ts(x)`; no hardcoded colors; conventional commits (`feat|fix|refactor|test|chore`). Run from the worktree root.
 
-**Commit messages:** the per-task `git commit -m` lines below show the subject only; per the repo git-workflow rule, end each message with the standard trailer `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` (and, if a codex review touched the change, its connector trailer per the upsource-review flow).
+**Commit messages:** the per-task `git commit -m` lines below show the subject only; per the repo git-workflow rule, end each message with the standard trailer `Co-Authored-By: codex <codex@openai.com>`.
 
 ---
 
@@ -982,6 +982,7 @@ import {
 } from './resolve'
 import { CATALOG } from './catalog'
 import { formatChord } from './chord'
+import { detectConflicts } from './conflicts'
 
 const tokenOf = (
   overrides: CustomKeybindings,
@@ -1067,6 +1068,14 @@ describe('resolveBindings', () => {
     }
     expect(tokenOf(overrides, 'focus-pane-1')).toBe('Mod+Digit1') // reverted
     expect(tokenOf(overrides, 'focus-pane-2')).toBe('Mod+KeyK') // survivor
+  })
+
+  test('default catalog is conflict-free for both platforms', () => {
+    for (const isMac of [true, false]) {
+      const superKey = isMac ? 'meta' : 'ctrl'
+      const resolved = resolveBindings({}, isMac, superKey)
+      expect(detectConflicts(resolved, superKey)).toHaveLength(0)
+    }
   })
 })
 ```
