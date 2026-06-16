@@ -6,6 +6,19 @@ const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
 ])
 
 let activeTerminalRendererId = xtermTerminalRenderer.id
+let hasConfiguredTerminalRendererFromEnvironment = false
+
+const readEnvironmentRendererId = (): string | null => {
+  const rendererId = import.meta.env.VITE_TERMINAL_RENDERER
+
+  if (typeof rendererId !== 'string') {
+    return null
+  }
+
+  const normalizedRendererId = rendererId.trim()
+
+  return normalizedRendererId.length > 0 ? normalizedRendererId : null
+}
 
 export const registerTerminalRendererAdapter = (
   adapter: TerminalRendererAdapter
@@ -30,7 +43,30 @@ export const setTerminalRendererAdapter = (rendererId: string): void => {
   activeTerminalRendererId = rendererId
 }
 
+export const configureTerminalRendererFromEnvironment = (): void => {
+  const rendererId = readEnvironmentRendererId()
+
+  if (!rendererId) {
+    hasConfiguredTerminalRendererFromEnvironment = true
+
+    return
+  }
+
+  setTerminalRendererAdapter(rendererId)
+  hasConfiguredTerminalRendererFromEnvironment = true
+}
+
+const ensureTerminalRendererConfigured = (): void => {
+  if (hasConfiguredTerminalRendererFromEnvironment) {
+    return
+  }
+
+  configureTerminalRendererFromEnvironment()
+}
+
 export const getTerminalRendererAdapter = (): TerminalRendererAdapter => {
+  ensureTerminalRendererConfigured()
+
   const adapter = terminalRendererAdapters.get(activeTerminalRendererId)
 
   if (!adapter) {
@@ -42,11 +78,15 @@ export const getTerminalRendererAdapter = (): TerminalRendererAdapter => {
   return adapter
 }
 
-export const createConfiguredTerminalInstance = (): TerminalInstance =>
-  getTerminalRendererAdapter().createInstance()
+export const createConfiguredTerminalInstance = (): TerminalInstance => {
+  ensureTerminalRendererConfigured()
+
+  return getTerminalRendererAdapter().createInstance()
+}
 
 export const _resetTerminalRendererRegistryForTest = (): void => {
   terminalRendererAdapters.clear()
   terminalRendererAdapters.set(xtermTerminalRenderer.id, xtermTerminalRenderer)
   activeTerminalRendererId = xtermTerminalRenderer.id
+  hasConfiguredTerminalRendererFromEnvironment = false
 }
