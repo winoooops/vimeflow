@@ -34,7 +34,7 @@ interface FakeTerminalControls {
   parserEventDisposable: TerminalDisposable
   rendererHandle: TerminalRendererHandle
   viewportReader: TerminalViewportReader
-  emitOsc: (identifier: number, data: string) => void
+  emitCwd: (uri: string) => void
 }
 
 const createDisposable = (): TerminalDisposable => ({
@@ -122,13 +122,13 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
     parserEventDisposable,
     rendererHandle,
     viewportReader,
-    emitOsc: (identifier, data): void => {
+    emitCwd: (uri): void => {
       parserEventHandlers.forEach((handler) => {
         handler({
-          type: 'osc',
-          identifier,
-          data,
-          output: { offsetStart: 0, byteLen: data.length, phase: 'live' },
+          type: 'cwd',
+          source: 'osc7',
+          uri,
+          output: { offsetStart: 0, byteLen: uri.length, phase: 'live' },
         })
       })
     },
@@ -204,7 +204,7 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
     TERMINAL_FOCUS_SCOPE_VALUE
   )
 
-  fake.emitOsc(7, 'file://localhost/tmp/fake-project')
+  fake.emitCwd('file://localhost/tmp/fake-project')
   expect(onCwdChange).toHaveBeenCalledWith('/tmp/fake-project')
 
   unmount()

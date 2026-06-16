@@ -176,9 +176,9 @@ const createTerminalParser = (
 
     osc7Disposable = terminal.parser.registerOscHandler(7, (data) => {
       emit({
-        type: 'osc',
-        identifier: 7,
-        data,
+        type: 'cwd',
+        source: 'osc7',
+        uri: data,
         output: outputContext.current(),
       })
 

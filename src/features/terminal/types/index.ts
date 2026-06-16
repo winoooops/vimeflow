@@ -279,18 +279,29 @@ export interface TerminalRendererHandle {
   dispose: () => void
 }
 
-/** Parser event emitted from terminal control sequences. */
-export interface TerminalParserEvent {
-  readonly type: 'osc'
-  readonly identifier: number
-  readonly data: string
+/** Cwd event emitted from OSC 7 terminal control sequences. */
+export interface TerminalCwdParserEvent {
+  readonly type: 'cwd'
+  readonly source: 'osc7'
+  /** Raw OSC 7 URI/path payload. Consumers own context-sensitive path normalization. */
+  readonly uri: string
   readonly output: TerminalParserOutputContext | null
 }
+
+/** Parser event emitted from terminal control sequences. */
+export type TerminalParserEvent = TerminalCwdParserEvent
 
 /** Handler for semantic parser events. */
 export type TerminalParserEventHandler = (event: TerminalParserEvent) => void
 
-/** Parser hooks emitted from terminal control sequences. */
+/**
+ * Parser hooks emitted from terminal control sequences.
+ *
+ * The current adapter contract emits cwd events derived from OSC 7. Adapters may
+ * consume matched control sequences from rendered output while subscribers are
+ * registered; callers should treat subscription as observing terminal semantics,
+ * not as a passive raw stream tap.
+ */
 export interface TerminalParser {
   onEvent: (handler: TerminalParserEventHandler) => TerminalDisposable
 }

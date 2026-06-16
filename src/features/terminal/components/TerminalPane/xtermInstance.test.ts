@@ -180,9 +180,9 @@ describe('xtermInstance', () => {
     oscHandler?.('file://localhost/tmp/xterm')
 
     expect(parserEventHandler).toHaveBeenCalledWith({
-      type: 'osc',
-      identifier: 7,
-      data: 'file://localhost/tmp/xterm',
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/xterm',
       output: {
         offsetStart: 8,
         byteLen: 12,

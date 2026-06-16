@@ -141,9 +141,9 @@ class FakeTerminal implements TerminalSurface {
       if (identifier === 7) {
         this.parserEventHandlers.forEach((handler) => {
           handler({
-            type: 'osc',
-            identifier,
-            data: match[2] ?? '',
+            type: 'cwd',
+            source: 'osc7',
+            uri: match[2] ?? '',
             output: this.outputContext,
           })
         })
