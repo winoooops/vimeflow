@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import { obsidianLens } from '../../../../theme'
 import { TERMINAL_FONT_FAMILY } from './terminalFont'
-import { createXtermTerminal } from './xtermInstance'
+import { createXtermTerminal, xtermTerminalRenderer } from './xtermInstance'
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: vi.fn(),
@@ -112,6 +112,11 @@ const createRawTerminal = (): RawTerminalMock => {
 describe('xtermInstance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('exports the default xterm renderer adapter', () => {
+    expect(xtermTerminalRenderer.id).toBe('xterm')
+    expect(xtermTerminalRenderer.createInstance).toBe(createXtermTerminal)
   })
 
   test('creates a themed terminal surface with a loaded fit addon', () => {

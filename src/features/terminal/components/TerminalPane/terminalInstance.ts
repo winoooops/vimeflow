@@ -1,5 +1,5 @@
 import type { TerminalInstance } from '../../types'
-import { createXtermTerminal } from './xtermInstance'
+import { createConfiguredTerminalInstance } from './terminalRendererRegistry'
 
 export const createTerminalInstance = (): TerminalInstance =>
-  createXtermTerminal()
+  createConfiguredTerminalInstance()
