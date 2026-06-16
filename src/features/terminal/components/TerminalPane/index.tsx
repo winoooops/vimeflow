@@ -53,7 +53,7 @@ export interface TerminalPaneProps {
 }
 
 export interface TerminalPaneHandle {
-  /** Returns true if xterm body focused successfully, false if not ready. */
+  /** Returns true if the terminal body focused successfully, false if not ready. */
   focusTerminal(): boolean
 }
 
@@ -89,7 +89,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     // Seeded `undefined` (NOT `pane.active`) so the first effect run can detect
     // initial mount distinctly from a stable `true → true` re-render. A pane
     // born active (createSession, addPane, restored on app launch) must focus
-    // on first paint — otherwise its xterm stays unfocused with no transition
+    // on first paint — otherwise its terminal stays unfocused with no transition
     // for the rising-edge branch below to catch.
     const wasActiveRef = useRef<boolean | undefined>(undefined)
     const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
@@ -148,7 +148,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const handleContainerClick = useCallback((): void => {
       // SplitView owns click-to-focus state changes. If this pane is inactive,
       // the slot click flips pane.active first; the rising-edge effect above
-      // moves DOM focus into xterm after React commits the active state.
+      // moves DOM focus into the terminal after React commits the active state.
       if (!pane.active) {
         return
       }

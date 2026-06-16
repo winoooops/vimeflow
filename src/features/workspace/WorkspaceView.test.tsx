@@ -105,7 +105,7 @@ const mockMatchMedia = (matches: boolean): (() => void) => {
   }
 }
 
-// Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
+// Mock TerminalPane to avoid terminal renderer work in tests. Surface `pane.cwd`
 // as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
 // without driving the full terminal mock surface.
 vi.mock('../terminal/components/TerminalPane', () => ({

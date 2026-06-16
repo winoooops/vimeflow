@@ -178,7 +178,7 @@ describe('useTerminal', () => {
 
     const sessionId = result.current.session!.id
 
-    // Simulate user typing in xterm
+    // Simulate user typing in the terminal renderer
     mockTerminal._mockTriggerData('ls\r')
 
     await waitFor(() => {

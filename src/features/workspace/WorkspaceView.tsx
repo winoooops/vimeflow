@@ -2336,7 +2336,7 @@ export const WorkspaceView = (): ReactElement => {
         onCancel={handleCancel}
       />
 
-      {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
+      {/* Drag overlay — prevents embedded panes from stealing mouse events */}
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {paneRenameNode}

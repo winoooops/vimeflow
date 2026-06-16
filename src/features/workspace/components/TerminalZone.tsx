@@ -38,7 +38,7 @@ export interface TerminalZoneProps {
    */
   onSessionRestart?: (sessionId: string) => void
   /**
-   * Temporarily hold xterm fitting while surrounding workspace chrome is being
+   * Temporarily hold terminal fitting while surrounding workspace chrome is being
    * dragged. The active terminal gets one final fit when the drag ends.
    */
   deferTerminalFit?: boolean
@@ -153,7 +153,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
         {/* Layout controls live in the workspace top chrome bar (main-stage
             handoff J3) — TerminalZone renders no toolbar of its own. */}
 
-        {/* Terminal content area — relative + absolute inner to give xterm explicit dimensions */}
+        {/* Terminal content area — relative + absolute inner to give the renderer explicit dimensions */}
         <div
           data-testid="terminal-content"
           className="relative min-h-0 flex-1 bg-surface"

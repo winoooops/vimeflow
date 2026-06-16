@@ -48,7 +48,7 @@ const mockService: ITerminalService = {
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 }
 
-// Mock TerminalPane to avoid xterm.js issues in tests
+// Mock TerminalPane to avoid terminal renderer work in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
   TerminalPane: vi.fn(
     ({

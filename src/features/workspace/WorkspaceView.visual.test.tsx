@@ -5,7 +5,7 @@ import { describe, test, expect, vi } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
 
-// Mock TerminalPane to avoid xterm.js issues in tests
+// Mock TerminalPane to avoid terminal renderer work in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
   TerminalPane: vi.fn(() => (
     <div data-testid="terminal-pane-mock">Mocked TerminalPane</div>

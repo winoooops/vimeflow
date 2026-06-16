@@ -72,7 +72,7 @@ export const useDockShortcuts = ({
 
       const key = event.key.toLowerCase()
 
-      // Ctrl+e / Ctrl+g: do not steal vim/readline shortcuts when xterm or
+      // Ctrl+e / Ctrl+g: do not steal vim/readline shortcuts when the terminal or
       // CodeMirror has focus. Ctrl+b is exempt — it only fires when dock is
       // active (checked below), so it can never originate from either surface.
       if ((key === 'e' || key === 'g') && (inTerminalZone || inCodeMirror)) {

@@ -55,7 +55,7 @@ export const Tabs = ({
 
   // STUB: tab cycling between sessions belongs on a global keybinding
   // (Cmd+Shift+] / [) routed through the command palette — see #177.
-  // xterm.js holds focus inside the terminal, so in-component
+  // The terminal renderer holds focus inside the terminal, so in-component
   // arrow-key handlers on the tab divs never fire; the user can't
   // Tab into the strip without leaving the terminal first. The
   // previous in-component handler was removed for that reason.
@@ -145,7 +145,7 @@ export const Tabs = ({
         role="tablist"
         aria-label="Open sessions"
         // Arrow-key cycling between tabs is required by WAI-ARIA Tabs
-        // §3.27, but cannot be hosted on the tablist itself — xterm.js
+        // §3.27, but cannot be hosted on the tablist itself — the renderer
         // holds keyboard focus inside the terminal pane, so an
         // in-component arrow handler would never fire. The proper fix
         // is the global Cmd+Shift+]/[ shortcut tracked in #177; in the
