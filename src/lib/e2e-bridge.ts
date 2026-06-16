@@ -1,6 +1,6 @@
 import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
-import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
+import { terminalCache } from '../features/terminal/terminalRegistry'
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
@@ -28,22 +28,18 @@ const findActivePane = (): HTMLElement | null => {
   return Array.from(panes).find(isVisible) ?? null
 }
 
-// `rows.textContent` is typed as `string` by this project's lib.dom
-// (see similar `const text = rows.textContent` pattern in this file);
-// `?? ''` is rejected by @typescript-eslint/no-unnecessary-condition.
-//
 // Multi-pane sessions (post-5b): the session-level wrapper contains a
-// SplitView with N inner TerminalPanes, each carrying an xterm. Prefer
-// the focused pane's xterm (the active pane has `data-focused="true"`
-// on its inner wrapper) so callers reading by session id always get the
-// active pane's buffer instead of whichever pane happens to be first in
-// DOM. Falls back to the first `.xterm-rows` for single-pane sessions
-// and for the defensive case where no inner wrapper has `data-focused`.
+// SplitView with N inner TerminalPanes. Prefer the focused pane's renderer
+// (the active pane has `data-focused="true"` on its inner wrapper) so callers
+// reading by session id always get the active pane's buffer instead of whichever
+// pane happens to be first in DOM. Falls back to the first terminal DOM rows for
+// single-pane sessions and for the defensive case where no inner wrapper has
+// `data-focused`.
 //
 // Exported for unit testing — production callers go through
 // `readVisibleTerminalBuffer` / `readTerminalBufferForSession`.
 //
-// `container` is any xterm ancestor element: the session-level
+// `container` is any terminal ancestor element: the session-level
 // `terminal-pane` wrapper (preferred for multi-pane sessions —
 // triggers the `data-focused` first-pass), a single `split-view-slot`
 // (the pty-id lookup path), or any `terminal-pane-wrapper` directly.
@@ -55,20 +51,21 @@ export const readPaneBuffer = (container: HTMLElement): string => {
   )
   const scope = focusedWrapper ?? container
 
-  const rows = scope.querySelector<HTMLElement>('.xterm-rows')
-  const domText = rows?.textContent ?? ''
-  if (domText.trim().length > 0) {
-    return domText
-  }
-
-  // DOM read empty — the renderer may be drawing to <canvas>.
-  // Fall back to the terminal surface's viewport reader via terminalCache.
   const cacheKey = resolveCacheKey(scope)
   if (cacheKey) {
     const entry = terminalCache.get(cacheKey)
     if (entry) {
-      return entry.viewportReader.readVisibleText()
+      const surfaceText = entry.viewportReader.readVisibleText()
+      if (surfaceText.trim().length > 0) {
+        return surfaceText
+      }
     }
+  }
+
+  const rows = scope.querySelector<HTMLElement>('.xterm-rows')
+  const domText = rows?.textContent ?? ''
+  if (domText.trim().length > 0) {
+    return domText
   }
 
   return domText

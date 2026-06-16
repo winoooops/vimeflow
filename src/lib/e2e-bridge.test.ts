@@ -1,7 +1,7 @@
 // cspell:ignore vsplit
 import { describe, test, expect, beforeEach } from 'vitest'
 import { readPaneBuffer } from './e2e-bridge'
-import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
+import { terminalCache } from '../features/terminal/terminalRegistry'
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
 
@@ -28,9 +28,9 @@ const makeMockEntry = (rows: readonly string[]): CacheEntry => {
 /**
  * Build a session-level wrapper containing N split-view-slots, each with
  * an inner terminal-pane-wrapper (one carrying `data-focused="true"` when
- * `activeIndex` matches) and a `.xterm-rows` child with the provided
- * text content. Mirrors the post-5b DOM shape produced by SplitView →
- * TerminalPane → Body.
+ * `activeIndex` matches) and an xterm DOM rows child with the provided text
+ * content. Mirrors the post-5b DOM shape produced by SplitView → TerminalPane
+ * → Body.
  */
 const buildSessionWrapper = (
   paneTexts: readonly string[],
@@ -81,7 +81,7 @@ describe('readPaneBuffer', () => {
 
   test('returns the focused pane buffer in multi-pane DOM', () => {
     // Three panes; active = index 1. Bug class this catches: a naive
-    // `pane.querySelector('.xterm-rows')` would return panes[0]'s buffer.
+    // A naive DOM-only query would return panes[0]'s buffer.
     const wrapper = buildSessionWrapper(
       ['pane-zero-buf', 'pane-one-buf', 'pane-two-buf'],
       1
@@ -96,7 +96,7 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(wrapper)).toBe('solo-buf')
   })
 
-  test('falls back to first .xterm-rows when no pane carries data-focused', () => {
+  test('falls back to first terminal DOM rows when no pane carries data-focused', () => {
     // Defensive case — invariant violation (5a guarantees exactly-one
     // active per session). The function must still return SOMETHING
     // (not throw) so e2e specs don't fail cryptically. Returns the
@@ -106,15 +106,15 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(wrapper)).toBe('first-buf')
   })
 
-  test('returns empty string when no .xterm-rows is present', () => {
+  test('returns empty string when no terminal DOM rows are present', () => {
     const wrapper = document.createElement('div')
     wrapper.setAttribute('data-testid', 'terminal-pane')
-    // No inner content — no slot, no xterm-rows.
+    // No inner content — no slot, no terminal DOM rows.
 
     expect(readPaneBuffer(wrapper)).toBe('')
   })
 
-  test('reads xterm-rows directly when passed a split-view-slot (pty-id lookup path)', () => {
+  test('reads terminal DOM rows directly when passed a split-view-slot without cache', () => {
     // `readTerminalBufferForSession`'s pty-id fallback path resolves to
     // a `split-view-slot`, not the session wrapper. The function must
     // descend into the slot's inner terminal-pane-wrapper just the
@@ -129,12 +129,20 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(slot!)).toBe('slot-buf')
   })
 
-  test('falls back to terminal surface text when .xterm-rows is empty (canvas renderer path)', () => {
-    // Canvas/WebGL renderers leave .xterm-rows empty. The fallback must reach into terminalCache by PTY id.
+  test('reads terminal surface text when DOM rows are empty', () => {
+    // Canvas/WebGL renderers leave xterm DOM rows empty. The bridge must reach into terminalCache by PTY id.
     const wrapper = buildSessionWrapper([''], 0)
     terminalCache.set('pty-0', makeMockEntry(['$ echo hi', 'hi', '$ '])!)
 
     expect(readPaneBuffer(wrapper)).toBe('$ echo hi\nhi\n$')
+  })
+
+  test('reads terminal surface text when renderer exposes no xterm DOM rows', () => {
+    const wrapper = buildSessionWrapper(['stale-dom-row'], 0)
+    wrapper.querySelector('.xterm-rows')?.remove()
+    terminalCache.set('pty-0', makeMockEntry(['generic renderer text'])!)
+
+    expect(readPaneBuffer(wrapper)).toBe('generic renderer text')
   })
 
   test('uses data-pty-id from Body container, not data-session-id from TerminalZone', () => {
@@ -159,14 +167,21 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(inner!)).toBe('inner-pane-buf')
   })
 
-  test('uses cached terminal surface viewport text, not scrollback DOM', () => {
-    const wrapper = buildSessionWrapper([''], 0)
+  test('prefers terminal surface viewport text over renderer-specific DOM rows', () => {
+    const wrapper = buildSessionWrapper(['stale-dom-row'], 0)
     terminalCache.set('pty-0', makeMockEntry(['row-5', 'row-6'])!)
 
     expect(readPaneBuffer(wrapper)).toBe('row-5\nrow-6')
   })
 
-  test('returns empty string when .xterm-rows is empty and the cache has no entry', () => {
+  test('falls back to DOM rows when cached viewport text is empty', () => {
+    const wrapper = buildSessionWrapper(['dom-row'], 0)
+    terminalCache.set('pty-0', makeMockEntry([])!)
+
+    expect(readPaneBuffer(wrapper)).toBe('dom-row')
+  })
+
+  test('returns empty string when DOM rows are empty and the cache has no entry', () => {
     // No DOM text AND no cached terminal — the legacy fallback path.
     const wrapper = buildSessionWrapper([''], 0)
 

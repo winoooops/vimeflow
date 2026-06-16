@@ -61,7 +61,7 @@ export {
   clearTerminalCache,
   disposeTerminalSession,
   terminalCache,
-} from './Body'
+} from '../../terminalRegistry'
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
   function TerminalPane(
