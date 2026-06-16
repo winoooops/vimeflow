@@ -40,7 +40,7 @@ export const LayoutSwitcher = ({
     // sequence — adequate for a 5-item picker.
     role="group"
     aria-label="Pane layout"
-    className="inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
+    className="vf-app-no-drag inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
   >
     {Object.values(LAYOUTS).map((layout) => {
       const isActive = activeLayoutId === layout.id

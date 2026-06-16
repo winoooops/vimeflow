@@ -170,12 +170,14 @@ const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 } = {}
 
 interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reserveWindowControls?: boolean
 }
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -183,10 +185,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
     agentStatus = undefined,
+    reserveWindowControls = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
     capturedAgentStatusPanelProps.agentStatus = agentStatus
+    capturedAgentStatusPanelProps.reserveWindowControls = reserveWindowControls
 
     // Render the panel testid so the existing zone-presence tests
     // (`getByTestId('agent-status-panel')`) keep passing without
@@ -283,6 +287,7 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    capturedAgentStatusPanelProps.reserveWindowControls = undefined
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -367,13 +372,9 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
       'vf-app-drag-region'
     )
-  })
 
-  // The main-stage chrome removes the session-tab strip, which previously
-  // carried the macOS window-drag regions. Per the merge decision we keep
-  // main's SidebarTopBar drag region (covered by SidebarTopBar.test) and do
-  // not re-home the drag region onto the auto-hide top chrome, so the old
-  // "collapsed macOS tab chrome" test no longer applies.
+    expect(capturedAgentStatusPanelProps.reserveWindowControls).toBe(true)
+  })
 
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
     const restoreMatchMedia = mockMatchMedia(true)

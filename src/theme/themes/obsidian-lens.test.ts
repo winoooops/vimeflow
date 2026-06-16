@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { obsidianLens } from './obsidian-lens'
 
-test('obsidian lens is the dark default with current rendered values', () => {
+test('catppuccin (obsidian-lens) is the dark default with current rendered values', () => {
   expect(obsidianLens.id).toBe('obsidian-lens')
   expect(obsidianLens.kind).toBe('dark')
   expect(obsidianLens.ui.surface).toBe('#121221')
@@ -14,7 +14,7 @@ test('obsidian lens is the dark default with current rendered values', () => {
 })
 
 // Moved from src/features/workspace/WorkspaceView.visual.test.tsx (P2 policy)
-describe('Color Tokens: Obsidian Lens theme', () => {
+describe('Color Tokens: Catppuccin theme', () => {
   test('surface hierarchy tokens', () => {
     expect(obsidianLens.ui.surface).toBe('#121221')
     expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')

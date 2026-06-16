@@ -87,6 +87,12 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByRole('group')).toHaveAccessibleName('Pane layout')
   })
 
+  test('cuts the layout pillar out of parent drag regions', () => {
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
+  })
+
   // Layout buttons render the layout name only — no shortcut chip.
   // `Mod+\` cycles to the NEXT layout (usePaneShortcuts), not to any
   // specific one, so attaching the chip to individual layout buttons

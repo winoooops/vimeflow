@@ -12,7 +12,11 @@ import {
   type BodyHandle,
 } from './Body'
 import { TERMINAL_FONT_FAMILY } from './terminalFont'
-import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
+import {
+  useTerminal,
+  type UseTerminalOptions,
+  type UseTerminalReturn,
+} from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { obsidianLens } from '../../../../theme'
 
@@ -81,6 +85,16 @@ vi.mock('@xterm/addon-canvas', () => ({
 vi.mock('../../hooks/useTerminal', () => ({
   useTerminal: vi.fn(),
 }))
+
+let latestUseTerminalOptionsValue: UseTerminalOptions | null = null
+
+const latestUseTerminalOptions = (): UseTerminalOptions => {
+  if (latestUseTerminalOptionsValue === null) {
+    throw new Error('useTerminal was not called')
+  }
+
+  return latestUseTerminalOptionsValue
+}
 
 describe('Body', () => {
   let mockTerminal: {
@@ -157,7 +171,14 @@ describe('Body', () => {
     vi.mocked(Terminal).mockImplementation(() => mockTerminal as never)
     vi.mocked(FitAddon).mockImplementation(() => mockFitAddon as never)
     vi.mocked(CanvasAddon).mockImplementation(() => mockCanvasAddon as never)
-    vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
+    latestUseTerminalOptionsValue = null
+    vi.mocked(useTerminal).mockImplementation(
+      (options: UseTerminalOptions): UseTerminalReturn => {
+        latestUseTerminalOptionsValue = options
+
+        return mockUseTerminal
+      }
+    )
   })
 
   afterEach(() => {
@@ -190,6 +211,57 @@ describe('Body', () => {
     expect(screen.getByTestId('terminal-pane-body-wrapper')).toHaveClass(
       'terminal-pane-body'
     )
+  })
+
+  test('reports submitted terminal command lines from xterm input', async () => {
+    const onCommandSubmit = vi.fn()
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        onCommandSubmit={onCommandSubmit}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useTerminal).toHaveBeenCalled()
+    })
+
+    const options = latestUseTerminalOptions()
+    act(() => {
+      options.onInput?.('/')
+      options.onInput?.('clears')
+      options.onInput?.('\x7f')
+      options.onInput?.('\r')
+    })
+
+    expect(onCommandSubmit).toHaveBeenCalledWith('test-session', '/clear')
+  })
+
+  test('reports slash commands submitted through bracketed paste input', async () => {
+    const onCommandSubmit = vi.fn()
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        onCommandSubmit={onCommandSubmit}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useTerminal).toHaveBeenCalled()
+    })
+
+    const options = latestUseTerminalOptions()
+    act(() => {
+      options.onInput?.('\x1b[200~/clear\x1b[201~\r')
+    })
+
+    expect(onCommandSubmit).toHaveBeenCalledWith('test-session', '/clear')
   })
 
   test('initializes xterm terminal on mount', async () => {

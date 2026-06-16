@@ -16,7 +16,7 @@ export interface GlassSurfaceProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * Frosted-glass surface — the "Obsidian Lens" glassmorphism treatment shared
+ * Frosted-glass surface — The Lens glassmorphism treatment shared
  * by the app's floating/overlay chrome (dialogs, tooltips, the command
  * palette, diff popovers).
  *
