@@ -91,3 +91,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 3        | 0    | 2026-06-15   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 0    | 2026-06-15   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 0    | 2026-06-15   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 1        | 0    | 2026-06-16   |

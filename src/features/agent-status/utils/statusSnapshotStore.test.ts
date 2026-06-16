@@ -77,6 +77,33 @@ describe('statusSnapshotStore', () => {
     )
   })
 
+  test('does not persist active tool calls in pane snapshots', () => {
+    const store = createAgentStatusSnapshotStore(() => 100)
+
+    const runningStatus = createStatus({
+      toolCalls: {
+        total: 9,
+        byType: { exec_command: 9 },
+        active: {
+          tool: 'exec_command',
+          args: 'nl -ba scripts/qa-runner/lib/worker-instance.mjs',
+          startedAt: '2026-06-15T19:50:00Z',
+          toolUseId: 'call-running',
+        },
+      },
+    })
+
+    const snapshot = store.writeStatus('pane-a', runningStatus)
+
+    expect(runningStatus.toolCalls.active?.toolUseId).toBe('call-running')
+    expect(snapshot.status.toolCalls).toEqual({
+      total: 9,
+      byType: { exec_command: 9 },
+      active: null,
+    })
+    expect(store.readStatus('pane-a')?.toolCalls.active).toBeNull()
+  })
+
   test('preserves unchanged recent tool-call object identity while merging', () => {
     const existingCall = {
       id: 'toolu_1',

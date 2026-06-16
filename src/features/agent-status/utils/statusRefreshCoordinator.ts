@@ -80,13 +80,21 @@ const mergeDetectedAgent = (
   ptyId: string,
   detected: AgentDetectedEvent,
   previous: AgentStatus | null
-): AgentStatus => ({
-  ...(previous ?? createDefaultAgentStatus(ptyId)),
-  sessionId: ptyId,
-  isActive: true,
-  agentExited: false,
-  agentType: mapDetectedAgentType(detected.agentType as string),
-})
+): AgentStatus => {
+  const base = previous ?? createDefaultAgentStatus(ptyId)
+
+  return {
+    ...base,
+    sessionId: ptyId,
+    isActive: true,
+    agentExited: false,
+    agentType: mapDetectedAgentType(detected.agentType as string),
+    toolCalls: {
+      ...base.toolCalls,
+      active: null,
+    },
+  }
+}
 
 export const createAgentStatusRefreshCoordinator = ({
   detectAgent = defaultDetectAgent,
