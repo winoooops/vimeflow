@@ -9,6 +9,7 @@ const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
 let activeTerminalRendererId = xtermTerminalRenderer.id
 let hasConfiguredTerminalRendererFromEnvironment = false
 let bundledPlainTextRenderer: TerminalRendererAdapter | null = null
+let configureTerminalRendererPromise: Promise<void> | null = null
 const initialEnvironmentRendererId = import.meta.env.VITE_TERMINAL_RENDERER
 
 const shouldRegisterBundledPlainTextRenderer =
@@ -84,7 +85,16 @@ const ensureTerminalRendererConfigured = async (): Promise<void> => {
     return
   }
 
-  await configureTerminalRendererFromEnvironment()
+  configureTerminalRendererPromise ??=
+    configureTerminalRendererFromEnvironment()
+
+  try {
+    await configureTerminalRendererPromise
+  } catch (error) {
+    configureTerminalRendererPromise = null
+
+    throw error
+  }
 }
 
 export const getTerminalRendererAdapter =
@@ -122,4 +132,5 @@ export const _resetTerminalRendererRegistryForTest = (): void => {
 
   activeTerminalRendererId = xtermTerminalRenderer.id
   hasConfiguredTerminalRendererFromEnvironment = false
+  configureTerminalRendererPromise = null
 }

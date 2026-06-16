@@ -270,6 +270,29 @@ describe('Body', () => {
     })
   })
 
+  test('surfaces terminal instance creation failures', async () => {
+    vi.mocked(createTerminalInstance).mockRejectedValueOnce(
+      new Error('Unknown terminal renderer adapter: custom-renderer')
+    )
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    const alert = await screen.findByTestId('terminal-startup-error')
+
+    expect(alert).toHaveTextContent('Terminal failed to start')
+    expect(alert).toHaveTextContent(
+      'Unknown terminal renderer adapter: custom-renderer'
+    )
+    expect(mockTerminal.open).not.toHaveBeenCalled()
+    expect(terminalCache.has('test-session')).toBe(false)
+  })
+
   test('repaints the terminal when the window regains focus', async () => {
     render(
       <Body
