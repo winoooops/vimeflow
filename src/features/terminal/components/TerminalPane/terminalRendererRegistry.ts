@@ -1,4 +1,6 @@
+// cspell:ignore ghostty
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
+import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 import { xtermTerminalRenderer } from './xtermInstance'
 
@@ -9,12 +11,17 @@ const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
 let activeTerminalRendererId = xtermTerminalRenderer.id
 let hasConfiguredTerminalRendererFromEnvironment = false
 let bundledPlainTextRenderer: TerminalRendererAdapter | null = null
+let bundledGhosttyRenderer: TerminalRendererAdapter | null = null
 let configureTerminalRendererPromise: Promise<void> | null = null
 const initialEnvironmentRendererId = import.meta.env.VITE_TERMINAL_RENDERER
 
 const shouldRegisterBundledPlainTextRenderer =
   typeof initialEnvironmentRendererId === 'string' &&
   initialEnvironmentRendererId.trim() === PLAIN_TEXT_TERMINAL_RENDERER_ID
+
+const shouldRegisterBundledGhosttyRenderer =
+  typeof initialEnvironmentRendererId === 'string' &&
+  initialEnvironmentRendererId.trim() === GHOSTTY_TERMINAL_RENDERER_ID
 
 const readEnvironmentRendererId = (): string | null => {
   const rendererId = import.meta.env.VITE_TERMINAL_RENDERER
@@ -45,16 +52,24 @@ export const registerTerminalRendererAdapter = (
 
 const registerBundledEnvironmentRenderer = async (): Promise<void> => {
   if (
-    !shouldRegisterBundledPlainTextRenderer ||
-    terminalRendererAdapters.has(PLAIN_TEXT_TERMINAL_RENDERER_ID)
+    shouldRegisterBundledPlainTextRenderer &&
+    !terminalRendererAdapters.has(PLAIN_TEXT_TERMINAL_RENDERER_ID)
   ) {
-    return
+    const { plainTextTerminalRenderer } = await import('./plainTextInstance')
+
+    bundledPlainTextRenderer = plainTextTerminalRenderer
+    registerTerminalRendererAdapter(plainTextTerminalRenderer)
   }
 
-  const { plainTextTerminalRenderer } = await import('./plainTextInstance')
+  if (
+    shouldRegisterBundledGhosttyRenderer &&
+    !terminalRendererAdapters.has(GHOSTTY_TERMINAL_RENDERER_ID)
+  ) {
+    const { ghosttyTerminalRenderer } = await import('./ghosttyInstance')
 
-  bundledPlainTextRenderer = plainTextTerminalRenderer
-  registerTerminalRendererAdapter(plainTextTerminalRenderer)
+    bundledGhosttyRenderer = ghosttyTerminalRenderer
+    registerTerminalRendererAdapter(ghosttyTerminalRenderer)
+  }
 }
 
 export const setTerminalRendererAdapter = (rendererId: string): void => {
@@ -127,6 +142,13 @@ export const _resetTerminalRendererRegistryForTest = (): void => {
     terminalRendererAdapters.set(
       bundledPlainTextRenderer.id,
       bundledPlainTextRenderer
+    )
+  }
+
+  if (bundledGhosttyRenderer) {
+    terminalRendererAdapters.set(
+      bundledGhosttyRenderer.id,
+      bundledGhosttyRenderer
     )
   }
 
