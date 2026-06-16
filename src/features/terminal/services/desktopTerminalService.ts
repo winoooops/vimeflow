@@ -33,7 +33,8 @@ export class DesktopTerminalService implements ITerminalService {
     sessionId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    bytesBase64?: string
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -88,7 +89,8 @@ export class DesktopTerminalService implements ITerminalService {
         const unlistenData = await listen<PtyDataEvent>(
           'pty-data',
           (payload) => {
-            const { sessionId, data, offsetStart, byteLen } = payload
+            const { sessionId, data, offsetStart, byteLen, bytesBase64 } =
+              payload
 
             // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
             // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
@@ -98,7 +100,15 @@ export class DesktopTerminalService implements ITerminalService {
                 ? Number(offsetStart)
                 : offsetStart
             const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
-            this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+            this.dataCallbacks.forEach((cb) => {
+              if (bytesBase64 === undefined) {
+                cb(sessionId, data, offset, len)
+
+                return
+              }
+
+              cb(sessionId, data, offset, len, bytesBase64)
+            })
           }
         )
         pendingUnlistenFns.push(unlistenData)

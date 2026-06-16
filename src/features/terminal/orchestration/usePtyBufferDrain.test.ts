@@ -42,6 +42,22 @@ describe('usePtyBufferDrain', () => {
     expect(handler).toHaveBeenNthCalledWith(2, 'second', 5, 6)
   })
 
+  test('preserves raw bytes payload while buffering and draining events', () => {
+    const { result } = renderHook(() => usePtyBufferDrain())
+    const handler = vi.fn()
+
+    result.current.registerPending('pty-1')
+    result.current.bufferEvent('pty-1', '��', 0, 2, '//4=')
+
+    expect(result.current.getBufferedSnapshot('pty-1')).toEqual([
+      { data: '��', offsetStart: 0, byteLen: 2, bytesBase64: '//4=' },
+    ])
+
+    result.current.notifyPaneReady('pty-1', handler)
+
+    expect(handler).toHaveBeenCalledWith('��', 0, 2, '//4=')
+  })
+
   test('notifyPaneReady cleanup re-arms pending state on remount', () => {
     const { result } = renderHook(() => usePtyBufferDrain())
     const handler = vi.fn()

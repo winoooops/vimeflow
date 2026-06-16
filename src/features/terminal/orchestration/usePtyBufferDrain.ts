@@ -5,6 +5,7 @@ interface BufferedEvent {
   data: string
   offsetStart: number
   byteLen: number
+  bytesBase64?: string
 }
 
 export interface PtyBufferDrain {
@@ -12,7 +13,8 @@ export interface PtyBufferDrain {
     ptyId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    bytesBase64?: string
   ) => void
   notifyPaneReady: (
     ptyId: string,
@@ -39,7 +41,7 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
   const tombstonedPanesRef = useRef(new Set<string>())
 
   const bufferEvent = useCallback<PtyBufferDrain['bufferEvent']>(
-    (ptyId, data, offsetStart, byteLen) => {
+    (ptyId, data, offsetStart, byteLen, bytesBase64) => {
       if (
         tombstonedPanesRef.current.has(ptyId) ||
         readyPanesRef.current.has(ptyId)
@@ -52,7 +54,12 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
         queue = []
         bufferedRef.current.set(ptyId, queue)
       }
-      queue.push({ data, offsetStart, byteLen })
+      queue.push({
+        data,
+        offsetStart,
+        byteLen,
+        ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
+      })
     },
     []
   )
@@ -72,7 +79,18 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
       const events = bufferedRef.current.get(ptyId)
       if (events && events.length > 0) {
         for (const event of events) {
-          handler(event.data, event.offsetStart, event.byteLen)
+          if (event.bytesBase64 === undefined) {
+            handler(event.data, event.offsetStart, event.byteLen)
+
+            continue
+          }
+
+          handler(
+            event.data,
+            event.offsetStart,
+            event.byteLen,
+            event.bytesBase64
+          )
         }
         bufferedRef.current.delete(ptyId)
       }

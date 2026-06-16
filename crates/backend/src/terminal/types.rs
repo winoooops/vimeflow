@@ -93,6 +93,11 @@ pub struct PtyDataEvent {
     pub session_id: SessionId,
     /// Output data from PTY stdout (lossy UTF-8 — invalid bytes become U+FFFD)
     pub data: String,
+    /// Raw PTY stdout bytes encoded as base64 for byte-preserving renderer
+    /// adapters. Existing xterm-compatible renderers continue to use `data`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bytes_base64: Option<String>,
     /// Starting byte offset of this chunk in the session's lifetime stream
     pub offset_start: u64,
     /// Raw byte count of this chunk from the PTY read (matches the producer's
@@ -314,4 +319,37 @@ pub struct WorkspaceSessionSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SetWorkspaceSessionsRequest {
     pub sessions: Vec<WorkspaceSessionSnapshot>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PtyDataEvent;
+
+    #[test]
+    fn pty_data_event_serializes_bytes_base64_when_present() {
+        let value = serde_json::to_value(PtyDataEvent {
+            session_id: "session-1".to_string(),
+            data: "��".to_string(),
+            bytes_base64: Some("//4=".to_string()),
+            offset_start: 0,
+            byte_len: 2,
+        })
+        .expect("serialize event");
+
+        assert_eq!(value["bytesBase64"], "//4=");
+    }
+
+    #[test]
+    fn pty_data_event_omits_bytes_base64_when_absent() {
+        let value = serde_json::to_value(PtyDataEvent {
+            session_id: "session-1".to_string(),
+            data: "hello".to_string(),
+            bytes_base64: None,
+            offset_start: 0,
+            byte_len: 5,
+        })
+        .expect("serialize event");
+
+        assert!(value.get("bytesBase64").is_none());
+    }
 }

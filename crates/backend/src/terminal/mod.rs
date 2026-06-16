@@ -4,6 +4,7 @@
 //! and IPC communication with the frontend.
 
 pub mod bridge;
+pub(crate) mod bytes;
 pub mod cache;
 pub mod commands;
 pub(crate) mod events;

@@ -47,6 +47,8 @@ export interface ITerminalService {
    * UTF-8 becomes U+FFFD (3 bytes when re-encoded), which would skew any
    * cursor derived from `data.length` away from the producer's offsets.
    * Subscribers MUST advance their cursor with `offsetStart + byteLen`.
+   * `bytesBase64`, when present, preserves the producer's raw bytes for
+   * renderer adapters that can parse bytes directly.
    *
    * Returns a Promise that resolves to the unsubscribe function once the
    * underlying transport listener is fully attached. Callers in the restore
@@ -59,7 +61,8 @@ export interface ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      bytesBase64?: string
     ) => void
   ): Promise<() => void>
 
@@ -150,7 +153,8 @@ export class MockTerminalService implements ITerminalService {
     sessionId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    bytesBase64?: string
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -358,16 +362,26 @@ export class MockTerminalService implements ITerminalService {
    * here (the real producer must emit the raw `buf[..n]` byte count, which
    * may differ from the re-encoded length). Tests can pass an explicit
    * `byteLen` to exercise the producer-vs-decoded mismatch case.
+   * `bytesBase64` can be supplied to test byte-preserving renderer paths.
    */
   emitData(
     sessionId: string,
     data: string,
     offsetStart?: number,
-    byteLen?: number
+    byteLen?: number,
+    bytesBase64?: string
   ): void {
     const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
     const len = byteLen ?? new TextEncoder().encode(data).length
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+    this.dataCallbacks.forEach((cb) => {
+      if (bytesBase64 === undefined) {
+        cb(sessionId, data, offset, len)
+
+        return
+      }
+
+      cb(sessionId, data, offset, len, bytesBase64)
+    })
     // Always advance the per-session cursor past this chunk so future
     // auto-assigned offsets stay monotonic, even when the caller passed
     // an explicit offset.
@@ -394,6 +408,7 @@ export class MockTerminalService implements ITerminalService {
       data?: string
       offsetStart?: number
       byteLen?: number
+      bytesBase64?: string
       code?: number | null
       message?: string
     }
@@ -403,7 +418,8 @@ export class MockTerminalService implements ITerminalService {
         payload.sessionId,
         payload.data,
         payload.offsetStart,
-        payload.byteLen
+        payload.byteLen,
+        payload.bytesBase64
       )
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)

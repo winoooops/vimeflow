@@ -343,8 +343,14 @@ export const useSessionRestore = ({
     void (async (): Promise<void> => {
       try {
         stopBuffering = await service.onData(
-          (sessionId, data, offsetStart, byteLen) => {
-            bufferRef.current.bufferEvent(sessionId, data, offsetStart, byteLen)
+          (sessionId, data, offsetStart, byteLen, bytesBase64) => {
+            bufferRef.current.bufferEvent(
+              sessionId,
+              data,
+              offsetStart,
+              byteLen,
+              bytesBase64
+            )
           }
         )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition

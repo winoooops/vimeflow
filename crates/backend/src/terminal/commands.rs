@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use crate::debug::debug_log;
 use crate::runtime::EventSink;
 
+use super::bytes::encode_base64;
 use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
@@ -1175,6 +1176,7 @@ async fn read_pty_output(
                     &PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
+                        bytes_base64: Some(encode_base64(&buf[..n])),
                         offset_start: chunk_start,
                         // Raw byte count — the unit the producer's offset
                         // arithmetic (RingBuffer::append) used. Subscribers
