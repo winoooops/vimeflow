@@ -8,6 +8,7 @@ This file records the supported user-facing state of Vimeflow. For the detailed 
 
 ### Added
 
+- Official agent observability support now covers Claude Code, Codex CLI, and Kimi Code. Kimi Code detection watches `kimi` / `kimi-code`, reads state under `~/.kimi-code/`, streams persisted `wire.jsonl` activity, and gates plan-usage network fetching behind opt-in consent.
 - Runtime theme system: Catppuccin (dark, default) and Flexoki (light) are now switchable live via the command palette (`:theme <name>`) without reloading the app. Terminals (xterm.js), the code editor (CodeMirror), and the diff viewer (Pierre) all re-theme instantly through their respective bridge adapters. All previously hardcoded hex colors have been migrated to semantic CSS-variable tokens defined in `src/theme/themes/*.ts` and applied at runtime by `src/theme/service.ts`. A new ESLint rule `vimeflow/no-hardcoded-colors` and a CSS guard test prevent color regressions. Spec: [`docs/superpowers/specs/2026-06-11-theme-system-design.md`](./docs/superpowers/specs/2026-06-11-theme-system-design.md).
 
 ### Changed
@@ -25,14 +26,14 @@ This file records the supported user-facing state of Vimeflow. For the detailed 
 ### Supported
 
 - Vimeflow is currently supported only as a source-built `0.1.0` app.
-- Linux AppImage is the only supported packaged target, built locally with `npm run electron:build`.
-- Hosted binary releases, signed installers, auto-update, and macOS / Windows packaging are not supported yet.
+- Linux x64 AppImage and macOS arm64 DMG are the supported packaged targets, built locally with `npm run electron:build`.
+- Hosted binary releases, signed installers, auto-update, and Windows packaging are not supported yet.
 
 ### Added
 
 - Electron 42 desktop shell with the Rust `vimeflow-backend` sidecar over LSP-framed JSON IPC. This replaced the historical Tauri runtime. See the Electron migration retrospective in [docs/superpowers/retros/2026-05-16-electron-migration.md](./docs/superpowers/retros/2026-05-16-electron-migration.md).
 - Terminal-first workspace: session tabs, multi-pane `SplitView` layouts, docked editor and diff panels, file explorer, git diff surfaces, command palette, and status bar.
-- Agent observability for Claude Code and Codex through the shared backend adapter model and frontend agent-status panel.
+- Agent observability for Claude Code, Codex CLI, and Kimi Code through the shared backend adapter model and frontend agent-status panel.
 - Codex cwd tracking from transcript events and terminal OSC 7 updates, plus linked-worktree names in pane headers.
 - Agent-status UI polish including the collapsed rail bucket meters and activity-detail tooltips.
 

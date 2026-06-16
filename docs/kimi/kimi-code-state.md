@@ -5,6 +5,9 @@
 > persisted `wire.jsonl`. Mirrors the per-provider documentation style of
 > [`crates/backend/src/agent/adapter/README.md`](../../crates/backend/src/agent/adapter/README.md).
 
+Vimeflow's Kimi Code adapter is officially supported alongside Claude Code and
+Codex CLI.
+
 ## Only kimi-code (TS) is supported
 
 The legacy Python `kimi-cli` stored state under `~/.kimi/` with a **different** layout
@@ -74,8 +77,10 @@ agent-loop lifecycle is **nested** inside `context.append_loop_event.event`.
 
 ## Detection
 
-Binary name `kimi` (on PATH as `~/.kimi-code/bin/kimi`). The detector is registry-driven, so
-detection is one `AGENT_SPECS` entry: `{ agent_type: Kimi, binary_names: ["kimi"], display_name: "Kimi", provider_home: ~/.kimi-code }`.
+Binary names are `kimi` (on PATH as `~/.kimi-code/bin/kimi`) and `kimi-code`
+(the process title used by a running session). The detector is registry-driven,
+so detection is one `AGENT_SPECS` entry:
+`{ agent_type: Kimi, binary_names: ["kimi", "kimi-code"], display_name: "Kimi", provider_home: ~/.kimi-code }`.
 
 ## Gotchas / divergences discovered
 

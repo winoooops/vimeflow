@@ -1,8 +1,12 @@
-# Agent state pipeline observation for a Kimi adapter
+# Agent state pipeline observation for the Kimi adapter
+
+This started as the design note for adding Kimi Code. Kimi Code support is now
+merged on `main`, and Vimeflow officially supports Claude Code, Codex CLI, and
+Kimi Code observability.
 
 ## 1 unified events and their Rust types
 
-The unified backend event surface is provider-neutral. `AgentType` is the root discriminator and currently serializes as camelCase with `ClaudeCode`, `Codex`, `Aider`, and `Generic` in [types.rs](crates/backend/src/agent/types.rs:5).
+The unified backend event surface is provider-neutral. `AgentType` is the root discriminator and currently serializes as camelCase with `ClaudeCode`, `Codex`, `Kimi`, `Aider`, and `Generic` in [types.rs](crates/backend/src/agent/types.rs:5).
 
 Primary event payloads:
 
@@ -14,11 +18,11 @@ Primary event payloads:
 - Tools: `AgentToolCallEvent` and `ToolCallStatus` in [types.rs](crates/backend/src/agent/types.rs:304), emitted as `"agent-tool-call"` in [events.rs](crates/backend/src/agent/events.rs:20).
 - Lifecycle: `AgentLifecycleEvent` and `AgentPhase` in [types.rs](crates/backend/src/agent/types.rs:366), emitted as `"agent-lifecycle"` in [events.rs](crates/backend/src/agent/events.rs:48).
 
-For Kimi, the best fit is to translate Kimi-native state into these existing structs rather than adding Kimi-specific UI events.
+The Kimi adapter translates Kimi-native state into these existing structs rather than adding Kimi-specific UI events.
 
 ## 2 the for_attach dispatch and AttachContext LocatedStatusSource StatusSnapshot
 
-Production binding is built by `AgentBindings::for_attach` in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:70). The current dispatch has a Claude arm in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:84), a Codex arm in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:95), and a `NoOpAdapter` fallback in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:162).
+Production binding is built by `AgentBindings::for_attach` in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:70). The current dispatch has Claude Code, Codex CLI, and Kimi Code arms, with a `NoOpAdapter` fallback for other agent variants.
 
 `AttachContext` is the attach-time input: `session_id`, `initial_cwd`, shell and agent pids, `pty_start`, `agent_type`, `provider_home`, and `proc_root` in [attach.rs](crates/backend/src/agent/adapter/attach.rs:41). It is created from PTY state, detector state, `config::spec_for`, and `default_proc_root` in [mod.rs](crates/backend/src/agent/adapter/mod.rs:240).
 
@@ -98,27 +102,27 @@ Transcript tail:
 - CWD is intentionally sourced only from `session_meta.payload.cwd` and `exec_command.arguments.workdir`, not `turn_context.cwd`, in [transcript.rs](crates/backend/src/agent/adapter/codex/transcript.rs:62).
 - Codex has an additional title watcher for `<codex_home>/session_index.jsonl`, spawned only when `agent_session_id` is present in [watcher_runtime.rs](crates/backend/src/agent/adapter/base/watcher_runtime.rs:1237), with watcher behavior in [session_index.rs](crates/backend/src/agent/adapter/codex/session_index.rs:1).
 
-## 5 the exact registration checklist to add a new AgentType covering the enum the AGENT_SPECS entry in config.rs the for_attach arm the module dir the ts-rs bindings regeneration and the frontend registry.ts plus agentTypeToRegistryKey
+## 5 the implemented Kimi registration points covering the enum the AGENT_SPECS entry in config.rs the for_attach arm the module dir the ts-rs bindings regeneration and the frontend registry.ts plus agentTypeToRegistryKey
 
-1. Add `Kimi` to `AgentType` in [types.rs](crates/backend/src/agent/types.rs:10). With `serde(rename_all = "camelCase")`, a `Kimi` variant serializes as `kimi`.
+1. `Kimi` is registered in `AgentType` in [types.rs](crates/backend/src/agent/types.rs:10). With `serde(rename_all = "camelCase")`, the `Kimi` variant serializes as `kimi`.
 
-2. Add a Kimi `AgentSpec` to `AGENT_SPECS` in [config.rs](crates/backend/src/agent/config.rs:54). Existing entries show the required shape: `agent_type`, `binary_names`, `display_name`, and optional `provider_home`.
+2. The Kimi `AgentSpec` lives in `AGENT_SPECS` in [config.rs](crates/backend/src/agent/config.rs:54), with `binary_names` covering both `kimi` and `kimi-code`.
 
-3. Add a `kimi` module under `crates/backend/src/agent/adapter/` and expose it from [adapter/mod.rs](crates/backend/src/agent/adapter/mod.rs:7).
+3. The `kimi` module lives under `crates/backend/src/agent/adapter/` and is exposed from [adapter/mod.rs](crates/backend/src/agent/adapter/mod.rs:7).
 
-4. Add a `Kimi` arm to `AgentBindings::for_attach` in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:70), returning concrete `Arc`s for `locator`, `decoder`, `transcript_paths`, `validator`, and `streamer`.
+4. The `Kimi` arm in `AgentBindings::for_attach` in [bindings.rs](crates/backend/src/agent/adapter/bindings.rs:70) returns concrete `Arc`s for `locator`, `decoder`, `transcript_paths`, `validator`, and `streamer`.
 
-5. If Kimi follows the Codex single-JSONL model, use `LocatedStatusSource.static_transcript_hint` and implement `TranscriptPathSource::static_hint`; avoid `dynamic_hint` unless Kimi writes the transcript path inside the status payload. The runtime prefers dynamic hints before static hints in [watcher_runtime.rs](crates/backend/src/agent/adapter/base/watcher_runtime.rs:37).
+5. Kimi follows the Codex-style single-JSONL model: `LocatedStatusSource.static_transcript_hint` points at `wire.jsonl`, and `TranscriptPathSource::static_hint` feeds the shared transcript tail runtime. The runtime prefers dynamic hints before static hints in [watcher_runtime.rs](crates/backend/src/agent/adapter/base/watcher_runtime.rs:37).
 
-6. Regenerate Rust-to-TypeScript bindings with `npm run generate:bindings`; the script is defined in [package.json](package.json:31). This worktree currently has only `src/bindings/index.ts`, so generated per-type files will be recreated by that command.
+6. Rust-to-TypeScript bindings are regenerated with `npm run generate:bindings`; the script is defined in [package.json](package.json:31).
 
-7. Frontend: add Kimi to `AgentStatus['agentType']` in [src/features/agent-status/types/index.ts](src/features/agent-status/types/index.ts:48).
+7. Frontend: Kimi is included in `AgentStatus['agentType']` in [src/features/agent-status/types/index.ts](src/features/agent-status/types/index.ts:48).
 
-8. Frontend: add `kimi: 'kimi'` to `AGENT_TYPE_MAP` in [useAgentStatus.ts](src/features/agent-status/hooks/useAgentStatus.ts:22), assuming the Rust enum variant is `Kimi`.
+8. Frontend: `kimi: 'kimi'` is included in `AGENT_TYPE_MAP` in [useAgentStatus.ts](src/features/agent-status/hooks/useAgentStatus.ts:22).
 
-9. Frontend: add a Kimi entry to `AGENTS` in [registry.ts](src/agents/registry.ts:21), then map `case 'kimi': return 'kimi'` in `agentTypeToRegistryKey` in [registry.ts](src/agents/registry.ts:72).
+9. Frontend: `AGENTS` includes a Kimi entry in [registry.ts](src/agents/registry.ts:21), and `agentTypeToRegistryKey` maps `case 'kimi': return 'kimi'` in [registry.ts](src/agents/registry.ts:72).
 
-10. Frontend: update remaining local unions such as `StatusCard`’s `AgentType` and `agentNames` in [StatusCard.tsx](src/features/agent-status/components/StatusCard.tsx:6) if that component is still part of the rendered surface.
+10. Remaining local unions in the rendered surface include Kimi-specific handling, including the Kimi usage consent gate in the agent-status card.
 
 ## 6 gotchas for a Codex style single JSONL adapter
 
