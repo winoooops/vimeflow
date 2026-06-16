@@ -1,9 +1,13 @@
-import { render, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { Body } from './Body'
 import { createTerminalInstance } from './terminalInstance'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
+import {
+  TERMINAL_FOCUS_SCOPE_ATTRIBUTE,
+  TERMINAL_FOCUS_SCOPE_VALUE,
+} from '../../terminalFocusScope'
 import type {
   TerminalDisposable,
   TerminalInstance,
@@ -167,6 +171,11 @@ test('Body can run against a non-xterm TerminalInstance contract', async () => {
 
   expect(useTerminal).toHaveBeenCalledWith(
     expect.objectContaining({ terminal: fake.terminal })
+  )
+
+  expect(screen.getByTestId('terminal-pane')).toHaveAttribute(
+    TERMINAL_FOCUS_SCOPE_ATTRIBUTE,
+    TERMINAL_FOCUS_SCOPE_VALUE
   )
 
   expect(fake.emitOsc(7, 'file://localhost/tmp/fake-project')).toBe(true)

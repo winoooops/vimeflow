@@ -8,6 +8,7 @@ import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
 } from '../../workspace/containerIds'
+import { isElementInTerminalFocusScope } from '../terminalFocusScope'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -66,7 +67,7 @@ export const usePaneShortcuts = ({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       // Match exactly the modifier the toolbar advertises. On macOS
-      // (preferModifier='meta'), Ctrl+1 flows through to xterm so
+      // (preferModifier='meta'), Ctrl+1 flows through to the terminal so
       // terminal apps keep their Ctrl-shortcuts. Same logic mirrored
       // on Linux/Windows for Cmd combos. (Codex P2 cycle 10.)
       const mod = preferModifierRef.current
@@ -136,7 +137,7 @@ export const usePaneShortcuts = ({
           } else if (paneIndex < activeSession.panes.length) {
             const target = activeSession.panes[paneIndex]
             if (target.active) {
-              if (activeElement?.closest('.xterm-helper-textarea')) {
+              if (isElementInTerminalFocusScope(activeElement)) {
                 return
               }
 
