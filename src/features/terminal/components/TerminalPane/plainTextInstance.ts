@@ -6,8 +6,6 @@ import type {
   TerminalKeyEventHandler,
   TerminalOutputChunk,
   TerminalOutputWriter,
-  TerminalParserEvent,
-  TerminalParserEventHandler,
   TerminalParserOutputContext,
   TerminalParser,
   TerminalRendererAdapter,
@@ -18,6 +16,7 @@ import type {
   TerminalViewportReader,
 } from '../../types'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
+import { TerminalControlSequenceParser } from './terminalControlParser'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
 export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
@@ -437,21 +436,13 @@ class PlainTextTerminalSurface implements TerminalSurface {
 }
 
 class PlainTextTerminalModel {
-  private readonly parserEventHandlers = new Set<TerminalParserEventHandler>()
+  private readonly controlParser = new TerminalControlSequenceParser()
   private currentOutputContext: TerminalParserOutputContext | null = null
   readonly terminal = new PlainTextTerminalSurface((data) =>
-    this.consumeControlSequences(data)
+    this.controlParser.transformOutput(data, this.currentOutputContext)
   )
 
-  readonly parser: TerminalParser = {
-    onEvent: (handler): TerminalDisposable => {
-      this.parserEventHandlers.add(handler)
-
-      return createDisposable((): void => {
-        this.parserEventHandlers.delete(handler)
-      })
-    },
-  }
+  readonly parser: TerminalParser = this.controlParser
 
   readonly output: TerminalOutputWriter = {
     writeOutput: (chunk, callback): void => {
@@ -477,36 +468,6 @@ class PlainTextTerminalModel {
 
   readonly rendererHandle: TerminalRendererHandle = {
     dispose: (): void => undefined,
-  }
-
-  private consumeControlSequences(data: string): string {
-    const oscSequencePattern = /\x1b\](\d+);([^\x07\x1b]*)(?:\x07|\x1b\\)/g
-
-    return data.replace(
-      oscSequencePattern,
-      (sequence, identifier: string, payload: string): string => {
-        const numericIdentifier = Number(identifier)
-
-        if (numericIdentifier !== 7 || this.parserEventHandlers.size === 0) {
-          return sequence
-        }
-
-        this.emitParserEvent({
-          type: 'cwd',
-          source: 'osc7',
-          uri: payload,
-          output: this.currentOutputContext,
-        })
-
-        return ''
-      }
-    )
-  }
-
-  private emitParserEvent(event: TerminalParserEvent): void {
-    this.parserEventHandlers.forEach((handler) => {
-      handler(event)
-    })
   }
 }
 

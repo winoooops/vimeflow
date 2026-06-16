@@ -155,6 +155,38 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
+  test('reassembles split OSC sequences before emitting parser events', () => {
+    const created = createTrackedPlainTextTerminal()
+    const parserEventHandler = vi.fn()
+
+    created.parser.onEvent(parserEventHandler)
+    created.output.writeOutput({
+      text: 'before \x1b]7;file://local',
+      offsetStart: 0,
+      byteLen: 24,
+      phase: 'restore',
+    })
+
+    created.output.writeOutput({
+      text: 'host/tmp/plain-text\x07 after',
+      offsetStart: 24,
+      byteLen: 27,
+      phase: 'restore',
+    })
+
+    expect(parserEventHandler).toHaveBeenCalledWith({
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/plain-text',
+      output: {
+        offsetStart: 24,
+        byteLen: 27,
+        phase: 'restore',
+      },
+    })
+    expect(created.viewportReader.readVisibleText()).toBe('before  after')
+  })
+
   test('notifies parser event subscribers in registration order', () => {
     const created = createTrackedPlainTextTerminal()
     const firstHandler = vi.fn()
