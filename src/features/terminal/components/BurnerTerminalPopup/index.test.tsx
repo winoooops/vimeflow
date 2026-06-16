@@ -5,9 +5,9 @@ import { BurnerTerminalPopup } from './index'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
-// Body owns the xterm instance (canvas/webgl), which jsdom can't render. Stub
-// it as a forwardRef exposing a focusTerminal spy and capturing the onPaneReady
-// it receives, so the popup's focus + drain wiring is unit-tested in isolation;
+// Body owns the terminal renderer instance, which jsdom can't render. Stub it
+// as a forwardRef exposing a focusTerminal spy and capturing the onPaneReady it
+// receives, so the popup's focus + drain wiring is unit-tested in isolation;
 // Body's attach behavior is covered in Body.test.tsx.
 const { focusTerminal, captured } = vi.hoisted(() => ({
   focusTerminal: vi.fn(),
@@ -36,9 +36,9 @@ vi.mock('../TerminalPane/Body', async () => {
           data-has-on-ready={props.onPaneReady ? 'yes' : 'no'}
           data-has-on-cwd-change={props.onCwdChange ? 'yes' : 'no'}
         >
-          {/* xterm renders a textarea for keyboard input; keep one in the stub
-              so focus-trap tests can simulate the terminal holding focus. */}
-          <textarea data-testid="xterm-textarea" />
+          {/* Terminal renderers typically own an input element; keep one in the
+              stub so focus-trap tests can simulate the terminal holding focus. */}
+          <textarea data-testid="terminal-input" />
         </div>
       )
     }),
@@ -211,7 +211,7 @@ test('Escape hides the popup instead of reaching the terminal', () => {
   render(popup(true, { onHide }))
 
   // Fire on the terminal stub so the event captures up through the overlay —
-  // the capture listener must intercept before the keydown reaches xterm.
+  // the capture listener must intercept before the keydown reaches the renderer.
   fireEvent.keyDown(screen.getByTestId('body-stub'), { key: 'Escape' })
 
   expect(onHide).toHaveBeenCalledTimes(1)
@@ -277,7 +277,7 @@ test('refocuses the burner terminal after aligning so typing continues there', (
     screen.getByRole('button', { name: /align burner to pane directory/i })
   )
 
-  // The button took focus on click; hand it back to xterm so keys land there.
+  // The button took focus on click; hand it back to the terminal so keys land there.
   expect(onAlignCwd).toHaveBeenCalledTimes(1)
   expect(focusTerminal).toHaveBeenCalled()
 })
@@ -327,10 +327,10 @@ test('backdrop dismiss button is removed from the tab order', () => {
   ).toHaveAttribute('tabIndex', '-1')
 })
 
-test('Tab from terminal passes through to xterm for shell autocomplete', () => {
+test('Tab from terminal passes through for shell autocomplete', () => {
   render(popup(true, { onAlignCwd: vi.fn() }))
 
-  const textarea = screen.getByTestId('xterm-textarea')
+  const textarea = screen.getByTestId('terminal-input')
   textarea.focus()
   expect(textarea).toHaveFocus()
 
@@ -371,10 +371,10 @@ test('Shift+Tab from first button wraps focus back to the terminal', () => {
   expect(focusTerminal).toHaveBeenCalledTimes(1)
 })
 
-test('Shift+Tab from terminal passes through to xterm', () => {
+test('Shift+Tab from terminal passes through to the renderer', () => {
   render(popup(true, { onAlignCwd: vi.fn() }))
 
-  const textarea = screen.getByTestId('xterm-textarea')
+  const textarea = screen.getByTestId('terminal-input')
   textarea.focus()
   expect(textarea).toHaveFocus()
 

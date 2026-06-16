@@ -75,7 +75,7 @@ export interface BurnerTerminalPopupProps {
  * `<Body>` in `attach` mode against `burnerPtyId`.
  *
  * Because it renders `<Body>` directly (no `TerminalPane` wrapper to drive
- * focus), it moves DOM focus into the burner xterm itself when shown —
+ * focus), it moves DOM focus into the burner terminal itself when shown —
  * otherwise a chord-opened popup leaves focus on the pane underneath and sends
  * keystrokes there.
  */
@@ -111,10 +111,10 @@ export const BurnerTerminalPopup = ({
     }
   }, [open])
 
-  // Esc hides the popup. The burner xterm holds focus, so without a native
+  // Esc hides the popup. The burner terminal holds focus, so without a native
   // capture-phase intercept the keydown reaches the terminal and is sent to the
-  // shell as ^[. Capturing on the overlay fires before xterm's textarea handler.
-  // Tab / Shift+Tab must pass through while the xterm body has focus so shell
+  // shell as ^[. Capturing on the overlay fires before the renderer input handler.
+  // Tab / Shift+Tab must pass through while the terminal body has focus so shell
   // autocomplete and reverse-complete keep working. Toolbar focus still cycles
   // back to the terminal when a toolbar button owns focus.
   useEffect(() => {
@@ -211,7 +211,7 @@ export const BurnerTerminalPopup = ({
     }
   }, [open, onHide])
 
-  // First open: focus once Body signals its xterm attached (also drains).
+  // First open: focus once Body signals its terminal attached (also drains).
   const handlePaneReady = useCallback<NotifyPaneReady>(
     (ptyId, handler) => {
       const release = onPaneReady?.(ptyId, handler)
@@ -224,7 +224,7 @@ export const BurnerTerminalPopup = ({
     [onPaneReady]
   )
 
-  // Aligning moves DOM focus onto the toolbar button; hand it back to the xterm
+  // Aligning moves DOM focus onto the toolbar button; hand it back to the terminal
   // so the next keystrokes land in the burner instead of the document.
   const handleAlign = useCallback((): void => {
     onAlignCwd?.()
