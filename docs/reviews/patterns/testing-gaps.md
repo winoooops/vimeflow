@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 ref_count: 31
 ---
 
@@ -691,4 +691,13 @@ filesystem scope restrictions).
 - **File:** `src/features/settings/sections.test.ts` L94-99
 - **Finding:** After fixing `KEYMAP_GROUPS` in the same file, the adjacent `VIM_KEYMAP_GROUPS` binding test still called `expect(b.keys.length).toBeGreaterThan(0)` directly on the `ShortcutInput[] | ((isMac: boolean) => ShortcutInput[])` union. A future vim binding using the function form would silently pass because `function.length` reports parameter count, not the returned array length.
 - **Fix:** Mirrored the same resolution pattern used for `KEYMAP_GROUPS`: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
+- **Commit:** same commit as this entry
+
+### 67. Default catalog has no test asserting it is conflict-free
+
+- **Source:** github-claude | PR #491 round 1 | 2026-06-16
+- **Severity:** LOW
+- **File:** `docs/superpowers/plans/2026-06-15-keybinding-engine-pr1.md`
+- **Finding:** Task 3's `catalog.test.ts` checks descriptor invariants per entry but never asserts that `detectConflicts(resolveBindings({}, isMac, superKey), superKey)` returns `[]`. A future catalog addition that reuses a default `(super, code)` would produce a permanently non-empty `conflicts` array in `useKeybindings` before the user changes anything.
+- **Fix:** Added a `default catalog is conflict-free for both platforms` test to Task 5's `resolve.test.ts` plan, importing `detectConflicts` and asserting zero conflicts for both `isMac` values.
 - **Commit:** same commit as this entry

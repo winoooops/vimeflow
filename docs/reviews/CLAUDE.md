@@ -54,9 +54,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 70       | 31   | 2026-06-15   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 71       | 31   | 2026-06-16   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 90       | 26   | 2026-06-15   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 26   | 2026-06-16   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 67       | 23   | 2026-06-15   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 67       | 22   | 2026-06-14   |

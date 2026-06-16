@@ -9,5 +9,6 @@ playwright-report
 *.min.js
 *.d.ts
 docs/design/**/*.html
+docs/decisions/**/*.html
 docs/diagrams/*.html
 docs/explorations/*.html
