@@ -1,4 +1,18 @@
 const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const PTY_BYTES_BASE64_ENV: &str = "VIMEFLOW_EXPERIMENTAL_PTY_BYTES_BASE64";
+
+fn is_truthy_flag(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+pub(crate) fn should_emit_bytes_base64() -> bool {
+    std::env::var(PTY_BYTES_BASE64_ENV)
+        .map(|value| is_truthy_flag(&value))
+        .unwrap_or(false)
+}
 
 pub(crate) fn encode_base64(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(((bytes.len() + 2) / 3) * 4);
@@ -51,5 +65,21 @@ mod tests {
     #[test]
     fn preserves_non_utf8_bytes() {
         assert_eq!(encode_base64(&[0xff, 0xfe, 0x00, 0x61]), "//4AYQ==");
+    }
+
+    #[test]
+    fn accepts_truthy_feature_flag_values() {
+        assert!(super::is_truthy_flag("1"));
+        assert!(super::is_truthy_flag("true"));
+        assert!(super::is_truthy_flag("YES"));
+        assert!(super::is_truthy_flag("on"));
+    }
+
+    #[test]
+    fn rejects_non_truthy_feature_flag_values() {
+        assert!(!super::is_truthy_flag(""));
+        assert!(!super::is_truthy_flag("0"));
+        assert!(!super::is_truthy_flag("false"));
+        assert!(!super::is_truthy_flag("disabled"));
     }
 }
