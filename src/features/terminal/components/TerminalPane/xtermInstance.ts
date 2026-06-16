@@ -7,6 +7,7 @@ import type {
   TerminalInstance,
   TerminalParser,
   TerminalRendererHandle,
+  TerminalRendererAdapter,
   TerminalSurface,
   TerminalTheme,
   TerminalViewportReader,
@@ -35,6 +36,11 @@ export const createXtermTerminal = (): TerminalInstance => {
     fitController: fitAddon,
     attachRenderer: () => attachXtermRenderer(terminal),
   }
+}
+
+export const xtermTerminalRenderer: TerminalRendererAdapter = {
+  id: 'xterm',
+  createInstance: createXtermTerminal,
 }
 
 const createTerminalSurface = (terminal: Terminal): TerminalSurface => ({

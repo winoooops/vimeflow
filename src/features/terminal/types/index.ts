@@ -271,3 +271,9 @@ export interface TerminalInstance {
   fitController: TerminalFitController
   attachRenderer: () => TerminalRendererHandle
 }
+
+/** Adapter that creates complete terminal renderer instances. */
+export interface TerminalRendererAdapter {
+  readonly id: string
+  createInstance: () => TerminalInstance
+}

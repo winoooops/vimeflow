@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { createTerminalInstance } from './terminalInstance'
-import { createXtermTerminal } from './xtermInstance'
+import { createConfiguredTerminalInstance } from './terminalRendererRegistry'
 
-vi.mock('./xtermInstance', () => ({
-  createXtermTerminal: vi.fn(),
+vi.mock('./terminalRendererRegistry', () => ({
+  createConfiguredTerminalInstance: vi.fn(),
 }))
 
 test('creates the configured terminal renderer instance', () => {
@@ -14,7 +14,7 @@ test('creates the configured terminal renderer instance', () => {
     fitController: {},
     attachRenderer: vi.fn(),
   }
-  vi.mocked(createXtermTerminal).mockReturnValue(instance as never)
+  vi.mocked(createConfiguredTerminalInstance).mockReturnValue(instance as never)
 
   expect(createTerminalInstance()).toBe(instance)
 })
