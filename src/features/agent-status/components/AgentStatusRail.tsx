@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import { Bucket } from './Bucket'
 
 export interface AgentStatusRailProps {
@@ -90,7 +91,7 @@ export const AgentStatusRail = ({
           borderColor: agent.accentSoft,
         }}
       >
-        {agent.glyph}
+        <AgentGlyph agent={agent} size={14} />
       </div>
 
       {ctxPct !== null && (

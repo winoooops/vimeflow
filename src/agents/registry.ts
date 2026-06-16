@@ -1,5 +1,4 @@
-import anthropicMark from '../assets/vendor-icons/anthropic.svg'
-import openaiMark from '../assets/vendor-icons/openai.svg'
+import { ClaudeCode, Codex, type AgentIcon } from './brandIcons'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
@@ -16,6 +15,7 @@ export interface PaneIdentity {
 export interface AgentDef extends PaneIdentity {
   id: string
   model: string | null
+  Icon?: AgentIcon
 }
 
 export const AGENTS = {
@@ -24,6 +24,7 @@ export const AGENTS = {
     name: 'Claude Code',
     short: 'CLAUDE',
     glyph: '∴',
+    Icon: ClaudeCode,
     model: 'sonnet-4',
     accent: 'var(--color-agent-claude-accent)',
     accentDim: 'var(--color-agent-claude-accent-dim)',
@@ -35,6 +36,7 @@ export const AGENTS = {
     name: 'Codex CLI',
     short: 'CODEX',
     glyph: '◇',
+    Icon: Codex,
     model: 'gpt-5-codex',
     accent: 'var(--color-agent-codex-accent)',
     accentDim: 'var(--color-agent-codex-accent-dim)',
@@ -46,6 +48,7 @@ export const AGENTS = {
     name: 'Gemini CLI',
     short: 'GEMINI',
     glyph: '✦',
+    Icon: undefined,
     model: 'gemini-2.5',
     accent: 'var(--color-agent-gemini-accent)',
     accentDim: 'var(--color-agent-gemini-accent-dim)',
@@ -57,6 +60,7 @@ export const AGENTS = {
     name: 'Shell',
     short: 'SHELL',
     glyph: '$',
+    Icon: undefined,
     model: null,
     accent: 'var(--color-agent-shell-accent)',
     accentDim: 'var(--color-agent-shell-accent-dim)',
@@ -85,14 +89,3 @@ export const agentTypeToRegistryKey = (
 export const agentStatusToSessionStatus = (
   agentStatus: AgentStatus
 ): SessionStatus => (agentStatus.isActive ? 'running' : 'idle')
-
-export const vendorMarkFor = (agentId: AgentId): string | null => {
-  switch (agentId) {
-    case 'claude':
-      return anthropicMark
-    case 'codex':
-      return openaiMark
-    default:
-      return null
-  }
-}

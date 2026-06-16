@@ -17,7 +17,11 @@ test('renders glyph chip, context bucket, cache bucket, and running dot when run
     />
   )
 
-  expect(screen.getByText('∴')).toBeInTheDocument()
+  const glyphChip = screen.getByTestId('agent-glyph-chip')
+  // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+  const brandMark = glyphChip.querySelector('svg')
+
+  expect(brandMark).toBeInTheDocument()
   expect(screen.getByTestId('bucket-ctx')).toBeInTheDocument()
   expect(screen.getByTestId('bucket-ctx-pct')).toHaveTextContent('42%')
   expect(screen.getByTestId('bucket-cache')).toBeInTheDocument()

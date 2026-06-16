@@ -4,7 +4,6 @@ import {
   AGENTS,
   agentStatusToSessionStatus,
   agentTypeToRegistryKey,
-  vendorMarkFor,
   type AgentId,
 } from './registry'
 
@@ -92,18 +91,9 @@ test('agentStatusToSessionStatus reports idle when not isActive', () => {
   )
 })
 
-test('vendorMarkFor returns an asset URL for claude and codex', () => {
-  const claudeMark = vendorMarkFor('claude')
-  const codexMark = vendorMarkFor('codex')
-
-  expect(claudeMark).toEqual(expect.any(String))
-  expect(codexMark).toEqual(expect.any(String))
-  expect(claudeMark).not.toBe('')
-  expect(codexMark).not.toBe('')
-  expect(claudeMark).not.toBe(codexMark)
-})
-
-test('vendorMarkFor returns null for shell and gemini', () => {
-  expect(vendorMarkFor('shell')).toBeNull()
-  expect(vendorMarkFor('gemini')).toBeNull()
+test('supported agents carry a brand Icon; others fall back to their glyph', () => {
+  expect(AGENTS.claude.Icon).toBeDefined()
+  expect(AGENTS.codex.Icon).toBeDefined()
+  expect(AGENTS.gemini.Icon).toBeUndefined()
+  expect(AGENTS.shell.Icon).toBeUndefined()
 })
