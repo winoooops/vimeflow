@@ -19,7 +19,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 - 支持的版本线：`0.1.0`
 - 支持的打包目标：在本地从源码构建 Linux x64 AppImage 和 macOS arm64 DMG
 - 桌面运行时：Electron 42 + Rust 旁路，通过 LSP 帧 JSON IPC 通信
-- 代理可观测性：Claude Code、Codex CLI 和 Kimi Code
+- agent可观测性：Claude Code、Codex CLI 和 Kimi Code
 - 暂不支持：托管二进制发布、Windows 打包、生产签名/公证、自动更新
 
 打包路径与主机相关：Linux x64 AppImage 需要在 Linux x64 主机上构建，macOS arm64 DMG 需要在 Apple Silicon Mac 上构建。
