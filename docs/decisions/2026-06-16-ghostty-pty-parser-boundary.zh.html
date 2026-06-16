@@ -3,20 +3,20 @@
   ========================================================================
   REVIEW NOTE - for human and agent (Codex / Claude) reviewers
   ========================================================================
-  This file is a STATIC, hand-authored exploration document. It holds no
+  This file is a STATIC, hand-authored decision document. It holds no
   application logic, no runtime imports, no external scripts, and no tests.
   It is documentation: prose, inline CSS, and simple HTML diagrams only.
 
   Please do not line-by-line review CSS/markup nits or treat it as part of
   the app behavioral surface. To verify it, open it in a browser and confirm
-  that it renders. docs/explorations/*.html is Prettier-ignored.
+  that it renders.
   ========================================================================
 -->
 <html lang="zh-Hans">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ghostty Spike 前的 PTY 传输与 Parser 责任边界</title>
+    <title>Ghostty PTY Parser 决策：Adapter 拥有 Parser，应用消费事件</title>
     <style>
       :root {
         --base: #11131a;
@@ -33,9 +33,10 @@
         --red: #ed8796;
         --purple: #c6a0f6;
         --peach: #f5a97f;
-        --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
+        --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+        --sans:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
       }
 
       * {
@@ -77,6 +78,19 @@
         font-family: var(--mono);
         font-size: 0.92em;
         padding: 1px 6px;
+      }
+
+      pre {
+        background: rgba(8, 10, 14, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        line-height: 1.58;
+        margin: 14px 0 0;
+        overflow-x: auto;
+        padding: 16px;
       }
 
       .wrap {
@@ -356,37 +370,41 @@
       <header class="hero">
         <div>
           <p class="eyebrow">Ghostty terminal investigation</p>
-          <h1>Ghostty Spike 前的 PTY 传输与 Parser 责任边界</h1>
+          <h1>Ghostty PTY Parser 决策：Adapter 拥有 Parser，应用消费事件</h1>
           <p class="dek">
-            这份笔记讨论下一阶段最关键的架构问题：我们不能只把
-            xterm.js 的渲染器换成 Ghostty。真正的风险在 PTY 字节流、
-            terminal parser 归属，以及应用层如何消费 OSC、cwd、viewport
-            等语义事件。
+            这份决策记录下一阶段 Ghostty spike 的前置架构选择：parser 归
+            renderer adapter 所有，但应用层只消费统一事件；PTY 输出统一成 output
+            chunk，adapter 内部决定使用 string write 还是 byte write。
           </p>
         </div>
         <aside class="meta">
           <span class="chip"><strong>日期</strong> 2026-06-16</span>
-          <span class="chip"><strong>分支</strong> codex/ghostty-lazy-plain-text-renderer</span>
-          <span class="chip"><strong>目标</strong> 为 Ghostty spike 定义前置契约</span>
+          <span class="chip"
+            ><strong>分支</strong> codex/ghostty-lazy-plain-text-renderer</span
+          >
+          <span class="chip"><strong>状态</strong> Accepted for spike PR1</span>
         </aside>
       </header>
 
       <div class="callout">
         <p>
-          <strong>短结论：</strong>下一步不应该直接写 Ghostty adapter。
-          应先把 PTY 输出从“前端字符串事件”提升为“可保留原始字节的输出包”，
-          同时把 parser 产生的应用语义事件定义成 renderer-neutral contract。
-          否则 Ghostty spike 会被当前 xterm 形状的字符串管线和 OSC 处理方式限制住。
+          <strong>决策：</strong>采用 Option A+。Parser 留在 renderer adapter
+          内部，xterm adapter 继续使用 string write，Ghostty adapter 可以使用
+          byte write；应用层不再记忆不同 adapter 的写入机制，只把
+          <code>TerminalOutputChunk</code> 交给 parser adapter，并监听统一的
+          <code>TerminalParserEvent</code>。
         </p>
       </div>
 
       <nav class="toc" aria-label="目录">
         <a href="#current">当前链路</a>
+        <a href="#decision">决策</a>
         <a href="#why-bytes">为什么 PTY 字节重要</a>
         <a href="#parser">Parser 责任边界</a>
-        <a href="#options">三个可选方案</a>
+        <a href="#observability">OSC 7 与 agent observability</a>
+        <a href="#options">方案回顾</a>
         <a href="#spike">Ghostty spike 路线</a>
-        <a href="#questions">讨论问题</a>
+        <a href="#questions">术语与开放问题</a>
       </nav>
 
       <section id="current">
@@ -424,20 +442,82 @@
 
         <p>
           这里有一个很重要的好消息：<code>offsetStart</code> 和
-          <code>byteLen</code> 已经存在。这说明 restore/dedupe 的 cursor
-          已经是 byte-aware 的。坏消息是 payload 本身仍然不是 byte-preserving。
+          <code>byteLen</code> 已经存在。这说明 restore/dedupe 的 cursor 已经是
+          byte-aware 的。坏消息是 payload 本身仍然不是 byte-preserving。
         </p>
       </section>
 
+      <section id="decision">
+        <h2><span class="num">02</span> 已接受的决策：Option A+</h2>
+        <p>
+          我们选择“parser 属于 renderer adapter，但 app 只依赖 generic parser
+          contract”。这保留 xterm 和 Ghostty 各自 parser 的真实行为，同时避免
+          <code>Body</code>、<code>useTerminal</code>、session manager
+          这些上层代码知道 “哪个 adapter 要 string、哪个 adapter 要 bytes”。
+        </p>
+
+        <pre><code>type TerminalOutputChunk = {
+  text: string
+  bytesBase64?: string
+  offsetStart: number
+  byteLen: number
+  phase: 'live' | 'restore'
+}
+
+type TerminalParserEvent =
+  | {
+      type: 'cwd'
+      source: 'osc7'
+      uri: string
+      path: string
+      phase: 'live' | 'restore'
+      offsetStart: number
+    }
+
+interface TerminalParserAdapter {
+  readonly id: string
+  readonly capabilities: {
+    acceptsText: boolean
+    acceptsBytes: boolean
+  }
+
+  writeOutput(chunk: TerminalOutputChunk): void
+  onEvent(handler: (event: TerminalParserEvent) =&gt; void): TerminalDisposable
+}</code></pre>
+
+        <div class="wide-card decision">
+          <h3>边界要求</h3>
+          <ul>
+            <li>
+              xterm adapter 从 <code>TerminalOutputChunk.text</code> 写入 xterm
+              parser。
+            </li>
+            <li>
+              Ghostty adapter 优先从
+              <code>TerminalOutputChunk.bytesBase64</code>
+              还原 bytes，再写入 Ghostty/libghostty-vt parser。
+            </li>
+            <li>
+              上层只处理 <code>TerminalParserEvent</code>，不直接注册
+              <code>registerOscHandler(7)</code>。
+            </li>
+            <li>
+              Ghostty spike 必须继续挂在显式 feature flag / renderer selector
+              后面。
+            </li>
+          </ul>
+        </div>
+      </section>
+
       <section id="why-bytes">
-        <h2><span class="num">02</span> 为什么 Ghostty 需要认真对待 bytes</h2>
+        <h2><span class="num">03</span> 为什么 Ghostty 需要认真对待 bytes</h2>
         <div class="grid">
           <article class="card">
             <span class="tag red">Lossy decode</span>
             <h3>无效 UTF-8 会被替换</h3>
             <p>
-              <code>from_utf8_lossy</code> 会把非法字节替换成 U+FFFD。
-              对 xterm 当前字符串路径来说通常够用，但对一个严肃的 terminal parser
+              <code>from_utf8_lossy</code> 会把非法字节替换成 U+FFFD。 对 xterm
+              当前字符串路径来说通常够用，但对一个严肃的 terminal parser
               来说，这已经丢失了输入事实。
             </p>
           </article>
@@ -464,19 +544,19 @@
           <p>
             当前 string pipe 可以继续服务 xterm 默认路径，但 Ghostty spike
             应该被视为一个新的 transport contract 验证点。也就是说：
-            <code>xterm</code> 可以暂时从 byte chunk 解码成 string，
-            但 <code>ghostty</code> adapter 不应该被迫接受 lossy string。
+            <code>xterm</code> 可以暂时从 byte chunk 解码成 string， 但
+            <code>ghostty</code> adapter 不应该被迫接受 lossy string。
           </p>
         </div>
       </section>
 
       <section id="parser">
-        <h2><span class="num">03</span> Parser 到底归谁管</h2>
+        <h2><span class="num">04</span> Parser 到底归谁管</h2>
         <p>
           现在应用层最明显的 parser 依赖是 OSC 7：renderer 实例暴露
           <code>parser.registerOscHandler(7, ...)</code>，<code>Body.tsx</code>
-          在 handler 中解析 cwd、做 stale guard、restore suppression，并更新 pane
-          的 cwd 状态。
+          在 handler 中解析 cwd、做 stale guard、restore suppression，并更新
+          pane 的 cwd 状态。
         </p>
         <p>
           这说明 parser 不只是“渲染内部细节”。它已经在为应用层提供语义事件。
@@ -517,49 +597,107 @@
         </table>
       </section>
 
+      <section id="observability">
+        <h2>
+          <span class="num">05</span> OSC 7 与 agent observability 的真实关系
+        </h2>
+        <p>
+          这里必须分清两个 cwd 通道。它们都重要，但语义不同，不能在 Ghostty
+          spike 中混成一个状态源。
+        </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>通道</th>
+              <th>来源</th>
+              <th>当前消费者</th>
+              <th>必须保护的结构</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Pane live cwd</td>
+              <td>Terminal output 中的 OSC 7，以及 agent text hint fallback</td>
+              <td>
+                <code>Body.tsx</code> → <code>onCwdChange</code> →
+                <code>updatePaneCwd</code> → backend PTY cwd cache
+              </td>
+              <td>
+                <code>Session.panes[].cwd</code
+                >、<code>update_session_cwd</code>、 git header、burner
+                align、workspace restore
+              </td>
+            </tr>
+            <tr>
+              <td>Agent observed cwd</td>
+              <td>
+                Backend transcript watcher 发出的 <code>agent-cwd</code> event
+              </td>
+              <td><code>useAgentStatus</code> 和 agent status panel</td>
+              <td>
+                <code>AgentStatus.cwd</code>，来自 Claude/Codex transcript
+                的结构化 cwd/workdir
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="wide-card decision">
+          <h3>OSC 7 优先级</h3>
+          <p>
+            PR1 的最高优先级是保护 pane cwd 的现有数据路径。新的 parser event
+            只是把 <code>registerOscHandler(7)</code> 变成 generic
+            <code>{ type: 'cwd', source: 'osc7' }</code> 事件；它不能改变
+            <code>Session.panes[].cwd</code> 的存储位置，也不能替代
+            <code>agent-cwd</code> 这个 observability 通道。
+          </p>
+        </div>
+      </section>
+
       <section id="options">
-        <h2><span class="num">04</span> 三个可选方案</h2>
+        <h2><span class="num">06</span> 方案回顾</h2>
         <div class="grid">
           <article class="card">
             <span class="tag blue">A</span>
-            <h3>Parser 留在 renderer adapter</h3>
+            <h3>接受：Parser 留在 renderer adapter</h3>
             <p>
               xterm 用 xterm parser，Ghostty 用 Ghostty parser。adapter 负责把
               OSC/cwd/title 等事件翻译成统一的前端事件。
             </p>
             <p>
-              优点是迁移成本最低，真实 terminal 语义跟 renderer 一起走。缺点是应用语义
-              依赖每个 adapter 的实现质量。
+              这就是我们接受的方向，但补上 output chunk 和 parser event
+              contract， 所以更准确地叫 Option A+。
             </p>
           </article>
           <article class="card">
             <span class="tag green">B</span>
             <h3>Parser 下沉到 backend/native</h3>
             <p>
-              后端保留原始 bytes，并由一个 native parser 统一产出语义事件。
-              前端 renderer 只负责画面。
+              后端保留原始 bytes，并由一个 native parser 统一产出语义事件。 前端
+              renderer 只负责画面。
             </p>
             <p>
-              优点是语义来源单一，restore/cache 更可控。缺点是会和 xterm 内部 parser
-              重复，短期改动面也最大。
+              优点是语义来源单一，restore/cache 更可控。缺点是会和 xterm 内部
+              parser 重复，短期改动面也最大。
             </p>
           </article>
           <article class="card">
             <span class="tag yellow">C</span>
-            <h3>推荐：先做 split contract</h3>
+            <h3>并入 A+：先做 split contract</h3>
             <p>
               先定义 byte transport 和 parser event contract。parser 可以暂时由
               renderer adapter 提供，但应用层只消费统一事件。
             </p>
             <p>
-              这让 Ghostty spike 可以选择 native parser，同时不要求 xterm 默认路径一次性重写。
+              这个 contract 不作为单独方案推进，而是作为 Option A 的必要护栏。
             </p>
           </article>
         </div>
       </section>
 
       <section id="spike">
-        <h2><span class="num">05</span> 建议的 Ghostty spike 路线</h2>
+        <h2><span class="num">07</span> 建议的 Ghostty spike 路线</h2>
         <ol>
           <li>
             <strong>定义输出包：</strong>增加类似
@@ -575,45 +713,59 @@
           <li>
             <strong>建立 parser event bus：</strong>把 OSC 7 这类语义抽成
             <code>TerminalParserEvent</code>，例如
-            <code>{ type: 'cwd', path, sourceOffset, phase }</code>。
-            <code>phase</code> 至少要区分 live 和 restore replay。
+            <code>{ type: 'cwd', source: 'osc7', path, uri, phase }</code>。
+            <code>phase</code> 必须区分 live 和 restore replay。
           </li>
           <li>
             <strong>实现 Ghostty adapter spike：</strong>只在
             <code>VITE_TERMINAL_RENDERER=ghostty</code> 之类的 opt-in 路径启用。
-            第一版目标不是替换 UI，而是验证 bytes 能进入 Ghostty parser，并能产出 viewport
-            snapshot 与 parser events。
+            第一版目标不是替换 UI，而是验证 bytes 能进入 Ghostty
+            parser，并能产出 viewport snapshot 与 parser events。
           </li>
           <li>
-            <strong>补 contract tests：</strong>用跨 chunk OSC、多字节 UTF-8、非法 bytes、
-            restore replay OSC 这几类 fixture 证明新边界可靠。
+            <strong>补 contract tests：</strong>用跨 chunk OSC、多字节
+            UTF-8、非法 bytes、 restore replay OSC 这几类 fixture
+            证明新边界可靠。
           </li>
         </ol>
       </section>
 
       <section id="questions">
-        <h2><span class="num">06</span> 需要讨论的关键问题</h2>
+        <h2><span class="num">08</span> 术语与开放问题</h2>
         <div class="wide-card">
           <ul>
             <li>
-              Ghostty spike 的第一阶段是否必须 byte-perfect？我的建议是：parser 输入必须
-              byte-preserving，渲染输出可以先最小化。
+              <strong>byte-preserving</strong> 指传输层不丢原始 bytes。PTY
+              读到什么 bytes，Ghostty parser 就能拿到同样的 bytes。 这是 PR1
+              需要保护的能力。
             </li>
             <li>
-              <code>bytesBase64</code> 是否足够作为 IPC 初版？它简单、可测，但有性能成本。
-              如果高吞吐输出有问题，再优化成更直接的 binary transport。
+              <strong>byte-perfect</strong> 更强，表示最终 terminal
+              state、viewport、 restore、render 都和真实 terminal
+              完全一致。Ghostty spike 第一阶段不承诺这个，只先保证 parser 输入
+              byte-preserving。
             </li>
             <li>
-              OSC 7/cwd 是由 adapter 发 normalized event，还是 backend/native parser 统一发？
-              我建议先让 adapter 发统一 event，避免一次性重写 xterm 默认路径。
+              <code>bytesBase64</code> 只是 IPC 初版方案，不是 terminal 语义。
+              因为当前 IPC event 是 JSON/string，base64 是最小改动的 raw bytes
+              容器。它有性能成本；如果 Ghostty 路径高吞吐有问题，再换 binary
+              transport。
             </li>
             <li>
-              restore replay 是否应该进入 parser？如果进入，事件必须带
-              <code>phase: 'restore'</code>，否则历史 OSC 会污染当前 cwd。
+              <strong>restore replay</strong> 指 app 重新 attach 一个已有 PTY
+              时，把历史输出写回 terminal 以恢复
+              scrollback。历史输出里可能包含旧 OSC 7；所以 parser event 必须携带
+              <code>phase: 'restore'</code>，避免旧 cwd 污染 live pane cwd。
             </li>
             <li>
-              Ghostty adapter 的最小成功标准是什么？建议定义为：能吃 raw bytes、能产出 cwd
-              event、能提供 viewport reader、不会影响默认 xterm bundle。
+              OSC 7/cwd 第一阶段由 adapter 发 normalized event，不下沉到
+              backend。 这样可以保护 xterm 默认路径，并让 Ghostty spike
+              独立验证自己的 parser。
+            </li>
+            <li>
+              Ghostty adapter 的最小成功标准是什么？建议定义为：能吃 raw
+              bytes、能产出 cwd event、能提供 viewport reader、不会影响默认
+              xterm bundle。
             </li>
           </ul>
         </div>
@@ -626,7 +778,9 @@
           <code>src/features/terminal/services/terminalService.ts</code>,
           <code>src/features/terminal/hooks/useTerminal.ts</code>,
           <code>src/features/terminal/components/TerminalPane/Body.tsx</code>,
-          <code>src/features/terminal/components/TerminalPane/terminalRendererRegistry.ts</code>.
+          <code
+            >src/features/terminal/components/TerminalPane/terminalRendererRegistry.ts</code
+          >.
         </p>
       </footer>
     </main>
