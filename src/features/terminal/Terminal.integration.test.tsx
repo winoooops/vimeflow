@@ -137,7 +137,7 @@ describe('Terminal Integration Tests', () => {
         />
       )
 
-      // Wait for terminal to be ready (xterm.js initialized)
+      // Wait for terminal to be ready
       const terminalPane = await screen.findByTestId('terminal-pane')
       expect(terminalPane).toBeInTheDocument()
 
@@ -155,7 +155,7 @@ describe('Terminal Integration Tests', () => {
       expect(sessions).toHaveLength(1)
     })
 
-    test('emits PTY data events to xterm output', async (): Promise<void> => {
+    test('emits PTY data events to terminal output', async (): Promise<void> => {
       render(
         <TestTerminalPane
           service={mockServiceInstance}
@@ -177,7 +177,7 @@ describe('Terminal Integration Tests', () => {
       // Emit data to the terminal (simulate PTY output)
       mockServiceInstance.emitData(sessionId, 'Welcome to the terminal!\r\n')
 
-      // Wait for the data to appear in xterm
+      // Wait for the data to appear in the terminal
       await waitFor(() => {
         const terminalPane = screen.getByTestId('terminal-pane')
         const content = terminalPane.textContent || ''

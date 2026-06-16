@@ -173,18 +173,17 @@ describe('useDockShortcuts', () => {
     expect(props.openDock).not.toHaveBeenCalled()
   })
 
-  test('Ctrl+e does not fire when focus is inside terminal zone (xterm readline guard)', () => {
-    // xterm uses a hidden textarea for PTY input; Ctrl+e is readline "end-of-line".
+  test('Ctrl+e does not fire when focus is inside terminal zone (readline guard)', () => {
+    // Ctrl+e is readline "end-of-line"; do not steal it from terminal input.
     // The hook must pass through when the event originates from the terminal zone.
     const props = makeProps()
 
     const terminalZone = document.createElement('div')
     terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
-    const xtermTextarea = document.createElement('textarea')
-    xtermTextarea.className = 'xterm-helper-textarea'
-    terminalZone.appendChild(xtermTextarea)
+    const terminalInput = document.createElement('textarea')
+    terminalZone.appendChild(terminalInput)
     document.body.appendChild(terminalZone)
-    xtermTextarea.focus()
+    terminalInput.focus()
 
     renderHook(() => useDockShortcuts(props))
     const event = fire('e', { ctrlKey: true })
@@ -195,16 +194,15 @@ describe('useDockShortcuts', () => {
     document.body.removeChild(terminalZone)
   })
 
-  test('Ctrl+g does not fire when focus is inside terminal zone (xterm abort guard)', () => {
+  test('Ctrl+g does not fire when focus is inside terminal zone (abort guard)', () => {
     const props = makeProps()
 
     const terminalZone = document.createElement('div')
     terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
-    const xtermTextarea = document.createElement('textarea')
-    xtermTextarea.className = 'xterm-helper-textarea'
-    terminalZone.appendChild(xtermTextarea)
+    const terminalInput = document.createElement('textarea')
+    terminalZone.appendChild(terminalInput)
     document.body.appendChild(terminalZone)
-    xtermTextarea.focus()
+    terminalInput.focus()
 
     renderHook(() => useDockShortcuts(props))
     const event = fire('g', { ctrlKey: true })

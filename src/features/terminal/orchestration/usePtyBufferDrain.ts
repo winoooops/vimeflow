@@ -59,7 +59,7 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
 
   const notifyPaneReady = useCallback<PtyBufferDrain['notifyPaneReady']>(
     (ptyId, handler) => {
-      // F6: dead pane already tombstoned — caller's xterm subscription is
+      // F6: dead pane already tombstoned — caller's terminal subscription is
       // a no-op for this id, drain nothing, return a no-op release so
       // the pane unmount cleanup doesn't re-arm pending state.
       if (tombstonedPanesRef.current.has(ptyId)) {

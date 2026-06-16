@@ -12,7 +12,7 @@ import type {
   UseFeedbackBatchReturn,
 } from '../diff/hooks/useFeedbackBatch'
 
-// Mock TerminalPane / TerminalZone deps to avoid xterm.js in jsdom
+// Mock TerminalPane / TerminalZone deps to avoid terminal renderer work in jsdom
 interface MockTerminalPaneProps {
   onCwdChange?: (cwd: string) => void
 }
