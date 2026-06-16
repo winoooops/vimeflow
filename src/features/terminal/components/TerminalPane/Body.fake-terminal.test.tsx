@@ -11,6 +11,7 @@ import {
 import type {
   TerminalDisposable,
   TerminalInstance,
+  TerminalOutputChunk,
   TerminalParser,
   TerminalRendererHandle,
   TerminalSurface,
@@ -89,6 +90,13 @@ const createFakeTerminalInstance = (): FakeTerminalControls => {
 
   const instance: TerminalInstance = {
     terminal,
+    output: {
+      writeOutput: vi.fn(
+        (chunk: TerminalOutputChunk, callback?: () => void): void => {
+          terminal.write(chunk.text, callback)
+        }
+      ),
+    },
     parser,
     viewportReader,
     fitController: { fit: vi.fn((): void => undefined) },

@@ -1,11 +1,13 @@
 import type {
   TerminalFitController,
+  TerminalOutputWriter,
   TerminalSurface,
   TerminalViewportReader,
 } from './types'
 
 export interface TerminalRegistryEntry {
   terminal: TerminalSurface
+  output: TerminalOutputWriter
   fitController: TerminalFitController
   viewportReader: TerminalViewportReader
 }

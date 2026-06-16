@@ -14,6 +14,7 @@ import type {
   TerminalDisposable,
   TerminalFitController,
   TerminalInstance,
+  TerminalOutputChunk,
   TerminalParser,
   TerminalRendererHandle,
   TerminalSurface,
@@ -159,6 +160,13 @@ const createMockTerminalControls = (): MockTerminalControls => {
 
   const instance: TerminalInstance = {
     terminal,
+    output: {
+      writeOutput: vi.fn(
+        (chunk: TerminalOutputChunk, callback?: () => void): void => {
+          terminal.write(chunk.text, callback)
+        }
+      ),
+    },
     parser,
     viewportReader,
     fitController,
@@ -1597,6 +1605,7 @@ describe('Body', () => {
 
       terminalCache.set('cached-session', {
         terminal: cachedTerminal as unknown as TerminalSurface,
+        output: { writeOutput: vi.fn() },
         fitController: cachedFitController as unknown as TerminalFitController,
         viewportReader: { readVisibleText: vi.fn() },
       })
@@ -1651,6 +1660,7 @@ describe('Body', () => {
 
       terminalCache.set('cached-session', {
         terminal: cachedTerminal as unknown as TerminalSurface,
+        output: { writeOutput: vi.fn() },
         fitController: cachedFitController as unknown as TerminalFitController,
         viewportReader: { readVisibleText: vi.fn() },
       })

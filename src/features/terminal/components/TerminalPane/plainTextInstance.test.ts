@@ -74,14 +74,22 @@ describe('plainTextInstance', () => {
     expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 50, rows: 10 })
   })
 
-  test('writes frontend string chunks into the viewport reader', () => {
+  test('writes output chunks into the viewport reader', () => {
     const created = createTrackedPlainTextTerminal()
     const callback = vi.fn()
     const container = document.createElement('div')
 
     setElementSize(container, 640, 360)
     created.terminal.open(container)
-    created.terminal.write('hello\r\nworld\n', callback)
+    created.output.writeOutput(
+      {
+        text: 'hello\r\nworld\n',
+        offsetStart: 0,
+        byteLen: 13,
+        phase: 'live',
+      },
+      callback
+    )
 
     expect(created.viewportReader.readVisibleText()).toBe('hello\nworld')
     expect(callback).toHaveBeenCalledOnce()

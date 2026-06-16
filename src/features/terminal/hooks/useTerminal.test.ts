@@ -2,7 +2,11 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useTerminal } from './useTerminal'
 import { MockTerminalService } from '../services/terminalService'
-import type { TerminalSurface } from '../types'
+import type {
+  TerminalOutputChunk,
+  TerminalOutputWriter,
+  TerminalSurface,
+} from '../types'
 
 // Mock terminal surface with test helpers
 interface MockTerminal extends TerminalSurface {
@@ -52,10 +56,24 @@ const createMockTerminal = (): MockTerminal => {
 describe('useTerminal', () => {
   let mockService: MockTerminalService
   let mockTerminal: MockTerminal
+  let mockOutput: TerminalOutputWriter
 
   beforeEach(() => {
     mockService = new MockTerminalService()
     mockTerminal = createMockTerminal()
+    mockOutput = {
+      writeOutput: vi.fn(
+        (chunk: TerminalOutputChunk, callback?: () => void): void => {
+          if (callback) {
+            mockTerminal.write(chunk.text, callback)
+
+            return
+          }
+
+          mockTerminal.write(chunk.text)
+        }
+      ),
+    }
 
     // Spy on all mock service methods
     vi.spyOn(mockService, 'spawn')
@@ -75,6 +93,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -103,6 +122,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -116,6 +136,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -131,6 +152,12 @@ describe('useTerminal', () => {
       data: 'Hello from PTY\r\n',
     })
 
+    expect(mockOutput.writeOutput).toHaveBeenCalledWith({
+      text: 'Hello from PTY\r\n',
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode('Hello from PTY\r\n').length,
+      phase: 'live',
+    })
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
@@ -140,6 +167,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
         onOutput,
@@ -167,6 +195,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -193,6 +222,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -222,6 +252,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -251,6 +282,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -285,6 +317,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -315,6 +348,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -350,6 +384,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -385,6 +420,7 @@ describe('useTerminal', () => {
     const { result, unmount } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -410,6 +446,7 @@ describe('useTerminal', () => {
     renderHook(() =>
       useTerminal({
         terminal: null,
+        output: null,
         service: mockService,
         cwd: '/home/user',
       })
@@ -428,6 +465,7 @@ describe('useTerminal', () => {
     renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -449,6 +487,7 @@ describe('useTerminal', () => {
     renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
         shell: '/bin/zsh',
@@ -470,6 +509,7 @@ describe('useTerminal', () => {
     renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
         env: customEnv,
@@ -494,6 +534,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -523,6 +564,7 @@ describe('useTerminal', () => {
     const { result } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -538,6 +580,7 @@ describe('useTerminal', () => {
     const { result, unmount } = renderHook(() =>
       useTerminal({
         terminal: mockTerminal,
+        output: mockOutput,
         service: mockService,
         cwd: '/home/user',
       })
@@ -568,6 +611,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           cwd: '/home/user',
           restoredFrom: {
@@ -590,7 +634,47 @@ describe('useTerminal', () => {
       expect(mockService.spawn).not.toHaveBeenCalled()
 
       // Should write replay data to terminal
+      expect(mockOutput.writeOutput).toHaveBeenCalledWith({
+        text: 'Restored output\r\n',
+        offsetStart: null,
+        byteLen: null,
+        phase: 'restore',
+      })
       expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
+    })
+
+    test('ignores empty buffered restore events', async () => {
+      const onRestoreStart = vi.fn()
+      const onRestoreOutput = vi.fn()
+      const onRestoreEnd = vi.fn()
+
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          output: mockOutput,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [{ data: '', offsetStart: 0, byteLen: 0 }],
+          },
+          onRestoreStart,
+          onRestoreOutput,
+          onRestoreEnd,
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      expect(mockOutput.writeOutput).not.toHaveBeenCalled()
+      expect(onRestoreStart).not.toHaveBeenCalled()
+      expect(onRestoreOutput).toHaveBeenCalledWith('')
+      expect(onRestoreEnd).not.toHaveBeenCalled()
     })
 
     test('reports restored output after the final restore write callback', async () => {
@@ -613,6 +697,7 @@ describe('useTerminal', () => {
       renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -680,6 +765,7 @@ describe('useTerminal', () => {
       renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -729,6 +815,7 @@ describe('useTerminal', () => {
       renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -761,6 +848,7 @@ describe('useTerminal', () => {
       const { unmount } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'restored-session-id',
@@ -787,6 +875,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -820,6 +909,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -845,6 +935,12 @@ describe('useTerminal', () => {
         offsetStart: 100,
       })
 
+      expect(mockOutput.writeOutput).toHaveBeenCalledWith({
+        text: 'AT_CURSOR',
+        offsetStart: 100,
+        byteLen: new TextEncoder().encode('AT_CURSOR').length,
+        phase: 'live',
+      })
       expect(mockTerminal.write).toHaveBeenCalledWith('AT_CURSOR')
 
       vi.mocked(mockTerminal.write).mockClear()
@@ -888,6 +984,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           restoredFrom: {
             sessionId: 'session-1',
@@ -942,6 +1039,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           mode: 'awaiting-restart',
         })
@@ -959,6 +1057,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           mode: 'attach',
           restoredFrom: {
@@ -985,6 +1084,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           mode: 'attach',
         })
@@ -1002,6 +1102,7 @@ describe('useTerminal', () => {
       const { result } = renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
+          output: mockOutput,
           service: mockService,
           mode: 'spawn',
         })
