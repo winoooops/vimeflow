@@ -1,40 +1,36 @@
 // cspell:ignore ghostty
 import type {
   TerminalInstance,
-  TerminalOutputChunk,
-  TerminalParserOutputContext,
   TerminalRendererAdapter,
   TerminalRendererHandle,
   TerminalOutputWriter,
 } from '../../types'
 import { createPlainTextTerminal } from './plainTextInstance'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
-import { TerminalControlSequenceParser } from './terminalControlParser'
-import { TerminalOutputPayloadDecoder } from './terminalOutputPayload'
+import {
+  createControlSequenceTerminalParserEngine,
+  type TerminalParserEngine,
+} from './terminalParserEngine'
 
 export { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 
-const outputContextFromChunk = (
-  chunk: TerminalOutputChunk
-): TerminalParserOutputContext => ({
-  offsetStart: chunk.offsetStart,
-  byteLen: chunk.byteLen,
-  phase: chunk.phase,
-})
+export interface GhosttyTerminalOptions {
+  readonly createParserEngine?: () => TerminalParserEngine
+}
 
 class GhosttyTerminalModel {
   private readonly base = createPlainTextTerminal()
-  private readonly parser = new TerminalControlSequenceParser()
-  private readonly decoder = new TerminalOutputPayloadDecoder()
+  private readonly parserEngine: TerminalParserEngine
+
+  constructor(options: GhosttyTerminalOptions = {}) {
+    this.parserEngine =
+      options.createParserEngine?.() ??
+      createControlSequenceTerminalParserEngine()
+  }
 
   readonly output: TerminalOutputWriter = {
     writeOutput: (chunk, callback): void => {
-      const text = this.decoder.decode(chunk)
-
-      const visibleText = this.parser.transformOutput(
-        text,
-        outputContextFromChunk(chunk)
-      )
+      const { visibleText } = this.parserEngine.parseOutput(chunk)
 
       this.base.terminal.write(visibleText, callback)
     },
@@ -49,7 +45,7 @@ class GhosttyTerminalModel {
     return {
       terminal: this.base.terminal,
       output: this.output,
-      parser: this.parser,
+      parser: this.parserEngine.parser,
       viewportReader: this.base.viewportReader,
       fitController: this.base.fitController,
       attachRenderer: (): TerminalRendererHandle => this.base.attachRenderer(),
@@ -57,8 +53,9 @@ class GhosttyTerminalModel {
   }
 }
 
-export const createGhosttyTerminal = (): TerminalInstance =>
-  new GhosttyTerminalModel().createInstance()
+export const createGhosttyTerminal = (
+  options: GhosttyTerminalOptions = {}
+): TerminalInstance => new GhosttyTerminalModel(options).createInstance()
 
 export const ghosttyTerminalRenderer: TerminalRendererAdapter = {
   id: GHOSTTY_TERMINAL_RENDERER_ID,

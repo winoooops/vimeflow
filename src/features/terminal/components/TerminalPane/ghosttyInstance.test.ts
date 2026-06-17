@@ -1,9 +1,16 @@
 // cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import type {
+  TerminalDisposable,
+  TerminalOutputChunk,
+  TerminalParser,
+} from '../../types'
+import type { TerminalParserEngineOutput } from './terminalParserEngine'
 import {
   GHOSTTY_TERMINAL_RENDERER_ID,
   createGhosttyTerminal,
   ghosttyTerminalRenderer,
+  type GhosttyTerminalOptions,
 } from './ghosttyInstance'
 
 const encodeBase64 = (bytes: Uint8Array): string => {
@@ -21,10 +28,10 @@ const encodeText = (text: string): string =>
 
 const createdTerminals = new Set<ReturnType<typeof createGhosttyTerminal>>()
 
-const createTrackedGhosttyTerminal = (): ReturnType<
-  typeof createGhosttyTerminal
-> => {
-  const created = createGhosttyTerminal()
+const createTrackedGhosttyTerminal = (
+  options: GhosttyTerminalOptions = {}
+): ReturnType<typeof createGhosttyTerminal> => {
+  const created = createGhosttyTerminal(options)
   createdTerminals.add(created)
 
   return created
@@ -43,6 +50,42 @@ describe('ghosttyInstance', () => {
   test('exposes the opt-in ghostty renderer adapter', () => {
     expect(ghosttyTerminalRenderer.id).toBe(GHOSTTY_TERMINAL_RENDERER_ID)
     expect(ghosttyTerminalRenderer.createInstance).toBe(createGhosttyTerminal)
+  })
+
+  test('delegates output parsing through an injected parser engine', () => {
+    const parser: TerminalParser = {
+      onEvent: (handler): TerminalDisposable => {
+        void handler
+
+        return { dispose: vi.fn() }
+      },
+    }
+
+    const parseOutput = vi.fn(
+      (chunk: TerminalOutputChunk): TerminalParserEngineOutput => ({
+        visibleText: `parsed:${chunk.text}`,
+      })
+    )
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => ({
+        parser,
+        parseOutput,
+      }),
+    })
+
+    const chunk = {
+      text: 'from-engine',
+      offsetStart: 3,
+      byteLen: 11,
+      phase: 'live' as const,
+    }
+
+    created.output.writeOutput(chunk)
+
+    expect(created.parser).toBe(parser)
+    expect(parseOutput).toHaveBeenCalledWith(chunk)
+    expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })
 
   test('prefers byte payloads over lossy text fallback', () => {
