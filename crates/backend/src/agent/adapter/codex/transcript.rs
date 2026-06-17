@@ -675,12 +675,10 @@ fn output_completion_status(
     is_custom_tool_output: bool,
 ) -> ToolCallStatus {
     if matches!(call.completion_mode, CompletionMode::ExecCommandEnd) {
-        return if exec_function_output_exit_code(payload.output.as_deref())
-            .is_some_and(|code| code != 0)
-        {
-            ToolCallStatus::Failed
-        } else {
-            ToolCallStatus::Done
+        return match exec_function_output_exit_code(payload.output.as_deref()) {
+            Some(0) => ToolCallStatus::Done,
+            Some(_) => ToolCallStatus::Failed,
+            None => ToolCallStatus::Failed,
         };
     }
 
@@ -2021,6 +2019,61 @@ mod tests {
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
         assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_function_call_output_marks_exec_command_failed_when_exit_code_line_missing() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"timeout\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 30.0000 seconds\nOutput:\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(
+            tool_calls[1].1["status"], "failed",
+            "exec_command function_call_output without an exit-code line must fail closed"
+        );
         assert!(in_flight.is_empty());
     }
 

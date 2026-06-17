@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-17
-ref_count: 32
+ref_count: 33
 ---
 
 # Testing Gaps
@@ -684,3 +684,13 @@ filesystem scope restrictions).
 - **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
 - **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
 - **Commit:** _(same commit as this entry)_
+
+### 69. Global inert-click interceptor can silence capture-phase test handlers
+
+- **Source:** github-claude | PR #517 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/test/setup.ts`
+- **Finding:** A module-level capture-phase click listener called `event.stopImmediatePropagation()` for clicks inside `[inert]` elements to polyfill jsdom's lack of inert activation suppression. Because the listener is installed once at module load and persists across all tests, a future test adding its own capture-phase click spy near an inert subtree would have its handler silently dropped, producing a false-green assertion.
+- **Fix:** Added a comment documenting the global side-effect and warning future contributors to use bubbling-phase listeners or keep spies outside inert subtrees unless explicitly testing inert blocking.
+- **Commit:** same commit as this entry
+- **Note:** Low-severity test-infrastructure finding; a per-test helper would be cleaner but requires broader test-file changes.

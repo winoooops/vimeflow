@@ -487,9 +487,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
       isDragging: false,
     }
 
-    vi.mocked(useElasticContainer)
-      .mockReturnValueOnce(dockDragContainer)
-      .mockReturnValueOnce(idleDockContainer)
+    vi.mocked(useElasticContainer).mockImplementation((options) =>
+      options.axis === 'vertical' ? dockDragContainer : idleDockContainer
+    )
 
     render(<WorkspaceView />)
 
