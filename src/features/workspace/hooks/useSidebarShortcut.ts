@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -38,6 +39,10 @@ export const useSidebarShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       if (event.key.toLowerCase() !== 'b' || event.altKey) {
         return
       }

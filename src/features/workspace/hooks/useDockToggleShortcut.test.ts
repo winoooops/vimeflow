@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import { useDockToggleShortcut } from './useDockToggleShortcut'
 
 const appended: HTMLElement[] = []
@@ -91,6 +92,29 @@ describe('useDockToggleShortcut', () => {
 
     unmount()
     press('Digit0')
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  test('ignores keydown when the keymap capture target is focused', () => {
+    const captureButton = document.createElement('button')
+    captureButton.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+    append(captureButton)
+
+    const onToggle = vi.fn()
+    renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('Digit0') })
+    )
+
+    const event = new KeyboardEvent('keydown', {
+      code: 'Digit0',
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      captureButton.dispatchEvent(event)
+    })
+
+    expect(event.defaultPrevented).toBe(false)
     expect(onToggle).not.toHaveBeenCalled()
   })
 })

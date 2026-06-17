@@ -17,12 +17,16 @@ import {
   developmentContentSecurityPolicy,
   packagedContentSecurityPolicy,
 } from './csp'
-import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
+import {
+  installCommandPaletteShortcutOverride,
+  setKeymapCaptureActive,
+} from './command-palette-shortcut'
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
+  KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_OPEN_FILE,
   SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
@@ -462,6 +466,13 @@ const setupApp = async (): Promise<void> => {
       }
     }
   )
+
+  ipcMain.on(KEYMAP_CAPTURE_ACTIVE, (ipcEvent, active: unknown) => {
+    const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+    if (win !== null) {
+      setKeymapCaptureActive(win, active === true)
+    }
+  })
 
   ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json')

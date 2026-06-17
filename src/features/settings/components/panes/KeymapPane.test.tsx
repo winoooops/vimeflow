@@ -1,10 +1,11 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
-import { render as rtlRender, screen } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createElement, type ReactElement } from 'react'
 import { DEFAULT_SETTINGS } from '../../store/settingsDefaults'
 import { SettingsProvider, SettingsContext } from '../../SettingsProvider'
 import type { AppSettings } from '../../../../bindings/AppSettings'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../../keymap/capture'
 import { KeymapPane } from './KeymapPane'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
@@ -14,16 +15,19 @@ const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
 // (bypassing the provider's async load).
 const renderWithSettings = (
   customKeybindings: Record<string, string> = {}
-): ReturnType<typeof rtlRender> => {
+): ReturnType<typeof rtlRender> & { update: ReturnType<typeof vi.fn> } => {
   const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+  const update = vi.fn()
 
-  return rtlRender(
+  const view = rtlRender(
     createElement(
       SettingsContext.Provider,
-      { value: { settings, saveError: null, update: vi.fn() } },
+      { value: { settings, saveError: null, update } },
       createElement(KeymapPane)
     )
   )
+
+  return { ...view, update }
 }
 
 describe('KeymapPane', () => {
@@ -63,7 +67,9 @@ describe('KeymapPane', () => {
     expect(
       screen.getByText('Show / hide editor & diff dock')
     ).toBeInTheDocument()
+    expect(screen.getByText('Open settings')).toBeInTheDocument()
     expect(screen.getByText('Open command palette')).toBeInTheDocument()
+    expect(screen.getByText('Focus browser address bar')).toBeInTheDocument()
     // The bare-key Diff zone still renders from KEYMAP_GROUPS.
     expect(screen.getByText('Next / previous file')).toBeInTheDocument()
   })
@@ -121,6 +127,447 @@ describe('KeymapPane', () => {
     renderWithSettings({ 'dock-toggle': 'Mod+KeyK' })
 
     expect(screen.getByText('⌘K')).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('saves a captured chord for a rebindable row', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    const { update } = renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    expect(capture).toHaveAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+    expect(screen.getByText('Ctrl+K')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Saved.')
+
+    vi.unstubAllGlobals()
+  })
+
+  test('bare modifier key presses do not replace the captured draft', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+    fireEvent.keyDown(capture, {
+      key: 'Shift',
+      code: 'ShiftLeft',
+      shiftKey: true,
+    })
+
+    expect(screen.getByText('Ctrl+K')).toBeInTheDocument()
+    expect(screen.queryByText('ShiftLeft')).not.toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('bare Escape cancels a row binding edit', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'Escape', code: 'Escape' })
+
+    expect(
+      screen.queryByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('bare Escape returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'Escape', code: 'Escape' })
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
+  test('Cancel button returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Cancel Show / hide editor & diff dock binding edit',
+      })
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
+  test('Save button returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
+  test('Tab cancels recording and moves focus to the next stable keymap control', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Focus pane 1 binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Focus pane 1 binding',
+    })
+    capture.focus()
+
+    const tabEvent = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    const preventDefaultSpy = vi.spyOn(tabEvent, 'preventDefault')
+
+    fireEvent(capture, tabEvent)
+
+    expect(preventDefaultSpy).toHaveBeenCalled()
+    expect(
+      screen.queryByRole('button', {
+        name: 'Capture Focus pane 1 binding',
+      })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Edit Focus pane 2 binding' })
+    ).toHaveFocus()
+  })
+
+  test('Shift+Tab cancels recording and moves focus to the previous stable keymap control', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Focus pane 2 binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Focus pane 2 binding',
+    })
+    capture.focus()
+
+    const tabEvent = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      code: 'Tab',
+      bubbles: true,
+      cancelable: true,
+      shiftKey: true,
+    })
+    const preventDefaultSpy = vi.spyOn(tabEvent, 'preventDefault')
+
+    fireEvent(capture, tabEvent)
+
+    expect(preventDefaultSpy).toHaveBeenCalled()
+    expect(
+      screen.queryByRole('button', {
+        name: 'Capture Focus pane 2 binding',
+      })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Edit Focus pane 1 binding' })
+    ).toHaveFocus()
+  })
+
+  test('modified Escape stays in capture mode', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, {
+      key: 'Escape',
+      code: 'Escape',
+      shiftKey: true,
+    })
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      })
+    ).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('focus leaving the binding edit controls cancels recording', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    const outside = document.createElement('button')
+    document.body.append(outside)
+
+    try {
+      fireEvent.focusOut(capture, { relatedTarget: outside })
+    } finally {
+      outside.remove()
+    }
+
+    expect(
+      screen.queryByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      })
+    ).not.toBeInTheDocument()
+  })
+
+  test('focus can move from recording to save without cancelling', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    const { update } = renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+
+    const save = screen.getByRole('button', {
+      name: 'Save Show / hide editor & diff dock binding',
+    })
+    fireEvent.focusOut(capture, { relatedTarget: save })
+    fireEvent.click(save)
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
+    })
+
+    vi.unstubAllGlobals()
+  })
+
+  test('resetting a row removes only that override', () => {
+    const { update } = renderWithSettings({
+      'dock-toggle': 'Mod+KeyK',
+      'focus-pane-1': 'Mod+KeyJ',
+    })
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Reset Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'focus-pane-1': 'Mod+KeyJ' },
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Reset.')
+  })
+
+  test('does not render edit controls for display-only rows', () => {
+    renderWithSettings()
+
+    expect(
+      screen.queryByRole('button', {
+        name: 'Edit Open command palette binding',
+      })
+    ).not.toBeInTheDocument()
+  })
+
+  test('shows a conflict warning without persisting', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    const { update } = renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      }),
+      { key: '1', code: 'Digit1', ctrlKey: true }
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Shortcut conflicts with another command.'
+    )
+    expect(update).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      }),
+      { key: 'k', code: 'KeyK', ctrlKey: true }
+    )
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  test('cancel clears validation feedback from a failed edit', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: 'Capture Show / hide editor & diff dock binding',
+      }),
+      { key: '1', code: 'Digit1', ctrlKey: true }
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Shortcut conflicts with another command.'
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Cancel Show / hide editor & diff dock binding edit',
+      })
+    )
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     vi.unstubAllGlobals()
   })

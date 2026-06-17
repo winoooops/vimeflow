@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isMacPlatform } from '../../../lib/formatShortcut'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import type { UseSettingsDialogReturn } from '../types'
 
 export const useSettingsDialog = (): UseSettingsDialogReturn => {
@@ -16,7 +18,17 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
+      const isMac = isMacPlatform()
+
+      const isSuper = isMac
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey
+
+      if (isSuper && event.key === ',' && !event.altKey && !event.shiftKey) {
         event.preventDefault()
         handlersRef.current.toggle()
 

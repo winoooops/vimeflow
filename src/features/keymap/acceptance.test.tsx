@@ -46,7 +46,7 @@ const sessions: Session[] = [
 // End-to-end: a persisted override flows settings → useKeybindings → the migrated
 // hook, so it dispatches on the new combo and not the old default. jsdom is
 // non-mac, so useKeybindings resolves `Mod` to `ctrl`.
-test('persisted override changes the live shortcut (focus-pane-2 → Mod+KeyL)', () => {
+test('persisted override changes the live shortcut (focus-pane-2 -> Mod+KeyL)', () => {
   const setSessionActivePane = vi.fn()
 
   const settings: AppSettings = {

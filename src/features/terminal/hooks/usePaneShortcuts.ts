@@ -14,6 +14,7 @@ import {
 } from '../../workspace/containerIds'
 import { selectVisiblePanes } from '../utils/selectVisiblePanes'
 import type { CommandId } from '../../keymap/catalog'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -65,6 +66,10 @@ export const usePaneShortcuts = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       // The platform-super check AND the per-key match both live in the
       // registry's `match` (called per command below), so an override changes
       // the live shortcut. The former shared super early-return is gone; every

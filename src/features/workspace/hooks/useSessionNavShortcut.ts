@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
 
 export interface UseSessionNavShortcutParams {
@@ -34,6 +35,10 @@ export const useSessionNavShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       if (event.repeat || event.altKey) {
         return
       }

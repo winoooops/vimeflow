@@ -7,6 +7,8 @@ export const BACKEND_EVENT = 'backend:event'
 
 export const COMMAND_PALETTE_TOGGLE = 'command-palette:toggle'
 
+export const KEYMAP_CAPTURE_ACTIVE = 'keymap:capture-active'
+
 export const SETTINGS_OPEN_FILE = 'settings:open-file'
 
 export const SETTINGS_SYNC_SNAPSHOT = 'settings:sync-snapshot'

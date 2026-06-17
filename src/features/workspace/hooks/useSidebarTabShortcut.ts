@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
 
 export interface UseSidebarTabShortcutParams {
@@ -35,6 +36,10 @@ export const useSidebarTabShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       // Shift is mandatory (bare ⌘S/Ctrl+S = save); reject Alt-modified chords.
       if (event.repeat || event.altKey || !event.shiftKey) {
         return

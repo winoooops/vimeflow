@@ -10,6 +10,7 @@ import {
 import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
 import { resolveBinding } from '../../keymap/resolve'
 import { getCommand, type CommandId } from '../../keymap/catalog'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 
 const makeSession = (
   id: string,
@@ -110,6 +111,37 @@ describe('usePaneShortcuts', () => {
     expect(setSessionLayout).toHaveBeenCalledOnce()
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
     expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('Ctrl+\\ from the keymap recorder does not cycle layout', () => {
+    const setSessionLayout = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
+
+    const recorder = document.createElement('button')
+    recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+    document.body.append(recorder)
+
+    try {
+      const event = new KeyboardEvent('keydown', {
+        key: '\\',
+        code: 'Backslash',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+      recorder.dispatchEvent(event)
+
+      expect(setSessionLayout).not.toHaveBeenCalled()
+      expect(preventDefaultSpy).not.toHaveBeenCalled()
+    } finally {
+      recorder.remove()
+    }
   })
 
   test('Ctrl+\\ from quad wraps to single (default modifier)', () => {

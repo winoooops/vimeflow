@@ -6,6 +6,7 @@ import {
   type CommandPaletteShortcutOverrideOptions,
   installCommandPaletteShortcutOverride,
   isCommandPaletteShortcutInput,
+  setKeymapCaptureActive,
 } from './command-palette-shortcut'
 
 vi.mock('electron', () => ({
@@ -476,5 +477,33 @@ describe('command palette shortcut override', () => {
     expect(registry.register).toHaveBeenCalledTimes(
       COMMAND_PALETTE_GLOBAL_ACCELERATORS.length
     )
+  })
+
+  test('suppresses toggle while keymap capture is active', () => {
+    const { beforeInputHandlers, send, win } = createFakeWindow()
+    const preventDefault = vi.fn()
+
+    installCommandPaletteShortcutOverride(win, { platform: 'linux' })
+    setKeymapCaptureActive(win, true)
+
+    const handler = beforeInputHandlers[0]
+
+    if (handler === undefined) {
+      throw new Error('before-input-event handler was not registered')
+    }
+
+    handler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: ';',
+        control: true,
+        meta: false,
+        alt: false,
+      }
+    )
+
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 })

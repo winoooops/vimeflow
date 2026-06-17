@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
-import { render as rtlRender, screen } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
@@ -162,6 +162,32 @@ describe('SettingsDialog', () => {
     await user.tab()
 
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
+  })
+
+  test('keeps Tab from recorder on the next keymap control', async () => {
+    const user = userEvent.setup()
+    render(<DialogWithTrigger initialOpen />)
+
+    await user.click(screen.getByRole('button', { name: 'Keymap' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Edit Focus pane 1 binding' })
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Capture Focus pane 1 binding' })
+    ).toHaveFocus()
+
+    await user.tab()
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Capture Focus pane 1 binding' })
+      ).not.toBeInTheDocument()
+    })
+
+    expect(
+      screen.getByRole('button', { name: 'Edit Focus pane 2 binding' })
+    ).toHaveFocus()
   })
 
   test('restores focus to the triggering element on close', async () => {

@@ -57,6 +57,48 @@ describe('useKeybindings', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  test("setUserBinding rejects shadowing the settings shortcut as 'reserved'", () => {
+    const { result, update } = renderKeybindings()
+    expect(
+      result.current.setUserBinding('dock-toggle', {
+        code: 'Comma',
+        mods: new Set(['Mod']),
+      })
+    ).toEqual({ ok: false, reason: 'reserved' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  test("setUserBinding rejects macOS literal Ctrl+, as 'reserved'", () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'MacIntel',
+    })
+    const { result, update } = renderKeybindings()
+
+    try {
+      expect(
+        result.current.setUserBinding('dock-toggle', {
+          code: 'Comma',
+          mods: new Set(['Ctrl']),
+        })
+      ).toEqual({ ok: false, reason: 'reserved' })
+      expect(update).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  test("setUserBinding rejects shadowing the browser address shortcut as 'reserved'", () => {
+    const { result, update } = renderKeybindings()
+    expect(
+      result.current.setUserBinding('dock-toggle', {
+        code: 'KeyL',
+        mods: new Set(['Mod']),
+      })
+    ).toEqual({ ok: false, reason: 'reserved' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
   test("setUserBinding rejects display-only commands as 'reserved'", () => {
     const { result, update } = renderKeybindings()
     expect(
