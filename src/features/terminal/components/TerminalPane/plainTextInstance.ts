@@ -7,6 +7,7 @@ import type {
   TerminalOutputWriter,
   TerminalParser,
   TerminalRendererAdapter,
+  TerminalRendererCapabilities,
   TerminalRendererHandle,
   TerminalSize,
   TerminalSurface,
@@ -14,7 +15,7 @@ import type {
   TerminalViewportReader,
 } from '../../types'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
-import { createTextControlSequenceTerminalParserEngine } from './terminalParserEngine'
+import { createControlSequenceTerminalParserEngine } from './terminalParserEngine'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
 export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
@@ -26,6 +27,12 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MAX_SCROLLBACK_LINES = 10_000
+
+const PLAIN_TEXT_TERMINAL_CAPABILITIES: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'text',
+  acceptsText: true,
+  acceptsBytes: false,
+}
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -438,8 +445,9 @@ class PlainTextTerminalSurface implements TerminalSurface {
 }
 
 class PlainTextTerminalModel {
-  private readonly parserEngine =
-    createTextControlSequenceTerminalParserEngine()
+  private readonly parserEngine = createControlSequenceTerminalParserEngine({
+    capabilities: PLAIN_TEXT_TERMINAL_CAPABILITIES,
+  })
   readonly terminal = new PlainTextTerminalSurface(
     (data) => this.parserEngine.parseText(data, null).visibleText
   )
@@ -490,10 +498,6 @@ export const createPlainTextTerminal = (): TerminalInstance => {
 
 export const plainTextTerminalRenderer: TerminalRendererAdapter = {
   id: PLAIN_TEXT_TERMINAL_RENDERER_ID,
-  capabilities: {
-    preferredOutputInputMode: 'text',
-    acceptsText: true,
-    acceptsBytes: false,
-  },
+  capabilities: PLAIN_TEXT_TERMINAL_CAPABILITIES,
   createInstance: createPlainTextTerminal,
 }

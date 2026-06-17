@@ -1,4 +1,8 @@
-import type { TerminalOutputChunk } from '../../types'
+import type {
+  TerminalOutputChunk,
+  TerminalOutputInputMode,
+  TerminalRendererCapabilities,
+} from '../../types'
 
 export const decodeBase64ToBytes = (value: string): Uint8Array | null => {
   try {
@@ -22,16 +26,16 @@ export const readTerminalOutputBytes = (
     ? null
     : decodeBase64ToBytes(chunk.bytesBase64)
 
-export class TerminalOutputPayloadDecoder {
+class TerminalOutputBytePayloadDecoder {
   private readonly streamingDecoder = new TextDecoder()
 
-  decode(chunk: TerminalOutputChunk): string {
+  decode(chunk: TerminalOutputChunk): string | null {
     const bytes = readTerminalOutputBytes(chunk)
 
     if (!bytes) {
       this.reset()
 
-      return chunk.text
+      return null
     }
 
     return this.streamingDecoder.decode(bytes, { stream: true })
@@ -39,5 +43,50 @@ export class TerminalOutputPayloadDecoder {
 
   private reset(): void {
     this.streamingDecoder.decode()
+  }
+}
+
+export interface TerminalOutputPayloadSelection {
+  readonly inputMode: TerminalOutputInputMode
+  readonly text: string
+}
+
+export class TerminalOutputPayloadRouter {
+  private readonly byteDecoder: TerminalOutputBytePayloadDecoder | null
+
+  constructor(private readonly capabilities: TerminalRendererCapabilities) {
+    this.byteDecoder =
+      capabilities.preferredOutputInputMode === 'bytes'
+        ? new TerminalOutputBytePayloadDecoder()
+        : null
+  }
+
+  read(chunk: TerminalOutputChunk): TerminalOutputPayloadSelection {
+    if (this.capabilities.preferredOutputInputMode === 'text') {
+      return {
+        inputMode: 'text',
+        text: chunk.text,
+      }
+    }
+
+    const decodedBytes = this.byteDecoder?.decode(chunk) ?? null
+
+    if (decodedBytes !== null) {
+      return {
+        inputMode: 'bytes',
+        text: decodedBytes,
+      }
+    }
+
+    if (this.capabilities.acceptsText) {
+      return {
+        inputMode: 'text',
+        text: chunk.text,
+      }
+    }
+
+    throw new Error(
+      'Terminal renderer requires bytesBase64 output, but the chunk did not include readable bytesBase64'
+    )
   }
 }

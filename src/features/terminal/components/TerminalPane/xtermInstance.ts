@@ -13,13 +13,21 @@ import type {
   TerminalParser,
   TerminalRendererHandle,
   TerminalRendererAdapter,
+  TerminalRendererCapabilities,
   TerminalSurface,
   TerminalTheme,
   TerminalViewportReader,
 } from '../../types'
 import { toXtermTheme } from '../../theme/toXtermTheme'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
+import { TerminalOutputPayloadRouter } from './terminalOutputPayload'
 import '@xterm/xterm/css/xterm.css'
+
+const XTERM_TERMINAL_CAPABILITIES: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'text',
+  acceptsText: true,
+  acceptsBytes: false,
+}
 
 export const createXtermTerminal = (): TerminalInstance => {
   const terminal = new Terminal({
@@ -47,11 +55,7 @@ export const createXtermTerminal = (): TerminalInstance => {
 
 export const xtermTerminalRenderer: TerminalRendererAdapter = {
   id: 'xterm',
-  capabilities: {
-    preferredOutputInputMode: 'text',
-    acceptsText: true,
-    acceptsBytes: false,
-  },
+  capabilities: XTERM_TERMINAL_CAPABILITIES,
   createInstance: createXtermTerminal,
 }
 
@@ -151,15 +155,23 @@ const createTerminalOutputContext = (): TerminalOutputContextTracker => {
 const createTerminalOutputWriter = (
   terminal: Terminal,
   outputContext: TerminalOutputContextTracker
-): TerminalOutputWriter => ({
-  writeOutput: (chunk, callback): void => {
-    outputContext.push(chunk)
-    terminal.write(chunk.text, () => {
-      outputContext.finish(chunk)
-      callback?.()
-    })
-  },
-})
+): TerminalOutputWriter => {
+  const outputRouter = new TerminalOutputPayloadRouter(
+    XTERM_TERMINAL_CAPABILITIES
+  )
+
+  return {
+    writeOutput: (chunk, callback): void => {
+      const selection = outputRouter.read(chunk)
+
+      outputContext.push(chunk)
+      terminal.write(selection.text, () => {
+        outputContext.finish(chunk)
+        callback?.()
+      })
+    },
+  }
+}
 
 const createTerminalParser = (
   terminal: Terminal,

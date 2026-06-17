@@ -3,9 +3,10 @@ import type {
   TerminalOutputChunk,
   TerminalParser,
   TerminalParserOutputContext,
+  TerminalRendererCapabilities,
 } from '../../types'
 import { TerminalControlSequenceParser } from './terminalControlParser'
-import { TerminalOutputPayloadDecoder } from './terminalOutputPayload'
+import { TerminalOutputPayloadRouter } from './terminalOutputPayload'
 
 export interface TerminalParserEngineOutput {
   readonly visibleText: string
@@ -14,11 +15,12 @@ export interface TerminalParserEngineOutput {
 export type TerminalParserEngineInputMode = TerminalOutputInputMode
 
 export interface TerminalParserEngineOptions {
-  readonly inputMode: TerminalParserEngineInputMode
+  readonly capabilities: TerminalRendererCapabilities
 }
 
 export interface TerminalParserEngine {
   readonly inputMode: TerminalParserEngineInputMode
+  readonly capabilities: TerminalRendererCapabilities
   readonly parser: TerminalParser
   parseText: (
     text: string,
@@ -35,44 +37,36 @@ const outputContextFromChunk = (
   phase: chunk.phase,
 })
 
-const createOutputTextReader = (
-  inputMode: TerminalParserEngineInputMode
-): ((chunk: TerminalOutputChunk) => string) => {
-  if (inputMode === 'text') {
-    return (chunk): string => chunk.text
+export class TerminalControlSequenceParserEngine implements TerminalParserEngine {
+  readonly capabilities: TerminalRendererCapabilities
+  readonly parser = new TerminalControlSequenceParser()
+  private readonly outputRouter: TerminalOutputPayloadRouter
+
+  constructor(options: TerminalParserEngineOptions) {
+    this.capabilities = options.capabilities
+    this.outputRouter = new TerminalOutputPayloadRouter(options.capabilities)
   }
 
-  const decoder = new TerminalOutputPayloadDecoder()
+  get inputMode(): TerminalParserEngineInputMode {
+    return this.capabilities.preferredOutputInputMode
+  }
 
-  return (chunk): string => decoder.decode(chunk)
+  parseText(
+    text: string,
+    output: TerminalParserOutputContext | null
+  ): TerminalParserEngineOutput {
+    return {
+      visibleText: this.parser.transformOutput(text, output),
+    }
+  }
+
+  parseOutput(chunk: TerminalOutputChunk): TerminalParserEngineOutput {
+    const selection = this.outputRouter.read(chunk)
+
+    return this.parseText(selection.text, outputContextFromChunk(chunk))
+  }
 }
 
 export const createControlSequenceTerminalParserEngine = (
   options: TerminalParserEngineOptions
-): TerminalParserEngine => {
-  const parser = new TerminalControlSequenceParser()
-  const readOutputText = createOutputTextReader(options.inputMode)
-
-  const parseText = (
-    text: string,
-    output: TerminalParserOutputContext | null
-  ): TerminalParserEngineOutput => ({
-    visibleText: parser.transformOutput(text, output),
-  })
-
-  return {
-    inputMode: options.inputMode,
-    parser,
-    parseText,
-    parseOutput: (chunk): TerminalParserEngineOutput =>
-      parseText(readOutputText(chunk), outputContextFromChunk(chunk)),
-  }
-}
-
-export const createTextControlSequenceTerminalParserEngine =
-  (): TerminalParserEngine =>
-    createControlSequenceTerminalParserEngine({ inputMode: 'text' })
-
-export const createByteControlSequenceTerminalParserEngine =
-  (): TerminalParserEngine =>
-    createControlSequenceTerminalParserEngine({ inputMode: 'bytes' })
+): TerminalParserEngine => new TerminalControlSequenceParserEngine(options)

@@ -1,10 +1,28 @@
 import { describe, expect, test } from 'vitest'
 import type { TerminalOutputChunk } from '../../types'
 import {
-  TerminalOutputPayloadDecoder,
+  TerminalOutputPayloadRouter,
   decodeBase64ToBytes,
   readTerminalOutputBytes,
 } from './terminalOutputPayload'
+
+const textOnlyCapabilities = {
+  preferredOutputInputMode: 'text',
+  acceptsText: true,
+  acceptsBytes: false,
+} as const
+
+const bytePreferredCapabilities = {
+  preferredOutputInputMode: 'bytes',
+  acceptsText: true,
+  acceptsBytes: true,
+} as const
+
+const byteOnlyCapabilities = {
+  preferredOutputInputMode: 'bytes',
+  acceptsText: false,
+  acceptsBytes: true,
+} as const
 
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
@@ -15,6 +33,9 @@ const encodeBase64 = (bytes: Uint8Array): string => {
 
   return globalThis.btoa(binary)
 }
+
+const encodeText = (text: string): string =>
+  encodeBase64(new TextEncoder().encode(text))
 
 const outputChunk = (
   text: string,
@@ -44,34 +65,92 @@ describe('terminalOutputPayload', () => {
   })
 
   test('prefers streaming byte payloads over fallback text', () => {
-    const decoder = new TerminalOutputPayloadDecoder()
+    const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
     const character = String.fromCodePoint(0x4f60)
     const bytes = new TextEncoder().encode(character)
     const first = outputChunk('wrong', encodeBase64(bytes.slice(0, 2)))
     const second = outputChunk('wrong', encodeBase64(bytes.slice(2)))
 
-    expect(decoder.decode(first)).toBe('')
-    expect(decoder.decode(second)).toBe(character)
+    expect(router.read(first)).toEqual({ inputMode: 'bytes', text: '' })
+    expect(router.read(second)).toEqual({
+      inputMode: 'bytes',
+      text: character,
+    })
   })
 
   test('falls back to text when bytes are unavailable or invalid', () => {
-    const decoder = new TerminalOutputPayloadDecoder()
+    const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
 
-    expect(decoder.decode(outputChunk('fallback'))).toBe('fallback')
-    expect(decoder.decode(outputChunk('fallback', 'not base64?'))).toBe(
-      'fallback'
-    )
+    expect(router.read(outputChunk('fallback'))).toEqual({
+      inputMode: 'text',
+      text: 'fallback',
+    })
+
+    expect(router.read(outputChunk('fallback', 'not base64?'))).toEqual({
+      inputMode: 'text',
+      text: 'fallback',
+    })
   })
 
   test('resets streaming bytes before falling back to text', () => {
-    const decoder = new TerminalOutputPayloadDecoder()
+    const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
     const character = String.fromCodePoint(0x4f60)
     const bytes = new TextEncoder().encode(character)
     const partial = outputChunk('wrong', encodeBase64(bytes.slice(0, 2)))
     const complete = outputChunk('wrong', encodeBase64(bytes))
 
-    expect(decoder.decode(partial)).toBe('')
-    expect(decoder.decode(outputChunk('fallback'))).toBe('fallback')
-    expect(decoder.decode(complete)).toBe(character)
+    expect(router.read(partial)).toEqual({ inputMode: 'bytes', text: '' })
+    expect(router.read(outputChunk('fallback'))).toEqual({
+      inputMode: 'text',
+      text: 'fallback',
+    })
+
+    expect(router.read(complete)).toEqual({
+      inputMode: 'bytes',
+      text: character,
+    })
+  })
+
+  test('routes text-preferring renderers through text chunks', () => {
+    const router = new TerminalOutputPayloadRouter(textOnlyCapabilities)
+
+    expect(
+      router.read(outputChunk('text wins', encodeText('bytes lose')))
+    ).toEqual({
+      inputMode: 'text',
+      text: 'text wins',
+    })
+  })
+
+  test('routes byte-preferring renderers through byte chunks', () => {
+    const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
+
+    expect(
+      router.read(outputChunk('text loses', encodeText('bytes win')))
+    ).toEqual({
+      inputMode: 'bytes',
+      text: 'bytes win',
+    })
+  })
+
+  test('falls back to text only when byte-preferring renderers accept text', () => {
+    const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
+
+    expect(router.read(outputChunk('text fallback'))).toEqual({
+      inputMode: 'text',
+      text: 'text fallback',
+    })
+  })
+
+  test('throws when byte-only renderers receive no readable byte payload', () => {
+    const router = new TerminalOutputPayloadRouter(byteOnlyCapabilities)
+
+    expect(() => router.read(outputChunk('text fallback'))).toThrow(
+      'Terminal renderer requires bytesBase64 output'
+    )
+
+    expect(() =>
+      router.read(outputChunk('text fallback', 'not base64?'))
+    ).toThrow('Terminal renderer requires bytesBase64 output')
   })
 })

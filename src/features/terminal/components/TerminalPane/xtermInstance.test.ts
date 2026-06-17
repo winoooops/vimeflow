@@ -124,6 +124,26 @@ describe('xtermInstance', () => {
     expect(xtermTerminalRenderer.createInstance).toBe(createXtermTerminal)
   })
 
+  test('writes text output chunks even when byte payloads are present', () => {
+    const terminal = createRawTerminal()
+    const fitAddon = { fit: vi.fn() }
+
+    vi.mocked(Terminal).mockImplementation(() => terminal as never)
+    vi.mocked(FitAddon).mockImplementation(() => fitAddon as never)
+
+    const created = createXtermTerminal()
+
+    created.output.writeOutput({
+      text: 'text wins',
+      bytesBase64: 'Ynl0ZXMgbG9zZQ==',
+      offsetStart: 0,
+      byteLen: 10,
+      phase: 'live',
+    })
+
+    expect(terminal.write).toHaveBeenCalledWith('text wins', expect.anything())
+  })
+
   test('creates a themed terminal surface with a loaded fit addon', () => {
     const terminal = createRawTerminal()
     const fitAddon = { fit: vi.fn() }

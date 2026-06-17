@@ -72,15 +72,18 @@ describe('ghosttyInstance', () => {
       })
     )
 
-    const created = createTrackedGhosttyTerminal({
-      createParserEngine: () => ({
-        inputMode: 'bytes',
-        parser,
-        parseText: (text): TerminalParserEngineOutput => ({
-          visibleText: `parsed:${text}`,
-        }),
-        parseOutput,
+    const createParserEngine = vi.fn(() => ({
+      inputMode: 'bytes' as const,
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text: string): TerminalParserEngineOutput => ({
+        visibleText: `parsed:${text}`,
       }),
+      parseOutput,
+    }))
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine,
     })
 
     const chunk = {
@@ -93,6 +96,9 @@ describe('ghosttyInstance', () => {
     created.output.writeOutput(chunk)
 
     expect(created.parser).toBe(parser)
+    expect(createParserEngine).toHaveBeenCalledWith(
+      ghosttyTerminalRenderer.capabilities
+    )
     expect(parseOutput).toHaveBeenCalledWith(chunk)
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })
