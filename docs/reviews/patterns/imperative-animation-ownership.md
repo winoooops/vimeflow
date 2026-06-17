@@ -3,7 +3,7 @@ id: imperative-animation-ownership
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-06-17
-ref_count: 1
+ref_count: 2
 ---
 
 # Imperative Animation Ownership
@@ -78,4 +78,22 @@ The fix shape:
 - **File:** `src/features/browser/components/BrowserPane.tsx`
 - **Finding:** `TerminalZone` keeps inactive session panels mounted and only hides them with CSS, so the unconditional rAF loop started for every background `BrowserPane`. Hidden panes kept calling `syncBounds()`/`getBoundingClientRect()` once per frame even after they had already sent invisible/0×0 bounds.
 - **Fix:** Gated the rAF effect on `nativePaneReady && isActive && !isOccluded` so the loop only runs while the pane is visible. The existing focus/occlusion effects still send a final invisible bounds update when the pane becomes inactive or occluded.
+- **Commit:** _(same commit as this entry)_
+
+### 5. rAF idle cutoff leaves stale native bounds after position-only ancestor moves
+
+- **Source:** github-claude | PR #515 round 2 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** After 60 unchanged frames the rAF bounds-sync loop stopped and only restarted from React-visible dependencies. A later CSS transform or other position-only ancestor move that did not cause a React render left the native `WebContentsView` at stale coordinates until an unrelated render occurred.
+- **Fix:** Added a 250 ms post-idle polling interval and an ancestor `MutationObserver` watching `style`/`class` attributes up to 10 ancestors deep. Either detector restarts a short rAF burst that calls `syncBounds()`, catching CSS-only moves without restoring a perpetual 60 fps loop.
+- **Commit:** _(same commit as this entry)_
+
+### 6. `nativePaneReady` state is not reset in creation-effect cleanup
+
+- **Source:** github-claude | PR #515 round 2 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** The creation effect cleanup set `nativePaneReadyRef.current = false` but did not call `setNativePaneReady(false)`. If `browserSessionId` or `pane.id` changed and the effect re-ran, the rAF guard stayed `true` and the loop spun for up to 60 idle frames before `syncBounds()`'s ref guard short-circuited each tick.
+- **Fix:** Added `setNativePaneReady(false)` to the cleanup so the reactive state mirror matches the ref and reliably restarts the rAF effect on re-mount.
 - **Commit:** _(same commit as this entry)_

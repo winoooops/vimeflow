@@ -293,6 +293,86 @@ describe('BrowserPane', () => {
     }
   })
 
+  test('detects position-only moves after the rAF loop has idled', async () => {
+    let frameCallback: FrameRequestCallback | null = null
+    let nextFrameId = 1
+    let intervalCallback: (() => void) | null = null
+    let intervalCleared = false
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallback = callback
+
+        return nextFrameId++
+      })
+
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => undefined)
+
+    const setIntervalSpy = vi
+      .spyOn(window, 'setInterval')
+      .mockImplementation(
+        (
+          handler: unknown,
+          _timeout?: unknown,
+          ..._args: unknown[]
+        ): ReturnType<typeof window.setInterval> => {
+          if (typeof handler === 'function') {
+            intervalCallback = handler as () => void
+          }
+
+          return 123 as unknown as ReturnType<typeof window.setInterval>
+        }
+      )
+
+    const clearIntervalSpy = vi
+      .spyOn(window, 'clearInterval')
+      .mockImplementation((id: unknown): void => {
+        if (id === 123) {
+          intervalCleared = true
+        }
+      })
+
+    try {
+      const { unmount } = render(
+        <BrowserPaneHarness session={session} pane={browserPane} isActive />
+      )
+      await settle()
+      bridgeMocks.setBrowserPaneBounds.mockClear()
+
+      for (let i = 0; i < 60; i += 1) {
+        act(() => {
+          frameCallback?.(performance.now())
+        })
+      }
+
+      expect(intervalCallback).not.toBeNull()
+
+      rectSpy.mockReturnValue(movedRect)
+      act(() => {
+        intervalCallback?.()
+      })
+
+      expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+        sessionId: 'session-1',
+        paneId: 'p1',
+        bounds: { x: 120, y: 20, width: 640, height: 360 },
+        shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+        visible: true,
+      })
+
+      unmount()
+      expect(intervalCleared).toBe(true)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      cancelAnimationFrameSpy.mockRestore()
+      setIntervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+    }
+  })
+
   test('marks the native browser pane invisible while occluded, then restores it', async () => {
     const { rerender } = render(
       <BrowserPaneHarness

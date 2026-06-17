@@ -293,6 +293,7 @@ export const BrowserPane = ({
     return (): void => {
       lifecycle.cancelled = true
       nativePaneReadyRef.current = false
+      setNativePaneReady(false)
       offNavState()
     }
   }, [browserSessionId, pane.id, session.id, session.projectId, syncBounds])
@@ -325,15 +326,76 @@ export const BrowserPane = ({
   // also need to follow ancestor transforms and other position-only moves.
   // The loop runs only while the pane is visible and stops once bounds have
   // been stable for a short interval, restarting automatically when visibility
-  // or layout changes.
+  // or layout changes. After the rAF window idles, a low-frequency interval
+  // plus an ancestor mutation observer detect CSS-only position moves that
+  // do not trigger a React render.
   useEffect(() => {
     if (!nativePaneReady || !isActive || isOccluded) {
       return
     }
 
+    const IDLE_CUTOFF = 60
+    const POST_IDLE_INTERVAL_MS = 250
+    const MAX_MUTATION_ANCESTOR_DEPTH = 10
+
     let frameId: number | null = null
+    let postIdleIntervalId: number | null = null
+    let mutationObserver: MutationObserver | null = null
     let idleFrames = 0
     let running = true
+
+    const stopPostIdleDetection = (): void => {
+      if (postIdleIntervalId !== null) {
+        window.clearInterval(postIdleIntervalId)
+        postIdleIntervalId = null
+      }
+
+      if (mutationObserver !== null) {
+        mutationObserver.disconnect()
+        mutationObserver = null
+      }
+    }
+
+    const restart = (): void => {
+      if (running) {
+        return
+      }
+
+      running = true
+      idleFrames = 0
+      stopPostIdleDetection()
+      frameId = window.requestAnimationFrame(tick)
+    }
+
+    const startPostIdleDetection = (): void => {
+      const node = contentRef.current
+      if (!node) {
+        return
+      }
+
+      postIdleIntervalId = window.setInterval(() => {
+        const previousKey = lastBoundsKeyRef.current
+        syncBounds()
+        if (lastBoundsKeyRef.current !== previousKey) {
+          restart()
+        }
+      }, POST_IDLE_INTERVAL_MS)
+
+      mutationObserver = new MutationObserver(() => {
+        restart()
+      })
+
+      let ancestor: Element | null = node.parentElement
+      let depth = 0
+      while (ancestor !== null && depth < MAX_MUTATION_ANCESTOR_DEPTH) {
+        mutationObserver.observe(ancestor, {
+          attributes: true,
+          attributeFilter: ['style', 'class'],
+        })
+        ancestor = ancestor.parentElement
+        depth += 1
+      }
+    }
 
     const tick = (): void => {
       if (!running) {
@@ -349,8 +411,9 @@ export const BrowserPane = ({
         idleFrames = 0
       }
 
-      if (idleFrames >= 60) {
+      if (idleFrames >= IDLE_CUTOFF) {
         running = false
+        startPostIdleDetection()
 
         return
       }
@@ -365,6 +428,8 @@ export const BrowserPane = ({
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId)
       }
+
+      stopPostIdleDetection()
     }
   }, [isActive, isOccluded, nativePaneReady, boundsGeneration, syncBounds])
 
