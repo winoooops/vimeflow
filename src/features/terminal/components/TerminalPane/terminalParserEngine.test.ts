@@ -1,7 +1,10 @@
 // cspell:ignore ghostty
 import { describe, expect, test, vi } from 'vitest'
 import type { TerminalOutputChunk, TerminalOutputPhase } from '../../types'
-import { createControlSequenceTerminalParserEngine } from './terminalParserEngine'
+import {
+  createByteControlSequenceTerminalParserEngine,
+  createTextControlSequenceTerminalParserEngine,
+} from './terminalParserEngine'
 
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
@@ -29,9 +32,32 @@ const createByteChunk = (
   }
 }
 
-describe('createControlSequenceTerminalParserEngine', () => {
+describe('terminal parser engine input modes', () => {
+  test('text mode records its input mode and ignores byte payloads', () => {
+    const engine = createTextControlSequenceTerminalParserEngine()
+    const chunk = createByteChunk('bytes lose', 0, 'live')
+
+    expect(engine.inputMode).toBe('text')
+    expect(engine.parseOutput({ ...chunk, text: 'text wins' })).toEqual({
+      visibleText: 'text wins',
+    })
+  })
+
+  test('byte mode records its input mode and prefers byte payloads', () => {
+    const engine = createByteControlSequenceTerminalParserEngine()
+
+    expect(engine.inputMode).toBe('bytes')
+    expect(engine.parseOutput(createByteChunk('bytes win', 0, 'live'))).toEqual(
+      {
+        visibleText: 'bytes win',
+      }
+    )
+  })
+})
+
+describe('createByteControlSequenceTerminalParserEngine', () => {
   test('emits OSC 7 cwd events from byte payloads', () => {
-    const engine = createControlSequenceTerminalParserEngine()
+    const engine = createByteControlSequenceTerminalParserEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(
@@ -56,7 +82,7 @@ describe('createControlSequenceTerminalParserEngine', () => {
   })
 
   test('reassembles split OSC 7 byte payloads with completion context', () => {
-    const engine = createControlSequenceTerminalParserEngine()
+    const engine = createByteControlSequenceTerminalParserEngine()
     const handler = vi.fn()
 
     const firstChunk = createByteChunk(
@@ -88,7 +114,7 @@ describe('createControlSequenceTerminalParserEngine', () => {
   })
 
   test('supports OSC 7 sequences terminated with string terminator', () => {
-    const engine = createControlSequenceTerminalParserEngine()
+    const engine = createByteControlSequenceTerminalParserEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(
@@ -113,7 +139,7 @@ describe('createControlSequenceTerminalParserEngine', () => {
   })
 
   test('preserves raw non-file OSC 7 payloads for consumer validation', () => {
-    const engine = createControlSequenceTerminalParserEngine()
+    const engine = createByteControlSequenceTerminalParserEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(

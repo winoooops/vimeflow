@@ -69,7 +69,11 @@ describe('ghosttyInstance', () => {
 
     const created = createTrackedGhosttyTerminal({
       createParserEngine: () => ({
+        inputMode: 'bytes',
         parser,
+        parseText: (text): TerminalParserEngineOutput => ({
+          visibleText: `parsed:${text}`,
+        }),
         parseOutput,
       }),
     })

@@ -4,9 +4,7 @@ import type {
   TerminalFitController,
   TerminalInstance,
   TerminalKeyEventHandler,
-  TerminalOutputChunk,
   TerminalOutputWriter,
-  TerminalParserOutputContext,
   TerminalParser,
   TerminalRendererAdapter,
   TerminalRendererHandle,
@@ -16,7 +14,7 @@ import type {
   TerminalViewportReader,
 } from '../../types'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
-import { TerminalControlSequenceParser } from './terminalControlParser'
+import { createTextControlSequenceTerminalParserEngine } from './terminalParserEngine'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
 export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
@@ -71,14 +69,6 @@ const trimScrollbackLines = (text: string): string => {
 
   return lines.slice(-MAX_SCROLLBACK_LINES).join('\n')
 }
-
-const outputContextFromChunk = (
-  chunk: TerminalOutputChunk
-): TerminalParserOutputContext => ({
-  offsetStart: chunk.offsetStart,
-  byteLen: chunk.byteLen,
-  phase: chunk.phase,
-})
 
 const readContainedSelection = (root: HTMLElement): string => {
   const selection = window.getSelection()
@@ -236,6 +226,10 @@ class PlainTextTerminalSurface implements TerminalSurface {
     this.root.remove()
   }
 
+  isDisposed(): boolean {
+    return this.disposed
+  }
+
   clear(): void {
     this.outputText = ''
     this.renderOutput()
@@ -248,7 +242,15 @@ class PlainTextTerminalSurface implements TerminalSurface {
       return
     }
 
-    const visibleData = this.transformOutput(data)
+    this.writeVisible(this.transformOutput(data), callback)
+  }
+
+  writeVisible(visibleData: string, callback?: () => void): void {
+    if (this.disposed) {
+      callback?.()
+
+      return
+    }
 
     if (visibleData.length > 0) {
       this.outputText = trimScrollbackLines(
@@ -436,23 +438,25 @@ class PlainTextTerminalSurface implements TerminalSurface {
 }
 
 class PlainTextTerminalModel {
-  private readonly controlParser = new TerminalControlSequenceParser()
-  private currentOutputContext: TerminalParserOutputContext | null = null
-  readonly terminal = new PlainTextTerminalSurface((data) =>
-    this.controlParser.transformOutput(data, this.currentOutputContext)
+  private readonly parserEngine =
+    createTextControlSequenceTerminalParserEngine()
+  readonly terminal = new PlainTextTerminalSurface(
+    (data) => this.parserEngine.parseText(data, null).visibleText
   )
 
-  readonly parser: TerminalParser = this.controlParser
+  readonly parser: TerminalParser = this.parserEngine.parser
 
   readonly output: TerminalOutputWriter = {
     writeOutput: (chunk, callback): void => {
-      this.currentOutputContext = outputContextFromChunk(chunk)
+      if (this.terminal.isDisposed()) {
+        callback?.()
 
-      try {
-        this.terminal.write(chunk.text, callback)
-      } finally {
-        this.currentOutputContext = null
+        return
       }
+
+      const { visibleText } = this.parserEngine.parseOutput(chunk)
+
+      this.terminal.writeVisible(visibleText, callback)
     },
   }
 
