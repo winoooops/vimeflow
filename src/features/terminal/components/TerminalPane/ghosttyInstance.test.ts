@@ -106,6 +106,25 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })
 
+  test('routes direct terminal writes through the Ghostty parser', () => {
+    const created = createTrackedGhosttyTerminal()
+    const handler = vi.fn()
+
+    created.parser.onEvent(handler)
+    created.terminal.write(
+      'before \x1b]7;file://localhost/tmp/ghostty-direct\x07 after'
+    )
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://localhost/tmp/ghostty-direct',
+      })
+    )
+    expect(created.viewportReader.readVisibleText()).toBe('before  after')
+  })
+
   test('prefers byte payloads over lossy text fallback', () => {
     const created = createTrackedGhosttyTerminal()
 
@@ -145,6 +164,31 @@ describe('ghosttyInstance', () => {
     })
 
     expect(created.viewportReader.readVisibleText()).toBe('text fallback')
+  })
+
+  test('ignores output chunks after dispose without parser side effects', () => {
+    const created = createTrackedGhosttyTerminal()
+    const callback = vi.fn()
+    const parserEventHandler = vi.fn()
+
+    created.parser.onEvent(parserEventHandler)
+    created.terminal.dispose()
+    created.output.writeOutput(
+      {
+        text: 'wrong',
+        bytesBase64: encodeText(
+          '\x1b]7;file://localhost/tmp/ghostty-disposed\x07'
+        ),
+        offsetStart: 0,
+        byteLen: 45,
+        phase: 'live',
+      },
+      callback
+    )
+
+    expect(parserEventHandler).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe('')
+    expect(callback).toHaveBeenCalledOnce()
   })
 
   test('streams split UTF-8 byte payloads before rendering text', () => {
