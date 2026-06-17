@@ -299,6 +299,10 @@ describe('BrowserPane', () => {
     let intervalCallback: (() => void) | null = null
     let intervalCleared = false
 
+    const disconnectSpy = vi
+      .spyOn(MutationObserver.prototype, 'disconnect')
+      .mockImplementation(() => undefined)
+
     const requestAnimationFrameSpy = vi
       .spyOn(window, 'requestAnimationFrame')
       .mockImplementation((callback: FrameRequestCallback): number => {
@@ -314,11 +318,7 @@ describe('BrowserPane', () => {
     const setIntervalSpy = vi
       .spyOn(window, 'setInterval')
       .mockImplementation(
-        (
-          handler: unknown,
-          _timeout?: unknown,
-          ..._args: unknown[]
-        ): ReturnType<typeof window.setInterval> => {
+        (handler: unknown): ReturnType<typeof window.setInterval> => {
           if (typeof handler === 'function') {
             intervalCallback = handler as () => void
           }
@@ -365,11 +365,13 @@ describe('BrowserPane', () => {
 
       unmount()
       expect(intervalCleared).toBe(true)
+      expect(disconnectSpy).toHaveBeenCalled()
     } finally {
       requestAnimationFrameSpy.mockRestore()
       cancelAnimationFrameSpy.mockRestore()
       setIntervalSpy.mockRestore()
       clearIntervalSpy.mockRestore()
+      disconnectSpy.mockRestore()
     }
   })
 

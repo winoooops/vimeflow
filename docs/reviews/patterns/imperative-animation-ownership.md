@@ -3,7 +3,7 @@ id: imperative-animation-ownership
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-06-17
-ref_count: 2
+ref_count: 3
 ---
 
 # Imperative Animation Ownership
@@ -96,4 +96,13 @@ The fix shape:
 - **File:** `src/features/browser/components/BrowserPane.tsx`
 - **Finding:** The creation effect cleanup set `nativePaneReadyRef.current = false` but did not call `setNativePaneReady(false)`. If `browserSessionId` or `pane.id` changed and the effect re-ran, the rAF guard stayed `true` and the loop spun for up to 60 idle frames before `syncBounds()`'s ref guard short-circuited each tick.
 - **Fix:** Added `setNativePaneReady(false)` to the cleanup so the reactive state mirror matches the ref and reliably restarts the rAF effect on re-mount.
+- **Commit:** _(same commit as this entry)_
+
+### 7. MutationObserver restarts rAF burst unconditionally on ancestor class/style mutations
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** In `startPostIdleDetection`, the `MutationObserver` callback called `restart()` for every `style` or `class` attribute change on any observed ancestor, with no bounds-change guard. Hover/focus/active CSS classes on split-view ancestors therefore triggered a 60-frame rAF burst even when the browser pane had not moved.
+- **Fix:** Mirrored the interval guard inside the MO callback: call `syncBounds()`, then only call `restart()` if `lastBoundsKeyRef.current` changed. This catches transform-driven moves while ignoring cosmetic class mutations.
 - **Commit:** _(same commit as this entry)_

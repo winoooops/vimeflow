@@ -633,7 +633,28 @@ const prepareBrowserPaneAtSlot = async (
 
   await waitForPaneKinds(expectedKinds)
 
-  const paneId = `p${slotIndex}`
+  const paneId = await browser.execute((index: number) => {
+    const splitViews = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
+    )
+    const splitView = splitViews.find((candidate) => {
+      const rect = candidate.getBoundingClientRect()
+
+      return rect.width > 0 && rect.height > 0
+    })
+    const slots = Array.from(
+      splitView?.querySelectorAll<HTMLElement>(
+        '[data-testid="split-view-slot"]'
+      ) ?? []
+    )
+
+    return slots[index]?.dataset.paneId ?? null
+  }, slotIndex)
+
+  if (!paneId) {
+    throw new Error(`no pane id found for slot ${String(slotIndex)}`)
+  }
+
   const identity = await readBrowserPaneIdentity(paneId)
   await waitForBrowserPaneCdpInfo(identity)
 

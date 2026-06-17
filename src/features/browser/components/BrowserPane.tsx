@@ -382,7 +382,11 @@ export const BrowserPane = ({
       }, POST_IDLE_INTERVAL_MS)
 
       mutationObserver = new MutationObserver(() => {
-        restart()
+        const previousKey = lastBoundsKeyRef.current
+        syncBounds()
+        if (lastBoundsKeyRef.current !== previousKey) {
+          restart()
+        }
       })
 
       let ancestor: Element | null = node.parentElement
