@@ -99,7 +99,7 @@ const MAX_TABS: usize = 50;
 const MAX_HISTORY: usize = 100;
 const MAX_URL_LEN: usize = 4096;
 const MAX_TITLE_LEN: usize = 1024;
-const KNOWN_AGENTS: [&str; 4] = ["claude-code", "codex", "aider", "generic"];
+const KNOWN_AGENTS: [&str; 5] = ["claude-code", "codex", "kimi", "aider", "generic"];
 
 fn layout_capacity(layout: &str) -> Option<usize> {
     match layout {
@@ -196,8 +196,7 @@ pub fn repair_workspace_layout(
         sessions: Vec::new(),
     };
     // Version gate: only the current version is decodable; anything else → fresh.
-    if raw.get("version").and_then(|v| v.as_u64())
-        != Some(CURRENT_WORKSPACE_LAYOUT_VERSION as u64)
+    if raw.get("version").and_then(|v| v.as_u64()) != Some(CURRENT_WORKSPACE_LAYOUT_VERSION as u64)
     {
         return empty;
     }
@@ -237,7 +236,12 @@ pub fn repair_workspace_layout(
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let panes = repair_panes(&raw_panes, &working_directory, active_cwd, &mut seen_pty_ids);
+        let panes = repair_panes(
+            &raw_panes,
+            &working_directory,
+            active_cwd,
+            &mut seen_pty_ids,
+        );
         if panes.is_empty() {
             continue; // session emptied by repair → drop (floor: ≥1 pane)
         }
@@ -506,7 +510,10 @@ impl WorkspaceLayoutCache {
     pub fn load(&self, project_id: &str, cwd: &str) -> WorkspaceLayoutStore {
         // Hold the lock across read + repair + mirror update so a load cannot
         // race a save's mid-flush file and return/cache a stale layout.
-        let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
+        let mut guard = self
+            .mirror
+            .lock()
+            .expect("workspace-layout mirror poisoned");
         let raw: serde_json::Value = match fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
             Err(_) => serde_json::Value::Null,
@@ -541,7 +548,10 @@ impl WorkspaceLayoutCache {
             .unwrap_or(("", ""));
         let raw = serde_json::to_value(store).map_err(|e| format!("serialize: {e}"))?;
         let repaired = repair_workspace_layout(raw, default_project, default_cwd);
-        let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
+        let mut guard = self
+            .mirror
+            .lock()
+            .expect("workspace-layout mirror poisoned");
         self.flush_to_disk(&repaired)?;
         *guard = Some(repaired);
         Ok(())
@@ -562,11 +572,12 @@ impl WorkspaceLayoutCache {
             .parent()
             .ok_or_else(|| "workspace-layout path has no parent".to_string())?;
         fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)
-            .map_err(|e| format!("create tempfile: {e}"))?;
+        let mut tmp =
+            tempfile::NamedTempFile::new_in(parent).map_err(|e| format!("create tempfile: {e}"))?;
         let bytes = serde_json::to_vec_pretty(store).map_err(|e| format!("serialize: {e}"))?;
         tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
-        tmp.persist(&self.path).map_err(|e| format!("persist: {e}"))?;
+        tmp.persist(&self.path)
+            .map_err(|e| format!("persist: {e}"))?;
         Ok(())
     }
 }
@@ -679,6 +690,21 @@ mod tests {
     }
 
     #[test]
+    fn preserves_known_kimi_agent_type() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{
+                "id": "s", "layout": "single", "active": true,
+                "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true,
+                      "ptyId": "x", "cwd": "/", "agentType": "kimi", "agentSessionId": null } ] }] }),
+            "proj",
+            "/",
+        );
+        let s = shell(&store.sessions[0].panes[0]);
+        assert_eq!(s.agent_type, "kimi"); // kimi is a known agent, not coerced to generic
+    }
+
+    #[test]
     fn defaults_project_context_and_drops_invalid_urls_remapping_index() {
         let store = repair_workspace_layout(
             json!({ "version": 1, "sessions": [{
@@ -712,7 +738,7 @@ mod tests {
             "/",
         );
         assert_eq!(store.sessions.len(), 1); // duplicate session id dropped
-        // p0 (first), p0-dup dropped, p1 has dup ptyId "a" → dropped → only p0 remains
+                                             // p0 (first), p0-dup dropped, p1 has dup ptyId "a" → dropped → only p0 remains
         assert_eq!(store.sessions[0].panes.len(), 1);
         assert_eq!(shell(&store.sessions[0].panes[0]).pane_id, "p0");
     }
@@ -753,9 +779,17 @@ mod tests {
             "proj",
             "/",
         );
-        let ids: Vec<&str> = store.sessions[0].panes.iter().map(|p| shell(p).pane_id.as_str()).collect();
+        let ids: Vec<&str> = store.sessions[0]
+            .panes
+            .iter()
+            .map(|p| shell(p).pane_id.as_str())
+            .collect();
         assert_eq!(ids, vec!["a", "b", "c"]); // sorted by paneIndex
-        let idxs: Vec<u32> = store.sessions[0].panes.iter().map(|p| shell(p).pane_index).collect();
+        let idxs: Vec<u32> = store.sessions[0]
+            .panes
+            .iter()
+            .map(|p| shell(p).pane_index)
+            .collect();
         assert_eq!(idxs, vec![0, 1, 2]); // re-indexed
     }
 
@@ -969,7 +1003,10 @@ mod tests {
         );
         // shell missing cwd dropped → only the browser pane remains, forced active
         assert_eq!(store.sessions[0].panes.len(), 1);
-        assert!(matches!(store.sessions[0].panes[0], WorkspacePane::Browser(_)));
+        assert!(matches!(
+            store.sessions[0].panes[0],
+            WorkspacePane::Browser(_)
+        ));
         assert!(pane_active(&store.sessions[0].panes[0]));
     }
 
@@ -998,7 +1035,11 @@ mod tests {
             "/",
         );
         assert_eq!(store.sessions[0].panes.len(), 4); // truncated to quad
-        let actives = store.sessions[0].panes.iter().filter(|p| pane_active(p)).count();
+        let actives = store.sessions[0]
+            .panes
+            .iter()
+            .filter(|p| pane_active(p))
+            .count();
         assert_eq!(actives, 1); // exactly one, never zero (the beyond-quad active was truncated)
     }
 
@@ -1016,7 +1057,7 @@ mod tests {
         );
         let b = browser_tab(&store.sessions[0].panes[0]);
         assert_eq!(b.tabs[0].history.len(), MAX_HISTORY); // capped
-        // the formerly-active entry is preserved at the remapped index
+                                                          // the formerly-active entry is preserved at the remapped index
         assert_eq!(
             b.tabs[0].history[b.tabs[0].history_index as usize].url,
             "https://e120"
@@ -1144,7 +1185,10 @@ mod tests {
             "/",
         );
         assert_eq!(store.sessions.len(), 1);
-        assert!(matches!(store.sessions[0].panes[0], WorkspacePane::Browser(_)));
+        assert!(matches!(
+            store.sessions[0].panes[0],
+            WorkspacePane::Browser(_)
+        ));
     }
 
     #[test]
@@ -1186,7 +1230,8 @@ mod tests {
         let sessions: Vec<_> = (0..(MAX_SESSIONS + 6))
             .map(|i| json!({ "id": format!("s{i}"), "layout": "single", "active": i == 0, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] }))
             .collect();
-        let store = repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
+        let store =
+            repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
         assert_eq!(store.sessions.len(), MAX_SESSIONS);
     }
 
@@ -1196,7 +1241,8 @@ mod tests {
         let sessions: Vec<_> = (0..MAX_SESSIONS)
             .map(|i| json!({ "id": format!("s{i}"), "layout": "single", "active": i == 0, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] }))
             .collect();
-        let store = repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
+        let store =
+            repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
         assert_eq!(store.sessions.len(), MAX_SESSIONS);
     }
 
@@ -1211,7 +1257,10 @@ mod tests {
             "proj",
             "/",
         );
-        assert_eq!(browser_tab(&store.sessions[0].panes[0]).tabs.len(), MAX_TABS);
+        assert_eq!(
+            browser_tab(&store.sessions[0].panes[0]).tabs.len(),
+            MAX_TABS
+        );
     }
 
     #[test]

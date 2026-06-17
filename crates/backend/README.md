@@ -2,7 +2,7 @@
 
 Long-lived sidecar process spawned by Electron over LSP-framed JSON stdio IPC.
 Hosts PTY (`portable-pty`), filesystem, git (status / diff / watch), and agent
-observability (Claude Code + Codex adapters).
+observability (Claude Code + Codex CLI + Kimi Code adapters).
 
 - `src/bin/vimeflow-backend.rs` - sidecar binary entry point.
 - `src/runtime/` - `BackendState`, IPC router, `EventSink` trait.

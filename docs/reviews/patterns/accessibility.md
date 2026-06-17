@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 23
+ref_count: 24
 ---
 
 # Accessibility
@@ -533,7 +533,25 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 50. Reduced-motion media query leaves animated element visible at rest
+### 50. Pointer-leave handler schedules drift under reduced-motion and when already at rest
+
+- **Source:** github-claude + github-codex-connector | PR #457 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.ts`
+- **Finding:** `onLeave` called `ensureLoop()` unconditionally, so it scheduled a rAF frame even when `prefers-reduced-motion: reduce` was active, the water refs were null, or the loop was already at rest. Under reduced motion this could re-apply a cached `translate(...)` transform after `onMqlChange` had explicitly cleared it.
+- **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Meter reports unknown context usage as 0%
+
+- **Source:** github-codex-connector | PR #462 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** When `usedPercentage` was `null` (context window not yet known), the card still derived `aria-valuenow` from `effectivePct` (`pct ?? 0`), exposing a 0% meter value while the visible UI and `aria-valuetext` announced the usage as unknown. Screen-reader users could confuse an initial/unknown state with a genuinely empty context window.
+- **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Reduced-motion media query leaves animated element visible at rest
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -542,11 +560,11 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 51. `aria-live` region announces completion on every refresh cycle
+### 53. `aria-live` region announces completion on every refresh cycle
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** LOW
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
-- **Finding:** The live region alternated between `'Fetching latest agent status'` and `'Agent status updated'`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
+- **Finding:** The live region alternated between `Fetching latest agent status` and `Agent status updated`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
 - **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
 - **Commit:** see `git blame` / `git log` on this line

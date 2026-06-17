@@ -195,8 +195,8 @@
   }
 }
 
-/* Liquid bucket animations (used by both Bucket and ContextBucket via
-   LiquidFill). Two opposing sine-wave translations create the ripple;
+/* Liquid animations consumed by LiquidFill (the collapsed-rail RailMeter
+   gauges). Two opposing sine-wave translations create the ripple;
    vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
    prefers-reduced-motion. */
 @keyframes vfLiquidWaveA {

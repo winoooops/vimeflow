@@ -2,7 +2,7 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 ref_count: 0
 ---
 
@@ -32,11 +32,20 @@ feature.
 - **Fix:** Added a `logs_db_cache: std::sync::OnceLock<PathBuf>` field to `CompositeLocator`. `latest_account_rate_limits` checks the cache first; on a miss it runs `discover_db`, stores the result only on success, and retries on subsequent calls if the earlier discovery returned `None`. This eliminates repeated filesystem I/O without changing per-call read-query behavior.
 - **Commit:** same commit as this entry
 
-### 2. Stale active snapshot returned when detection returns null
+### 2. Kimi supervisor reparses full transcript on every idle poll
+
+- **Source:** github-codex-connector | PR #481 round 1 | 2026-06-16
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** `run_session_supervisor` calls `emit_session_status` every 750 ms, which unconditionally calls `parse_session_aggregate` and `main_settled_turn_count`. Both helpers read and parse the full main and active `wire.jsonl` files before deduping. For long-running sessions the transcripts grow large, so leaving a Kimi pane open keeps doing full-file I/O and JSON parsing indefinitely.
+- **Fix:** Added a cheap `session_source_mtime` metadata walk over `state.json` and every known agent wire. `emit_session_status` now caches the parsed `StatusSnapshot` and the settled turn count; when the source mtimes are unchanged it reuses the cached snapshot and still calls `maybe_refresh_usage` every poll so consent/retry flows are not starved. The expensive reparse is skipped only when the inputs have not changed.
+- **Commit:** same commit as this entry
+
+### 3. Stale active snapshot returned when detection returns null
 
 - **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
 - **File:** `src/features/agent-status/utils/statusRefreshCoordinator.ts`
 - **Finding:** When `detect_agent_in_session` returned `null` for a pane with a cached active snapshot, the coordinator returned the stale snapshot unchanged. Switching back to that pane restored `isActive: true` until the primary polling hook caught up.
-- **Fix:** Changed the null-detection branch to write a default (inactive) snapshot instead of returning the previous one, so hot-loaded panes never display a dead agent as active.
+- **Fix:** Changed the null-detection branch to write a default inactive snapshot instead of returning the previous one, so hot-loaded panes never display a dead agent as active.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

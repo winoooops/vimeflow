@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import type { SessionStatus } from '../../../sessions/types'
 import { StatusDot } from '../../../sessions/components/StatusDot'
 
@@ -8,6 +9,7 @@ export interface AgentStatusPanelHeaderProps {
   isRefreshing?: boolean
   status: SessionStatus
   onCollapse: () => void
+  reserveWindowControls?: boolean
 }
 
 export const AgentStatusPanelHeader = ({
@@ -15,10 +17,13 @@ export const AgentStatusPanelHeader = ({
   isRefreshing = false,
   status,
   onCollapse,
+  reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
   <div
     data-testid="agent-status-panel-header"
-    className="relative flex h-11 shrink-0 items-center gap-2.5 pr-2 pl-3.5"
+    className={`relative flex h-11 shrink-0 items-center gap-2.5 pr-2 pl-3.5 ${
+      reserveWindowControls ? 'vf-app-drag-region' : ''
+    }`}
     style={{
       background: `linear-gradient(180deg, ${agent.accentDim}, transparent 80%)`,
     }}
@@ -26,10 +31,10 @@ export const AgentStatusPanelHeader = ({
     <div
       data-testid="agent-glyph-chip"
       data-refreshing={isRefreshing ? 'true' : 'false'}
-      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border font-mono text-xs font-bold ${isRefreshing ? 'vf-activity-glyph-refresh' : ''}`}
+      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold ${isRefreshing ? 'vf-activity-glyph-refresh' : ''}`}
       style={{ background: agent.accentDim, color: agent.accent }}
     >
-      {agent.glyph}
+      <AgentGlyph agent={agent} size={14} />
     </div>
     <div className="flex min-w-0 flex-1 flex-col justify-center">
       <div className="flex min-w-0 items-center gap-1.5">
@@ -54,7 +59,7 @@ export const AgentStatusPanelHeader = ({
       type="button"
       onClick={onCollapse}
       aria-label="Collapse activity panel"
-      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
+      className="vf-app-no-drag grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
     >
       <span className="material-symbols-outlined text-base">chevron_right</span>
     </button>

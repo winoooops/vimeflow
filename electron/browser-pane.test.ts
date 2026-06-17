@@ -316,6 +316,7 @@ const electronMock = vi.hoisted(() => {
   interface LocalFakeView {
     webContents: LocalFakeWebContents
     setBounds: (bounds: LocalBounds) => void
+    setVisible: (visible: boolean) => void
   }
 
   interface LocalFakeWindow {
@@ -445,6 +446,7 @@ const electronMock = vi.hoisted(() => {
     const view: LocalFakeView = {
       webContents: createWebContents(),
       setBounds: vi.fn(),
+      setVisible: vi.fn(),
     }
 
     views.push(view)
@@ -1835,6 +1837,44 @@ describe('BrowserPaneController', () => {
       electronMock.views[0]
     )
     expect(electronMock.views[0]?.webContents.close).toHaveBeenCalledOnce()
+  })
+
+  test('keeps zero-bounds projection for an occluded native view', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    handler(BROWSER_PANE_SET_BOUNDS)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      bounds: { x: 1, y: 2, width: 300, height: 200 },
+      visible: true,
+    })
+
+    expect(electronMock.views[0]?.setBounds).toHaveBeenLastCalledWith({
+      x: 1,
+      y: 2,
+      width: 300,
+      height: 200,
+    })
+
+    handler(BROWSER_PANE_SET_BOUNDS)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      bounds: { x: 1, y: 2, width: 300, height: 200 },
+      visible: false,
+    })
+
+    expect(electronMock.views[0]?.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    })
+    expect(electronMock.views[0]?.setVisible).not.toHaveBeenCalled()
   })
 
   test('tab-0 destroyed after teardown does not emit a spurious empty tabs-changed', async () => {

@@ -3,6 +3,7 @@ import type { AgentStatus } from '../types'
 const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
   codex: 'codex',
+  kimi: 'kimi',
   aider: 'aider',
   generic: 'generic',
 } as const
@@ -32,6 +33,7 @@ export const createDefaultAgentStatus = (
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  usageFetched: false,
   numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],

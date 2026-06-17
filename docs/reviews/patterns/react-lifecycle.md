@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 15
+ref_count: 20
 ---
 
 # React Lifecycle
@@ -312,25 +312,79 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 31. Ref mutation + store write inside setStatus updater breaks React StrictMode
+### 31. `useNativeSurface` returns a fresh `NativeSurfaceState` object on every render
+
+- **Source:** github-claude | PR #467 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The hook synchronously called `getNativeSurfaceState` in render, and `nativeSurfaceStateFrom` always allocated a fresh object and `occludingOverlayIds` array. Consumers that used the returned state in `useEffect`, `useMemo`, or `useCallback` dependency arrays would re-run on every parent re-render, even when occlusion had not changed. A naive `useMemo` with `[getNativeSurfaceState, id, owner, belowPlane, getRect]` did not work in this codebase because the overlay stack uses a `latestDescriptorRef` pattern: overlay descriptors are stored once and read through refs on subsequent renders, so the `overlays` array reference (and therefore `getNativeSurfaceState`) does not change when an overlay's rect or other mutable content changes.
+- **Fix:** Compute the state every render so the latest ref-based overlay descriptor values are observed, but keep a `useRef` to the previous result and return the previous object when descriptor identity, occlusion flag, and `occludingOverlayIds` content are unchanged. This preserves referential stability for dependency arrays without breaking the ref-based content-update path.
+- **Commit:** _(PR #467 round 1)_
+
+### 32. `nativeSurfaceStates` snapshot freezes occlusion on geometry changes
+
+- **Source:** github-claude + github-codex-connector | PR #467 round 2 | 2026-06-15
+- **Severity:** MEDIUM / P2
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
+- **Finding:** Pre-aggregated `nativeSurfaceStates` was computed by a `useMemo` keyed on `[nativeSurfaces, overlays]`, which only update when descriptors are registered or unregistered. `useOverlayRegistration` stores a stable `getRect` callback that reads from `latestDescriptorRef`, so moving or resizing an already-open `intersects` overlay does not change the descriptor arrays. The snapshot therefore kept the occlusion values from the last registration moment and would silently expose stale `occluded`/`occludingOverlayIds` to any context consumer reading `nativeSurfaceStates`.
+- **Fix:** Removed `nativeSurfaceStates` from `OverlayStackSnapshot` and the context value, leaving `getNativeSurfaceState(descriptor)` as the only public occlusion API. It evaluates the live `getRect` callbacks during each consumer's render, so geometry changes are always reflected. Added JSDoc explaining the design choice and updated the provider test to read live state via `getNativeSurfaceState` instead of the removed snapshot field.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. `occludingOverlayIds` order depends on Map insertion order, breaking referential stability after re-registration
+
+- **Source:** github-codex-connector | PR #467 round 5 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx` and `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** `occludingOverlayIds` was derived by filtering `Array.from(overlayDescriptors.values())` and mapping to ids, preserving the underlying `Map` insertion order. `useOverlayRegistration` unregisters and re-registers an overlay whenever any of its logical descriptor fields change; a re-registered overlay moves to the tail of the `Map`, so a semantically identical set of occluders could produce a different positional array. `areOcclusionStatesEqual` compared ids positionally, so the reordering caused `useNativeSurface` to replace its cached `NativeSurfaceState` even though visibility had not changed, defeating the referential-stability contract.
+- **Fix:** Sorted the `occludingOverlayIds` array alphabetically in `nativeSurfaceStateFrom` before returning the state. Added a regression test that registers two occluding overlays, re-registers one by changing a non-occlusion prop, and asserts the id order remains deterministic.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Registered overlay descriptor exposes stale `isOpen`/`nativeOcclusion` for one frame
+
+- **Source:** github-claude | PR #467 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
+- **Finding:** `latestDescriptorRef.current` was updated during render, but the descriptor stored in the provider captured `isOpen` and `nativeOcclusion` from the previous effect registration. Between render and the layout-effect re-registration, `getNativeSurfaceState` read stale logical fields, producing a one-frame native-surface visibility error during overlay open/close or `nativeOcclusion` policy transitions.
+- **Fix:** Changed the registered descriptor to read `isOpen`, `nativeOcclusion`, and `getRect` through `latestDescriptorRef.current` — `isOpen` and `nativeOcclusion` as getters and `getRect` as a callback — so the provider map always observes the latest render values before the effect re-registers.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. useNativeSurface: unconstrained useLayoutEffect causes layout reads every commit
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The dep-array-less `useLayoutEffect` (lines 78-92) runs after every React commit for every mounted `BrowserPane`. When an `'intersects'`-type overlay is open (pane-rename or workspace-banners), each commit calls `getBoundingClientRect()` on the overlay element (`document.querySelector(...)`) and on `contentRef.current`. During pane-rename, every keystroke is a commit, producing 2 forced layout reads per browser pane per keystroke. The `areOcclusionStatesEqual` guard correctly prevents render cascades, so only the reads accumulate. With multiple panes the reads are proportional. Fix: skip the re-check when no open `'intersects'` overlay is registered, reducing DOM reads to zero during the common `'global'`-only case.
+- **Fix:** Added an early return in the post-commit useLayoutEffect when no open intersecting overlay is registered, eliminating layout reads in the global-only case.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. useNativeSurface: bare eslint-disable on unbounded effect lacks rationale
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The second `useLayoutEffect` captures `overlays`, `getNativeSurfaceState`, `id`, `owner`, `belowPlane`, and `getRect` but lists no deps so it runs after every commit. The `// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses the warning without naming which variables are deliberately unlisted or why each is safe.
+- **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Ref mutation + store write inside setStatus updater breaks React StrictMode
 
 - **Source:** github-claude | PR #456 round 1 | 2026-06-15
 - **Severity:** HIGH
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** `seenToolUseIdsRef.current.has/add` and `writeStatusSeenToolUseIds` were called inside the functional `setStatus` updater. React 18 StrictMode double-invokes state updaters with the same `prev` in development, so the first invocation mutated the ref and the second invocation treated the legitimate tool call as a duplicate, returning `prev` unchanged.
-- **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure (before `setStatus`), capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
+- **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure before `setStatus`, capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 32. Move seen-tool ID writes out of the state updater
+### 38. Move seen-tool ID writes out of the state updater
 
 - **Source:** github-codex-connector | PR #456 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
-- **Fix:** Same change as entry 31: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
+- **Fix:** Same change as entry 37: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 33. Fragile `\n` separator in effect dependency signature
+### 39. Fragile newline separator in effect dependency signature
 
 - **Source:** github-claude | PR #459 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -339,7 +393,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Replaced the join/split signature with `JSON.stringify({ activePtyId, visiblePtyIds })` and parsed it inside the effect. JSON escapes any special characters, making the dependency string robust.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 34. Hook pre-plans then coordinator re-plans
+### 40. Hook pre-plans then coordinator re-plans
 
 - **Source:** github-claude | PR #459 round 1 | 2026-06-15
 - **Severity:** LOW
@@ -348,25 +402,25 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Removed the hook's pre-planning; it now serializes the raw `{ activePtyId, visiblePtyIds }` request as the effect dep and lets the coordinator do all planning internally.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 35. Hot-loading scope should match SplitView visibility
+### 41. Hot-loading scope should match SplitView visibility
 
 - **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
 - **File:** `src/features/workspace/WorkspaceView.tsx`
-- **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes (e.g., after shrinking to `single`/`vsplit`) still received prefetches and warm snapshots. The background-work boundary diverged from the UI visibility boundary.
+- **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes still received prefetches and warm snapshots after shrinking to a lower-capacity layout. The background-work boundary diverged from the UI visibility boundary.
 - **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 36. Scroll-anchor compensation inferred prepend from list length
+### 42. Scroll-anchor compensation inferred prepend from list length
 
 - **Source:** github-claude + github-codex-connector (P2) | PR #464 round 1 | 2026-06-15
 - **Severity:** MEDIUM
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
 - **Finding:** The prepend detector compared `feedEvents.length` to a stored count. When the capped activity feed replaced its oldest row (total length unchanged) or appended rows at the bottom, the detector produced false negatives/positives. The compensation amount also relied on total `scrollHeight` growth, which is zero when an equal-height row drops off the bottom.
-- **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` (with `CSS.escape` on the selector) and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
+- **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` with `CSS.escape` and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 37. Batch prepends compensated by only the first inserted row height
+### 43. Batch prepends compensated by only the first inserted row height
 
 - **Source:** github-codex-connector (P2) | PR #464 round 2 | 2026-06-15
 - **Severity:** MEDIUM

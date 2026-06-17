@@ -37,6 +37,9 @@ async fn main() {
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
 
+    // Restore the persisted kimi plan-usage consent before any agent attaches.
+    state.load_kimi_usage_consent();
+
     // Drive the burner-terminal live "running" cue (VIM-71).
     state.start_foreground_poll();
 

@@ -521,6 +521,22 @@ mod router {
                 state.set_workspace_sessions(p.request)?;
                 Ok(Value::Null)
             }
+            "set_kimi_usage_consent" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    enabled: bool,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.set_kimi_usage_consent(p.enabled)?;
+                Ok(Value::Null)
+            }
+            "get_kimi_usage_consent" => encode_result(state.get_kimi_usage_consent()),
+            "refresh_kimi_usage" => {
+                state.refresh_kimi_usage();
+                Ok(Value::Null)
+            }
             "detect_agent_in_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

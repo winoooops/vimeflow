@@ -1,6 +1,7 @@
 // cspell:ignore worktree
 import { useEffect, useRef, type ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import { StatusDot } from '../../../sessions/components/StatusDot'
 import type { Session, SessionStatus } from '../../../sessions/types'
 import { register, unregister } from '../../paneHeaderRefs'
@@ -75,6 +76,7 @@ export const Header = ({
       }`}
     >
       <div
+        data-testid="agent-glyph-chip"
         className="inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
         style={{
           background: agent.accentDim,
@@ -83,7 +85,7 @@ export const Header = ({
         }}
       >
         <span className="text-[12px]" aria-hidden="true">
-          {agent.glyph}
+          <AgentGlyph agent={agent} size={12} />
         </span>
         <span>{agent.short}</span>
       </div>

@@ -1,6 +1,8 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
-import { Bucket } from './Bucket'
+import { AgentGlyph } from '@/components/AgentGlyph'
+import { RailMeter } from './RailMeter'
+import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
   agent: Agent
@@ -8,6 +10,7 @@ export interface AgentStatusRailProps {
   cacheHitPercentage: number | null
   isRunning: boolean
   onExpand: () => void
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can drive the `transition-[width]` animation on
@@ -15,33 +18,16 @@ export interface AgentStatusRailProps {
 // duplicated magic number that can drift if the rail is resized.
 export const RAIL_WIDTH_PX = 44
 
-// Bucket fill tones — semantic mapping per the bucket-redesign spec.
-// These literals mirror tokens defined in `docs/design/tokens.ts`
-// (tertiary, error, success-muted, primary);
-// `tokens.ts` is the design reference and is NOT imported from `src/` (see
-// the rationale in `TokenCache.tsx`). If the palette migrates, update these
-// constants in lockstep with tokens.ts.
-// Annotations match the runtime CSS variables to their `docs/design/tokens.ts`
-// names. Severity hierarchy: DANGER > WARN > NEUTRAL/HEALTHY. The Catppuccin
-// Mocha palette names are non-obvious — `tertiary` is the strong
-// pink (highest severity), `error` is the softer coral
-// (intermediate). If the palette migrates, update each constant from the
-// named token so the severity ordering survives.
-const TONE_DANGER = 'var(--color-tertiary)' // tertiary  (strong pink, peak severity)
-const TONE_WARN = 'var(--color-error)' // error      (soft coral, warning)
-const TONE_HEALTHY = 'var(--color-success-muted)' // success-muted
-const TONE_NEUTRAL = 'var(--color-primary)' // primary
-
-const contextTone = (pct: number, accent: string): string => {
-  if (pct > 90) {
-    return TONE_DANGER
-  }
-  if (pct > 75) {
-    return TONE_WARN
-  }
-
-  return accent
-}
+// Cache-bucket fill tones — semantic mapping per the bucket-redesign spec.
+// These literals mirror tokens in `docs/design/tokens.ts` (success-muted,
+// primary, tertiary); `tokens.ts` is the design reference and is NOT imported
+// from `src/` (see the rationale in `TokenCache.tsx`). If the palette migrates,
+// update these in lockstep. The context meter no longer uses tiered tokens —
+// it shares the continuous `ctxTone` sweep with the expanded reservoir card so
+// the context color agrees across collapsed and expanded states.
+const TONE_DANGER = 'var(--color-tertiary)' // tertiary (strong pink, low cache)
+const TONE_HEALTHY = 'var(--color-success-muted)' // success-muted (high cache)
+const TONE_NEUTRAL = 'var(--color-primary)' // primary (mid cache)
 
 const cacheTone = (rate: number): string => {
   if (rate >= 70) {
@@ -60,6 +46,7 @@ export const AgentStatusRail = ({
   cacheHitPercentage,
   isRunning,
   onExpand,
+  reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
   const cachePct = cacheHitPercentage
@@ -67,14 +54,16 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
+      className={`flex h-full flex-col items-center bg-surface pb-3 pt-2 ${
+        reserveWindowControls ? 'vf-app-drag-region' : ''
+      }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
       <button
         type="button"
         onClick={onExpand}
         aria-label="Expand activity panel"
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        className="vf-app-no-drag grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
       >
         <span className="material-symbols-outlined text-base">
           chevron_left
@@ -90,21 +79,23 @@ export const AgentStatusRail = ({
           borderColor: agent.accentSoft,
         }}
       >
-        {agent.glyph}
+        <AgentGlyph agent={agent} size={14} />
       </div>
 
       {ctxPct !== null && (
-        <Bucket
-          pct={ctxPct}
-          color={contextTone(ctxPct, agent.accent)}
-          label="CTX"
-          tooltip={`Context: ${Math.round(ctxPct)}%`}
-        />
+        <div className="vf-app-no-drag">
+          <RailMeter
+            pct={ctxPct}
+            color={ctxTone(ctxPct).base}
+            label="CTX"
+            tooltip={`Context: ${Math.round(ctxPct)}%`}
+          />
+        </div>
       )}
 
       {cachePct !== null && (
-        <div className="mt-4">
-          <Bucket
+        <div className="vf-app-no-drag mt-4">
+          <RailMeter
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"

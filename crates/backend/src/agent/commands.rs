@@ -26,11 +26,20 @@ pub(crate) async fn detect_agent_in_session_inner(
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
     match detect_agent(pid) {
-        Some((agent_type, agent_pid)) => Ok(Some(AgentDetectedEvent {
-            session_id,
-            agent_type,
-            pid: agent_pid,
-        })),
+        Some((agent_type, agent_pid)) => {
+            crate::debug::debug_log(
+                "agent-detect",
+                &format!(
+                    "session={} shell_pid={} agent={:?} agent_pid={}",
+                    session_id, pid, agent_type, agent_pid
+                ),
+            );
+            Ok(Some(AgentDetectedEvent {
+                session_id,
+                agent_type,
+                pid: agent_pid,
+            }))
+        }
         None => Ok(None),
     }
 }

@@ -47,6 +47,7 @@ export interface TerminalPaneProps {
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
+  onCommandSubmit?: (ptyId: string, command: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
   showFocusHighlight?: boolean
@@ -78,6 +79,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       onCwdChange = undefined,
+      onCommandSubmit = undefined,
       onRestart = undefined,
       deferFit = false,
       showFocusHighlight = true,
@@ -278,6 +280,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               restoredFrom={pane.restoreData}
               onCwdChange={onCwdChange}
               onPaneReady={onPaneReady}
+              onCommandSubmit={onCommandSubmit}
               mode={mode}
               onPtyStatusChange={setPtyStatus}
               deferFit={deferFit}

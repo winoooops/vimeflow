@@ -145,3 +145,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** After `pendingRestartId` is set to the restarted PTY id, synchronous code such as `reconstructWorkspace`, buffer attachment, `onRestoreRef.current`, or `activate` can throw before `pendingRestartId` is cleared. The catch block only logged and cleared loading state, so the backend PTY remained alive until a later unmount or dependency change, appearing as a phantom session in subsequent `listSessions()` results.
 - **Fix:** Call the existing idempotent `disposePendingRestart()` helper at the start of the restore IIFE's catch block so any uncommitted restarted PTY is killed on errors.
 - **Commit:** same commit as this entry
+
+### 15. Process zombie leak in version_from_command when try_wait returns an error
+
+- **Source:** github-claude | PR #477 round 1 | 2026-06-16
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/usage_fetch.rs`
+- **Finding:** version_from_command used child.try_wait().ok()? to poll a spawned kimi binary; an Err from try_wait propagated None out of the loop, dropping the child without kill/wait and leaving a zombie process on Unix.
+- **Fix:** Removed version_from_command and the version_from_kimi_binary fallback entirely so the User-Agent version is resolved from transcript metadata or install/latest JSON only, eliminating the zombie-leak surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

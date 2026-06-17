@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html class="vf-root vf-aesthetic-obsidian" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Kimi · Plan Usage Permission Gate</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet"/>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  #root { height: 100%; }
+  @keyframes vfPulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:0.55; transform: scale(0.85);} }
+  @keyframes kimiSpin { to { transform: rotate(360deg); } }
+  @keyframes kimiShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(220%); } }
+  .kimi-shimmer {
+    position: absolute; inset: 0; width: 55%;
+    background: linear-gradient(90deg, transparent, rgba(255,179,138,0.6), transparent);
+    animation: kimiShimmer 1.15s ease-in-out infinite;
+  }
+  .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; }
+
+  /* Obsidian Lens palette (defaults from Vimeflow.html) */
+  .vf-root {
+    --vf-bg:            #141424;
+    --vf-surface-0:     #0d0d1c;  --vf-surface-0-rgb: 13,13,28;
+    --vf-surface-1:     #121221;
+    --vf-surface-2:     #1e1e2e;  --vf-surface-2-rgb: 30,30,46;
+    --vf-surface-3:     #292839;
+    --vf-text:          #e3e0f7;
+    --vf-text-1:        #cdc3d1;
+    --vf-text-2:        #8a8299;
+    --vf-text-3:        #6c7086;
+    --vf-accent:        #cba6f7;  --vf-accent-rgb: 203,166,247;
+    --vf-accent-bright: #e2c7ff;  --vf-accent-bright-rgb: 226,199,255;
+    --vf-outline:       #4a444f;  --vf-outline-rgb: 74,68,79;
+    --vf-success:       #7defa1;  --vf-success-rgb: 125,239,161;
+    --vf-warn:          #ff94a5;  --vf-warn-rgb: 255,148,165;
+    /* Kimi peach — the per-agent accent this gate is built around */
+    --vf-kimi:          #ffb38a;  --vf-kimi-rgb: 255,179,138;
+    --vf-kimi-bright:   #ffcaa8;  --vf-kimi-bright-rgb: 255,201,168;
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="primitives.jsx"></script>
+<script type="text/babel" src="kimi-cards.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+
+<script type="text/babel">
+const ABW = SIDEBAR_W;
+const ABH = 296;
+
+function State({ state }) {
+  return <KimiSidebarFrame><KimiCard state={state} /></KimiSidebarFrame>;
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection
+        id="states"
+        title="Kimi · plan-usage permission gate"
+        subtitle="One slot in the agent-status card, five states. Kimi's 5-hour + weekly limits need a network call to api.kimi.com (it sends your key), so they're opt-in — Claude/Codex read limits locally and skip this. Every state is the same height: the session list below never jumps.">
+        <DCArtboard id="off" label="1 · OFF — opt-in (default)" width={ABW} height={ABH}>
+          <State state="off" />
+        </DCArtboard>
+        <DCArtboard id="loading" label="2 · LOADING — just enabled" width={ABW} height={ABH}>
+          <State state="loading" />
+        </DCArtboard>
+        <DCArtboard id="on" label="3 · ON — two peach bars" width={ABW} height={ABH}>
+          <State state="on" />
+        </DCArtboard>
+        <DCArtboard id="error" label="4 · ERROR — offline / auth" width={ABW} height={ABH}>
+          <State state="error" />
+        </DCArtboard>
+        <DCArtboard id="revoke" label="5 · REVOKE — turn-off (hover)" width={ABW} height={ABH}>
+          <State state="revoke" />
+        </DCArtboard>
+
+        <DCPostIt top={-4} right={-188} width={250} rotate={2}>
+          OFF is a <b>button</b>, not a toggle or link: enabling fires a deliberate, reversible network fetch that ships your key to api.kimi.com. A toggle would imply a free, instant local flip; a link, navigation. The cloud glyph + the named host signal "this goes over the network" — informative, not alarming.
+        </DCPostIt>
+      </DCSection>
+
+      <DCSection
+        id="live"
+        title="Live — click through the flow"
+        subtitle="The same card, interactive: click “Show plan usage” to watch OFF → LOADING → ON, then hover the corner control and click it to revoke back to OFF.">
+        <DCArtboard id="live-card" label="Interactive" width={ABW} height={ABH}>
+          <KimiSidebarFrame><KimiCardLive /></KimiSidebarFrame>
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

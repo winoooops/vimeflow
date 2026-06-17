@@ -26,8 +26,8 @@ export interface FilePillProps {
 // `not-allowed` cursor, no hover, no tooltip — rather than showing the blocked
 // cursor (matches the design's unavailable affordance).
 const GHOST_ARROW_CLASSES =
-  'w-[26px] h-[30px] grid place-items-center rounded-md bg-transparent ' +
-  'text-on-surface-muted hover:bg-surface-bright hover:text-primary-container ' +
+  'w-[26px] h-7 grid place-items-center rounded-md bg-transparent ' +
+  'text-on-surface-muted hover:bg-surface-container hover:text-primary ' +
   'transition-colors disabled:opacity-40 disabled:pointer-events-none'
 
 export const FilePill = ({
@@ -71,7 +71,7 @@ export const FilePill = ({
               ? `file ${counterText}: ${fileName}`
               : `file ${counterText}`
           }
-          className="inline-flex items-center gap-2 h-[30px] px-3 rounded-md bg-primary/10 ring-1 ring-inset ring-primary/20"
+          className="inline-flex items-center gap-2 h-7 px-3 rounded-md bg-primary/10 ring-1 ring-inset ring-primary/20"
         >
           <span
             aria-hidden="true"
@@ -79,7 +79,11 @@ export const FilePill = ({
           >
             description
           </span>
-          <span className="font-mono text-xs font-medium text-on-surface truncate max-w-[12rem]">
+          {/* Fixed-width name slot: keeps the pill — and the whole toolbar's
+              control rhythm — a consistent length regardless of filename. Long
+              names truncate with `…`; the full path stays on the group tooltip
+              + aria-label so it is never lost. */}
+          <span className="font-mono text-xs font-medium text-on-surface truncate w-28">
             {baseName}
           </span>
           <span className="font-mono text-[0.625rem] text-primary-dim bg-primary/[0.14] px-1.5 py-0.5 rounded-full whitespace-nowrap">

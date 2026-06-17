@@ -315,16 +315,14 @@ fn process_line(
     // Capture Codex's own session id (session_meta) as the lifecycle identity,
     // then derive a phase from the event_msg turn boundary; replay-bounded.
     if matches!(record_type, CodexRecordType::SessionMeta) {
-        if let Some(id) = payload.id.as_deref() {
+        if let Some(id) = payload.id.as_deref().filter(|id| !id.is_empty()) {
             if !codex_agent_session_id.is_empty() && codex_agent_session_id != id {
-                let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
-                flush_in_flight_tool_calls(
-                    session_id,
-                    events,
-                    in_flight,
-                    ToolCallStatus::Failed,
-                    &timestamp,
-                );
+                in_flight.clear();
+                *num_turns = 0;
+                *last_cwd = None;
+                *last_phase = None;
+                *replay_phase = None;
+                emitter.clear_pending();
             }
             *codex_agent_session_id = id.to_string();
         }
@@ -713,7 +711,11 @@ fn process_exec_command_end(
     if let Some(matched) = call.test_match {
         if let Some(cwd_ref) = cwd {
             let captured = CapturedOutput {
-                content: payload.aggregated_output.as_deref().unwrap_or("").to_string(),
+                content: payload
+                    .aggregated_output
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_string(),
                 is_error: payload.exit_code.is_some_and(|code| code != 0),
             };
             if let Some(snapshot) = maybe_build_snapshot(BuildArgs {
@@ -950,7 +952,10 @@ fn custom_tool_output_failed(output: Option<&str>) -> bool {
         Err(_) => return false,
     };
 
-    parsed.metadata.and_then(|m| m.exit_code).is_some_and(|code| code != 0)
+    parsed
+        .metadata
+        .and_then(|m| m.exit_code)
+        .is_some_and(|code| code != 0)
 }
 
 fn exec_function_output_exit_code(output: Option<&str>) -> Option<i64> {
@@ -1049,8 +1054,9 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
         decoder.decode_line(r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#);
-        decoder
-            .decode_line(r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#);
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#,
+        );
         decoder.decode_line(
             r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
         );
@@ -1384,9 +1390,21 @@ mod tests {
         let transcript_path = tmp.path().join("rollout.jsonl");
 
         let mut records = Vec::new();
-        records.extend(exec_test_pair("call_exec1", "2026-05-04T10:00:00Z", "2026-05-04T10:00:01Z"));
-        records.extend(exec_test_pair("call_exec2", "2026-05-04T10:00:02Z", "2026-05-04T10:00:03Z"));
-        records.extend(exec_test_pair("call_exec3", "2026-05-04T10:00:04Z", "2026-05-04T10:00:05Z"));
+        records.extend(exec_test_pair(
+            "call_exec1",
+            "2026-05-04T10:00:00Z",
+            "2026-05-04T10:00:01Z",
+        ));
+        records.extend(exec_test_pair(
+            "call_exec2",
+            "2026-05-04T10:00:02Z",
+            "2026-05-04T10:00:03Z",
+        ));
+        records.extend(exec_test_pair(
+            "call_exec3",
+            "2026-05-04T10:00:04Z",
+            "2026-05-04T10:00:05Z",
+        ));
         write_rollout(&transcript_path, &records);
 
         let handle = start_tailing(
@@ -1433,14 +1451,18 @@ mod tests {
     #[test]
     fn summarize_function_call_args_prefers_exec_command_cmd() {
         assert_eq!(
-            summarize_function_call_args(Some("{\"cmd\":\"cargo test --workspace --all-features\",\"workdir\":\"/tmp/ws\"}")),
+            summarize_function_call_args(Some(
+                "{\"cmd\":\"cargo test --workspace --all-features\",\"workdir\":\"/tmp/ws\"}"
+            )),
             "cargo test --workspace --all-features"
         );
     }
 
     #[test]
     fn custom_tool_output_failed_reads_metadata_exit_code() {
-        assert!(custom_tool_output_failed(Some("{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}")));
+        assert!(custom_tool_output_failed(Some(
+            "{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}"
+        )));
     }
 
     // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
@@ -1453,7 +1475,9 @@ mod tests {
 
     #[test]
     fn extract_session_cwd_session_meta_returns_cwd() {
-        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":"/workspace/A"}}"#).unwrap();
+        let dto: CodexLineDto =
+            serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":"/workspace/A"}}"#)
+                .unwrap();
         assert_eq!(
             extract_session_cwd(dto.record_type(), &payload_of(&dto)),
             Some("/workspace/A".to_string())
@@ -1466,20 +1490,34 @@ mod tests {
         // Codex's turn_context.cwd is pinned to session-start and treating
         // it as live would cause false reverts after exec_command transitions.
         // This test is a defensive guard against re-introduction.
-        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"turn_context","payload":{"cwd":"/workspace/A"}}"#).unwrap();
-        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
+        let dto: CodexLineDto =
+            serde_json::from_str(r#"{"type":"turn_context","payload":{"cwd":"/workspace/A"}}"#)
+                .unwrap();
+        assert_eq!(
+            extract_session_cwd(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_session_cwd_other_type_returns_none() {
-        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"cwd":"/workspace/A"}}"#).unwrap();
-        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
+        let dto: CodexLineDto =
+            serde_json::from_str(r#"{"type":"event_msg","payload":{"cwd":"/workspace/A"}}"#)
+                .unwrap();
+        assert_eq!(
+            extract_session_cwd(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_session_cwd_empty_string_returns_none() {
-        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":""}}"#).unwrap();
-        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
+        let dto: CodexLineDto =
+            serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":""}}"#).unwrap();
+        assert_eq!(
+            extract_session_cwd(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     // ---- extract_exec_workdir unit tests (the mid-session signal) ----
@@ -1498,31 +1536,46 @@ mod tests {
         // event_msg carrying a function_call-shaped payload should still
         // be rejected — the outer event type gate is response_item.
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"type":"function_call","name":"exec_command","arguments":"{\"workdir\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_exec_workdir_non_function_call_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec_command","input":"{\"workdir\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_exec_workdir_non_exec_command_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{\"path\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_exec_workdir_malformed_arguments_json_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{not json"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     #[test]
     fn extract_exec_workdir_missing_workdir_field_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
     }
 
     // ---- process_line transition-semantics tests ----
@@ -1703,6 +1756,114 @@ mod tests {
         assert_eq!(last_cwd.as_deref(), Some("/workspace/B"));
     }
 
+    #[test]
+    fn process_line_new_session_meta_resets_run_scoped_tail_state() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+        let mut codex_agent_session_id = String::new();
+        let mut last_phase = None;
+        let mut replay_phase = None;
+
+        let lines = [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"old-run","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"user_message","message":"old prompt"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"old-call","arguments":"{\"cmd\":\"npm run lint\"}"}}"#,
+        ];
+        for line in lines {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+                &mut codex_agent_session_id,
+                &mut last_phase,
+                &mut replay_phase,
+                true,
+            );
+        }
+
+        assert_eq!(codex_agent_session_id, "old-run");
+        assert_eq!(num_turns, 1);
+        assert_eq!(in_flight.len(), 1);
+
+        process_line(
+            r#"{"timestamp":"2026-05-22T10:00:03Z","type":"session_meta","payload":{"id":"new-run","cwd":"/workspace/A"}}"#,
+            "sid-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut last_phase,
+            &mut replay_phase,
+            true,
+        );
+
+        assert_eq!(codex_agent_session_id, "new-run");
+        assert_eq!(num_turns, 0);
+        assert!(in_flight.is_empty());
+        assert_eq!(last_cwd.as_deref(), Some("/workspace/A"));
+
+        process_line(
+            r#"{"timestamp":"2026-05-22T10:00:04Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"old-call","exit_code":0,"duration":10}}"#,
+            "sid-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut last_phase,
+            &mut replay_phase,
+            true,
+        );
+        process_line(
+            r#"{"timestamp":"2026-05-22T10:00:05Z","type":"event_msg","payload":{"type":"user_message","message":"new prompt"}}"#,
+            "sid-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut last_phase,
+            &mut replay_phase,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(
+            tool_calls.len(),
+            1,
+            "the old running tool call must not complete after a /clear boundary"
+        );
+        assert_eq!(num_turns, 1);
+
+        let turns: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-turn")
+            .map(|(_, payload)| payload["numTurns"].clone())
+            .collect();
+        assert_eq!(turns, vec![json!(1), json!(1)]);
+    }
+
     // ---- DTO-migration regression tests (Task 1.6) ----
 
     #[test]
@@ -1715,12 +1876,42 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":"bad","aggregated_output":"ok"}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
-        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["status"], "done");
     }
@@ -1962,7 +2153,7 @@ mod tests {
     }
 
     #[test]
-    fn process_line_session_meta_reset_flushes_unfinished_exec_command() {
+    fn process_line_session_meta_reset_drops_unfinished_exec_command() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -2024,9 +2215,13 @@ mod tests {
             .into_iter()
             .filter(|(n, _)| n == "agent-tool-call")
             .collect();
-        assert_eq!(tool_calls.len(), 2);
-        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
-        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert_eq!(
+            tool_calls.len(),
+            1,
+            "session reset must not emit a stale completion for the old run"
+        );
+        assert_eq!(tool_calls[0].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[0].1["status"], "running");
         assert_eq!(codex_agent_session_id, "codex-new");
         assert!(in_flight.is_empty());
     }
@@ -2041,12 +2236,42 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"c1","input":"*** Begin Patch\n*** Update File: foo.ts\n*** End Patch"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"c1","success":"bad"}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
-        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["status"], "failed");
     }
@@ -2061,12 +2286,42 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":0,"duration":null}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
-        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["durationMs"], 0);
     }
@@ -2081,9 +2336,26 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let line = r#"{"timestamp":42,"type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#;
-        process_line(line, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
+        process_line(
+            line,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
 
-        let turns: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-turn").collect();
+        let turns: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-turn")
+            .collect();
         assert_eq!(turns.len(), 1);
     }
 

@@ -97,9 +97,9 @@ export const SYN_TOKENS = [
 export const AGENT_IDS = [
   'claude',
   'codex',
-  'gemini',
   'shell',
   'browser',
+  'kimi',
 ] as const
 
 export const AGENT_ACCENT_FIELDS = [

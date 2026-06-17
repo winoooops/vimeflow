@@ -129,12 +129,6 @@ export const obsidianLens: ThemeDefinition = {
       accentSoft: 'rgb(125 239 161 / 0.32)',
       onAccent: '#0a2415',
     },
-    gemini: {
-      accent: '#a8c8ff',
-      accentDim: 'rgb(168 200 255 / 0.16)',
-      accentSoft: 'rgb(168 200 255 / 0.32)',
-      onAccent: '#0e1c33',
-    },
     shell: {
       accent: '#f0c674',
       accentDim: 'rgb(240 198 116 / 0.14)',
@@ -146,6 +140,12 @@ export const obsidianLens: ThemeDefinition = {
       accentDim: 'rgb(79 200 214 / 0.16)',
       accentSoft: 'rgb(79 200 214 / 0.3)',
       onAccent: '#06232a',
+    },
+    kimi: {
+      accent: '#fab387',
+      accentDim: 'rgb(250 179 135 / 0.16)',
+      accentSoft: 'rgb(250 179 135 / 0.32)',
+      onAccent: '#2a1608',
     },
   },
 }

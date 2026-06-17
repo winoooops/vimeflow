@@ -44,6 +44,12 @@ import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
+const TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN =
+  /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g
+
+const stripTerminalInputControlSequences = (data: string): string =>
+  data.replace(TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN, '')
+
 const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
   Boolean(
     currentCwd &&
@@ -168,6 +174,11 @@ export interface BodyProps {
   onPaneReady?: NotifyPaneReady
 
   /**
+   * Called when the user submits a full terminal command line.
+   */
+  onCommandSubmit?: (ptyId: string, command: string) => void
+
+  /**
    * Explicit lifecycle mode — see {@link BodyMode}.
    * @default 'spawn'
    */
@@ -204,6 +215,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     restoredFrom = undefined,
     onCwdChange = undefined,
     onPaneReady = undefined,
+    onCommandSubmit = undefined,
     mode = 'spawn',
     onPtyStatusChange = undefined,
     onFocusChange = undefined,
@@ -227,6 +239,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
   const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
+  const submittedInputLineRef = useRef('')
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
 
@@ -239,6 +252,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     onCwdChangeRef.current = onCwdChange
   }, [onCwdChange])
+
+  const onCommandSubmitRef = useRef(onCommandSubmit)
+  useEffect(() => {
+    onCommandSubmitRef.current = onCommandSubmit
+  }, [onCommandSubmit])
 
   useEffect(() => {
     const previousCwd = agentCwdRef.current
@@ -358,18 +376,55 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     [applyAgentCwdHint, flushAgentCwdOutputBuffer]
   )
 
-  const handleTerminalInput = useCallback((): void => {
-    if (agentCwdSourceRef.current !== 'text-hint') {
-      return
-    }
+  const handleTerminalInput = useCallback(
+    (data: string): void => {
+      if (agentCwdSourceRef.current !== 'text-hint') {
+        // Continue below; command submission still needs to be tracked even when
+        // the cwd hint guard has nothing to unlock.
+      } else {
+        agentCwdSourceRef.current = 'user-input'
+        logAgentCwdDebug('user-input', {
+          sessionId,
+          agentCwd: agentCwdRef.current,
+          unlocked: true,
+        })
+      }
 
-    agentCwdSourceRef.current = 'user-input'
-    logAgentCwdDebug('user-input', {
-      sessionId,
-      agentCwd: agentCwdRef.current,
-      unlocked: true,
-    })
-  }, [sessionId])
+      for (const char of stripTerminalInputControlSequences(data)) {
+        if (char === '\r' || char === '\n') {
+          const submitted = submittedInputLineRef.current.trim()
+          submittedInputLineRef.current = ''
+          if (submitted.length > 0) {
+            onCommandSubmitRef.current?.(sessionIdRef.current, submitted)
+          }
+
+          continue
+        }
+
+        if (char === '\b' || char === '\x7f') {
+          submittedInputLineRef.current = submittedInputLineRef.current.slice(
+            0,
+            -1
+          )
+
+          continue
+        }
+
+        if (char === '\u0003' || char === '\u0015') {
+          submittedInputLineRef.current = ''
+
+          continue
+        }
+
+        if (char < ' ' || char === '\u001b') {
+          continue
+        }
+
+        submittedInputLineRef.current += char
+      }
+    },
+    [sessionId]
+  )
 
   const handleRestoreStart = useCallback((): void => {
     isRestoringOutputRef.current = true

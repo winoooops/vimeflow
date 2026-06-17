@@ -165,6 +165,7 @@ export const PaneRenameInput = ({
     <div
       ref={frameRef}
       data-testid="pane-rename-frame"
+      data-workspace-overlay-id="pane-rename"
       style={style}
       className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--color-scrim)_42%,transparent)] backdrop-blur-md"
     >

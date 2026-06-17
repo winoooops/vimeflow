@@ -11,7 +11,7 @@ import {
 import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import type { SessionStatus } from '../../../sessions/types'
-import { ContextBucket } from '../ContextBucket'
+import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
 import { ToolCallSummary } from '../ToolCallSummary'
 import { FilesChanged } from '../FilesChanged'
@@ -43,6 +43,7 @@ interface AgentStatusPanelProps {
   onCollapse: () => void
   cacheHistory: number[]
   snapshotKey?: string | null
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -308,6 +309,7 @@ export const AgentStatusPanel = ({
   onCollapse,
   cacheHistory,
   snapshotKey = null,
+  reserveWindowControls = false,
 }: AgentStatusPanelProps): ReactElement => {
   const bodyState = useRetainedBodyState({
     agentStatus,
@@ -540,6 +542,7 @@ export const AgentStatusPanel = ({
         isRefreshing={showsRefreshing}
         status={sessionStatus}
         onCollapse={onCollapse}
+        reserveWindowControls={reserveWindowControls}
       />
 
       <span className="sr-only" role="status" aria-live="polite">
@@ -554,14 +557,12 @@ export const AgentStatusPanel = ({
         <AgentStatusPanelOverviewSkeleton />
       ) : (
         <div className="flex flex-col gap-2 p-2">
-          <ContextBucket
+          <ContextReservoirCard
             usedPercentage={status.contextWindow?.usedPercentage ?? null}
             contextWindowSize={
               status.contextWindow?.contextWindowSize ??
               DEFAULT_CONTEXT_WINDOW_SIZE
             }
-            totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
-            totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
           />
           <TokenCache
             usage={status.contextWindow?.currentUsage ?? null}

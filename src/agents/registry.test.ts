@@ -4,13 +4,12 @@ import {
   AGENTS,
   agentStatusToSessionStatus,
   agentTypeToRegistryKey,
-  vendorMarkFor,
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'shell']
+const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'kimi', 'shell']
 
-test('AGENTS keys are claude, codex, gemini, shell', () => {
+test('AGENTS keys are claude, codex, kimi, shell', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
 })
 
@@ -44,13 +43,6 @@ test('codex is mint', () => {
   expect(AGENTS.codex.model).toBe('gpt-5-codex')
 })
 
-test('gemini is azure', () => {
-  expect(AGENTS.gemini.accent).toBe('var(--color-agent-gemini-accent)')
-  expect(AGENTS.gemini.short).toBe('GEMINI')
-  expect(AGENTS.gemini.glyph).toBe('✦')
-  expect(AGENTS.gemini.model).toBe('gemini-2.5')
-})
-
 test('shell is yellow with null model and title-cased name', () => {
   expect(AGENTS.shell.accent).toBe('var(--color-agent-shell-accent)')
   expect(AGENTS.shell.short).toBe('SHELL')
@@ -65,6 +57,17 @@ test('agentTypeToRegistryKey maps claude-code to claude', () => {
 
 test('agentTypeToRegistryKey maps codex to codex', () => {
   expect(agentTypeToRegistryKey('codex')).toBe('codex')
+})
+
+test('kimi is peach with model k2.7', () => {
+  expect(AGENTS.kimi.accent).toBe('var(--color-agent-kimi-accent)')
+  expect(AGENTS.kimi.short).toBe('KIMI')
+  expect(AGENTS.kimi.glyph).toBe('☾')
+  expect(AGENTS.kimi.model).toBe('k2.7')
+})
+
+test('agentTypeToRegistryKey maps kimi to kimi', () => {
+  expect(agentTypeToRegistryKey('kimi')).toBe('kimi')
 })
 
 test.each(['aider', 'generic', null] as const)(
@@ -92,18 +95,9 @@ test('agentStatusToSessionStatus reports idle when not isActive', () => {
   )
 })
 
-test('vendorMarkFor returns an asset URL for claude and codex', () => {
-  const claudeMark = vendorMarkFor('claude')
-  const codexMark = vendorMarkFor('codex')
-
-  expect(claudeMark).toEqual(expect.any(String))
-  expect(codexMark).toEqual(expect.any(String))
-  expect(claudeMark).not.toBe('')
-  expect(codexMark).not.toBe('')
-  expect(claudeMark).not.toBe(codexMark)
-})
-
-test('vendorMarkFor returns null for shell and gemini', () => {
-  expect(vendorMarkFor('shell')).toBeNull()
-  expect(vendorMarkFor('gemini')).toBeNull()
+test('supported agents carry a brand Icon; others fall back to their glyph', () => {
+  expect(AGENTS.claude.Icon).toBeDefined()
+  expect(AGENTS.codex.Icon).toBeDefined()
+  expect(AGENTS.kimi.Icon).toBeDefined()
+  expect(AGENTS.shell.Icon).toBeUndefined()
 })

@@ -6,7 +6,7 @@ Project context for OpenAI Codex code review.
 
 Vimeflow is an Electron desktop application (Rust sidecar + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
+**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules for Claude Code, Codex CLI, and Kimi Code. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ src/
 │   ├── sessions/               # Session tabs, pane model, layout state, lifecycle orchestration
 │   ├── workspace/              # Workspace assembly, shell components, DockPanel, focus state
 │   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
-│   ├── agent-status/           # Live Claude Code / Codex observability panel
+│   ├── agent-status/           # Live agent observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
 │   ├── diff/                   # Git status/diff viewer
@@ -37,7 +37,7 @@ crates/backend/
 │   ├── terminal/               # PTY commands, cache, bridge, state
 │   ├── filesystem/             # List/read/write commands with scope validation
 │   ├── git/                    # Git status/diff/watch support
-│   └── agent/                  # Agent detector and Claude Code / Codex adapters
+│   └── agent/                  # Agent detector and adapters for supported coding agents
 └── tests/                      # Rust integration fixtures and transcript tests
 ```
 

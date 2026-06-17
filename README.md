@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="build/icon.png" alt="Vimeflow logo" width="128" />
+
 **A terminal-first workspace for AI coding agents**
 
 English | [简体中文](./README.zh-CN.md)
@@ -10,7 +12,7 @@ English | [简体中文](./README.zh-CN.md)
 
 </div>
 
-Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It brings terminal sessions, multi-pane layouts, file browsing, code editing, git diff review, command palette actions, and live Claude Code / Codex observability into one workspace.
+Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It brings terminal sessions, multi-pane layouts, file browsing, code editing, git diff review, command palette actions, and live observability for Claude Code, Codex CLI, and Kimi Code into one workspace.
 
 ## Current Support
 
@@ -19,7 +21,7 @@ Vimeflow currently supports **version 0.1.0 from source code only**.
 - Supported release line: `0.1.0`
 - Supported packaged targets: Linux x64 AppImage and macOS arm64 DMG built locally from source
 - Desktop runtime: Electron 42 + Rust sidecar over LSP-framed JSON IPC
-- Agent observability: Claude Code and Codex
+- Agent observability: Claude Code, Codex CLI, and Kimi Code
 - Not yet supported: hosted binary releases, Windows packaging, production signing/notarization, or auto-update
 
 Packaging is host-specific: build the Linux x64 AppImage on Linux x64, and build the macOS arm64 DMG on an Apple Silicon Mac.
@@ -84,9 +86,11 @@ The macOS DMG is written to `release/vimeflow-*-arm64.dmg`. It is intended for l
 ## Use Vimeflow
 
 1. Start Vimeflow with `npm run electron:dev` or a locally built package.
-2. Open a terminal pane and run `claude` or `codex`.
+2. Open a terminal pane and run `claude`, `codex`, or `kimi`.
 3. Use the workspace to split panes, browse files, edit code, and review git diffs.
 4. The agent status panel appears when a supported agent is detected.
+
+Kimi Code plan-usage fetching is opt-in because it sends your configured Kimi credentials to the Kimi API. Detection, transcript tailing, and activity streaming work locally from the Kimi Code state files under `~/.kimi-code/`.
 
 **Run your beloved TUI in the same pane** — `nvim`, `htop`, `less`, and other full-screen tools render side-by-side with your agent session. The in-app terminal is a real PTY, so anything that works in your usual terminal works here too.
 
