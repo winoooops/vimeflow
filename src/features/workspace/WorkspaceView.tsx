@@ -110,7 +110,6 @@ import {
   parentPathForFileLookup,
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
-  isNotFoundError,
   buildSelectedFileGitKey,
 } from './utils/editorFileLifecycleStatus'
 
@@ -1444,26 +1443,43 @@ const WorkspaceViewContent = (): ReactElement => {
 
     let cancelled = false
 
-    const checkSelectedFile = async (): Promise<void> => {
-      setSelectedEditorFileExists(null)
+    const checkSelectedFile = async (initial = false): Promise<void> => {
+      if (initial) {
+        setSelectedEditorFileExists(null)
+      }
 
       try {
-        await fileSystemService.readFile(editorBuffer.filePath ?? '')
+        const exists = await fileSystemService.fileExists(
+          editorBuffer.filePath ?? ''
+        )
 
         if (!cancelled) {
-          setSelectedEditorFileExists(true)
+          setSelectedEditorFileExists(exists)
         }
-      } catch (error) {
+      } catch {
         if (!cancelled) {
-          setSelectedEditorFileExists(isNotFoundError(error) ? false : null)
+          setSelectedEditorFileExists(null)
         }
       }
     }
 
-    void checkSelectedFile()
+    void checkSelectedFile(true)
+
+    const isStatusLess = selectedFileGitKey.endsWith(':none')
+    let intervalId: ReturnType<typeof setInterval> | undefined
+
+    if (isStatusLess) {
+      intervalId = setInterval(() => {
+        void checkSelectedFile(false)
+      }, 2000)
+    }
 
     return (): void => {
       cancelled = true
+
+      if (intervalId !== undefined) {
+        clearInterval(intervalId)
+      }
     }
   }, [
     editorFileLookupCwd,

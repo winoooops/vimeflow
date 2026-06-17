@@ -2,7 +2,7 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-05-07
+last_updated: 2026-06-17
 ref_count: 3
 ---
 
@@ -70,3 +70,12 @@ consider using path libraries for cross-platform code.
 - **Finding:** Cycle 1's F5 fix re-wired the Codex `session_index.jsonl` title-sync watcher by computing `session_index_path = located.trust_root.join("session_index.jsonl")` and handing it to `spawn_watch`. But `default_codex_home()` returns relative `PathBuf::from(".codex")` when `dirs::home_dir()` is `None` (headless containers, service sessions with no `HOME` env, CI environments) — that relative path flows into `CompositeLocator::codex_home` → `LocatedStatusSource::trust_root`. The status-path flow tolerated this because `ensure_status_source_under_trust_root` canonicalizes early and fails noisily if `trust_root` can't resolve; the title-sync path I added in cycle 1 bypassed that gate entirely, so `session_index::spawn_watch` would open `.codex/session_index.jsonl` against the sidecar's cwd (NOT the user's home), silently emit zero events, and the operator would have no signal that Codex titles weren't updating. Sibling of #5 — same shape (platform-conditional / environment-conditional plumbing) but the gate this time wasn't a `cfg!` check, it was an implicit "canonicalize-or-error" gate that the new path missed.
 - **Fix:** Add an explicit `if !located.trust_root.is_absolute()` guard in `start_watching` before spawning the title-sync watcher. Non-absolute trust_root → skip the spawn, set both `session_index_stop` / `session_index_join` to `None` (so `WatcherHandle::Drop` becomes a no-op for those fields), and emit `log::warn!` naming the offending relative path. Operators correlating "Codex titles aren't updating" now have a single grep target (`"codex title-sync: skipping spawn"`) and the cause (missing HOME / `dirs::home_dir()` returns `None`). Code-review heuristic: when a refactor adds a NEW consumer of a value that an EXISTING consumer treats as trusted (canonical path, validated URL, sanitized input), audit how the existing consumer earned that trust — usually via a canonicalization / validation / sanitization step that the new consumer might be bypassing. If the value's invariant is "absolute path", add an `is_absolute()` assertion at the new consumer; if "no traversal characters", re-run the sanitizer; if "schema-valid", re-validate. Don't assume upstream did it just because the type signature is the same.
 - **Commit:** _(PR #302 upsource cycle 2 fix commit)_
+
+### 7. `filesCwd !== gitStatusCwd` uses raw string equality and disables lifecycle labels
+
+- **Source:** github-claude | PR #510 round 6 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/utils/editorFileLifecycleStatus.ts` L207-210
+- **Finding:** The guard comparing `filesCwd` to `gitStatusCwd` used raw `!==`, so trailing slashes, tilde expansion, or case-only differences on case-insensitive volumes made equivalent directories look different. The function then returned `null`, silently disabling the `NEW`/`DELETED` lifecycle crumb for the selected editor file even though the file was inside the reported git status directory.
+- **Fix:** Reuse the shared `normalizePathForComparison` helper (which expands `~`, normalizes separators, strips trailing slashes, and lowercases on macOS/Windows) before comparing both cwd values.
+- **Commit:** same commit as this entry

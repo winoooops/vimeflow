@@ -34,8 +34,28 @@ export const expandTildePath = (path: string): string => {
   return path === '~' ? home : `${home}${path.slice(1)}`
 }
 
-export const normalizePathForComparison = (path: string): string =>
-  expandTildePath(path).replace(/\\/g, '/').replace(/\/+$/u, '')
+const isCaseInsensitivePlatform = (): boolean => {
+  if (typeof process === 'undefined') {
+    return false
+  }
+
+  return process.platform === 'darwin' || process.platform === 'win32'
+}
+
+/**
+ * Normalize a path for comparison. Expands `~`, converts backslashes to
+ * forward slashes, and removes trailing slashes. On macOS and Windows the
+ * result is lowercased so equivalent case-insensitive paths compare equal.
+ */
+export const normalizePathForComparison = (path: string): string => {
+  const normalized = expandTildePath(path).replace(/\\/g, '/').replace(/\/+$/u, '')
+
+  if (isCaseInsensitivePlatform()) {
+    return normalized.toLowerCase()
+  }
+
+  return normalized
+}
 
 const normalizePathSeparators = (path: string): string =>
   path.replace(/\\/g, '/').replace(/\/+$/u, '')
@@ -204,7 +224,10 @@ export const resolveEditorFileLifecycleStatus = ({
     return 'DELETED'
   }
 
-  if (filesCwd !== gitStatusCwd) {
+  if (
+    normalizePathForComparison(filesCwd ?? '') !==
+    normalizePathForComparison(gitStatusCwd)
+  ) {
     return null
   }
 

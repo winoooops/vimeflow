@@ -55,6 +55,7 @@ const fileSystemServiceOverride = vi.hoisted(() => ({
   current: {
     listDir: vi.fn().mockResolvedValue([]),
     readFile: vi.fn().mockResolvedValue(''),
+    fileExists: vi.fn().mockResolvedValue(true),
     writeFile: vi.fn().mockResolvedValue(undefined),
     renamePath: vi.fn().mockResolvedValue(undefined),
     deletePath: vi.fn().mockResolvedValue(undefined),
@@ -348,6 +349,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     fileSystemServiceOverride.current = {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
+      fileExists: vi.fn().mockResolvedValue(true),
       writeFile: vi.fn().mockResolvedValue(undefined),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),
@@ -582,9 +584,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     const useAgentStatusMock = vi.mocked(useAgentStatus)
     const originalImpl = useAgentStatusMock.getMockImplementation()
     useAgentStatusMock.mockImplementation(() => idleAgentStatus)
-    fileSystemServiceOverride.current.readFile = vi
-      .fn()
-      .mockResolvedValue('export const example = 1\n')
+    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/new.ts',
@@ -603,9 +603,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
       )
 
       await waitFor(() => {
-        expect(fileSystemServiceOverride.current.readFile).toHaveBeenCalledWith(
-          '/repo/src/new.ts'
-        )
+        expect(
+          fileSystemServiceOverride.current.fileExists
+        ).toHaveBeenCalledWith('/repo/src/new.ts')
       })
     } finally {
       if (originalImpl) {
@@ -628,9 +628,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
       idle: false,
     }))
 
-    fileSystemServiceOverride.current.readFile = vi
-      .fn()
-      .mockResolvedValue('export const dummy = 1\n')
+    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/dummy.ts',
@@ -642,9 +640,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
     changedFiles = []
-    fileSystemServiceOverride.current.readFile = vi
-      .fn()
-      .mockRejectedValue(new Error('ENOENT'))
+    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(false)
     view.rerender(<WorkspaceView />)
 
     await waitFor(() => {
@@ -666,9 +662,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
       idle: false,
     }))
 
-    fileSystemServiceOverride.current.readFile = vi
-      .fn()
-      .mockResolvedValue('export const dummy = 1\n')
+    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/dummy.ts',
@@ -680,13 +674,13 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
     changedFiles = []
-    fileSystemServiceOverride.current.readFile = vi
+    fileSystemServiceOverride.current.fileExists = vi
       .fn()
-      .mockRejectedValue(new Error('EACCES: permission denied'))
+      .mockRejectedValue(new Error('backend unavailable'))
     view.rerender(<WorkspaceView />)
 
     await waitFor(() => {
-      expect(fileSystemServiceOverride.current.readFile).toHaveBeenCalledWith(
+      expect(fileSystemServiceOverride.current.fileExists).toHaveBeenCalledWith(
         '/repo/src/dummy.ts'
       )
     })

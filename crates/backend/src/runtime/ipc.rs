@@ -592,6 +592,17 @@ mod router {
                 let res = state.read_file(p.request)?;
                 encode_result(res)
             }
+            "file_exists" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::filesystem::types::FileExistsRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let res = state.file_exists(p.request)?;
+                encode_result(res)
+            }
             "write_file" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

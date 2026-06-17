@@ -59,6 +59,20 @@ describe('fileSystemService', () => {
     expect(content).toContain('Mock')
   })
 
+  test('mock service fileExists returns true for existing files', async () => {
+    const service = createFileSystemService()
+
+    expect(await service.fileExists('~/src/middleware/auth.ts')).toBe(true)
+    expect(await service.fileExists('~/package.json')).toBe(true)
+  })
+
+  test('mock service fileExists returns false for folders and missing files', async () => {
+    const service = createFileSystemService()
+
+    expect(await service.fileExists('~/src/middleware')).toBe(false)
+    expect(await service.fileExists('~/src/missing.ts')).toBe(false)
+  })
+
   test('service has writeFile method', () => {
     const service = createFileSystemService()
 

@@ -20,6 +20,7 @@ vi.mock('../services/fileSystemService', () => ({
 
       return Promise.resolve([])
     }),
+    fileExists: vi.fn().mockResolvedValue(true),
   })),
 }))
 

@@ -141,6 +141,47 @@ describe('editorFileLifecycleStatus', () => {
     ).toBeNull()
   })
 
+  test('normalizes cwd paths before comparing', () => {
+    expect(
+      resolveEditorFileLifecycleStatus({
+        filePath: '/repo/src/new.ts',
+        gitStatusCwd: '/repo/',
+        files: [file('src/new.ts', 'untracked')],
+        filesCwd: '/repo',
+      })
+    ).toBe('NEW')
+
+    expect(
+      resolveEditorFileLifecycleStatus({
+        filePath: '/repo/src/new.ts',
+        gitStatusCwd: '/repo',
+        files: [file('src/new.ts', 'untracked')],
+        filesCwd: '~/repo',
+      })
+    ).toBeNull()
+  })
+
+  test('folds case on case-insensitive platforms', () => {
+    const originalPlatform = process.platform
+
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+    })
+
+    expect(
+      resolveEditorFileLifecycleStatus({
+        filePath: '/Repo/src/new.ts',
+        gitStatusCwd: '/repo',
+        files: [file('src/new.ts', 'untracked')],
+        filesCwd: '/Repo',
+      })
+    ).toBe('NEW')
+
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+    })
+  })
+
   test.each([
     ['ENOENT', true],
     ['No such file or directory (os error 2)', true],

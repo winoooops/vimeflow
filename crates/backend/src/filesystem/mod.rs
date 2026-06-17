@@ -18,6 +18,7 @@
 //!
 //! See `SECURITY.md` for the full model.
 
+pub(crate) mod exists;
 pub(crate) mod list;
 pub(crate) mod mutate;
 pub(crate) mod read;
