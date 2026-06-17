@@ -22,6 +22,19 @@ const setElementSize = (
   })
 }
 
+const encodeBase64 = (bytes: Uint8Array): string => {
+  let binary = ''
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte)
+  })
+
+  return globalThis.btoa(binary)
+}
+
+const encodeText = (text: string): string =>
+  encodeBase64(new TextEncoder().encode(text))
+
 const createdTerminals = new Set<ReturnType<typeof createPlainTextTerminal>>()
 
 const createTrackedPlainTextTerminal = (): ReturnType<
@@ -95,6 +108,20 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('uses text output chunks even when byte payloads are present', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.output.writeOutput({
+      text: 'text wins',
+      bytesBase64: encodeText('bytes lose'),
+      offsetStart: 0,
+      byteLen: 10,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('text wins')
+  })
+
   test('ignores writes after dispose while preserving the callback', () => {
     const created = createTrackedPlainTextTerminal()
     const callback = vi.fn()
@@ -104,6 +131,29 @@ describe('plainTextInstance', () => {
     created.terminal.write('after', callback)
 
     expect(created.viewportReader.readVisibleText()).toBe('before')
+    expect(callback).toHaveBeenCalledOnce()
+  })
+
+  test('ignores output chunks after dispose without parser side effects', () => {
+    const created = createTrackedPlainTextTerminal()
+    const callback = vi.fn()
+    const parserEventHandler = vi.fn()
+    const text = '\x1b]7;file://localhost/tmp/disposed\x07'
+
+    created.parser.onEvent(parserEventHandler)
+    created.terminal.dispose()
+    created.output.writeOutput(
+      {
+        text,
+        offsetStart: 0,
+        byteLen: new TextEncoder().encode(text).length,
+        phase: 'live',
+      },
+      callback
+    )
+
+    expect(parserEventHandler).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe('')
     expect(callback).toHaveBeenCalledOnce()
   })
 

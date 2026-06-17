@@ -8,7 +8,7 @@ import type {
 import { createPlainTextTerminal } from './plainTextInstance'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import {
-  createControlSequenceTerminalParserEngine,
+  createByteControlSequenceTerminalParserEngine,
   type TerminalParserEngine,
 } from './terminalParserEngine'
 
@@ -25,7 +25,7 @@ class GhosttyTerminalModel {
   constructor(options: GhosttyTerminalOptions = {}) {
     this.parserEngine =
       options.createParserEngine?.() ??
-      createControlSequenceTerminalParserEngine()
+      createByteControlSequenceTerminalParserEngine()
   }
 
   readonly output: TerminalOutputWriter = {
