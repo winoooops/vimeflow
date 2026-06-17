@@ -1,5 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
 import {
   useBurnerToggleShortcut,
   type UseBurnerToggleShortcutParams,
@@ -32,10 +35,27 @@ const fireBackquote = (
   return event.defaultPrevented
 }
 
+const matchesFor = (
+  isMac: boolean,
+  overrides: CustomKeybindings = {}
+): UseBurnerToggleShortcutParams['matches'] => {
+  const superKey: PlatformSuper = isMac ? 'meta' : 'ctrl'
+  const resolved = resolveBindings(overrides, isMac, superKey)
+
+  return (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolved.get(id)!,
+      superKey,
+      getCommand(id).matchPolicy
+    )
+}
+
 const makeProps = (
   overrides: Partial<UseBurnerToggleShortcutParams> = {}
 ): UseBurnerToggleShortcutParams => ({
   onToggle: vi.fn(),
+  matches: matchesFor(true),
   ...overrides,
 })
 
@@ -133,5 +153,25 @@ describe('useBurnerToggleShortcut', () => {
     fireBackquote({ ctrlKey: true })
 
     expect(props.onToggle).not.toHaveBeenCalled()
+  })
+
+  test('fires on a rebound combo supplied by the registry matcher', () => {
+    const props = makeProps({
+      matches: matchesFor(true, { 'burner-toggle': 'Mod+KeyK' }),
+    })
+    renderHook(() => useBurnerToggleShortcut(props))
+
+    const event = new KeyboardEvent('keydown', {
+      code: 'KeyK',
+      key: 'k',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      document.body.dispatchEvent(event)
+    })
+
+    expect(props.onToggle).toHaveBeenCalledOnce()
   })
 })

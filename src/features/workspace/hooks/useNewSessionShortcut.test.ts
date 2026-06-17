@@ -1,5 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
 import { TERMINAL_CONTAINER_ID } from '../containerIds'
 import {
   useNewSessionShortcut,
@@ -36,6 +39,7 @@ const fireFrom = (
 ): void => {
   const event = new KeyboardEvent('keydown', {
     key: 'n',
+    code: 'KeyN',
     bubbles: true,
     cancelable: true,
     ...modifiers,
@@ -45,11 +49,27 @@ const fireFrom = (
   })
 }
 
+const matchesFor = (
+  isMac: boolean,
+  overrides: CustomKeybindings = {}
+): UseNewSessionShortcutParams['matches'] => {
+  const superKey: PlatformSuper = isMac ? 'meta' : 'ctrl'
+  const resolved = resolveBindings(overrides, isMac, superKey)
+
+  return (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolved.get(id)!,
+      superKey,
+      getCommand(id).matchPolicy
+    )
+}
+
 const makeProps = (
   overrides: Partial<UseNewSessionShortcutParams> = {}
 ): UseNewSessionShortcutParams => ({
   onNewSession: vi.fn(),
-  modKey: '⌘',
+  matches: matchesFor(true),
   ...overrides,
 })
 
@@ -66,7 +86,7 @@ describe('useNewSessionShortcut', () => {
 
   describe('meta (⌘) modifier', () => {
     test('⌘N (no shift) creates a session', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useNewSessionShortcut(props))
 
@@ -76,7 +96,7 @@ describe('useNewSessionShortcut', () => {
     })
 
     test('⌘⇧N does not fire (shift not allowed on meta)', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useNewSessionShortcut(props))
 
@@ -86,7 +106,7 @@ describe('useNewSessionShortcut', () => {
     })
 
     test('⌘⌥N does not fire (alt always bails)', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useNewSessionShortcut(props))
 
@@ -98,7 +118,7 @@ describe('useNewSessionShortcut', () => {
 
   describe('Ctrl modifier', () => {
     test('Ctrl+⇧N creates a session', () => {
-      const props = makeProps({ modKey: 'Ctrl' })
+      const props = makeProps({ matches: matchesFor(false) })
       const target = append(document.createElement('div'))
       renderHook(() => useNewSessionShortcut(props))
 
@@ -108,7 +128,7 @@ describe('useNewSessionShortcut', () => {
     })
 
     test('bare Ctrl+N (no shift) does not fire — left to the terminal', () => {
-      const props = makeProps({ modKey: 'Ctrl' })
+      const props = makeProps({ matches: matchesFor(false) })
       const target = append(document.createElement('div'))
       renderHook(() => useNewSessionShortcut(props))
 
@@ -119,7 +139,7 @@ describe('useNewSessionShortcut', () => {
   })
 
   test('bails when a dialog matching DIALOG_SELECTOR is in the DOM', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
     append(dialog)
@@ -132,7 +152,7 @@ describe('useNewSessionShortcut', () => {
   })
 
   test('⌘N fires from inside the terminal zone', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = appendContainerWithChild(TERMINAL_CONTAINER_ID, 'textarea')
     renderHook(() => useNewSessionShortcut(props))
 
@@ -142,7 +162,7 @@ describe('useNewSessionShortcut', () => {
   })
 
   test('bails when the target is a plain <input> (e.g. the rename field)', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = append(document.createElement('input'))
     renderHook(() => useNewSessionShortcut(props))
 
@@ -152,7 +172,7 @@ describe('useNewSessionShortcut', () => {
   })
 
   test('removes the listener on unmount', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = append(document.createElement('div'))
     const { unmount } = renderHook(() => useNewSessionShortcut(props))
 
@@ -163,12 +183,24 @@ describe('useNewSessionShortcut', () => {
   })
 
   test('ignores auto-repeat (held key) events', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = append(document.createElement('div'))
     renderHook(() => useNewSessionShortcut(props))
 
     fireFrom(target, { metaKey: true, repeat: true })
 
     expect(props.onNewSession).not.toHaveBeenCalled()
+  })
+
+  test('fires on a rebound combo supplied by the registry matcher', () => {
+    const props = makeProps({
+      matches: matchesFor(true, { 'new-session': 'Mod+KeyK' }),
+    })
+    const target = append(document.createElement('div'))
+    renderHook(() => useNewSessionShortcut(props))
+
+    fireFrom(target, { key: 'k', code: 'KeyK', metaKey: true })
+
+    expect(props.onNewSession).toHaveBeenCalledOnce()
   })
 })

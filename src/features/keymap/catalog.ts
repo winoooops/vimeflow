@@ -25,10 +25,10 @@ const c = (
   ...mods: ('Mod' | 'Ctrl' | 'Shift' | 'Alt')[]
 ): Chord => ({ code, mods: new Set(mods) })
 
-// PR1 migrates usePaneShortcuts (the focus-pane / cycle-layout commands) and
-// useDockToggleShortcut. Their defaultCombo MUST equal today's hardcoded combos
-// (resolve.test asserts this). Everything else is rebindable:false display-only
-// for now; PR2 flips the workspace hooks, SP3 the leader.
+// PR1 migrated usePaneShortcuts (the focus-pane / cycle-layout commands) and
+// useDockToggleShortcut. PR2 migrates the remaining workspace hooks. Their
+// defaultCombo MUST equal today's hardcoded combos (resolve.test asserts this).
+// Terminal-owned rows and the SP3-owned palette leader remain display-only.
 export const CATALOG = [
   // ── Panes & Layout (MIGRATED — rebindable) ──
   {
@@ -159,7 +159,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: (isMac: boolean): Chord =>
       isMac ? c('KeyN', 'Mod') : c('KeyN', 'Mod', 'Shift'),
   },
@@ -169,7 +169,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: (isMac: boolean): Chord =>
       isMac ? c('BracketLeft', 'Mod') : c('BracketLeft', 'Mod', 'Shift'),
   },
@@ -179,7 +179,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: (isMac: boolean): Chord =>
       isMac ? c('BracketRight', 'Mod') : c('BracketRight', 'Mod', 'Shift'),
   },
@@ -189,7 +189,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: (isMac: boolean): Chord =>
       isMac ? c('KeyB', 'Mod') : c('KeyB', 'Mod', 'Shift'),
   },
@@ -199,7 +199,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: c('KeyS', 'Mod', 'Shift'),
   },
   {
@@ -208,7 +208,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: c('KeyF', 'Mod', 'Shift'),
   },
   {
@@ -217,7 +217,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: c('KeyE', 'Mod'),
   },
   {
@@ -226,7 +226,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: c('KeyG', 'Mod'),
   },
   {
@@ -235,7 +235,7 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
     defaultCombo: c('Backquote', 'Ctrl'),
   },
 

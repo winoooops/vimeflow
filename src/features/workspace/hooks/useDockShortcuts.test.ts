@@ -1,5 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
 import { DOCK_CONTAINER_ID, TERMINAL_CONTAINER_ID } from '../containerIds'
 import { useDockShortcuts } from './useDockShortcuts'
 
@@ -39,6 +42,22 @@ const blurActiveElement = (): void => {
   activeElement?.blur?.()
 }
 
+const matchesFor = (
+  isMac: boolean,
+  overrides: CustomKeybindings = {}
+): Parameters<typeof useDockShortcuts>[0]['matches'] => {
+  const superKey: PlatformSuper = isMac ? 'meta' : 'ctrl'
+  const resolved = resolveBindings(overrides, isMac, superKey)
+
+  return (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolved.get(id)!,
+      superKey,
+      getCommand(id).matchPolicy
+    )
+}
+
 describe('useDockShortcuts', () => {
   const makeProps = (
     overrides: Partial<Parameters<typeof useDockShortcuts>[0]> = {}
@@ -46,6 +65,7 @@ describe('useDockShortcuts', () => {
     activeContainerId: DOCK_CONTAINER_ID,
     openDock: vi.fn(),
     claimTerminal: vi.fn(),
+    matches: matchesFor(false),
     modKey: 'Ctrl',
     ...overrides,
   })
@@ -134,6 +154,21 @@ describe('useDockShortcuts', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
+  test('focus-editor fires on a rebound combo supplied by the registry matcher', () => {
+    const props = makeProps({
+      matches: matchesFor(false, { 'focus-editor': 'Mod+KeyK' }),
+    })
+    const dockElement = attachDockAndFocus()
+    renderHook(() => useDockShortcuts(props))
+
+    const event = fire('k', { ctrlKey: true })
+
+    expect(props.openDock).toHaveBeenCalledWith('editor')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+    removeElement(dockElement)
+  })
+
   test('Ctrl+e from within a dialog is a no-op', () => {
     const props = makeProps()
     const dialog = document.createElement('div')
@@ -153,7 +188,7 @@ describe('useDockShortcuts', () => {
   })
 
   test('macOS modifier mode accepts Cmd+e and ignores Ctrl+e', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true), modKey: '⌘' })
     renderHook(() => useDockShortcuts(props))
 
     fire('e', { ctrlKey: true })

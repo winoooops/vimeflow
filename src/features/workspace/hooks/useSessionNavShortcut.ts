@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
+import type { CommandId } from '../../keymap/catalog'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
 
 export interface UseSessionNavShortcutParams {
@@ -7,8 +8,8 @@ export interface UseSessionNavShortcutParams {
   onPrevSession: () => void
   /** Activate the next session (wraps around). */
   onNextSession: () => void
-  /** Visible modifier on this platform: '⌘' (meta) or 'Ctrl'. */
-  modKey: '⌘' | 'Ctrl'
+  /** Registry matcher — true iff the event is the resolved command chord. */
+  matches: (event: KeyboardEvent, id: CommandId) => boolean
 }
 
 // Session navigation (VIM-104): ⌘[ / ⌘] cycle to the previous / next session
@@ -23,15 +24,15 @@ export interface UseSessionNavShortcutParams {
 export const useSessionNavShortcut = ({
   onPrevSession,
   onNextSession,
-  modKey,
+  matches,
 }: UseSessionNavShortcutParams): void => {
   const onPrevRef = useRef(onPrevSession)
   const onNextRef = useRef(onNextSession)
-  const modKeyRef = useRef(modKey)
+  const matchesRef = useRef(matches)
 
   onPrevRef.current = onPrevSession
   onNextRef.current = onNextSession
-  modKeyRef.current = modKey
+  matchesRef.current = matches
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -39,28 +40,17 @@ export const useSessionNavShortcut = ({
         return
       }
 
-      if (event.repeat || event.altKey) {
+      if (event.repeat) {
         return
       }
 
-      if (event.code !== 'BracketLeft' && event.code !== 'BracketRight') {
-        return
-      }
+      const commandId = matchesRef.current(event, 'session-prev')
+        ? 'session-prev'
+        : matchesRef.current(event, 'session-next')
+          ? 'session-next'
+          : null
 
-      // Match only this platform's modifier; reject the opposite so the other
-      // chord still reaches the terminal.
-      const isMeta = modKeyRef.current === '⌘'
-
-      const expectedModifier = isMeta
-        ? event.metaKey && !event.ctrlKey
-        : event.ctrlKey && !event.metaKey
-      if (!expectedModifier) {
-        return
-      }
-
-      // macOS: ⌘[ / ⌘] (no Shift). Ctrl platforms: Ctrl+⇧[ / Ctrl+⇧] (Shift
-      // required) — bare Ctrl+[ is the terminal's ESC.
-      if (isMeta ? event.shiftKey : !event.shiftKey) {
+      if (commandId === null) {
         return
       }
 
@@ -94,7 +84,7 @@ export const useSessionNavShortcut = ({
       event.preventDefault()
       event.stopPropagation()
 
-      if (event.code === 'BracketLeft') {
+      if (commandId === 'session-prev') {
         onPrevRef.current()
       } else {
         onNextRef.current()

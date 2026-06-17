@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
+import type { CommandId } from '../../keymap/catalog'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -13,6 +14,8 @@ export interface UseDockShortcutsParams {
   activeContainerId: string
   openDock: (tab: DockFocusTarget) => void
   claimTerminal: () => void
+  /** Registry matcher for focus-editor/focus-diff. Dock reclaim stays hardcoded. */
+  matches: (event: KeyboardEvent, id: CommandId) => boolean
   modKey: '⌘' | 'Ctrl'
 }
 
@@ -20,16 +23,19 @@ export const useDockShortcuts = ({
   activeContainerId,
   openDock,
   claimTerminal,
+  matches,
   modKey,
 }: UseDockShortcutsParams): void => {
   const activeContainerIdRef = useRef(activeContainerId)
   const openDockRef = useRef(openDock)
   const claimTerminalRef = useRef(claimTerminal)
+  const matchesRef = useRef(matches)
   const modKeyRef = useRef(modKey)
 
   activeContainerIdRef.current = activeContainerId
   openDockRef.current = openDock
   claimTerminalRef.current = claimTerminal
+  matchesRef.current = matches
   modKeyRef.current = modKey
 
   useEffect(() => {
@@ -38,12 +44,26 @@ export const useDockShortcuts = ({
         return
       }
 
-      const expectedModifier =
+      const dockTarget = matchesRef.current(event, 'focus-editor')
+        ? 'editor'
+        : matchesRef.current(event, 'focus-diff')
+          ? 'diff'
+          : null
+
+      const expectedReclaimModifier =
         modKeyRef.current === '⌘'
           ? event.metaKey && !event.ctrlKey
           : event.ctrlKey && !event.metaKey
 
-      if (!expectedModifier || event.shiftKey || event.altKey) {
+      const key = event.key.toLowerCase()
+
+      const canReclaimTerminal =
+        key === 'b' &&
+        expectedReclaimModifier &&
+        !event.shiftKey &&
+        !event.altKey
+
+      if (dockTarget === null && !canReclaimTerminal) {
         return
       }
 
@@ -75,32 +95,22 @@ export const useDockShortcuts = ({
         return
       }
 
-      const key = event.key.toLowerCase()
-
       // Ctrl+e / Ctrl+g: do not steal vim/readline shortcuts when xterm or
       // CodeMirror has focus. Ctrl+b is exempt — it only fires when dock is
       // active (checked below), so it can never originate from either surface.
-      if ((key === 'e' || key === 'g') && (inTerminalZone || inCodeMirror)) {
+      if (dockTarget !== null && (inTerminalZone || inCodeMirror)) {
         return
       }
 
-      if (key === 'e') {
+      if (dockTarget !== null) {
         event.preventDefault()
         event.stopPropagation()
-        openDockRef.current('editor')
+        openDockRef.current(dockTarget)
 
         return
       }
 
-      if (key === 'g') {
-        event.preventDefault()
-        event.stopPropagation()
-        openDockRef.current('diff')
-
-        return
-      }
-
-      if (key === 'b') {
+      if (canReclaimTerminal) {
         const activeElement = document.activeElement
         if (
           !inCodeMirror &&

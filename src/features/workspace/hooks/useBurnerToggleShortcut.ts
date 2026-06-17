@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
+import type { CommandId } from '../../keymap/catalog'
 import { DIALOG_SELECTOR } from '../containerIds'
 
 export interface UseBurnerToggleShortcutParams {
   /** Toggle the burner terminal popup for the focused pane. */
   onToggle: () => void
+  /** Registry matcher — true iff the event is the resolved command chord. */
+  matches: (event: KeyboardEvent, id: CommandId) => boolean
 }
 
 // Burner terminal toggle (VIM-53): Ctrl+` on every platform — the cross-editor
@@ -14,9 +17,12 @@ export interface UseBurnerToggleShortcutParams {
 // so it toggles from anywhere except an open modal.
 export const useBurnerToggleShortcut = ({
   onToggle,
+  matches,
 }: UseBurnerToggleShortcutParams): void => {
   const onToggleRef = useRef(onToggle)
+  const matchesRef = useRef(matches)
   onToggleRef.current = onToggle
+  matchesRef.current = matches
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -24,15 +30,11 @@ export const useBurnerToggleShortcut = ({
         return
       }
 
-      // Exactly Ctrl+` — reject ⌘/Alt/Shift-modified and held-key repeats.
-      if (
-        event.repeat ||
-        event.code !== 'Backquote' ||
-        !event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey
-      ) {
+      if (event.repeat) {
+        return
+      }
+
+      if (!matchesRef.current(event, 'burner-toggle')) {
         return
       }
 

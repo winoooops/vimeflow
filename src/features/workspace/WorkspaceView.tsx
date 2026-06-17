@@ -1452,6 +1452,7 @@ export const WorkspaceView = (): ReactElement => {
     activeContainerId,
     openDock,
     claimTerminal,
+    matches,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
@@ -1462,13 +1463,13 @@ export const WorkspaceView = (): ReactElement => {
 
   useSidebarShortcut({
     onToggle: handleToggleSidebar,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
     activeContainerId,
   })
 
   useNewSessionShortcut({
     onNewSession: handleCreateSession,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
 
   // VIM-104: ⌘⇧S / ⌘⇧F switch the left sidebar between Sessions and Files,
@@ -1497,7 +1498,7 @@ export const WorkspaceView = (): ReactElement => {
   useSidebarTabShortcut({
     onShowSessions: handleShowSessions,
     onShowFiles: handleShowFiles,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
 
   // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
@@ -1528,11 +1529,11 @@ export const WorkspaceView = (): ReactElement => {
   useSessionNavShortcut({
     onPrevSession: handlePrevSession,
     onNextSession: handleNextSession,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
 
   // VIM-104: Ctrl+` toggles the burner terminal popup for the focused pane.
-  useBurnerToggleShortcut({ onToggle: toggleBurnerCommand })
+  useBurnerToggleShortcut({ onToggle: toggleBurnerCommand, matches })
 
   // One elastic size per axis so values survive dock unmounts and position changes.
   const verticalDockElastic = useElasticContainer({

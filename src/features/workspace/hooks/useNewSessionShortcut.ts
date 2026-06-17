@@ -1,29 +1,31 @@
 import { useEffect, useRef } from 'react'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
+import type { CommandId } from '../../keymap/catalog'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
 
 export interface UseNewSessionShortcutParams {
   /** Create a new session. */
   onNewSession: () => void
-  /** Visible modifier on this platform: '⌘' (meta) or 'Ctrl'. */
-  modKey: '⌘' | 'Ctrl'
+  /** Registry matcher — true iff the event is the resolved command chord. */
+  matches: (event: KeyboardEvent, id: CommandId) => boolean
 }
 
 // New-session shortcut (VIM-77), mirroring the sidebar-toggle convention:
-//   - macOS (modKey '⌘'): ⌘N — ⌘ chords never reach the PTY.
-//   - Linux/Windows (modKey 'Ctrl'): Ctrl+⇧N — bare Ctrl+N is reserved by the
-//     terminal (readline next-line / TUI bindings), so we require Shift.
+//   - macOS default: ⌘N — ⌘ chords never reach the PTY.
+//   - Linux/Windows default: Ctrl+⇧N — bare Ctrl+N is reserved by the terminal
+//     (readline next-line / TUI bindings), so we require Shift.
 // Allowed through from the terminal and the editor, but not from plain text
-// inputs (e.g. the session rename field).
+// inputs (e.g. the session rename field). The key match comes from the
+// keybinding registry so persisted overrides take effect.
 export const useNewSessionShortcut = ({
   onNewSession,
-  modKey,
+  matches,
 }: UseNewSessionShortcutParams): void => {
   const onNewSessionRef = useRef(onNewSession)
-  const modKeyRef = useRef(modKey)
+  const matchesRef = useRef(matches)
 
   onNewSessionRef.current = onNewSession
-  modKeyRef.current = modKey
+  matchesRef.current = matches
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -36,21 +38,7 @@ export const useNewSessionShortcut = ({
         return
       }
 
-      if (event.key.toLowerCase() !== 'n' || event.altKey) {
-        return
-      }
-
-      const isMeta = modKeyRef.current === '⌘'
-
-      const expectedModifier = isMeta
-        ? event.metaKey && !event.ctrlKey
-        : event.ctrlKey && !event.metaKey
-      if (!expectedModifier) {
-        return
-      }
-
-      // macOS: ⌘N (no Shift). Ctrl platforms: Ctrl+⇧N (Shift required).
-      if (isMeta ? event.shiftKey : !event.shiftKey) {
+      if (!matchesRef.current(event, 'new-session')) {
         return
       }
 
