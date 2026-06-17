@@ -116,6 +116,11 @@ describe('xtermInstance', () => {
 
   test('exports the default xterm renderer adapter', () => {
     expect(xtermTerminalRenderer.id).toBe('xterm')
+    expect(xtermTerminalRenderer.capabilities).toEqual({
+      preferredOutputInputMode: 'text',
+      acceptsText: true,
+      acceptsBytes: false,
+    })
     expect(xtermTerminalRenderer.createInstance).toBe(createXtermTerminal)
   })
 

@@ -1,4 +1,5 @@
 import type {
+  TerminalOutputInputMode,
   TerminalOutputChunk,
   TerminalParser,
   TerminalParserOutputContext,
@@ -10,7 +11,7 @@ export interface TerminalParserEngineOutput {
   readonly visibleText: string
 }
 
-export type TerminalParserEngineInputMode = 'text' | 'bytes'
+export type TerminalParserEngineInputMode = TerminalOutputInputMode
 
 export interface TerminalParserEngineOptions {
   readonly inputMode: TerminalParserEngineInputMode

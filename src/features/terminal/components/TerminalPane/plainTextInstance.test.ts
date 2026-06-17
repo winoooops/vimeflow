@@ -60,6 +60,12 @@ afterEach(() => {
 describe('plainTextInstance', () => {
   test('exposes the opt-in plain-text renderer adapter', () => {
     expect(plainTextTerminalRenderer.id).toBe(PLAIN_TEXT_TERMINAL_RENDERER_ID)
+    expect(plainTextTerminalRenderer.capabilities).toEqual({
+      preferredOutputInputMode: 'text',
+      acceptsText: true,
+      acceptsBytes: false,
+    })
+
     expect(plainTextTerminalRenderer.createInstance).toBe(
       createPlainTextTerminal
     )

@@ -49,6 +49,11 @@ afterEach(() => {
 describe('ghosttyInstance', () => {
   test('exposes the opt-in ghostty renderer adapter', () => {
     expect(ghosttyTerminalRenderer.id).toBe(GHOSTTY_TERMINAL_RENDERER_ID)
+    expect(ghosttyTerminalRenderer.capabilities).toEqual({
+      preferredOutputInputMode: 'bytes',
+      acceptsText: true,
+      acceptsBytes: true,
+    })
     expect(ghosttyTerminalRenderer.createInstance).toBe(createGhosttyTerminal)
   })
 

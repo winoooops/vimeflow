@@ -224,6 +224,9 @@ export interface TerminalSize {
 /** Source phase for output written into a terminal renderer. */
 export type TerminalOutputPhase = 'live' | 'restore'
 
+/** Payload format a renderer adapter consumes from terminal output chunks. */
+export type TerminalOutputInputMode = 'text' | 'bytes'
+
 /** PTY output chunk delivered to a renderer-owned parser/writer. */
 export interface TerminalOutputChunk {
   /** UTF-8 decoded text payload used by the current xterm-compatible path. */
@@ -279,6 +282,29 @@ export interface TerminalFitController {
 export interface TerminalOutputWriter {
   writeOutput: (chunk: TerminalOutputChunk, callback?: () => void) => void
 }
+
+interface TextPreferredTerminalRendererCapabilities {
+  /** Preferred payload format when both text and bytes are available. */
+  readonly preferredOutputInputMode: 'text'
+  /** Text-preferring renderers must consume `TerminalOutputChunk.text`. */
+  readonly acceptsText: true
+  /** Whether the renderer can consume `TerminalOutputChunk.bytesBase64`. */
+  readonly acceptsBytes: boolean
+}
+
+interface BytesPreferredTerminalRendererCapabilities {
+  /** Preferred payload format when both text and bytes are available. */
+  readonly preferredOutputInputMode: 'bytes'
+  /** Whether the renderer can consume `TerminalOutputChunk.text`. */
+  readonly acceptsText: boolean
+  /** Byte-preferring renderers must consume `TerminalOutputChunk.bytesBase64`. */
+  readonly acceptsBytes: true
+}
+
+/** Declares how a renderer adapter consumes terminal output chunks. */
+export type TerminalRendererCapabilities =
+  | TextPreferredTerminalRendererCapabilities
+  | BytesPreferredTerminalRendererCapabilities
 
 /** Renderer addon handle owned by the terminal adapter. */
 export interface TerminalRendererHandle {
@@ -337,5 +363,6 @@ export interface TerminalInstance {
 /** Adapter that creates complete terminal renderer instances. */
 export interface TerminalRendererAdapter {
   readonly id: string
+  readonly capabilities: TerminalRendererCapabilities
   createInstance: () => TerminalInstance
 }
