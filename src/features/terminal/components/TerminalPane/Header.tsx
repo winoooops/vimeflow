@@ -1,5 +1,6 @@
 // cspell:ignore worktree
 import { useEffect, useRef, type ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import type { Agent } from '../../../../agents/registry'
 import type { Session } from '../../../sessions/types'
 import { register, unregister } from '../../paneHeaderRefs'
@@ -71,8 +72,11 @@ export const Header = ({
         isCollapsed ? 'px-2.5 py-1.5' : 'pb-2 pl-2.5 pr-3 pt-2'
       }`}
     >
-      <div
-        className="inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
+      <Chip
+        tone="custom"
+        radius="md"
+        size="custom"
+        className="gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
         style={{
           background: agent.accentDim,
           borderColor: agent.accentSoft,
@@ -83,7 +87,7 @@ export const Header = ({
           {agent.glyph}
         </span>
         <span>{agent.short}</span>
-      </div>
+      </Chip>
 
       <span ref={titleRef} className="min-w-0 truncate text-on-surface">
         {paneUserLabel ?? paneAgentTitle ?? session.name}

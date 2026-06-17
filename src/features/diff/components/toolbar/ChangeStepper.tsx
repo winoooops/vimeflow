@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -39,10 +40,14 @@ export const ChangeStepper = ({
   // role="group" makes the aria-label a valid author name — ARIA 1.2 forbids
   // names on the implicit `generic` role of a bare <span>, so the hunk
   // position would otherwise be discarded by screen readers.
-  <span
+  <Chip
     role="group"
     aria-label={`hunk ${counterText}`}
-    className="inline-flex items-center gap-[7px] h-[30px] pl-2.5 pr-1 rounded-md bg-secondary/[0.08] ring-1 ring-inset ring-secondary/[0.16]"
+    tone="secondary"
+    variant="tinted"
+    radius="md"
+    size="custom"
+    className="h-[30px] gap-[7px] rounded-md bg-secondary/[0.08] pl-2.5 pr-1 ring-1 ring-inset ring-secondary/[0.16]"
   >
     <Tooltip content="Jump between changes in this file">
       <span className="inline-flex items-center gap-[7px]">
@@ -81,5 +86,5 @@ export const ChangeStepper = ({
         />
       </Tooltip>
     </span>
-  </span>
+  </Chip>
 )

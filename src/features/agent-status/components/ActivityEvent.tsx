@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
+import { Chip } from '@/components/Chip'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -195,9 +196,14 @@ const FilePathChip = ({
 }
 
 const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
-  <span className="inline-flex items-center justify-center rounded border border-outline-variant/35 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_50%,transparent)] px-1 py-px font-mono text-[9.5px] text-syn-comment">
+  <Chip
+    tone="custom"
+    size="custom"
+    radius="chip"
+    className="justify-center rounded border border-outline-variant/35 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_50%,transparent)] px-1 py-px font-mono text-[9.5px] text-syn-comment"
+  >
     {children}
-  </span>
+  </Chip>
 )
 
 // Shared relative-time string for the feed row, the tooltip header, and the
@@ -285,22 +291,20 @@ export const ActivityTooltipContent = ({
       {/* Header */}
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
         {/* Kind chip */}
-        <div
-          className="inline-flex h-5 items-center gap-[5px] rounded-[5px] border px-2 pl-1.5 font-mono text-[10px] font-semibold lowercase tracking-[0.06em]"
+        <Chip
+          tone="custom"
+          size="custom"
+          radius="chip"
+          leadingIcon={KIND_ICON[event.kind]}
+          label={kindLabel}
+          iconClassName="material-symbols-outlined text-[11px]"
+          className="h-5 gap-[5px] rounded-[5px] border px-2 pl-1.5 font-mono text-[10px] font-semibold lowercase tracking-[0.06em]"
           style={{
             backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
             borderColor: `color-mix(in srgb, ${accent} 24%, transparent)`,
             color: accent,
           }}
-        >
-          <span
-            className="material-symbols-outlined text-[11px]"
-            aria-hidden="true"
-          >
-            {KIND_ICON[event.kind]}
-          </span>
-          {kindLabel}
-        </div>
+        />
 
         {/* Meta pips */}
         <Pip>
@@ -436,11 +440,14 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
 
     return (
       <div className="mt-0.5">
-        <span
-          className={`inline-block rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
+        <Chip
+          tone="custom"
+          size="custom"
+          radius="md"
+          className={`rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
         >
           {text}
-        </span>
+        </Chip>
       </div>
     )
   }

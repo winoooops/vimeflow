@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-15
-ref_count: 31
+last_updated: 2026-06-17
+ref_count: 33
 ---
 
 # Testing Gaps
@@ -656,4 +656,23 @@ filesystem scope restrictions).
 - **File:** `src/features/agent-status/hooks/useReservoirFlow.test.tsx`
 - **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
+- **Commit:** same commit as this entry
+
+### 66. DiffLegend tests assert tagName instead of behavioral contract
+
+- **Source:** github-claude | PR #509 round 2 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/diff/components/DiffLegend.test.tsx` L62-78
+- **Finding:** Both indicator-dot tests asserted `greenDot.tagName === 'SPAN'` and `redDot.tagName === 'SPAN'`. The meaningful contract — that each dot carries the correct VCS color class (`bg-vcs-added` / `bg-vcs-deleted`) and is reachable by its `data-testid` — was already covered. The `tagName` check is pure implementation coupling: it would fail on any future refactor that swaps the element type for a semantically equivalent one, even when the visual contract is preserved.
+- **Fix:** Removed the two `tagName` assertions. The remaining `toHaveClass('bg-vcs-added')` / `toHaveClass('bg-vcs-deleted')` assertions plus `getByTestId` fully describe the contract.
+- **Commit:** same commit as this entry
+
+### 67. Production-used gradient rendering path in shared primitive lacks test coverage
+
+- **Source:** github-codex-connector | PR #509 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/components/ProgressBar.test.tsx` L46-L50
+- **Finding:** `ProgressBar` switches fill classes when `gradient` is true, and the PR uses that branch in `CommitInfoPanel` for context memory and token progress bars. Existing tests covered clamping, semantic mode, segmented mode, and decorative mode, but not the gradient lookup path, so a future token/class regression could make production fills visually disappear without test signal.
+- **Fix:** Added a focused test that renders `ProgressBar` with `gradient` and a production-used `secondary` tone, then asserts the fill element receives `bg-gradient-to-r`.
+- **Code-review heuristic:** When a PR centralizes rendering into a new shared primitive and production consumers exercise a non-default branch, add at least one targeted test for that branch. Simple lookup tables are still worth covering because theme-token or primitive refactors can silently break the mapped class.
 - **Commit:** same commit as this entry

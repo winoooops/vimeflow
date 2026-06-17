@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { IconButton } from '@/components/IconButton'
+import { ProgressBar } from '@/components/ProgressBar'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface CommitInfoPanelProps {
@@ -100,9 +102,14 @@ const CommitInfoPanel = ({
 
         {/* Commit Hash Badge */}
         <div>
-          <span className="font-label bg-surface-container-highest px-2 py-1 rounded text-xs text-on-surface">
+          <Chip
+            tone="custom"
+            size="custom"
+            radius="chip"
+            className="rounded bg-surface-container-highest px-2 py-1 font-label text-xs text-on-surface"
+          >
             {commitHash}
-          </span>
+          </Chip>
         </div>
 
         {/* Commit Message */}
@@ -137,12 +144,14 @@ const CommitInfoPanel = ({
               <span>Context Memory</span>
               <span>{contextMemoryPercent}%</span>
             </div>
-            <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-secondary to-secondary-container rounded-full"
-                style={{ width: `${contextMemoryPercent}%` }}
-              />
-            </div>
+            <ProgressBar
+              label="Context Memory"
+              value={contextMemoryPercent}
+              height="sm"
+              tone="secondary"
+              gradient
+              className="bg-surface-container-highest"
+            />
           </div>
 
           {/* Tokens Processed Progress */}
@@ -151,12 +160,14 @@ const CommitInfoPanel = ({
               <span>Tokens Processed</span>
               <span>{tokensProcessedPercent}%</span>
             </div>
-            <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-primary to-primary-container rounded-full"
-                style={{ width: `${tokensProcessedPercent}%` }}
-              />
-            </div>
+            <ProgressBar
+              label="Tokens Processed"
+              value={tokensProcessedPercent}
+              height="sm"
+              tone="primary"
+              gradient
+              className="bg-surface-container-highest"
+            />
           </div>
         </div>
 

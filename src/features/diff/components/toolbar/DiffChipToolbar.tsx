@@ -1,5 +1,6 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
@@ -455,9 +456,14 @@ export const DiffChipToolbar = ({
                 check
               </span>
               Finish
-              <span className="font-mono text-[0.625rem] font-semibold bg-on-primary/20 text-on-primary px-1.5 py-px rounded-full">
+              <Chip
+                tone="custom"
+                radius="pill"
+                size="custom"
+                className="rounded-full bg-on-primary/20 px-1.5 py-px font-mono text-[0.625rem] font-semibold text-on-primary"
+              >
                 {feedbackCount}
-              </span>
+              </Chip>
             </button>
           </div>
         ) : null}
