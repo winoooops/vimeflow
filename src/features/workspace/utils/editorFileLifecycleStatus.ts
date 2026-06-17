@@ -124,10 +124,10 @@ export const fileExistsInDirectory = (
   )
 }
 
-const NOT_FOUND_PATTERNS = [
+const NOT_FOUND_PATTERNS: readonly (string | RegExp)[] = [
   'ENOENT',
   'No such file or directory',
-  'os error 2',
+  /\bos error 2\b/,
   'The system cannot find the file specified',
 ]
 
@@ -145,7 +145,11 @@ export const isNotFoundError = (error: unknown): boolean => {
         ? error.message
         : ''
 
-  return NOT_FOUND_PATTERNS.some((pattern) => message.includes(pattern))
+  return NOT_FOUND_PATTERNS.some((pattern) =>
+    typeof pattern === 'string'
+      ? message.includes(pattern)
+      : pattern.test(message)
+  )
 }
 
 export const resolveEditorFileLifecycleStatus = ({
