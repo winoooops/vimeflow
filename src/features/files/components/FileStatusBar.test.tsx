@@ -8,7 +8,6 @@ describe('FileStatusBar', () => {
     totalSize: '12.4 MB',
     encoding: 'UTF-8',
     gitBranch: 'main*',
-    liveSyncActive: true,
   }
 
   test('renders status bar with role', () => {
@@ -47,21 +46,6 @@ describe('FileStatusBar', () => {
 
     expect(screen.getByLabelText('Live sync status')).toBeInTheDocument()
     expect(screen.getByText('Live Sync')).toBeInTheDocument()
-  })
-
-  test('shows pulse dot when live sync is active', () => {
-    render(<FileStatusBar {...defaultProps} />)
-
-    const pulseDot = screen.getByLabelText('Active')
-    expect(pulseDot).toBeInTheDocument()
-    expect(pulseDot).toHaveClass('animate-pulse', 'bg-secondary')
-  })
-
-  test('hides pulse dot when live sync is inactive', () => {
-    // eslint-disable-next-line react/jsx-boolean-value
-    render(<FileStatusBar {...defaultProps} liveSyncActive={false} />)
-
-    expect(screen.queryByLabelText('Active')).not.toBeInTheDocument()
   })
 
   test('has correct height class', () => {

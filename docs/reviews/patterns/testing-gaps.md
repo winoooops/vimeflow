@@ -658,7 +658,26 @@ filesystem scope restrictions).
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
 - **Commit:** same commit as this entry
 
-### 66. `requestAnimationFrame` mock always returns the same frame ID
+### 66. DiffLegend tests assert tagName instead of behavioral contract
+
+- **Source:** github-claude | PR #509 round 2 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/diff/components/DiffLegend.test.tsx` L62-78
+- **Finding:** Both indicator-dot tests asserted `greenDot.tagName === 'SPAN'` and `redDot.tagName === 'SPAN'`. The meaningful contract — that each dot carries the correct VCS color class (`bg-vcs-added` / `bg-vcs-deleted`) and is reachable by its `data-testid` — was already covered. The `tagName` check is pure implementation coupling: it would fail on any future refactor that swaps the element type for a semantically equivalent one, even when the visual contract is preserved.
+- **Fix:** Removed the two `tagName` assertions. The remaining `toHaveClass('bg-vcs-added')` / `toHaveClass('bg-vcs-deleted')` assertions plus `getByTestId` fully describe the contract.
+- **Commit:** same commit as this entry
+
+### 67. Production-used gradient rendering path in shared primitive lacks test coverage
+
+- **Source:** github-codex-connector | PR #509 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/components/ProgressBar.test.tsx` L46-L50
+- **Finding:** `ProgressBar` switches fill classes when `gradient` is true, and the PR uses that branch in `CommitInfoPanel` for context memory and token progress bars. Existing tests covered clamping, semantic mode, segmented mode, and decorative mode, but not the gradient lookup path, so a future token/class regression could make production fills visually disappear without test signal.
+- **Fix:** Added a focused test that renders `ProgressBar` with `gradient` and a production-used `secondary` tone, then asserts the fill element receives `bg-gradient-to-r`.
+- **Code-review heuristic:** When a PR centralizes rendering into a new shared primitive and production consumers exercise a non-default branch, add at least one targeted test for that branch. Simple lookup tables are still worth covering because theme-token or primitive refactors can silently break the mapped class.
+- **Commit:** same commit as this entry
+
+### 68. `requestAnimationFrame` mock always returns the same frame ID
 
 - **Source:** github-claude | PR #515 round 1 | 2026-06-17
 - **Severity:** LOW
@@ -667,7 +686,7 @@ filesystem scope restrictions).
 - **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
 - **Commit:** _(same commit as this entry)_
 
-### 67. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
+### 69. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
 
 - **Source:** github-claude | PR #515 round 3 | 2026-06-17
 - **Severity:** LOW
@@ -676,7 +695,7 @@ filesystem scope restrictions).
 - **Fix:** Read `dataset.paneId` from the Nth `[data-testid="split-view-slot"]` node in the active split view and throw a clear error if the slot has no pane ID.
 - **Commit:** _(same commit as this entry)_
 
-### 68. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
+### 70. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
 
 - **Source:** github-claude | PR #515 round 3 | 2026-06-17
 - **Severity:** LOW

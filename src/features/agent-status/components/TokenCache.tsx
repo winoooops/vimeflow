@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactElement } from 'react'
+import { ProgressBar } from '@/components/ProgressBar'
 import type { CurrentUsageState } from '../types'
 import {
   cacheBuckets,
@@ -58,9 +59,13 @@ const StackBar = ({
 }): ReactElement => {
   if (total === 0) {
     return (
-      <div
+      <ProgressBar
+        label="Token cache bucket distribution"
+        value={0}
+        height="md"
+        decorative
         data-testid="token-cache-stack-empty"
-        className="h-2 w-full rounded-full"
+        className="rounded-full"
         style={{
           background:
             'color-mix(in srgb, var(--color-outline-variant) 25%, transparent)',
@@ -70,43 +75,45 @@ const StackBar = ({
   }
 
   const cPct = (cached / total) * 100
-  const wPct = (wrote / total) * 100
-  const fPct = (fresh / total) * 100
   const cTone = cachedShareHex(cPct)
 
   return (
-    <div
-      className="flex h-2 w-full overflow-hidden rounded-full"
+    <ProgressBar
+      label="Token cache bucket distribution"
+      height="md"
+      decorative
+      className="flex rounded-full"
       style={{
         background:
           'color-mix(in srgb, var(--color-surface-container-lowest) 60%, transparent)',
         border:
           '1px solid color-mix(in srgb, var(--color-outline-variant) 25%, transparent)',
       }}
-    >
-      <div
-        data-testid="token-cache-stack-cached"
-        style={{
-          width: `${cPct}%`,
-          background: `linear-gradient(90deg, ${cTone}, color-mix(in srgb, ${cTone} 80%, transparent))`,
-          boxShadow: `inset 0 0 6px color-mix(in srgb, ${cTone} 33%, transparent)`,
-        }}
-      />
-      <div
-        data-testid="token-cache-stack-wrote"
-        style={{
-          width: `${wPct}%`,
-          background: WROTE_STACK_GRADIENT,
-        }}
-      />
-      <div
-        data-testid="token-cache-stack-fresh"
-        style={{
-          width: `${fPct}%`,
-          background: FRESH_STACK_GRADIENT,
-        }}
-      />
-    </div>
+      segments={[
+        {
+          value: cached,
+          testId: 'token-cache-stack-cached',
+          style: {
+            background: `linear-gradient(90deg, ${cTone}, color-mix(in srgb, ${cTone} 80%, transparent))`,
+            boxShadow: `inset 0 0 6px color-mix(in srgb, ${cTone} 33%, transparent)`,
+          },
+        },
+        {
+          value: wrote,
+          testId: 'token-cache-stack-wrote',
+          style: {
+            background: WROTE_STACK_GRADIENT,
+          },
+        },
+        {
+          value: fresh,
+          testId: 'token-cache-stack-fresh',
+          style: {
+            background: FRESH_STACK_GRADIENT,
+          },
+        },
+      ]}
+    />
   )
 }
 

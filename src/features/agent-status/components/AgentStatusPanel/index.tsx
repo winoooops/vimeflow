@@ -10,7 +10,6 @@ import {
 } from 'react'
 import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
-import type { SessionStatus } from '../../../sessions/types'
 import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
 import { ToolCallSummary } from '../ToolCallSummary'
@@ -39,7 +38,6 @@ interface AgentStatusPanelProps {
   gitStatus?: UseGitStatusReturn
   isRefreshing?: boolean
   agent: Agent
-  status: SessionStatus
   onCollapse: () => void
   cacheHistory: number[]
   snapshotKey?: string | null
@@ -305,7 +303,6 @@ export const AgentStatusPanel = ({
   gitStatus = undefined,
   isRefreshing = false,
   agent,
-  status: sessionStatus,
   onCollapse,
   cacheHistory,
   snapshotKey = null,
@@ -540,7 +537,6 @@ export const AgentStatusPanel = ({
       <AgentStatusPanelHeader
         agent={agent}
         isRefreshing={showsRefreshing}
-        status={sessionStatus}
         onCollapse={onCollapse}
         reserveWindowControls={reserveWindowControls}
       />

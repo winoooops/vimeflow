@@ -1,13 +1,11 @@
 import type { ReactElement } from 'react'
-import type { Agent } from '../../../../agents/registry'
+import { IconButton } from '@/components/IconButton'
 import { AgentGlyph } from '@/components/AgentGlyph'
-import type { SessionStatus } from '../../../sessions/types'
-import { StatusDot } from '../../../sessions/components/StatusDot'
+import type { Agent } from '../../../../agents/registry'
 
 export interface AgentStatusPanelHeaderProps {
   agent: Agent
   isRefreshing?: boolean
-  status: SessionStatus
   onCollapse: () => void
   reserveWindowControls?: boolean
 }
@@ -15,7 +13,6 @@ export interface AgentStatusPanelHeaderProps {
 export const AgentStatusPanelHeader = ({
   agent,
   isRefreshing = false,
-  status,
   onCollapse,
   reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
@@ -41,7 +38,6 @@ export const AgentStatusPanelHeader = ({
         <span className="truncate font-headline text-[13px] font-semibold text-on-surface">
           {agent.short}
         </span>
-        <StatusDot status={status} size={6} aria-label={`agent ${status}`} />
         {isRefreshing && (
           <span
             className="material-symbols-outlined text-[11px] text-on-surface-muted motion-safe:animate-spin"
@@ -55,14 +51,12 @@ export const AgentStatusPanelHeader = ({
         {isRefreshing ? 'fetching latest' : 'updated now'}
       </span>
     </div>
-    <button
-      type="button"
+    <IconButton
+      icon="chevron_right"
+      label="Collapse activity panel"
       onClick={onCollapse}
-      aria-label="Collapse activity panel"
-      className="vf-app-no-drag grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
-    >
-      <span className="material-symbols-outlined text-base">chevron_right</span>
-    </button>
+      className="vf-app-no-drag shrink-0"
+    />
     <div
       className="absolute right-0 bottom-0 left-0 h-px overflow-hidden bg-outline-variant/25"
       aria-hidden="true"

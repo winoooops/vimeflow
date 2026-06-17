@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../agents/registry'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { RailMeter } from './RailMeter'
@@ -8,7 +9,6 @@ export interface AgentStatusRailProps {
   agent: Agent
   contextUsedPercentage: number | null
   cacheHitPercentage: number | null
-  isRunning: boolean
   onExpand: () => void
   reserveWindowControls?: boolean
 }
@@ -44,7 +44,6 @@ export const AgentStatusRail = ({
   agent,
   contextUsedPercentage,
   cacheHitPercentage,
-  isRunning,
   onExpand,
   reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
@@ -59,16 +58,12 @@ export const AgentStatusRail = ({
       }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
-      <button
-        type="button"
+      <IconButton
+        icon="chevron_left"
+        label="Expand activity panel"
         onClick={onExpand}
-        aria-label="Expand activity panel"
-        className="vf-app-no-drag grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
-      >
-        <span className="material-symbols-outlined text-base">
-          chevron_left
-        </span>
-      </button>
+        className="vf-app-no-drag shrink-0"
+      />
 
       <div
         data-testid="agent-glyph-chip"
@@ -105,17 +100,6 @@ export const AgentStatusRail = ({
       )}
 
       <span className="flex-1" />
-
-      {isRunning && (
-        <span
-          data-testid="running-dot"
-          className="h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
-          style={{
-            background: agent.accent,
-            boxShadow: `0 0 10px ${agent.accent}`,
-          }}
-        />
-      )}
     </aside>
   )
 }

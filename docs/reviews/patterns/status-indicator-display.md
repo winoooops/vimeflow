@@ -2,8 +2,8 @@
 id: status-indicator-display
 category: code-quality
 created: 2026-05-26
-last_updated: 2026-05-26
-ref_count: 0
+last_updated: 2026-06-15
+ref_count: 1
 ---
 
 # Status Indicator Display
@@ -68,3 +68,12 @@ colour/face tier.
   returns undefined ("no data yet", semantically distinct from "<1m"). Added an
   integration test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Burner align button shows out-of-sync amber while disabled for an in-progress align
+
+- **Source:** github-codex-connector | PR #454 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** After migrating the align control to `IconButton`, the amber `outOfSync` styling was applied via `className` whenever `outOfSync` was true, even when `alignBusy` disabled the button. This produced conflicting cues during a normal sync: a disabled/in-progress tooltip alongside an urgent amber visual.
+- **Fix:** Gated the amber `outOfSync` class on `outOfSync && !alignBusy` so the busy state keeps the neutral disabled visual precedence.
+- **Commit:** same commit as this entry

@@ -1,9 +1,9 @@
 // cspell:ignore worktree
 import { useEffect, useRef, type ReactElement } from 'react'
-import type { Agent } from '../../../../agents/registry'
+import { Chip } from '@/components/Chip'
 import { AgentGlyph } from '@/components/AgentGlyph'
-import { StatusDot } from '../../../sessions/components/StatusDot'
-import type { Session, SessionStatus } from '../../../sessions/types'
+import type { Agent } from '../../../../agents/registry'
+import type { Session } from '../../../sessions/types'
 import { register, unregister } from '../../paneHeaderRefs'
 import { HeaderActions } from './HeaderActions'
 import { HeaderMetadata } from './HeaderMetadata'
@@ -11,7 +11,6 @@ import { HeaderMetadata } from './HeaderMetadata'
 export interface HeaderProps {
   agent: Agent
   session: Session
-  pipStatus: SessionStatus
   worktreeName: string | null
   branch: string | null
   cwd?: string
@@ -32,7 +31,6 @@ export interface HeaderProps {
 export const Header = ({
   agent,
   session,
-  pipStatus,
   worktreeName,
   branch,
   cwd = undefined,
@@ -75,9 +73,12 @@ export const Header = ({
         isCollapsed ? 'px-2.5 py-1.5' : 'pb-2 pl-2.5 pr-3 pt-2'
       }`}
     >
-      <div
+      <Chip
         data-testid="agent-glyph-chip"
-        className="inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
+        tone="custom"
+        radius="md"
+        size="custom"
+        className="gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
         style={{
           background: agent.accentDim,
           borderColor: agent.accentSoft,
@@ -88,9 +89,8 @@ export const Header = ({
           <AgentGlyph agent={agent} size={12} />
         </span>
         <span>{agent.short}</span>
-      </div>
+      </Chip>
 
-      <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
       <span ref={titleRef} className="min-w-0 truncate text-on-surface">
         {paneUserLabel ?? paneAgentTitle ?? session.name}
       </span>

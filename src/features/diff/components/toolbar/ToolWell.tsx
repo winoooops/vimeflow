@@ -5,6 +5,8 @@ import {
   type ReactNode,
 } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Shared icon-button base for every button inside the tool-well (and the
 // discard-all button the parent renders into the `discardAllSlot`, so the
@@ -53,21 +55,16 @@ export const WellDisabledButton = forwardRef<
   WellDisabledButtonProps
 >(
   ({ icon, label, ...buttonProps }, ref): ReactElement => (
-    <button
+    <IconButton
       ref={ref}
-      type="button"
+      icon={icon}
+      label={label}
+      size="md"
       aria-disabled="true"
-      aria-label={label}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={WELL_DISABLED_BUTTON_CLASSES}
       {...buttonProps}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
+    />
   )
 )
 
@@ -90,20 +87,15 @@ const WellButton = ({
   disabled: boolean
 }): ReactElement => (
   <Tooltip content={tooltip}>
-    <button
-      type="button"
+    <IconButton
+      icon={icon}
+      label={label}
+      size="md"
       disabled={disabled}
-      aria-label={label}
       onClick={onClick}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
+    />
   </Tooltip>
 )
 

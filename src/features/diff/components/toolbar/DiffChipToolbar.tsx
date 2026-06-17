@@ -1,7 +1,10 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
@@ -277,13 +280,16 @@ export const DiffChipToolbar = ({
     onDiscardAll !== undefined ? (
       <Tooltip content="Discard all changes" disabled={discardAllOpen}>
         <span>
-          <button
+          <IconButton
             ref={setDiscardAllAnchor}
-            type="button"
+            icon="delete_sweep"
+            label="discard all"
+            variant="danger"
+            size="md"
             disabled={staging}
-            aria-label="discard all"
             aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
+            showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already wraps the discard-all span
             className={
               staging
                 ? WELL_DISABLED_BUTTON_CLASSES
@@ -294,14 +300,7 @@ export const DiffChipToolbar = ({
                 setDiscardAllOpen((prev) => !prev)
               }
             }}
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-base leading-none"
-            >
-              delete_sweep
-            </span>
-          </button>
+          />
           <Popover
             anchor={discardAllAnchor}
             open={discardAllOpen}
@@ -497,9 +496,14 @@ export const DiffChipToolbar = ({
                 check
               </span>
               Finish
-              <span className="font-mono text-[0.625rem] font-semibold bg-on-primary/20 text-on-primary px-1.5 py-px rounded-full">
+              <Chip
+                tone="custom"
+                radius="pill"
+                size="custom"
+                className="rounded-full bg-on-primary/20 px-1.5 py-px font-mono text-[0.625rem] font-semibold text-on-primary"
+              >
                 {feedbackCount}
-              </span>
+              </Chip>
             </button>
           </div>
         ) : null}

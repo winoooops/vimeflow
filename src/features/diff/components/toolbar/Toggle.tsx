@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Toggle as SharedToggle } from '@/components/Toggle'
 
 interface ToggleProps {
   label: string
@@ -18,22 +19,5 @@ export const Toggle = ({
   value = false,
   onChange,
 }: ToggleProps): ReactElement => (
-  <button
-    type="button"
-    onClick={(): void => onChange(!value)}
-    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.7rem] font-medium transition-colors ${
-      value
-        ? 'bg-primary/20 text-primary hover:bg-primary/30'
-        : 'bg-surface-container/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60'
-    }`}
-    aria-pressed={value ? 'true' : 'false'}
-  >
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-base leading-none"
-    >
-      {value ? 'check_box' : 'check_box_outline_blank'}
-    </span>
-    {label}
-  </button>
+  <SharedToggle label={label} value={value} onChange={onChange} />
 )

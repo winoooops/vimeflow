@@ -1,6 +1,8 @@
 import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
+import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
@@ -262,24 +264,21 @@ const CardComponent = ({
             }
           }}
         >
-          <button
+          <IconButton
             ref={triggerRef}
-            type="button"
-            aria-label="Session actions"
+            icon="more_horiz"
+            label="Session actions"
+            size="sm"
+            // The inline menu owns the disclosure affordance; a hover tooltip
+            // duplicating the label would conflict with it.
+            showTooltip={TOOLTIP_SUPPRESSED} // inline menu is the disclosure affordance
             aria-expanded={menuOpen}
+            aria-haspopup="menu"
             onClick={(e) => {
               e.stopPropagation()
               setMenuOpen((open) => !open)
             }}
-            className="grid h-6 w-6 place-items-center rounded-md bg-surface-container-lowest/55 text-on-surface-muted backdrop-blur-sm transition-colors hover:text-primary"
-          >
-            <span
-              className="material-symbols-outlined text-[16px]"
-              aria-hidden="true"
-            >
-              more_horiz
-            </span>
-          </button>
+          />
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}

@@ -153,7 +153,8 @@ describe('HeaderActions', () => {
 
     await user.hover(screen.getByRole('button', { name: /collapse status/i }))
     const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Collapse status')
+    // IconButton derives the tooltip from its label (the accessible name).
+    expect(tip).toHaveTextContent('collapse status')
     expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 
@@ -169,7 +170,8 @@ describe('HeaderActions', () => {
 
     await user.hover(screen.getByRole('button', { name: /close pane/i }))
     const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Close pane')
+    // IconButton derives the tooltip from its label (the accessible name).
+    expect(tip).toHaveTextContent('close pane')
     expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })
