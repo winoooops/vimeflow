@@ -1,10 +1,32 @@
 // cspell:ignore ghostty
 import { describe, expect, test, vi } from 'vitest'
-import type { TerminalOutputChunk, TerminalOutputPhase } from '../../types'
+import type {
+  TerminalOutputChunk,
+  TerminalOutputPhase,
+  TerminalRendererCapabilities,
+} from '../../types'
 import {
-  createByteControlSequenceTerminalParserEngine,
-  createTextControlSequenceTerminalParserEngine,
+  TerminalControlSequenceParserEngine,
+  createControlSequenceTerminalParserEngine,
 } from './terminalParserEngine'
+
+const textOnlyCapabilities: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'text',
+  acceptsText: true,
+  acceptsBytes: false,
+}
+
+const bytePreferredCapabilities: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'bytes',
+  acceptsText: true,
+  acceptsBytes: true,
+}
+
+const byteOnlyCapabilities: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'bytes',
+  acceptsText: false,
+  acceptsBytes: true,
+}
 
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
@@ -32,9 +54,30 @@ const createByteChunk = (
   }
 }
 
+const createTextChunk = (
+  text: string,
+  offsetStart: number,
+  phase: TerminalOutputPhase
+): TerminalOutputChunk => ({
+  text,
+  offsetStart,
+  byteLen: new TextEncoder().encode(text).length,
+  phase,
+})
+
+const createTextEngine = (): TerminalControlSequenceParserEngine =>
+  new TerminalControlSequenceParserEngine({
+    capabilities: textOnlyCapabilities,
+  })
+
+const createByteEngine = (): TerminalControlSequenceParserEngine =>
+  new TerminalControlSequenceParserEngine({
+    capabilities: bytePreferredCapabilities,
+  })
+
 describe('terminal parser engine input modes', () => {
   test('text mode records its input mode and ignores byte payloads', () => {
-    const engine = createTextControlSequenceTerminalParserEngine()
+    const engine = createTextEngine()
     const chunk = createByteChunk('bytes lose', 0, 'live')
 
     expect(engine.inputMode).toBe('text')
@@ -44,7 +87,7 @@ describe('terminal parser engine input modes', () => {
   })
 
   test('byte mode records its input mode and prefers byte payloads', () => {
-    const engine = createByteControlSequenceTerminalParserEngine()
+    const engine = createByteEngine()
 
     expect(engine.inputMode).toBe('bytes')
     expect(engine.parseOutput(createByteChunk('bytes win', 0, 'live'))).toEqual(
@@ -53,11 +96,81 @@ describe('terminal parser engine input modes', () => {
       }
     )
   })
+
+  test('control parser class exposes the configured capabilities', () => {
+    const engine = new TerminalControlSequenceParserEngine({
+      capabilities: bytePreferredCapabilities,
+    })
+
+    expect(engine.inputMode).toBe('bytes')
+    expect(engine.capabilities).toBe(bytePreferredCapabilities)
+  })
+
+  test('capability-aware parser engines fall back to text only when allowed', () => {
+    const fallbackEngine = createControlSequenceTerminalParserEngine({
+      capabilities: bytePreferredCapabilities,
+    })
+
+    const byteOnlyEngine = createControlSequenceTerminalParserEngine({
+      capabilities: byteOnlyCapabilities,
+    })
+
+    expect(
+      fallbackEngine.parseOutput(createTextChunk('fallback', 0, 'live'))
+    ).toEqual({ visibleText: 'fallback' })
+
+    expect(() =>
+      byteOnlyEngine.parseOutput(createTextChunk('fallback', 0, 'live'))
+    ).toThrow('Terminal renderer requires bytesBase64 output')
+  })
+
+  test('emits matching OSC 7 cwd events from text and byte paths', () => {
+    const textEngine = createControlSequenceTerminalParserEngine({
+      capabilities: textOnlyCapabilities,
+    })
+
+    const byteEngine = createControlSequenceTerminalParserEngine({
+      capabilities: bytePreferredCapabilities,
+    })
+
+    const textHandler = vi.fn()
+    const byteHandler = vi.fn()
+    const output = 'before \x1b]7;file://localhost/tmp/generic-parser\x07 after'
+
+    textEngine.parser.onEvent(textHandler)
+    byteEngine.parser.onEvent(byteHandler)
+
+    expect(textEngine.parseOutput(createTextChunk(output, 12, 'live'))).toEqual(
+      {
+        visibleText: 'before  after',
+      }
+    )
+
+    expect(byteEngine.parseOutput(createByteChunk(output, 12, 'live'))).toEqual(
+      {
+        visibleText: 'before  after',
+      }
+    )
+
+    const expectedEvent = {
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/generic-parser',
+      output: {
+        offsetStart: 12,
+        byteLen: new TextEncoder().encode(output).length,
+        phase: 'live',
+      },
+    }
+
+    expect(textHandler).toHaveBeenCalledWith(expectedEvent)
+    expect(byteHandler).toHaveBeenCalledWith(expectedEvent)
+  })
 })
 
-describe('createByteControlSequenceTerminalParserEngine', () => {
+describe('byte-capable control sequence parser engine', () => {
   test('emits OSC 7 cwd events from byte payloads', () => {
-    const engine = createByteControlSequenceTerminalParserEngine()
+    const engine = createByteEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(
@@ -82,7 +195,7 @@ describe('createByteControlSequenceTerminalParserEngine', () => {
   })
 
   test('reassembles split OSC 7 byte payloads with completion context', () => {
-    const engine = createByteControlSequenceTerminalParserEngine()
+    const engine = createByteEngine()
     const handler = vi.fn()
 
     const firstChunk = createByteChunk(
@@ -114,7 +227,7 @@ describe('createByteControlSequenceTerminalParserEngine', () => {
   })
 
   test('supports OSC 7 sequences terminated with string terminator', () => {
-    const engine = createByteControlSequenceTerminalParserEngine()
+    const engine = createByteEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(
@@ -139,7 +252,7 @@ describe('createByteControlSequenceTerminalParserEngine', () => {
   })
 
   test('preserves raw non-file OSC 7 payloads for consumer validation', () => {
-    const engine = createByteControlSequenceTerminalParserEngine()
+    const engine = createByteEngine()
     const handler = vi.fn()
 
     const chunk = createByteChunk(

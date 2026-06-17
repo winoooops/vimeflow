@@ -2,20 +2,29 @@
 import type {
   TerminalInstance,
   TerminalRendererAdapter,
+  TerminalRendererCapabilities,
   TerminalRendererHandle,
   TerminalOutputWriter,
 } from '../../types'
 import { createPlainTextTerminal } from './plainTextInstance'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import {
-  createByteControlSequenceTerminalParserEngine,
+  createControlSequenceTerminalParserEngine,
   type TerminalParserEngine,
 } from './terminalParserEngine'
 
 export { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 
+const GHOSTTY_TERMINAL_CAPABILITIES: TerminalRendererCapabilities = {
+  preferredOutputInputMode: 'bytes',
+  acceptsText: true,
+  acceptsBytes: true,
+}
+
 export interface GhosttyTerminalOptions {
-  readonly createParserEngine?: () => TerminalParserEngine
+  readonly createParserEngine?: (
+    capabilities: TerminalRendererCapabilities
+  ) => TerminalParserEngine
 }
 
 class GhosttyTerminalModel {
@@ -24,8 +33,10 @@ class GhosttyTerminalModel {
 
   constructor(options: GhosttyTerminalOptions = {}) {
     this.parserEngine =
-      options.createParserEngine?.() ??
-      createByteControlSequenceTerminalParserEngine()
+      options.createParserEngine?.(GHOSTTY_TERMINAL_CAPABILITIES) ??
+      createControlSequenceTerminalParserEngine({
+        capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
+      })
   }
 
   readonly output: TerminalOutputWriter = {
@@ -59,10 +70,6 @@ export const createGhosttyTerminal = (
 
 export const ghosttyTerminalRenderer: TerminalRendererAdapter = {
   id: GHOSTTY_TERMINAL_RENDERER_ID,
-  capabilities: {
-    preferredOutputInputMode: 'bytes',
-    acceptsText: true,
-    acceptsBytes: true,
-  },
+  capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
   createInstance: createGhosttyTerminal,
 }
