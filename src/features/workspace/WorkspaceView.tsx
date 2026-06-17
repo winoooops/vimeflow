@@ -109,6 +109,7 @@ import {
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
   isNotFoundError,
+  buildSelectedFileGitKey,
 } from './utils/editorFileLifecycleStatus'
 
 const rateLimitPercentage = (
@@ -1392,6 +1393,26 @@ const WorkspaceViewContent = (): ReactElement => {
       (isDockOpen && (dockTab === 'diff' || editorBuffer.filePath !== null)),
   })
 
+  // Stable key for the selected file's relevant git state. The git watcher
+  // emits a new `files` array reference on each poll; this key collapses that
+  // down to a primitive that only changes when the selected file's status,
+  // staging, cwd, or presence in the changed-file list actually changes.
+  const selectedFileGitKey = useMemo(
+    () =>
+      buildSelectedFileGitKey(
+        editorBuffer.filePath,
+        gitStatus.files,
+        gitStatus.filesCwd,
+        gitStatus.repoRoot
+      ),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+    ]
+  )
+
   useEffect(() => {
     if (!editorBuffer.filePath || !editorFileLookupCwd) {
       setSelectedEditorFileExists((current) =>
@@ -1428,8 +1449,7 @@ const WorkspaceViewContent = (): ReactElement => {
     editorFileLookupCwd,
     editorBuffer.filePath,
     fileSystemService,
-    gitStatus.files,
-    gitStatus.filesCwd,
+    selectedFileGitKey,
   ])
 
   const editorFileLifecycleStatus = useMemo(

@@ -152,6 +152,42 @@ export const isNotFoundError = (error: unknown): boolean => {
   )
 }
 
+/**
+ * Build a stable primitive key representing the git state that is relevant to
+ * a single selected file. React equality on the returned string is stable when
+ * the underlying arrays change identity but the selected file's git state does
+ * not, which avoids re-running existence probes on every git-watch poll.
+ */
+export const buildSelectedFileGitKey = (
+  filePath: string | null,
+  files: readonly ChangedFile[],
+  filesCwd: string | null,
+  repoRoot: string | null = null
+): string => {
+  if (!filePath) {
+    return `${filesCwd ?? ''}:no-path`
+  }
+
+  const normalizedFilePath = normalizePathForComparison(filePath)
+
+  const relativePath =
+    repoRoot && repoRoot.length > 0
+      ? relativePathFromCwd(filePath, repoRoot)
+      : relativePathFromCwd(filePath, filesCwd ?? '')
+
+  const changedFile = files.find(
+    (file) =>
+      normalizePathForComparison(file.path) === relativePath ||
+      normalizePathForComparison(file.path) === normalizedFilePath
+  )
+
+  if (!changedFile) {
+    return `${filesCwd ?? ''}:none`
+  }
+
+  return `${filesCwd ?? ''}:${changedFile.status}:${changedFile.staged ? 'staged' : 'unstaged'}`
+}
+
 export const resolveEditorFileLifecycleStatus = ({
   filePath,
   gitStatusCwd,

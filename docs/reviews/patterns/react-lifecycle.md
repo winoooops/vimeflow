@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-17
 ref_count: 20
 ---
 
@@ -364,4 +364,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/overlays/useNativeSurface.ts`
 - **Finding:** The second `useLayoutEffect` captures `overlays`, `getNativeSurfaceState`, `id`, `owner`, `belowPlane`, and `getRect` but lists no deps so it runs after every commit. The `// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses the warning without naming which variables are deliberately unlisted or why each is safe.
 - **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. `checkSelectedFile` existence probe re-runs on every git-watch poll
+
+- **Source:** github-claude | PR #510 round 5 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The `checkSelectedFile` effect in `WorkspaceView.tsx` listed `gitStatus.files` and `gitStatus.filesCwd` in its dependency array. With `watch: true`, `useGitStatus` emits a fresh `files` array reference on every poll, so the effect re-ran continuously even when nothing about the open file had changed. Each run reset `selectedEditorFileExists` to `null` and called `fileSystemService.readFile(editorBuffer.filePath)`, repeatedly transferring full file contents over IPC and transiently clearing the `DELETED` crumb state for deleted untracked buffers.
+- **Fix:** Introduced `buildSelectedFileGitKey` in `editorFileLifecycleStatus.ts` to derive a stable primitive key from the selected file's path, git cwd, repo root, and matching `ChangedFile` status/staging. The `checkSelectedFile` effect now depends on that key instead of the raw arrays, so the probe only runs when the selected file's relevant git state actually changes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
