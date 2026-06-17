@@ -98,29 +98,6 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
   disconnect: vi.fn(),
 }))
 
-// jsdom exposes the `inert` attribute but does not suppress activation of
-// inert subtrees. Block click activation at capture so tests can assert the
-// real-browser non-interactivity behavior of retained/inert bodies.
-//
-// NOTE: This listener is installed once at module load and stays active for
-// every test file. Any future test that adds its own capture-phase click
-// handler near an `[inert]` subtree will have that handler silenced by
-// `stopImmediatePropagation`. Use bubbling-phase listeners or keep spies
-// outside inert subtrees unless you explicitly intend to test inert blocking.
-if (typeof document !== 'undefined') {
-  document.addEventListener(
-    'click',
-    (event): void => {
-      const target = event.target as Element | null
-      if (target !== null && target.closest('[inert]') !== null) {
-        event.stopImmediatePropagation()
-        event.preventDefault()
-      }
-    },
-    true
-  )
-}
-
 // Mock matchMedia for xterm.js (used for DPI detection and color scheme)
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

@@ -620,14 +620,17 @@ fn process_output_completion(
         return;
     };
 
-    // Preserve the PatchApplyEnd guard: custom_tool_call_output is not
-    // authoritative for patch completion. Wait for the matching
-    // patch_apply_end event so a failed patch is not reported as done.
-    if is_custom_tool_output {
-        if let Some(call) = in_flight.get(call_id) {
-            if matches!(call.completion_mode, CompletionMode::PatchApplyEnd) {
-                return;
-            }
+    // Preserve completion-mode guards: function_call_output and
+    // custom_tool_call_output are not authoritative for exec_command or
+    // apply_patch completion. Wait for the matching exec_command_end /
+    // patch_apply_end event so failed commands/patches are not reported
+    // as done.
+    if let Some(call) = in_flight.get(call_id) {
+        if matches!(
+            call.completion_mode,
+            CompletionMode::ExecCommandEnd | CompletionMode::PatchApplyEnd
+        ) {
+            return;
         }
     }
 
@@ -1089,18 +1092,18 @@ mod tests {
         let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
 
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"call_exec"}}"#,
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"Read","arguments":"{\"file\":\"src/lib.rs\"}","call_id":"call_read"}}"#,
         );
         assert_eq!(sink.count("agent-tool-call"), 0);
 
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_exec","output":"Process exited with code 0"}}"#,
+            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_read","output":"file contents"}}"#,
         );
         decoder.on_caught_up();
 
         let payloads = tool_call_payloads(&sink);
         assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0]["toolUseId"], "call_exec");
+        assert_eq!(payloads[0]["toolUseId"], "call_read");
         assert_eq!(payloads[0]["status"], "done");
     }
 
@@ -1915,7 +1918,7 @@ mod tests {
     }
 
     #[test]
-    fn process_line_function_call_output_completes_exec_command_without_exec_end() {
+    fn process_line_exec_command_end_finalizes_after_function_call_output() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -1955,6 +1958,27 @@ mod tests {
             true,
         );
 
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output must keep exec_command in-flight until exec_command_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","git status"],"aggregated_output":"ok\n","exit_code":0,"duration":{"secs":1,"nanos":234500000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
         let tool_calls: Vec<_> = sink
             .recorded()
             .into_iter()
@@ -1964,14 +1988,11 @@ mod tests {
         assert_eq!(tool_calls[0].1["status"], "running");
         assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
         assert_eq!(tool_calls[1].1["status"], "done");
-        assert!(
-            in_flight.is_empty(),
-            "function_call_output must clear exec_command in-flight state"
-        );
+        assert!(in_flight.is_empty());
     }
 
     #[test]
-    fn process_line_function_call_output_marks_failed_exec_command() {
+    fn process_line_exec_command_end_marks_failed_exec_command() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -2011,6 +2032,27 @@ mod tests {
             true,
         );
 
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output must keep exec_command in-flight until exec_command_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","false"],"aggregated_output":"","exit_code":1,"duration":{"secs":0,"nanos":10000000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
         let tool_calls: Vec<_> = sink
             .recorded()
             .into_iter()
@@ -2023,7 +2065,7 @@ mod tests {
     }
 
     #[test]
-    fn process_line_function_call_output_marks_exec_command_failed_when_exit_code_line_missing() {
+    fn process_line_function_call_output_without_exit_code_keeps_exec_command_pending() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -2063,6 +2105,27 @@ mod tests {
             true,
         );
 
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output without an exit-code line must not finalize exec_command"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","timeout"],"aggregated_output":"","exit_code":0,"duration":{"secs":30,"nanos":0},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
         let tool_calls: Vec<_> = sink
             .recorded()
             .into_iter()
@@ -2070,10 +2133,7 @@ mod tests {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
-        assert_eq!(
-            tool_calls[1].1["status"], "failed",
-            "exec_command function_call_output without an exit-code line must fail closed"
-        );
+        assert_eq!(tool_calls[1].1["status"], "done");
         assert!(in_flight.is_empty());
     }
 

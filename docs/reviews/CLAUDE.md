@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 69       | 33   | 2026-06-17   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 70       | 33   | 2026-06-17   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 25   | 2026-06-16   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 61       | 24   | 2026-06-15   |
@@ -98,4 +98,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 0    | 2026-06-15   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 0    | 2026-06-15   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 1        | 0    | 2026-06-16   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 2        | 0    | 2026-06-17   |
+| [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |

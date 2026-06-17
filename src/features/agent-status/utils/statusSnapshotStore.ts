@@ -160,6 +160,7 @@ export const mergeAgentStatusSnapshot = (
       previous.contextWindow === next.contextWindow &&
       previous.cost === next.cost &&
       previous.rateLimits === next.rateLimits &&
+      previous.usageFetched === next.usageFetched &&
       previous.numTurns === next.numTurns &&
       previous.testRun === next.testRun)
   ) {

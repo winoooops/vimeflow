@@ -1,5 +1,13 @@
 // cspell:ignore winoooops
-import { afterEach, describe, test, expect, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
@@ -11,6 +19,10 @@ import {
   readStatusScrollAnchor,
   writeStatusScrollAnchor,
 } from '../../utils/statusSnapshotStore'
+import {
+  installInertClickPolyfill,
+  removeInertClickPolyfill,
+} from '../../../../test/inertClickPolyfill'
 import { AgentStatusPanel } from '.'
 
 const inactiveAgentStatus: AgentStatus = {
@@ -118,6 +130,14 @@ const createGitStatus = (
 })
 
 describe('AgentStatusPanel', () => {
+  beforeAll(() => {
+    installInertClickPolyfill()
+  })
+
+  afterAll(() => {
+    removeInertClickPolyfill()
+  })
+
   afterEach(() => {
     clearStatusSnapshots()
   })
