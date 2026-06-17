@@ -34,6 +34,9 @@ test('renders segmented bars as proportional widths', () => {
     />
   )
 
+  expect(screen.getByRole('progressbar', { name: 'Buckets' })).toHaveClass(
+    'flex'
+  )
   expect(screen.getByTestId('cached')).toHaveStyle({ width: '75%' })
   expect(screen.getByTestId('fresh')).toHaveStyle({ width: '25%' })
 })

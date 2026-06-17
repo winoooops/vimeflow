@@ -19,7 +19,7 @@ export interface ProgressBarVariantProps {
   radius?: ProgressBarRadius
 }
 
-const TRACK_BASE_CLASS = 'w-full overflow-hidden'
+const TRACK_BASE_CLASS = 'flex w-full overflow-hidden'
 
 const HEIGHT_CLASS: Record<ProgressBarHeight, string> = {
   thin: 'h-[3px]',
