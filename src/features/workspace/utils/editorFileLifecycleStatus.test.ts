@@ -145,15 +145,12 @@ describe('editorFileLifecycleStatus', () => {
     ['ENOENT', true],
     ['No such file or directory (os error 2)', true],
     ['The system cannot find the file specified', true],
-    ['invalid path \'/foo\': No such file or directory (os error 2)', true],
+    ["invalid path '/foo': No such file or directory (os error 2)", true],
     ['EACCES: permission denied', false],
     ['session not found', false],
     ['backend unavailable', false],
-  ] as const)(
-    'isNotFoundError(%s) returns %s',
-    (message, expected) => {
-      expect(isNotFoundError(new Error(message))).toBe(expected)
-      expect(isNotFoundError(message)).toBe(expected)
-    }
-  )
+  ] as const)('isNotFoundError(%s) returns %s', (message, expected) => {
+    expect(isNotFoundError(new Error(message))).toBe(expected)
+    expect(isNotFoundError(message)).toBe(expected)
+  })
 })

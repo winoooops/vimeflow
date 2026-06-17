@@ -651,9 +651,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     view.rerender(<WorkspaceView />)
 
     await waitFor(() => {
-      expect(
-        fileSystemServiceOverride.current.readFile
-      ).toHaveBeenCalledWith('/repo/src/dummy.ts')
+      expect(fileSystemServiceOverride.current.readFile).toHaveBeenCalledWith(
+        '/repo/src/dummy.ts'
+      )
     })
 
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBeNull()
