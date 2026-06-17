@@ -59,6 +59,20 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('bytes win')
   })
 
+  test('renders invalid byte payloads through the byte path', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: '//4=',
+      offsetStart: 0,
+      byteLen: 2,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('\uFFFD\uFFFD')
+  })
+
   test('falls back to text when byte payloads are unavailable', () => {
     const created = createTrackedGhosttyTerminal()
 

@@ -289,7 +289,14 @@ export interface TerminalRendererHandle {
 export interface TerminalCwdParserEvent {
   readonly type: 'cwd'
   readonly source: 'osc7'
-  /** Raw OSC 7 URI/path payload. Consumers own context-sensitive path normalization. */
+  /**
+   * Raw OSC 7 URI/path payload from the terminal stream.
+   *
+   * This is untrusted terminal output, not a normalized filesystem path.
+   * Consumers that need a cwd must validate and normalize it with
+   * `parseOsc7Cwd` or an equivalent filesystem-only parser before storing it
+   * or passing it to any shell/open-external path.
+   */
   readonly uri: string
   readonly output: TerminalParserOutputContext | null
 }
