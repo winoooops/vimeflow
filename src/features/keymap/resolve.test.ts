@@ -25,6 +25,8 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
     'focus-pane-up': 'Mod+Shift+ArrowUp',
     'focus-pane-right': 'Mod+Shift+ArrowRight',
     'dock-toggle': 'Mod+Digit0',
+    palette: 'Mod+Semicolon',
+    'palette-leader': 'Mod+Semicolon',
     'sidebar-sessions': 'Mod+Shift+KeyS',
     'sidebar-files': 'Mod+Shift+KeyF',
     'focus-editor': 'Mod+KeyE',
@@ -78,8 +80,22 @@ describe('resolveBindings', () => {
     )
   })
 
+  test('override on the PR3-migrated palette command wins', () => {
+    expect(tokenOf({ palette: 'Mod+KeyP' }, 'palette')).toBe('Mod+KeyP')
+  })
+
+  test('palette and leader overrides may intentionally share a binding', () => {
+    const overrides: CustomKeybindings = {
+      palette: 'Mod+KeyP',
+      'palette-leader': 'Mod+KeyP',
+    }
+
+    expect(tokenOf(overrides, 'palette')).toBe('Mod+KeyP')
+    expect(tokenOf(overrides, 'palette-leader')).toBe('Mod+KeyP')
+  })
+
   test('override on a rebindable:false command is ignored', () => {
-    expect(tokenOf({ palette: 'Mod+KeyP' }, 'palette')).toBe('Mod+Semicolon')
+    expect(tokenOf({ settings: 'Mod+KeyP' }, 'settings')).toBe('Mod+Comma')
   })
 
   test('super-less / both-super / malformed overrides fall back to default', () => {

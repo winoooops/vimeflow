@@ -19,6 +19,8 @@ import {
 } from './csp'
 import {
   installCommandPaletteShortcutOverride,
+  setCommandPaletteShortcutBinding,
+  setCommandPaletteShortcutBindings,
   setKeymapCaptureActive,
 } from './command-palette-shortcut'
 import { installApplicationEditMenu } from './edit-menu'
@@ -26,6 +28,7 @@ import { installNavigationGuard } from './navigation-guard'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
+  COMMAND_PALETTE_BINDING,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_OPEN_FILE,
   SETTINGS_SYNC_SNAPSHOT,
@@ -65,6 +68,17 @@ const E2E_RUNTIME_ARG = '--vimeflow-e2e'
 // Kept local to the main process so Electron startup never depends on a renderer
 // feature module that may later gain browser-only runtime imports.
 const SETTINGS_SCHEMA_VERSION = 1
+
+const isCommandPaletteBindingSync = (
+  value: unknown
+): value is { palette: string; leader: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  'palette' in value &&
+  'leader' in value &&
+  typeof value.palette === 'string' &&
+  typeof value.leader === 'string'
 
 // E2E detection (env var OR CLI flag fallback). Hoisted above its first
 // caller (installContentSecurityPolicy at ~line 80) so the TDZ never
@@ -471,6 +485,23 @@ const setupApp = async (): Promise<void> => {
     const win = BrowserWindow.fromWebContents(ipcEvent.sender)
     if (win !== null) {
       setKeymapCaptureActive(win, active === true)
+    }
+  })
+
+  ipcMain.on(COMMAND_PALETTE_BINDING, (ipcEvent, binding: unknown) => {
+    const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+    if (win === null) {
+      return
+    }
+
+    if (typeof binding === 'string') {
+      setCommandPaletteShortcutBinding(win, binding)
+
+      return
+    }
+
+    if (isCommandPaletteBindingSync(binding)) {
+      setCommandPaletteShortcutBindings(win, binding)
     }
   })
 

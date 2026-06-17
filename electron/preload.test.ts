@@ -17,6 +17,7 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
+import { COMMAND_PALETTE_BINDING, COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import './preload'
 
 const electronMock = vi.hoisted(() => {
@@ -35,6 +36,7 @@ const electronMock = vi.hoisted(() => {
       invoke: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
+      send: vi.fn(),
       setMaxListeners: vi.fn(),
     },
   }
@@ -65,6 +67,16 @@ const browserPane = (): Record<string, unknown> => {
   return pane as Record<string, unknown>
 }
 
+const preloadApi = (): Record<string, unknown> => {
+  const api = electronMock.exposed
+
+  if (!api || typeof api !== 'object') {
+    throw new Error('preload API not exposed')
+  }
+
+  return api
+}
+
 describe('preload browserPane wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -72,6 +84,68 @@ describe('preload browserPane wiring', () => {
 
   test('raises the shared ipcRenderer listener cap during preload startup', () => {
     expect(preloadSetMaxListenersCalls).toEqual([[64]])
+  })
+
+  test('setCommandPaletteBinding sends the resolved binding to main', () => {
+    const setCommandPaletteBinding = preloadApi().setCommandPaletteBinding as (
+      binding: string
+    ) => void
+
+    setCommandPaletteBinding('Mod+KeyK')
+
+    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
+      COMMAND_PALETTE_BINDING,
+      'Mod+KeyK'
+    )
+  })
+
+  test('setCommandPaletteBindings sends split palette bindings to main', () => {
+    const setCommandPaletteBindings = preloadApi()
+      .setCommandPaletteBindings as (bindings: {
+      palette: string
+      leader: string
+    }) => void
+
+    setCommandPaletteBindings({
+      palette: 'Mod+KeyP',
+      leader: 'Mod+KeyK',
+    })
+
+    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
+      COMMAND_PALETTE_BINDING,
+      {
+        palette: 'Mod+KeyP',
+        leader: 'Mod+KeyK',
+      }
+    )
+  })
+
+  test('onCommandPaletteToggle forwards the shortcut source', () => {
+    const onCommandPaletteToggle = preloadApi().onCommandPaletteToggle as (
+      callback: (source?: 'palette' | 'leader') => void
+    ) => () => void
+    const callback = vi.fn()
+
+    const unlisten = onCommandPaletteToggle(callback)
+
+    const handler = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === COMMAND_PALETTE_TOGGLE
+    )?.[1] as ((event: unknown, source: unknown) => void) | undefined
+
+    if (handler === undefined) {
+      throw new Error('command palette listener was not registered')
+    }
+
+    handler({}, 'palette')
+    handler({}, 'invalid')
+    unlisten()
+
+    expect(callback).toHaveBeenNthCalledWith(1, 'palette')
+    expect(callback).toHaveBeenNthCalledWith(2, undefined)
+    expect(electronMock.ipcRenderer.off).toHaveBeenCalledWith(
+      COMMAND_PALETTE_TOGGLE,
+      handler
+    )
   })
 
   test.each([

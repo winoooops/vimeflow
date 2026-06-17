@@ -1,5 +1,10 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render as rtlRender,
+  screen,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createElement, type ReactElement } from 'react'
 import { DEFAULT_SETTINGS } from '../../store/settingsDefaults'
@@ -43,6 +48,7 @@ describe('KeymapPane', () => {
 
   afterEach(() => {
     delete window.vimeflow
+    vi.useRealTimers()
   })
 
   test('renders the pane title', () => {
@@ -69,6 +75,7 @@ describe('KeymapPane', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Open settings')).toBeInTheDocument()
     expect(screen.getByText('Open command palette')).toBeInTheDocument()
+    expect(screen.getByText('Command palette leader')).toBeInTheDocument()
     expect(screen.getByText('Focus browser address bar')).toBeInTheDocument()
     // The bare-key Diff zone still renders from KEYMAP_GROUPS.
     expect(screen.getByText('Next / previous file')).toBeInTheDocument()
@@ -95,7 +102,7 @@ describe('KeymapPane', () => {
 
     render(<KeymapPane />)
 
-    expect(screen.getByText('⌘;')).toBeInTheDocument()
+    expect(screen.getAllByText('⌘;')).toHaveLength(2)
     expect(screen.getByText('⌘B')).toBeInTheDocument()
     expect(screen.getByText('⌘C')).toBeInTheDocument()
 
@@ -110,7 +117,7 @@ describe('KeymapPane', () => {
 
     render(<KeymapPane />)
 
-    expect(screen.getByText('Ctrl+;')).toBeInTheDocument()
+    expect(screen.getAllByText('Ctrl+;')).toHaveLength(2)
     expect(screen.getByText('Ctrl+Shift+B')).toBeInTheDocument()
     expect(screen.getByText('Ctrl+Shift+C')).toBeInTheDocument()
 
@@ -461,6 +468,8 @@ describe('KeymapPane', () => {
   })
 
   test('resetting a row removes only that override', () => {
+    vi.useFakeTimers()
+
     const { update } = renderWithSettings({
       'dock-toggle': 'Mod+KeyK',
       'focus-pane-1': 'Mod+KeyJ',
@@ -476,14 +485,32 @@ describe('KeymapPane', () => {
       customKeybindings: { 'focus-pane-1': 'Mod+KeyJ' },
     })
     expect(screen.getByRole('status')).toHaveTextContent('Reset.')
+
+    act(() => {
+      vi.advanceTimersByTime(1800)
+    })
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   test('does not render edit controls for display-only rows', () => {
     renderWithSettings()
 
     expect(
-      screen.queryByRole('button', {
+      screen.getByRole('button', {
         name: 'Edit Open command palette binding',
+      })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Command palette leader binding',
+      })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', {
+        name: 'Edit Open settings binding',
       })
     ).not.toBeInTheDocument()
   })

@@ -4,7 +4,7 @@ import {
   waitFor,
   act,
 } from '@testing-library/react'
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
@@ -345,10 +345,15 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
+  afterEach(() => {
+    delete window.vimeflow
+  })
+
   const openPalette = (): void => {
     act(() => {
       const event = new KeyboardEvent('keydown', {
         key: ';',
+        code: 'Semicolon',
         ctrlKey: true,
         bubbles: true,
       })
@@ -366,6 +371,39 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     return call[0]
   }
+
+  test('syncs separate palette and leader bindings to Electron', async () => {
+    const setCommandPaletteBindings = vi.fn()
+    const setCommandPaletteBinding = vi.fn()
+    window.vimeflow = {
+      setCommandPaletteBindings,
+      setCommandPaletteBinding,
+    } as unknown as Window['vimeflow']
+
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      customKeybindings: {
+        palette: 'Mod+KeyP',
+        'palette-leader': 'Mod+KeyK',
+      },
+    }
+
+    rtlRender(
+      <SettingsContext.Provider
+        value={{ settings, saveError: null, update: vi.fn() }}
+      >
+        <WorkspaceView />
+      </SettingsContext.Provider>
+    )
+
+    await waitFor(() => {
+      expect(setCommandPaletteBindings).toHaveBeenCalledWith({
+        palette: 'Mod+KeyP',
+        leader: 'Mod+KeyK',
+      })
+    })
+    expect(setCommandPaletteBinding).not.toHaveBeenCalled()
+  })
 
   test(':new command creates a new session', async () => {
     const user = userEvent.setup()

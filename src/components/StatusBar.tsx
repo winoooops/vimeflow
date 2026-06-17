@@ -5,11 +5,10 @@ import {
   type ReactNode,
 } from 'react'
 import { Tooltip } from './Tooltip'
-import type { ShortcutKey } from '../lib/formatShortcut'
+import type { ShortcutInput, ShortcutKey } from '../lib/formatShortcut'
 
-// Display-side chords for the bottom-bar actions. The behavior lives in the
-// command palette and dock-shortcut hooks; these mirror those bindings so the
-// Zed-style tooltip chips can't drift from the wired keys.
+// Display-side fallbacks for the bottom-bar actions. WorkspaceView passes the
+// live palette binding so the tooltip chip follows persisted overrides.
 const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
 const DOCK_SHORTCUT = ['Mod', '0'] as const satisfies readonly ShortcutKey[]
 
@@ -37,6 +36,8 @@ export interface StatusBarProps {
   // the segment is suppressed rather than shown as a misleading 0%.
   contextPct: number | null
   onOpenPalette: () => void
+  /** Current command-palette shortcut — defaults to the app binding. */
+  paletteShortcut?: ShortcutInput
   /** Whether the editor/diff dock is open — drives the toggle's icon tone. */
   dockOpen: boolean
   onToggleDock: () => void
@@ -310,6 +311,7 @@ export const StatusBar = ({
   session,
   contextPct,
   onOpenPalette,
+  paletteShortcut = PALETTE_SHORTCUT,
   dockOpen,
   onToggleDock,
   burnerCount = 0,
@@ -327,7 +329,7 @@ export const StatusBar = ({
         data-testid="status-bar-actions"
         className="inline-flex items-center gap-[6px]"
       >
-        <Tooltip content="Command palette" shortcut={PALETTE_SHORTCUT}>
+        <Tooltip content="Command palette" shortcut={paletteShortcut}>
           <button
             type="button"
             aria-label="Open command palette"

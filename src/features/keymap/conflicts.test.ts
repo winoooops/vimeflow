@@ -97,6 +97,15 @@ describe('detectConflicts', () => {
     expect(detectConflicts(resolved, 'ctrl')).toHaveLength(0)
   })
 
+  test('does not report the intentionally shared palette and leader binding', () => {
+    const resolved = new Map<CommandId, Chord>([
+      ['palette', c('Semicolon', 'Mod')],
+      ['palette-leader', c('Semicolon', 'Mod')],
+    ])
+
+    expect(detectConflicts(resolved, 'meta')).toHaveLength(0)
+  })
+
   test('reports accidental fixed command overlaps outside reserved shadows', () => {
     const resolved = new Map<CommandId, Chord>([
       ['palette', c('KeyN', 'Mod')],

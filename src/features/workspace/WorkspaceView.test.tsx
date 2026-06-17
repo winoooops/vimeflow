@@ -2040,6 +2040,7 @@ describe('WorkspaceView', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: ';',
+          code: 'Semicolon',
           ctrlKey: true,
           bubbles: true,
         })

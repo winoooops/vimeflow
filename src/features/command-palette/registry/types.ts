@@ -30,4 +30,7 @@ export interface UseCommandPaletteReturn {
 
 export interface UseCommandPaletteOptions {
   enabled?: boolean
+  isPaletteToggleEvent?: (event: KeyboardEvent) => boolean
+  isLeaderEvent?: (event: KeyboardEvent) => boolean
+  isToggleEvent?: (event: KeyboardEvent) => boolean
 }

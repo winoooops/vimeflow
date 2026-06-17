@@ -40,8 +40,10 @@ import {
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 import {
+  commandPaletteShortcutBindingsConfigForWindow,
+  commandPaletteShortcutSourceForInput,
   commandPaletteToggleDispatcherForWindow,
-  isCommandPaletteShortcutInput,
+  type CommandPaletteShortcutSource,
 } from './command-palette-shortcut'
 import type {
   PersistedTab,
@@ -1822,14 +1824,16 @@ export class BrowserPaneController {
     record: BrowserPaneRecord,
     webContents: WebContents = record.view.webContents
   ): void {
-    const dispatchCommandPaletteToggle = (): void => {
+    const dispatchCommandPaletteToggle = (
+      source: CommandPaletteShortcutSource
+    ): void => {
       const win = BrowserWindow.fromId(record.windowId)
       if (!win || win.isDestroyed()) {
         return
       }
 
       win.webContents.focus()
-      commandPaletteToggleDispatcherForWindow(win)()
+      commandPaletteToggleDispatcherForWindow(win)(source)
     }
 
     webContents.on('before-input-event', (event, input) => {
@@ -1847,9 +1851,19 @@ export class BrowserPaneController {
         return
       }
 
-      if (isCommandPaletteShortcutInput(input)) {
+      const win = BrowserWindow.fromId(record.windowId)
+
+      const source =
+        win && !win.isDestroyed()
+          ? commandPaletteShortcutSourceForInput(
+              input,
+              commandPaletteShortcutBindingsConfigForWindow(win)
+            )
+          : null
+
+      if (source !== null) {
         event.preventDefault()
-        dispatchCommandPaletteToggle()
+        dispatchCommandPaletteToggle(source)
 
         return
       }

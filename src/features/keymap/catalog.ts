@@ -18,6 +18,7 @@ export interface CommandDescriptor {
   readonly rebindable: boolean
   readonly preserveStoredOverrides?: boolean
   readonly intentionalShadow?: boolean
+  readonly intentionalShadowWith?: readonly string[]
 }
 
 const c = (
@@ -26,9 +27,10 @@ const c = (
 ): Chord => ({ code, mods: new Set(mods) })
 
 // PR1 migrated usePaneShortcuts (the focus-pane / cycle-layout commands) and
-// useDockToggleShortcut. PR2 migrates the remaining workspace hooks. Their
+// useDockToggleShortcut. PR2 migrates the remaining workspace hooks. PR3
+// migrates the command-palette direct toggle and leader prefix. Their
 // defaultCombo MUST equal today's hardcoded combos (resolve.test asserts this).
-// Terminal-owned rows and the SP3-owned palette leader remain display-only.
+// Terminal-owned rows remain display-only.
 export const CATALOG = [
   // ── Panes & Layout (MIGRATED — rebindable) ──
   {
@@ -113,7 +115,7 @@ export const CATALOG = [
     defaultCombo: c('Backslash', 'Mod'),
   },
 
-  // ── Global (dock-toggle MIGRATED; others display-only until PR2/SP3) ──
+  // ── Global (MIGRATED — rebindable except fixed settings shortcuts) ──
   {
     id: 'dock-toggle',
     label: 'Show / hide editor & diff dock',
@@ -129,7 +131,18 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
+    intentionalShadowWith: ['palette-leader'],
+    defaultCombo: c('Semicolon', 'Mod'),
+  },
+  {
+    id: 'palette-leader',
+    label: 'Command palette leader',
+    group: 'Global',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    intentionalShadowWith: ['palette'],
     defaultCombo: c('Semicolon', 'Mod'),
   },
   {
