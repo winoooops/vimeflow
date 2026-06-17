@@ -115,6 +115,7 @@ interface ProgressBarProps
   fillClassName?: string
   fillStyle?: CSSProperties
   fillTestId?: string
+  trackTestId?: string
 }
 
 const boundedValue = (value: number, max: number): number => {
@@ -148,6 +149,7 @@ export const ProgressBar = ({
   fillClassName = undefined,
   fillStyle = undefined,
   fillTestId = undefined,
+  trackTestId = undefined,
   ...rest
 }: ProgressBarProps): ReactElement => {
   const safeMax = max > 0 ? max : 100
@@ -155,7 +157,9 @@ export const ProgressBar = ({
   const clampedValue =
     value === undefined ? undefined : boundedValue(value, safeMax)
 
-  const ariaProps = decorative
+  const isDecorative = decorative || segments !== undefined
+
+  const ariaProps = isDecorative
     ? { 'aria-hidden': true }
     : {
         role: 'progressbar',
@@ -172,6 +176,7 @@ export const ProgressBar = ({
     <div
       {...rest}
       {...ariaProps}
+      data-testid={trackTestId}
       style={style}
       className={trackClassName({
         height,

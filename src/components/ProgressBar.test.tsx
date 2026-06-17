@@ -23,10 +23,11 @@ test('clamps negative fill width to zero', () => {
   expect(screen.getByTestId('fill')).toHaveStyle({ width: '0%' })
 })
 
-test('renders segmented bars as proportional widths', () => {
+test('renders segmented bars as decorative proportional widths', () => {
   render(
     <ProgressBar
       label="Buckets"
+      trackTestId="bucket-track"
       segments={[
         { value: 3, testId: 'cached', className: 'bg-success' },
         { value: 1, testId: 'fresh', className: 'bg-warning' },
@@ -34,11 +35,12 @@ test('renders segmented bars as proportional widths', () => {
     />
   )
 
-  expect(screen.getByRole('progressbar', { name: 'Buckets' })).toHaveClass(
-    'flex'
-  )
+  const track = screen.getByTestId('bucket-track')
+  expect(track).toHaveAttribute('aria-hidden', 'true')
+  expect(track).toHaveClass('flex')
   expect(screen.getByTestId('cached')).toHaveStyle({ width: '75%' })
   expect(screen.getByTestId('fresh')).toHaveStyle({ width: '25%' })
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 })
 
 test('can render decorative loading bars without progressbar role', () => {
