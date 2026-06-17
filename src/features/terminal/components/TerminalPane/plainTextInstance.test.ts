@@ -155,6 +155,17 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('done')
   })
 
+  test('erases from line start to cursor inclusive in erase-line mode 1', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('abc')
+    created.terminal.write('\ra')
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[1K')
+
+    expect(created.viewportReader.readVisibleText()).toBe('c')
+  })
+
   test('moves the output cursor backward for backspace rewrites', () => {
     const created = createTrackedPlainTextTerminal()
 

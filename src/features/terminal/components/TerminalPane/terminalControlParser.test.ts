@@ -118,5 +118,4 @@ describe('TerminalControlSequenceParser', () => {
     )
     expect(handler).not.toHaveBeenCalled()
   })
-
 })

@@ -126,9 +126,11 @@ const eraseLineInState = (
   }
 
   if (mode === 1) {
+    const cursorCodePointLength = readCodePointLength(text, cursor)
+
     return {
       ...state,
-      text: `${text.slice(0, lineStart)}${text.slice(cursor)}`,
+      text: `${text.slice(0, lineStart)}${text.slice(cursor + cursorCodePointLength)}`,
       cursor: lineStart,
     }
   }
@@ -149,7 +151,10 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
     const eraseLineMode = getEraseLineModeFromSentinel(character)
 
     if (eraseLineMode !== null) {
-      const nextState = eraseLineInState({ text, cursor, pendingCr }, eraseLineMode)
+      const nextState = eraseLineInState(
+        { text, cursor, pendingCr },
+        eraseLineMode
+      )
       text = nextState.text
       cursor = nextState.cursor
       pendingCr = false
@@ -592,6 +597,7 @@ class PlainTextTerminalModel {
   private readonly parserEngine = createControlSequenceTerminalParserEngine({
     capabilities: PLAIN_TEXT_TERMINAL_CAPABILITIES,
   })
+  private readonly noOpParserDisposable: TerminalDisposable
   readonly terminal = new PlainTextTerminalSurface(
     (data) => this.parserEngine.parseText(data, null).visibleText
   )
@@ -617,7 +623,7 @@ class PlainTextTerminalModel {
     // (and replacing erase-line sequences with sentinels). Subscribing a no-op
     // handler keeps the parser in stripping mode even when no external consumer
     // is listening.
-    this.parserEngine.parser.onEvent(() => {
+    this.noOpParserDisposable = this.parserEngine.parser.onEvent(() => {
       // Intentionally empty: visible-text transformation is handled by the
       // parser, and erase-line sentinels are interpreted by the surface.
     })
@@ -634,7 +640,9 @@ class PlainTextTerminalModel {
   }
 
   readonly rendererHandle: TerminalRendererHandle = {
-    dispose: (): void => undefined,
+    dispose: (): void => {
+      this.noOpParserDisposable.dispose()
+    },
   }
 }
 

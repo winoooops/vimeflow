@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-17
-ref_count: 0
+ref_count: 1
 ---
 
 # Terminal Control Sequence Handling
@@ -25,7 +25,7 @@ all required state through pure display-state helpers.
 - **Source:** github-claude | PR #516 round 1 | 2026-06-17
 - **Severity:** MEDIUM
 - **File:** `src/features/terminal/components/TerminalPane/plainTextInstance.ts` L103-126
-- **Finding:** When `\r` arrives in one `write()` call and `\n` in the next, `applyDisplayData` moves the cursor to line-start on `\r`, then the `\n` branch inserts a newline *before* the existing line content rather than advancing past it, producing a leading blank line and losing the prior line.
+- **Finding:** When `\r` arrives in one `write()` call and `\n` in the next, `applyDisplayData` moves the cursor to line-start on `\r`, then the `\n` branch inserts a newline _before_ the existing line content rather than advancing past it, producing a leading blank line and losing the prior line.
 - **Fix:** Added `pendingCr` to `DisplayState`; set it on `\r`, clear it on any other character, and advance the cursor to the end of the current line before inserting the newline when `\n` follows a pending `\r`. Narrowed `writeDisplayCharacter`'s return type and preserved `pendingCr` through `trimScrollbackLines`.
 - **Commit:** same commit as this entry
 
@@ -45,4 +45,22 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L167
 - **Finding:** When a PTY chunk ended with just `ESC` and the next chunk started `[38;...m`, the parser emitted the escape byte as visible output and advanced, so the following chunk no longer matched `CSI_PREFIX` and rendered literal color/control text.
 - **Fix:** When an `ESC` byte appears at the very end of a chunk, store it in `pendingControlSequence` instead of emitting it as visible output, allowing the next chunk to complete the sequence.
+- **Commit:** same commit as this entry
+
+### 4. eraseLineInState mode 1 keeps character at cursor (off-by-one)
+
+- **Source:** github-claude | PR #516 round 2 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/plainTextInstance.ts` L128-133
+- **Finding:** `text.slice(cursor)` in erase-line mode 1 starts at the cursor index, so the character AT the cursor position survives the erase. VT100/xterm specifies that `\x1b[1K` (erase from line start to cursor) is inclusive: the cursor cell must also be cleared.
+- **Fix:** Changed the slice to `text.slice(cursor + readCodePointLength(text, cursor))` so the cursor cell is removed, and added a unit test that writes `abc`, positions the cursor after `a`, emits `\x1b[1K`, and expects `c`.
+- **Commit:** same commit as this entry
+
+### 5. No-op handler TerminalDisposable discarded — parser handler set never cleaned up
+
+- **Source:** github-claude | PR #516 round 2 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/plainTextInstance.ts` L620-624
+- **Finding:** The `onEvent(...)` call in `PlainTextTerminalModel`'s constructor returned a `TerminalDisposable` that was silently dropped, leaving the no-op handler in the parser's internal set for the parser's lifetime and providing no cleanup path if a model-level dispose were added.
+- **Fix:** Stored the disposable as `private readonly noOpParserDisposable` and made `rendererHandle.dispose()` call it, aligning the internal subscription with the codebase's pattern of storing and disposing disposables.
 - **Commit:** same commit as this entry
