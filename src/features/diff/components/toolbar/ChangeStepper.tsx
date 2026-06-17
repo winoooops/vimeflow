@@ -40,7 +40,7 @@ export const ChangeStepper = ({
   <span
     role="group"
     aria-label={`hunk ${counterText}`}
-    className="inline-flex items-center gap-[7px] h-[30px] pl-2.5 pr-1 rounded-md bg-secondary/[0.08] ring-1 ring-inset ring-secondary/[0.16]"
+    className="inline-flex items-center gap-[7px] h-7 pl-2.5 pr-1 rounded-md bg-secondary/[0.08] ring-1 ring-inset ring-secondary/[0.16]"
   >
     <Tooltip content="Jump between changes in this file">
       <span className="inline-flex items-center gap-[7px]">
