@@ -17,7 +17,7 @@ import { createEvents } from './lib/events.js'
 import { createTickRunner } from './lib/tick-runner.js'
 import {
   dispatchConfig,
-  stopSsmWorkerBestEffort,
+  stopSsmWorkersBestEffort,
 } from './lib/cloud-dispatch.js'
 
 const log = (s) => process.stdout.write(`${new Date().toISOString()} ${s}\n`)
@@ -48,7 +48,7 @@ const canStopIdleBurstWorker = () =>
   workerDispatchConfig.mode === 'ssm' &&
   workerDispatchConfig.burst &&
   workerDispatchConfig.stopAfterRun &&
-  workerDispatchConfig.instanceId &&
+  workerDispatchConfig.instanceIds.length > 0 &&
   workerDispatchConfig.region
 
 const shouldKeepBurstWorkerAlive = () =>
@@ -68,9 +68,12 @@ const stopIdleBurstWorker = async () => {
     if (!canStopIdleBurstWorker() || queueHasWork()) {
       return
     }
-    log(`worker idle: stopping burst worker ${workerDispatchConfig.instanceId}`)
-    await stopSsmWorkerBestEffort({
-      instanceId: workerDispatchConfig.instanceId,
+    log(
+      `worker idle: stopping burst worker(s) ${workerDispatchConfig.instanceIds.join(',')}`
+    )
+
+    await stopSsmWorkersBestEffort({
+      instanceIds: workerDispatchConfig.instanceIds,
       region: workerDispatchConfig.region,
       stderr: {
         write: (message) => log(message.trim()),

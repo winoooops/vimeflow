@@ -12,6 +12,7 @@ worker_mode="${QA_WORKER_MODE:-ssm}"
 worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
 worker_instance_id="${QA_WORKER_INSTANCE_ID:-}"
+worker_instance_ids="${QA_WORKER_INSTANCE_IDS:-}"
 service_user="${QA_SERVICE_USER:-vimeflow-qa}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -33,8 +34,35 @@ bool_enabled() {
   esac
 }
 
-if [ "$worker_mode" = "ssm" ] && [ -z "$worker_instance_id" ]; then
+qa_max_parallel="${QA_MAX_PARALLEL:-}"
+if [ -z "$qa_max_parallel" ]; then
+  qa_max_parallel="$(optional_value QA_MAX_PARALLEL)" || exit 1
+fi
+if [ -z "$qa_max_parallel" ]; then
+  qa_max_parallel="2"
+fi
+
+if [ "$worker_mode" = "ssm" ] && [ -z "$worker_instance_ids" ]; then
+  worker_instance_ids="$(optional_value QA_WORKER_INSTANCE_IDS)" || exit 1
+fi
+
+if [ "$worker_mode" = "ssm" ] && [ -z "$worker_instance_id" ] && [ -z "$worker_instance_ids" ]; then
   worker_instance_id="$(value QA_WORKER_INSTANCE_ID)"
+fi
+
+worker_capacity_per_instance="${QA_WORKER_CAPACITY_PER_INSTANCE:-}"
+if [ -z "$worker_capacity_per_instance" ]; then
+  worker_capacity_per_instance="$(optional_value QA_WORKER_CAPACITY_PER_INSTANCE)" || exit 1
+fi
+
+worker_lease_wait_seconds="${QA_WORKER_LEASE_WAIT_SECONDS:-}"
+if [ -z "$worker_lease_wait_seconds" ]; then
+  worker_lease_wait_seconds="$(optional_value QA_WORKER_LEASE_WAIT_SECONDS)" || exit 1
+fi
+
+worker_lease_stale_seconds="${QA_WORKER_LEASE_STALE_SECONDS:-}"
+if [ -z "$worker_lease_stale_seconds" ]; then
+  worker_lease_stale_seconds="$(optional_value QA_WORKER_LEASE_STALE_SECONDS)" || exit 1
 fi
 
 worker_timeout_seconds="${QA_WORKER_TIMEOUT_SECONDS:-}"
@@ -138,7 +166,7 @@ QA_HOST=127.0.0.1
 QA_PORT=8787
 QA_LABEL=auto-review
 QA_APPROVE_LABEL=auto-approve
-QA_MAX_PARALLEL=2
+QA_MAX_PARALLEL=$qa_max_parallel
 QA_MAX_CI_RERUNS=3
 QA_LINEAR_DECISION_COMMENTS=1
 QA_LINEAR_CREATE_ISSUES=1
@@ -151,6 +179,10 @@ QA_WORKER_REPO=$worker_repo
 EOF
   write_env_line GH_TOKEN "$gh_orch_token"
   write_env_line QA_WORKER_INSTANCE_ID "$worker_instance_id"
+  write_env_line QA_WORKER_INSTANCE_IDS "$worker_instance_ids"
+  write_env_line QA_WORKER_CAPACITY_PER_INSTANCE "$worker_capacity_per_instance"
+  write_env_line QA_WORKER_LEASE_WAIT_SECONDS "$worker_lease_wait_seconds"
+  write_env_line QA_WORKER_LEASE_STALE_SECONDS "$worker_lease_stale_seconds"
   write_env_line QA_WORKER_TIMEOUT_SECONDS "$worker_timeout_seconds"
   write_env_line QA_WORKER_REFRESH_RUNNER "$worker_refresh_runner"
   write_env_line QA_WORKER_REF "$worker_ref"

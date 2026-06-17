@@ -1,11 +1,18 @@
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  acquireWorkerLease,
+  activeWorkerLeaseCount,
   cycleEnv,
   dispatchConfig,
   ensureWorkerInstanceRunning,
   localDispatchPlan,
+  parseWorkerInstanceIds,
   remoteCycleCommand,
+  runDispatch,
   runSsmDispatch,
   shellQuote,
   sshDispatchPlan,
@@ -163,6 +170,49 @@ describe('dispatchConfig', () => {
       readyTimeoutSeconds: 900,
     })
   })
+
+  test('parses a comma or whitespace separated SSM worker fleet', () => {
+    expect(
+      parseWorkerInstanceIds({
+        QA_WORKER_INSTANCE_IDS: 'i-one, i-two\ni-three i-two',
+      })
+    ).toEqual(['i-one', 'i-two', 'i-three'])
+
+    expect(
+      dispatchConfig({
+        QA_WORKER_MODE: 'ssm',
+        QA_WORKER_INSTANCE_IDS: 'i-one,i-two',
+      })
+    ).toMatchObject({
+      instanceId: 'i-one',
+      instanceIds: ['i-one', 'i-two'],
+      fleetLeaseEnabled: true,
+      capacityPerInstance: 2,
+    })
+  })
+
+  test('keeps single-instance dispatch backward compatible when no fleet env is set', () => {
+    expect(
+      dispatchConfig({
+        QA_WORKER_MODE: 'ssm',
+        QA_WORKER_INSTANCE_ID: 'i-single',
+      })
+    ).toMatchObject({
+      instanceId: 'i-single',
+      instanceIds: ['i-single'],
+      fleetLeaseEnabled: false,
+      capacityPerInstance: 1,
+    })
+  })
+
+  test('rejects invalid worker fleet capacity', () => {
+    expect(() =>
+      dispatchConfig({
+        QA_WORKER_INSTANCE_IDS: 'i-one,i-two',
+        QA_WORKER_CAPACITY_PER_INSTANCE: '0',
+      })
+    ).toThrow('QA_WORKER_CAPACITY_PER_INSTANCE must be a positive integer')
+  })
 })
 
 describe('ssmSendCommandArgs', () => {
@@ -211,7 +261,7 @@ describe('ssmSendCommandArgs', () => {
         repo: '/srv/vimeflow',
         env: cycle,
       })
-    ).toThrow('QA_WORKER_INSTANCE_ID is required')
+    ).toThrow('QA_WORKER_INSTANCE_ID or QA_WORKER_INSTANCE_IDS is required')
 
     expect(() =>
       ssmSendCommandArgs({
@@ -220,6 +270,80 @@ describe('ssmSendCommandArgs', () => {
         env: cycle,
       })
     ).toThrow('QA_WORKER_REGION or AWS_REGION is required')
+  })
+})
+
+describe('worker fleet leases', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('fills per-instance slots before leasing the next worker', async () => {
+    const leaseDir = mkdtempSync(join(tmpdir(), 'qa-worker-leases-'))
+    try {
+      const first = await acquireWorkerLease({
+        instanceIds: ['i-one', 'i-two'],
+        capacityPerInstance: 2,
+        leaseDir,
+        pollIntervalMs: 1,
+        stdout: { write: vi.fn() },
+      })
+
+      const second = await acquireWorkerLease({
+        instanceIds: ['i-one', 'i-two'],
+        capacityPerInstance: 2,
+        leaseDir,
+        pollIntervalMs: 1,
+        stdout: { write: vi.fn() },
+      })
+
+      const third = await acquireWorkerLease({
+        instanceIds: ['i-one', 'i-two'],
+        capacityPerInstance: 2,
+        leaseDir,
+        pollIntervalMs: 1,
+        stdout: { write: vi.fn() },
+      })
+
+      expect(first).toMatchObject({ instanceId: 'i-one', slot: 0 })
+      expect(second).toMatchObject({ instanceId: 'i-one', slot: 1 })
+      expect(third).toMatchObject({ instanceId: 'i-two', slot: 0 })
+
+      first.release()
+      second.release()
+      third.release()
+    } finally {
+      rmSync(leaseDir, { recursive: true, force: true })
+    }
+  })
+
+  test('removes stale leases whose owning process is gone', async () => {
+    const leaseDir = mkdtempSync(join(tmpdir(), 'qa-worker-leases-'))
+    try {
+      writeFileSync(
+        join(leaseDir, 'i-one.0.lock'),
+        JSON.stringify({
+          instanceId: 'i-one',
+          slot: 0,
+          pid: 99999999,
+          createdAt: new Date().toISOString(),
+        })
+      )
+
+      const lease = await acquireWorkerLease({
+        instanceIds: ['i-one'],
+        capacityPerInstance: 1,
+        leaseDir,
+        pollIntervalMs: 1,
+        stdout: { write: vi.fn() },
+      })
+
+      expect(lease).toMatchObject({ instanceId: 'i-one', slot: 0 })
+      expect(activeWorkerLeaseCount({ leaseDir, instanceId: 'i-one' })).toBe(1)
+      lease.release()
+    } finally {
+      rmSync(leaseDir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -251,6 +375,82 @@ const makeMockSpawn = (responses) => {
     return child
   })
 }
+
+describe('runDispatch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  test('leases the next SSM worker when earlier fleet slots are full', async () => {
+    const leaseDir = mkdtempSync(join(tmpdir(), 'qa-worker-leases-'))
+    try {
+      for (const slot of [0, 1]) {
+        writeFileSync(
+          join(leaseDir, `i-one.${slot}.lock`),
+          JSON.stringify({
+            instanceId: 'i-one',
+            slot,
+            pid: process.pid,
+            createdAt: new Date().toISOString(),
+          })
+        )
+      }
+
+      const mockSpawn = makeMockSpawn([
+        {
+          stdout: JSON.stringify({ Command: { CommandId: 'cmd-fleet' } }),
+        },
+        {
+          stdout: JSON.stringify({
+            Status: 'Success',
+            ResponseCode: 0,
+            StandardOutputContent: 'fleet done\n',
+            StandardErrorContent: '',
+          }),
+        },
+      ])
+      const stdout = { write: vi.fn() }
+
+      const result = await runDispatch({
+        config: {
+          mode: 'ssm',
+          repo: '/srv/vimeflow',
+          instanceId: 'i-one',
+          instanceIds: ['i-one', 'i-two'],
+          fleetLeaseEnabled: true,
+          capacityPerInstance: 2,
+          leaseDir,
+          leaseWaitSeconds: 1,
+          leasePollIntervalMs: 1,
+          leaseStaleSeconds: 86400,
+          region: 'us-west-1',
+          timeoutSeconds: 30,
+          burst: false,
+          stopAfterRun: false,
+          keepAlive: false,
+          readyTimeoutSeconds: 30,
+        },
+        env: { QA_PR: '401' },
+        stdout,
+        stderr: { write: vi.fn() },
+        spawnImpl: mockSpawn,
+        pollIntervalMs: 1,
+      })
+
+      expect(result).toEqual({ code: 0, signal: null })
+      expect(stdout.write).toHaveBeenCalledWith(
+        'worker fleet: leased i-two slot 1/2\n'
+      )
+
+      expect(mockSpawn.mock.calls[0][1]).toEqual(
+        expect.arrayContaining(['--instance-ids', 'i-two'])
+      )
+    } finally {
+      rmSync(leaseDir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('runSsmDispatch', () => {
   afterEach(() => {

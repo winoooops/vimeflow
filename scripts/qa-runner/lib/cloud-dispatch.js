@@ -1,5 +1,20 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const LIB_DIR = dirname(fileURLToPath(import.meta.url))
+const STATE_DIR = join(dirname(LIB_DIR), '.state')
+const DEFAULT_WORKER_LEASE_DIR = join(STATE_DIR, 'worker-leases')
+const DEFAULT_FLEET_CAPACITY_PER_INSTANCE = 2
 
 export const CYCLE_ENV_KEYS = [
   'QA_PR',
@@ -24,6 +39,16 @@ const boolEnv = (value) =>
 
 const compact = (values) =>
   values.filter((value) => value != null && value !== '')
+
+const positiveInt = (value, fallback, label) => {
+  const raw = value == null || value === '' ? fallback : value
+  const number = Number(raw)
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`${label} must be a positive integer`)
+  }
+
+  return number
+}
 
 export const cycleEnv = (env = process.env) => {
   const values = {}
@@ -160,7 +185,9 @@ export const ssmSendCommandArgs = ({
   timeoutSeconds,
 }) => {
   if (!instanceId) {
-    throw new Error('QA_WORKER_INSTANCE_ID is required for QA_WORKER_MODE=ssm')
+    throw new Error(
+      'QA_WORKER_INSTANCE_ID or QA_WORKER_INSTANCE_IDS is required for QA_WORKER_MODE=ssm'
+    )
   }
   if (!region) {
     throw new Error(
@@ -217,6 +244,205 @@ const instanceStateFromDescribe = (stdout) => {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export const parseWorkerInstanceIds = (env = process.env) => {
+  const raw =
+    env.QA_WORKER_INSTANCE_IDS != null
+      ? env.QA_WORKER_INSTANCE_IDS
+      : env.QA_WORKER_INSTANCE_ID || ''
+  const seen = new Set()
+
+  return String(raw)
+    .split(/[,\s]+/)
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .filter((id) => {
+      if (seen.has(id)) {
+        return false
+      }
+      seen.add(id)
+
+      return true
+    })
+}
+
+const leaseInstanceSlug = (instanceId) =>
+  String(instanceId).replace(/[^A-Za-z0-9_.-]/g, '_')
+
+export const workerLeasePath = ({ leaseDir, instanceId, slot }) =>
+  join(leaseDir, `${leaseInstanceSlug(instanceId)}.${slot}.lock`)
+
+const leasePayload = ({ instanceId, slot, pr }) => ({
+  instanceId,
+  slot,
+  pr: pr || null,
+  pid: process.pid,
+  createdAt: new Date().toISOString(),
+})
+
+const readLease = (path) => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+const processIsAlive = (pid) => {
+  const number = Number(pid)
+  if (!Number.isInteger(number) || number < 1) {
+    return false
+  }
+
+  try {
+    process.kill(number, 0)
+
+    return true
+  } catch (error) {
+    return error?.code === 'EPERM'
+  }
+}
+
+const leaseIsStale = (lease, staleMs, now = Date.now()) => {
+  if (!lease || !processIsAlive(lease.pid)) {
+    return true
+  }
+
+  const created = Date.parse(lease.createdAt || '')
+  if (!Number.isFinite(created)) {
+    return true
+  }
+
+  return staleMs > 0 && now - created > staleMs
+}
+
+const removeStaleLease = (path, staleMs) => {
+  const lease = readLease(path)
+  if (!leaseIsStale(lease, staleMs)) {
+    return false
+  }
+
+  rmSync(path, { force: true })
+
+  return true
+}
+
+const tryAcquireWorkerLease = ({ leaseDir, instanceId, slot, staleMs, pr }) => {
+  const path = workerLeasePath({ leaseDir, instanceId, slot })
+
+  try {
+    const fd = openSync(path, 'wx', 0o600)
+    try {
+      writeFileSync(
+        fd,
+        `${JSON.stringify(leasePayload({ instanceId, slot, pr }))}\n`
+      )
+    } finally {
+      closeSync(fd)
+    }
+
+    return {
+      instanceId,
+      slot,
+      path,
+      release: () => rmSync(path, { force: true }),
+    }
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      throw error
+    }
+  }
+
+  if (removeStaleLease(path, staleMs)) {
+    return tryAcquireWorkerLease({ leaseDir, instanceId, slot, staleMs, pr })
+  }
+
+  return null
+}
+
+export const activeWorkerLeaseCount = ({
+  leaseDir = DEFAULT_WORKER_LEASE_DIR,
+  instanceId,
+  capacityPerInstance = DEFAULT_FLEET_CAPACITY_PER_INSTANCE,
+  staleSeconds = 0,
+}) => {
+  const staleMs = Math.max(0, Number(staleSeconds || 0)) * 1000
+  let count = 0
+  for (let slot = 0; slot < capacityPerInstance; slot++) {
+    const path = workerLeasePath({ leaseDir, instanceId, slot })
+    const lease = readLease(path)
+    if (!lease) {
+      continue
+    }
+    if (leaseIsStale(lease, staleMs)) {
+      rmSync(path, { force: true })
+      continue
+    }
+    count += 1
+  }
+
+  return count
+}
+
+export const acquireWorkerLease = async ({
+  instanceIds,
+  capacityPerInstance = DEFAULT_FLEET_CAPACITY_PER_INSTANCE,
+  leaseDir = DEFAULT_WORKER_LEASE_DIR,
+  waitSeconds = 5400,
+  pollIntervalMs = 5000,
+  staleSeconds = 0,
+  pr,
+  stdout = process.stdout,
+} = {}) => {
+  const ids = compact(instanceIds || [])
+  if (!ids.length) {
+    throw new Error('worker fleet has no instance ids')
+  }
+  mkdirSync(leaseDir, { recursive: true })
+
+  const capacity = positiveInt(
+    capacityPerInstance,
+    DEFAULT_FLEET_CAPACITY_PER_INSTANCE,
+    'QA_WORKER_CAPACITY_PER_INSTANCE'
+  )
+  const staleMs = Math.max(0, Number(staleSeconds || 0)) * 1000
+  const deadline = Date.now() + Math.max(0, Number(waitSeconds || 0)) * 1000
+  let loggedWait = false
+
+  while (Date.now() <= deadline) {
+    for (const instanceId of ids) {
+      for (let slot = 0; slot < capacity; slot++) {
+        const lease = tryAcquireWorkerLease({
+          leaseDir,
+          instanceId,
+          slot,
+          staleMs,
+          pr,
+        })
+        if (lease) {
+          stdout.write(
+            `worker fleet: leased ${instanceId} slot ${slot + 1}/${capacity}\n`
+          )
+
+          return lease
+        }
+      }
+    }
+
+    if (!loggedWait) {
+      stdout.write(
+        `worker fleet: waiting for capacity across ${ids.length} instance(s)\n`
+      )
+      loggedWait = true
+    }
+
+    await wait(pollIntervalMs)
+  }
+
+  throw new Error(
+    `worker fleet had no free slot within ${Math.max(0, Number(waitSeconds || 0))}s`
+  )
+}
 
 const describeInstanceState = async ({
   instanceId,
@@ -366,6 +592,29 @@ export const stopSsmWorkerBestEffort = async ({
   }
 
   return result
+}
+
+export const stopSsmWorkersBestEffort = async ({
+  instanceIds,
+  region,
+  stderr = process.stderr,
+  env = process.env,
+  spawnImpl = spawn,
+}) => {
+  const results = []
+  for (const instanceId of compact(instanceIds || [])) {
+    results.push(
+      await stopSsmWorkerBestEffort({
+        instanceId,
+        region,
+        stderr,
+        env,
+        spawnImpl,
+      })
+    )
+  }
+
+  return results
 }
 
 const printInvocation = ({ invocation, stdout, stderr }) => {
@@ -638,17 +887,42 @@ export const dispatchConfig = (env = process.env) => {
   if (env.QA_WORKER_SSH_OPTIONS_JSON && !Array.isArray(sshOptions)) {
     throw new Error('QA_WORKER_SSH_OPTIONS_JSON must be a JSON array')
   }
+  const instanceIds = parseWorkerInstanceIds(env)
+
+  const fleetLeaseEnabled = Boolean(
+    env.QA_WORKER_INSTANCE_IDS || env.QA_WORKER_CAPACITY_PER_INSTANCE
+  )
+
+  const capacityDefault = fleetLeaseEnabled
+    ? DEFAULT_FLEET_CAPACITY_PER_INSTANCE
+    : 1
+
+  const capacityPerInstance = positiveInt(
+    env.QA_WORKER_CAPACITY_PER_INSTANCE,
+    capacityDefault,
+    'QA_WORKER_CAPACITY_PER_INSTANCE'
+  )
+  const timeoutSeconds = Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400)
 
   return {
     mode: env.QA_WORKER_MODE || 'local',
     repo: env.QA_WORKER_REPO || process.cwd(),
     host: env.QA_WORKER_HOST || '',
     user: env.QA_WORKER_USER || '',
-    instanceId: env.QA_WORKER_INSTANCE_ID || '',
+    instanceId: instanceIds[0] || env.QA_WORKER_INSTANCE_ID || '',
+    instanceIds,
+    fleetLeaseEnabled,
+    capacityPerInstance,
+    leaseDir: env.QA_WORKER_LEASE_DIR || DEFAULT_WORKER_LEASE_DIR,
+    leaseWaitSeconds: Number(
+      env.QA_WORKER_LEASE_WAIT_SECONDS || timeoutSeconds
+    ),
+    leasePollIntervalMs: Number(env.QA_WORKER_LEASE_POLL_MS || 5000),
+    leaseStaleSeconds: Number(env.QA_WORKER_LEASE_STALE_SECONDS || 0),
     region:
       env.QA_WORKER_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || '',
     sshOptions,
-    timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
+    timeoutSeconds,
     burst: boolEnv(env.QA_WORKER_BURST),
     stopAfterRun: boolEnv(env.QA_WORKER_STOP_AFTER_RUN),
     keepAlive: boolEnv(env.QA_WORKER_KEEP_ALIVE),
@@ -661,6 +935,9 @@ export const runDispatch = async ({
   env = cycleEnv(),
   stdout = process.stdout,
   stderr = process.stderr,
+  awsEnv = process.env,
+  spawnImpl = spawn,
+  pollIntervalMs,
 } = {}) => {
   if (!env.QA_PR) {
     throw new Error('QA_PR is required')
@@ -690,19 +967,80 @@ export const runDispatch = async ({
   }
 
   if (config.mode === 'ssm') {
-    return runSsmDispatch({
-      instanceId: config.instanceId,
-      region: config.region,
-      repo: config.repo,
-      env,
-      timeoutSeconds: config.timeoutSeconds,
-      burst: config.burst,
-      stopAfterRun: config.stopAfterRun,
-      keepAlive: config.keepAlive,
-      readyTimeoutSeconds: config.readyTimeoutSeconds,
+    if (!config.fleetLeaseEnabled) {
+      return runSsmDispatch({
+        instanceId: config.instanceId,
+        region: config.region,
+        repo: config.repo,
+        env,
+        timeoutSeconds: config.timeoutSeconds,
+        burst: config.burst,
+        stopAfterRun: config.stopAfterRun,
+        keepAlive: config.keepAlive,
+        readyTimeoutSeconds: config.readyTimeoutSeconds,
+        stdout,
+        stderr,
+        awsEnv,
+        spawnImpl,
+        ...(pollIntervalMs ? { pollIntervalMs } : {}),
+      })
+    }
+
+    const lease = await acquireWorkerLease({
+      instanceIds: config.instanceIds,
+      capacityPerInstance: config.capacityPerInstance,
+      leaseDir: config.leaseDir,
+      waitSeconds: config.leaseWaitSeconds,
+      pollIntervalMs: config.leasePollIntervalMs,
+      staleSeconds: config.leaseStaleSeconds,
+      pr: env.QA_PR,
       stdout,
-      stderr,
     })
+
+    try {
+      return await runSsmDispatch({
+        instanceId: lease.instanceId,
+        region: config.region,
+        repo: config.repo,
+        env,
+        timeoutSeconds: config.timeoutSeconds,
+        burst: config.burst,
+        stopAfterRun: false,
+        keepAlive: true,
+        readyTimeoutSeconds: config.readyTimeoutSeconds,
+        stdout,
+        stderr,
+        awsEnv,
+        spawnImpl,
+        ...(pollIntervalMs ? { pollIntervalMs } : {}),
+      })
+    } finally {
+      try {
+        if (config.stopAfterRun && !config.keepAlive) {
+          const activeLeases = activeWorkerLeaseCount({
+            leaseDir: config.leaseDir,
+            instanceId: lease.instanceId,
+            capacityPerInstance: config.capacityPerInstance,
+            staleSeconds: config.leaseStaleSeconds,
+          })
+          if (activeLeases <= 1) {
+            await stopSsmWorkerBestEffort({
+              instanceId: lease.instanceId,
+              region: config.region,
+              stderr,
+              env: awsEnv,
+              spawnImpl,
+            })
+          } else {
+            stdout.write(
+              `worker ${lease.instanceId}: ${activeLeases - 1} other active lease(s); skip stop\n`
+            )
+          }
+        }
+      } finally {
+        lease.release()
+      }
+    }
   }
 
   throw new Error(`unsupported QA_WORKER_MODE '${config.mode}'`)

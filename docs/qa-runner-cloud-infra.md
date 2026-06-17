@@ -4,7 +4,8 @@ VIM-70 owns the production split-plane rollout for the QA runner.
 
 The target shape is one lightweight control host that owns webhooks, queue state,
 Linear comments, and merge decisions, plus a burst worker that runs Kimi, Codex,
-Lifeline, tests, and PR fix pushes only when a PR needs compute.
+Lifeline, tests, and PR fix pushes only when a PR needs compute. The worker
+plane can be a small fleet of reusable Spot instances for burst capacity.
 
 ## Planes
 
@@ -23,9 +24,12 @@ Lifeline, tests, and PR fix pushes only when a PR needs compute.
 - Runs only the lightweight Codex review adjudicator on the control plane.
   Kimi, fixer-side Codex verify, and tests stay on the worker.
 
-### Burst Worker
+### Burst Worker Fleet
 
-- Starts as one worker slot; scale-out is a later step after one worker is proven.
+- Uses one or more reusable SSM worker instances.
+- Each worker can accept a bounded number of concurrent fixer passes; the
+  control host leases slots before dispatching so PR spikes spread over the
+  configured workers.
 - Runs a neutral checkout of the repo.
 - Each PR cycle creates its own `.claude/worktrees/qa-pr-N` worktree.
 - Holds the fixer credentials and tool auth needed by `run.js`.
@@ -40,8 +44,15 @@ Control host credentials:
 
 - `GITHUB_WEBHOOK_SECRET`
 - `QA_STATUS_TOKEN`
-- `QA_WORKER_INSTANCE_ID`, stored under the control prefix so SSM dispatch knows
-  which worker to run
+- `QA_WORKER_INSTANCE_ID`, stored under the control prefix so single-worker SSM
+  dispatch knows which worker to run
+- `QA_WORKER_INSTANCE_IDS`, optional comma/space separated SSM worker fleet;
+  when present, the dispatcher leases local slots and starts the selected
+  stopped worker on demand
+- `QA_WORKER_CAPACITY_PER_INSTANCE`, optional fleet slot count per worker;
+  defaults to 2 in fleet mode
+- `QA_MAX_PARALLEL`, optional control daemon worker-pool size; set this to the
+  desired burst cap, normally `worker count * QA_WORKER_CAPACITY_PER_INSTANCE`
 - `GH_ORCH_TOKEN`, also materialized as ambient `GH_TOKEN` for daemon polling and
   PR status reads
 - `orchestrator.env`
@@ -158,16 +169,20 @@ The service receives its environment from
 `/etc/vimeflow/qa-runner/control.env`. The equivalent daemon shape is:
 
 ```bash
-QA_MAX_PARALLEL=3 \
+QA_MAX_PARALLEL=6 \
 QA_TICK_RUNNER=local \
 QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node /opt/vimeflow/repo/scripts/qa-runner/daemon.js
 ```
 
 In SSM mode, `control-env-from-ssm.sh` requires
-`/vimeflow/qa-runner/prod/control/QA_WORKER_INSTANCE_ID` and writes it into the
-local control env file. Worker refresh is explicit, not a code default. To turn
-it on, set both control SSM parameters:
+`/vimeflow/qa-runner/prod/control/QA_WORKER_INSTANCE_ID` for a single worker or
+`/vimeflow/qa-runner/prod/control/QA_WORKER_INSTANCE_IDS` for a worker fleet and
+writes the configured value into the local control env file. Fleet dispatch
+defaults to two concurrent PRs per worker; override
+`QA_WORKER_CAPACITY_PER_INSTANCE` only after the worker instance size and disk
+can sustain it. Worker refresh is explicit, not a code default. To turn it on,
+set both control SSM parameters:
 
 ```bash
 QA_WORKER_REFRESH_RUNNER=1
@@ -231,7 +246,8 @@ has the SSM agent and instance role:
 
 ```bash
 QA_WORKER_MODE=ssm \
-QA_WORKER_INSTANCE_ID=i-xxxxxxxxxxxxxxxxx \
+QA_WORKER_INSTANCE_IDS=i-xxxxxxxxxxxxxxxxx,i-yyyyyyyyyyyyyyyyy,i-zzzzzzzzzzzzzzzzz \
+QA_WORKER_CAPACITY_PER_INSTANCE=2 \
 QA_WORKER_REGION=us-west-1 \
 QA_WORKER_REPO=/opt/vimeflow/repo \
 QA_WORKER_TIMEOUT_SECONDS=5400 \
@@ -241,6 +257,13 @@ node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js
 The dispatcher calls `AWS-RunShellScript`, waits for the command invocation, then
 exits with the worker command response code. The SSM payload contains only the
 non-secret fixer variables and structured `QA_FIX_CONTEXT`.
+
+For a single worker, keep using `QA_WORKER_INSTANCE_ID`. When
+`QA_WORKER_INSTANCE_IDS` is set, each `dispatch-worker.js` process first creates
+an atomic lease under the qa-runner `.state/worker-leases` directory. This
+coordinates separate dispatch processes on the control host. If all slots are
+full, dispatch waits up to `QA_WORKER_LEASE_WAIT_SECONDS` before failing; stale
+leases whose owning process is gone are removed automatically.
 
 For burst workers that are stopped between PR fix cycles, enable the lifecycle
 wrapper on the control host:
@@ -257,19 +280,21 @@ waits until EC2 reports `running`, then retries the actual SSM fixer command
 until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, the daemon owns
 the stop decision for SSM burst workers: it always sends
 `QA_WORKER_KEEP_ALIVE=1` to the fixer contract so the dispatch layer never stops
-the instance from a stale job-claim snapshot. When the queue drains, the daemon waits
-`QA_WORKER_IDLE_STOP_SECONDS` and then performs a best-effort stop. The default
-35 minute grace keeps the worker warm through slow CI/Claude review rounds
-without keeping it alive indefinitely. A stop failure is only logged as a
-warning; the dispatcher still exits with the real fixer result.
+the instance from a stale job-claim snapshot. When the queue drains, the daemon
+waits `QA_WORKER_IDLE_STOP_SECONDS` and then performs a best-effort stop for
+every configured burst worker. The default 35 minute grace keeps workers warm
+through slow CI/Claude review rounds without keeping them alive indefinitely. A
+stop failure is only logged as a warning; the dispatcher still exits with the
+real fixer result.
 
 Standalone `dispatch-worker.js` runs can still stop after their command reaches
 a terminal SSM status unless they explicitly pass keep-alive.
 
-Spot workers should use the same SSM dispatch path. For the first realistic
-smoke, prefer a reusable EBS-backed Spot worker whose credentials are
-materialized from SSM at bootstrap time, not a private AMI made from a live
-worker disk that already contains auth caches.
+Spot workers should use the same SSM dispatch path. For burst scale-out, create
+multiple reusable EBS-backed Spot workers, put their instance IDs in
+`QA_WORKER_INSTANCE_IDS`, and raise `QA_MAX_PARALLEL` to the fleet capacity.
+Credentials should be materialized from SSM at bootstrap time, not copied from a
+private AMI made from a live worker disk that already contains auth caches.
 
 Use `scripts/qa-runner/deploy/worker-spot-user-data.sh` as the clean Spot worker
 bootstrap user-data. Set `QA_RUNNER_REF` explicitly to the runner branch or tag

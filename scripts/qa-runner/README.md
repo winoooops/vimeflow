@@ -268,6 +268,14 @@ supports:
 - `QA_WORKER_MODE=ssh` for an already-running worker reachable by SSH.
 - `QA_WORKER_MODE=ssm` for AWS Systems Manager `AWS-RunShellScript` dispatch with
   no inbound SSH.
+- `QA_WORKER_INSTANCE_IDS=i-aaa,i-bbb,i-ccc` enables SSM fleet dispatch. The
+  dispatcher leases one local slot before sending SSM, so parallel
+  `dispatch-worker.js` processes spread over the configured workers instead of
+  all targeting the first instance. `QA_WORKER_INSTANCE_ID` remains supported
+  for the single-worker path.
+- `QA_WORKER_CAPACITY_PER_INSTANCE=2` controls how many concurrent PR fixer
+  passes a worker may receive. Fleet mode defaults to `2`; set
+  `QA_MAX_PARALLEL` to `instance count * capacity` for the desired burst limit.
 - `QA_WORKER_BURST=1` for SSM workers that may be stopped between fix cycles.
   The dispatcher starts the instance when needed, waits for EC2 `running`, then
   retries the actual SSM worker command until the target accepts it.
@@ -281,6 +289,9 @@ supports:
 - `QA_WORKER_IDLE_STOP_SECONDS=2100` controls the daemon's idle-stop grace
   period after a keep-alive run drains the queue. The default keeps the worker
   warm through slow CI/Claude review rounds before stopping it.
+- `QA_WORKER_LEASE_WAIT_SECONDS=5400` caps how long a dispatch waits for a free
+  fleet slot. Stale lease files whose owning dispatch process is gone are
+  removed automatically.
 - `QA_WORKER_MIN_FREE_PERCENT=15` controls the worker disk health gate. The
   worker removes stale `.claude/worktrees/qa-pr-*`, matching git metadata, and
   stale PR locks before and after each fixer pass. If free space is still below
