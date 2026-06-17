@@ -445,7 +445,7 @@ describe('DockPanel', () => {
     expect(within(crumb).getByText('DELETED')).toHaveClass('text-tertiary')
   })
 
-  test('makes the editor read-only for a deleted file', () => {
+  test('makes the editor read-only for a clean deleted file', () => {
     renderDockPanel({
       selectedFilePath: '/home/user/deleted.ts',
       editorFileLifecycleStatus: 'DELETED',
@@ -453,6 +453,18 @@ describe('DockPanel', () => {
 
     expect(mockUseCodeMirror).toHaveBeenCalledWith(
       expect.objectContaining({ readOnly: true })
+    )
+  })
+
+  test('keeps the editor editable for a dirty deleted file so it can be saved', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/deleted.ts',
+      editorFileLifecycleStatus: 'DELETED',
+      isDirty: true,
+    })
+
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({ readOnly: false })
     )
   })
 
@@ -468,7 +480,7 @@ describe('DockPanel', () => {
     expect(within(crumb).queryByText('NEW')).toBeNull()
   })
 
-  test('renders saved path crumb state after a dirty buffer returns clean', async () => {
+  test('renders saved path crumb state after a successful save', async () => {
     const view = renderDockPanel({
       selectedFilePath: '/home/user/test.ts',
       isDirty: true,
@@ -477,6 +489,7 @@ describe('DockPanel', () => {
     view.rerenderWith({
       selectedFilePath: '/home/user/test.ts',
       isDirty: false,
+      savedAt: Date.now(),
     })
 
     const crumb = screen.getByTestId('editor-path-crumb')
@@ -499,6 +512,7 @@ describe('DockPanel', () => {
       selectedFilePath: '/home/user/new.ts',
       editorFileLifecycleStatus: 'NEW',
       isDirty: false,
+      savedAt: Date.now(),
     })
 
     const crumb = screen.getByTestId('editor-path-crumb')
@@ -520,6 +534,7 @@ describe('DockPanel', () => {
     view.rerenderWith({
       selectedFilePath: '/home/user/deleted.ts',
       isDirty: false,
+      savedAt: Date.now(),
     })
 
     await screen.findByText(/saved ·/i)
@@ -544,6 +559,7 @@ describe('DockPanel', () => {
     view.rerenderWith({
       selectedFilePath: '/home/user/first.ts',
       isDirty: false,
+      savedAt: Date.now(),
     })
 
     await screen.findByText(/saved ·/i)
@@ -572,6 +588,7 @@ describe('DockPanel', () => {
       editorBufferKey: 'session-a',
       selectedFilePath: '/home/user/shared.ts',
       isDirty: false,
+      savedAt: Date.now(),
     })
 
     await screen.findByText(/saved ·/i)

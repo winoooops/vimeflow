@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 22
+ref_count: 23
 ---
 
 # Async Race Conditions
@@ -641,3 +641,12 @@ prevent showing previous data.
 - **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
 - **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
 - **Commit:** same commit as this entry
+
+### 64. Stale `selectedEditorFileExists` bleeds into new file path
+
+- **Source:** github-claude | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `selectedEditorFileExists` was never reset before a new existence check began. Switching from a deleted file to an existing file could make the new file momentarily read-only because `resolveEditorFileLifecycleStatus` saw the stale `false` value before the async check completed.
+- **Fix:** Set `selectedEditorFileExists(null)` synchronously at the start of the check, then update it with the async result.
+- **Commit:** see current commit

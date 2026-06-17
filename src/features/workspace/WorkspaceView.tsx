@@ -105,7 +105,6 @@ import { OverlayStackProvider } from './overlays/OverlayStackProvider'
 import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
 import {
   parentPathForGitStatus,
-  fileExistsInDirectory,
   parentPathForFileLookup,
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
@@ -854,6 +853,7 @@ const WorkspaceViewContent = (): ReactElement => {
   >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isUnsavedDialogSaving, setIsUnsavedDialogSaving] = useState(false)
+  const [editorSavedAt, setEditorSavedAt] = useState<number | null>(null)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
@@ -1403,19 +1403,17 @@ const WorkspaceViewContent = (): ReactElement => {
     let cancelled = false
 
     const checkSelectedFile = async (): Promise<void> => {
+      setSelectedEditorFileExists(null)
+
       try {
-        const entries = await fileSystemService.listDir(editorFileLookupCwd)
+        await fileSystemService.readFile(editorBuffer.filePath ?? '')
 
         if (!cancelled) {
-          setSelectedEditorFileExists(
-            fileExistsInDirectory(editorBuffer.filePath ?? '', entries)
-          )
+          setSelectedEditorFileExists(true)
         }
       } catch {
         if (!cancelled) {
-          setSelectedEditorFileExists((current) =>
-            current === null ? current : null
-          )
+          setSelectedEditorFileExists(false)
         }
       }
     }
@@ -1578,11 +1576,19 @@ const WorkspaceViewContent = (): ReactElement => {
     try {
       await editorBuffer.saveFile()
       setFileError(null)
+      setEditorSavedAt(Date.now())
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to save: ${message}`)
     }
   }, [editorBuffer])
+
+  // Clear the explicit saved timestamp whenever the edited file or the scoped
+  // buffer identity changes, so a stale "SAVED · just now" never appears on a
+  // newly-selected file or after switching sessions.
+  useEffect(() => {
+    setEditorSavedAt((current) => (current === null ? current : null))
+  }, [editorBuffer.filePath, activeSessionId])
 
   // Handle file selection from FileExplorer. Memoized so its identity
   // is stable across the 4-level prop chain (WorkspaceView → Sidebar →
@@ -1976,6 +1982,7 @@ const WorkspaceViewContent = (): ReactElement => {
       selectedFilePath={editorBuffer.filePath}
       editorBufferKey={activeSessionId}
       editorFileLifecycleStatus={editorFileLifecycleStatus}
+      savedAt={editorSavedAt}
       content={editorBuffer.currentContent}
       onContentChange={editorBuffer.updateContent}
       onSave={() => {

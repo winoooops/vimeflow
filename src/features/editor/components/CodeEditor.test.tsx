@@ -261,11 +261,6 @@ describe('CodeEditor', () => {
         readOnly: true,
       })
     )
-
-    expect(screen.getByTestId('codemirror-container')).toHaveAttribute(
-      'aria-readonly',
-      'true'
-    )
   })
 
   test('read-only save callback does not invoke onSave', () => {

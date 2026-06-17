@@ -86,6 +86,8 @@ interface DockPanelBaseProps {
   content: string
   onContentChange?: (content: string) => void
   onSave?: () => void
+  /** Timestamp set by the parent when a save successfully completes. */
+  savedAt?: number | null
   isDirty?: boolean
   /** True while an async file read is in flight. */
   isLoading?: boolean
@@ -134,6 +136,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       content,
       onContentChange = undefined,
       onSave = undefined,
+      savedAt,
       isDirty = false,
       isLoading = false,
       cwd = '.',
@@ -164,9 +167,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
 
     const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
 
-    const [editorPathSavedAt, setEditorPathSavedAt] = useState<number | null>(
-      null
-    )
+    const [internalSavedAt, setInternalSavedAt] = useState<number | null>(null)
+    const editorPathSavedAt =
+      savedAt !== undefined ? savedAt : internalSavedAt
 
     // Ephemeral dock state (D5): the per-file Source/Reading mode is not
     // persisted across reload, matching the dock's existing non-persistence
@@ -214,7 +217,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       }
 
       if (!selectedFilePath) {
-        setEditorPathSavedAt((current) => (current === null ? current : null))
+        setInternalSavedAt((current) => (current === null ? current : null))
 
         return
       }
@@ -223,13 +226,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         selectedFilePath !== previousState.filePath ||
         editorBufferKey !== previousState.bufferKey
       ) {
-        setEditorPathSavedAt(null)
-
-        return
-      }
-
-      if (previousState.isDirty && !isDirty) {
-        setEditorPathSavedAt(Date.now())
+        setInternalSavedAt(null)
       }
     }, [editorBufferKey, isDirty, selectedFilePath])
 
@@ -324,7 +321,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         : editorPathSavedAt !== null
           ? 'SAVED'
           : editorFileLifecycleStatus
-    const isEditorReadOnly = editorFileLifecycleStatus === 'DELETED'
+    const isEditorReadOnly = editorFileLifecycleStatus === 'DELETED' && !isDirty
 
     const handleVerticalKeyDown = (e: KeyboardEvent): void => {
       const step = e.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX

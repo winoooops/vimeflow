@@ -251,7 +251,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           <div
             ref={setContainer}
             data-testid="codemirror-container"
-            aria-readonly={isReadOnly || undefined}
             className="h-full w-full"
             onContextMenu={handleContextMenu}
           />
