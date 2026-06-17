@@ -35,11 +35,11 @@ interface SwellPreset {
 
 export const SWELL_PRESETS: Record<SwellVariant, SwellPreset> = {
   // A single soft mound that follows the cursor closely (default).
-  'soft-mound': { width: 30, peakAmp: 8, followEase: 12, ampEase: 6 },
+  'soft-mound': { width: 30, peakAmp: 4.2, followEase: 12, ampEase: 6 },
   // The mound lags behind the cursor, giving a sense of mass / inertia.
-  trailing: { width: 30, peakAmp: 8, followEase: 4.5, ampEase: 6 },
+  trailing: { width: 30, peakAmp: 4.2, followEase: 4.5, ampEase: 6 },
   // A broad, low rise instead of a focused peak — the calmest.
-  'wide-lift': { width: 64, peakAmp: 5, followEase: 9, ampEase: 5 },
+  'wide-lift': { width: 64, peakAmp: 2.8, followEase: 9, ampEase: 5 },
 }
 
 const TANK_WIDTH = 248
@@ -49,12 +49,35 @@ const TAU = Math.PI * 2
 // equal (no seam) regardless of phase.
 const WL_FRONT = TANK_WIDTH / 2
 const WL_BACK = TANK_WIDTH
-const AMP_FRONT = 5
-const AMP_BACK = 7
+const AMP_FRONT = 2.5
+const AMP_BACK = 3.5
 const STEP = 4
+const MAX_AMBIENT_AMP = AMP_FRONT + AMP_BACK
 // Base drift: phase advances ~0.7 rad/s — a calm, always-on flow.
 const BASE_RATE = 0.7
 const LEVEL_EASE_PER_SECOND = 4
+
+const clamp = (n: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, n))
+
+/**
+ * Scales surface motion down near a dry floor or full ceiling. Without this,
+ * the ambient waves are larger than the available water at 1-2% and
+ * larger than the available headroom at 98-100%, which creates impossible
+ * bumps and dry gaps at the endpoints.
+ */
+export const computeSurfaceMotionScale = (
+  level: number,
+  height: number,
+  swellAmp: number
+): number => {
+  const riseBudget = MAX_AMBIENT_AMP + Math.max(0, swellAmp)
+  const fallBudget = MAX_AMBIENT_AMP
+  const topScale = level / riseBudget
+  const bottomScale = (height - level) / fallBudget
+
+  return clamp(Math.min(topScale, bottomScale), 0, 1)
+}
 
 /**
  * Builds the surface path. A Gaussian mound of height `swellAmp` centred at
@@ -70,15 +93,22 @@ export const buildReservoirSurface = (
   swellX: number,
   swellWidth: number
 ): { fill: string; crest: string } => {
+  const motionScale = computeSurfaceMotionScale(level, height, swellAmp)
   let crest = ''
   for (let x = 0; x <= TANK_WIDTH; x += STEP) {
-    const mound = swellAmp * Math.exp(-Math.pow((x - swellX) / swellWidth, 2))
+    const mound =
+      swellAmp * motionScale * Math.exp(-Math.pow((x - swellX) / swellWidth, 2))
 
-    const y =
+    const y = clamp(
       level +
-      Math.sin((x / WL_FRONT) * TAU + phase) * AMP_FRONT +
-      Math.sin((x / WL_BACK) * TAU + phase * 0.7 + 0.9) * AMP_BACK -
-      mound
+        Math.sin((x / WL_FRONT) * TAU + phase) * AMP_FRONT * motionScale +
+        Math.sin((x / WL_BACK) * TAU + phase * 0.7 + 0.9) *
+          AMP_BACK *
+          motionScale -
+        mound,
+      0,
+      height
+    )
     crest += `${x === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(2)} `
   }
 

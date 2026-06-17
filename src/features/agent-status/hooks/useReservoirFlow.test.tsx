@@ -12,6 +12,7 @@ import {
 import {
   useReservoirFlow,
   buildReservoirSurface,
+  computeSurfaceMotionScale,
   SWELL_PRESETS,
   type ReservoirSurfaceRefs,
   type ReservoirGeom,
@@ -79,6 +80,11 @@ const yAt = (crest: string, x: number): number => {
 
   return m === null ? NaN : parseFloat(m[1])
 }
+
+const yValues = (crest: string): number[] =>
+  [...crest.matchAll(/[ML] \d+\.0 (-?\d+(?:\.\d+)?)/g)].map((m) =>
+    parseFloat(m[1])
+  )
 
 let now = 0
 let pending: FrameRequestCallback | null = null
@@ -155,6 +161,36 @@ describe('buildReservoirSurface', () => {
 
     // surface at the mound centre sits higher (smaller y) than far away
     expect(yAt(crest, 124)).toBeLessThan(yAt(crest, 0))
+  })
+
+  test('keeps the ambient wave height restrained', () => {
+    const { crest } = buildReservoirSurface(52, 104, 0, 0, 124, 30)
+    const ys = yValues(crest)
+
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(10)
+  })
+
+  test('keeps a full tank flat against the top edge', () => {
+    const { crest } = buildReservoirSurface(0, 104, 1.2, 8, 124, 30)
+
+    expect(new Set(yValues(crest))).toEqual(new Set([0]))
+  })
+
+  test('bounds near-empty waves to the tank floor', () => {
+    const { crest } = buildReservoirSurface(102, 104, 1.2, 8, 124, 30)
+
+    expect(Math.max(...yValues(crest))).toBeLessThanOrEqual(104)
+  })
+})
+
+describe('computeSurfaceMotionScale', () => {
+  test('turns off motion at the top and floor', () => {
+    expect(computeSurfaceMotionScale(0, 104, 8)).toBe(0)
+    expect(computeSurfaceMotionScale(104, 104, 8)).toBe(0)
+  })
+
+  test('allows full motion away from the endpoints', () => {
+    expect(computeSurfaceMotionScale(52, 104, 8)).toBe(1)
   })
 })
 
