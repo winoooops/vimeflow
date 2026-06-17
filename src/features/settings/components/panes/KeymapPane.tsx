@@ -265,6 +265,7 @@ export const KeymapPane = (): ReactElement => {
     const result = setUserBinding(id, draftChord)
     if (result.ok) {
       setFeedback({ id, tone: 'info', text: 'Saved.' })
+      pendingCancelFocusRef.current = id
       stopEditing()
 
       return

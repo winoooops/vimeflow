@@ -639,3 +639,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** Pressing Tab to cancel recording inside `SettingsDialog` was intercepted by the dialog's document-level Tab focus trap, which called `preventDefault`. Focus jumped back to the start of the dialog instead of moving to the next keymap control.
 - **Fix:** Added `event.stopPropagation()` in the capture button's `onKeyDown` Tab handler so the dialog trap never sees the event, and kept the deferred `pendingTabFocusRef` restoration via `useLayoutEffect` so focus moves to the next logical control after the capture UI unmounts.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 58. Save success drops keyboard focus after persisting a keymap binding
+
+- **Source:** github-claude | PR #507 round 2 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** After a successful binding save, `saveDraft` called `stopEditing()` without setting a focus-restoration ref. The `useLayoutEffect` that returns focus to the row edit button only runs when `pendingCancelFocusRef` or `pendingTabFocusRef` is set, so keyboard and assistive-technology users who activate the Save button landed on `document.body`.
+- **Fix:** Set `pendingCancelFocusRef.current = id` in the `result.ok` branch before calling `stopEditing()`, reusing the same focus-restoration path as Escape and Cancel. Added a co-located test asserting the edit button regains focus after Save.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

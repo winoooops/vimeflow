@@ -270,6 +270,33 @@ describe('KeymapPane', () => {
     ).toHaveFocus()
   })
 
+  test('Save button returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Show / hide editor & diff dock binding',
+      })
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
   test('Tab cancels recording and moves focus to the next stable keymap control', () => {
     renderWithSettings()
 

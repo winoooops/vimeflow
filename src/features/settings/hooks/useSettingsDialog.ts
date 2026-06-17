@@ -28,12 +28,7 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
         ? event.metaKey && !event.ctrlKey
         : event.ctrlKey && !event.metaKey
 
-      if (
-        isSuper &&
-        event.key === ',' &&
-        !event.altKey &&
-        !event.shiftKey
-      ) {
+      if (isSuper && event.key === ',' && !event.altKey && !event.shiftKey) {
         event.preventDefault()
         handlersRef.current.toggle()
 
