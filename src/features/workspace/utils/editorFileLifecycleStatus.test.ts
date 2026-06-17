@@ -4,6 +4,7 @@ import {
   expandTildePath,
   fileExistsInDirectory,
   fileNameFromPath,
+  parentPathForFileLookup,
   parentPathForGitStatus,
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
@@ -25,6 +26,10 @@ describe('editorFileLifecycleStatus', () => {
 
     expect(expandTildePath('~/repo/src/new.ts')).toBe(`${home}/repo/src/new.ts`)
     expect(parentPathForGitStatus('~/repo/src/new.ts')).toBe(`${home}/repo/src`)
+  })
+
+  test('keeps home-relative paths intact for filesystem parent lookup', () => {
+    expect(parentPathForFileLookup('~/repo/src/new.ts')).toBe('~/repo/src')
   })
 
   test('normalizes absolute paths into cwd-relative paths', () => {

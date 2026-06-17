@@ -37,12 +37,30 @@ export const expandTildePath = (path: string): string => {
 export const normalizePathForComparison = (path: string): string =>
   expandTildePath(path).replace(/\\/g, '/').replace(/\/+$/u, '')
 
+const normalizePathSeparators = (path: string): string =>
+  path.replace(/\\/g, '/').replace(/\/+$/u, '')
+
 export const parentPathForGitStatus = (path: string | null): string | null => {
   if (!path) {
     return null
   }
 
   const normalizedPath = normalizePathForComparison(path)
+  const parent = normalizedPath.replace(/\/[^/]*$/u, '')
+
+  if (parent === normalizedPath || parent.length === 0) {
+    return null
+  }
+
+  return parent
+}
+
+export const parentPathForFileLookup = (path: string | null): string | null => {
+  if (!path) {
+    return null
+  }
+
+  const normalizedPath = normalizePathSeparators(path)
   const parent = normalizedPath.replace(/\/[^/]*$/u, '')
 
   if (parent === normalizedPath || parent.length === 0) {

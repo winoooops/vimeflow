@@ -106,6 +106,7 @@ import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegist
 import {
   parentPathForGitStatus,
   fileExistsInDirectory,
+  parentPathForFileLookup,
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
 } from './utils/editorFileLifecycleStatus'
@@ -1369,6 +1370,7 @@ const WorkspaceViewContent = (): ReactElement => {
   }, [activeCwd, clearFeedbackBatch])
 
   const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
+  const editorFileLookupCwd = parentPathForFileLookup(editorBuffer.filePath)
 
   const [selectedEditorFileExists, setSelectedEditorFileExists] = useState<
     boolean | null
@@ -1390,7 +1392,7 @@ const WorkspaceViewContent = (): ReactElement => {
   })
 
   useEffect(() => {
-    if (!editorBuffer.filePath || !editorGitStatusCwd) {
+    if (!editorBuffer.filePath || !editorFileLookupCwd) {
       setSelectedEditorFileExists((current) =>
         current === null ? current : null
       )
@@ -1402,7 +1404,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
     const checkSelectedFile = async (): Promise<void> => {
       try {
-        const entries = await fileSystemService.listDir(editorGitStatusCwd)
+        const entries = await fileSystemService.listDir(editorFileLookupCwd)
 
         if (!cancelled) {
           setSelectedEditorFileExists(
@@ -1424,8 +1426,8 @@ const WorkspaceViewContent = (): ReactElement => {
       cancelled = true
     }
   }, [
+    editorFileLookupCwd,
     editorBuffer.filePath,
-    editorGitStatusCwd,
     fileSystemService,
     gitStatus.files,
     gitStatus.filesCwd,
