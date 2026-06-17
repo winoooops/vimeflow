@@ -96,4 +96,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 3        | 1    | 2026-06-15   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |
-| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 4        | 2    | 2026-06-17   |
+| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 5        | 3    | 2026-06-17   |

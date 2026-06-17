@@ -93,7 +93,7 @@ export const LiveActionCard = ({
         ) : null}
         <span className="flex-1" />
         <Chip
-          tone="success"
+          tone="custom"
           radius="pill"
           size="custom"
           className="gap-1 rounded-full bg-success/[0.12] px-1.5 py-px font-mono text-[9px] font-semibold uppercase tracking-[0.06em] text-success-muted"
