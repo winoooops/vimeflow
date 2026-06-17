@@ -577,15 +577,13 @@ describe('DockPanel', () => {
     })
   })
 
-  test('clears saved path crumb state when the editor buffer identity changes', async () => {
+  test('clears saved path crumb state when the parent clears savedAt', async () => {
     const view = renderDockPanel({
-      editorBufferKey: 'session-a',
       selectedFilePath: '/home/user/shared.ts',
       isDirty: true,
     })
 
     view.rerenderWith({
-      editorBufferKey: 'session-a',
       selectedFilePath: '/home/user/shared.ts',
       isDirty: false,
       savedAt: Date.now(),
@@ -594,9 +592,9 @@ describe('DockPanel', () => {
     await screen.findByText(/saved ·/i)
 
     view.rerenderWith({
-      editorBufferKey: 'session-b',
       selectedFilePath: '/home/user/shared.ts',
       isDirty: false,
+      savedAt: null,
     })
 
     const crumb = screen.getByTestId('editor-path-crumb')

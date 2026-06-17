@@ -78,8 +78,6 @@ interface DockPanelBaseProps {
   horizontalPixelMax: number
 
   selectedFilePath: string | null
-  /** Stable identity for the scoped editor buffer that owns selectedFilePath. */
-  editorBufferKey?: string | null
   /** Git-derived lifecycle state for the selected editor file. */
   editorFileLifecycleStatus?: EditorFileLifecycleStatus | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
@@ -146,7 +144,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
-      editorBufferKey = null,
       editorFileLifecycleStatus = null,
       selectedDiffFile,
       onSelectedDiffFileChange,
@@ -159,17 +156,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
     const markdownViewRef = useRef<HTMLDivElement>(null)
 
-    const previousEditorStateRef = useRef({
-      bufferKey: editorBufferKey,
-      filePath: selectedFilePath,
-      isDirty,
-    })
-
     const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
-
-    const [internalSavedAt, setInternalSavedAt] = useState<number | null>(null)
-    const editorPathSavedAt =
-      savedAt !== undefined ? savedAt : internalSavedAt
 
     // Ephemeral dock state (D5): the per-file Source/Reading mode is not
     // persisted across reload, matching the dock's existing non-persistence
@@ -206,29 +193,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         markdownViewRef.current?.focus()
       }
     }, [tab, isMarkdown, viewMode, isFocused, selectedFilePath])
-
-    useEffect(() => {
-      const previousState = previousEditorStateRef.current
-
-      previousEditorStateRef.current = {
-        bufferKey: editorBufferKey,
-        filePath: selectedFilePath,
-        isDirty,
-      }
-
-      if (!selectedFilePath) {
-        setInternalSavedAt((current) => (current === null ? current : null))
-
-        return
-      }
-
-      if (
-        selectedFilePath !== previousState.filePath ||
-        editorBufferKey !== previousState.bufferKey
-      ) {
-        setInternalSavedAt(null)
-      }
-    }, [editorBufferKey, isDirty, selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
@@ -318,7 +282,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? 'UNSAVED'
       : editorFileLifecycleStatus === 'DELETED'
         ? 'DELETED'
-        : editorPathSavedAt !== null
+        : savedAt != null
           ? 'SAVED'
           : editorFileLifecycleStatus
     const isEditorReadOnly = editorFileLifecycleStatus === 'DELETED' && !isDirty
@@ -428,7 +392,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
               {selectedFilePath ? (
                 <EditorPathCrumb
                   filePath={selectedFilePath}
-                  savedAt={editorPathSavedAt}
+                  savedAt={savedAt ?? null}
                   status={editorPathCrumbStatus}
                 />
               ) : null}

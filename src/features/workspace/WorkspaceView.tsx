@@ -1980,7 +1980,6 @@ const WorkspaceViewContent = (): ReactElement => {
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
-      editorBufferKey={activeSessionId}
       editorFileLifecycleStatus={editorFileLifecycleStatus}
       savedAt={editorSavedAt}
       content={editorBuffer.currentContent}

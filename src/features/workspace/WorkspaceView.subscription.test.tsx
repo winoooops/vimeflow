@@ -547,11 +547,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     const useAgentStatusMock = vi.mocked(useAgentStatus)
     const originalImpl = useAgentStatusMock.getMockImplementation()
     useAgentStatusMock.mockImplementation(() => idleAgentStatus)
-    fileSystemServiceOverride.current.listDir = vi
+    fileSystemServiceOverride.current.readFile = vi
       .fn()
-      .mockResolvedValue([
-        { id: '/repo/src/new.ts', name: 'new.ts', type: 'file' },
-      ])
+      .mockResolvedValue('export const example = 1\n')
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/new.ts',
@@ -570,8 +568,8 @@ describe('WorkspaceView lifted-subscription contract', () => {
       )
 
       await waitFor(() => {
-        expect(fileSystemServiceOverride.current.listDir).toHaveBeenCalledWith(
-          '/repo/src'
+        expect(fileSystemServiceOverride.current.readFile).toHaveBeenCalledWith(
+          '/repo/src/new.ts'
         )
       })
     } finally {
@@ -585,9 +583,6 @@ describe('WorkspaceView lifted-subscription contract', () => {
     let changedFiles = [
       { path: 'dummy.ts', status: 'untracked' as const, staged: false },
     ]
-    let parentEntries = [
-      { id: '/repo/src/dummy.ts', name: 'dummy.ts', type: 'file' as const },
-    ]
 
     vi.mocked(useGitStatus).mockImplementation(() => ({
       files: changedFiles,
@@ -598,9 +593,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
       idle: false,
     }))
 
-    fileSystemServiceOverride.current.listDir = vi
+    fileSystemServiceOverride.current.readFile = vi
       .fn()
-      .mockImplementation(() => Promise.resolve(parentEntries))
+      .mockResolvedValue('export const dummy = 1\n')
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/dummy.ts',
@@ -612,7 +607,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
     changedFiles = []
-    parentEntries = []
+    fileSystemServiceOverride.current.readFile = vi
+      .fn()
+      .mockRejectedValue(new Error('ENOENT'))
     view.rerender(<WorkspaceView />)
 
     await waitFor(() => {
