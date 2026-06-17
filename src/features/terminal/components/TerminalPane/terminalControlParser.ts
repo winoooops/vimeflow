@@ -8,6 +8,7 @@ import type {
 
 const BEL = '\x07'
 const ESC = '\x1b'
+const CSI_PREFIX = `${ESC}[`
 const OSC_PREFIX = `${ESC}]`
 const STRING_TERMINATOR = `${ESC}\\`
 const MAX_PENDING_CONTROL_SEQUENCE_LENGTH = 16_384
@@ -43,6 +44,25 @@ const findSequenceTerminator = (
     index: stringTerminatorIndex,
     length: STRING_TERMINATOR.length,
   }
+}
+
+const isCsiFinalByte = (char: string): boolean => {
+  const code = char.charCodeAt(0)
+
+  return code >= 0x40 && code <= 0x7e
+}
+
+const findCsiTerminator = (
+  data: string,
+  startIndex: number
+): SequenceTerminator | null => {
+  for (let index = startIndex; index < data.length; index += 1) {
+    if (isCsiFinalByte(data[index] ?? '')) {
+      return { index, length: 1 }
+    }
+  }
+
+  return null
 }
 
 const parseOscIdentifier = (content: string): string | null => {
@@ -102,7 +122,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
     let cursor = 0
 
     while (cursor < data.length) {
-      const sequenceStart = data.indexOf(OSC_PREFIX, cursor)
+      const sequenceStart = data.indexOf(ESC, cursor)
 
       if (sequenceStart === -1) {
         visible += data.slice(cursor)
@@ -111,23 +131,40 @@ export class TerminalControlSequenceParser implements TerminalParser {
 
       visible += data.slice(cursor, sequenceStart)
 
-      const contentStart = sequenceStart + OSC_PREFIX.length
-      const terminator = findSequenceTerminator(data, contentStart)
+      if (data.startsWith(OSC_PREFIX, sequenceStart)) {
+        const contentStart = sequenceStart + OSC_PREFIX.length
+        const terminator = findSequenceTerminator(data, contentStart)
 
-      if (!terminator) {
-        this.pendingControlSequence = data.slice(sequenceStart)
-        break
+        if (!terminator) {
+          this.pendingControlSequence = data.slice(sequenceStart)
+          break
+        }
+
+        const sequenceEnd = terminator.index + terminator.length
+        const content = data.slice(contentStart, terminator.index)
+
+        this.consumeOsc(content, output)
+        cursor = sequenceEnd
+        continue
       }
 
-      const sequenceEnd = terminator.index + terminator.length
-      const content = data.slice(contentStart, terminator.index)
-      const sequence = data.slice(sequenceStart, sequenceEnd)
+      if (data.startsWith(CSI_PREFIX, sequenceStart)) {
+        const terminator = findCsiTerminator(
+          data,
+          sequenceStart + CSI_PREFIX.length
+        )
 
-      if (!this.consumeOsc(content, output)) {
-        visible += sequence
+        if (!terminator) {
+          this.pendingControlSequence = data.slice(sequenceStart)
+          break
+        }
+
+        cursor = terminator.index + terminator.length
+        continue
       }
 
-      cursor = sequenceEnd
+      visible += ESC
+      cursor = sequenceStart + ESC.length
     }
 
     if (
@@ -143,12 +180,12 @@ export class TerminalControlSequenceParser implements TerminalParser {
   private consumeOsc(
     content: string,
     output: TerminalParserOutputContext | null
-  ): boolean {
+  ): void {
     const identifier = parseOscIdentifier(content)
     const payload = parseOscPayload(content)
 
     if (identifier === null || payload === null || Number(identifier) !== 7) {
-      return false
+      return
     }
 
     this.emit({
@@ -157,8 +194,6 @@ export class TerminalControlSequenceParser implements TerminalParser {
       uri: payload,
       output,
     })
-
-    return true
   }
 
   private emit(event: TerminalParserEvent): void {

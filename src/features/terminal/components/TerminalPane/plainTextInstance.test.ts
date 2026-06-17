@@ -114,6 +114,23 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('rewrites the current line when carriage return output arrives', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('progress 10%')
+    created.terminal.write('\rprogress 20%')
+
+    expect(created.viewportReader.readVisibleText()).toBe('progress 20%')
+  })
+
+  test('moves the output cursor backward for backspace rewrites', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('ab\bcd')
+
+    expect(created.viewportReader.readVisibleText()).toBe('acd')
+  })
+
   test('uses text output chunks even when byte payloads are present', () => {
     const created = createTrackedPlainTextTerminal()
 

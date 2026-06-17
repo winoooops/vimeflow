@@ -7,7 +7,6 @@ import type {
   TerminalOutputWriter,
   TerminalParser,
   TerminalRendererAdapter,
-  TerminalRendererCapabilities,
   TerminalRendererHandle,
   TerminalSize,
   TerminalSurface,
@@ -16,6 +15,7 @@ import type {
 } from '../../types'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 import { createControlSequenceTerminalParserEngine } from './terminalParserEngine'
+import { PLAIN_TEXT_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
 export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
@@ -27,12 +27,6 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MAX_SCROLLBACK_LINES = 10_000
-
-const PLAIN_TEXT_TERMINAL_CAPABILITIES: TerminalRendererCapabilities = {
-  preferredOutputInputMode: 'text',
-  acceptsText: true,
-  acceptsBytes: false,
-}
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -64,17 +58,88 @@ const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
 
-const normalizeDisplayText = (data: string): string =>
-  data.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+interface DisplayState {
+  readonly text: string
+  readonly cursor: number
+}
 
-const trimScrollbackLines = (text: string): string => {
+const findLineStart = (text: string, cursor: number): number => {
+  if (cursor <= 0) {
+    return 0
+  }
+
+  return text.lastIndexOf('\n', cursor - 1) + 1
+}
+
+const readCodePointLength = (text: string, cursor: number): number =>
+  (text.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1
+
+const writeDisplayCharacter = (
+  text: string,
+  cursor: number,
+  character: string
+): DisplayState => {
+  if (cursor < text.length && text[cursor] !== '\n') {
+    const nextLength = readCodePointLength(text, cursor)
+
+    return {
+      text: `${text.slice(0, cursor)}${character}${text.slice(
+        cursor + nextLength
+      )}`,
+      cursor: cursor + character.length,
+    }
+  }
+
+  return {
+    text: `${text.slice(0, cursor)}${character}${text.slice(cursor)}`,
+    cursor: cursor + character.length,
+  }
+}
+
+const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
+  let text = state.text
+  let cursor = Math.min(Math.max(state.cursor, 0), text.length)
+
+  for (const character of data.replace(/\r\n/g, '\n')) {
+    if (character === '\r') {
+      cursor = findLineStart(text, cursor)
+      continue
+    }
+
+    if (character === '\n') {
+      text = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
+      cursor += 1
+      continue
+    }
+
+    if (character === '\b') {
+      cursor = Math.max(findLineStart(text, cursor), cursor - 1)
+      continue
+    }
+
+    const next = writeDisplayCharacter(text, cursor, character)
+    text = next.text
+    cursor = next.cursor
+  }
+
+  return { text, cursor }
+}
+
+const trimScrollbackLines = (state: DisplayState): DisplayState => {
+  const text = state.text
   const lines = text.split('\n')
 
   if (lines.length <= MAX_SCROLLBACK_LINES) {
-    return text
+    return state
   }
 
-  return lines.slice(-MAX_SCROLLBACK_LINES).join('\n')
+  const firstKeptLine = lines.length - MAX_SCROLLBACK_LINES
+  const removedText = `${lines.slice(0, firstKeptLine).join('\n')}\n`
+
+  return {
+    text: text.slice(removedText.length),
+    cursor: Math.max(0, state.cursor - removedText.length),
+  }
 }
 
 const readContainedSelection = (root: HTMLElement): string => {
@@ -142,6 +207,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
   private readonly keyHandlers = new Set<TerminalKeyEventHandler>()
   private container: HTMLElement | null = null
   private outputText = ''
+  private outputCursor = 0
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
   private lastSelectionText = ''
@@ -239,6 +305,7 @@ class PlainTextTerminalSurface implements TerminalSurface {
 
   clear(): void {
     this.outputText = ''
+    this.outputCursor = 0
     this.renderOutput()
   }
 
@@ -260,9 +327,15 @@ class PlainTextTerminalSurface implements TerminalSurface {
     }
 
     if (visibleData.length > 0) {
-      this.outputText = trimScrollbackLines(
-        `${this.outputText}${normalizeDisplayText(visibleData)}`
+      const nextState = trimScrollbackLines(
+        applyDisplayData(
+          { text: this.outputText, cursor: this.outputCursor },
+          visibleData
+        )
       )
+
+      this.outputText = nextState.text
+      this.outputCursor = nextState.cursor
       this.renderOutput()
     }
 

@@ -13,7 +13,6 @@ import type {
   TerminalParser,
   TerminalRendererHandle,
   TerminalRendererAdapter,
-  TerminalRendererCapabilities,
   TerminalSurface,
   TerminalTheme,
   TerminalViewportReader,
@@ -21,13 +20,8 @@ import type {
 import { toXtermTheme } from '../../theme/toXtermTheme'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 import { TerminalOutputPayloadRouter } from './terminalOutputPayload'
+import { XTERM_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 import '@xterm/xterm/css/xterm.css'
-
-const XTERM_TERMINAL_CAPABILITIES: TerminalRendererCapabilities = {
-  preferredOutputInputMode: 'text',
-  acceptsText: true,
-  acceptsBytes: false,
-}
 
 export const createXtermTerminal = (): TerminalInstance => {
   const terminal = new Terminal({
