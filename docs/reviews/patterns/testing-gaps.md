@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-15
-ref_count: 31
+last_updated: 2026-06-17
+ref_count: 32
 ---
 
 # Testing Gaps
@@ -657,3 +657,30 @@ filesystem scope restrictions).
 - **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
 - **Commit:** same commit as this entry
+
+### 66. `requestAnimationFrame` mock always returns the same frame ID
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The test spy mocked `window.requestAnimationFrame` to always return `1`. After the spy was restored, the component's unmount cleanup called `window.cancelAnimationFrame(1)` against the real API. In jsdom frame IDs start at `1`, so any other real rAF queued with that ID would be silently dropped.
+- **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
+- **Commit:** _(same commit as this entry)_
+
+### 67. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`
+- **Finding:** `prepareBrowserPaneAtSlot` constructed `paneId = \`p${slotIndex}\``and passed it to`readBrowserPaneIdentity` without verifying the ID against the DOM. A future change to pane-ID format would fail every parametrized slot test with an opaque "identity not available" error.
+- **Fix:** Read `dataset.paneId` from the Nth `[data-testid="split-view-slot"]` node in the active split view and throw a clear error if the slot has no pane ID.
+- **Commit:** _(same commit as this entry)_
+
+### 68. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
+- **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
+- **Commit:** _(same commit as this entry)_
