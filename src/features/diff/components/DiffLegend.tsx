@@ -19,7 +19,7 @@ const DiffLegend = (): ReactElement => (
       size="custom"
       className="gap-2 bg-transparent p-0 text-on-surface"
     >
-      <div
+      <span
         data-testid="added-dot"
         className="h-2 w-2 rounded-full bg-vcs-added"
       />
@@ -35,7 +35,7 @@ const DiffLegend = (): ReactElement => (
       size="custom"
       className="gap-2 bg-transparent p-0 text-on-surface"
     >
-      <div
+      <span
         data-testid="removed-dot"
         className="h-2 w-2 rounded-full bg-vcs-deleted"
       />
