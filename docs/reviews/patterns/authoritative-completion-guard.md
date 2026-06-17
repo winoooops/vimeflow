@@ -40,3 +40,22 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   authoritative end event is processed. Updated affected unit tests and added a
   regression test for `function_call_output` without an exit-code line.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. Dead exec snapshot path blocked by the ExecCommandEnd guard
+
+- **Source:** github-claude | PR #517 round 11 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs` L628
+- **Finding:** `process_output_completion` returns early whenever an in-flight
+  call's `completion_mode` is `ExecCommandEnd`, keeping the call pending for the
+  authoritative `exec_command_end` event. A later `ExecCommandEnd` branch, the
+  corresponding arm in `output_completion_status`, the `emit_exec_test_run_snapshot`
+  helper, and its supporting `exec_function_output_exit_code` parser were all
+  added below that guard and therefore never executed, leaving a half-refactor
+  that could mislead maintainers.
+- **Fix:** Removed the unreachable `ExecCommandEnd` branch from
+  `process_output_completion`, the unreachable arm from `output_completion_status`,
+  and the now-unused `emit_exec_test_run_snapshot` and
+  `exec_function_output_exit_code` helpers. Left `process_exec_command_end` as the
+  sole authoritative path for exec snapshots.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

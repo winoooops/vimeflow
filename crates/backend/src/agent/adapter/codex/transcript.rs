@@ -375,14 +375,7 @@ fn process_line(
     match record_type {
         CodexRecordType::ResponseItem => {
             process_response_item(
-                &dto,
-                &payload,
-                session_id,
-                cwd,
-                events,
-                emitter,
-                in_flight,
-                replay_done,
+                &dto, &payload, session_id, cwd, events, in_flight, replay_done,
             );
         }
         CodexRecordType::EventMsg => {
@@ -400,7 +393,6 @@ fn process_response_item(
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
-    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     replay_done: bool,
 ) {
@@ -430,12 +422,12 @@ fn process_response_item(
         }
         CodexPayloadType::FunctionCallOutput => {
             process_output_completion(
-                payload, session_id, cwd, events, emitter, in_flight, &timestamp, false,
+                payload, session_id, events, in_flight, &timestamp, false,
             );
         }
         CodexPayloadType::CustomToolCallOutput => {
             process_output_completion(
-                payload, session_id, cwd, events, emitter, in_flight, &timestamp, true,
+                payload, session_id, events, in_flight, &timestamp, true,
             );
         }
         _ => {}
@@ -609,9 +601,7 @@ fn start_custom_tool_call(
 fn process_output_completion(
     payload: &CodexPayloadDto,
     session_id: &str,
-    cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
-    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
     is_custom_tool_output: bool,
@@ -639,19 +629,7 @@ fn process_output_completion(
         None => return,
     };
 
-    let status = output_completion_status(&call, payload, is_custom_tool_output);
-
-    if matches!(call.completion_mode, CompletionMode::ExecCommandEnd) {
-        emit_exec_test_run_snapshot(
-            session_id,
-            cwd,
-            emitter,
-            &call,
-            payload.output.as_deref().unwrap_or_default(),
-            matches!(status, ToolCallStatus::Failed),
-            timestamp,
-        );
-    }
+    let status = output_completion_status(payload, is_custom_tool_output);
 
     emit_tool_call(
         events,
@@ -673,18 +651,9 @@ fn process_output_completion(
 }
 
 fn output_completion_status(
-    call: &InFlightToolCall,
     payload: &CodexPayloadDto,
     is_custom_tool_output: bool,
 ) -> ToolCallStatus {
-    if matches!(call.completion_mode, CompletionMode::ExecCommandEnd) {
-        return match exec_function_output_exit_code(payload.output.as_deref()) {
-            Some(0) => ToolCallStatus::Done,
-            Some(_) => ToolCallStatus::Failed,
-            None => ToolCallStatus::Failed,
-        };
-    }
-
     if is_custom_tool_output && custom_tool_output_failed(payload.output.as_deref()) {
         ToolCallStatus::Failed
     } else {
@@ -759,45 +728,6 @@ fn process_exec_command_end(
             is_test_file: call.is_test_file,
         },
     );
-}
-
-fn emit_exec_test_run_snapshot(
-    session_id: &str,
-    cwd: Option<&Path>,
-    emitter: &mut TestRunEmitter,
-    call: &InFlightToolCall,
-    output: &str,
-    is_error: bool,
-    timestamp: &str,
-) {
-    let Some(matched) = call.test_match.as_ref() else {
-        return;
-    };
-
-    let Some(cwd_ref) = cwd else {
-        log::debug!(
-            "Skipping Codex test-run snapshot for session {}: no workspace cwd resolved",
-            session_id
-        );
-        return;
-    };
-
-    let captured = CapturedOutput {
-        content: output.to_string(),
-        is_error,
-    };
-
-    if let Some(snapshot) = maybe_build_snapshot(BuildArgs {
-        session_id,
-        matched,
-        started_at: &call.started_at_iso,
-        finished_at: timestamp,
-        instant_fallback: call.started_at.elapsed(),
-        captured,
-        cwd: cwd_ref,
-    }) {
-        emitter.submit(snapshot);
-    }
 }
 
 fn process_patch_apply_end(
@@ -957,15 +887,6 @@ fn custom_tool_output_failed(output: Option<&str>) -> bool {
         .metadata
         .and_then(|m| m.exit_code)
         .is_some_and(|code| code != 0)
-}
-
-fn exec_function_output_exit_code(output: Option<&str>) -> Option<i64> {
-    let output = output?;
-
-    output.lines().find_map(|line| {
-        let code = line.trim().strip_prefix("Process exited with code ")?;
-        code.trim().parse::<i64>().ok()
-    })
 }
 
 fn exec_command_duration_ms(payload: &CodexPayloadDto) -> Option<u64> {
