@@ -13,6 +13,23 @@ const OSC_PREFIX = `${ESC}]`
 const STRING_TERMINATOR = `${ESC}\\`
 const MAX_PENDING_CONTROL_SEQUENCE_LENGTH = 16_384
 
+const ERASE_LINE_SENTINELS = ['\uE000', '\uE001', '\uE002']
+
+export const getEraseLineSentinel = (mode: 0 | 1 | 2): string =>
+  ERASE_LINE_SENTINELS[mode]
+
+export const getEraseLineModeFromSentinel = (
+  character: string
+): 0 | 1 | 2 | null => {
+  const index = ERASE_LINE_SENTINELS.indexOf(character)
+
+  if (index === -1) {
+    return null
+  }
+
+  return index as 0 | 1 | 2
+}
+
 interface SequenceTerminator {
   readonly index: number
   readonly length: number
@@ -159,8 +176,30 @@ export class TerminalControlSequenceParser implements TerminalParser {
           break
         }
 
+        const finalByte = data[terminator.index] ?? ''
+
+        if (finalByte === 'K') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const parameterMatch = /^(\d*)/.exec(content)
+          const mode = Number(parameterMatch?.[1] ?? '0')
+
+          if (mode === 0 || mode === 1 || mode === 2) {
+            visible += getEraseLineSentinel(mode)
+          }
+        }
+
         cursor = terminator.index + terminator.length
         continue
+      }
+
+      // A lone ESC at the end of the chunk is likely the prefix of a control
+      // sequence split across PTY writes; keep it pending for the next chunk.
+      if (sequenceStart + ESC.length >= data.length) {
+        this.pendingControlSequence = data.slice(sequenceStart)
+        break
       }
 
       visible += ESC

@@ -123,6 +123,38 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('progress 20%')
   })
 
+  test('treats carriage-return/newline pairs split across writes as a single newline', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('progress 10%')
+    created.terminal.write('\r')
+    created.terminal.write('\nprogress 20%')
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'progress 10%\nprogress 20%'
+    )
+  })
+
+  test('clears the current line when an erase-line CSI event is emitted', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('building 100%')
+    // cspell:disable-next-line
+    created.terminal.write('\r\x1b[Kdone')
+
+    expect(created.viewportReader.readVisibleText()).toBe('done')
+  })
+
+  test('applies erase-line before later text in the same chunk', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('old')
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[2K\rdone')
+
+    expect(created.viewportReader.readVisibleText()).toBe('done')
+  })
+
   test('moves the output cursor backward for backspace rewrites', () => {
     const created = createTrackedPlainTextTerminal()
 
@@ -293,18 +325,16 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('renders OSC sequences when no parser event subscribers exist', () => {
+  test('strips OSC sequences because the plain-text renderer consumes them internally', () => {
     const created = createTrackedPlainTextTerminal()
     const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
 
     created.terminal.write(`before ${sequence}after`)
 
-    expect(created.viewportReader.readVisibleText()).toBe(
-      `before ${sequence}after`
-    )
+    expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('stops invoking disposed parser event handlers', () => {
+  test('stops invoking disposed parser event handlers while keeping internal rendering', () => {
     const created = createTrackedPlainTextTerminal()
     const parserEventHandler = vi.fn()
     const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
@@ -314,7 +344,7 @@ describe('plainTextInstance', () => {
     created.terminal.write(sequence)
 
     expect(parserEventHandler).not.toHaveBeenCalled()
-    expect(created.viewportReader.readVisibleText()).toBe(sequence)
+    expect(created.viewportReader.readVisibleText()).toBe('')
   })
 
   test('emits pasted text and keyboard input through onData', () => {

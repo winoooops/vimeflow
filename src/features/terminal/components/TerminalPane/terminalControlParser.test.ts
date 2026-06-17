@@ -104,4 +104,19 @@ describe('TerminalControlSequenceParser', () => {
 
     expect(visible).toBe('\x1b]7;file://localhost/tmp/project\x07')
   })
+
+  test('keeps a trailing ESC pending until the next chunk completes the sequence', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    expect(parser.transformOutput('before \x1b', null)).toBe('before ')
+    // cspell:disable-next-line
+    expect(parser.transformOutput('[38;2;243;139;168mcolor', null)).toBe(
+      'color'
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
 })
