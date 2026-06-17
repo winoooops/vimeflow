@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -61,28 +62,25 @@ export const FilePill = ({
             forbids names on the implicit `generic` role of a bare <div>, so
             screen readers would otherwise discard the path + N/M position
             (the visible text only shows the basename). */}
-        <div
+        <Chip
           role="group"
           aria-label={
             fileName
               ? `file ${counterText}: ${fileName}`
               : `file ${counterText}`
           }
-          className="inline-flex items-center gap-2 h-[30px] px-3 rounded-md bg-primary/10 ring-1 ring-inset ring-primary/20"
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none text-primary-container"
-          >
-            description
-          </span>
-          <span className="font-mono text-xs font-medium text-on-surface truncate max-w-[12rem]">
-            {baseName}
-          </span>
-          <span className="font-mono text-[0.625rem] text-primary-dim bg-primary/[0.14] px-1.5 py-0.5 rounded-full whitespace-nowrap">
-            {counterText}
-          </span>
-        </div>
+          tone="primary"
+          variant="tinted"
+          radius="md"
+          size="custom"
+          leadingIcon="description"
+          label={baseName}
+          trailingCount={counterText}
+          iconClassName="material-symbols-outlined text-base leading-none text-primary-container"
+          labelClassName="max-w-[12rem] truncate font-mono text-xs font-medium text-on-surface"
+          countClassName="whitespace-nowrap rounded-full bg-primary/[0.14] px-1.5 py-0.5 font-mono text-[0.625rem] text-primary-dim"
+          className="h-[30px] gap-2 rounded-md bg-primary/10 px-3 ring-1 ring-inset ring-primary/20"
+        />
       </Tooltip>
       <Tooltip content="Next file">
         <IconButton

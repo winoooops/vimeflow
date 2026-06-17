@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 
 /**
  * DiffLegend component
@@ -12,7 +13,12 @@ const DiffLegend = (): ReactElement => (
     className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-surface-container-high/60 backdrop-blur-xl border border-outline-variant/20 shadow-2xl rounded-full px-6 py-3"
   >
     {/* Added indicator */}
-    <div className="flex items-center gap-2">
+    <Chip
+      tone="custom"
+      radius="pill"
+      size="custom"
+      className="gap-2 bg-transparent p-0 text-on-surface"
+    >
       <div
         data-testid="added-dot"
         className="h-2 w-2 rounded-full bg-vcs-added"
@@ -20,10 +26,15 @@ const DiffLegend = (): ReactElement => (
       <span className="text-[0.7rem] font-bold uppercase tracking-wider text-on-surface">
         ADDED
       </span>
-    </div>
+    </Chip>
 
     {/* Removed indicator */}
-    <div className="flex items-center gap-2">
+    <Chip
+      tone="custom"
+      radius="pill"
+      size="custom"
+      className="gap-2 bg-transparent p-0 text-on-surface"
+    >
       <div
         data-testid="removed-dot"
         className="h-2 w-2 rounded-full bg-vcs-deleted"
@@ -31,7 +42,7 @@ const DiffLegend = (): ReactElement => (
       <span className="text-[0.7rem] font-bold uppercase tracking-wider text-on-surface">
         REMOVED
       </span>
-    </div>
+    </Chip>
 
     {/* Divider */}
     <div

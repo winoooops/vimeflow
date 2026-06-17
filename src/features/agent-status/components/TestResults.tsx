@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import type { ReactElement } from 'react'
+import { ProgressBar } from '@/components/ProgressBar'
 import type { TestGroup, TestRunSnapshot } from '../types'
 
 interface TestResultsProps {
@@ -138,18 +139,17 @@ const ProportionalBar = ({
   }
 
   return (
-    <div className="flex h-[3px] w-full overflow-hidden rounded-full">
-      {passed > 0 && (
-        <div style={{ flexGrow: passed }} className="bg-success" />
-      )}
-      {failed > 0 && <div style={{ flexGrow: failed }} className="bg-error" />}
-      {skipped > 0 && (
-        <div
-          style={{ flexGrow: skipped }}
-          className="bg-on-surface-variant/40"
-        />
-      )}
-    </div>
+    <ProgressBar
+      label="Test result summary"
+      height="thin"
+      decorative
+      className="flex bg-transparent"
+      segments={[
+        { value: passed, className: 'bg-success' },
+        { value: failed, className: 'bg-error' },
+        { value: skipped, className: 'bg-on-surface-variant/40' },
+      ]}
+    />
   )
 }
 

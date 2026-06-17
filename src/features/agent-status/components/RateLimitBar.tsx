@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { ProgressBar, type ProgressBarTone } from '@/components/ProgressBar'
 
 // `kimi` recolors the fill to the kimi peach accent for the plan-usage gate;
 // `primary` (default) keeps the Claude/Codex look unchanged.
@@ -10,9 +11,9 @@ export interface RateLimitBarProps {
   accent?: RateLimitBarAccent
 }
 
-const FILL_CLASS: Record<RateLimitBarAccent, string> = {
-  primary: 'bg-primary-container',
-  kimi: 'bg-[var(--color-agent-kimi-accent)]',
+const FILL_TONE: Record<RateLimitBarAccent, ProgressBarTone> = {
+  primary: 'primary',
+  kimi: 'kimi',
 }
 
 // Label + percentage + a thin progress bar. Shared by the agent-status budget
@@ -32,19 +33,13 @@ export const RateLimitBar = ({
         {Math.round(percentage)}%
       </span>
     </div>
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuenow={Math.min(Math.max(Math.round(percentage), 0), 100)}
-      aria-valuemin={0}
-      aria-valuemax={100}
+    <ProgressBar
+      label={label}
+      value={percentage}
+      tone={FILL_TONE[accent]}
+      height="thin"
+      fillTestId="rate-limit-bar-fill"
       className="h-[3px] w-full overflow-hidden rounded-full bg-surface"
-    >
-      <div
-        data-testid="rate-limit-bar-fill"
-        className={`h-full rounded-full ${FILL_CLASS[accent]}`}
-        style={{ width: `${Math.min(percentage, 100)}%` }}
-      />
-    </div>
+    />
   </div>
 )
