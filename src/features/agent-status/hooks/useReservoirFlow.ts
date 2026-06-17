@@ -73,8 +73,8 @@ export const computeSurfaceMotionScale = (
 ): number => {
   const riseBudget = MAX_AMBIENT_AMP + Math.max(0, swellAmp)
   const fallBudget = MAX_AMBIENT_AMP
-  const topScale = riseBudget === 0 ? 1 : level / riseBudget
-  const bottomScale = fallBudget === 0 ? 1 : (height - level) / fallBudget
+  const topScale = level / riseBudget
+  const bottomScale = (height - level) / fallBudget
 
   return clamp(Math.min(topScale, bottomScale), 0, 1)
 }
