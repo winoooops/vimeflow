@@ -13,7 +13,7 @@ const OSC_PREFIX = `${ESC}]`
 const STRING_TERMINATOR = `${ESC}\\`
 const MAX_PENDING_CONTROL_SEQUENCE_LENGTH = 16_384
 
-const ERASE_LINE_SENTINELS = ['\uE000', '\uE001', '\uE002']
+const ERASE_LINE_SENTINELS = ['\u{F0000}', '\u{F0001}', '\u{F0002}']
 
 export const getEraseLineSentinel = (mode: 0 | 1 | 2): string =>
   ERASE_LINE_SENTINELS[mode]

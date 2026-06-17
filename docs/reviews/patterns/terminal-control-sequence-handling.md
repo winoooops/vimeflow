@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-17
-ref_count: 1
+ref_count: 2
 ---
 
 # Terminal Control Sequence Handling
@@ -63,4 +63,22 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/plainTextInstance.ts` L620-624
 - **Finding:** The `onEvent(...)` call in `PlainTextTerminalModel`'s constructor returned a `TerminalDisposable` that was silently dropped, leaving the no-op handler in the parser's internal set for the parser's lifetime and providing no cleanup path if a model-level dispose were added.
 - **Fix:** Stored the disposable as `private readonly noOpParserDisposable` and made `rendererHandle.dispose()` call it, aligning the internal subscription with the codebase's pattern of storing and disposing disposables.
+- **Commit:** same commit as this entry
+
+### 6. Same-chunk CRLF still skips the carriage-return cursor step
+
+- **Source:** github-claude | PR #516 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/plainTextInstance.ts` L150
+- **Finding:** `applyDisplayData` normalized `\r\n` to `\n` before iterating, so a same-chunk CRLF bypassed the `\r` branch that sets `pendingCr` and moves the cursor to line start. When the cursor was mid-line, the newline was inserted at the current cursor position rather than after the current line, making output depend on PTY chunk boundaries.
+- **Fix:** Removed the `data.replace(/\r\n/g, '\n')` pre-pass so same-chunk and split-chunk CRLF both use the existing `\r` + `pendingCr` + `\n` path, and added a regression test that backspaces into the middle of a line before writing `\r\n`.
+- **Commit:** same commit as this entry
+
+### 7. Erase-line sentinels collide with visible Private Use Area glyphs
+
+- **Source:** github-claude | PR #516 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L16
+- **Finding:** The in-band erase-line markers used U+E000 through U+E002, which are in the same BMP Private Use Area commonly used by terminal icon fonts. A real prompt glyph at one of those codepoints passed through the parser as visible text and was then consumed by `applyDisplayData` as an erase-line operation.
+- **Fix:** Moved the sentinels to Supplementary Private Use Area codepoints U+F0000, U+F0001, and U+F0002, and added a regression test that writes the legacy sentinel codepoint as visible text and expects it to render unchanged.
 - **Commit:** same commit as this entry

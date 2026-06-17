@@ -135,6 +135,16 @@ describe('plainTextInstance', () => {
     )
   })
 
+  test('moves the cursor to the line end before inserting a same-chunk CRLF', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('hello world')
+    created.terminal.write('\b\b\b\b\b')
+    created.terminal.write('\r\nmore')
+
+    expect(created.viewportReader.readVisibleText()).toBe('hello world\nmore')
+  })
+
   test('clears the current line when an erase-line CSI event is emitted', () => {
     const created = createTrackedPlainTextTerminal()
 
@@ -164,6 +174,17 @@ describe('plainTextInstance', () => {
     created.terminal.write('\x1b[1K')
 
     expect(created.viewportReader.readVisibleText()).toBe('c')
+  })
+
+  test('does not erase visible glyphs at legacy Private Use Area codepoints', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // Old erase-line sentinels used U+E000..U+E002; those must now render as
+    // visible glyphs so icon-font prompts are not silently erased.
+    // cspell:disable-next-line
+    created.terminal.write('prompt \uE000 icon')
+
+    expect(created.viewportReader.readVisibleText()).toBe('prompt \uE000 icon')
   })
 
   test('moves the output cursor backward for backspace rewrites', () => {

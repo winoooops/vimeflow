@@ -147,7 +147,7 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
   let cursor = Math.min(Math.max(state.cursor, 0), text.length)
   let pendingCr = state.pendingCr
 
-  for (const character of data.replace(/\r\n/g, '\n')) {
+  for (const character of data) {
     const eraseLineMode = getEraseLineModeFromSentinel(character)
 
     if (eraseLineMode !== null) {
