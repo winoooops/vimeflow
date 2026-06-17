@@ -2,7 +2,7 @@
 id: imperative-animation-ownership
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
+last_updated: 2026-06-17
 ref_count: 1
 ---
 
@@ -60,4 +60,22 @@ The fix shape:
   write a resting `buildReservoirSurface` path to both SVG paths using the
   current geometry. Added test coverage verifying the surface returns to the
   resting crest when reduced motion is enabled mid-hover.
+- **Commit:** _(same commit as this entry)_
+
+### 3. Perpetual rAF loop polls `getBoundingClientRect` at 60+ fps per pane forever
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** A `requestAnimationFrame` loop scheduled on mount called `syncBounds()` every frame for the component's entire lifetime. `syncBounds` ran `getBoundingClientRect()` and built a string key on every tick even when nothing had moved; the dedup only short-circuited the IPC call, not the DOM read.
+- **Fix:** Added a 60-frame idle counter inside the rAF tick. When the bounds key is unchanged for 60 consecutive frames the loop stops rescheduling. A `useLayoutEffect` that already fires `syncBounds()` on every React render bumps a `boundsGeneration` key whenever the bounds actually change, causing the rAF effect to re-run and restart the loop.
+- **Commit:** _(same commit as this entry)_
+
+### 4. Bounds-sync rAF runs for hidden/background browser panes
+
+- **Source:** github-codex-connector | PR #515 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** `TerminalZone` keeps inactive session panels mounted and only hides them with CSS, so the unconditional rAF loop started for every background `BrowserPane`. Hidden panes kept calling `syncBounds()`/`getBoundingClientRect()` once per frame even after they had already sent invisible/0×0 bounds.
+- **Fix:** Gated the rAF effect on `nativePaneReady && isActive && !isOccluded` so the loop only runs while the pane is visible. The existing focus/occlusion effects still send a final invisible bounds update when the pane becomes inactive or occluded.
 - **Commit:** _(same commit as this entry)_

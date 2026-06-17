@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-17
 ref_count: 31
 ---
 
@@ -657,3 +657,12 @@ filesystem scope restrictions).
 - **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
 - **Commit:** same commit as this entry
+
+### 66. `requestAnimationFrame` mock always returns the same frame ID
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The test spy mocked `window.requestAnimationFrame` to always return `1`. After the spy was restored, the component's unmount cleanup called `window.cancelAnimationFrame(1)` against the real API. In jsdom frame IDs start at `1`, so any other real rAF queued with that ID would be silently dropped.
+- **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
+- **Commit:** _(same commit as this entry)_

@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type KeyboardEvent,
@@ -104,6 +105,12 @@ export const BrowserPane = ({
   const [isEditing, setIsEditing] = useState(false)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [nativePaneReady, setNativePaneReady] = useState(false)
+
+  const [boundsGeneration, bumpBoundsGeneration] = useReducer(
+    (generation: number): number => generation + 1,
+    0
+  )
 
   const [navState, setNavState] = useState<BrowserPaneNavState>({
     canGoBack: false,
@@ -216,7 +223,11 @@ export const BrowserPane = ({
     // ResizeObserver does not fire for pure position changes. Ancestor layout
     // changes such as moving the dock still re-render this component, so sync
     // after every render and let syncBounds de-dupe unchanged rectangles.
+    const previousKey = lastBoundsKeyRef.current
     syncBounds()
+    if (lastBoundsKeyRef.current !== previousKey) {
+      bumpBoundsGeneration()
+    }
   })
 
   useEffect(() => {
@@ -250,6 +261,7 @@ export const BrowserPane = ({
         }
 
         nativePaneReadyRef.current = true
+        setNativePaneReady(true)
         setCommittedUrl(result.url)
         setTabs(result.tabs)
         if (!receivedLiveNavRef.current) {
@@ -311,26 +323,50 @@ export const BrowserPane = ({
 
   // ResizeObserver only sees box-size changes; native WebContentsView bounds
   // also need to follow ancestor transforms and other position-only moves.
+  // The loop runs only while the pane is visible and stops once bounds have
+  // been stable for a short interval, restarting automatically when visibility
+  // or layout changes.
   useEffect(() => {
+    if (!nativePaneReady || !isActive || isOccluded) {
+      return
+    }
+
     let frameId: number | null = null
-    let stopped = false
+    let idleFrames = 0
+    let running = true
 
     const tick = (): void => {
-      syncBounds()
-      if (!stopped) {
-        frameId = window.requestAnimationFrame(tick)
+      if (!running) {
+        return
       }
+
+      const previousKey = lastBoundsKeyRef.current
+      syncBounds()
+
+      if (lastBoundsKeyRef.current === previousKey) {
+        idleFrames += 1
+      } else {
+        idleFrames = 0
+      }
+
+      if (idleFrames >= 60) {
+        running = false
+
+        return
+      }
+
+      frameId = window.requestAnimationFrame(tick)
     }
 
     frameId = window.requestAnimationFrame(tick)
 
     return (): void => {
-      stopped = true
+      running = false
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId)
       }
     }
-  }, [syncBounds])
+  }, [isActive, isOccluded, nativePaneReady, boundsGeneration, syncBounds])
 
   useEffect(() => {
     const becameVisibleAgain = wasOccludedRef.current && !isOccluded

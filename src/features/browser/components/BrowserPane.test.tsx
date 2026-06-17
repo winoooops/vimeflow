@@ -252,13 +252,14 @@ describe('BrowserPane', () => {
 
   test('updates bounds when the content position changes without resize or rerender', async () => {
     let frameCallback: FrameRequestCallback | null = null
+    let nextFrameId = 1
 
     const requestAnimationFrameSpy = vi
       .spyOn(window, 'requestAnimationFrame')
       .mockImplementation((callback: FrameRequestCallback): number => {
         frameCallback = callback
 
-        return 1
+        return nextFrameId++
       })
 
     const cancelAnimationFrameSpy = vi
