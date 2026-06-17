@@ -15,6 +15,7 @@ import {
   CLAUDE_REVIEW_HEADING,
   controlCodexEnv,
   latestTrustedClaudeReview,
+  MAX_DIFF_CHARS,
   normalizeAdjudication,
   REVIEW_DECISIONS,
   summarizeBlockingFindings,
@@ -122,6 +123,26 @@ describe('review adjudicator helpers', () => {
     expect(first).not.toBe(second)
   })
 
+  test('cache key changes when adjudicator cache version changes', () => {
+    const first = adjudicationCacheKey({
+      pr: 1,
+      headSha: 'abc',
+      reviewComments: [trustedComment],
+      diffText: 'diff',
+      cacheVersion: 'review-adjudication-v1',
+    })
+
+    const second = adjudicationCacheKey({
+      pr: 1,
+      headSha: 'abc',
+      reviewComments: [trustedComment],
+      diffText: 'diff',
+      cacheVersion: 'review-adjudication-v2',
+    })
+
+    expect(first).not.toBe(second)
+  })
+
   test('prompt includes policy and practical filtering instructions', () => {
     const prompt = buildAdjudicationPrompt({
       owner: 'owner',
@@ -163,6 +184,43 @@ describe('review adjudicator helpers', () => {
 
     expect(prompt).toContain('malicious {{PR_DIFF}} injection')
     expect(prompt).toContain('real diff content')
+  })
+
+  test('keeps PR 510-sized diffs intact for adjudication', () => {
+    const diffText = `diff --git a/DockTab.tsx b/DockTab.tsx\n${'x'.repeat(
+      91500
+    )}`
+
+    const prompt = buildAdjudicationPrompt({
+      owner: 'owner',
+      name: 'vimeflow',
+      pr: 510,
+      headSha: 'abc',
+      reviewComments: [trustedComment],
+      diffText,
+    })
+
+    expect(diffText.length).toBeGreaterThan(80000)
+    expect(diffText.length).toBeLessThan(MAX_DIFF_CHARS)
+    expect(prompt).toContain(diffText)
+    expect(prompt).not.toContain('[diff truncated by daemon]')
+  })
+
+  test('marks oversized adjudication diffs when truncation is still necessary', () => {
+    const diffText = `diff --git a/huge.ts b/huge.ts\n${'x'.repeat(
+      MAX_DIFF_CHARS + 1
+    )}`
+
+    const prompt = buildAdjudicationPrompt({
+      owner: 'owner',
+      name: 'vimeflow',
+      pr: 999,
+      headSha: 'abc',
+      reviewComments: [trustedComment],
+      diffText,
+    })
+
+    expect(prompt).toContain('[diff truncated by daemon]')
   })
 
   test('normalizes adjudicator output and rejects invalid decisions', () => {

@@ -29,7 +29,12 @@ import { fileURLToPath } from 'node:url'
 const SCRIPT_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const STATE_DIR = join(SCRIPT_DIR, '.state', 'review-adjudication')
 const SCHEMA_FILE = join(SCRIPT_DIR, 'review-adjudication.schema.json')
-const MAX_DIFF_CHARS = 80000
+
+export const REVIEW_ADJUDICATION_CACHE_VERSION =
+  'review-adjudication-v2-diff-200k'
+
+export const MAX_DIFF_CHARS = 200000
+
 const MAX_REVIEW_CHARS = 60000
 const CONTROL_CODEX_API_ENV = ['CODEX_API_KEY', 'OPENAI_API_KEY']
 
@@ -123,9 +128,13 @@ export const adjudicationCacheKey = ({
   headSha,
   reviewComments = [],
   diffText = '',
+  cacheVersion = REVIEW_ADJUDICATION_CACHE_VERSION,
+  maxDiffChars = MAX_DIFF_CHARS,
 }) =>
   hashText(
     JSON.stringify({
+      cacheVersion,
+      maxDiffChars,
       pr,
       headSha,
       reviews: reviewComments.map((comment) => ({
