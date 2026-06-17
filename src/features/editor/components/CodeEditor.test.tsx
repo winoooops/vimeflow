@@ -253,6 +253,53 @@ describe('CodeEditor', () => {
     )
   })
 
+  test('passes read-only state to useCodeMirror', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="" isReadOnly />)
+
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readOnly: true,
+      })
+    )
+
+    expect(screen.getByTestId('codemirror-container')).toHaveAttribute(
+      'aria-readonly',
+      'true'
+    )
+  })
+
+  test('read-only save callback does not invoke onSave', () => {
+    const handleSave = vi.fn()
+    const captured: { onSave?: () => void } = {}
+
+    mockUseCodeMirror.mockImplementation((options: { onSave: () => void }) => {
+      captured.onSave = options.onSave
+
+      return {
+        editorView: mockEditorView,
+        updateContent: mockUpdateContent,
+        setContainer: vi.fn(),
+        copySelection: mockCopySelection,
+        cutSelection: mockCutSelection,
+        pasteClipboard: mockPasteClipboard,
+        selectAll: mockSelectAll,
+      }
+    })
+
+    render(
+      <CodeEditor
+        filePath="/home/user/test.ts"
+        content=""
+        onSave={handleSave}
+        isReadOnly
+      />
+    )
+
+    captured.onSave?.()
+
+    expect(handleSave).not.toHaveBeenCalled()
+  })
+
   test('ref focus returns true when editorView is ready', () => {
     const ref = createRef<CodeEditorHandle>()
 
@@ -293,6 +340,24 @@ describe('CodeEditor', () => {
 
     clickMenuItem(/select all/i)
     expect(mockSelectAll).toHaveBeenCalledOnce()
+  })
+
+  test('right-click menu omits mutating actions while read-only', () => {
+    render(
+      <CodeEditor filePath="/home/user/test.ts" content="hello" isReadOnly />
+    )
+
+    fireEvent.contextMenu(screen.getByTestId('codemirror-container'), {
+      clientX: 40,
+      clientY: 80,
+    })
+
+    expect(screen.getByRole('menuitem', { name: /copy/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: /select all/i })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /cut/i })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /paste/i })).toBeNull()
   })
 
   test('right-click focuses editor and syncs selection to click position', () => {

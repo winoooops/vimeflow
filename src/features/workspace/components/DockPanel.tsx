@@ -14,7 +14,10 @@ import {
   CodeEditor,
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
-import { EditorPathCrumb } from '../../editor/components/EditorPathCrumb'
+import {
+  EditorPathCrumb,
+  type EditorPathCrumbStatus,
+} from '../../editor/components/EditorPathCrumb'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
 import {
@@ -29,6 +32,7 @@ import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 import type { UseFeedbackBatchReturn } from '../../diff/hooks/useFeedbackBatch'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
+import type { EditorFileLifecycleStatus } from '../utils/editorFileLifecycleStatus'
 import {
   DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
   KEYBOARD_STEP_PX,
@@ -74,6 +78,10 @@ interface DockPanelBaseProps {
   horizontalPixelMax: number
 
   selectedFilePath: string | null
+  /** Stable identity for the scoped editor buffer that owns selectedFilePath. */
+  editorBufferKey?: string | null
+  /** Git-derived lifecycle state for the selected editor file. */
+  editorFileLifecycleStatus?: EditorFileLifecycleStatus | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
   content: string
   onContentChange?: (content: string) => void
@@ -135,6 +143,8 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
+      editorBufferKey = null,
+      editorFileLifecycleStatus = null,
       selectedDiffFile,
       onSelectedDiffFileChange,
     }: DockPanelProps,
@@ -145,8 +155,12 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const diffWrapperRef = useRef<HTMLDivElement>(null)
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
     const markdownViewRef = useRef<HTMLDivElement>(null)
-    const previousEditorPathRef = useRef(selectedFilePath)
-    const previousEditorDirtyRef = useRef(isDirty)
+
+    const previousEditorStateRef = useRef({
+      bufferKey: editorBufferKey,
+      filePath: selectedFilePath,
+      isDirty,
+    })
 
     const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
 
@@ -191,11 +205,13 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     }, [tab, isMarkdown, viewMode, isFocused, selectedFilePath])
 
     useEffect(() => {
-      const previousPath = previousEditorPathRef.current
-      const previousDirty = previousEditorDirtyRef.current
+      const previousState = previousEditorStateRef.current
 
-      previousEditorPathRef.current = selectedFilePath
-      previousEditorDirtyRef.current = isDirty
+      previousEditorStateRef.current = {
+        bufferKey: editorBufferKey,
+        filePath: selectedFilePath,
+        isDirty,
+      }
 
       if (!selectedFilePath) {
         setEditorPathSavedAt((current) => (current === null ? current : null))
@@ -203,16 +219,19 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         return
       }
 
-      if (selectedFilePath !== previousPath) {
+      if (
+        selectedFilePath !== previousState.filePath ||
+        editorBufferKey !== previousState.bufferKey
+      ) {
         setEditorPathSavedAt(null)
 
         return
       }
 
-      if (previousDirty && !isDirty) {
+      if (previousState.isDirty && !isDirty) {
         setEditorPathSavedAt(Date.now())
       }
-    }, [isDirty, selectedFilePath])
+    }, [editorBufferKey, isDirty, selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
@@ -297,6 +316,15 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
 
     const compactActions =
       !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
+
+    const editorPathCrumbStatus: EditorPathCrumbStatus | null = isDirty
+      ? 'UNSAVED'
+      : editorFileLifecycleStatus === 'DELETED'
+        ? 'DELETED'
+        : editorPathSavedAt !== null
+          ? 'SAVED'
+          : editorFileLifecycleStatus
+    const isEditorReadOnly = editorFileLifecycleStatus === 'DELETED'
 
     const handleVerticalKeyDown = (e: KeyboardEvent): void => {
       const step = e.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX
@@ -404,13 +432,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                 <EditorPathCrumb
                   filePath={selectedFilePath}
                   savedAt={editorPathSavedAt}
-                  status={
-                    isDirty
-                      ? 'UNSAVED'
-                      : editorPathSavedAt === null
-                        ? null
-                        : 'SAVED'
-                  }
+                  status={editorPathCrumbStatus}
                 />
               ) : null}
               {isMarkdown && viewMode === 'reading' ? (
@@ -431,6 +453,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                   isDirty={isDirty}
                   isLoading={isLoading}
                   shouldAutoFocus={isFocused}
+                  isReadOnly={isEditorReadOnly}
                 />
               )}
             </div>

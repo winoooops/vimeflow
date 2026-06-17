@@ -267,6 +267,52 @@ describe('useCodeMirror', () => {
     )
   })
 
+  test('read-only mode blocks document changes while allowing programmatic content updates', () => {
+    const onChange = vi.fn()
+
+    const { result } = renderHook(() =>
+      useCodeMirror({
+        initialContent: 'initial',
+        language: null,
+        onSave: vi.fn(),
+        onChange,
+        readOnly: true,
+      })
+    )
+
+    act(() => {
+      result.current.setContainer(containerDiv)
+    })
+
+    const view = result.current.editorView
+
+    if (!view) {
+      throw new Error('EditorView was not created')
+    }
+
+    expect(view.state.readOnly).toBe(true)
+    expect(view.contentDOM).toHaveAttribute('contenteditable', 'false')
+
+    act(() => {
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: 'blocked edit',
+        },
+      })
+    })
+
+    expect(view.state.doc.toString()).toBe('initial')
+    expect(onChange).not.toHaveBeenCalled()
+
+    act(() => {
+      result.current.updateContent('external content')
+    })
+
+    expect(view.state.doc.toString()).toBe('external content')
+  })
+
   test('cleans up EditorView on unmount', () => {
     const { result, unmount } = renderHook(() =>
       useCodeMirror({

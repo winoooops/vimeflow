@@ -78,8 +78,10 @@ export const EditorPathCrumb = ({
   }, [savedAt, status])
 
   const statusLabel =
-    status === 'SAVED' && savedAt !== null
-      ? `SAVED · ${formatSavedRelativeTime(savedAt, now)}`
+    status === 'SAVED'
+      ? savedAt === null
+        ? null
+        : `SAVED · ${formatSavedRelativeTime(savedAt, now)}`
       : status
 
   return (

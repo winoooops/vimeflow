@@ -103,6 +103,12 @@ import {
 } from './panelConfig'
 import { OverlayStackProvider } from './overlays/OverlayStackProvider'
 import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
+import {
+  parentPathForGitStatus,
+  fileExistsInDirectory,
+  relativePathFromCwd,
+  resolveEditorFileLifecycleStatus,
+} from './utils/editorFileLifecycleStatus'
 
 const rateLimitPercentage = (
   limit: RateLimitsState['fiveHour'] | null | undefined
@@ -187,36 +193,6 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
-
-const normalizePathForComparison = (path: string): string =>
-  path.replace(/\\/g, '/').replace(/\/+$/u, '')
-
-const relativePathFromCwd = (path: string, cwd: string): string | null => {
-  const normalizedPath = normalizePathForComparison(path)
-  const normalizedCwd = normalizePathForComparison(cwd)
-
-  if (normalizedCwd === '') {
-    return null
-  }
-
-  if (normalizedPath === normalizedCwd) {
-    return ''
-  }
-
-  if (normalizedCwd === '/') {
-    return normalizedPath.startsWith('/')
-      ? normalizedPath.replace(/^\/+/u, '')
-      : null
-  }
-
-  const cwdPrefix = `${normalizedCwd}/`
-
-  if (!normalizedPath.startsWith(cwdPrefix)) {
-    return null
-  }
-
-  return normalizedPath.slice(cwdPrefix.length)
-}
 
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
@@ -1392,10 +1368,88 @@ const WorkspaceViewContent = (): ReactElement => {
     }
   }, [activeCwd, clearFeedbackBatch])
 
-  const gitStatus = useGitStatus(activeCwd, {
+  const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
+
+  const [selectedEditorFileExists, setSelectedEditorFileExists] = useState<
+    boolean | null
+  >(null)
+
+  const activeCwdCanLoadGitStatus =
+    activeCwd !== '.' && activeCwd !== '~' && activeCwd.length > 0
+
+  const gitStatusCwd =
+    activeCwdCanLoadGitStatus || editorGitStatusCwd === null
+      ? activeCwd
+      : editorGitStatusCwd
+
+  const gitStatus = useGitStatus(gitStatusCwd, {
     watch: true,
-    enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
+    enabled:
+      agentStatus.isActive ||
+      (isDockOpen && (dockTab === 'diff' || editorBuffer.filePath !== null)),
   })
+
+  useEffect(() => {
+    if (!editorBuffer.filePath || !editorGitStatusCwd) {
+      setSelectedEditorFileExists((current) =>
+        current === null ? current : null
+      )
+
+      return
+    }
+
+    let cancelled = false
+
+    const checkSelectedFile = async (): Promise<void> => {
+      try {
+        const entries = await fileSystemService.listDir(editorGitStatusCwd)
+
+        if (!cancelled) {
+          setSelectedEditorFileExists(
+            fileExistsInDirectory(editorBuffer.filePath ?? '', entries)
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setSelectedEditorFileExists((current) =>
+            current === null ? current : null
+          )
+        }
+      }
+    }
+
+    void checkSelectedFile()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [
+    editorBuffer.filePath,
+    editorGitStatusCwd,
+    fileSystemService,
+    gitStatus.files,
+    gitStatus.filesCwd,
+  ])
+
+  const editorFileLifecycleStatus = useMemo(
+    () =>
+      resolveEditorFileLifecycleStatus({
+        filePath: editorBuffer.filePath,
+        gitStatusCwd,
+        files: gitStatus.files,
+        filesCwd: gitStatus.filesCwd,
+        repoRoot: gitStatus.repoRoot,
+        selectedFileExists: selectedEditorFileExists,
+      }),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      gitStatusCwd,
+      selectedEditorFileExists,
+    ]
+  )
 
   const statusBarSession = useMemo<StatusBarSession | null>(() => {
     if (!activeSession || !isStatusBarAgentActive) {
@@ -1918,6 +1972,8 @@ const WorkspaceViewContent = (): ReactElement => {
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
+      editorBufferKey={activeSessionId}
+      editorFileLifecycleStatus={editorFileLifecycleStatus}
       content={editorBuffer.currentContent}
       onContentChange={editorBuffer.updateContent}
       onSave={() => {

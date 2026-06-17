@@ -46,20 +46,57 @@ interface MockEditorBuffer {
   releaseScope: ReturnType<typeof vi.fn>
 }
 
+const editorBufferOverride = vi.hoisted(() => ({
+  current: null as unknown,
+}))
+
+const fileSystemServiceOverride = vi.hoisted(() => ({
+  current: {
+    listDir: vi.fn().mockResolvedValue([]),
+    readFile: vi.fn().mockResolvedValue(''),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    renamePath: vi.fn().mockResolvedValue(undefined),
+    deletePath: vi.fn().mockResolvedValue(undefined),
+  },
+}))
+
+const createMockEditorBuffer = (
+  overrides: Partial<MockEditorBuffer> = {}
+): MockEditorBuffer => ({
+  filePath: null,
+  originalContent: '',
+  currentContent: '',
+  isDirty: false,
+  isLoading: false,
+  openFile: vi.fn().mockResolvedValue(undefined),
+  saveFile: vi.fn().mockResolvedValue(undefined),
+  updateContent: vi.fn(),
+  hasUnsavedChanges: vi.fn(() => false),
+  getFilePathForScope: vi.fn(() => null),
+  releaseScope: vi.fn(),
+  ...overrides,
+})
+
 vi.mock('../editor/hooks/useEditorBuffer', () => ({
-  useEditorBuffer: (): MockEditorBuffer => ({
-    filePath: null,
-    originalContent: '',
-    currentContent: '',
-    isDirty: false,
-    isLoading: false,
-    openFile: vi.fn().mockResolvedValue(undefined),
-    saveFile: vi.fn().mockResolvedValue(undefined),
-    updateContent: vi.fn(),
-    hasUnsavedChanges: vi.fn(() => false),
-    getFilePathForScope: vi.fn(() => null),
-    releaseScope: vi.fn(),
-  }),
+  useEditorBuffer: (): MockEditorBuffer =>
+    (editorBufferOverride.current as MockEditorBuffer | null) ??
+    ({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    } satisfies MockEditorBuffer),
+}))
+
+vi.mock('../files/services/fileSystemService', () => ({
+  createFileSystemService: vi.fn(() => fileSystemServiceOverride.current),
 }))
 
 vi.mock('../terminal/services/terminalService', () => ({
@@ -176,6 +213,7 @@ const capturedDockPanelProps: {
   gitStatus?: unknown
   feedbackBatch?: UseFeedbackBatchReturn
   feedbackRepoRootRef?: FeedbackRepoRootRef
+  editorFileLifecycleStatus?: string | null
 } = {}
 
 interface MockPanelProps {
@@ -187,6 +225,7 @@ interface MockDockPanelProps {
   gitStatus?: unknown
   feedbackBatch?: UseFeedbackBatchReturn
   feedbackRepoRootRef?: FeedbackRepoRootRef
+  editorFileLifecycleStatus?: string | null
   tab?: 'editor' | 'diff'
   onTabChange?: (tab: 'editor' | 'diff') => void
   onClose?: () => void
@@ -239,12 +278,14 @@ vi.mock('./components/DockPanel', () => ({
     gitStatus = undefined,
     feedbackBatch = undefined,
     feedbackRepoRootRef = undefined,
+    editorFileLifecycleStatus = undefined,
     onTabChange,
     onClose,
   }: MockDockPanelProps): ReactElement => {
     capturedDockPanelProps.gitStatus = gitStatus
     capturedDockPanelProps.feedbackBatch = feedbackBatch
     capturedDockPanelProps.feedbackRepoRootRef = feedbackRepoRootRef
+    capturedDockPanelProps.editorFileLifecycleStatus = editorFileLifecycleStatus
 
     return (
       <div data-testid="dock-panel-mock">
@@ -280,6 +321,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedCardProps.title = undefined
     capturedDockPanelProps.feedbackBatch = undefined
     capturedDockPanelProps.feedbackRepoRootRef = undefined
+    capturedDockPanelProps.editorFileLifecycleStatus = undefined
     // Clear the mock between tests so `toHaveBeenCalledWith` assertions
     // see only the calls from THIS test's render. Without this,
     // accumulated history from earlier tests can satisfy the assertion
@@ -288,6 +330,14 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // computed `enabled: false`.
     vi.mocked(useAgentStatus).mockClear()
     vi.mocked(useGitStatus).mockClear()
+    editorBufferOverride.current = null
+    fileSystemServiceOverride.current = {
+      listDir: vi.fn().mockResolvedValue([]),
+      readFile: vi.fn().mockResolvedValue(''),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      renamePath: vi.fn().mockResolvedValue(undefined),
+      deletePath: vi.fn().mockResolvedValue(undefined),
+    }
   })
 
   test('AgentStatusPanel receives agentStatus', async () => {
@@ -473,6 +523,101 @@ describe('WorkspaceView lifted-subscription contract', () => {
         useAgentStatusMock.mockImplementation(originalImpl)
       }
     }
+  })
+
+  test('WorkspaceView keeps git status enabled for an open editor file when the idle dock is on editor', async () => {
+    const idleAgentStatus: AgentStatus = {
+      isActive: false,
+      agentExited: false,
+      agentType: null,
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: null,
+      agentSessionId: null,
+      cwd: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    }
+    const useAgentStatusMock = vi.mocked(useAgentStatus)
+    const originalImpl = useAgentStatusMock.getMockImplementation()
+    useAgentStatusMock.mockImplementation(() => idleAgentStatus)
+    fileSystemServiceOverride.current.listDir = vi
+      .fn()
+      .mockResolvedValue([
+        { id: '/repo/src/new.ts', name: 'new.ts', type: 'file' },
+      ])
+
+    editorBufferOverride.current = createMockEditorBuffer({
+      filePath: '/repo/src/new.ts',
+    })
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('dock-panel-mock')
+
+      vi.mocked(useGitStatus).mockClear()
+      fireEvent.click(screen.getByTestId('mock-switch-to-editor'))
+
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: true })
+      )
+
+      await waitFor(() => {
+        expect(fileSystemServiceOverride.current.listDir).toHaveBeenCalledWith(
+          '/repo/src'
+        )
+      })
+    } finally {
+      if (originalImpl) {
+        useAgentStatusMock.mockImplementation(originalImpl)
+      }
+    }
+  })
+
+  test('WorkspaceView marks an open untracked file deleted when its backing path disappears', async () => {
+    let changedFiles = [
+      { path: 'dummy.ts', status: 'untracked' as const, staged: false },
+    ]
+    let parentEntries = [
+      { id: '/repo/src/dummy.ts', name: 'dummy.ts', type: 'file' as const },
+    ]
+
+    vi.mocked(useGitStatus).mockImplementation(() => ({
+      files: changedFiles,
+      filesCwd: '/repo/src',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    }))
+
+    fileSystemServiceOverride.current.listDir = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(parentEntries))
+
+    editorBufferOverride.current = createMockEditorBuffer({
+      filePath: '/repo/src/dummy.ts',
+    })
+
+    const view = render(<WorkspaceView />)
+    await screen.findByTestId('dock-panel-mock')
+
+    expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
+
+    changedFiles = []
+    parentEntries = []
+    view.rerender(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('DELETED')
+    })
   })
 
   test('WorkspaceView passes enabled: false when idle diff dock is closed', async () => {
