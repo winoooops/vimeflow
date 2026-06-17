@@ -56,7 +56,7 @@ export const ContextReservoirCard = ({
   const used = Math.round(contextWindowSize * (effectivePct / 100))
   const headroom = contextWindowSize - used
 
-  // Pill rides the waterline (shares the tank's 2% visibility floor).
+  // Pill anchors near the tank floor at 0%; the clamp keeps it inside bounds.
   const visibleWaterPct =
     effectivePct <= 0 ? 2 : Math.min(100, Math.max(2, effectivePct))
   const waterlineTopPct = (1 - visibleWaterPct / 100) * 100

@@ -64,7 +64,9 @@ export const WaterTank = ({
 }: WaterTankProps): ReactElement => {
   const shouldRenderWater = !empty && pct > 0
   const shouldRenderMeniscus = shouldRenderWater && pct < 100
-  const shouldAnimateWater = shouldRenderWater && pct < 100
+  // The rAF loop updates both fill and meniscus refs, so it only runs while
+  // the meniscus element is mounted.
+  const shouldAnimateWater = shouldRenderMeniscus
   const tone = resolveContextTone(pct, theme)
   const chrome = tankChrome(theme)
   const level = computeTankLevel(pct, height)
@@ -120,20 +122,6 @@ export const WaterTank = ({
     fill.setAttribute('d', fillPath)
     meniscus?.setAttribute('d', crest)
   }, [shouldRenderMeniscus, shouldRenderWater, swell])
-
-  useLayoutEffect(() => {
-    if (shouldAnimateWater) {
-      return
-    }
-    const fill = fillRef.current
-    const meniscus = meniscusRef.current
-    if (fill === null) {
-      return
-    }
-
-    fill.setAttribute('d', resting.fill)
-    meniscus?.setAttribute('d', resting.crest)
-  }, [resting.crest, resting.fill, shouldAnimateWater])
 
   // Keep the static surface in sync with `pct` under reduced motion. During
   // normal animation the rAF loop in useReservoirFlow owns the `d` attributes
