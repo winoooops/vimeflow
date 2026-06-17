@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-15
-ref_count: 31
+last_updated: 2026-06-17
+ref_count: 33
 ---
 
 # Testing Gaps
@@ -657,3 +657,57 @@ filesystem scope restrictions).
 - **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
 - **Commit:** same commit as this entry
+
+### 66. `requestAnimationFrame` mock always returns the same frame ID
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The test spy mocked `window.requestAnimationFrame` to always return `1`. After the spy was restored, the component's unmount cleanup called `window.cancelAnimationFrame(1)` against the real API. In jsdom frame IDs start at `1`, so any other real rAF queued with that ID would be silently dropped.
+- **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
+- **Commit:** _(same commit as this entry)_
+
+### 67. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`
+- **Finding:** `prepareBrowserPaneAtSlot` constructed `paneId = \`p${slotIndex}\``and passed it to`readBrowserPaneIdentity` without verifying the ID against the DOM. A future change to pane-ID format would fail every parametrized slot test with an opaque "identity not available" error.
+- **Fix:** Read `dataset.paneId` from the Nth `[data-testid="split-view-slot"]` node in the active split view and throw a clear error if the slot has no pane ID.
+- **Commit:** _(same commit as this entry)_
+
+### 68. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
+- **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
+- **Commit:** _(same commit as this entry)_
+
+### 69. Global inert-click interceptor can silence capture-phase test handlers
+
+- **Source:** github-claude | PR #517 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/test/setup.ts`
+- **Finding:** A module-level capture-phase click listener called `event.stopImmediatePropagation()` for clicks inside `[inert]` elements to polyfill jsdom's lack of inert activation suppression. Because the listener is installed once at module load and persists across all tests, a future test adding its own capture-phase click spy near an inert subtree would have its handler silently dropped, producing a false-green assertion.
+- **Fix:** Added a comment documenting the global side-effect and warning future contributors to use bubbling-phase listeners or keep spies outside inert subtrees unless explicitly testing inert blocking.
+- **Commit:** same commit as this entry
+- **Note:** Low-severity test-infrastructure finding; a per-test helper would be cleaner but requires broader test-file changes.
+
+### 70. Global inert-click interceptor persists across all test files
+
+- **Source:** github-claude | PR #517 round 10 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/test/setup.ts` L102-121
+- **Finding:** The same module-level capture-phase click listener from entry 69
+  was still installed globally. A comment documenting the side-effect does not
+  remove the risk: any future test that registers a capture-phase click handler
+  near an `[inert]` subtree continues to have that handler silenced with no
+  error or warning.
+- **Fix:** Extracted the inert click polyfill into a scoped helper
+  (`src/test/inertClickPolyfill.ts`) and installed it via `beforeAll`/`afterAll`
+  only in the test file that actually exercises inert click behavior
+  (`AgentStatusPanel/index.test.tsx`), removing the global side-effect from
+  `src/test/setup.ts`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

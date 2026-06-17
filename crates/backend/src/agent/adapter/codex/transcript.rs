@@ -273,6 +273,7 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
                     );
                 }
             }
+            emit_replay_in_flight_tool_calls(&self.session_id, &self.events, &self.in_flight);
         }
         self.emitter.finish_replay();
     }
@@ -373,7 +374,9 @@ fn process_line(
 
     match record_type {
         CodexRecordType::ResponseItem => {
-            process_response_item(&dto, &payload, session_id, cwd, events, in_flight);
+            process_response_item(
+                &dto, &payload, session_id, cwd, events, in_flight, replay_done,
+            );
         }
         CodexRecordType::EventMsg => {
             process_event_msg(
@@ -391,21 +394,41 @@ fn process_response_item(
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
+    replay_done: bool,
 ) {
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
     match payload.payload_type() {
         CodexPayloadType::FunctionCall => {
-            start_function_call(payload, session_id, cwd, events, in_flight, &timestamp);
+            start_function_call(
+                payload,
+                session_id,
+                cwd,
+                events,
+                in_flight,
+                &timestamp,
+                replay_done,
+            );
         }
         CodexPayloadType::CustomToolCall => {
-            start_custom_tool_call(payload, session_id, events, in_flight, &timestamp);
+            start_custom_tool_call(
+                payload,
+                session_id,
+                events,
+                in_flight,
+                &timestamp,
+                replay_done,
+            );
         }
         CodexPayloadType::FunctionCallOutput => {
-            process_output_completion(payload, session_id, events, in_flight, &timestamp, false);
+            process_output_completion(
+                payload, session_id, events, in_flight, &timestamp, false,
+            );
         }
         CodexPayloadType::CustomToolCallOutput => {
-            process_output_completion(payload, session_id, events, in_flight, &timestamp, true);
+            process_output_completion(
+                payload, session_id, events, in_flight, &timestamp, true,
+            );
         }
         _ => {}
     }
@@ -434,6 +457,15 @@ fn process_event_msg(
         }
         CodexPayloadType::PatchApplyEnd => {
             process_patch_apply_end(payload, session_id, events, in_flight, &timestamp);
+        }
+        CodexPayloadType::TaskComplete => {
+            flush_in_flight_tool_calls(
+                session_id,
+                events,
+                in_flight,
+                ToolCallStatus::Done,
+                &timestamp,
+            );
         }
         _ => {}
     }
@@ -470,6 +502,7 @@ fn start_function_call(
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -499,19 +532,21 @@ fn start_function_call(
         },
     );
 
-    emit_tool_call(
-        events,
-        AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: call_id.to_string(),
-            tool,
-            args,
-            status: ToolCallStatus::Running,
-            timestamp: timestamp.to_string(),
-            duration_ms: 0,
-            is_test_file: false,
-        },
-    );
+    if replay_done {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.to_string(),
+                tool,
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.to_string(),
+                duration_ms: 0,
+                is_test_file: false,
+            },
+        );
+    }
 }
 
 fn start_custom_tool_call(
@@ -520,6 +555,7 @@ fn start_custom_tool_call(
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -545,19 +581,21 @@ fn start_custom_tool_call(
         },
     );
 
-    emit_tool_call(
-        events,
-        AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: call_id.to_string(),
-            tool,
-            args,
-            status: ToolCallStatus::Running,
-            timestamp: timestamp.to_string(),
-            duration_ms: 0,
-            is_test_file,
-        },
-    );
+    if replay_done {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.to_string(),
+                tool,
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.to_string(),
+                duration_ms: 0,
+                is_test_file,
+            },
+        );
+    }
 }
 
 fn process_output_completion(
@@ -572,14 +610,18 @@ fn process_output_completion(
         return;
     };
 
-    let Some(call) = in_flight.get(call_id) else {
-        return;
-    };
-    if matches!(
-        call.completion_mode,
-        CompletionMode::ExecCommandEnd | CompletionMode::PatchApplyEnd
-    ) {
-        return;
+    // Preserve completion-mode guards: function_call_output and
+    // custom_tool_call_output are not authoritative for exec_command or
+    // apply_patch completion. Wait for the matching exec_command_end /
+    // patch_apply_end event so failed commands/patches are not reported
+    // as done.
+    if let Some(call) = in_flight.get(call_id) {
+        if matches!(
+            call.completion_mode,
+            CompletionMode::ExecCommandEnd | CompletionMode::PatchApplyEnd
+        ) {
+            return;
+        }
     }
 
     let call = match in_flight.remove(call_id) {
@@ -587,11 +629,7 @@ fn process_output_completion(
         None => return,
     };
 
-    let status = if is_custom_tool_output && custom_tool_output_failed(payload.output.as_deref()) {
-        ToolCallStatus::Failed
-    } else {
-        ToolCallStatus::Done
-    };
+    let status = output_completion_status(payload, is_custom_tool_output);
 
     emit_tool_call(
         events,
@@ -610,6 +648,17 @@ fn process_output_completion(
             is_test_file: call.is_test_file,
         },
     );
+}
+
+fn output_completion_status(
+    payload: &CodexPayloadDto,
+    is_custom_tool_output: bool,
+) -> ToolCallStatus {
+    if is_custom_tool_output && custom_tool_output_failed(payload.output.as_deref()) {
+        ToolCallStatus::Failed
+    } else {
+        ToolCallStatus::Done
+    }
 }
 
 fn process_exec_command_end(
@@ -719,6 +768,56 @@ fn process_patch_apply_end(
             is_test_file: call.is_test_file,
         },
     );
+}
+
+fn flush_in_flight_tool_calls(
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    in_flight: &mut InFlightToolCalls,
+    status: ToolCallStatus,
+    timestamp: &str,
+) {
+    for (call_id, call) in in_flight.drain() {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id,
+                tool: call.tool,
+                args: call.args,
+                status: status.clone(),
+                timestamp: timestamp.to_string(),
+                duration_ms: compute_duration_ms(
+                    &call.started_at_iso,
+                    timestamp,
+                    call.started_at.elapsed(),
+                ),
+                is_test_file: call.is_test_file,
+            },
+        );
+    }
+}
+
+fn emit_replay_in_flight_tool_calls(
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    in_flight: &InFlightToolCalls,
+) {
+    for (call_id, call) in in_flight {
+        emit_tool_call(
+            events,
+            AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: call_id.clone(),
+                tool: call.tool.clone(),
+                args: call.args.clone(),
+                status: ToolCallStatus::Running,
+                timestamp: call.started_at_iso.clone(),
+                duration_ms: 0,
+                is_test_file: call.is_test_file,
+            },
+        );
+    }
 }
 
 fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
@@ -864,6 +963,14 @@ mod tests {
             .collect()
     }
 
+    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
     #[test]
     fn codex_replay_flushes_only_the_settled_phase_once() {
         let sink = Arc::new(FakeEventSink::new());
@@ -898,6 +1005,45 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
+
+    #[test]
+    fn codex_replay_does_not_emit_running_for_settled_tool_calls() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"Read","arguments":"{\"file\":\"src/lib.rs\"}","call_id":"call_read"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_read","output":"file contents"}}"#,
+        );
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "call_read");
+        assert_eq!(payloads[0]["status"], "done");
+    }
+
+    #[test]
+    fn codex_replay_emits_running_for_unsettled_tool_call_at_catch_up() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"call_exec"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "call_exec");
+        assert_eq!(payloads[0]["status"], "running");
     }
 
     fn write_rollout(path: &Path, lines: &[Value]) {
@@ -1058,8 +1204,8 @@ mod tests {
         // each event type the assertions below count so the tail has
         // demonstrably emitted all of them before we stop and snapshot.
         assert!(
-            sink.wait_for_count("agent-tool-call", 4, Duration::from_secs(5)),
-            "expected 4 agent-tool-call events within 5s",
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "expected 2 replay-settled agent-tool-call events within 5s",
         );
         assert!(
             sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
@@ -1077,17 +1223,13 @@ mod tests {
             .filter(|(event, _)| event == "agent-tool-call")
             .map(|(_, payload)| payload.clone())
             .collect();
-        assert_eq!(tool_call_payloads.len(), 4);
+        assert_eq!(tool_call_payloads.len(), 2);
         assert_eq!(tool_call_payloads[0]["toolUseId"], "call_exec");
-        assert_eq!(tool_call_payloads[0]["status"], "running");
-        assert_eq!(tool_call_payloads[1]["toolUseId"], "call_exec");
+        assert_eq!(tool_call_payloads[0]["status"], "done");
+        assert_eq!(tool_call_payloads[0]["durationMs"], 1250);
+        assert_eq!(tool_call_payloads[1]["toolUseId"], "call_patch");
         assert_eq!(tool_call_payloads[1]["status"], "done");
-        assert_eq!(tool_call_payloads[1]["durationMs"], 1250);
-        assert_eq!(tool_call_payloads[2]["toolUseId"], "call_patch");
-        assert_eq!(tool_call_payloads[2]["status"], "running");
-        assert_eq!(tool_call_payloads[3]["toolUseId"], "call_patch");
-        assert_eq!(tool_call_payloads[3]["status"], "done");
-        assert_eq!(tool_call_payloads[3]["isTestFile"], true);
+        assert_eq!(tool_call_payloads[1]["isTestFile"], true);
 
         let turn_payloads: Vec<Value> = recorded
             .iter()
@@ -1694,6 +1836,428 @@ mod tests {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["status"], "done");
+    }
+
+    #[test]
+    fn process_line_exec_command_end_finalizes_after_function_call_output() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"git status\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 1.2345 seconds\nProcess exited with code 0\nOutput:\n## main\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output must keep exec_command in-flight until exec_command_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","git status"],"aggregated_output":"ok\n","exit_code":0,"duration":{"secs":1,"nanos":234500000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0].1["status"], "running");
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["status"], "done");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_exec_command_end_marks_failed_exec_command() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"false\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 0.0100 seconds\nProcess exited with code 1\nOutput:\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output must keep exec_command in-flight until exec_command_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","false"],"aggregated_output":"","exit_code":1,"duration":{"secs":0,"nanos":10000000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_function_call_output_without_exit_code_keeps_exec_command_pending() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"timeout\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 30.0000 seconds\nOutput:\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "function_call_output without an exit-code line must not finalize exec_command"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","timeout"],"aggregated_output":"","exit_code":0,"duration":{"secs":30,"nanos":0},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["status"], "done");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_custom_tool_call_output_preserves_patch_apply_end_guard() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_patch","input":"*** Begin Patch\n*** Update File: foo.ts\n*** End Patch"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_patch","output":"done"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls_after_output: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls_after_output.len(), 1, "custom_tool_call_output must not finalize apply_patch");
+        assert!(in_flight.contains_key("call_patch"), "apply_patch must stay in-flight until patch_apply_end");
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call_patch","success":false}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_task_complete_flushes_unfinished_exec_command() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"git status\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let complete = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"task_complete","duration_ms":3000}}"#;
+        process_line(
+            complete,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["status"], "done");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_session_meta_reset_drops_unfinished_exec_command() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+        let mut codex_agent_session_id = String::new();
+
+        let session_start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"session_meta","payload":{"id":"codex-old","cwd":"/workspace/A"}}"#;
+        process_line(
+            session_start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_cmd","arguments":"{\"cmd\":\"git status\"}"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let session_reset = r#"{"timestamp":"2026-06-15T10:00:04Z","type":"session_meta","payload":{"id":"codex-new","cwd":"/workspace/A"}}"#;
+        process_line(
+            session_reset,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(
+            tool_calls.len(),
+            1,
+            "session reset must not emit a stale completion for the old run"
+        );
+        assert_eq!(tool_calls[0].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[0].1["status"], "running");
+        assert_eq!(codex_agent_session_id, "codex-new");
+        assert!(in_flight.is_empty());
     }
 
     #[test]

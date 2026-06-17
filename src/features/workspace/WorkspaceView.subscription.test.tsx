@@ -6,6 +6,7 @@ import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { AgentStatus } from '../agent-status/types'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import type { FeedbackRepoRootRef } from '../diff/components/DiffPanelContent'
 import type {
   ReviewComment,
@@ -173,6 +174,10 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   ),
 }))
 
+vi.mock('../agent-status/hooks/useAgentStatusHotLoading', () => ({
+  useAgentStatusHotLoading: vi.fn(() => false),
+}))
+
 vi.mock('../diff/hooks/useGitStatus', () => ({
   // Respect the `enabled` arg so the mock matches real hook semantics
   // (idle iff disabled). A test that asserts on `enabled: true` later
@@ -206,8 +211,11 @@ vi.mock('../../hooks/useElasticContainer', () => ({
   })),
 }))
 
-const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
-  {}
+const capturedPanelProps: {
+  agentStatus?: AgentStatus
+  gitStatus?: unknown
+  isRefreshing?: boolean
+} = {}
 
 const capturedDockPanelProps: {
   gitStatus?: unknown
@@ -219,6 +227,7 @@ const capturedDockPanelProps: {
 interface MockPanelProps {
   agentStatus?: AgentStatus
   gitStatus?: unknown
+  isRefreshing?: boolean
 }
 
 interface MockDockPanelProps {
@@ -264,9 +273,11 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: ({
     agentStatus = undefined,
     gitStatus = undefined,
+    isRefreshing = undefined,
   }: MockPanelProps): ReactElement => {
     capturedPanelProps.agentStatus = agentStatus
     capturedPanelProps.gitStatus = gitStatus
+    capturedPanelProps.isRefreshing = isRefreshing
 
     return <div data-testid="agent-status-panel-mock" />
   },
@@ -317,6 +328,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
+    capturedPanelProps.isRefreshing = undefined
     capturedDockPanelProps.gitStatus = undefined
     capturedCardProps.title = undefined
     capturedDockPanelProps.feedbackBatch = undefined
@@ -329,6 +341,8 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // making test 3's assertion pass even if test 3's own render
     // computed `enabled: false`.
     vi.mocked(useAgentStatus).mockClear()
+    vi.mocked(useAgentStatusHotLoading).mockClear()
+    vi.mocked(useAgentStatusHotLoading).mockReturnValue(false)
     vi.mocked(useGitStatus).mockClear()
     editorBufferOverride.current = null
     fileSystemServiceOverride.current = {
@@ -348,6 +362,27 @@ describe('WorkspaceView lifted-subscription contract', () => {
     await screen.findByTestId('agent-status-panel-mock')
 
     expect(capturedPanelProps.agentStatus).toBeDefined()
+  })
+
+  test('WorkspaceView hot-loads only visible PTY-backed panes in the active session', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(useAgentStatusHotLoading).toHaveBeenCalledWith({
+      activePtyId: 'sess-1',
+      visiblePtyIds: ['sess-1'],
+    })
+  })
+
+  test('AgentStatusPanel receives the hot-loading refresh phase', async () => {
+    vi.mocked(useAgentStatusHotLoading).mockReturnValue(true)
+
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(capturedPanelProps.isRefreshing).toBe(true)
   })
 
   test('AgentStatusCard and AgentStatusPanel both render from the single useAgentStatus subscription', async () => {
