@@ -1,6 +1,10 @@
 // cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
+import type {
+  TerminalInstance,
+  TerminalRendererAdapter,
+  TerminalRendererCapabilities,
+} from '../../types'
 
 type TerminalRendererRegistryModule =
   typeof import('./terminalRendererRegistry')
@@ -19,12 +23,29 @@ const ghosttyRendererMocks = vi.hoisted(() => ({
   moduleLoaded: vi.fn(),
 }))
 
+const rendererCapabilities = vi.hoisted(() => ({
+  text: {
+    preferredOutputInputMode: 'text',
+    acceptsText: true,
+    acceptsBytes: false,
+  } as const,
+  bytes: {
+    preferredOutputInputMode: 'bytes',
+    acceptsText: true,
+    acceptsBytes: true,
+  } as const,
+}))
+
+const textRendererCapabilities: TerminalRendererCapabilities =
+  rendererCapabilities.text
+
 vi.mock('./plainTextInstance', () => {
   plainTextRendererMocks.moduleLoaded()
 
   return {
     plainTextTerminalRenderer: {
       id: 'plain-text',
+      capabilities: rendererCapabilities.text,
       createInstance: plainTextRendererMocks.createInstance,
     },
   }
@@ -36,6 +57,7 @@ vi.mock('./ghosttyInstance', () => {
   return {
     ghosttyTerminalRenderer: {
       id: 'ghostty',
+      capabilities: rendererCapabilities.bytes,
       createInstance: ghosttyRendererMocks.createInstance,
     },
   }
@@ -44,6 +66,7 @@ vi.mock('./ghosttyInstance', () => {
 vi.mock('./xtermInstance', () => ({
   xtermTerminalRenderer: {
     id: 'xterm',
+    capabilities: rendererCapabilities.text,
     createInstance: xtermRendererMocks.createInstance,
   },
 }))
@@ -93,6 +116,7 @@ const createTerminalRendererAdapter = (
   instance: TerminalInstance
 ): TerminalRendererAdapter => ({
   id,
+  capabilities: textRendererCapabilities,
   createInstance: vi.fn((): TerminalInstance => instance),
 })
 

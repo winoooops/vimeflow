@@ -11,6 +11,7 @@ import type {
   PTYDataEvent,
   PTYExitEvent,
   PTYErrorEvent,
+  TerminalRendererCapabilities,
 } from './index'
 
 describe('Terminal Types', () => {
@@ -190,6 +191,53 @@ describe('Terminal Types', () => {
       }
 
       expect(event.message).toBe('Failed to spawn shell')
+    })
+  })
+
+  describe('TerminalRendererCapabilities', () => {
+    test('describes a byte-preferring renderer with text fallback', () => {
+      const capabilities: TerminalRendererCapabilities = {
+        preferredOutputInputMode: 'bytes',
+        acceptsText: true,
+        acceptsBytes: true,
+      }
+
+      expect(capabilities.preferredOutputInputMode).toBe('bytes')
+      expect(capabilities.acceptsText).toBe(true)
+      expect(capabilities.acceptsBytes).toBe(true)
+    })
+
+    test('requires preferred modes to be accepted', () => {
+      const textPreferred: TerminalRendererCapabilities = {
+        preferredOutputInputMode: 'text',
+        acceptsText: true,
+        acceptsBytes: false,
+      }
+
+      const bytesPreferred: TerminalRendererCapabilities = {
+        preferredOutputInputMode: 'bytes',
+        acceptsText: false,
+        acceptsBytes: true,
+      }
+
+      // @ts-expect-error text-preferring renderers must accept text
+      const invalidTextPreferred: TerminalRendererCapabilities = {
+        preferredOutputInputMode: 'text',
+        acceptsText: false,
+        acceptsBytes: true,
+      }
+
+      // @ts-expect-error byte-preferring renderers must accept bytes
+      const invalidBytesPreferred: TerminalRendererCapabilities = {
+        preferredOutputInputMode: 'bytes',
+        acceptsText: true,
+        acceptsBytes: false,
+      }
+
+      expect(textPreferred.acceptsText).toBe(true)
+      expect(bytesPreferred.acceptsBytes).toBe(true)
+      expect(invalidTextPreferred.acceptsText).toBe(false)
+      expect(invalidBytesPreferred.acceptsBytes).toBe(false)
     })
   })
 

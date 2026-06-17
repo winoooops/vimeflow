@@ -47,6 +47,11 @@ export const createXtermTerminal = (): TerminalInstance => {
 
 export const xtermTerminalRenderer: TerminalRendererAdapter = {
   id: 'xterm',
+  capabilities: {
+    preferredOutputInputMode: 'text',
+    acceptsText: true,
+    acceptsBytes: false,
+  },
   createInstance: createXtermTerminal,
 }
 

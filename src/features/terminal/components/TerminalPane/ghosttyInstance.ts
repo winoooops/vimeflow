@@ -59,5 +59,10 @@ export const createGhosttyTerminal = (
 
 export const ghosttyTerminalRenderer: TerminalRendererAdapter = {
   id: GHOSTTY_TERMINAL_RENDERER_ID,
+  capabilities: {
+    preferredOutputInputMode: 'bytes',
+    acceptsText: true,
+    acceptsBytes: true,
+  },
   createInstance: createGhosttyTerminal,
 }

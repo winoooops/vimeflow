@@ -490,5 +490,10 @@ export const createPlainTextTerminal = (): TerminalInstance => {
 
 export const plainTextTerminalRenderer: TerminalRendererAdapter = {
   id: PLAIN_TEXT_TERMINAL_RENDERER_ID,
+  capabilities: {
+    preferredOutputInputMode: 'text',
+    acceptsText: true,
+    acceptsBytes: false,
+  },
   createInstance: createPlainTextTerminal,
 }
