@@ -2128,6 +2128,36 @@ describe('Body', () => {
       expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
     })
 
+    test('ignores non-file OSC 7 URI payloads', async () => {
+      const onCwdChange = vi.fn()
+
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          onCwdChange={onCwdChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockParser.onEvent).toHaveBeenCalledWith(expect.any(Function))
+      })
+
+      const parserEventHandler = vi.mocked(mockParser.onEvent).mock
+        .calls[0]?.[0] as ((event: TerminalParserEvent) => void) | undefined
+
+      parserEventHandler?.({
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'javascript:alert(1)',
+        output: { offsetStart: 0, byteLen: 19, phase: 'live' },
+      })
+
+      expect(onCwdChange).not.toHaveBeenCalled()
+      expect(defaultMockService.updateSessionCwd).not.toHaveBeenCalled()
+    })
+
     test('forwards plain absolute path to onCwdChange', async () => {
       const mockService = {
         spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),

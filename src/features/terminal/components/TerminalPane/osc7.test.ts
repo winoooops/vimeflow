@@ -73,4 +73,14 @@ describe('parseOsc7Cwd', () => {
     expect(parseOsc7Cwd('https://example.com/home/user')).toBeNull()
     expect(parseOsc7Cwd('relative/path')).toBeNull()
   })
+
+  test.each([
+    'https://example.com/home/user',
+    'javascript:alert(1)',
+    'mailto:user@example.com',
+    'ssh://server/home/user',
+    'vscode://file/home/user/project',
+  ])('rejects non-file URL scheme %s', (value) => {
+    expect(parseOsc7Cwd(value)).toBeNull()
+  })
 })
