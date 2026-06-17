@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-17
-ref_count: 32
+ref_count: 33
 ---
 
 # Testing Gaps
@@ -665,4 +665,14 @@ filesystem scope restrictions).
 - **File:** `src/features/diff/components/DiffLegend.test.tsx` L62-78
 - **Finding:** Both indicator-dot tests asserted `greenDot.tagName === 'SPAN'` and `redDot.tagName === 'SPAN'`. The meaningful contract — that each dot carries the correct VCS color class (`bg-vcs-added` / `bg-vcs-deleted`) and is reachable by its `data-testid` — was already covered. The `tagName` check is pure implementation coupling: it would fail on any future refactor that swaps the element type for a semantically equivalent one, even when the visual contract is preserved.
 - **Fix:** Removed the two `tagName` assertions. The remaining `toHaveClass('bg-vcs-added')` / `toHaveClass('bg-vcs-deleted')` assertions plus `getByTestId` fully describe the contract.
+- **Commit:** same commit as this entry
+
+### 67. Production-used gradient rendering path in shared primitive lacks test coverage
+
+- **Source:** github-codex-connector | PR #509 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/components/ProgressBar.test.tsx` L46-L50
+- **Finding:** `ProgressBar` switches fill classes when `gradient` is true, and the PR uses that branch in `CommitInfoPanel` for context memory and token progress bars. Existing tests covered clamping, semantic mode, segmented mode, and decorative mode, but not the gradient lookup path, so a future token/class regression could make production fills visually disappear without test signal.
+- **Fix:** Added a focused test that renders `ProgressBar` with `gradient` and a production-used `secondary` tone, then asserts the fill element receives `bg-gradient-to-r`.
+- **Code-review heuristic:** When a PR centralizes rendering into a new shared primitive and production consumers exercise a non-default branch, add at least one targeted test for that branch. Simple lookup tables are still worth covering because theme-token or primitive refactors can silently break the mapped class.
 - **Commit:** same commit as this entry

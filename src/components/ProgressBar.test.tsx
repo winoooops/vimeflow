@@ -48,3 +48,9 @@ test('can render decorative loading bars without progressbar role', () => {
 
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 })
+
+test('renders gradient fills for production-used tones', () => {
+  render(<ProgressBar label="Memory" value={60} tone="secondary" gradient fillTestId="fill" />)
+
+  expect(screen.getByTestId('fill')).toHaveClass('bg-gradient-to-r')
+})
