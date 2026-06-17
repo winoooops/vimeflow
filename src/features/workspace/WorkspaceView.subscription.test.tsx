@@ -617,6 +617,48 @@ describe('WorkspaceView lifted-subscription contract', () => {
     })
   })
 
+  test('WorkspaceView does not mark a file deleted on non-ENOENT read errors', async () => {
+    let changedFiles = [
+      { path: 'dummy.ts', status: 'untracked' as const, staged: false },
+    ]
+
+    vi.mocked(useGitStatus).mockImplementation(() => ({
+      files: changedFiles,
+      filesCwd: '/repo/src',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    }))
+
+    fileSystemServiceOverride.current.readFile = vi
+      .fn()
+      .mockResolvedValue('export const dummy = 1\n')
+
+    editorBufferOverride.current = createMockEditorBuffer({
+      filePath: '/repo/src/dummy.ts',
+    })
+
+    const view = render(<WorkspaceView />)
+    await screen.findByTestId('dock-panel-mock')
+
+    expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
+
+    changedFiles = []
+    fileSystemServiceOverride.current.readFile = vi
+      .fn()
+      .mockRejectedValue(new Error('EACCES: permission denied'))
+    view.rerender(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(
+        fileSystemServiceOverride.current.readFile
+      ).toHaveBeenCalledWith('/repo/src/dummy.ts')
+    })
+
+    expect(capturedDockPanelProps.editorFileLifecycleStatus).toBeNull()
+  })
+
   test('WorkspaceView passes enabled: false when idle diff dock is closed', async () => {
     const idleAgentStatus: AgentStatus = {
       isActive: false,

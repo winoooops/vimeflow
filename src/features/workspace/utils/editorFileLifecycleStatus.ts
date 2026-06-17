@@ -124,6 +124,30 @@ export const fileExistsInDirectory = (
   )
 }
 
+const NOT_FOUND_PATTERNS = [
+  'ENOENT',
+  'No such file or directory',
+  'os error 2',
+  'The system cannot find the file specified',
+]
+
+/**
+ * Determine whether a thrown value represents a missing file or directory.
+ * The backend returns filesystem errors as bare strings; this heuristic only
+ * treats clearly not-found signals as deleted so transient IPC, permission,
+ * or I/O failures do not spuriously mark an existing file as deleted.
+ */
+export const isNotFoundError = (error: unknown): boolean => {
+  const message =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : ''
+
+  return NOT_FOUND_PATTERNS.some((pattern) => message.includes(pattern))
+}
+
 export const resolveEditorFileLifecycleStatus = ({
   filePath,
   gitStatusCwd,

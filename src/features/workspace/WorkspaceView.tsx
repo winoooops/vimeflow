@@ -108,6 +108,7 @@ import {
   parentPathForFileLookup,
   relativePathFromCwd,
   resolveEditorFileLifecycleStatus,
+  isNotFoundError,
 } from './utils/editorFileLifecycleStatus'
 
 const rateLimitPercentage = (
@@ -1411,9 +1412,9 @@ const WorkspaceViewContent = (): ReactElement => {
         if (!cancelled) {
           setSelectedEditorFileExists(true)
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setSelectedEditorFileExists(false)
+          setSelectedEditorFileExists(isNotFoundError(error) ? false : null)
         }
       }
     }
