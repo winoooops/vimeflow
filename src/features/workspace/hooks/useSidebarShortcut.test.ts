@@ -1,5 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
 import { DOCK_CONTAINER_ID, TERMINAL_CONTAINER_ID } from '../containerIds'
 import {
   useSidebarShortcut,
@@ -36,6 +39,7 @@ const fireFrom = (
 ): void => {
   const event = new KeyboardEvent('keydown', {
     key: 'b',
+    code: 'KeyB',
     bubbles: true,
     cancelable: true,
     ...modifiers,
@@ -45,11 +49,27 @@ const fireFrom = (
   })
 }
 
+const matchesFor = (
+  isMac: boolean,
+  overrides: CustomKeybindings = {}
+): UseSidebarShortcutParams['matches'] => {
+  const superKey: PlatformSuper = isMac ? 'meta' : 'ctrl'
+  const resolved = resolveBindings(overrides, isMac, superKey)
+
+  return (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolved.get(id)!,
+      superKey,
+      getCommand(id).matchPolicy
+    )
+}
+
 const makeProps = (
   overrides: Partial<UseSidebarShortcutParams> = {}
 ): UseSidebarShortcutParams => ({
   onToggle: vi.fn(),
-  modKey: '⌘',
+  matches: matchesFor(true),
   activeContainerId: TERMINAL_CONTAINER_ID,
   ...overrides,
 })
@@ -67,7 +87,7 @@ describe('useSidebarShortcut', () => {
 
   describe('meta (⌘) modifier', () => {
     test('⌘B (no shift) toggles', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useSidebarShortcut(props))
 
@@ -77,7 +97,7 @@ describe('useSidebarShortcut', () => {
     })
 
     test('⌘⇧B does not toggle (shift not allowed on meta)', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useSidebarShortcut(props))
 
@@ -87,7 +107,7 @@ describe('useSidebarShortcut', () => {
     })
 
     test('⌘⌥B does not toggle (alt always bails)', () => {
-      const props = makeProps({ modKey: '⌘' })
+      const props = makeProps({ matches: matchesFor(true) })
       const target = append(document.createElement('div'))
       renderHook(() => useSidebarShortcut(props))
 
@@ -99,7 +119,7 @@ describe('useSidebarShortcut', () => {
 
   describe('Ctrl modifier', () => {
     test('Ctrl+⇧B toggles', () => {
-      const props = makeProps({ modKey: 'Ctrl' })
+      const props = makeProps({ matches: matchesFor(false) })
       const target = append(document.createElement('div'))
       renderHook(() => useSidebarShortcut(props))
 
@@ -109,7 +129,7 @@ describe('useSidebarShortcut', () => {
     })
 
     test('bare Ctrl+B (no shift) does not toggle — left to the terminal', () => {
-      const props = makeProps({ modKey: 'Ctrl' })
+      const props = makeProps({ matches: matchesFor(false) })
       const target = append(document.createElement('div'))
       renderHook(() => useSidebarShortcut(props))
 
@@ -120,7 +140,7 @@ describe('useSidebarShortcut', () => {
   })
 
   test('bails when a real dialog matching DIALOG_SELECTOR is in the DOM', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
     dialog.setAttribute('aria-label', 'Unsaved changes')
@@ -134,7 +154,7 @@ describe('useSidebarShortcut', () => {
   })
 
   test('toggles when the compact sidebar drawer (role=dialog aria-label=Sidebar) is open', () => {
-    const props = makeProps({ modKey: 'Ctrl' })
+    const props = makeProps({ matches: matchesFor(false) })
     const sidebarDialog = document.createElement('div')
     sidebarDialog.setAttribute('role', 'dialog')
     sidebarDialog.setAttribute('aria-label', 'Sidebar')
@@ -150,7 +170,7 @@ describe('useSidebarShortcut', () => {
 
   test('meta: bails when dock is active and target is inside the dock', () => {
     const props = makeProps({
-      modKey: '⌘',
+      matches: matchesFor(true),
       activeContainerId: DOCK_CONTAINER_ID,
     })
     const target = appendContainerWithChild(DOCK_CONTAINER_ID)
@@ -163,7 +183,7 @@ describe('useSidebarShortcut', () => {
 
   test('meta: ⌘B toggles when target is inside the terminal zone', () => {
     const props = makeProps({
-      modKey: '⌘',
+      matches: matchesFor(true),
       activeContainerId: TERMINAL_CONTAINER_ID,
     })
     const target = appendContainerWithChild(TERMINAL_CONTAINER_ID, 'textarea')
@@ -175,7 +195,7 @@ describe('useSidebarShortcut', () => {
   })
 
   test('bails when the target is a plain <input> (not terminal/codemirror)', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = append(document.createElement('input'))
     renderHook(() => useSidebarShortcut(props))
 
@@ -185,7 +205,7 @@ describe('useSidebarShortcut', () => {
   })
 
   test('removes the listener on unmount', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const target = append(document.createElement('div'))
     const { unmount } = renderHook(() => useSidebarShortcut(props))
 
@@ -193,5 +213,30 @@ describe('useSidebarShortcut', () => {
     fireFrom(target, { metaKey: true })
 
     expect(props.onToggle).not.toHaveBeenCalled()
+  })
+
+  test('fires on a rebound combo supplied by the registry matcher', () => {
+    const props = makeProps({
+      matches: matchesFor(true, { 'sidebar-toggle': 'Mod+KeyK' }),
+    })
+    const target = append(document.createElement('div'))
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, { key: 'k', code: 'KeyK', metaKey: true })
+
+    expect(props.onToggle).toHaveBeenCalledOnce()
+  })
+
+  test('does not defer rebound meta combos to the dock unless the key is B', () => {
+    const props = makeProps({
+      matches: matchesFor(true, { 'sidebar-toggle': 'Mod+KeyK' }),
+      activeContainerId: DOCK_CONTAINER_ID,
+    })
+    const target = appendContainerWithChild(DOCK_CONTAINER_ID)
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, { key: 'k', code: 'KeyK', metaKey: true })
+
+    expect(props.onToggle).toHaveBeenCalledOnce()
   })
 })

@@ -9,7 +9,7 @@ describe('CATALOG', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  test('the ten PR1-migrated commands are rebindable; the rest are display-only', () => {
+  test('PR1 + PR2 migrated commands are rebindable; the rest are display-only', () => {
     const rebindable = CATALOG.filter((cmd) => cmd.rebindable)
       .map((cmd) => cmd.id)
       .sort()
@@ -25,6 +25,15 @@ describe('CATALOG', () => {
         'focus-pane-right',
         'cycle-layout',
         'dock-toggle',
+        'new-session',
+        'session-prev',
+        'session-next',
+        'sidebar-toggle',
+        'sidebar-sessions',
+        'sidebar-files',
+        'focus-editor',
+        'focus-diff',
+        'burner-toggle',
       ].sort()
     )
   })

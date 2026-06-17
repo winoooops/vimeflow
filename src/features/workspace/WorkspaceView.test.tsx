@@ -457,6 +457,7 @@ describe('WorkspaceView', () => {
         document.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: 'b',
+            code: 'KeyB',
             ctrlKey: true,
             shiftKey: true,
             bubbles: true,
@@ -524,6 +525,7 @@ describe('WorkspaceView', () => {
         document.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: 'b',
+            code: 'KeyB',
             ctrlKey: true,
             shiftKey: true,
             bubbles: true,
@@ -1374,6 +1376,7 @@ describe('WorkspaceView', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'n',
+          code: 'KeyN',
           ctrlKey: true,
           shiftKey: true,
           bubbles: true,

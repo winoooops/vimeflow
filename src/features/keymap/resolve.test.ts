@@ -25,6 +25,11 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
     'focus-pane-up': 'Mod+Shift+ArrowUp',
     'focus-pane-right': 'Mod+Shift+ArrowRight',
     'dock-toggle': 'Mod+Digit0',
+    'sidebar-sessions': 'Mod+Shift+KeyS',
+    'sidebar-files': 'Mod+Shift+KeyF',
+    'focus-editor': 'Mod+KeyE',
+    'focus-diff': 'Mod+KeyG',
+    'burner-toggle': 'Ctrl+Backquote',
   }
   for (const isMac of [true, false]) {
     for (const [id, token] of Object.entries(expected)) {
@@ -33,6 +38,30 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
         expect(formatChord(resolveDefault(cmd, isMac))).toBe(token)
       })
     }
+  }
+})
+
+describe('behavior preservation — platform-specific PR2 defaults equal today’s hardcoded combos', () => {
+  const expectedByPlatform: Record<string, { mac: string; other: string }> = {
+    'new-session': { mac: 'Mod+KeyN', other: 'Mod+Shift+KeyN' },
+    'session-prev': {
+      mac: 'Mod+BracketLeft',
+      other: 'Mod+Shift+BracketLeft',
+    },
+    'session-next': {
+      mac: 'Mod+BracketRight',
+      other: 'Mod+Shift+BracketRight',
+    },
+    'sidebar-toggle': { mac: 'Mod+KeyB', other: 'Mod+Shift+KeyB' },
+  }
+
+  for (const [id, expected] of Object.entries(expectedByPlatform)) {
+    test(`${id} has a platform-specific default`, () => {
+      const cmd = CATALOG.find((c) => c.id === id)!
+
+      expect(formatChord(resolveDefault(cmd, true))).toBe(expected.mac)
+      expect(formatChord(resolveDefault(cmd, false))).toBe(expected.other)
+    })
   }
 })
 

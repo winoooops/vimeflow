@@ -1,5 +1,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
 import {
   useSessionNavShortcut,
   type UseSessionNavShortcutParams,
@@ -33,12 +36,28 @@ const fireBracket = (
   return event.defaultPrevented
 }
 
+const matchesFor = (
+  isMac: boolean,
+  overrides: CustomKeybindings = {}
+): UseSessionNavShortcutParams['matches'] => {
+  const superKey: PlatformSuper = isMac ? 'meta' : 'ctrl'
+  const resolved = resolveBindings(overrides, isMac, superKey)
+
+  return (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolved.get(id)!,
+      superKey,
+      getCommand(id).matchPolicy
+    )
+}
+
 const makeProps = (
   overrides: Partial<UseSessionNavShortcutParams> = {}
 ): UseSessionNavShortcutParams => ({
   onPrevSession: vi.fn(),
   onNextSession: vi.fn(),
-  modKey: '⌘',
+  matches: matchesFor(true),
   ...overrides,
 })
 
@@ -53,7 +72,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('⌘[ / ⌘] cycle prev / next on macOS', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     expect(fireBracket('BracketLeft', { metaKey: true })).toBe(true)
@@ -64,7 +83,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('Ctrl+⇧[ / Ctrl+⇧] cycle on Linux', () => {
-    const props = makeProps({ modKey: 'Ctrl' })
+    const props = makeProps({ matches: matchesFor(false) })
     renderHook(() => useSessionNavShortcut(props))
 
     fireBracket('BracketLeft', { ctrlKey: true, shiftKey: true })
@@ -75,7 +94,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('macOS rejects the Shift variant', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     fireBracket('BracketLeft', { metaKey: true, shiftKey: true })
@@ -84,7 +103,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('Linux leaves bare Ctrl+[ for the terminal ESC', () => {
-    const props = makeProps({ modKey: 'Ctrl' })
+    const props = makeProps({ matches: matchesFor(false) })
     renderHook(() => useSessionNavShortcut(props))
 
     const prevented = fireBracket('BracketLeft', { ctrlKey: true })
@@ -94,7 +113,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('ignores the opposite modifier so it reaches the terminal', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     const prevented = fireBracket('BracketLeft', { ctrlKey: true })
@@ -110,7 +129,7 @@ describe('useSessionNavShortcut', () => {
     content.setAttribute('contenteditable', 'true')
     editor.appendChild(content)
 
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     const prevented = fireBracket('BracketLeft', { metaKey: true }, content)
@@ -125,7 +144,7 @@ describe('useSessionNavShortcut', () => {
     const textarea = document.createElement('textarea')
     zone.appendChild(textarea)
 
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     fireBracket('BracketRight', { metaKey: true }, textarea)
@@ -137,7 +156,7 @@ describe('useSessionNavShortcut', () => {
     const dialog = append(document.createElement('div'))
     dialog.setAttribute('role', 'dialog')
 
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     fireBracket('BracketLeft', { metaKey: true })
@@ -146,7 +165,7 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('ignores other keys', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     renderHook(() => useSessionNavShortcut(props))
 
     const event = new KeyboardEvent('keydown', {
@@ -165,12 +184,45 @@ describe('useSessionNavShortcut', () => {
   })
 
   test('detaches its listener on unmount', () => {
-    const props = makeProps({ modKey: '⌘' })
+    const props = makeProps({ matches: matchesFor(true) })
     const { unmount } = renderHook(() => useSessionNavShortcut(props))
 
     unmount()
     fireBracket('BracketLeft', { metaKey: true })
 
     expect(props.onPrevSession).not.toHaveBeenCalled()
+  })
+
+  test('fires on rebound combos supplied by the registry matcher', () => {
+    const props = makeProps({
+      matches: matchesFor(true, {
+        'session-prev': 'Mod+KeyJ',
+        'session-next': 'Mod+KeyK',
+      }),
+    })
+    renderHook(() => useSessionNavShortcut(props))
+
+    const prev = new KeyboardEvent('keydown', {
+      code: 'KeyJ',
+      key: 'j',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+
+    const next = new KeyboardEvent('keydown', {
+      code: 'KeyK',
+      key: 'k',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      document.body.dispatchEvent(prev)
+      document.body.dispatchEvent(next)
+    })
+
+    expect(props.onPrevSession).toHaveBeenCalledOnce()
+    expect(props.onNextSession).toHaveBeenCalledOnce()
   })
 })
