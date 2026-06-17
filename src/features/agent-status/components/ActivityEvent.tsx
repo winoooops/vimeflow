@@ -444,7 +444,7 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
           tone="custom"
           size="custom"
           radius="md"
-          className={`inline-block rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
+          className={`rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
         >
           {text}
         </Chip>
