@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
 
 export interface UseNewSessionShortcutParams {
@@ -26,6 +27,10 @@ export const useNewSessionShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       // Auto-repeat (held key) would spawn a PTY per repeat — fire once.
       if (event.repeat) {
         return

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import { DIALOG_SELECTOR } from '../containerIds'
 
 export interface UseBurnerToggleShortcutParams {
@@ -19,6 +20,10 @@ export const useBurnerToggleShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       // Exactly Ctrl+` — reject ⌘/Alt/Shift-modified and held-key repeats.
       if (
         event.repeat ||

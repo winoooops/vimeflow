@@ -35,6 +35,7 @@ export interface BackendApi {
   ) => Promise<UnlistenFn>
 
   onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
+  setKeymapCaptureActive?: (active: boolean) => void
 
   settings?: SettingsBridge
   aliases?: AliasesBridge

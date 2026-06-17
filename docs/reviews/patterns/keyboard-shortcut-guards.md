@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-15
-ref_count: 5
+last_updated: 2026-06-17
+ref_count: 11
 ---
 
 # Keyboard Shortcut Guards
@@ -37,6 +37,27 @@ against three classes of false-fire:
    that show shortcuts must render the modifier that matches the runtime
    platform (`⌘` on macOS, `Ctrl` on Linux/Windows). Hardcoding `⌘` in the UI
    misleads non-Mac users and drifts from the behavior-side modifier choice.
+7. **Capture-target guard in renderer shortcut hooks** — capture-phase document
+   listeners that fire global shortcuts must check whether the active element is
+   inside a keymap-recorder (or similar capture target) and return early. A
+   button-level `onKeyDown` runs after capture-phase listeners, so it cannot
+   outrace them; the guard must live in the same hook that claims the keystroke.
+8. **Main-process guard parity for capture state** — when a shortcut is consumed
+   in the Electron main process (`before-input-event`) and the renderer already
+   has a capture-active guard, the main-process matcher must receive the same
+   state. `event.preventDefault()` in the main process suppresses the renderer
+   `keydown`, so a renderer-only guard is bypassed in packaged builds; route
+   capture state through an explicit IPC channel and WeakMap per window.
+9. **Platform-specific modifier enforcement** — shortcuts that are tied to a
+   single platform modifier (e.g. `Cmd+,` on macOS, `Ctrl+,` elsewhere) must
+   reject the cross-platform modifier and any Alt/Shift variants, otherwise a
+   recorded user binding can collide with the built-in toggle and fire both
+   actions.
+10. **Reserve non-rebindable catalog entries for system chords** — chords that
+    must remain available to the browser or shell (settings toggle, browser
+    location focus, etc.) should be represented as non-rebindable catalog
+    entries so the keymap validator rejects attempts to bind them to other
+    commands.
 
 ## Findings
 
@@ -376,4 +397,58 @@ against three classes of false-fire:
 - **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L187-203
 - **Finding:** The `event.code === 'Backslash'` branch called `setSessionLayout` but did not `return`. The branch happened to be safe because `arrowDirection` was `null` for Backslash and the subsequent guard exited, but any future case inserted between the Backslash block and the arrow block would execute on every `⌘\` / `Ctrl+\` keypress.
 - **Fix:** Added an explicit `return` immediately after `setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])` so the Backslash branch exclusively owns the keystroke.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Keymap recorder lost chords to document-capture workspace shortcuts
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`, `src/features/workspace/hooks/useSidebarTabShortcut.ts`, `src/features/workspace/hooks/useSidebarShortcut.ts`, `src/features/workspace/hooks/useSessionNavShortcut.ts`, `src/features/workspace/hooks/useNewSessionShortcut.ts`, `src/features/workspace/hooks/useDockShortcuts.ts`, `src/features/workspace/hooks/useBurnerToggleShortcut.ts`, `src/features/workspace/hooks/useDockToggleShortcut.ts`
+- **Finding:** The keymap capture UI only handled `onKeyDown` on the focused button. Because the app's workspace shortcuts register at the document capture phase, they consumed chords such as `Cmd/Ctrl+,`, `Cmd/Ctrl+Shift+S`, and layout-cycle chords before the recorder's button handler ever saw them. A button-level handler cannot outrace a capture-phase listener, so recording silently failed or triggered unrelated global actions.
+- **Fix:** Added `isKeymapCaptureTarget(event.target)` guard to every workspace document-capture shortcut hook and returned early when the event originated inside the keymap recorder. Added tests verifying the recorder can capture `Cmd/Ctrl+,` without opening Settings.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Electron command-palette shortcut fired while keymap recorder was active
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/command-palette-shortcut.ts`, `electron/ipc-channels.ts`, `electron/preload.ts`, `electron/main.ts`, `src/lib/backend.ts`, `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** `Cmd/Ctrl+;` toggles the command palette via Electron's `before-input-event` in packaged builds. The renderer-side capture-target guard did not run because `event.preventDefault()` in the main process suppresses the renderer `keydown`. Recording `Cmd/Ctrl+;` inside the keymap pane therefore opened the palette instead of capturing the chord.
+- **Fix:** Added a new `KEYMAP_CAPTURE_ACTIVE` IPC channel and preload helper `setKeymapCaptureActive(active)`. `KeymapPane` calls this whenever `editingId !== null`. `command-palette-shortcut.ts` stores capture state in a per-window WeakMap and returns early from `isCommandPaletteShortcutInput` while capture is active, mirroring the renderer guard in the main process.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Settings toggle shortcut accepted wrong modifiers and collided with recorded bindings
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/hooks/useSettingsDialog.ts`, `src/features/keymap/catalog.ts`
+- **Finding:** `useSettingsDialog` toggled for `metaKey || ctrlKey` together with `event.key === ','`, without rejecting `altKey`/`shiftKey`. On macOS a user could record `Control+Comma` or `Command+Shift+Comma` for another command, and pressing it would both run the rebound command and open Settings.
+- **Fix:** Tightened the matcher to the exact platform super chord (`Cmd` on macOS, `Ctrl` elsewhere) and added explicit `!event.altKey && !event.shiftKey` checks. Added non-rebindable catalog entries (`settings`, `settings-control`) so the validator also blocks these chords at save time.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Browser-location chord not reserved in the keymap catalog
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/keymap/catalog.ts`, `src/features/keymap/hooks/useKeybindings.test.ts`
+- **Finding:** `setUserBinding` only validated against `CATALOG`, which did not include a reservation for the browser's `Mod+L` address-bar focus chord. A user could bind `Mod+L` to a workspace command such as dock-toggle, after which the browser still focused the address bar and the app also ran the bound command.
+- **Fix:** Added a `browser-location` catalog entry (`Mod+KeyL`, non-rebindable, `preserveStoredOverrides`) so the validator rejects `Mod+L` rebindings. Existing stored overrides are preserved to avoid breaking users who already remapped it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. macOS Ctrl+Comma not reserved alongside Command+Comma for settings
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/keymap/catalog.ts`, `src/features/keymap/hooks/useKeybindings.test.ts`
+- **Finding:** On macOS the keymap recorder stores a literal `Control+Comma` chord separately from `Mod+Comma`. The catalog only reserved `Mod+Comma` for settings, so `Control+Comma` could be saved as a user binding and collide with the settings toggle path.
+- **Fix:** Added a `settings-control` catalog entry (`Ctrl+Comma`, non-rebindable, `preserveStoredOverrides`) to reserve the literal Ctrl+Comma chord on macOS. `useSettingsDialog` now only toggles on the platform super chord, so Ctrl+Comma no longer opens Settings.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Alt/Shift-modified comma chords could toggle Settings while bound elsewhere
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/hooks/useSettingsDialog.ts`
+- **Finding:** The settings shortcut matcher ignored modifier state beyond `metaKey`/`ctrlKey`. A user could record `Ctrl+Alt+Comma` (Linux/Windows) or `Cmd+Shift+Comma` (macOS) for a rebindable command, and the settings toggle would still fire because it did not reject `altKey` or `shiftKey`.
+- **Fix:** Added `!event.altKey && !event.shiftKey` to the platform-super matcher so only the bare `Cmd/Ctrl+Comma` chord toggles Settings. Added tests for `Ctrl+Alt+Comma` and `Cmd+Shift+Comma` to confirm they pass through.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -3,6 +3,7 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
+  KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_OPEN_FILE,
   SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
@@ -101,10 +102,15 @@ const onCommandPaletteToggle = (callback: () => void): (() => void) => {
   }
 }
 
+const setKeymapCaptureActive = (active: boolean): void => {
+  ipcRenderer.send(KEYMAP_CAPTURE_ACTIVE, active)
+}
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
   onCommandPaletteToggle,
+  setKeymapCaptureActive,
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CREATE, request),

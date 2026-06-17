@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import { DIALOG_SELECTOR } from '../containerIds'
 import type { CommandId } from '../../keymap/catalog'
 
@@ -24,6 +25,10 @@ export const useDockToggleShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       if (!matchesRef.current(event, 'dock-toggle')) {
         return
       }

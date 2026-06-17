@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -33,6 +34,10 @@ export const useDockShortcuts = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
       const expectedModifier =
         modKeyRef.current === '⌘'
           ? event.metaKey && !event.ctrlKey

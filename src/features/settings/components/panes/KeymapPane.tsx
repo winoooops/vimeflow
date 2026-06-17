@@ -1,5 +1,6 @@
 import {
   type FocusEvent as ReactFocusEvent,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -61,6 +62,14 @@ const focusableElements = (container: ParentNode): HTMLElement[] =>
     (el) =>
       !el.matches(':disabled') && el.getAttribute('aria-hidden') !== 'true'
   )
+
+const focusEditButton = (id: CommandId): void => {
+  document
+    .querySelector<HTMLButtonElement>(
+      `[${KEYMAP_EDIT_BUTTON_ATTRIBUTE}="${id}"]`
+    )
+    ?.focus()
+}
 
 const focusAfterTabCancel = (id: CommandId, direction: TabDirection): void => {
   const editButton = document.querySelector<HTMLButtonElement>(
@@ -140,11 +149,32 @@ export const KeymapPane = (): ReactElement => {
   const [draftChord, setDraftChord] = useState<Chord | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const pendingTabFocusRef = useRef<PendingTabFocus | null>(null)
+  const pendingCancelFocusRef = useRef<CommandId | null>(null)
   const showVim = settings.keymapPreset === 'vim'
   const isMac = isMacPlatform()
 
+  useEffect(() => {
+    window.vimeflow?.setKeymapCaptureActive?.(editingId !== null)
+
+    return (): void => {
+      window.vimeflow?.setKeymapCaptureActive?.(false)
+    }
+  }, [editingId])
+
   useLayoutEffect(() => {
-    if (editingId !== null || pendingTabFocusRef.current === null) {
+    if (editingId !== null) {
+      return
+    }
+
+    if (pendingCancelFocusRef.current !== null) {
+      const id = pendingCancelFocusRef.current
+      pendingCancelFocusRef.current = null
+      focusEditButton(id)
+
+      return
+    }
+
+    if (pendingTabFocusRef.current === null) {
       return
     }
 
@@ -158,7 +188,10 @@ export const KeymapPane = (): ReactElement => {
     setDraftChord(null)
   }
 
-  const cancelEditing = (): void => {
+  const cancelEditing = (restoreId?: CommandId): void => {
+    if (restoreId !== undefined) {
+      pendingCancelFocusRef.current = restoreId
+    }
     stopEditing()
     setFeedback(null)
   }
@@ -182,7 +215,7 @@ export const KeymapPane = (): ReactElement => {
     ) {
       event.preventDefault()
       event.stopPropagation()
-      cancelEditing()
+      cancelEditing(id)
 
       return
     }
@@ -320,7 +353,7 @@ export const KeymapPane = (): ReactElement => {
                   {iconButton({
                     label: `Cancel ${cmd.label} binding edit`,
                     icon: 'close',
-                    onClick: cancelEditing,
+                    onClick: () => cancelEditing(cmd.id),
                   })}
                 </div>
               ) : (

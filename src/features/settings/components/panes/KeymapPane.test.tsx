@@ -227,6 +227,49 @@ describe('KeymapPane', () => {
     vi.unstubAllGlobals()
   })
 
+  test('bare Escape returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Show / hide editor & diff dock binding',
+    })
+    fireEvent.keyDown(capture, { key: 'Escape', code: 'Escape' })
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
+  test('Cancel button returns focus to the row edit button', () => {
+    renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Cancel Show / hide editor & diff dock binding edit',
+      })
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Edit Show / hide editor & diff dock binding',
+      })
+    ).toHaveFocus()
+  })
+
   test('Tab cancels recording and moves focus to the next stable keymap control', () => {
     renderWithSettings()
 

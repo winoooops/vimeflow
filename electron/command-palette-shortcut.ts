@@ -68,6 +68,14 @@ const sendCommandPaletteToggle = (win: BrowserWindow): void => {
 }
 
 const commandPaletteToggleDispatchers = new WeakMap<BrowserWindow, () => void>()
+const captureActiveByWindow = new WeakMap<BrowserWindow, boolean>()
+
+export const setKeymapCaptureActive = (
+  win: BrowserWindow,
+  active: boolean
+): void => {
+  captureActiveByWindow.set(win, active)
+}
 
 const createCommandPaletteToggleDispatcher = (
   win: BrowserWindow
@@ -136,6 +144,10 @@ export const installCommandPaletteShortcutOverride = (
 
   win.webContents.on('before-input-event', (event, input) => {
     if (!isCommandPaletteShortcutInput(input, shortcutConfig)) {
+      return
+    }
+
+    if (captureActiveByWindow.get(win)) {
       return
     }
 

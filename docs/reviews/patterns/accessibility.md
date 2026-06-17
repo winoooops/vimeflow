@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-15
-ref_count: 23
+last_updated: 2026-06-17
+ref_count: 25
 ---
 
 # Accessibility
@@ -620,4 +620,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/agent-status/hooks/useReservoirFlow.ts`
 - **Finding:** `onLeave` called `ensureLoop()` unconditionally, so it scheduled a rAF frame even when `prefers-reduced-motion: reduce` was active, the water refs were null, or the loop was already at rest. Under reduced motion this could re-apply a cached `translate(...)` transform after `onMqlChange` had explicitly cleared it.
 - **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 56. Keymap capture cancellation dropped focus to document.body
+
+- **Source:** github-claude | PR #507 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** When the user cancelled keymap recording via Escape or the Cancel (X) button, the capture UI was removed from the DOM but focus was not restored. Keyboard-only users landed on `document.body` and had to re-tab through the entire settings dialog to return to their place in the keymap list.
+- **Fix:** Added `pendingCancelFocusRef` to remember the command id being edited, then used `useLayoutEffect` to focus the row's edit button synchronously after `editingId` becomes `null` and the capture UI unmounts. Added tests asserting the edit button regains focus after Escape and Cancel.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 57. Settings dialog Tab trap intercepted Tab while leaving keymap capture
+
+- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** Pressing Tab to cancel recording inside `SettingsDialog` was intercepted by the dialog's document-level Tab focus trap, which called `preventDefault`. Focus jumped back to the start of the dialog instead of moving to the next keymap control.
+- **Fix:** Added `event.stopPropagation()` in the capture button's `onKeyDown` Tab handler so the dialog trap never sees the event, and kept the deferred `pendingTabFocusRef` restoration via `useLayoutEffect` so focus moves to the next logical control after the capture UI unmounts.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
