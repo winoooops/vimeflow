@@ -174,9 +174,9 @@ export const ProgressBar = ({
 
   return (
     <div
+      data-testid={trackTestId}
       {...rest}
       {...ariaProps}
-      data-testid={trackTestId}
       style={style}
       className={trackClassName({
         height,

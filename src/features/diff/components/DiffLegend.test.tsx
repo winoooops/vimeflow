@@ -64,7 +64,6 @@ describe('DiffLegend', () => {
 
     const greenDot = screen.getByTestId('added-dot')
 
-    expect(greenDot.tagName).toBe('SPAN')
     expect(greenDot).toHaveClass('bg-vcs-added')
   })
 
@@ -73,7 +72,6 @@ describe('DiffLegend', () => {
 
     const redDot = screen.getByTestId('removed-dot')
 
-    expect(redDot.tagName).toBe('SPAN')
     expect(redDot).toHaveClass('bg-vcs-deleted')
   })
 

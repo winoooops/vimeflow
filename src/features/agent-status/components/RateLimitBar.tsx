@@ -39,7 +39,6 @@ export const RateLimitBar = ({
       tone={FILL_TONE[accent]}
       height="thin"
       fillTestId="rate-limit-bar-fill"
-      className="h-[3px] w-full overflow-hidden rounded-full bg-surface"
     />
   </div>
 )
