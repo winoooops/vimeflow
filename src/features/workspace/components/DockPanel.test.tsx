@@ -408,11 +408,62 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
   })
 
+  test('renders editor path crumb above the editor surface without status for an untouched file', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts' })
+
+    const editorPanel = screen.getByTestId('editor-panel')
+    const crumb = within(editorPanel).getByTestId('editor-path-crumb')
+    expect(crumb).toHaveTextContent('test.ts')
+    expect(within(crumb).queryByText(/saved ·/i)).toBeNull()
+    expect(within(crumb).queryByText('UNSAVED')).toBeNull()
+  })
+
+  test('renders unsaved path crumb state when the buffer is dirty', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts', isDirty: true })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('UNSAVED')).toHaveClass('text-primary')
+  })
+
+  test('renders saved path crumb state after a dirty buffer returns clean', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/test.ts',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/test.ts',
+      isDirty: false,
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+
+    await waitFor(() => {
+      expect(within(crumb).getByText(/saved ·/i)).toHaveClass(
+        'text-success-muted'
+      )
+    })
+  })
+
+  test('keeps selected file path out of the dock tab header', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts' })
+
+    expect(
+      within(screen.getByTestId('dock-tab')).queryByText(/test\.ts/)
+    ).toBeNull()
+  })
+
   test('shows "No file selected" when selectedFilePath is null', () => {
     renderDockPanel()
 
     expect(screen.getByTestId('no-file-selected')).toBeInTheDocument()
     expect(screen.getByText(/No file selected/i)).toBeInTheDocument()
+  })
+
+  test('does not render editor path crumb when no file is selected', () => {
+    renderDockPanel()
+
+    expect(screen.queryByTestId('editor-path-crumb')).toBeNull()
   })
 
   describe('markdown reading view', () => {

@@ -14,6 +14,7 @@ import {
   CodeEditor,
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
+import { EditorPathCrumb } from '../../editor/components/EditorPathCrumb'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
 import {
@@ -144,8 +145,14 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const diffWrapperRef = useRef<HTMLDivElement>(null)
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
     const markdownViewRef = useRef<HTMLDivElement>(null)
+    const previousEditorPathRef = useRef(selectedFilePath)
+    const previousEditorDirtyRef = useRef(isDirty)
 
     const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
+
+    const [editorPathSavedAt, setEditorPathSavedAt] = useState<number | null>(
+      null
+    )
 
     // Ephemeral dock state (D5): the per-file Source/Reading mode is not
     // persisted across reload, matching the dock's existing non-persistence
@@ -182,6 +189,30 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         markdownViewRef.current?.focus()
       }
     }, [tab, isMarkdown, viewMode, isFocused, selectedFilePath])
+
+    useEffect(() => {
+      const previousPath = previousEditorPathRef.current
+      const previousDirty = previousEditorDirtyRef.current
+
+      previousEditorPathRef.current = selectedFilePath
+      previousEditorDirtyRef.current = isDirty
+
+      if (!selectedFilePath) {
+        setEditorPathSavedAt((current) => (current === null ? current : null))
+
+        return
+      }
+
+      if (selectedFilePath !== previousPath) {
+        setEditorPathSavedAt(null)
+
+        return
+      }
+
+      if (previousDirty && !isDirty) {
+        setEditorPathSavedAt(Date.now())
+      }
+    }, [isDirty, selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
@@ -348,7 +379,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         <DockTab
           tab={tab}
           onTabChange={onTabChange}
-          selectedFilePath={selectedFilePath}
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
@@ -368,8 +398,21 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           {tab === 'editor' && (
             <div
               data-testid="editor-panel"
-              className="flex min-h-0 flex-1 overflow-hidden"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
             >
+              {selectedFilePath ? (
+                <EditorPathCrumb
+                  filePath={selectedFilePath}
+                  savedAt={editorPathSavedAt}
+                  status={
+                    isDirty
+                      ? 'UNSAVED'
+                      : editorPathSavedAt === null
+                        ? null
+                        : 'SAVED'
+                  }
+                />
+              ) : null}
               {isMarkdown && viewMode === 'reading' ? (
                 <MarkdownReadingView
                   key={selectedFilePath ?? 'markdown'}
