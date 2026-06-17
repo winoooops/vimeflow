@@ -12,6 +12,7 @@ import {
   ghosttyTerminalRenderer,
   type GhosttyTerminalOptions,
 } from './ghosttyInstance'
+import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
@@ -54,6 +55,10 @@ describe('ghosttyInstance', () => {
       acceptsText: true,
       acceptsBytes: true,
     })
+
+    expect(ghosttyTerminalRenderer.capabilities).toBe(
+      GHOSTTY_TERMINAL_CAPABILITIES
+    )
     expect(ghosttyTerminalRenderer.createInstance).toBe(createGhosttyTerminal)
   })
 
@@ -96,9 +101,7 @@ describe('ghosttyInstance', () => {
     created.output.writeOutput(chunk)
 
     expect(created.parser).toBe(parser)
-    expect(createParserEngine).toHaveBeenCalledWith(
-      ghosttyTerminalRenderer.capabilities
-    )
+    expect(createParserEngine).toHaveBeenCalledOnce()
     expect(parseOutput).toHaveBeenCalledWith(chunk)
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })

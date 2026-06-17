@@ -114,6 +114,87 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('rewrites the current line when carriage return output arrives', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('progress 10%')
+    created.terminal.write('\rprogress 20%')
+
+    expect(created.viewportReader.readVisibleText()).toBe('progress 20%')
+  })
+
+  test('treats carriage-return/newline pairs split across writes as a single newline', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('progress 10%')
+    created.terminal.write('\r')
+    created.terminal.write('\nprogress 20%')
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'progress 10%\nprogress 20%'
+    )
+  })
+
+  test('moves the cursor to the line end before inserting a same-chunk CRLF', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('hello world')
+    created.terminal.write('\b\b\b\b\b')
+    created.terminal.write('\r\nmore')
+
+    expect(created.viewportReader.readVisibleText()).toBe('hello world\nmore')
+  })
+
+  test('clears the current line when an erase-line CSI event is emitted', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('building 100%')
+    // cspell:disable-next-line
+    created.terminal.write('\r\x1b[Kdone')
+
+    expect(created.viewportReader.readVisibleText()).toBe('done')
+  })
+
+  test('applies erase-line before later text in the same chunk', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('old')
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[2K\rdone')
+
+    expect(created.viewportReader.readVisibleText()).toBe('done')
+  })
+
+  test('erases from line start to cursor inclusive in erase-line mode 1', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('abc')
+    created.terminal.write('\ra')
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[1K')
+
+    expect(created.viewportReader.readVisibleText()).toBe('c')
+  })
+
+  test('does not erase visible glyphs at legacy Private Use Area codepoints', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // Old erase-line sentinels used U+E000..U+E002; those must now render as
+    // visible glyphs so icon-font prompts are not silently erased.
+    // cspell:disable-next-line
+    created.terminal.write('prompt \uE000 icon')
+
+    expect(created.viewportReader.readVisibleText()).toBe('prompt \uE000 icon')
+  })
+
+  test('moves the output cursor backward for backspace rewrites', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('ab\bcd')
+
+    expect(created.viewportReader.readVisibleText()).toBe('acd')
+  })
+
   test('uses text output chunks even when byte payloads are present', () => {
     const created = createTrackedPlainTextTerminal()
 
@@ -276,18 +357,16 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('renders OSC sequences when no parser event subscribers exist', () => {
+  test('strips OSC sequences because the plain-text renderer consumes them internally', () => {
     const created = createTrackedPlainTextTerminal()
     const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
 
     created.terminal.write(`before ${sequence}after`)
 
-    expect(created.viewportReader.readVisibleText()).toBe(
-      `before ${sequence}after`
-    )
+    expect(created.viewportReader.readVisibleText()).toBe('before after')
   })
 
-  test('stops invoking disposed parser event handlers', () => {
+  test('stops invoking disposed parser event handlers while keeping internal rendering', () => {
     const created = createTrackedPlainTextTerminal()
     const parserEventHandler = vi.fn()
     const sequence = '\x1b]7;file://localhost/tmp/plain-text-project\x07'
@@ -297,7 +376,7 @@ describe('plainTextInstance', () => {
     created.terminal.write(sequence)
 
     expect(parserEventHandler).not.toHaveBeenCalled()
-    expect(created.viewportReader.readVisibleText()).toBe(sequence)
+    expect(created.viewportReader.readVisibleText()).toBe('')
   })
 
   test('emits pasted text and keyboard input through onData', () => {

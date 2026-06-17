@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from 'vitest'
 import { TerminalControlSequenceParser } from './terminalControlParser'
 
+const ESC = '\x1b'
+const SGR_FINAL = 'm'
+
 describe('TerminalControlSequenceParser', () => {
   test('emits OSC 7 cwd events and strips them from visible output', () => {
     const parser = new TerminalControlSequenceParser()
@@ -52,7 +55,7 @@ describe('TerminalControlSequenceParser', () => {
     })
   })
 
-  test('passes through non-cwd OSC sequences', () => {
+  test('strips non-cwd OSC sequences from visible output', () => {
     const parser = new TerminalControlSequenceParser()
     const handler = vi.fn()
 
@@ -60,7 +63,34 @@ describe('TerminalControlSequenceParser', () => {
 
     const visible = parser.transformOutput('a\x1b]0;title\x07b', null)
 
-    expect(visible).toBe('a\x1b]0;title\x07b')
+    expect(visible).toBe('ab')
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('strips CSI style sequences from visible output', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const visible = parser.transformOutput(
+      `prompt ${ESC}[38;2;243;139;168${SGR_FINAL}` +
+        `branch${ESC}[0${SGR_FINAL} done`,
+      null
+    )
+
+    expect(visible).toBe('prompt branch done')
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('reassembles CSI sequences split across output chunks', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    expect(parser.transformOutput('before \x1b[38;2;', null)).toBe('before ')
+    expect(parser.transformOutput('243;139;168m' + 'color', null)).toBe('color')
     expect(handler).not.toHaveBeenCalled()
   })
 
@@ -73,5 +103,19 @@ describe('TerminalControlSequenceParser', () => {
     )
 
     expect(visible).toBe('\x1b]7;file://localhost/tmp/project\x07')
+  })
+
+  test('keeps a trailing ESC pending until the next chunk completes the sequence', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    expect(parser.transformOutput('before \x1b', null)).toBe('before ')
+    // cspell:disable-next-line
+    expect(parser.transformOutput('[38;2;243;139;168mcolor', null)).toBe(
+      'color'
+    )
+    expect(handler).not.toHaveBeenCalled()
   })
 })
