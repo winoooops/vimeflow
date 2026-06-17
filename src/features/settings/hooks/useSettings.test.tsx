@@ -20,6 +20,7 @@ const createLoadedSettings = (): AppSettings => ({
   monoFont: 'fira',
   keymapPreset: 'vscode',
   agentShimEnabled: false,
+  customKeybindings: {},
 })
 
 describe('useSettings', () => {

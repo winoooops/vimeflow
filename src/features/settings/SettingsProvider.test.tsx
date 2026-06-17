@@ -21,6 +21,7 @@ const createLoadedSettings = (): AppSettings => ({
   monoFont: 'fira',
   keymapPreset: 'vscode',
   agentShimEnabled: false,
+  customKeybindings: {},
 })
 
 const TestConsumer = (): ReactElement => {

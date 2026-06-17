@@ -16,4 +16,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   monoFont: 'jetbrains',
   keymapPreset: 'vimeflow',
   agentShimEnabled: true,
+  customKeybindings: {},
 }

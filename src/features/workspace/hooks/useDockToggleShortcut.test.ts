@@ -1,9 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import {
-  useDockToggleShortcut,
-  type UseDockToggleShortcutParams,
-} from './useDockToggleShortcut'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { useDockToggleShortcut } from './useDockToggleShortcut'
 
 const appended: HTMLElement[] = []
 
@@ -14,123 +11,86 @@ const append = (element: HTMLElement): HTMLElement => {
   return element
 }
 
-const fireDigit0 = (
-  modifiers: Partial<KeyboardEventInit> = {},
-  target: EventTarget = document.body
-): boolean => {
+afterEach(() => {
+  appended.forEach((element) => element.remove())
+  appended.length = 0
+})
+
+const press = (code: string): boolean => {
   const event = new KeyboardEvent('keydown', {
-    code: 'Digit0',
-    key: '0',
+    code,
     bubbles: true,
     cancelable: true,
-    ...modifiers,
   })
   act(() => {
-    target.dispatchEvent(event)
+    document.body.dispatchEvent(event)
   })
 
   return event.defaultPrevented
 }
 
-const makeProps = (
-  overrides: Partial<UseDockToggleShortcutParams> = {}
-): UseDockToggleShortcutParams => ({
-  onToggle: vi.fn(),
-  modKey: '⌘',
-  ...overrides,
-})
+// `matches` stands in for the registry resolution; the hook is responsible only
+// for calling it, the DIALOG guard, and the toggle. The modifier/code matching
+// itself is covered by eventMatchesChord's own tests.
+const matchesFor =
+  (wanted: string) =>
+  (event: KeyboardEvent, id: string): boolean =>
+    id === 'dock-toggle' && event.code === wanted
 
 describe('useDockToggleShortcut', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  test('fires onToggle + preventDefault when matches() is true and no dialog is open', () => {
+    const onToggle = vi.fn()
+    renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('Digit0') })
+    )
+
+    expect(press('Digit0')).toBe(true)
+    expect(onToggle).toHaveBeenCalledOnce()
   })
 
-  afterEach(() => {
-    appended.forEach((element) => element.remove())
-    appended.length = 0
+  test('does not fire when matches() is false', () => {
+    const onToggle = vi.fn()
+    renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('KeyK') })
+    )
+
+    expect(press('Digit0')).toBe(false)
+    expect(onToggle).not.toHaveBeenCalled()
   })
 
-  test('⌘+0 toggles on macOS', () => {
-    const props = makeProps({ modKey: '⌘' })
-    renderHook(() => useDockToggleShortcut(props))
+  test('fires on the rebound combo (matches resolves a different key)', () => {
+    const onToggle = vi.fn()
+    renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('KeyK') })
+    )
 
-    const prevented = fireDigit0({ metaKey: true })
-
-    expect(props.onToggle).toHaveBeenCalledOnce()
-    expect(prevented).toBe(true)
+    press('KeyK')
+    expect(onToggle).toHaveBeenCalledOnce()
   })
 
-  test('Ctrl+0 toggles on Linux', () => {
-    const props = makeProps({ modKey: 'Ctrl' })
-    renderHook(() => useDockToggleShortcut(props))
-
-    const prevented = fireDigit0({ ctrlKey: true })
-
-    expect(props.onToggle).toHaveBeenCalledOnce()
-    expect(prevented).toBe(true)
-  })
-
-  test('ignores the opposite modifier so it reaches the terminal', () => {
-    // On macOS we only claim ⌘0; Ctrl+0 must pass through to the PTY.
-    const props = makeProps({ modKey: '⌘' })
-    renderHook(() => useDockToggleShortcut(props))
-
-    const prevented = fireDigit0({ ctrlKey: true })
-
-    expect(props.onToggle).not.toHaveBeenCalled()
-    expect(prevented).toBe(false)
-  })
-
-  test('ignores other digits', () => {
-    const props = makeProps({ modKey: '⌘' })
-    renderHook(() => useDockToggleShortcut(props))
-
-    const event = new KeyboardEvent('keydown', {
-      code: 'Digit1',
-      key: '1',
-      metaKey: true,
-      bubbles: true,
-      cancelable: true,
-    })
-    act(() => {
-      document.body.dispatchEvent(event)
-    })
-
-    expect(props.onToggle).not.toHaveBeenCalled()
-  })
-
-  test('fires on Shift+0 so AZERTY/QWERTZ layouts still toggle', () => {
-    // The digit 0 sits on a shifted key on several layouts; matching the
-    // physical Digit0 keeps the shortcut reachable there.
-    const props = makeProps({ modKey: 'Ctrl' })
-    renderHook(() => useDockToggleShortcut(props))
-
-    fireDigit0({ ctrlKey: true, shiftKey: true })
-
-    expect(props.onToggle).toHaveBeenCalledOnce()
-  })
-
-  test('bails while a modal dialog is open', () => {
+  test('defers to an open modal dialog (guard preserved)', () => {
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
     append(dialog)
 
-    const props = makeProps({ modKey: '⌘' })
-    renderHook(() => useDockToggleShortcut(props))
+    const onToggle = vi.fn()
+    renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('Digit0') })
+    )
 
-    const prevented = fireDigit0({ metaKey: true })
-
-    expect(props.onToggle).not.toHaveBeenCalled()
-    expect(prevented).toBe(false)
+    expect(press('Digit0')).toBe(false)
+    expect(onToggle).not.toHaveBeenCalled()
   })
 
   test('detaches its listener on unmount', () => {
-    const props = makeProps({ modKey: '⌘' })
-    const { unmount } = renderHook(() => useDockToggleShortcut(props))
+    const onToggle = vi.fn()
+
+    const { unmount } = renderHook(() =>
+      useDockToggleShortcut({ onToggle, matches: matchesFor('Digit0') })
+    )
 
     unmount()
-    fireDigit0({ metaKey: true })
-
-    expect(props.onToggle).not.toHaveBeenCalled()
+    press('Digit0')
+    expect(onToggle).not.toHaveBeenCalled()
   })
 })

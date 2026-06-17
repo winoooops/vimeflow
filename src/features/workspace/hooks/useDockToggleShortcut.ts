@@ -1,49 +1,35 @@
 import { useEffect, useRef } from 'react'
 import { DIALOG_SELECTOR } from '../containerIds'
+import type { CommandId } from '../../keymap/catalog'
 
 export interface UseDockToggleShortcutParams {
   /** Open the dock if it is closed, collapse it if it is open. */
   onToggle: () => void
-  /** Visible modifier on this platform: '⌘' (meta) or 'Ctrl'. */
-  modKey: '⌘' | 'Ctrl'
+  /** Registry matcher — true iff the event is the resolved `dock-toggle` chord. */
+  matches: (event: KeyboardEvent, id: CommandId) => boolean
 }
 
-// Workspace-global toggle for the editor/diff dock: ⌘0 on macOS, Ctrl+0 on
-// Linux. The 0 slot sits beside the pane-focus digits (⌘1-4 in
-// usePaneShortcuts) and the sidebar's ⌘B, so the panel controls read as one
-// number row. Matches the physical Digit0 key (event.code) — like the pane
-// shortcuts — so AZERTY/QWERTZ layouts that reach 0 via Shift still fire. The
-// chord is terminal-safe: ⌘0 never reaches the PTY on macOS, and Ctrl+0 has no
-// terminal meaning, so it can toggle from anywhere except an open modal.
+// Workspace-global toggle for the editor/diff dock (default ⌘0 / Ctrl+0). The
+// key + modifier match now comes from the keybinding registry via `matches`
+// (so a persisted override takes effect); the DIALOG_SELECTOR guard and the
+// terminal-safe capture-phase claim are unchanged.
 export const useDockToggleShortcut = ({
   onToggle,
-  modKey,
+  matches,
 }: UseDockToggleShortcutParams): void => {
   const onToggleRef = useRef(onToggle)
-  const modKeyRef = useRef(modKey)
+  const matchesRef = useRef(matches)
   onToggleRef.current = onToggle
-  modKeyRef.current = modKey
+  matchesRef.current = matches
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== 'Digit0') {
+      if (!matchesRef.current(event, 'dock-toggle')) {
         return
       }
-
-      // Match only the modifier this platform advertises; reject the other so
-      // the opposite chord (e.g. Ctrl+0 on macOS) still reaches the terminal.
-      const isMeta = modKeyRef.current === '⌘'
-      const expected = isMeta ? event.metaKey : event.ctrlKey
-      const forbidden = isMeta ? event.ctrlKey : event.metaKey
-      if (!expected || forbidden) {
-        return
-      }
-
-      // Defer to whatever owns an open modal (command palette, unsaved-changes).
       if (document.querySelector(DIALOG_SELECTOR)) {
         return
       }
-
       event.preventDefault()
       event.stopPropagation()
       onToggleRef.current()

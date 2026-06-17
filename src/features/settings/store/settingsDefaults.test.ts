@@ -18,6 +18,7 @@ describe('DEFAULT_SETTINGS', () => {
       monoFont: 'jetbrains',
       keymapPreset: 'vimeflow',
       agentShimEnabled: true,
+      customKeybindings: {},
     })
   })
 })
