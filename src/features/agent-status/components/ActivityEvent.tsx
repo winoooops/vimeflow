@@ -482,6 +482,7 @@ export const ActivityEvent = ({
     >
       <article
         ref={rowRef}
+        data-event-id={event.id}
         aria-label={label}
         aria-posinset={ariaPosInSet}
         aria-setsize={ariaSetSize}

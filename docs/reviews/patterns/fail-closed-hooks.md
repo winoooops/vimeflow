@@ -2,8 +2,8 @@
 id: fail-closed-hooks
 category: security
 created: 2026-04-20
-last_updated: 2026-04-20
-ref_count: 0
+last_updated: 2026-06-17
+ref_count: 1
 ---
 
 # Fail-Closed Security Hooks
@@ -81,3 +81,13 @@ When building any subprocess-based security hook for a CLI tool that uses
 - **Fix:** Wrap the hook invocation in `asyncio.wait_for(hook(payload), timeout=45.0)` — kept under the 60 s inner LLM timeout so we emit an explicit block before the CLI gives up. Added an `asyncio.TimeoutError` arm to the outer try/except that emits a "hook exceeded 45s" block.
 - **Lesson:** Fail-closed hooks need DEFENSE-IN-DEPTH deadlines. The rule of thumb: outer wrapper timeout < inner call timeout < CLI's external kill deadline. Each layer has a chance to emit a clean block.
 - **Commit:** (round 12)
+
+### 4. Missing exit-code line in exec_command fallback reported Done
+
+- **Source:** github-claude | PR #517 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** `output_completion_status` for `CompletionMode::ExecCommandEnd` used `exec_function_output_exit_code(...).is_some_and(|code| code != 0)` to decide failure. When the `function_call_output` payload lacked a `"Process exited with code N"` line (crash, timeout, or non-standard output), the call was reported as `Done` instead of `Failed`, silently swallowing the failure.
+- **Fix:** Replaced the boolean check with an explicit `match`: `Some(0)` → `Done`, `Some(_)` → `Failed`, `None` → `Failed`. Added a unit test covering a `function_call_output` payload with no exit-code line.
+- **Commit:** same commit as this entry
+- **Note:** Non-security instance of the fail-closed principle: when an authoritative signal is missing, prefer the conservative (failure) default.

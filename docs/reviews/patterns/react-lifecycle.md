@@ -365,3 +365,66 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The second `useLayoutEffect` captures `overlays`, `getNativeSurfaceState`, `id`, `owner`, `belowPlane`, and `getRect` but lists no deps so it runs after every commit. The `// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses the warning without naming which variables are deliberately unlisted or why each is safe.
 - **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Ref mutation + store write inside setStatus updater breaks React StrictMode
+
+- **Source:** github-claude | PR #456 round 1 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `seenToolUseIdsRef.current.has/add` and `writeStatusSeenToolUseIds` were called inside the functional `setStatus` updater. React 18 StrictMode double-invokes state updaters with the same `prev` in development, so the first invocation mutated the ref and the second invocation treated the legitimate tool call as a duplicate, returning `prev` unchanged.
+- **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure before `setStatus`, capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Move seen-tool ID writes out of the state updater
+
+- **Source:** github-codex-connector | PR #456 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
+- **Fix:** Same change as entry 37: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Fragile newline separator in effect dependency signature
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** `plannedPtyIds.join('\n')` and `.split('\n')` assumed PTY IDs never contain newlines. A future backend ID containing `\n` would split into phantom tokens and refresh wrong panes.
+- **Fix:** Replaced the join/split signature with `JSON.stringify({ activePtyId, visiblePtyIds })` and parsed it inside the effect. JSON escapes any special characters, making the dependency string robust.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. Hook pre-plans then coordinator re-plans
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** The hook called `planVisibleStatusRefreshes` to build a stable effect dep, then passed the planned IDs to `refreshVisibleAgentStatusPanes`, which called the same planner again. The double-planning is idempotent today but creates silent coupling if the algorithm evolves.
+- **Fix:** Removed the hook's pre-planning; it now serializes the raw `{ activePtyId, visiblePtyIds }` request as the effect dep and lets the coordinator do all planning internally.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. Hot-loading scope should match SplitView visibility
+
+- **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes still received prefetches and warm snapshots after shrinking to a lower-capacity layout. The background-work boundary diverged from the UI visibility boundary.
+- **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Scroll-anchor compensation inferred prepend from list length
+
+- **Source:** github-claude + github-codex-connector (P2) | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The prepend detector compared `feedEvents.length` to a stored count. When the capped activity feed replaced its oldest row (total length unchanged) or appended rows at the bottom, the detector produced false negatives/positives. The compensation amount also relied on total `scrollHeight` growth, which is zero when an equal-height row drops off the bottom.
+- **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` with `CSS.escape` and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 43. Batch prepends compensated by only the first inserted row height
+
+- **Source:** github-codex-connector (P2) | PR #464 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The round-1 fix computed `prependDelta = firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta`. When hot-loading delivered multiple new activity rows in one snapshot, the viewport adjusted by one row instead of the total inserted height, causing visible content jump and undermining scroll-stability.
+- **Fix:** Prefer total positive `scrollHeightDelta` for growing prepends and fall back to the measured first-row height only when the container does not grow. Added a regression test that stubs `offsetHeight` to a single-row value while growing `scrollHeight` by several rows' worth, asserting the viewport compensates by the full delta.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

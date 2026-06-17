@@ -19,6 +19,35 @@ test('renders agent glyph and short label', () => {
   expect(screen.getByText('CLAUDE')).toBeInTheDocument()
 })
 
+test('reserves a fixed 44px header height', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-panel-header')).toHaveClass('h-11')
+})
+
+test('shows compact refresh affordance without replacing status', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      isRefreshing
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.queryByTestId('status-dot')).not.toBeInTheDocument()
+  expect(screen.getByText('fetching latest')).toBeInTheDocument()
+  expect(screen.getByText('sync')).toBeInTheDocument()
+  expect(screen.getByTestId('agent-glyph-chip')).toHaveAttribute(
+    'data-refreshing',
+    'true'
+  )
+})
+
 test('chevron button fires onCollapse when clicked', async () => {
   const onCollapse = vi.fn()
   render(

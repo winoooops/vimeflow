@@ -310,6 +310,7 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
                     phase,
                 );
             }
+            emit_replay_in_flight_tool_calls(&self.session_id, &self.events, &self.in_flight);
         }
         self.emitter.finish_replay();
     }
@@ -406,7 +407,7 @@ fn process_line(
 
     match dto.line_type.as_deref().unwrap_or("") {
         "assistant" => {
-            process_assistant_message(&dto, session_id, cwd, events, in_flight);
+            process_assistant_message(&dto, session_id, cwd, events, in_flight, replay_done);
         }
         "user" => {
             process_user_message(
@@ -519,6 +520,7 @@ fn process_assistant_message(
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
+    replay_done: bool,
 ) {
     let content = match message_content_items(dto) {
         Some(arr) => arr,
@@ -576,19 +578,21 @@ fn process_assistant_message(
             },
         );
 
-        let event = AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: id,
-            tool: name.to_string(),
-            args,
-            status: ToolCallStatus::Running,
-            timestamp: timestamp.clone(),
-            duration_ms: 0,
-            is_test_file,
-        };
+        if replay_done {
+            let event = AgentToolCallEvent {
+                session_id: session_id.to_string(),
+                tool_use_id: id,
+                tool: name.to_string(),
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.clone(),
+                duration_ms: 0,
+                is_test_file,
+            };
 
-        if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-tool-call event: {}", e);
+            if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-tool-call event: {}", e);
+            }
         }
     }
 }
@@ -739,6 +743,29 @@ fn process_tool_result(
 
     if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
+    }
+}
+
+fn emit_replay_in_flight_tool_calls(
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    in_flight: &InFlightToolCalls,
+) {
+    for (tool_use_id, call) in in_flight {
+        let event = AgentToolCallEvent {
+            session_id: session_id.to_string(),
+            tool_use_id: tool_use_id.clone(),
+            tool: call.tool.clone(),
+            args: call.args.clone(),
+            status: ToolCallStatus::Running,
+            timestamp: call.started_at_iso.clone(),
+            duration_ms: 0,
+            is_test_file: call.is_test_file,
+        };
+
+        if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
+            log::warn!("Failed to emit agent-tool-call event: {}", e);
+        }
     }
 }
 
@@ -977,6 +1004,14 @@ mod tests {
             .collect()
     }
 
+    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
     #[test]
     fn claude_replay_flushes_only_the_settled_phase_once() {
         let sink = Arc::new(FakeEventSink::new());
@@ -1009,6 +1044,47 @@ mod tests {
             r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
+
+    #[test]
+    fn claude_replay_does_not_emit_running_for_settled_tool_calls() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"src/main.ts"}}],"stop_reason":"tool_use"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"tool_result","tool_use_id":"toolu_1","content":"ok","is_error":false}"#,
+        );
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "toolu_1");
+        assert_eq!(payloads[0]["status"], "done");
+    }
+
+    #[test]
+    fn claude_replay_emits_running_for_unsettled_tool_call_at_catch_up() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+
+        decoder.decode_line(
+            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"src/main.ts"}}],"stop_reason":"tool_use"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.on_caught_up();
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["toolUseId"], "toolu_1");
+        assert_eq!(payloads[0]["status"], "running");
     }
 
     #[test]

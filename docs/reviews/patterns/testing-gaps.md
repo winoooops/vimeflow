@@ -703,3 +703,30 @@ filesystem scope restrictions).
 - **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
 - **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
 - **Commit:** _(same commit as this entry)_
+
+### 69. Global inert-click interceptor can silence capture-phase test handlers
+
+- **Source:** github-claude | PR #517 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/test/setup.ts`
+- **Finding:** A module-level capture-phase click listener called `event.stopImmediatePropagation()` for clicks inside `[inert]` elements to polyfill jsdom's lack of inert activation suppression. Because the listener is installed once at module load and persists across all tests, a future test adding its own capture-phase click spy near an inert subtree would have its handler silently dropped, producing a false-green assertion.
+- **Fix:** Added a comment documenting the global side-effect and warning future contributors to use bubbling-phase listeners or keep spies outside inert subtrees unless explicitly testing inert blocking.
+- **Commit:** same commit as this entry
+- **Note:** Low-severity test-infrastructure finding; a per-test helper would be cleaner but requires broader test-file changes.
+
+### 70. Global inert-click interceptor persists across all test files
+
+- **Source:** github-claude | PR #517 round 10 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/test/setup.ts` L102-121
+- **Finding:** The same module-level capture-phase click listener from entry 69
+  was still installed globally. A comment documenting the side-effect does not
+  remove the risk: any future test that registers a capture-phase click handler
+  near an `[inert]` subtree continues to have that handler silenced with no
+  error or warning.
+- **Fix:** Extracted the inert click polyfill into a scoped helper
+  (`src/test/inertClickPolyfill.ts`) and installed it via `beforeAll`/`afterAll`
+  only in the test file that actually exercises inert click behavior
+  (`AgentStatusPanel/index.test.tsx`), removing the global side-effect from
+  `src/test/setup.ts`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

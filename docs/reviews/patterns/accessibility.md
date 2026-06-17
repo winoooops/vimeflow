@@ -569,7 +569,25 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Preserved the raw `findIndex` result as `activeIndex`, added a separate `focusIndex = Math.max(0, activeIndex)` used only for keyboard entry (`tabIndex`), and guarded thumb rendering with `activeIndex >= 0` so no thumb appears when no option is semantically selected. Added a regression test verifying the thumb is absent, the first option remains tabbable, and both options report `aria-pressed="false"` for an unmatched value.
 - **Commit:** same commit as this entry
 
-### 54. Segmented ProgressBar exposes `role="progressbar"` without a value
+### 54. Reduced-motion media query leaves animated element visible at rest
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/index.css`
+- **Finding:** The `prefers-reduced-motion: reduce` block set `animation: none` on `.vf-activity-refresh-comet` but left the 45%-wide gradient `div` mounted at `translateX(0)`. Because keyframe positions are not applied when animation is disabled, users who opted out of motion saw a static semi-transparent bar in the header divider.
+- **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 55. `aria-live` region announces completion on every refresh cycle
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The live region alternated between `Fetching latest agent status` and `Agent status updated`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
+- **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 56. Segmented ProgressBar exposes `role="progressbar"` without a value
 
 - **Source:** github-codex-connector | PR #509 round 1 | 2026-06-17
 - **Severity:** MEDIUM
