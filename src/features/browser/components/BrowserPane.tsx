@@ -309,6 +309,29 @@ export const BrowserPane = ({
     }
   }, [browserSessionId, pane.id, syncBounds])
 
+  // ResizeObserver only sees box-size changes; native WebContentsView bounds
+  // also need to follow ancestor transforms and other position-only moves.
+  useEffect(() => {
+    let frameId: number | null = null
+    let stopped = false
+
+    const tick = (): void => {
+      syncBounds()
+      if (!stopped) {
+        frameId = window.requestAnimationFrame(tick)
+      }
+    }
+
+    frameId = window.requestAnimationFrame(tick)
+
+    return (): void => {
+      stopped = true
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+    }
+  }, [syncBounds])
+
   useEffect(() => {
     const becameVisibleAgain = wasOccludedRef.current && !isOccluded
     isActiveRef.current = isActive

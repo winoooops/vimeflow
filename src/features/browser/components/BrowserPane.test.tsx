@@ -88,6 +88,13 @@ const rect = {
   toJSON: (): Record<string, number> => ({}),
 } as DOMRect
 
+const movedRect = {
+  ...rect,
+  x: 120,
+  left: 120,
+  right: 760,
+} as DOMRect
+
 const singleTab: BrowserPaneCreateResult = {
   url: 'https://example.com/',
   title: 'Example',
@@ -241,6 +248,48 @@ describe('BrowserPane', () => {
       shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
       visible: true,
     })
+  })
+
+  test('updates bounds when the content position changes without resize or rerender', async () => {
+    let frameCallback: FrameRequestCallback | null = null
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallback = callback
+
+        return 1
+      })
+
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => undefined)
+
+    try {
+      render(
+        <BrowserPaneHarness session={session} pane={browserPane} isActive />
+      )
+      await settle()
+      bridgeMocks.setBrowserPaneBounds.mockClear()
+
+      rectSpy.mockReturnValue(movedRect)
+      act(() => {
+        frameCallback?.(performance.now())
+      })
+
+      await waitFor(() => {
+        expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+          sessionId: 'session-1',
+          paneId: 'p1',
+          bounds: { x: 120, y: 20, width: 640, height: 360 },
+          shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+          visible: true,
+        })
+      })
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      cancelAnimationFrameSpy.mockRestore()
+    }
   })
 
   test('marks the native browser pane invisible while occluded, then restores it', async () => {
