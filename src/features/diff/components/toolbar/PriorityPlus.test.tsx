@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PriorityPlus } from './PriorityPlus'
+import { ToolbarSeparator } from './ToolbarSeparator'
 
 // Capture the ResizeObserver callback so the test can flush measurements
 // synchronously. The test setup file already stubs a global ResizeObserver
@@ -314,6 +315,13 @@ describe('PriorityPlus', () => {
   })
 
   test('restores overflowed items when the toolbar expands', () => {
+    // SCOPE: this validates the measurement LOGIC only — given a re-measure
+    // against a wider container, overflowed items come back. It deliberately
+    // fires the observer by hand because jsdom has no layout engine. It does
+    // NOT prove a real-world widen triggers that re-measure: that depends on
+    // the container actually growing with the pane, which is the separate
+    // layout-contract guard ('the measurement container fills its row …').
+    // Both are required — the manual fire alone once masked a real expand bug.
     render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
 
     const root = rootContainer('item-0')
@@ -616,5 +624,109 @@ describe('PriorityPlus', () => {
     expect(
       screen.getByRole('dialog', { name: 'More controls' })
     ).toBeInTheDocument()
+  })
+
+  test('trims a trailing separator and excludes separators from the tray', () => {
+    render(
+      <PriorityPlus maxRows={1}>
+        {[
+          <button key="i0" type="button" data-testid="item-0">
+            item 0
+          </button>,
+          <ToolbarSeparator key="sep" />,
+          <button key="i1" type="button" data-testid="item-1">
+            item 1
+          </button>,
+          <button key="i2" type="button" data-testid="item-2">
+            item 2
+          </button>,
+        ]}
+      </PriorityPlus>
+    )
+
+    // item-0 + separator sit on row 1; item-1 + item-2 wrap to row 2. The raw
+    // cutoff (item-1's index) would leave the separator as the last VISIBLE
+    // item — the trim pulls the cutoff back so only item-0 stays and the
+    // hairline never dangles before the `…` chip.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 66, offsetWidth: 1 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    // The count excludes the separator: 2 controls (item-1, item-2), not 3.
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 2 more controls')
+
+    // The trailing separator wrapper is hidden — it folds away with its group.
+    const root = rootContainer('item-0')
+    // eslint-disable-next-line testing-library/no-node-access -- locate the separator wrapper
+    const separatorWrapper = root.querySelector('[data-pp-separator]')
+    expect(separatorWrapper?.className).toContain('hidden')
+
+    // item-0 stays visible.
+    expect(wrapperFor('item-0').className).not.toContain('hidden')
+  })
+
+  test('keeps an interior separator visible between two visible groups', () => {
+    render(
+      <PriorityPlus maxRows={1}>
+        {[
+          <button key="i0" type="button" data-testid="item-0">
+            item 0
+          </button>,
+          <ToolbarSeparator key="sep" />,
+          <button key="i1" type="button" data-testid="item-1">
+            item 1
+          </button>,
+          <button key="i2" type="button" data-testid="item-2">
+            item 2
+          </button>,
+        ]}
+      </PriorityPlus>
+    )
+
+    // item-0, separator and item-1 all fit on row 1; only item-2 wraps. The
+    // last visible item is item-1 (not the separator), so no trim happens and
+    // the divider stays between the two visible groups.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 66, offsetWidth: 1 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 1 more controls')
+
+    const root = rootContainer('item-0')
+    // eslint-disable-next-line testing-library/no-node-access -- locate the separator wrapper
+    const separatorWrapper = root.querySelector('[data-pp-separator]')
+    expect(separatorWrapper?.className).not.toContain('hidden')
+  })
+
+  test('the measurement container fills its row so a widen triggers re-measure', () => {
+    // Regression guard for the real-app expand bug: a shrink-to-fit container
+    // only narrows when the pane shrinks and never widens back, so overflowed
+    // items stay stuck in the `…` tray on expand. The observed container must
+    // FILL the row (flex-1) so its own width tracks the pane and the
+    // ResizeObserver fires on widen. jsdom has no layout/observer, so this
+    // asserts the load-bearing fill class rather than re-measurement directly.
+    render(<PriorityPlus maxRows={1}>{renderItems(2)}</PriorityPlus>)
+
+    expect(rootContainer('item-0').className).toMatch(/\bflex-1\b/)
   })
 })

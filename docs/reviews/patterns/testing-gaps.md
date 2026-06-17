@@ -676,3 +676,30 @@ filesystem scope restrictions).
 - **Fix:** Added a focused test that renders `ProgressBar` with `gradient` and a production-used `secondary` tone, then asserts the fill element receives `bg-gradient-to-r`.
 - **Code-review heuristic:** When a PR centralizes rendering into a new shared primitive and production consumers exercise a non-default branch, add at least one targeted test for that branch. Simple lookup tables are still worth covering because theme-token or primitive refactors can silently break the mapped class.
 - **Commit:** same commit as this entry
+
+### 68. `requestAnimationFrame` mock always returns the same frame ID
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The test spy mocked `window.requestAnimationFrame` to always return `1`. After the spy was restored, the component's unmount cleanup called `window.cancelAnimationFrame(1)` against the real API. In jsdom frame IDs start at `1`, so any other real rAF queued with that ID would be silently dropped.
+- **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
+- **Commit:** _(same commit as this entry)_
+
+### 69. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`
+- **Finding:** `prepareBrowserPaneAtSlot` constructed `paneId = \`p${slotIndex}\``and passed it to`readBrowserPaneIdentity` without verifying the ID against the DOM. A future change to pane-ID format would fail every parametrized slot test with an opaque "identity not available" error.
+- **Fix:** Read `dataset.paneId` from the Nth `[data-testid="split-view-slot"]` node in the active split view and throw a clear error if the slot has no pane ID.
+- **Commit:** _(same commit as this entry)_
+
+### 70. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
+- **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
+- **Commit:** _(same commit as this entry)_

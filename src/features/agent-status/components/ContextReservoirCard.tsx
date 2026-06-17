@@ -56,9 +56,10 @@ export const ContextReservoirCard = ({
   const used = Math.round(contextWindowSize * (effectivePct / 100))
   const headroom = contextWindowSize - used
 
-  // Pill rides the waterline (shares the tank's 2% visibility floor).
-  const waterlineTopPct =
-    (1 - Math.min(100, Math.max(2, effectivePct)) / 100) * 100
+  // Pill anchors near the tank floor at 0%; the clamp keeps it inside bounds.
+  const visibleWaterPct =
+    effectivePct <= 0 ? 2 : Math.min(100, Math.max(2, effectivePct))
+  const waterlineTopPct = (1 - visibleWaterPct / 100) * 100
 
   // Card chrome matches the sibling TokenCache directly below it in the panel
   // (radius 10, 135deg tone wash, tinted border, no elevation) so the two
@@ -123,7 +124,7 @@ export const ContextReservoirCard = ({
           </span>
         </div>
 
-        {/* Tank with scale ticks + floating waterline value */}
+        {/* Tank with top scale tick + floating waterline value */}
         <div className="relative">
           <WaterTank pct={effectivePct} theme={mode} empty={pct === null} />
 
@@ -132,12 +133,6 @@ export const ContextReservoirCard = ({
             style={{ color: chrome.tick }}
           >
             {compactTokens(contextWindowSize)}
-          </span>
-          <span
-            className="pointer-events-none absolute bottom-[6px] right-[7px] font-mono text-[8.5px] font-semibold tracking-[0.04em]"
-            style={{ color: chrome.tick }}
-          >
-            0
           </span>
 
           {pct !== null && (

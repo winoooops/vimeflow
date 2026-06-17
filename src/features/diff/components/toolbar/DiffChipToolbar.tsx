@@ -17,6 +17,8 @@ import {
   WELL_DANGER_BUTTON_CLASSES,
   WELL_DISABLED_BUTTON_CLASSES,
 } from './ToolWell'
+import { ToolbarSeparator } from './ToolbarSeparator'
+import { CONFIG_CHIP_CLASSES, ConfigChipContent } from './ConfigChip'
 
 // Floating-UI popover confirmation for the Discard All action. Rendered as
 // a floating box anchored to the trigger so it escapes any overflow clipping
@@ -335,6 +337,9 @@ export const DiffChipToolbar = ({
   //
   // Collapse order (lowest priority overflows FIRST):
   //   View → Theme → Hi-lite → Change-stepper → Tool-well → File-pill → Segmented
+  // Group hairlines (ToolbarSeparator) sit between the major clusters and are
+  // overflow-safe: PriorityPlus trims a trailing separator and drops them from
+  // the `…` tray, so a hairline never dangles or appears in the menu.
   const chips: ReactNode[] = [
     // 1. split / unified segmented — top priority; the most-used control.
     <Segmented
@@ -342,7 +347,10 @@ export const DiffChipToolbar = ({
       value={diffStyle}
       options={['split', 'unified'] as const}
       onChange={onDiffStyleChange}
+      icons={{ split: 'vertical_split', unified: 'view_headline' }}
     />,
+    // hairline between the view-mode control and the navigation cluster.
+    <ToolbarSeparator key="sep-nav" />,
     // 2. file pill — lavender (primary) file-nav group (prev arrow + basename
     // pill + N/M badge + next arrow). FUNCTIONAL: steps the selection through
     // the changed-files list; inert on a single file.
@@ -354,7 +362,8 @@ export const DiffChipToolbar = ({
       onPrev={onPrevFile}
       onNext={onNextFile}
     />,
-    // 3. tool-well — annotation placeholders + staging group (one unit).
+    // 3. tool-well — staging group (stage / unstage / discard / discard-all) as
+    // a flat ghost-icon group (one unit).
     <ToolWell
       key="tool-well"
       showUnstage={diffMode === 'staged'}
@@ -373,24 +382,55 @@ export const DiffChipToolbar = ({
       onPrev={onPrevHunk}
       onNext={onNextHunk}
     />,
-    // 5. highlight dropdown — `lineDiffType` Pierre option.
+    // hairline between the navigation cluster and the config chips.
+    <ToolbarSeparator key="sep-config" />,
+    // 5. highlight chip — `lineDiffType` Pierre option as a labelled config chip
+    // (small-caps key + value inside the control).
     <Dropdown
       key="highlight"
-      label="highlight"
       value={lineDiffType}
       options={LINE_DIFF_OPTIONS}
       onChange={onLineDiffTypeChange}
       width={260}
+      renderTrigger={({ ref, props, current }): ReactElement => (
+        <Tooltip content="Intra-line highlight granularity">
+          <button
+            ref={ref}
+            type="button"
+            className={CONFIG_CHIP_CLASSES}
+            {...props}
+          >
+            <ConfigChipContent
+              icon="format_ink_highlighter"
+              label="Highlight"
+              value={current?.label ?? lineDiffType}
+            />
+          </button>
+        </Tooltip>
+      )}
     />,
-    // 6. theme dropdown — `DiffsThemeNames` enumeration, with a palette lead
-    // icon.
+    // 6. theme chip — `DiffsThemeNames` enumeration, with a palette lead icon.
     <Dropdown
       key="theme"
-      label="theme"
       value={theme}
       options={THEME_OPTIONS}
       onChange={onThemeChange}
-      leadingIcon="palette"
+      renderTrigger={({ ref, props, current }): ReactElement => (
+        <Tooltip content="Syntax theme">
+          <button
+            ref={ref}
+            type="button"
+            className={CONFIG_CHIP_CLASSES}
+            {...props}
+          >
+            <ConfigChipContent
+              icon="palette"
+              label="Theme"
+              value={current?.label ?? theme}
+            />
+          </button>
+        </Tooltip>
+      )}
     />,
     // 7. View ▾ gear chip — consolidates the indicators / overflow dropdowns
     // and the four boolean toggle chips into a single portal-rendered popover
@@ -422,7 +462,7 @@ export const DiffChipToolbar = ({
     <div
       role="toolbar"
       aria-label="Diff toolbar"
-      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15"
+      className="flex min-h-[46px] items-center px-3 bg-surface-container-lowest border-b border-outline-variant/45"
     >
       <div className="flex w-full items-center">
         <PriorityPlus
@@ -438,7 +478,7 @@ export const DiffChipToolbar = ({
               aria-label="discard all feedback"
               disabled={!canDiscardFeedback}
               onClick={onDiscardFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold bg-surface-container-highest text-on-surface-variant hover:bg-error/15 hover:text-error transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface-container-highest disabled:hover:text-on-surface-variant"
+              className="inline-flex items-center h-7 px-3.5 rounded-md font-mono text-[0.6875rem] font-medium bg-transparent border border-outline-variant/60 text-on-surface hover:bg-surface-container hover:border-error/50 hover:text-error transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-outline-variant/60 disabled:hover:text-on-surface"
             >
               Discard
             </button>
@@ -447,11 +487,11 @@ export const DiffChipToolbar = ({
               aria-label={`finish feedback (${feedbackCount})`}
               disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_color-mix(in_srgb,var(--color-primary-container)_22%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span
                 aria-hidden="true"
-                className="material-symbols-outlined text-base leading-none"
+                className="material-symbols-outlined text-sm leading-none"
               >
                 check
               </span>

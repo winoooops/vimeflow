@@ -108,19 +108,27 @@ describe('ContextReservoirCard tank + waterline', () => {
     expect(screen.getByTestId('tank-water')).toBeInTheDocument()
   })
 
+  test('renders a dry tank, not a tiny animated fill, at 0%', () => {
+    render(<ContextReservoirCard {...defaultProps} usedPercentage={0} />)
+
+    expect(screen.getByTestId('water-tank')).toBeInTheDocument()
+    expect(screen.queryByTestId('tank-water')).not.toBeInTheDocument()
+    expect(screen.getByTestId('context-pill')).toHaveTextContent('0')
+  })
+
   test('rides a value pill on the waterline showing the used tokens', () => {
     render(<ContextReservoirCard {...defaultProps} />)
 
     expect(screen.getByTestId('context-pill')).toHaveTextContent('560k')
   })
 
-  test('top scale tick shows the window size, bottom shows zero', () => {
+  test('top scale tick shows the window size without a bottom zero label', () => {
     render(
       <ContextReservoirCard {...defaultProps} contextWindowSize={200_000} />
     )
 
     expect(screen.getByText('200k')).toBeInTheDocument()
-    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 })
 

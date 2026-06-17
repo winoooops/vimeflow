@@ -231,8 +231,11 @@ describe('DiffChipToolbar', () => {
       screen.queryByRole('button', { name: /unstage/i })
     ).not.toBeInTheDocument()
 
-    // Dropdown triggers — value labels surface on the chip itself.
-    expect(screen.getByRole('button', { name: /^Word$/ })).toBeInTheDocument() // highlight
+    // Config chips — the small-caps key + value both surface on the chip
+    // itself (e.g. "Highlight" + "Word"), not as an external caption.
+    expect(
+      screen.getByRole('button', { name: /highlight.*word/i })
+    ).toBeInTheDocument() // highlight chip
 
     expect(
       screen.getByRole('button', { name: /pierre-dark/i })
@@ -395,7 +398,7 @@ describe('DiffChipToolbar', () => {
 
     renderToolbar({ onLineDiffTypeChange })
 
-    await user.click(screen.getByRole('button', { name: /^Word$/ }))
+    await user.click(screen.getByRole('button', { name: /highlight.*word/i }))
     const menu = await screen.findByRole('menu')
     await user.click(within(menu).getByRole('menuitem', { name: /^Character/ }))
 

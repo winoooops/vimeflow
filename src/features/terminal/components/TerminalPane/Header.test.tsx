@@ -58,7 +58,12 @@ describe('Header', () => {
     render(<Header {...baseProps} />)
 
     expect(screen.getByText('CLAUDE')).toBeInTheDocument()
-    expect(screen.getByText('∴')).toBeInTheDocument()
+
+    const glyphChip = screen.getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+    const brandMark = glyphChip.querySelector('svg')
+
+    expect(brandMark).toBeInTheDocument()
   })
 
   test('renders pane title from session.name', () => {

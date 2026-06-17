@@ -180,9 +180,13 @@ describe('Tab — click', () => {
 })
 
 describe('Tab — visual', () => {
-  test('renders agent glyph from the registry', () => {
+  test('renders the agent brand mark from the registry', () => {
     renderTab({ agent: AGENTS.claude })
-    expect(screen.getByText(AGENTS.claude.glyph)).toBeInTheDocument()
+    const glyphChip = screen.getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+    const brandMark = glyphChip.querySelector('svg')
+
+    expect(brandMark).toBeInTheDocument()
   })
 
   test('active tab uses bg-surface (no agent-color gradient — handoff §4.3)', () => {

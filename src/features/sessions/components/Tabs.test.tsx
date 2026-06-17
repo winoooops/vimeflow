@@ -235,7 +235,11 @@ describe('Tabs', () => {
     const activeTab = screen.getByRole('tab', { name: 'codex tab' })
     const inactiveTab = screen.getByRole('tab', { name: 'shell tab' })
 
-    expect(within(activeTab).getByText(AGENTS.codex.glyph)).toBeInTheDocument()
+    const codexChip = within(activeTab).getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- codex renders an svg brand mark
+    const codexMark = codexChip.querySelector('svg')
+
+    expect(codexMark).toBeInTheDocument()
     expect(
       within(inactiveTab).getByText(AGENTS.shell.glyph)
     ).toBeInTheDocument()

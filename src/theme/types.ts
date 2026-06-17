@@ -97,7 +97,6 @@ export const SYN_TOKENS = [
 export const AGENT_IDS = [
   'claude',
   'codex',
-  'gemini',
   'shell',
   'browser',
   'kimi',

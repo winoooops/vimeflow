@@ -47,7 +47,7 @@ export const ChangeStepper = ({
     variant="tinted"
     radius="md"
     size="custom"
-    className="h-[30px] gap-[7px] rounded-md bg-secondary/[0.08] pl-2.5 pr-1 ring-1 ring-inset ring-secondary/[0.16]"
+    className="h-7 gap-[7px] rounded-md bg-secondary/[0.08] pl-2.5 pr-1 ring-1 ring-inset ring-secondary/[0.16]"
   >
     <Tooltip content="Jump between changes in this file">
       <span className="inline-flex items-center gap-[7px]">

@@ -1323,8 +1323,8 @@ describe('DiffPanelContent', () => {
         'word'
       )
 
-      // HIGHLIGHT dropdown trigger shows the current value 'Word'.
-      await user.click(screen.getByRole('button', { name: 'Word' }))
+      // The Highlight config chip surfaces its key + current value ("Word").
+      await user.click(screen.getByRole('button', { name: /highlight.*word/i }))
       const menu = await screen.findByRole('menu')
       await user.click(
         within(menu).getByRole('menuitem', { name: /character/i })

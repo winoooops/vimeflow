@@ -1,6 +1,7 @@
 import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import { hasLivePane } from '../utils/sessionStatus'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -94,10 +95,11 @@ export const Tab = ({
       )}
       <span
         aria-hidden="true"
+        data-testid="agent-glyph-chip"
         className="flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[10px] font-bold"
         style={{ background: agent.accentDim, color: agent.accent }}
       >
-        {agent.glyph}
+        <AgentGlyph agent={agent} size={12} />
       </span>
       <span
         className={`

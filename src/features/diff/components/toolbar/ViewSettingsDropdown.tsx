@@ -2,7 +2,7 @@ import { type ReactElement } from 'react'
 import type { BaseDiffOptions } from '@pierre/diffs'
 import { type DropdownOption } from '@/components/Dropdown'
 import { Menu } from '@/components/Menu'
-import { ToolbarButton } from '@/components/ToolbarButton'
+import { CONFIG_CHIP_CLASSES, ConfigChipContent } from './ConfigChip'
 
 // Pierre option subtypes — same pattern as DiffChipToolbar.tsx so a Pierre
 // version bump that widens / renames the enums is caught at type-check time.
@@ -71,12 +71,13 @@ export const ViewSettingsDropdown = ({
     placement="bottom-end"
     aria-label="View settings"
     trigger={
-      <ToolbarButton
+      <button
+        type="button"
         aria-label="View settings"
-        icon="tune"
-        label="View"
-        trailingIcon="expand_more"
-      />
+        className={CONFIG_CHIP_CLASSES}
+      >
+        <ConfigChipContent icon="tune" value="View" />
+      </button>
     }
   >
     <Menu.Section label="Format">

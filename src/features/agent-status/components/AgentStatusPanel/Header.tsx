@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import type { Agent } from '../../../../agents/registry'
 
 export interface AgentStatusPanelHeaderProps {
@@ -27,7 +28,7 @@ export const AgentStatusPanelHeader = ({
       className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md font-mono text-[13px] font-bold"
       style={{ background: agent.accentDim, color: agent.accent }}
     >
-      {agent.glyph}
+      <AgentGlyph agent={agent} size={14} />
     </div>
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <span className="font-headline text-[13px] font-semibold text-on-surface">

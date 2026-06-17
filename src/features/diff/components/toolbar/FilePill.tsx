@@ -29,8 +29,8 @@ export interface FilePillProps {
 // `not-allowed` cursor, no hover, no tooltip — rather than showing the blocked
 // cursor (matches the design's unavailable affordance).
 const GHOST_ARROW_CLASSES =
-  'w-[26px] h-[30px] grid place-items-center rounded-md bg-transparent ' +
-  'text-on-surface-muted hover:bg-surface-bright hover:text-primary-container ' +
+  'w-[26px] h-7 grid place-items-center rounded-md bg-transparent ' +
+  'text-on-surface-muted hover:bg-surface-container hover:text-primary ' +
   'transition-colors disabled:opacity-40 disabled:pointer-events-none'
 
 export const FilePill = ({
@@ -77,9 +77,9 @@ export const FilePill = ({
           label={baseName}
           trailingCount={counterText}
           iconClassName="material-symbols-outlined text-base leading-none text-primary-container"
-          labelClassName="max-w-[12rem] truncate font-mono text-xs font-medium text-on-surface"
+          labelClassName="w-28 truncate font-mono text-xs font-medium text-on-surface"
           countClassName="whitespace-nowrap rounded-full bg-primary/[0.14] px-1.5 py-0.5 font-mono text-[0.625rem] text-primary-dim"
-          className="h-[30px] gap-2 rounded-md bg-primary/10 px-3 ring-1 ring-inset ring-primary/20"
+          className="h-7 gap-2 rounded-md bg-primary/10 px-3 ring-1 ring-inset ring-primary/20"
         />
       </Tooltip>
       <Tooltip content="Next file">

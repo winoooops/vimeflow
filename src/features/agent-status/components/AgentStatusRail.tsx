@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../agents/registry'
+import { AgentGlyph } from '@/components/AgentGlyph'
 import { RailMeter } from './RailMeter'
 import { ctxTone } from '../utils/contextTone'
 
@@ -73,7 +74,7 @@ export const AgentStatusRail = ({
           borderColor: agent.accentSoft,
         }}
       >
-        {agent.glyph}
+        <AgentGlyph agent={agent} size={14} />
       </div>
 
       {ctxPct !== null && (
