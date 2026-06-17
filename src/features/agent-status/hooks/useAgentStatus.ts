@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
+import {
+  readStatusSeenToolUseIds,
+  readStatusSnapshot,
+  writeStatusSeenToolUseIds,
+  writeStatusSnapshot,
+} from '../utils/statusSnapshotStore'
+import {
+  createDefaultAgentStatus,
+  mapDetectedAgentType,
+} from '../utils/agentStatusModel'
 import type {
   AgentCwdEvent,
   AgentDetectedEvent,
@@ -19,44 +29,38 @@ const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
 const EXIT_HOLD_MS = 5000
 
-const AGENT_TYPE_MAP = {
-  claudeCode: 'claude-code',
-  codex: 'codex',
-  kimi: 'kimi',
-  aider: 'aider',
-  generic: 'generic',
-} as const
+const createStatusForSession = (sessionId: string | null): AgentStatus => {
+  if (sessionId === null) {
+    return createDefaultAgentStatus(null)
+  }
 
-const isKnownAgentType = (
-  value: string
-): value is keyof typeof AGENT_TYPE_MAP =>
-  Object.prototype.hasOwnProperty.call(AGENT_TYPE_MAP, value)
+  return readStatusSnapshot(sessionId) ?? createDefaultAgentStatus(sessionId)
+}
 
-const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
-  isActive: false,
-  agentExited: false,
-  agentType: null,
-  modelId: null,
-  modelDisplayName: null,
-  version: null,
-  sessionId,
-  agentSessionId: null,
-  cwd: null,
-  contextWindow: null,
-  cost: null,
-  rateLimits: null,
-  usageFetched: false,
-  numTurns: 0,
-  toolCalls: { total: 0, byType: {}, active: null },
-  recentToolCalls: [],
-  testRun: null,
-})
+const shouldTreatStatusAsDetected = (status: AgentStatus): boolean =>
+  status.isActive || status.agentExited
+
+const createSeenToolUseIds = (status: AgentStatus): Set<string> =>
+  new Set(status.recentToolCalls.map((call) => call.id))
+
+const createSeenToolUseIdsForSession = (
+  sessionId: string | null,
+  status: AgentStatus
+): Set<string> => {
+  if (sessionId === null) {
+    return createSeenToolUseIds(status)
+  }
+
+  const stored = readStatusSeenToolUseIds(sessionId)
+
+  return stored.size > 0 ? stored : createSeenToolUseIds(status)
+}
 
 const createRunResetStatus = (
   prev: AgentStatus,
   sessionId: string | null
 ): AgentStatus => ({
-  ...createDefaultStatus(sessionId),
+  ...createDefaultAgentStatus(sessionId),
   isActive: prev.isActive,
   agentExited: prev.agentExited,
   agentType: prev.agentType,
@@ -112,7 +116,11 @@ export const useAgentStatus = (
   resetGeneration = 0
 ): AgentStatus => {
   const [status, setStatus] = useState<AgentStatus>(() =>
-    createDefaultStatus(sessionId)
+    createStatusForSession(sessionId)
+  )
+
+  const seenToolUseIdsRef = useRef<Set<string>>(
+    createSeenToolUseIdsForSession(sessionId, status)
   )
   const prevSessionIdRef = useRef<string | null>(sessionId)
   const prevResetGenerationRef = useRef(resetGeneration)
@@ -141,7 +149,7 @@ export const useAgentStatus = (
   // past and is now gone, regardless of whether the backend watcher
   // start succeeded — so transient `start_agent_watcher` failures no
   // longer leave the panel stuck.
-  const agentEverDetectedRef = useRef(false)
+  const agentEverDetectedRef = useRef(shouldTreatStatusAsDetected(status))
   const watcherStartedRef = useRef(false)
   // Distinct from watcherStartedRef: this guards the await window while
   // start_agent_watcher is in flight. Without it, overlapping detection
@@ -223,7 +231,12 @@ export const useAgentStatus = (
       }
 
       prevSessionIdRef.current = sessionId
-      agentEverDetectedRef.current = false
+      const nextStatus = createStatusForSession(sessionId)
+      seenToolUseIdsRef.current = createSeenToolUseIdsForSession(
+        sessionId,
+        nextStatus
+      )
+      agentEverDetectedRef.current = shouldTreatStatusAsDetected(nextStatus)
       watcherStartedRef.current = false
       watcherStartInFlightRef.current = false
       watcherStartGenerationRef.current += 1
@@ -237,9 +250,18 @@ export const useAgentStatus = (
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
       }
-      setStatus(createDefaultStatus(sessionId))
+      setStatus(nextStatus)
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (status.sessionId === null) {
+      return
+    }
+
+    writeStatusSnapshot(status.sessionId, status)
+    writeStatusSeenToolUseIds(status.sessionId, seenToolUseIdsRef.current)
+  }, [status])
 
   // Detection polling: poll detect_agent_in_session frequently enough that
   // pane chrome returns to shell styling promptly after an agent exits.
@@ -272,12 +294,6 @@ export const useAgentStatus = (
           collapseTimeoutRef.current = null
         }
 
-        const agentKey = result.agentType as string
-
-        const mapped = isKnownAgentType(agentKey)
-          ? AGENT_TYPE_MAP[agentKey]
-          : 'generic'
-
         const detectedPid = result.pid
 
         const agentProcessChanged =
@@ -290,6 +306,8 @@ export const useAgentStatus = (
           watcherStartedRef.current = false
           watcherStartInFlightRef.current = false
           watcherStartGenerationRef.current += 1
+          seenToolUseIdsRef.current = new Set()
+          writeStatusSeenToolUseIds(sid, seenToolUseIdsRef.current)
           await stopWatchers(sid, knownPtyIdRef.current ?? ptySessionId)
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
@@ -302,10 +320,10 @@ export const useAgentStatus = (
         setStatus((prev) =>
           prev.sessionId === sid
             ? {
-                ...(agentProcessChanged ? createDefaultStatus(sid) : prev),
+                ...(agentProcessChanged ? createDefaultAgentStatus(sid) : prev),
                 isActive: true,
                 agentExited: false,
-                agentType: mapped,
+                agentType: mapDetectedAgentType(result.agentType as string),
               }
             : prev
         )
@@ -408,7 +426,7 @@ export const useAgentStatus = (
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
-            prev.sessionId === sid ? createDefaultStatus(sid) : prev
+            prev.sessionId === sid ? createDefaultAgentStatus(sid) : prev
           )
         }, EXIT_HOLD_MS)
       }
@@ -518,17 +536,27 @@ export const useAgentStatus = (
               locallyResetRunScopedEventsRef.current = false
             }
 
-            const base =
+            const agentSessionChanged =
               p.agentSessionId !== null &&
               prev.agentSessionId !== null &&
               p.agentSessionId !== prev.agentSessionId
-                ? {
-                    ...createDefaultStatus(prev.sessionId),
-                    isActive: prev.isActive,
-                    agentExited: prev.agentExited,
-                    agentType: prev.agentType,
-                  }
-                : prev
+
+            if (agentSessionChanged && prev.sessionId !== null) {
+              seenToolUseIdsRef.current = new Set()
+              writeStatusSeenToolUseIds(
+                prev.sessionId,
+                seenToolUseIdsRef.current
+              )
+            }
+
+            const base = agentSessionChanged
+              ? {
+                  ...createDefaultAgentStatus(prev.sessionId),
+                  isActive: prev.isActive,
+                  agentExited: prev.agentExited,
+                  agentType: prev.agentType,
+                }
+              : prev
 
             return {
               ...base,
@@ -649,7 +677,30 @@ export const useAgentStatus = (
               isTestFile: p.isTestFile,
             }
 
+            const duplicate = seenToolUseIdsRef.current.has(p.toolUseId)
+            seenToolUseIdsRef.current.add(p.toolUseId)
+            writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
+
             setStatus((prev) => {
+              if (duplicate) {
+                const active =
+                  prev.toolCalls.active?.toolUseId === p.toolUseId
+                    ? null
+                    : prev.toolCalls.active
+
+                if (active === prev.toolCalls.active) {
+                  return prev
+                }
+
+                return {
+                  ...prev,
+                  toolCalls: {
+                    ...prev.toolCalls,
+                    active,
+                  },
+                }
+              }
+
               const newByType = { ...prev.toolCalls.byType }
               newByType[p.tool] = (newByType[p.tool] ?? 0) + 1
 
@@ -800,5 +851,7 @@ export const useAgentStatus = (
     []
   )
 
-  return status
+  return status.sessionId === sessionId
+    ? status
+    : createStatusForSession(sessionId)
 }

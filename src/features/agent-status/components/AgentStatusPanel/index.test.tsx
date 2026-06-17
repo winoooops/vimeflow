@@ -1,10 +1,28 @@
 // cspell:ignore winoooops
-import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import * as useGitStatusModule from '../../../diff/hooks/useGitStatus'
+import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
+import {
+  clearStatusSnapshots,
+  readStatusScrollAnchor,
+  writeStatusScrollAnchor,
+} from '../../utils/statusSnapshotStore'
+import {
+  installInertClickPolyfill,
+  removeInertClickPolyfill,
+} from '../../../../test/inertClickPolyfill'
 import { AgentStatusPanel } from '.'
 
 const inactiveAgentStatus: AgentStatus = {
@@ -99,7 +117,31 @@ const defaultProps = {
   cacheHistory: [],
 }
 
+const createGitStatus = (
+  overrides: Partial<UseGitStatusReturn> = {}
+): UseGitStatusReturn => ({
+  files: [],
+  filesCwd: '/tmp/repo',
+  loading: false,
+  error: null,
+  refresh: vi.fn(),
+  idle: false,
+  ...overrides,
+})
+
 describe('AgentStatusPanel', () => {
+  beforeAll(() => {
+    installInertClickPolyfill()
+  })
+
+  afterAll(() => {
+    removeInertClickPolyfill()
+  })
+
+  afterEach(() => {
+    clearStatusSnapshots()
+  })
+
   test('renders at 280px width when agent is not active', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
@@ -380,6 +422,829 @@ describe('AgentStatusPanel', () => {
     expect(screen.getByTestId('token-cache-sparkline')).toBeInTheDocument()
   })
 
+  test('restores and stores the pane scroll anchor', () => {
+    writeStatusScrollAnchor('pty-pane-1', 148)
+
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollable = panel.querySelector('.overflow-y-auto')
+    expect(scrollable).toBeInstanceOf(HTMLDivElement)
+
+    const scrollContainer = scrollable as HTMLDivElement
+    expect(scrollContainer.scrollTop).toBe(148)
+
+    scrollContainer.scrollTop = 260
+    fireEvent.scroll(scrollContainer)
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(260)
+  })
+
+  test('preserves the visual scroll anchor when new activity prepends above history', () => {
+    const oldHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={oldHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...oldHistoryStatus,
+          toolCalls: {
+            total: 2,
+            byType: { Read: 2 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            ...oldHistoryStatus.recentToolCalls,
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+  })
+
+  test('compensates by total scroll growth when multiple rows prepend at once', () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight'
+    )
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      value: 30,
+    })
+
+    const oldHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={oldHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 620
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...oldHistoryStatus,
+          toolCalls: {
+            total: 4,
+            byType: { Read: 4 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read-3',
+              tool: 'Read',
+              args: 'src/new3.ts',
+              status: 'done',
+              durationMs: 70,
+              timestamp: '2026-04-22T12:02:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'new-read-2',
+              tool: 'Read',
+              args: 'src/new2.ts',
+              status: 'done',
+              durationMs: 80,
+              timestamp: '2026-04-22T12:01:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'new-read-1',
+              tool: 'Read',
+              args: 'src/new1.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            ...oldHistoryStatus.recentToolCalls,
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(240)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(240)
+
+    if (originalOffsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetHeight',
+        originalOffsetHeight
+      )
+    }
+  })
+
+  test('preserves the visual scroll anchor when prepending replaces the oldest row', () => {
+    const cappedHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 2,
+        byType: { Read: 2 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'middle-read',
+          tool: 'Read',
+          args: 'src/middle.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:30Z',
+          isTestFile: false,
+        },
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:58:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={cappedHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...cappedHistoryStatus,
+          toolCalls: {
+            total: 3,
+            byType: { Read: 3 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'middle-read',
+              tool: 'Read',
+              args: 'src/middle.ts',
+              status: 'done',
+              durationMs: 100,
+              timestamp: '2026-04-22T11:59:30Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+  })
+
+  test('compensates by inserted row height when total scroll height does not grow', () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight'
+    )
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      value: 60,
+    })
+
+    const cappedHistoryStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 2,
+        byType: { Read: 2 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'middle-read',
+          tool: 'Read',
+          args: 'src/middle.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:30Z',
+          isTestFile: false,
+        },
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/old.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:58:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={cappedHistoryStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    const scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...cappedHistoryStatus,
+          toolCalls: {
+            total: 3,
+            byType: { Read: 3 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'new-read',
+              tool: 'Read',
+              args: 'src/new.ts',
+              status: 'done',
+              durationMs: 90,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            {
+              id: 'middle-read',
+              tool: 'Read',
+              args: 'src/middle.ts',
+              status: 'done',
+              durationMs: 100,
+              timestamp: '2026-04-22T11:59:30Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(180)
+
+    if (originalOffsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetHeight',
+        originalOffsetHeight
+      )
+    }
+  })
+
+  test('does not adjust scroll when a lower sidebar section grows', () => {
+    const emptyGitStatus = {
+      files: [],
+      filesCwd: '/tmp/repo',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        gitStatus={emptyGitStatus}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    let scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    scrollHeight = 560
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        gitStatus={{
+          ...emptyGitStatus,
+          files: [
+            {
+              path: 'later.ts',
+              status: 'modified',
+              insertions: 4,
+              deletions: 1,
+              staged: false,
+            },
+          ],
+        }}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(scrollElement.scrollTop).toBe(120)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(120)
+  })
+
+  test('retains the previous content body while a cold target pane is refreshing', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cacheHistory={[75]}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('agent-status-panel-body-refresh-indicator')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fetching')
+  })
+
+  test('keeps the last stable body during the pane-switch render before refresh starts', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cacheHistory={[75]}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('fetching latest')).toBeInTheDocument()
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cacheHistory={[]}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-loading')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fetching')
+  })
+
+  test('releases the retained body after refresh settles', () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cwd="/tmp/repo"
+        gitStatus={createGitStatus()}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        snapshotKey="pty-pane-2"
+      />
+    )
+
+    expect(screen.queryByText('src/retained.ts')).not.toBeInTheDocument()
+    expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-status-panel-body-refresh-indicator')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-scroll-region')
+    ).toHaveAttribute('data-body-phase', 'fresh')
+  })
+
+  test('makes retained body non-interactive while fetching a cold target pane', async () => {
+    const richStatus: AgentStatus = {
+      ...activeAgentStatus,
+      sessionId: 'pty-pane-1',
+      toolCalls: {
+        total: 1,
+        byType: { Read: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'old-read',
+          tool: 'Read',
+          args: 'src/retained.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const coldStatus: AgentStatus = {
+      ...inactiveAgentStatus,
+      sessionId: 'pty-pane-2',
+    }
+
+    const onOpenDiff = vi.fn()
+
+    const retainedGitStatus = createGitStatus({
+      files: [
+        {
+          path: 'retained-diff.ts',
+          status: 'modified',
+          insertions: 3,
+          deletions: 1,
+          staged: false,
+        },
+      ],
+    })
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={richStatus}
+        cwd="/tmp/repo"
+        gitStatus={retainedGitStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={coldStatus}
+        cwd="/tmp/other"
+        gitStatus={createGitStatus({ filesCwd: '/tmp/other' })}
+        isRefreshing
+        snapshotKey="pty-pane-2"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveClass('select-none')
+    expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
+
+    // Clicks on the retained FilesChanged row must not dispatch while the
+    // snapshot is retained, because onOpenDiff is wired through FilesChanged
+    // and would otherwise fire with the target pane's context.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /retained-diff\.ts/ }))
+    expect(onOpenDiff).not.toHaveBeenCalled()
+  })
+
+  test('keeps the current body interactive during a same-pane refresh', () => {
+    const onOpenDiff = vi.fn()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        cwd="/tmp/repo"
+        isRefreshing
+        snapshotKey="pty-pane-1"
+        onOpenDiff={onOpenDiff}
+      />
+    )
+
+    const content = screen.getByTestId('agent-status-panel-body-content')
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).not.toHaveClass('select-none')
+
+    fireEvent.click(screen.getByText('a.ts'))
+    expect(onOpenDiff).toHaveBeenCalled()
+  })
+
+  test('shows fixed body skeletons on a cold load with no retained content', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...inactiveAgentStatus,
+          sessionId: 'pty-pane-1',
+        }}
+        gitStatus={createGitStatus()}
+        isRefreshing
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    expect(
+      screen.getByTestId('agent-status-panel-overview-loading')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('agent-status-panel-body-loading')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Loading agent status')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    )
+  })
+
   test('renders Header above the body with the provided agent status and onCollapse', async () => {
     const onCollapse = vi.fn()
     render(
@@ -403,6 +1268,22 @@ describe('AgentStatusPanel', () => {
       screen.getByRole('button', { name: /collapse activity panel/i })
     )
     expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  test('passes refreshing state into the fixed header affordance', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        isRefreshing
+      />
+    )
+
+    expect(screen.getByText('fetching latest')).toBeInTheDocument()
+    expect(screen.getByText('Fetching latest agent status')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    )
   })
 })
 
@@ -514,6 +1395,63 @@ describe('AgentStatusPanel — live action card', () => {
     expect(screen.getByRole('article')).toHaveTextContent(
       'gh pr view 420 --repo winoooops/vimeflow'
     )
+  })
+
+  test('removes the NOW card when a running exec_command completes', () => {
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 0,
+            byType: {},
+            active: {
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              startedAt: '2026-04-22T11:59:42Z',
+              toolUseId: 'cmd-1',
+            },
+          },
+          recentToolCalls: [],
+        }}
+      />
+    )
+
+    expect(screen.getByTestId('live-action-card')).toBeInTheDocument()
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 1,
+            byType: { exec_command: 1 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'cmd-1',
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              status: 'done',
+              durationMs: 500,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
   })
 
   test('does not also list the running action in the activity feed', () => {

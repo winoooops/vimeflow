@@ -550,3 +550,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** When `usedPercentage` was `null` (context window not yet known), the card still derived `aria-valuenow` from `effectivePct` (`pct ?? 0`), exposing a 0% meter value while the visible UI and `aria-valuetext` announced the usage as unknown. Screen-reader users could confuse an initial/unknown state with a genuinely empty context window.
 - **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Reduced-motion media query leaves animated element visible at rest
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/index.css`
+- **Finding:** The `prefers-reduced-motion: reduce` block set `animation: none` on `.vf-activity-refresh-comet` but left the 45%-wide gradient `div` mounted at `translateX(0)`. Because keyframe positions are not applied when animation is disabled, users who opted out of motion saw a static semi-transparent bar in the header divider.
+- **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 53. `aria-live` region announces completion on every refresh cycle
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The live region alternated between `Fetching latest agent status` and `Agent status updated`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
+- **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
+- **Commit:** see `git blame` / `git log` on this line
