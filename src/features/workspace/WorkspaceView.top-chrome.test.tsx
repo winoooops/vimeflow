@@ -436,6 +436,38 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chrome).toHaveClass('vf-app-drag-region')
   })
 
+  test('closing the active session while the layout display menu is open restores the macOS drag region', async () => {
+    const user = userEvent.setup()
+
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    await setupSessionManager(mockSessions, 'session-2')
+    const { rerender } = render(<WorkspaceView />)
+
+    const chrome = screen.getByTestId('top-chrome')
+    expect(chrome).toHaveClass('vf-app-drag-region')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(chrome).not.toHaveClass('vf-app-drag-region')
+
+    // Simulate the active session being removed without an explicit menu close.
+    mockSessionManager.activeSessionId = null
+    mockSessionManager.sessions = []
+    rerender(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+    expect(chrome).toHaveClass('vf-app-drag-region')
+  })
+
   test('split layout: label-free pills right-aligned; config docked in the pillar (J3)', async () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)

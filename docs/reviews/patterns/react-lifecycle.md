@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-18
-ref_count: 20
+ref_count: 21
 ---
 
 # React Lifecycle
@@ -479,4 +479,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/terminal/components/SplitView/useSplitDivider.ts` L58-78
 - **Finding:** `writeRatio` listed `initialRatios` in its `useCallback` deps. In `quad` and `grid3x2` layouts, sibling dividers on the same axis share the axis ratios; committing one divider created a new `ratios` array reference, which was passed as `initialRatios` to all sibling handles. Each sibling's `writeRatio` was recreated, firing its commit effect with a stale `size` from `useElasticContainer`, producing wrong track weights and an infinite state oscillation that ended in React's "Maximum update depth exceeded" crash.
 - **Fix:** Store `initialRatios` in a ref (`initialRatiosRef`) updated synchronously during render, and read `initialRatiosRef.current` inside `writeRatio`. Removed `initialRatios` from the `useCallback` deps so `writeRatio` stays stable across sibling commits.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 50. Conditional child unmount leaves parent state stale
+
+- **Source:** github-claude, github-codex-connector | PR #535 round 1 | 2026-06-18
+- **Severity:** LOW / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L2365-2379
+- **Finding:** `LayoutDisplayMenu` is rendered only when `activeSession` exists. If the active session closes while the menu is open, the menu unmounts without `MenuRoot` calling `onOpenChange(false)`, leaving `isLayoutDisplayMenuOpen` stuck `true`. On macOS this permanently removes `vf-app-drag-region` from the top chrome, making the title bar undraggable until the menu is mounted and closed again.
+- **Fix:** Added a `useEffect` in `WorkspaceView` that resets `isLayoutDisplayMenuOpen` to `false` whenever `activeSession` becomes `undefined`, restoring the drag region when the menu unmounts. Added a regression test that removes the active session while the menu is open and asserts the drag region returns.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -475,6 +475,16 @@ const WorkspaceViewContent = (): ReactElement => {
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
+
+  // If the active session disappears while the layout-display menu is open,
+  // the menu unmounts without firing onOpenChange(false). Reset the flag so
+  // the top chrome restores the draggable region on macOS.
+  useEffect(() => {
+    if (!activeSession) {
+      setIsLayoutDisplayMenuOpen(false)
+    }
+  }, [activeSession])
+
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
