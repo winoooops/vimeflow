@@ -479,6 +479,35 @@ export class TerminalTextSurface implements TerminalSurface {
     )
   }
 
+  private applyStyleToElement(
+    element: HTMLElement,
+    style: TerminalDisplayStyle
+  ): void {
+    if (style.background) {
+      element.style.backgroundColor = style.background
+    }
+
+    if (style.bold) {
+      element.style.fontWeight = '700'
+    }
+
+    if (style.dim) {
+      element.style.opacity = '0.72'
+    }
+
+    if (style.foreground) {
+      element.style.color = style.foreground
+    }
+
+    if (style.italic) {
+      element.style.fontStyle = 'italic'
+    }
+
+    if (style.underline) {
+      element.style.textDecoration = 'underline'
+    }
+  }
+
   private createTextNode(text: string, style: TerminalDisplayStyle): Node {
     if (!this.hasStyle(style)) {
       return document.createTextNode(text)
@@ -487,30 +516,7 @@ export class TerminalTextSurface implements TerminalSurface {
     const span = document.createElement('span')
     span.dataset.terminalStyleRun = 'true'
     span.textContent = text
-
-    if (style.background) {
-      span.style.backgroundColor = style.background
-    }
-
-    if (style.bold) {
-      span.style.fontWeight = '700'
-    }
-
-    if (style.dim) {
-      span.style.opacity = '0.72'
-    }
-
-    if (style.foreground) {
-      span.style.color = style.foreground
-    }
-
-    if (style.italic) {
-      span.style.fontStyle = 'italic'
-    }
-
-    if (style.underline) {
-      span.style.textDecoration = 'underline'
-    }
+    this.applyStyleToElement(span, style)
 
     return span
   }
@@ -546,18 +552,35 @@ export class TerminalTextSurface implements TerminalSurface {
       ) {
         const splitOffset = cursorOffset - runStart
 
-        this.appendRunFragment(
-          fragments,
-          run.text.slice(0, splitOffset),
-          run.style
-        )
-        fragments.push(this.createCursorElement())
-        didRenderCursor = true
-        this.appendRunFragment(
-          fragments,
-          run.text.slice(splitOffset),
-          run.style
-        )
+        if (
+          splitOffset > 0 &&
+          splitOffset < run.text.length &&
+          this.hasStyle(run.style)
+        ) {
+          const runElement = document.createElement('span')
+          runElement.dataset.terminalStyleRun = 'true'
+          this.applyStyleToElement(runElement, run.style)
+          runElement.append(
+            document.createTextNode(run.text.slice(0, splitOffset)),
+            this.createCursorElement(),
+            document.createTextNode(run.text.slice(splitOffset))
+          )
+          fragments.push(runElement)
+          didRenderCursor = true
+        } else {
+          this.appendRunFragment(
+            fragments,
+            run.text.slice(0, splitOffset),
+            run.style
+          )
+          fragments.push(this.createCursorElement())
+          didRenderCursor = true
+          this.appendRunFragment(
+            fragments,
+            run.text.slice(splitOffset),
+            run.style
+          )
+        }
       } else {
         this.appendRunFragment(fragments, run.text, run.style)
       }

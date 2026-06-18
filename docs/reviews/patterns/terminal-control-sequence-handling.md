@@ -100,3 +100,12 @@ all required state through pure display-state helpers.
 - **Finding:** The parser passed `parseCsiIntegerParameter` results directly to sentinel emission for `CSI D`, `CSI C`, and `CSI G`. For cursor movement/count parameters, an omitted value and an explicit `0` should both behave as the default count/column `1`. The original code emitted no D/C movement for `CSI 0D`/`CSI 0C` and only a carriage return for `CSI 0G`, which corrupts progress or prompt redraw output.
 - **Fix:** Normalized parsed zero values to `1` in the D, C, and G branches before emitting cursor-left/cursor-right/carriage-return sentinels, and added a regression test that asserts `CSI 0D`, `CSI 0C`, and `CSI 0G` each produce the same result as the default value.
 - **Commit:** same commit as this entry
+
+### 10. Cursor inside a styled run splits it into two sibling `data-terminal-style-run` spans
+
+- **Source:** github-claude | PR #530 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L530-572
+- **Finding:** `createOutputFragments` split a styled run at the cursor offset into two separate `<span data-terminal-style-run>` elements, each carrying identical CSS. Code that queries `data-terminal-style-run` elements to read run text or style (including E2E helpers) saw a fragmented view of what is logically one run.
+- **Fix:** When the cursor lands strictly inside a styled run, wrap the cursor element inside a single `data-terminal-style-run` span rather than emitting two sibling spans. Added a regression test that asserts only one style-run span exists and that it contains the cursor element.
+- **Commit:** same commit as this entry

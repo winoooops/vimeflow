@@ -182,6 +182,24 @@ describe('plainTextInstance', () => {
     )
   })
 
+  test('keeps a styled run as a single span when the cursor is inside it', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[38;2;243;139;168mabc\x1b[2D')
+
+    const output = created.terminal.element?.querySelector('pre')
+    const styleRuns = output?.querySelectorAll('[data-terminal-style-run="true"]')
+    const cursor = output?.querySelector('[data-terminal-cursor="true"]')
+
+    expect(output?.textContent).toBe('abc')
+    expect(created.viewportReader.readVisibleText()).toBe('abc')
+    expect(styleRuns?.length).toBe(1)
+    expect(styleRuns?.[0]?.contains(cursor ?? null)).toBe(true)
+    expect(cursor?.previousSibling?.textContent).toBe('a')
+    expect(cursor?.nextSibling?.textContent).toBe('bc')
+  })
+
   test('rewrites the current line when carriage return output arrives', () => {
     const created = createTrackedPlainTextTerminal()
 
