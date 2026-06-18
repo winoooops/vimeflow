@@ -54,6 +54,25 @@ describe('linkedVim', () => {
       )
     ).toBe('VIM-70')
   })
+
+  test('ignores follow-up issue mentions when deciding whether to create a PR issue', () => {
+    expect(
+      linkedVim(
+        [
+          '## Summary',
+          'Add terminal redraw controls.',
+          '',
+          '## Follow-ups',
+          '- VIM-154 tracks Codex input visibility.',
+          '- VIM-155 tracks Claude Code blank TUI rendering.',
+          '',
+          '## Verification',
+          '- npm test',
+        ].join('\n'),
+        'codex/terminal-progress-rewrite-cursor'
+      )
+    ).toBeUndefined()
+  })
 })
 
 describe('linked issue cache', () => {

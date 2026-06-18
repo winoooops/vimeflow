@@ -19,11 +19,28 @@ export const linkedVim = (...texts) => {
   )
   const branch = branchText.match(/\bVIM-\d+\b/i)
 
-  return (
-    explicit?.[1] ||
-    branch?.[0] ||
-    body.match(/\bVIM-\d+\b/i)?.[0]
-  )?.toUpperCase()
+  return (explicit?.[1] || branch?.[0] || genericBodyIssue(body))?.toUpperCase()
+}
+
+const genericBodyIssue = (body = '') => {
+  let inFollowUps = false
+  const eligibleLines = []
+
+  for (const line of String(body || '').split('\n')) {
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/)
+    if (heading) {
+      inFollowUps = /\bfollow[- ]?ups?\b/i.test(heading[1])
+      if (inFollowUps) {
+        continue
+      }
+    }
+
+    if (!inFollowUps) {
+      eligibleLines.push(line)
+    }
+  }
+
+  return eligibleLines.join('\n').match(/\bVIM-\d+\b/i)?.[0] || null
 }
 
 export const linkedIssueStorePath = (pr) =>
