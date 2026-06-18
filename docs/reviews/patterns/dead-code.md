@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-15
-ref_count: 0
+ref_count: 1
 ---
 
 # Dead Code

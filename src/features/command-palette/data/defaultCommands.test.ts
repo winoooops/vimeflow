@@ -8,10 +8,18 @@ test(':set theme lists every registered theme and applies on execute', () => {
   expect(setTheme?.children?.map((c) => c.id)).toEqual([
     'set-theme-obsidian-lens',
     'set-theme-flexoki',
+    'set-theme-gruvbox-dark',
+    'set-theme-gruvbox-light',
   ])
 
   findCommandById(defaultCommands, 'set-theme-flexoki')?.execute?.('')
   expect(themeService.current().id).toBe('flexoki')
+
+  findCommandById(defaultCommands, 'set-theme-gruvbox-dark')?.execute?.('')
+  expect(themeService.current().id).toBe('gruvbox-dark')
+
+  findCommandById(defaultCommands, 'set-theme-gruvbox-light')?.execute?.('')
+  expect(themeService.current().id).toBe('gruvbox-light')
 
   findCommandById(defaultCommands, 'set-theme-obsidian-lens')?.execute?.('')
   expect(themeService.current().id).toBe('obsidian-lens')

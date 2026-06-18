@@ -123,7 +123,11 @@ export type AgentAccentField = (typeof AGENT_ACCENT_FIELDS)[number]
 
 export type AgentAccent = Record<AgentAccentField, string>
 
-export type ThemeId = 'obsidian-lens' | 'flexoki'
+export type ThemeId =
+  | 'obsidian-lens'
+  | 'flexoki'
+  | 'gruvbox-dark'
+  | 'gruvbox-light'
 
 export type ThemeKind = 'dark' | 'light'
 
