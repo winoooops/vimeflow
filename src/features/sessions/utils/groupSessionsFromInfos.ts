@@ -363,6 +363,7 @@ const buildStoreSession = (
     id: shape.id,
     projectId: shape.projectId,
     name: tabName(shape.workingDirectory, fallbackIndex),
+    open: shape.open,
     status: deriveShellSessionStatus(panes),
     workingDirectory: shape.workingDirectory,
     agentType: activePane.agentType,

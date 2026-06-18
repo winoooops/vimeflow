@@ -1917,7 +1917,7 @@ mod tests {
             "version": 1,
             "sessions": [{
                 "id": "s", "projectId": "proj", "layout": "single",
-                "workingDirectory": "/", "active": true,
+                "workingDirectory": "/", "active": true, "open": true,
                 "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
                     "tabs": [{ "active": true, "historyIndex": 0,
                         "history": [{ "url": "https://x", "title": null }] }] }]

@@ -1476,6 +1476,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],
@@ -1510,6 +1511,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -1568,6 +1570,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -1695,6 +1698,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],

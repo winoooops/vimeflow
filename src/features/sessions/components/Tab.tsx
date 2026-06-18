@@ -2,7 +2,7 @@ import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
 import { AgentGlyph } from '@/components/AgentGlyph'
-import { hasLivePane } from '../utils/sessionStatus'
+import { isOpenSession } from '../utils/sessionStatus'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
@@ -62,7 +62,7 @@ export const Tab = ({
       id={`session-tab-${session.id}`}
       role="tab"
       aria-label={
-        !hasLivePane(session.panes) ? `${session.name} (ended)` : session.name
+        !isOpenSession(session) ? `${session.name} (ended)` : session.name
       }
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}

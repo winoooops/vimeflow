@@ -33,6 +33,7 @@ import {
 } from '../utils/paneLifecycle'
 import {
   deriveShellSessionStatus,
+  hasLivePane,
   isLiveStatus,
   isTerminalStatus,
 } from '../utils/sessionStatus'
@@ -363,6 +364,7 @@ export const useSessionManager = (
           ...s,
           status: deriveShellSessionStatus(newPanes),
           agentType: activePane?.agentType ?? s.agentType,
+          open: hasLivePane(newPanes) ? s.open : false,
           panes: newPanes,
           lastActivityAt: exitedAt,
         }
@@ -396,6 +398,7 @@ export const useSessionManager = (
           ...s,
           status: deriveShellSessionStatus(newPanes),
           agentType: activePane?.agentType ?? s.agentType,
+          open: hasLivePane(newPanes) ? s.open : false,
           panes: newPanes,
           lastActivityAt: exitedAt,
         }

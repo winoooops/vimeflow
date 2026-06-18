@@ -1,4 +1,4 @@
-import type { Pane, SessionStatus } from '../types'
+import type { Pane, Session, SessionStatus } from '../types'
 import { isShellPane } from './paneKind'
 
 // precedence high → low; exhaustive Record — a new SessionStatus must be ranked
@@ -27,6 +27,10 @@ export const isLiveStatus = (s: SessionStatus): boolean => !TERMINAL[s]
 // errored-dominant (display), so check panes, not the rolled-up status.
 export const hasLivePane = (panes: Pane[]): boolean =>
   panes.some((pane) => isLiveStatus(pane.status))
+
+export const isOpenSession = (
+  session: Pick<Session, 'open' | 'panes'>
+): boolean => session.open === true || hasLivePane(session.panes)
 
 export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
   // empty panes is an invariant violation; flag it errored, not vacuously completed

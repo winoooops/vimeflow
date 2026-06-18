@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
-import { hasLivePane } from '../utils/sessionStatus'
+import { isOpenSession } from '../utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
 import { mediateReorder } from '../utils/mediateReorder'
 
@@ -28,8 +28,8 @@ export const List = ({
   // in pickNextVisibleSessionId.ts. Recent = the complement so any
   // future non-open status (e.g. `suspended`) lands in Recent rather
   // than being silently dropped from both groups.
-  const activeGroup = sessions.filter((s) => hasLivePane(s.panes))
-  const recentGroup = sessions.filter((s) => !hasLivePane(s.panes))
+  const activeGroup = sessions.filter(isOpenSession)
+  const recentGroup = sessions.filter((s) => !isOpenSession(s))
 
   // Mirror `recentGroup` into a ref synchronously on every render so
   // Framer Motion's `onReorder` callback reads the current Recent section

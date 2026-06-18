@@ -33,6 +33,7 @@ export interface PersistedWorkspaceSessionShape {
   layout: string
   workingDirectory: string
   active: boolean
+  open: boolean
   panes: PersistedWorkspacePaneShape[]
 }
 

@@ -16,6 +16,7 @@ const shape = (): PersistedWorkspaceShape => ({
       layout: 'vsplit',
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -80,6 +81,7 @@ describe('WorkspaceLayoutWriter', () => {
           layout: 'vsplit',
           workingDirectory: '/repo',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',

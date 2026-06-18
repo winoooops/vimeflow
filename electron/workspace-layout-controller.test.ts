@@ -39,6 +39,7 @@ const sampleShape = (): PersistedWorkspaceShape => ({
       layout: 'vsplit',
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -65,6 +66,7 @@ const sampleStore = (): PersistedWorkspaceLayoutStore => ({
       layout: 'vsplit',
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -358,6 +360,7 @@ describe('WorkspaceLayoutController', () => {
             layout: 'vsplit',
             workingDirectory: '/repo',
             active: true,
+            open: true,
             panes: [
               {
                 kind: 'browser',
@@ -377,6 +380,7 @@ describe('WorkspaceLayoutController', () => {
             layout: 'vsplit',
             workingDirectory: '/repo',
             active: true,
+            open: true,
             panes: [
               {
                 kind: 'shell',

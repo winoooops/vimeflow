@@ -84,7 +84,7 @@ import { isShellPane } from '../sessions/utils/paneKind'
 import { LAYOUTS, selectVisiblePanes } from '../terminal/components/SplitView'
 import { LAYOUT_IDS } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
-import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
+import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { LayoutId, SessionCloseResult } from '../sessions/types'
@@ -743,7 +743,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
-      if (hasLivePane(session.panes)) {
+      if (isOpenSession(session)) {
         continue
       }
       // Effect-path: skip silently on transient invariant violations
