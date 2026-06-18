@@ -51,6 +51,8 @@ export const LayoutDisplayMenu = ({
       placement="bottom-end"
       aria-label="Displayed layouts"
       onOpenChange={onOpenChange}
+      tooltip="Configure displayed layouts"
+      tooltipPlacement="bottom"
       trigger={
         <button
           type="button"

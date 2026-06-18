@@ -17,6 +17,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import {
@@ -267,6 +268,11 @@ interface MenuProps {
   'aria-label'?: string
   onOpenChange?: (open: boolean) => void
   children: ReactNode
+  // Optional shared Tooltip label for the trigger. When provided, Menu clones
+  // the trigger with its floating reference props first, then Tooltip wraps that
+  // cloned element and composes its own hover/focus handlers with Menu's.
+  tooltip?: ReactNode
+  tooltipPlacement?: Placement
 }
 
 // Generic anchored menu: a trigger element opens a portal-rendered, glass
@@ -282,6 +288,8 @@ const MenuRoot = ({
   'aria-label': ariaLabel = undefined,
   onOpenChange = undefined,
   children,
+  tooltip = undefined,
+  tooltipPlacement = 'top',
 }: MenuProps): ReactElement => {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
@@ -396,9 +404,17 @@ const MenuRoot = ({
     onKeyDown: consumerOnKeyDown,
   })
 
+  const triggerNode = <TriggerSlot trigger={trigger} props={triggerProps} />
+
   return (
     <>
-      <TriggerSlot trigger={trigger} props={triggerProps} />
+      {tooltip !== undefined ? (
+        <Tooltip content={tooltip} placement={tooltipPlacement}>
+          {triggerNode}
+        </Tooltip>
+      ) : (
+        triggerNode
+      )}
       {open ? (
         <MenuBody
           setFloating={refs.setFloating}
