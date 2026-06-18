@@ -34,7 +34,9 @@ describe('ratioModel', () => {
 
   test('updates only the adjacent track pair for a boundary move', () => {
     expect(updateTrackBoundaryRatio([1, 1], 0, 0.25)).toEqual([0.5, 1.5])
-    expect(updateTrackBoundaryRatio([1, 1, 1], 1, 0.75)).toEqual([1, 1.25, 0.75])
+    expect(updateTrackBoundaryRatio([1, 1, 1], 1, 0.75)).toEqual([
+      1, 1.25, 0.75,
+    ])
   })
 
   test('compares track arrays shallowly', () => {

@@ -19,8 +19,7 @@ export const DEFAULT_RATIOS: Record<LayoutId, LayoutRatios> = {
 export const getTrackCssVar = (
   axis: RatioAxis,
   trackIndex: number
-): `--split-${RatioAxis}-${number}` =>
-  `--split-${axis}-${trackIndex}`
+): `--split-${RatioAxis}-${number}` => `--split-${axis}-${trackIndex}`
 
 export const buildTrackTemplate = (
   axis: RatioAxis,

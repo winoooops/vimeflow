@@ -58,7 +58,11 @@ export const useSplitDivider = ({
   const writeRatio = useCallback(
     (ratio: number): readonly number[] => {
       const el = containerRef.current
-      const nextRatios = updateTrackBoundaryRatio(initialRatios, trackIndex, ratio)
+      const nextRatios = updateTrackBoundaryRatio(
+        initialRatios,
+        trackIndex,
+        ratio
+      )
       const start = nextRatios[trackIndex]
       const end = nextRatios[trackIndex + 1]
 

@@ -105,7 +105,8 @@ const SplitDividerHandle = ({
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'> & DividerHandleSpec): ReactElement => {
   const onTrackChange = useCallback(
-    (nextRatios: readonly number[]): void => onRatioChange(trackAxis, nextRatios),
+    (nextRatios: readonly number[]): void =>
+      onRatioChange(trackAxis, nextRatios),
     [onRatioChange, trackAxis]
   )
 
