@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import type {
-  WorkspaceShapeBrowserPane,
-  WorkspaceShapeDto,
-  WorkspaceShapeShellPane,
+  PersistedBrowserPaneShape,
+  PersistedWorkspaceShape,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   groupSessionsFromInfos,
@@ -315,8 +315,8 @@ describe('groupSessionsFromInfos', () => {
 })
 
 const shellShape = (
-  overrides: Partial<WorkspaceShapeShellPane> = {}
-): WorkspaceShapeShellPane => ({
+  overrides: Partial<PersistedShellPaneShape> = {}
+): PersistedShellPaneShape => ({
   kind: 'shell',
   paneId: 'p0',
   paneIndex: 0,
@@ -329,8 +329,8 @@ const shellShape = (
 })
 
 const browserShape = (
-  overrides: Partial<WorkspaceShapeBrowserPane> = {}
-): WorkspaceShapeBrowserPane => ({
+  overrides: Partial<PersistedBrowserPaneShape> = {}
+): PersistedBrowserPaneShape => ({
   kind: 'browser',
   paneId: 'p0',
   paneIndex: 0,
@@ -339,12 +339,12 @@ const browserShape = (
 })
 
 const storeOf = (
-  sessions: WorkspaceShapeDto['sessions']
-): WorkspaceShapeDto => ({ sessions })
+  sessions: PersistedWorkspaceShape['sessions']
+): PersistedWorkspaceShape => ({ sessions })
 
 const storeSession = (
-  overrides: Partial<WorkspaceShapeDto['sessions'][number]> = {}
-): WorkspaceShapeDto['sessions'][number] => ({
+  overrides: Partial<PersistedWorkspaceShape['sessions'][number]> = {}
+): PersistedWorkspaceShape['sessions'][number] => ({
   id: 'ws-1',
   projectId: 'proj-1',
   layout: 'single',

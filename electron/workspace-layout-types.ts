@@ -3,7 +3,7 @@
 // Two distinct shapes:
 //  - The persisted store (`PersistedWorkspaceLayoutStore`) mirrors the Rust
 //    `WorkspaceLayoutStore` binding; it carries full browser tab + history.
-//  - The shape-only DTO (`WorkspaceShapeDto`) is what the renderer pushes and
+//  - The shape-only DTO (`PersistedWorkspaceShape`) is what the renderer pushes and
 //    what `load` returns to the renderer; it omits browser tab/history (main
 //    owns those via the WebContents) and keeps shell pane fields.
 //
@@ -59,7 +59,7 @@ export interface PersistedWorkspaceLayoutStore {
 
 // Shape-only DTO (renderer <-> main). No browser tab/history.
 
-export interface WorkspaceShapeShellPane {
+export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
   paneIndex: number
@@ -70,28 +70,28 @@ export interface WorkspaceShapeShellPane {
   agentSessionId: string | null
 }
 
-export interface WorkspaceShapeBrowserPane {
+export interface PersistedBrowserPaneShape {
   kind: 'browser'
   paneId: string
   paneIndex: number
   active: boolean
 }
 
-export type WorkspaceShapePane =
-  | WorkspaceShapeShellPane
-  | WorkspaceShapeBrowserPane
+export type PersistedWorkspacePaneShape =
+  | PersistedShellPaneShape
+  | PersistedBrowserPaneShape
 
-export interface WorkspaceShapeSession {
+export interface PersistedWorkspaceSessionShape {
   id: string
   projectId: string
   layout: string
   workingDirectory: string
   active: boolean
-  panes: WorkspaceShapePane[]
+  panes: PersistedWorkspacePaneShape[]
 }
 
-export interface WorkspaceShapeDto {
-  sessions: WorkspaceShapeSession[]
+export interface PersistedWorkspaceShape {
+  sessions: PersistedWorkspaceSessionShape[]
 }
 
 // Arguments the renderer passes to load-for-restore so Rust can apply project
@@ -104,7 +104,7 @@ export interface LoadWorkspaceForRestoreRequest {
 // Port the single-writer assembler plugs into so the controller can drive it
 // without depending on the concrete writer.
 export interface WorkspaceLayoutWriterPort {
-  onShapePushed: (dto: WorkspaceShapeDto) => void
+  onShapePushed: (dto: PersistedWorkspaceShape) => void
   setHydrating: (hydrating: boolean) => void
 }
 

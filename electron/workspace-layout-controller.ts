@@ -17,11 +17,11 @@ import type {
   PersistedTab,
   PersistedWorkspaceLayoutStore,
   PersistedWorkspacePane,
+  PersistedWorkspacePaneShape,
+  PersistedWorkspaceSessionShape,
+  PersistedWorkspaceShape,
   RendererSender,
   WorkspaceLayoutWriterPort,
-  WorkspaceShapeDto,
-  WorkspaceShapePane,
-  WorkspaceShapeSession,
 } from './workspace-layout-types'
 
 interface SidecarInvoker {
@@ -40,7 +40,9 @@ const noopWriter: WorkspaceLayoutWriterPort = {
   setHydrating: (): void => undefined,
 }
 
-const paneToShape = (pane: PersistedWorkspacePane): WorkspaceShapePane =>
+const paneToShape = (
+  pane: PersistedWorkspacePane
+): PersistedWorkspacePaneShape =>
   pane.kind === 'shell'
     ? {
         kind: 'shell',
@@ -63,7 +65,7 @@ const paneToShape = (pane: PersistedWorkspacePane): WorkspaceShapePane =>
 // fields, with browser tab/history stripped (those stay main-side).
 const storeToShape = (
   store: PersistedWorkspaceLayoutStore
-): WorkspaceShapeDto => ({
+): PersistedWorkspaceShape => ({
   sessions: store.sessions.map((session) => ({
     id: session.id,
     projectId: session.projectId,
@@ -74,7 +76,7 @@ const storeToShape = (
   })),
 })
 
-const emptyWorkspaceShape = (): WorkspaceShapeDto => ({ sessions: [] })
+const emptyWorkspaceShape = (): PersistedWorkspaceShape => ({ sessions: [] })
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -101,7 +103,9 @@ const hasShapePaneBase = (pane: Record<string, unknown>): boolean =>
   Number.isFinite(pane.paneIndex) &&
   typeof pane.active === 'boolean'
 
-const isWorkspaceShapePane = (pane: unknown): pane is WorkspaceShapePane => {
+const isPersistedWorkspacePaneShape = (
+  pane: unknown
+): pane is PersistedWorkspacePaneShape => {
   if (!isRecord(pane) || !hasShapePaneBase(pane)) {
     return false
   }
@@ -119,9 +123,9 @@ const isWorkspaceShapePane = (pane: unknown): pane is WorkspaceShapePane => {
   )
 }
 
-const isWorkspaceShapeSession = (
+const isPersistedWorkspaceSessionShape = (
   session: unknown
-): session is WorkspaceShapeSession => {
+): session is PersistedWorkspaceSessionShape => {
   if (!isRecord(session)) {
     return false
   }
@@ -133,14 +137,16 @@ const isWorkspaceShapeSession = (
     typeof session.workingDirectory === 'string' &&
     typeof session.active === 'boolean' &&
     Array.isArray(session.panes) &&
-    session.panes.every(isWorkspaceShapePane)
+    session.panes.every(isPersistedWorkspacePaneShape)
   )
 }
 
-const isWorkspaceShapeDto = (dto: unknown): dto is WorkspaceShapeDto =>
+const isPersistedWorkspaceShape = (
+  dto: unknown
+): dto is PersistedWorkspaceShape =>
   isRecord(dto) &&
   Array.isArray(dto.sessions) &&
-  dto.sessions.every(isWorkspaceShapeSession)
+  dto.sessions.every(isPersistedWorkspaceSessionShape)
 
 const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
   tabs.map((tab) => ({
@@ -153,14 +159,14 @@ const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
   }))
 
 interface PendingFinalShape {
-  resolve: (dto: WorkspaceShapeDto | null) => void
+  resolve: (dto: PersistedWorkspaceShape | null) => void
   timer: ReturnType<typeof setTimeout>
 }
 
 export class WorkspaceLayoutController {
   private readonly sidecar: SidecarInvoker
   private readonly writer: WorkspaceLayoutWriterPort
-  private shape: WorkspaceShapeDto | null = null
+  private shape: PersistedWorkspaceShape | null = null
   private store: PersistedWorkspaceLayoutStore | null = null
   private pendingFinalShape: PendingFinalShape | null = null
   private installedOn: IpcMainLike | null = null
@@ -171,7 +177,7 @@ export class WorkspaceLayoutController {
     this.writer = deps.writer ?? noopWriter
   }
 
-  get latestShapeDto(): WorkspaceShapeDto | null {
+  get latestShapeDto(): PersistedWorkspaceShape | null {
     return this.shape
   }
 
@@ -179,7 +185,7 @@ export class WorkspaceLayoutController {
     return this.store
   }
 
-  pushShape(dto: WorkspaceShapeDto): void {
+  pushShape(dto: PersistedWorkspaceShape): void {
     this.shape = dto
     this.writer.onShapePushed(dto)
     this.resolveFinalShape(dto)
@@ -187,7 +193,7 @@ export class WorkspaceLayoutController {
 
   async loadForRestore(
     request: LoadWorkspaceForRestoreRequest
-  ): Promise<WorkspaceShapeDto> {
+  ): Promise<PersistedWorkspaceShape> {
     const store = await this.sidecar.invoke<PersistedWorkspaceLayoutStore>(
       'load_workspace_layout',
       {
@@ -217,14 +223,14 @@ export class WorkspaceLayoutController {
   requestFinalShape(
     sender: RendererSender,
     timeoutMs = DEFAULT_FINAL_SHAPE_TIMEOUT_MS
-  ): Promise<WorkspaceShapeDto | null> {
+  ): Promise<PersistedWorkspaceShape | null> {
     if (this.pendingFinalShape !== null) {
       throw new Error('workspace layout final shape request already pending')
     }
 
     sender.send(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, {})
 
-    return new Promise<WorkspaceShapeDto | null>((resolve) => {
+    return new Promise<PersistedWorkspaceShape | null>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingFinalShape = null
         resolve(this.shape)
@@ -256,7 +262,7 @@ export class WorkspaceLayoutController {
 
   install(ipcMain: IpcMainLike): void {
     ipcMain.handle(WORKSPACE_LAYOUT_PUSH_SHAPE, (_event, dto): void => {
-      if (!isWorkspaceShapeDto(dto)) {
+      if (!isPersistedWorkspaceShape(dto)) {
         return
       }
 
@@ -295,7 +301,7 @@ export class WorkspaceLayoutController {
     }
   }
 
-  private resolveFinalShape(dto: WorkspaceShapeDto | null): void {
+  private resolveFinalShape(dto: PersistedWorkspaceShape | null): void {
     if (!this.pendingFinalShape) {
       return
     }

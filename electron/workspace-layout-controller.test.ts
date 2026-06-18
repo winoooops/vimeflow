@@ -14,7 +14,7 @@ import type {
   IpcMainLike,
   PersistedWorkspaceLayoutStore,
   WorkspaceLayoutWriterPort,
-  WorkspaceShapeDto,
+  PersistedWorkspaceShape,
 } from './workspace-layout-types'
 
 const makeWriter = (): WorkspaceLayoutWriterPort & {
@@ -31,7 +31,7 @@ const makeSidecar = (
   invoke: vi.fn().mockResolvedValue(result),
 })
 
-const sampleShape = (): WorkspaceShapeDto => ({
+const sampleShape = (): PersistedWorkspaceShape => ({
   sessions: [
     {
       id: 's1',

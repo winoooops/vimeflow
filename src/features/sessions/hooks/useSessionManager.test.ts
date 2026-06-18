@@ -14,7 +14,7 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
-import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
 import {
   loadWorkspaceForRestore,
   pushWorkspaceShape,
@@ -1468,7 +1468,7 @@ describe('useSessionManager', () => {
   // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.
   test('auto-create is skipped for a restored browser-only session', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-browser',
@@ -1560,7 +1560,7 @@ describe('useSessionManager', () => {
   // cache must NOT be merged — otherwise a pane closed before a crash (never
   // cleared from localStorage) would be resurrected on the next restore.
   test('store-driven restore ignores the stale localStorage browser cache', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',

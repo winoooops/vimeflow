@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 1
+last_updated: 2026-06-18
+ref_count: 3
 ---
 
 # Type Contract Safety
@@ -50,4 +50,31 @@ expands.
 - **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
 - **Finding:** The proxy object in `useLayoutEffect` is cast to `OverlayDescriptor` via `as` (line 27) rather than satisfying the discriminated union. Because `get nativeOcclusion()` reads `latestDescriptorRef.current.nativeOcclusion` live, the runtime variant can shift from `'none'`/`'global'` to `'intersects'` without re-running the effect (only `id` and `plane` changes trigger a re-run). When that shift occurs, `overlayOccludesNativeSurface` branches into `rectsIntersect` but `overlay.getRect()` returns `null` (the proxy calls `latestDescriptorRef.current.getRect?.() ?? null`), so the overlay silently fails to occlude. Fix: include `nativeOcclusion` in the effect deps so re-registration fires on variant changes, or close over it in the proxy to hold it stable.
 - **Fix:** Added nativeOcclusion to the useLayoutEffect dependency array so the proxy re-registers when the occlusion variant changes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Duplicate `PersistedBrowserPane` interface declarations silently merge
+
+- **Source:** github-claude | PR #531 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `electron/workspace-layout-types.ts`
+- **Finding:** The shape-only DTO pane interface was renamed to `PersistedBrowserPane`, but a `PersistedBrowserPane` store pane interface already existed in the same file. TypeScript merges the two declarations, so the merged type requires `tabs: PersistedTab[]` even for the shape-only DTO. This erased the distinction between the persisted store pane type and the shape-only DTO type, causing `tsc` errors wherever a browser shape was constructed without tabs.
+- **Fix:** Renamed the shape-only interfaces to `PersistedShellPaneShape` and `PersistedBrowserPaneShape`, then updated `PersistedWorkspacePaneShape` to reference the new names so it no longer merges with the store-side types.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Renderer bridge shape-only pane types share names with electron store-side types
+
+- **Source:** github-claude | PR #531 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/workspaceLayoutBridge.ts`
+- **Finding:** The renderer-side bridge exported `PersistedShellPane`, `PersistedBrowserPane`, and `PersistedWorkspacePane` as the shape-only DTO types. In `electron/workspace-layout-types.ts` those same identifiers belonged to the full persisted-store types (where `PersistedBrowserPane` carries `tabs: PersistedTab[]`). The structural mismatch made the two definitions of `PersistedBrowserPane` incompatible across the IPC boundary, and a future developer adding resume/reopen fields would have to update both files in lockstep without a clear naming signal.
+- **Fix:** Renamed the renderer bridge's shape-only pane leaf types to `PersistedShellPaneShape`, `PersistedBrowserPaneShape`, and `PersistedWorkspacePaneShape` to match the electron-side shape-only naming convention, then updated the three consumer files (`useSessionRestore.ts`, `groupSessionsFromInfos.ts`, `usePushWorkspaceGrouping.ts`) and the co-located test fixture to import the new names.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Shape-only browser pane type not distinct from full persisted pane type
+
+- **Source:** github-codex-connector | PR #531 round 2 | 2026-06-18
+- **Severity:** P1 / HIGH
+- **File:** `electron/workspace-layout-types.ts`
+- **Finding:** The shape-only DTO browser pane was named `PersistedBrowserPane`, identical to the full persisted-store pane type that includes `tabs: PersistedTab[]`. TypeScript declaration merging meant `PersistedWorkspacePaneShape` required `tabs` even though shape DTOs intentionally strip browser tab/history, breaking `paneToShape` and round-trip test fixtures that construct browser shapes without tabs.
+- **Fix:** Same rename as finding 5: the renderer bridge's browser shape type is now `PersistedBrowserPaneShape`, so the shape-only DTO and the full persisted-store type are distinct identifiers and no longer merge.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

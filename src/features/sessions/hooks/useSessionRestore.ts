@@ -8,9 +8,9 @@ import { createLogger } from '../../../lib/log'
 import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
 import { isBrowserPane } from '../utils/paneKind'
 import type {
-  WorkspaceShapeDto,
-  WorkspaceShapePane,
-  WorkspaceShapeShellPane,
+  PersistedWorkspaceShape,
+  PersistedWorkspacePaneShape,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   beginWorkspaceHydration,
@@ -27,22 +27,22 @@ const log = createLogger('restore')
 const RESTORE_PANE_TIMEOUT_MS = 4000
 
 const isShapeShellPane = (
-  pane: WorkspaceShapePane
-): pane is WorkspaceShapeShellPane => pane.kind === 'shell'
+  pane: PersistedWorkspacePaneShape
+): pane is PersistedShellPaneShape => pane.kind === 'shell'
 
 interface StoreShellSelection {
   sessionId: string
   paneId: string
-  pane: WorkspaceShapeShellPane
+  pane: PersistedShellPaneShape
 }
 
 interface RestartedStoreShell {
-  storeShape: WorkspaceShapeDto
+  storeShape: PersistedWorkspaceShape
   liveSession: SessionInfo
 }
 
 const findActiveStoreShell = (
-  storeShape: WorkspaceShapeDto | null
+  storeShape: PersistedWorkspaceShape | null
 ): StoreShellSelection | null => {
   const activeSession = storeShape?.sessions.find((session) => session.active)
   if (!activeSession) {
@@ -78,10 +78,10 @@ const findActiveStoreShell = (
 }
 
 const shapeWithRestartedShell = (
-  storeShape: WorkspaceShapeDto,
+  storeShape: PersistedWorkspaceShape,
   selection: StoreShellSelection,
   liveSession: SessionInfo
-): WorkspaceShapeDto => ({
+): PersistedWorkspaceShape => ({
   sessions: storeShape.sessions.map((session) =>
     session.id !== selection.sessionId
       ? session
@@ -104,7 +104,7 @@ const shapeWithRestartedShell = (
 
 const restartPersistedActiveShell = async (
   service: ITerminalService,
-  storeShape: WorkspaceShapeDto | null,
+  storeShape: PersistedWorkspaceShape | null,
   liveSessions: readonly SessionInfo[]
 ): Promise<RestartedStoreShell | null> => {
   const hasLiveSession = liveSessions.some(
@@ -290,7 +290,7 @@ export const useSessionRestore = ({
     // through the browser-capable `setActiveSessionId` so a browser-only
     // session is selectable); otherwise fall back to the PTY-driven order.
     const activate = (
-      storeShape: WorkspaceShapeDto | null,
+      storeShape: PersistedWorkspaceShape | null,
       sessions: Session[],
       activePtyId: string | null
     ): void => {
