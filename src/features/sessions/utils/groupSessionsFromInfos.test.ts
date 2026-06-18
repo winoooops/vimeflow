@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import type {
-  PersistedBrowserPane,
+  PersistedBrowserPaneShape,
   PersistedWorkspaceShape,
-  PersistedShellPane,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   groupSessionsFromInfos,
@@ -315,8 +315,8 @@ describe('groupSessionsFromInfos', () => {
 })
 
 const shellShape = (
-  overrides: Partial<PersistedShellPane> = {}
-): PersistedShellPane => ({
+  overrides: Partial<PersistedShellPaneShape> = {}
+): PersistedShellPaneShape => ({
   kind: 'shell',
   paneId: 'p0',
   paneIndex: 0,
@@ -329,8 +329,8 @@ const shellShape = (
 })
 
 const browserShape = (
-  overrides: Partial<PersistedBrowserPane> = {}
-): PersistedBrowserPane => ({
+  overrides: Partial<PersistedBrowserPaneShape> = {}
+): PersistedBrowserPaneShape => ({
   kind: 'browser',
   paneId: 'p0',
   paneIndex: 0,

@@ -9,8 +9,8 @@ import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
 import { isBrowserPane } from '../utils/paneKind'
 import type {
   PersistedWorkspaceShape,
-  PersistedWorkspacePane,
-  PersistedShellPane,
+  PersistedWorkspacePaneShape,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   beginWorkspaceHydration,
@@ -27,13 +27,13 @@ const log = createLogger('restore')
 const RESTORE_PANE_TIMEOUT_MS = 4000
 
 const isShapeShellPane = (
-  pane: PersistedWorkspacePane
-): pane is PersistedShellPane => pane.kind === 'shell'
+  pane: PersistedWorkspacePaneShape
+): pane is PersistedShellPaneShape => pane.kind === 'shell'
 
 interface StoreShellSelection {
   sessionId: string
   paneId: string
-  pane: PersistedShellPane
+  pane: PersistedShellPaneShape
 }
 
 interface RestartedStoreShell {

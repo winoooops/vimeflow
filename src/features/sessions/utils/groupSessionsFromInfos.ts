@@ -21,7 +21,7 @@ import type { LayoutId, Pane, Session } from '../types'
 import type {
   PersistedWorkspaceShape,
   PersistedWorkspaceSessionShape,
-  PersistedShellPane,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { sessionFromInfo } from './sessionFromInfo'
@@ -293,14 +293,14 @@ const reconcileActivePane = (
 // store pane's `paneId` / `agentType` / `active`.
 const buildReattachedShellPane = (
   live: SessionInfo,
-  shape: PersistedShellPane
+  shape: PersistedShellPaneShape
 ): Pane =>
   buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active)
 
 // A shell pane whose PTY is gone (graceful quit / crash) returns as a
 // restartable `completed` placeholder seeded with the persisted cwd + agent —
 // the existing Restart UX spawns a fresh shell there.
-const buildPlaceholderShellPane = (shape: PersistedShellPane): Pane => ({
+const buildPlaceholderShellPane = (shape: PersistedShellPaneShape): Pane => ({
   id: shape.paneId,
   ptyId: shape.ptyId,
   cwd: shape.cwd,

@@ -22,7 +22,7 @@ import {
   onWorkspaceRequestFinalShape,
   pushWorkspaceShape,
   type PersistedWorkspaceShape,
-  type PersistedWorkspacePane,
+  type PersistedWorkspacePaneShape,
 } from '../workspaceLayoutBridge'
 import { isShellPane } from '../utils/paneKind'
 import type { Session } from '../types'
@@ -58,7 +58,7 @@ export const buildWorkspaceShape = (
     workingDirectory: session.workingDirectory,
     active: session.id === activeSessionId,
     panes: session.panes.map(
-      (pane, paneIndex): PersistedWorkspacePane =>
+      (pane, paneIndex): PersistedWorkspacePaneShape =>
         isShellPane(pane)
           ? {
               kind: 'shell',

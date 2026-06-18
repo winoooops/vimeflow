@@ -5,7 +5,7 @@
 // The shape-only DTO defined here is the renderer<->main contract: it carries
 // pane existence + shell fields, never browser tab/history (main owns those).
 
-export interface PersistedShellPane {
+export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
   paneIndex: number
@@ -16,14 +16,16 @@ export interface PersistedShellPane {
   agentSessionId: string | null
 }
 
-export interface PersistedBrowserPane {
+export interface PersistedBrowserPaneShape {
   kind: 'browser'
   paneId: string
   paneIndex: number
   active: boolean
 }
 
-export type PersistedWorkspacePane = PersistedShellPane | PersistedBrowserPane
+export type PersistedWorkspacePaneShape =
+  | PersistedShellPaneShape
+  | PersistedBrowserPaneShape
 
 export interface PersistedWorkspaceSessionShape {
   id: string
@@ -31,7 +33,7 @@ export interface PersistedWorkspaceSessionShape {
   layout: string
   workingDirectory: string
   active: boolean
-  panes: PersistedWorkspacePane[]
+  panes: PersistedWorkspacePaneShape[]
 }
 
 export interface PersistedWorkspaceShape {
