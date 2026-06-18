@@ -3,7 +3,10 @@ import type {
   AppearanceScheme,
   KeymapGroup,
   SettingsSection,
+  SettingsTarget,
+  SettingsTargetId,
 } from './types'
+import { CATALOG, type CommandId } from '../keymap/catalog'
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'general', label: 'General', icon: 'settings' },
@@ -21,6 +24,29 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'ai', label: 'AI', icon: 'psychology' },
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
+
+export const SETTINGS_TARGET_IDS = {
+  generalCloseWithNoTabs: 'general-close-with-no-tabs',
+  generalOnLastWindowClosed: 'general-on-last-window-closed',
+  generalUseSystemPathPrompts: 'general-use-system-path-prompts',
+  generalUseSystemPrompts: 'general-use-system-prompts',
+  generalRedactPrivateValues: 'general-redact-private-values',
+  generalCliOpenBehavior: 'general-cli-open-behavior',
+  appearanceColorScheme: 'appearance-color-scheme',
+  appearanceAccentHue: 'appearance-accent-hue',
+  appearanceDensity: 'appearance-density',
+  appearanceUiFont: 'appearance-ui-font',
+  appearanceMonoFont: 'appearance-mono-font',
+  keymapPreset: 'keymap-preset',
+  agentsManageAliases: 'agents-manage-aliases',
+  agentsShellAliases: 'agents-shell-aliases',
+} as const satisfies Record<string, SettingsTargetId>
+
+export const keymapCommandTargetId = (id: CommandId): SettingsTargetId =>
+  `keymap-command-${id}`
+
+export const keymapStaticTargetId = (id: string): SettingsTargetId =>
+  `keymap-static-${id}`
 
 /* eslint-disable vimeflow/no-hardcoded-colors -- literal preview swatches for the
    appearance scheme picker (AppearancePane): each entry intentionally shows that
@@ -194,6 +220,120 @@ export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
   },
 ]
 // cspell:enable
+
+const KEYMAP_TARGET_GROUPS = new Set([
+  'Global',
+  'Panes & Layout',
+  'Terminal',
+  'Browser',
+])
+
+export const SETTINGS_TARGETS: SettingsTarget[] = [
+  {
+    id: SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
+    section: 'general',
+    label: 'When Closing With No Tabs',
+    hint: "What to do when using the 'close active item' action with no tabs.",
+  },
+  {
+    id: SETTINGS_TARGET_IDS.generalOnLastWindowClosed,
+    section: 'general',
+    label: 'On Last Window Closed',
+    hint: 'What to do when the last window is closed.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.generalUseSystemPathPrompts,
+    section: 'general',
+    label: 'Use System Path Prompts',
+    hint: "Use native OS dialogs for 'Open' and 'Save As'.",
+  },
+  {
+    id: SETTINGS_TARGET_IDS.generalUseSystemPrompts,
+    section: 'general',
+    label: 'Use System Prompts',
+    hint: 'Use native OS dialogs for confirmations.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.generalRedactPrivateValues,
+    section: 'general',
+    label: 'Redact Private Values',
+    hint: 'Hide the values of variables in private files.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.generalCliOpenBehavior,
+    section: 'general',
+    label: 'CLI Default Open Behavior',
+    hint: 'How `vf <path>` opens directories when no flag is specified.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceColorScheme,
+    section: 'appearance',
+    label: 'Color Scheme',
+    hint: 'The base palette for all surfaces, text, and accents.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceAccentHue,
+    section: 'appearance',
+    label: 'Accent Hue',
+    hint: 'Shift the primary accent around the wheel.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceDensity,
+    section: 'appearance',
+    label: 'Density',
+    hint: 'Compact for power users; comfortable for readability.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceUiFont,
+    section: 'appearance',
+    label: 'UI Font',
+    hint: 'Sans-serif used for labels, sidebars, headings.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceMonoFont,
+    section: 'appearance',
+    label: 'Mono Font',
+    hint: 'Used in the terminal, editor, and all code blocks.',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.keymapPreset,
+    section: 'keymap',
+    label: 'Preset',
+    hint: 'Switch between the default Vimeflow binding set and Vim-style bindings.',
+  },
+  ...CATALOG.filter((cmd) => KEYMAP_TARGET_GROUPS.has(cmd.group)).map(
+    (cmd): SettingsTarget => ({
+      id: keymapCommandTargetId(cmd.id),
+      section: 'keymap',
+      label: cmd.label,
+      hint: `${cmd.group} shortcut`,
+    })
+  ),
+  ...KEYMAP_GROUPS.filter(
+    (group) => group.zone === 'Diff (when focused)'
+  ).flatMap((group) =>
+    group.bindings.map(
+      (binding): SettingsTarget => ({
+        id: keymapStaticTargetId(binding.id),
+        section: 'keymap',
+        label: binding.label,
+        hint: `${group.zone} shortcut`,
+      })
+    )
+  ),
+  {
+    id: SETTINGS_TARGET_IDS.agentsManageAliases,
+    section: 'agents',
+    label: 'Manage agent shell aliases',
+    hint: "Vimeflow injects these into each pane's PTY environment.",
+  },
+  {
+    id: SETTINGS_TARGET_IDS.agentsShellAliases,
+    section: 'agents',
+    label: 'Shell aliases',
+    hint: 'Type the alias in any pane and Vimeflow swaps it for the full agent invocation.',
+  },
+]
 
 export const DEFAULT_ALIASES: AgentAlias[] = [
   {

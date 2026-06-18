@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-17
+last_updated: 2026-06-18
 ref_count: 25
 ---
 
@@ -647,4 +647,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/components/panes/KeymapPane.tsx`
 - **Finding:** After a successful binding save, `saveDraft` called `stopEditing()` without setting a focus-restoration ref. The `useLayoutEffect` that returns focus to the row edit button only runs when `pendingCancelFocusRef` or `pendingTabFocusRef` is set, so keyboard and assistive-technology users who activate the Save button landed on `document.body`.
 - **Fix:** Set `pendingCancelFocusRef.current = id` in the `result.ok` branch before calling `stopEditing()`, reusing the same focus-restoration path as Escape and Cancel. Added a co-located test asserting the edit button regains focus after Save.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 71. Programmatically focused settings target rows are excluded from the dialog focus trap
+
+- **Source:** github-codex-connector | PR #537 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx` L174
+- **Finding:** When a keyboard user activated an option search result, the target row (marked `tabIndex={-1}`) received focus, but the dialog focus trap only indexed `[tabindex]:not([tabindex="-1"])`. The next Tab saw `currentIndex === -1` and jumped to the close button, so keyboard users could not continue from the search result they just opened.
+- **Fix:** Added `orderedFocusable(dialog)` to include the currently focused programmatic target row in the trap's ordering (sorted by DOM position), so Tab from a focused target moves to the next focusable control naturally. Added a co-located test asserting Tab from a focused search result lands on the setting control.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

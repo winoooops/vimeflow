@@ -3,8 +3,11 @@ import {
   BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
+  SETTINGS_TARGET_IDS,
+  SETTINGS_TARGETS,
   SETTINGS_SECTIONS,
   VIM_KEYMAP_GROUPS,
+  keymapCommandTargetId,
 } from './sections'
 
 describe('SETTINGS_SECTIONS', () => {
@@ -34,6 +37,36 @@ describe('SETTINGS_SECTIONS', () => {
       expect(s.label).toBeDefined()
       expect(s.icon).toBeDefined()
     })
+  })
+})
+
+describe('SETTINGS_TARGETS', () => {
+  test('contains unique option target ids', () => {
+    const ids = SETTINGS_TARGETS.map((target) => target.id)
+
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  test('contains real settings rows and independent keymap command targets', () => {
+    expect(SETTINGS_TARGETS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.generalRedactPrivateValues,
+          section: 'general',
+          label: 'Redact Private Values',
+        }),
+        expect.objectContaining({
+          id: keymapCommandTargetId('palette'),
+          section: 'keymap',
+          label: 'Open command palette',
+        }),
+        expect.objectContaining({
+          id: keymapCommandTargetId('palette-leader'),
+          section: 'keymap',
+          label: 'Command palette leader',
+        }),
+      ])
+    )
   })
 })
 

@@ -2,8 +2,16 @@ import { useState, type ReactElement } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { SETTINGS_SECTIONS } from '../sections'
+import {
+  SETTINGS_SECTIONS,
+  SETTINGS_TARGET_IDS,
+  SETTINGS_TARGETS,
+} from '../sections'
 import { SettingsSidebar } from './SettingsSidebar'
+
+const redactTarget = SETTINGS_TARGETS.find(
+  (target) => target.id === SETTINGS_TARGET_IDS.generalRedactPrivateValues
+)!
 
 const StatefulSidebar = (): ReactElement => {
   const [query, setQuery] = useState('')
@@ -83,5 +91,62 @@ describe('SettingsSidebar', () => {
     expect(screen.getByRole('button', { name: 'Keymap' })).not.toHaveAttribute(
       'aria-current'
     )
+  })
+
+  test('renders matching option targets under their owning section', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Redact Private Values' })
+    ).toBeInTheDocument()
+  })
+
+  test('calls onPickTarget when an option target is clicked', async () => {
+    const user = userEvent.setup()
+    const onPickTarget = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        onPickTarget={onPickTarget}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Redact Private Values' })
+    )
+
+    expect(onPickTarget).toHaveBeenCalledWith(redactTarget)
+  })
+
+  test('marks the active option target with aria-current', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        activeTargetId={redactTarget.id}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Redact Private Values',
+        current: 'location',
+      })
+    ).toBeInTheDocument()
   })
 })
