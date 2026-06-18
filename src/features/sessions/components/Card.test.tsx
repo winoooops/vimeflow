@@ -160,6 +160,20 @@ describe('Card — active variant', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
   })
 
+  test('kebab (IconButton trigger) reflects open state on aria-expanded', async () => {
+    const user = userEvent.setup()
+    renderActiveCard(session(), { onRename: vi.fn(), onRemove: vi.fn() })
+
+    const trigger = screen.getByRole('button', { name: 'Session actions' })
+    // The migrated IconButton forwards aria-haspopup + aria-expanded through
+    // ...rest; the attribute drives the open tint (no separate render path).
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  })
+
   test('kebab Remove calls onRemove with the session id', async () => {
     const onRemove = vi.fn()
     const user = userEvent.setup()

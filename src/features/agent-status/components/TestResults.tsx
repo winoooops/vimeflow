@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import type { ReactElement } from 'react'
-import type { TestGroup, TestRunSnapshot, TestRunStatus } from '../types'
+import { ProgressBar } from '@/components/ProgressBar'
+import type { TestGroup, TestRunSnapshot } from '../types'
 
 interface TestResultsProps {
   snapshot: TestRunSnapshot | null
@@ -41,8 +42,6 @@ const TestResultsLive = ({
   const [expanded, setExpanded] = useState(false)
   const bodyId = useId()
 
-  const dotClass = statusDotClass(snapshot.status)
-
   return (
     <div
       className="border-t border-outline-variant/[0.08]"
@@ -60,10 +59,6 @@ const TestResultsLive = ({
         <span className="text-[10px] font-black uppercase tracking-[0.15em] text-outline">
           Tests
         </span>
-        <span
-          className={`inline-block h-2 w-2 rounded-full ${dotClass}`}
-          aria-hidden
-        />
         <span className="font-mono text-[10px] text-on-surface">
           {headerStatusText(snapshot)}
         </span>
@@ -144,18 +139,17 @@ const ProportionalBar = ({
   }
 
   return (
-    <div className="flex h-[3px] w-full overflow-hidden rounded-full">
-      {passed > 0 && (
-        <div style={{ flexGrow: passed }} className="bg-success" />
-      )}
-      {failed > 0 && <div style={{ flexGrow: failed }} className="bg-error" />}
-      {skipped > 0 && (
-        <div
-          style={{ flexGrow: skipped }}
-          className="bg-on-surface-variant/40"
-        />
-      )}
-    </div>
+    <ProgressBar
+      label="Test result summary"
+      height="thin"
+      decorative
+      className="flex bg-transparent"
+      segments={[
+        { value: passed, className: 'bg-success' },
+        { value: failed, className: 'bg-error' },
+        { value: skipped, className: 'bg-on-surface-variant/40' },
+      ]}
+    />
   )
 }
 
@@ -237,19 +231,6 @@ const GroupRow = ({
       </span>
     </div>
   )
-}
-
-const statusDotClass = (s: TestRunStatus): string => {
-  switch (s) {
-    case 'pass':
-      return 'bg-success'
-    case 'fail':
-      return 'bg-error'
-    case 'noTests':
-      return 'bg-on-surface-variant'
-    case 'error':
-      return 'bg-tertiary'
-  }
 }
 
 // Visible header text in the slot the count badge would occupy.

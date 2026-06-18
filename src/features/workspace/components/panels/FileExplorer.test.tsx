@@ -9,6 +9,7 @@ const originalClipboard = navigator.clipboard
 const createTestFileSystemService = (): IFileSystemService => ({
   listDir: vi.fn().mockResolvedValue(mockFileTree),
   readFile: vi.fn().mockResolvedValue('content'),
+  fileExists: vi.fn().mockResolvedValue(true),
   writeFile: vi.fn().mockResolvedValue(undefined),
   renamePath: vi.fn().mockResolvedValue(undefined),
   deletePath: vi.fn().mockResolvedValue(undefined),

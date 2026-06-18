@@ -3,7 +3,7 @@ id: filesystem-scope
 category: security
 created: 2026-04-09
 last_updated: 2026-06-13
-ref_count: 5
+ref_count: 6
 ---
 
 # Filesystem Scope
@@ -228,3 +228,12 @@ preserve their original Tauri-era paths.
 - **Finding:** `try_resolve_from_index` validated `session_dir` only when reading `created_at` metadata, then allowed the macOS fallback (`process_start = None`) to select the longest matching `workDir` regardless of whether its `sessionDir` was missing, outside the Kimi home, or traversing `..`. The winning untrusted path reached `status_path` construction, failed downstream trust checks, and left the agent-status panel blank.
 - **Fix:** Filter index candidates before they enter the match vector: require `session_dir` to be present and canonically resolve under `home` via `path_under`. Carry the validated `session_dir` forward so `status_path` is built from the trusted value and malformed rows can no longer shadow valid sessions.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Existence check uses `listDir`, which filters dotfiles
+
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `fileSystemService.listDir` maps to the backend `list_dir`, which skips names starting with `.`. Open dotfiles such as `.env` or `.gitignore` were therefore marked as deleted even though they existed.
+- **Fix:** Replaced the directory-listing existence check with a direct `readFile` check, which is not filtered by the backend listing logic.
+- **Commit:** see current commit

@@ -408,11 +408,223 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
   })
 
+  test('renders editor path crumb above the editor surface without status for an untouched file', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts' })
+
+    const editorPanel = screen.getByTestId('editor-panel')
+    const crumb = within(editorPanel).getByTestId('editor-path-crumb')
+    expect(crumb).toHaveTextContent('test.ts')
+    expect(within(crumb).queryByText(/saved ·/i)).toBeNull()
+    expect(within(crumb).queryByText('UNSAVED')).toBeNull()
+  })
+
+  test('renders unsaved path crumb state when the buffer is dirty', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts', isDirty: true })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('UNSAVED')).toHaveClass('text-primary')
+  })
+
+  test('renders new path crumb state for a clean new file', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/new.ts',
+      editorFileLifecycleStatus: 'NEW',
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('NEW')).toHaveClass('text-success-muted')
+  })
+
+  test('renders deleted path crumb state for a clean deleted file', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/deleted.ts',
+      editorFileLifecycleStatus: 'DELETED',
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('DELETED')).toHaveClass('text-tertiary')
+  })
+
+  test('makes the editor read-only for a clean deleted file', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/deleted.ts',
+      editorFileLifecycleStatus: 'DELETED',
+    })
+
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({ readOnly: true })
+    )
+  })
+
+  test('keeps the editor editable for a dirty deleted file so it can be saved', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/deleted.ts',
+      editorFileLifecycleStatus: 'DELETED',
+      isDirty: true,
+    })
+
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({ readOnly: false })
+    )
+  })
+
+  test('lets dirty state override new file lifecycle state', () => {
+    renderDockPanel({
+      selectedFilePath: '/home/user/new.ts',
+      editorFileLifecycleStatus: 'NEW',
+      isDirty: true,
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('UNSAVED')).toBeInTheDocument()
+    expect(within(crumb).queryByText('NEW')).toBeNull()
+  })
+
+  test('renders saved path crumb state after a successful save', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/test.ts',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/test.ts',
+      isDirty: false,
+      savedAt: Date.now(),
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+
+    await waitFor(() => {
+      expect(within(crumb).getByText(/saved ·/i)).toHaveClass(
+        'text-success-muted'
+      )
+    })
+  })
+
+  test('shows just-saved state over new lifecycle state after saving a new file', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/new.ts',
+      editorFileLifecycleStatus: 'NEW',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/new.ts',
+      editorFileLifecycleStatus: 'NEW',
+      isDirty: false,
+      savedAt: Date.now(),
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+
+    await waitFor(() => {
+      expect(within(crumb).getByText(/saved ·/i)).toHaveClass(
+        'text-success-muted'
+      )
+    })
+    expect(within(crumb).queryByText('NEW')).toBeNull()
+  })
+
+  test('lets deleted lifecycle state override stale saved state', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/deleted.ts',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/deleted.ts',
+      isDirty: false,
+      savedAt: Date.now(),
+    })
+
+    await screen.findByText(/saved ·/i)
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/deleted.ts',
+      editorFileLifecycleStatus: 'DELETED',
+      isDirty: false,
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('DELETED')).toHaveClass('text-tertiary')
+    expect(within(crumb).queryByText(/saved ·/i)).toBeNull()
+  })
+
+  test('clears saved path crumb state when the selected file path changes', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/first.ts',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/first.ts',
+      isDirty: false,
+      savedAt: Date.now(),
+    })
+
+    await screen.findByText(/saved ·/i)
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/second.ts',
+      isDirty: false,
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('second.ts')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(within(crumb).queryByText(/saved ·/i)).toBeNull()
+    })
+  })
+
+  test('clears saved path crumb state when the parent clears savedAt', async () => {
+    const view = renderDockPanel({
+      selectedFilePath: '/home/user/shared.ts',
+      isDirty: true,
+    })
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/shared.ts',
+      isDirty: false,
+      savedAt: Date.now(),
+    })
+
+    await screen.findByText(/saved ·/i)
+
+    view.rerenderWith({
+      selectedFilePath: '/home/user/shared.ts',
+      isDirty: false,
+      savedAt: null,
+    })
+
+    const crumb = screen.getByTestId('editor-path-crumb')
+    expect(within(crumb).getByText('shared.ts')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(within(crumb).queryByText(/saved ·/i)).toBeNull()
+    })
+    expect(within(crumb).queryByText('UNSAVED')).toBeNull()
+  })
+
+  test('keeps selected file path out of the dock tab header', () => {
+    renderDockPanel({ selectedFilePath: '/home/user/test.ts' })
+
+    expect(
+      within(screen.getByTestId('dock-tab')).queryByText(/test\.ts/)
+    ).toBeNull()
+  })
+
   test('shows "No file selected" when selectedFilePath is null', () => {
     renderDockPanel()
 
     expect(screen.getByTestId('no-file-selected')).toBeInTheDocument()
     expect(screen.getByText(/No file selected/i)).toBeInTheDocument()
+  })
+
+  test('does not render editor path crumb when no file is selected', () => {
+    renderDockPanel()
+
+    expect(screen.queryByTestId('editor-path-crumb')).toBeNull()
   })
 
   describe('markdown reading view', () => {

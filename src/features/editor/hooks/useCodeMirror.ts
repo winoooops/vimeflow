@@ -16,6 +16,7 @@ import {
   Transaction,
   type TransactionSpec,
   Compartment,
+  Annotation,
 } from '@codemirror/state'
 import { history } from '@codemirror/commands'
 import { vim, Vim, getCM } from '@replit/codemirror-vim'
@@ -88,6 +89,7 @@ export const scrollCursorOnSelectionChange = (
 // that view up in the WeakMap to find the right save callback.
 const vimSaveByView = new WeakMap<EditorView, () => void>()
 let vimWriteRegistered = false
+const programmaticContentUpdate = Annotation.define<boolean>()
 
 const registerVimWriteOnce = (): void => {
   if (vimWriteRegistered) {
@@ -109,6 +111,7 @@ export interface UseCodeMirrorOptions {
   onSave: () => void
   onChange?: (content: string) => void
   shouldAutoFocus?: boolean
+  readOnly?: boolean
 }
 
 export interface UseCodeMirrorReturn {
@@ -148,6 +151,10 @@ const copySelectionFromView = async (view: EditorView): Promise<void> => {
 
 const cutSelectionFromView = async (view: EditorView): Promise<void> => {
   const state = view.state
+  if (state.readOnly) {
+    return
+  }
+
   if (!hasSelection(state)) {
     return
   }
@@ -163,6 +170,10 @@ const cutSelectionFromView = async (view: EditorView): Promise<void> => {
 
 const pasteClipboardIntoView = async (view: EditorView): Promise<void> => {
   const state = view.state
+  if (state.readOnly) {
+    return
+  }
+
   const clipboard = window.navigator.clipboard as ClipboardLike | undefined
   if (clipboard?.readText === undefined) {
     return
@@ -296,13 +307,20 @@ const editorClipboardKeymap = Prec.highest(
 export function useCodeMirror(
   options: UseCodeMirrorOptions
 ): UseCodeMirrorReturn {
-  const { initialContent, language, onSave, onChange, shouldAutoFocus } =
-    options
+  const {
+    initialContent,
+    language,
+    onSave,
+    onChange,
+    shouldAutoFocus,
+    readOnly = false,
+  } = options
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
   const initialContentRef = useRef(initialContent)
   const shouldAutoFocusRef = useRef(shouldAutoFocus ?? false)
+  const readOnlyRef = useRef(readOnly)
 
   // Update `initialContentRef` synchronously during render (not via
   // useEffect). `setContainer` runs during the commit phase when React
@@ -315,6 +333,7 @@ export function useCodeMirror(
   // re-render.
   initialContentRef.current = initialContent
   shouldAutoFocusRef.current = shouldAutoFocus ?? false
+  readOnlyRef.current = readOnly
 
   // onSave / onChange aren't read synchronously during render, so they
   // can use the normal effect-based ref update pattern.
@@ -328,6 +347,7 @@ export function useCodeMirror(
 
   const languageCompartment = useRef(new Compartment())
   const themeCompartment = useRef(new Compartment())
+  const readOnlyCompartment = useRef(new Compartment())
   const themeUnsubscribeRef = useRef<(() => void) | null>(null)
   const viewRef = useRef<EditorView | null>(null)
 
@@ -363,6 +383,21 @@ export function useCodeMirror(
         createEditorTheme(themeService.current().kind)
       ),
       languageCompartment.current.of([]),
+      readOnlyCompartment.current.of([
+        EditorState.readOnly.of(readOnlyRef.current),
+        EditorView.editable.of(!readOnlyRef.current),
+      ]),
+      EditorState.transactionFilter.of((tr) => {
+        if (
+          !tr.startState.readOnly ||
+          !tr.docChanged ||
+          tr.annotation(programmaticContentUpdate)
+        ) {
+          return tr
+        }
+
+        return []
+      }),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged && onChangeRef.current) {
           const content = update.state.doc.toString()
@@ -453,6 +488,20 @@ export function useCodeMirror(
     })
   }, [language])
 
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    view.dispatch({
+      effects: readOnlyCompartment.current.reconfigure([
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
+      ]),
+    })
+  }, [readOnly])
+
   /**
    * Update the editor content programmatically.
    * Also focuses the editor after content update.
@@ -474,6 +523,7 @@ export function useCodeMirror(
         to: view.state.doc.length,
         insert: content,
       },
+      annotations: programmaticContentUpdate.of(true),
     })
 
     // Focus editor after content load

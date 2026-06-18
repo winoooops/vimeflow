@@ -17,6 +17,7 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
 import {
@@ -146,6 +147,32 @@ vi.mock('../editor/hooks/useEditorBuffer', () => ({
   useEditorBuffer: vi.fn(),
 }))
 
+// Mock useGitStatus so file-lifecycle tests can control the git-derived
+// state without spinning up a real git watcher.
+vi.mock('../diff/hooks/useGitStatus', () => ({
+  useGitStatus: vi.fn(() => ({
+    files: [],
+    filesCwd: null,
+    repoRoot: null,
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    idle: true,
+  })),
+}))
+
+// Mutable file-system mock so tests can flip fileExists between calls.
+const fileSystemMock = vi.hoisted(() => ({
+  readFile: vi.fn().mockResolvedValue(''),
+  fileExists: vi.fn().mockResolvedValue(false),
+  writeFile: vi.fn().mockResolvedValue(undefined),
+  listDirectory: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('../files/services/fileSystemService', () => ({
+  createFileSystemService: vi.fn(() => fileSystemMock),
+}))
+
 vi.mock('../terminal/hooks/usePaneShortcuts', () => ({
   usePaneShortcuts: vi.fn(),
 }))
@@ -198,6 +225,30 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     return <div data-testid="agent-status-panel" />
   },
   PANEL_WIDTH_PX: 280,
+}))
+
+// Capture CodeEditor's controlled props so tests can verify lifecycle state
+// ordering and drive vim saves without spinning up xterm.js/CodeMirror.
+const capturedCodeEditorProps: {
+  onSave?: () => void
+  isReadOnly?: boolean
+} = {}
+
+interface MockCodeEditorProps {
+  onSave?: () => void
+  isReadOnly?: boolean
+}
+
+vi.mock('../editor/components/CodeEditor', () => ({
+  CodeEditor: ({
+    onSave = undefined,
+    isReadOnly = false,
+  }: MockCodeEditorProps): ReactElement => {
+    capturedCodeEditorProps.onSave = onSave
+    capturedCodeEditorProps.isReadOnly = isReadOnly
+
+    return <div data-testid="code-editor" />
+  },
 }))
 
 // Only kimi cards instantiate the consent gate, so a global consent=ON keeps
@@ -288,6 +339,22 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
     capturedAgentStatusPanelProps.reserveWindowControls = undefined
+    capturedCodeEditorProps.onSave = undefined
+    capturedCodeEditorProps.isReadOnly = undefined
+    fileSystemMock.readFile.mockReset().mockResolvedValue('')
+    fileSystemMock.fileExists.mockReset().mockResolvedValue(false)
+    fileSystemMock.writeFile.mockReset().mockResolvedValue(undefined)
+    fileSystemMock.listDirectory.mockReset().mockResolvedValue([])
+    vi.mocked(useGitStatus).mockReset().mockReturnValue({
+      files: [],
+      filesCwd: null,
+      repoRoot: null,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: true,
+    })
+
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -2336,5 +2403,78 @@ describe('WorkspaceView', () => {
       'data-cwd',
       '/home/user/projects/vimeflow/.claude/worktrees/stale'
     )
+  })
+
+  test('vim save refreshes selected-file existence so a recreated deleted file is not read-only', async () => {
+    const user = userEvent.setup()
+
+    const bufferState = {
+      filePath: '/repo/deleted.ts',
+      originalContent: 'original',
+      currentContent: 'edited',
+      isDirty: true,
+    }
+
+    const saveFile = vi.fn().mockImplementation(() => {
+      bufferState.originalContent = bufferState.currentContent
+      bufferState.isDirty = false
+
+      return Promise.resolve()
+    })
+
+    vi.mocked(useGitStatus).mockReturnValue({
+      files: [],
+      filesCwd: '/repo',
+      repoRoot: '/repo',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+    fileSystemMock.fileExists.mockResolvedValue(false)
+    vi.mocked(useEditorBuffer).mockImplementation(() => ({
+      filePath: bufferState.filePath,
+      originalContent: bufferState.originalContent,
+      currentContent: bufferState.currentContent,
+      isDirty: bufferState.isDirty,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile,
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => bufferState.isDirty),
+      getFilePathForScope: vi.fn(() => bufferState.filePath),
+      releaseScope: vi.fn(),
+    }))
+
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: 'Editor' }))
+
+    expect(screen.getByTestId('code-editor')).toBeInTheDocument()
+    expect(fileSystemMock.fileExists).toHaveBeenCalled()
+
+    // While the buffer is dirty the editor stays editable even though the
+    // backing file is missing; the path crumb shows UNSAVED.
+    expect(screen.getByTestId('editor-path-crumb')).toHaveAttribute(
+      'aria-label',
+      'File path: /repo/deleted.ts. unsaved'
+    )
+    expect(capturedCodeEditorProps.isReadOnly).toBe(false)
+
+    act(() => {
+      capturedCodeEditorProps.onSave?.()
+    })
+
+    await waitFor(() => {
+      expect(saveFile).toHaveBeenCalledTimes(1)
+    })
+
+    // After save the buffer is clean. Without the existence refresh, the
+    // stale `selectedEditorFileExists=false` would make the lifecycle status
+    // stay DELETED and the editor would flip to read-only.
+    await waitFor(() => {
+      expect(screen.queryByText('DELETED')).not.toBeInTheDocument()
+    })
+    expect(capturedCodeEditorProps.isReadOnly).toBe(false)
   })
 })

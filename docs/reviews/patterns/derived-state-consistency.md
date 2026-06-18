@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-13
-ref_count: 7
+ref_count: 8
 ---
 
 # Derived State Consistency
@@ -122,3 +122,21 @@ base data is technically "correct."
 - **Fix:** Pass the updated `activePtyId` local to `activate()` instead of `list.activeSessionId`.
 - **Verification:** Added regression test that restarts a persisted active shell without an `onActivePersisted` handler and asserts `onActiveResolved` is called with the workspace session id.
 - **Commit:** same commit as this entry
+
+### 9. Saved crumb timestamp not tied to buffer identity
+
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** The saved timestamp was inferred from a dirty→clean transition without verifying that the same buffer/session identity produced the transition. Switching sessions could show `SAVED · just now` for a buffer that had never been saved.
+- **Fix:** Lifted `editorSavedAt` into `WorkspaceView`, reset it on file-path or session-id changes, and passed it down as a `savedAt` prop so the timestamp is scoped to the current buffer identity.
+- **Commit:** see current commit
+
+### 10. Saved crumb timestamp driven by dirty→clean heuristic
+
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** The crumb timestamp was set on every transition from dirty to clean, including undoing all edits back to the original content. No disk write occurred, yet the UI rendered `SAVED · just now`.
+- **Fix:** Replaced the heuristic with an explicit `savedAt` timestamp that `WorkspaceView` sets only after `editorBuffer.saveFile()` resolves successfully.
+- **Commit:** see current commit

@@ -5,14 +5,7 @@ import { DockTab } from './DockTab'
 
 describe('DockTab', () => {
   test('renders Editor and Diff Viewer buttons', () => {
-    render(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath={null}
-        onClose={vi.fn()}
-      />
-    )
+    render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
 
@@ -22,14 +15,7 @@ describe('DockTab', () => {
   })
 
   test('active tab gets chip styling', () => {
-    render(
-      <DockTab
-        tab="diff"
-        onTabChange={vi.fn()}
-        selectedFilePath={null}
-        onClose={vi.fn()}
-      />
-    )
+    render(<DockTab tab="diff" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     expect(diffTab).toHaveClass('rounded-md')
@@ -41,42 +27,31 @@ describe('DockTab', () => {
   test('clicking a tab calls onTabChange with the right id', async () => {
     const user = userEvent.setup()
     const onTabChange = vi.fn()
-    render(
-      <DockTab
-        tab="editor"
-        onTabChange={onTabChange}
-        selectedFilePath={null}
-        onClose={vi.fn()}
-      />
-    )
+    render(<DockTab tab="editor" onTabChange={onTabChange} onClose={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: /diff viewer/i }))
 
     expect(onTabChange).toHaveBeenCalledWith('diff')
   })
 
-  test('children render between tabs and the path/close cluster', () => {
+  test('children render between tabs and the action cluster', () => {
     render(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath="~/src/app.tsx"
-        onClose={vi.fn()}
-      >
+      <DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()}>
         <div>Switcher slot</div>
       </DockTab>
     )
 
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     const slot = screen.getByText('Switcher slot')
-    const filePath = screen.getByText('src/app.tsx')
+    const closeButton = screen.getByRole('button', { name: /collapse panel/i })
 
     expect(
       diffTab.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
 
     expect(
-      slot.compareDocumentPosition(filePath) & Node.DOCUMENT_POSITION_FOLLOWING
+      slot.compareDocumentPosition(closeButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 
@@ -86,7 +61,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath="~/src/app.tsx"
         onClose={vi.fn()}
         compactActions
       >
@@ -96,13 +70,11 @@ describe('DockTab', () => {
 
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
     expect(screen.queryByText('Switcher slot')).not.toBeInTheDocument()
-    expect(screen.queryByText('src/app.tsx')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /more dock actions/i }))
 
     expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
     expect(screen.getByText('Switcher slot')).toBeInTheDocument()
-    expect(screen.getByText('src/app.tsx')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /collapse panel/i })
     ).toBeInTheDocument()
@@ -114,7 +86,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath={null}
         onClose={vi.fn()}
         compactActions
       >
@@ -142,7 +113,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath={null}
         onClose={vi.fn()}
         compactActions
       >
@@ -161,43 +131,23 @@ describe('DockTab', () => {
   test('clicking the close button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    render(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath={null}
-        onClose={onClose}
-      />
-    )
+    render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={onClose} />)
 
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
     expect(onClose).toHaveBeenCalled()
   })
 
-  test('file path renders and truncates home prefix', () => {
-    render(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath="~/src/app.tsx"
-        onClose={vi.fn()}
-      />
-    )
+  test('does not render a file path in the tab strip', () => {
+    render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
-    expect(screen.getByText('src/app.tsx')).toBeInTheDocument()
-    expect(screen.queryByText('~/src/app.tsx')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('dock-tab')).queryByText(/src\/app/)
+    ).toBeNull()
   })
 
   test('collapse button uses a minimize (window-style) icon', () => {
-    render(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath={null}
-        onClose={vi.fn()}
-      />
-    )
+    render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
     const closeButton = screen.getByRole('button', { name: /collapse panel/i })
     expect(within(closeButton).getByText('minimize')).toBeInTheDocument()
@@ -211,7 +161,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath={null}
         onClose={vi.fn()}
         compactActions
       />
@@ -222,14 +171,7 @@ describe('DockTab', () => {
     expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
 
     // Widen the dock → compactActions goes false
-    rerender(
-      <DockTab
-        tab="editor"
-        onTabChange={vi.fn()}
-        selectedFilePath={null}
-        onClose={vi.fn()}
-      />
-    )
+    rerender(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
     // Menu element is gone (not rendered) and actionsOpen was cleared,
     // so narrowing again should not auto-open the menu
@@ -240,7 +182,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath={null}
         onClose={vi.fn()}
         compactActions
       />
@@ -256,7 +197,6 @@ describe('DockTab', () => {
       <DockTab
         tab="editor"
         onTabChange={vi.fn()}
-        selectedFilePath={null}
         onClose={vi.fn()}
         compactActions
       />
@@ -278,14 +218,7 @@ describe('DockTab', () => {
   describe('tooltip wiring', () => {
     test('Editor tab tooltip shows the Mod+E shortcut chip', async () => {
       const user = userEvent.setup()
-      render(
-        <DockTab
-          tab="diff"
-          onTabChange={vi.fn()}
-          selectedFilePath={null}
-          onClose={vi.fn()}
-        />
-      )
+      render(<DockTab tab="diff" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
       await user.hover(screen.getByRole('button', { name: /editor/i }))
       const tip = await screen.findByRole('tooltip')
@@ -295,14 +228,7 @@ describe('DockTab', () => {
 
     test('Diff Viewer tab tooltip shows the Mod+G shortcut chip', async () => {
       const user = userEvent.setup()
-      render(
-        <DockTab
-          tab="editor"
-          onTabChange={vi.fn()}
-          selectedFilePath={null}
-          onClose={vi.fn()}
-        />
-      )
+      render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
       await user.hover(screen.getByRole('button', { name: /diff viewer/i }))
       const tip = await screen.findByRole('tooltip')
@@ -312,14 +238,7 @@ describe('DockTab', () => {
 
     test('Collapse panel tooltip shows the Mod+0 shortcut chip', async () => {
       const user = userEvent.setup()
-      render(
-        <DockTab
-          tab="editor"
-          onTabChange={vi.fn()}
-          selectedFilePath={null}
-          onClose={vi.fn()}
-        />
-      )
+      render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
 
       await user.hover(screen.getByRole('button', { name: /collapse panel/i }))
       const tip = await screen.findByRole('tooltip')
@@ -341,7 +260,6 @@ describe('DockTab', () => {
         <DockTab
           tab="editor"
           onTabChange={vi.fn()}
-          selectedFilePath={null}
           onClose={vi.fn()}
           compactActions
         >

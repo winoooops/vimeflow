@@ -3,7 +3,7 @@ id: codemirror-integration
 category: editor
 created: 2026-04-10
 last_updated: 2026-06-06
-ref_count: 4
+ref_count: 5
 ---
 
 # CodeMirror 6 + Vim Integration
@@ -199,3 +199,12 @@ affects event/command routing.
 - **Finding:** `nativePasteShortcutBypass` called `stopImmediatePropagation()` on every platform paste shortcut keydown, unconditionally blocking `@replit/codemirror-vim` from seeing the event. On Linux/Windows `Ctrl+V` is the paste shortcut, but in Vim NORMAL mode it enters VISUAL BLOCK. After the bypass, NORMAL-mode `Ctrl+V` silently triggered a clipboard paste instead.
 - **Fix:** Gate the bypass on `getCM(view)?.state.vim?.insertMode`. Only call `stopImmediatePropagation()` in INSERT mode (where `Ctrl+V` has no vim meaning). In NORMAL mode the event falls through to vim, preserving VISUAL BLOCK entry. Updated tests to enter INSERT mode before exercising the paste bypass.
 - **Commit:** same commit as this entry
+
+### 20. Dirty deleted buffers blocked from saving
+
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** When an open file was deleted externally, the editor was made read-only solely because the lifecycle was `DELETED`, even if the buffer had unsaved edits. The read-only state suppressed edits and `onSave`, so `:w` could not recreate the deleted file from the dirty buffer.
+- **Fix:** Gate read-only on `editorFileLifecycleStatus === 'DELETED' && !isDirty` so dirty deleted buffers remain editable and saveable.
+- **Commit:** see current commit

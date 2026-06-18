@@ -4,11 +4,10 @@ import { test, expect, vi } from 'vitest'
 import { AGENTS } from '../../../../agents/registry'
 import { AgentStatusPanelHeader } from './Header'
 
-test('renders agent glyph, short label, and a status dot', () => {
+test('renders agent glyph and short label', () => {
   render(
     <AgentStatusPanelHeader
       agent={AGENTS.claude}
-      status="running"
       onCollapse={() => undefined}
     />
   )
@@ -18,17 +17,41 @@ test('renders agent glyph, short label, and a status dot', () => {
 
   expect(brandMark).toBeInTheDocument()
   expect(screen.getByText('CLAUDE')).toBeInTheDocument()
-  expect(screen.getByTestId('status-dot')).toBeInTheDocument()
+})
+
+test('reserves a fixed 44px header height', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-status-panel-header')).toHaveClass('h-11')
+})
+
+test('shows compact refresh affordance without replacing status', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.claude}
+      isRefreshing
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.queryByTestId('status-dot')).not.toBeInTheDocument()
+  expect(screen.getByText('fetching latest')).toBeInTheDocument()
+  expect(screen.getByText('sync')).toBeInTheDocument()
+  expect(screen.getByTestId('agent-glyph-chip')).toHaveAttribute(
+    'data-refreshing',
+    'true'
+  )
 })
 
 test('chevron button fires onCollapse when clicked', async () => {
   const onCollapse = vi.fn()
   render(
-    <AgentStatusPanelHeader
-      agent={AGENTS.claude}
-      status="running"
-      onCollapse={onCollapse}
-    />
+    <AgentStatusPanelHeader agent={AGENTS.claude} onCollapse={onCollapse} />
   )
 
   await userEvent.click(
@@ -39,11 +62,7 @@ test('chevron button fires onCollapse when clicked', async () => {
 
 test('gradient wash uses agent.accentDim in inline style', () => {
   render(
-    <AgentStatusPanelHeader
-      agent={AGENTS.codex}
-      status="idle"
-      onCollapse={() => undefined}
-    />
+    <AgentStatusPanelHeader agent={AGENTS.codex} onCollapse={() => undefined} />
   )
   const header = screen.getByTestId('agent-status-panel-header')
   expect(header.getAttribute('style')).toMatch(/linear-gradient\(180deg/)
@@ -56,7 +75,6 @@ test('adds macOS drag coverage while keeping collapse clickable', () => {
   render(
     <AgentStatusPanelHeader
       agent={AGENTS.claude}
-      status="running"
       onCollapse={() => undefined}
       reserveWindowControls
     />
@@ -75,7 +93,6 @@ test('does not add drag coverage when native controls are not reserved', () => {
   render(
     <AgentStatusPanelHeader
       agent={AGENTS.claude}
-      status="running"
       onCollapse={() => undefined}
     />
   )

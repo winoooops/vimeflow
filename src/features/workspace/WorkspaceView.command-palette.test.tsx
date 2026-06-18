@@ -279,6 +279,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(createFileSystemService).mockReturnValue({
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
+      fileExists: vi.fn().mockResolvedValue(true),
       writeFile: vi.fn().mockResolvedValue(undefined),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),
@@ -487,9 +488,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
       isDragging: false,
     }
 
-    vi.mocked(useElasticContainer)
-      .mockReturnValueOnce(dockDragContainer)
-      .mockReturnValueOnce(idleDockContainer)
+    vi.mocked(useElasticContainer).mockImplementation((options) =>
+      options.axis === 'vertical' ? dockDragContainer : idleDockContainer
+    )
 
     render(<WorkspaceView />)
 

@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import {
   BrowserAddressBar,
   type BrowserAddressBarProps,
@@ -16,8 +17,12 @@ export interface BrowserToolbarProps extends BrowserAddressBarProps {
   onReloadOrStop: () => void
 }
 
+// Intentional accent exceptions kept on the IconButton via `className`
+// (rounded-lg shape + the browser accent hover/focus/disabled skin) — all
+// semantic tokens, so they pass `no-hardcoded-colors`. Geometry/base come from
+// the `IconButton` ghost `md` variant.
 const NAV_BTN =
-  'flex h-[27px] w-[27px] items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-wash-subtle hover:text-agent-browser-accent disabled:cursor-default disabled:text-outline-variant disabled:hover:bg-transparent disabled:hover:text-outline-variant focus:outline-none focus-visible:ring-2 focus-visible:ring-agent-browser-accent/45'
+  'rounded-lg hover:bg-wash-subtle hover:text-agent-browser-accent disabled:cursor-default disabled:opacity-100 disabled:text-outline-variant disabled:hover:bg-transparent disabled:hover:text-outline-variant focus-visible:ring-2 focus-visible:ring-agent-browser-accent/45'
 
 export const BrowserToolbar = ({
   onOpenExternal,
@@ -70,21 +75,14 @@ export const BrowserToolbar = ({
     >
       <div className="flex items-center gap-[6px] justify-self-start">
         {navButtons.map((button) => (
-          <button
+          <IconButton
             key={button.key}
-            type="button"
+            icon={button.icon}
+            label={button.label}
             disabled={button.disabled}
-            aria-label={button.label}
             onClick={button.onClick}
             className={NAV_BTN}
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[17px]"
-            >
-              {button.icon}
-            </span>
-          </button>
+          />
         ))}
       </div>
 
@@ -92,20 +90,13 @@ export const BrowserToolbar = ({
         <BrowserAddressBar {...address} />
       </div>
 
-      <button
-        type="button"
-        aria-label="open in system browser"
+      <IconButton
+        icon="open_in_new"
+        label="open in system browser"
         onClick={onOpenExternal}
         disabled={!canOpenExternal}
         className={`${NAV_BTN} justify-self-end`}
-      >
-        <span
-          aria-hidden="true"
-          className="material-symbols-outlined text-[17px]"
-        >
-          open_in_new
-        </span>
-      </button>
+      />
 
       {isLoading ? (
         <div

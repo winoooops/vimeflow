@@ -40,3 +40,12 @@ feature.
 - **Finding:** `run_session_supervisor` calls `emit_session_status` every 750 ms, which unconditionally calls `parse_session_aggregate` and `main_settled_turn_count`. Both helpers read and parse the full main and active `wire.jsonl` files before deduping. For long-running sessions the transcripts grow large, so leaving a Kimi pane open keeps doing full-file I/O and JSON parsing indefinitely.
 - **Fix:** Added a cheap `session_source_mtime` metadata walk over `state.json` and every known agent wire. `emit_session_status` now caches the parsed `StatusSnapshot` and the settled turn count; when the source mtimes are unchanged it reuses the cached snapshot and still calls `maybe_refresh_usage` every poll so consent/retry flows are not starved. The expensive reparse is skipped only when the inputs have not changed.
 - **Commit:** same commit as this entry
+
+### 3. Stale active snapshot returned when detection returns null
+
+- **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/utils/statusRefreshCoordinator.ts`
+- **Finding:** When `detect_agent_in_session` returned `null` for a pane with a cached active snapshot, the coordinator returned the stale snapshot unchanged. Switching back to that pane restored `isActive: true` until the primary polling hook caught up.
+- **Fix:** Changed the null-detection branch to write a default inactive snapshot instead of returning the previous one, so hot-loaded panes never display a dead agent as active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

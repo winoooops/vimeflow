@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>右侧状态面板：热刷新、预取与稳定更新方案</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0d1c;
+        --surface: #121221;
+        --surface-low: #1a1a2a;
+        --surface-high: #292839;
+        --surface-top: #333344;
+        --text: #e3e0f7;
+        --muted: #a79daf;
+        --dim: #71677c;
+        --line: rgba(203, 166, 247, 0.12);
+        --primary: #cba6f7;
+        --primary-soft: rgba(203, 166, 247, 0.13);
+        --green: #7defa1;
+        --green-soft: rgba(125, 239, 161, 0.12);
+        --coral: #ff94a5;
+        --coral-soft: rgba(255, 148, 165, 0.12);
+        --amber: #fab387;
+        --amber-soft: rgba(250, 179, 135, 0.12);
+        --blue: #89b4fa;
+        --blue-soft: rgba(137, 180, 250, 0.12);
+        --mono: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+        --sans:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            circle at 12% 0%,
+            rgba(203, 166, 247, 0.12),
+            transparent 30rem
+          ),
+          radial-gradient(
+            circle at 88% 10%,
+            rgba(137, 180, 250, 0.08),
+            transparent 28rem
+          ),
+          linear-gradient(180deg, var(--bg) 0%, var(--surface) 100%);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.65;
+      }
+
+      .page {
+        width: min(1120px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) 360px;
+        gap: 32px;
+        align-items: end;
+        min-height: 360px;
+        padding-bottom: 34px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: var(--primary);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        letter-spacing: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        max-width: 820px;
+        font-size: clamp(38px, 6vw, 72px);
+        font-weight: 760;
+      }
+
+      .lead {
+        max-width: 760px;
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(41, 40, 57, 0.72);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--primary);
+        box-shadow: 0 0 18px rgba(203, 166, 247, 0.55);
+      }
+
+      .panel-preview {
+        min-height: 330px;
+        overflow: hidden;
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(203, 166, 247, 0.1), transparent 32%),
+          rgba(26, 26, 42, 0.74);
+        box-shadow:
+          inset 0 0 0 1px rgba(203, 166, 247, 0.1),
+          0 24px 70px rgba(0, 0, 0, 0.38);
+      }
+
+      .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(203, 166, 247, 0.08);
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .glyph {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font-family: var(--mono);
+      }
+
+      .preview-body {
+        padding: 14px;
+      }
+
+      .metric {
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(41, 40, 57, 0.58);
+      }
+
+      .metric-top,
+      .event-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .metric-value {
+        color: var(--primary);
+        font-family: var(--mono);
+        font-weight: 700;
+      }
+
+      .bar {
+        height: 6px;
+        margin-top: 10px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(13, 13, 28, 0.88);
+      }
+
+      .bar span {
+        display: block;
+        width: 43%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--primary), var(--amber));
+      }
+
+      .event-list {
+        display: grid;
+        gap: 7px;
+        margin-top: 16px;
+      }
+
+      .event-row {
+        min-height: 32px;
+        padding: 8px 9px;
+        border-radius: 10px;
+        background: rgba(18, 18, 33, 0.72);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .event-row strong {
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      article {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 270px;
+        gap: 44px;
+        margin-top: 44px;
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      aside {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        padding: 18px;
+        border-radius: 16px;
+        background: rgba(26, 26, 42, 0.72);
+        box-shadow: inset 0 0 0 1px rgba(203, 166, 247, 0.08);
+      }
+
+      aside h2 {
+        margin-bottom: 12px;
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      aside a {
+        display: block;
+        padding: 7px 0;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 13px;
+      }
+
+      aside a:hover {
+        color: var(--primary);
+      }
+
+      section {
+        padding: 30px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      section:first-child {
+        padding-top: 0;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 28px;
+      }
+
+      h3 {
+        margin: 24px 0 10px;
+        color: var(--primary);
+        font-size: 18px;
+      }
+
+      p {
+        margin: 0 0 14px;
+        color: var(--muted);
+      }
+
+      strong {
+        color: var(--text);
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: rgba(203, 166, 247, 0.1);
+        color: var(--primary);
+        font-family: var(--mono);
+        font-size: 0.92em;
+      }
+
+      .callout {
+        margin: 20px 0;
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: rgba(203, 166, 247, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(203, 166, 247, 0.13);
+      }
+
+      .callout p {
+        margin: 0;
+        color: var(--text);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin: 18px 0;
+      }
+
+      .card {
+        padding: 16px;
+        border-radius: 16px;
+        background: rgba(26, 26, 42, 0.74);
+        box-shadow: inset 0 0 0 1px rgba(203, 166, 247, 0.08);
+      }
+
+      .card h3 {
+        margin-top: 0;
+      }
+
+      .card p {
+        margin-bottom: 0;
+        font-size: 14px;
+      }
+
+      .flow {
+        display: grid;
+        gap: 12px;
+        margin: 20px 0;
+      }
+
+      .flow-row {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+        padding: 14px;
+        border-radius: 14px;
+        background: rgba(41, 40, 57, 0.48);
+      }
+
+      .flow-row span {
+        color: var(--primary);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .flow-row p {
+        margin: 0;
+      }
+
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .bad {
+        background: var(--coral-soft);
+      }
+
+      .good {
+        background: var(--green-soft);
+      }
+
+      .mini-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .mini-title::before {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+        content: '';
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 22px;
+        color: var(--muted);
+      }
+
+      li {
+        margin: 8px 0;
+      }
+
+      .code-block {
+        margin: 18px 0;
+        padding: 18px;
+        overflow-x: auto;
+        border-radius: 16px;
+        background: rgba(13, 13, 28, 0.78);
+        box-shadow: inset 0 0 0 1px rgba(203, 166, 247, 0.08);
+      }
+
+      pre {
+        margin: 0;
+        color: #cdc3d1;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+      }
+
+      .num {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 999px;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .linear-card {
+        margin-top: 18px;
+        padding: 16px;
+        border-radius: 16px;
+        background: var(--amber-soft);
+        box-shadow: inset 0 0 0 1px rgba(250, 179, 135, 0.16);
+      }
+
+      .linear-card a {
+        color: var(--amber);
+      }
+
+      footer {
+        padding-top: 28px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        article,
+        .grid,
+        .compare {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          position: static;
+          order: -1;
+        }
+
+        h1 {
+          font-size: 42px;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          width: min(100vw - 24px, 1120px);
+          padding-top: 28px;
+        }
+
+        .flow-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Technical analysis · Vimeflow activity panel</p>
+          <h1>右侧状态面板不应该“跳”：它应该像热视图一样切换</h1>
+          <p class="lead">
+            录屏里的问题不是简单的 CSS 抖动，而是 pane
+            切换时状态从冷启动重新装载：旧内容消失、空态出现、后端 replay
+            再把长列表补回来。更优雅的解法是把右栏设计成
+            <strong>缓存快照 + 后台预取 + 轻量同步态</strong> 的 live lens。
+          </p>
+          <div class="meta">
+            <span class="pill"><span class="dot"></span>目标：零空白切换</span>
+            <span class="pill">范围：React 前端状态层</span>
+            <span class="pill"
+              >策略：hot reload / prefetch / stable viewport</span
+            >
+          </div>
+        </div>
+
+        <div class="panel-preview" aria-label="activity panel preview">
+          <div class="preview-header">
+            <div class="chip"><span class="glyph">C</span> Codex</div>
+            <span class="pill"><span class="dot"></span>syncing</span>
+          </div>
+          <div class="preview-body">
+            <div class="metric">
+              <div class="metric-top">
+                <span class="metric-label">Current context</span>
+                <span class="metric-value">43%</span>
+              </div>
+              <div class="bar"><span></span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-top">
+                <span class="metric-label">Token cache</span>
+                <span class="metric-value">132.9k</span>
+              </div>
+              <div class="bar"><span style="width: 74%"></span></div>
+            </div>
+            <div class="event-list">
+              <div class="event-row">
+                <strong>UPDATE_PLAN</strong><span>20s ago</span>
+              </div>
+              <div class="event-row">
+                <strong>WRITE_STDIN</strong><span>17s ago</span>
+              </div>
+              <div class="event-row">
+                <strong>LIST_ISSUE_STATUSES</strong><span>14s ago</span>
+              </div>
+              <div class="event-row">
+                <strong>READ</strong><span>10s ago</span>
+              </div>
+              <div class="event-row">
+                <strong>+ 40 earlier events</strong><span>cached</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <article>
+        <main>
+          <section id="supporting-document">
+            <h2>Supporting document</h2>
+            <p>
+              This document supports the Linear planning issue for stabilizing
+              the Vimeflow right-side agent activity panel during rapid pane
+              switching. It is intentionally committed under
+              <code>docs/design/</code> because the proposed fix changes the
+              activity panel interaction contract, not just implementation
+              plumbing.
+            </p>
+            <div class="linear-card">
+              <p>
+                Linear issue:
+                <a
+                  href="https://linear.app/vimeflow/issue/VIM-127/epic-stabilize-activity-panel-hot-reload-across-pane-switching"
+                  data-linear-issue-link
+                  >VIM-127 · Epic: stabilize activity panel hot reload across
+                  pane switching</a
+                >
+              </p>
+            </div>
+          </section>
+
+          <section id="symptom">
+            <h2>现象：为什么看起来“超级乱跳”</h2>
+            <p>
+              从录屏看，右侧 activity panel 在不同 pane
+              之间切换时，会在短面板和长面板之间瞬间重排。有些 pane
+              已经积累了很多 tool calls、activity events、files changed；有些
+              pane 几乎为空。当前 UI
+              把这些内容直接替换到同一个滚动容器里，于是浏览器必须立刻重新计算高度和滚动位置。
+            </p>
+            <div class="callout">
+              <p>
+                关键判断：问题的核心不是“动画不够好看”，而是“切换时进入了错误的状态模型”。
+                它把已经访问过的 pane 当作第一次打开，导致用户看到冷启动过程。
+              </p>
+            </div>
+            <div class="compare">
+              <div class="card bad">
+                <div class="mini-title">当前观感</div>
+                <p>
+                  长内容消失 → 空态出现 → replay 填充 → 列表高度变化 →
+                  右栏跳动。
+                </p>
+              </div>
+              <div class="card good">
+                <div class="mini-title">目标观感</div>
+                <p>
+                  旧快照立即出现 → 角落显示同步 → 新事件轻量补齐 →
+                  右栏位置稳定。
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section id="root-cause">
+            <h2>根因：状态订阅是 live 的，但切换体验是 cold 的</h2>
+            <p>
+              Vimeflow 的 active pane 会驱动右栏读取对应的
+              <code>ptyId</code>。当 active pane 改变时，agent status hook
+              会重新进入目标 PTY 的检测和事件订阅流程。这个流程技术上正确， 但
+              UI 上会暴露中间态。
+            </p>
+            <div class="flow">
+              <div class="flow-row">
+                <span>1 · active pane</span>
+                <p>
+                  用户切换 pane，右栏目标从 <code>pty-a</code> 变成
+                  <code>pty-b</code>。
+                </p>
+              </div>
+              <div class="flow-row">
+                <span>2 · reset</span>
+                <p>
+                  前端状态暂时回到默认值：context、tool calls、activity feed
+                  都变空。
+                </p>
+              </div>
+              <div class="flow-row">
+                <span>3 · replay</span>
+                <p>
+                  后端 watcher / transcript replay 逐步送回历史事件和当前
+                  metrics。
+                </p>
+              </div>
+              <div class="flow-row">
+                <span>4 · layout</span>
+                <p>右栏 DOM 从空变长，scroll height 改变，视觉上就是跳。</p>
+              </div>
+            </div>
+          </section>
+
+          <section id="model">
+            <h2>新的模型：右栏是 live lens，不是详情页重载</h2>
+            <p>
+              右侧面板应该被看成一个“实时透镜”。切换 pane
+              时，它不应该卸掉全部内容再从零加载， 而应该先显示目标 pane
+              的最近快照，然后在后台确认 freshness。
+            </p>
+            <div class="grid">
+              <div class="card">
+                <h3>Snapshot</h3>
+                <p>
+                  按 <code>ptyId</code> 缓存最后一次完整状态。切回 pane
+                  时立即可画。
+                </p>
+              </div>
+              <div class="card">
+                <h3>Syncing</h3>
+                <p>快照可能不是最新，但可以保留；只显示轻量同步标识。</p>
+              </div>
+              <div class="card">
+                <h3>Live</h3>
+                <p>订阅完成后增量更新，不让用户看到空白中间过程。</p>
+              </div>
+            </div>
+          </section>
+
+          <section id="proposal">
+            <h2>方案：热缓存、预取、加载态三层组合</h2>
+
+            <h3>1. 建立 <code>agentStatusStore</code></h3>
+            <p>
+              把 agent status 从“组件局部状态”提升为“按 PTY
+              分片的状态缓存”。每个 <code>ptyId</code>
+              一条记录，包含最新 status、freshness、订阅状态、最后更新时间。
+            </p>
+            <div class="code-block">
+              <pre>
+type AgentStatusRecord = {
+  ptyId: string
+  status: AgentStatus
+  phase: 'cold' | 'snapshot' | 'syncing' | 'live' | 'stale'
+  updatedAt: number
+  hasWatcher: boolean
+}</pre
+              >
+            </div>
+
+            <h3>2. 当前 session 的 shell panes 做轻量预取</h3>
+            <p>
+              用户在一个 split view 里频繁切 pane，所以预取范围不需要无限扩大。
+              优先预热当前 session 中的所有 shell panes，再保留最近访问过的少量
+              pane。
+            </p>
+            <ul>
+              <li>当前 active pane：完整 live subscription。</li>
+              <li>同 session 的 sibling panes：轻量 detect + 最新快照。</li>
+              <li>最近访问 pane：短 TTL 缓存，例如 30-60 秒。</li>
+              <li>关闭 pane 或 PTY 退出：立即清理缓存和 watcher。</li>
+            </ul>
+
+            <h3>3. loading 不再等于 empty</h3>
+            <p>
+              如果已有快照，切换时不要显示“无活动”。显示旧快照，并在 header 或
+              metrics 区显示 <code>syncing</code>。只有完全没有快照的 pane
+              才显示固定高度 skeleton。
+            </p>
+            <div class="compare">
+              <div class="card bad">
+                <div class="mini-title">避免</div>
+                <p>
+                  <code>No activity yet</code>
+                  先闪出来，然后马上被几十条事件替换。
+                </p>
+              </div>
+              <div class="card good">
+                <div class="mini-title">采用</div>
+                <p>保留快照内容，追加一个低调的 <code>syncing</code> 标签。</p>
+              </div>
+            </div>
+
+            <h3>4. 固定 scroll viewport，内容内部更新</h3>
+            <p>
+              Header、context bucket、token cache 这些关键区域应该有稳定尺寸。
+              Tool Calls、Activity、Files Changed 放在同一个固定的 scroll
+              viewport 中，pane 切换只重置这个内部滚动容器，
+              不让整个右栏参与高度动画。
+            </p>
+
+            <h3>5. 动画只做 crossfade，不做高度魔法</h3>
+            <p>
+              高度动画会和长列表、滚动条、replay 事件互相打架。更稳的方式是：
+              pane key 变化时，内容区做 120-160ms 的 opacity + 4px
+              translate，且尊重
+              <code>prefers-reduced-motion</code>。
+            </p>
+          </section>
+
+          <section id="architecture">
+            <h2>建议架构</h2>
+            <div class="code-block">
+              <pre>
+WorkspaceView
+  ├─ resolve activePtyId
+  ├─ resolve visibleSiblingPtyIds
+  ├─ useAgentStatusStore(activePtyId)
+  ├─ useAgentStatusPrefetch(visibleSiblingPtyIds)
+  └─ AgentStatusPanel
+       ├─ receives record.status
+       ├─ receives record.phase
+       └─ renders stable viewport</pre
+              >
+            </div>
+            <p>
+              重点是：<code>WorkspaceView</code> 不需要因为每个 tool-call
+              都重建整棵树。store 可以把高频事件集中到对应 <code>ptyId</code> 的
+              record 里，面板只订阅当前需要的分片。
+            </p>
+          </section>
+
+          <section id="rollout">
+            <h2>落地顺序</h2>
+            <div class="timeline">
+              <div class="step">
+                <div class="num">1</div>
+                <p>
+                  先做 <code>agentStatusStore</code>，保持现有后端事件协议不变。
+                </p>
+              </div>
+              <div class="step">
+                <div class="num">2</div>
+                <p>
+                  让 active pane 使用 store snapshot，消除切换时的空白闪烁。
+                </p>
+              </div>
+              <div class="step">
+                <div class="num">3</div>
+                <p>
+                  加入 sibling panes 预取，只覆盖当前 session，避免过度
+                  watcher。
+                </p>
+              </div>
+              <div class="step">
+                <div class="num">4</div>
+                <p>
+                  给面板加
+                  <code>phase</code>：cold、snapshot、syncing、live、stale。
+                </p>
+              </div>
+              <div class="step">
+                <div class="num">5</div>
+                <p>
+                  最后再优化视觉层：固定 viewport、轻量 crossfade、固定 skeleton
+                  高度。
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section id="pr-plan">
+            <h2>PR 聚合计划</h2>
+            <ol>
+              <li>
+                <strong>PR 1 — docs + planning branch.</strong> Commit this
+                supporting document and the Prettier opt-in. No runtime
+                behavior.
+              </li>
+              <li>
+                <strong>PR 2 — status store.</strong> Extract
+                <code>AgentStatusRecord</code> and per-<code>ptyId</code>
+                cache behind a small hook API. Existing active-pane behavior
+                should remain equivalent.
+              </li>
+              <li>
+                <strong>PR 3 — prefetch and freshness.</strong> Add bounded
+                sibling-pane prefetch, TTL, cleanup on pane close/restart, and
+                <code>phase</code> semantics.
+              </li>
+              <li>
+                <strong>PR 4 — panel rendering stability.</strong> Add stable
+                viewport, snapshot/syncing UI, scroll reset rules, and
+                reduced-motion-safe crossfade.
+              </li>
+              <li>
+                <strong>PR 5 — verification.</strong> Add regression tests and
+                browser/recording verification for long-feed to short-feed pane
+                switches.
+              </li>
+            </ol>
+          </section>
+
+          <section id="tradeoffs">
+            <h2>取舍与风险</h2>
+            <ul>
+              <li>
+                <strong>不要预取全局所有 pane。</strong> 只预热当前 session
+                和最近访问项，避免 watcher 数量失控。
+              </li>
+              <li>
+                <strong>快照需要标记 freshness。</strong>
+                旧数据可以显示，但不能伪装成 live。
+              </li>
+              <li>
+                <strong>缓存清理要跟 PTY 生命周期绑定。</strong> pane
+                close、restart、agent process change 都要清理或重置。
+              </li>
+              <li>
+                <strong>高频事件要批处理。</strong> tool-call replay
+                可能密集到达，应该合并到一帧或一个短 debounce 窗口。
+              </li>
+            </ul>
+          </section>
+
+          <section id="result">
+            <h2>最终效果</h2>
+            <p>
+              切换到已经访问过的 pane：右栏立即显示最后快照，角落显示同步态，
+              最新事件补齐后安静更新。切换到完全新的 pane：显示固定高度
+              skeleton， 不撑爆布局。长 feed 和短 feed
+              之间切换时，滚动容器内部变化， 外层右栏不再跳。
+            </p>
+            <div class="callout">
+              <p>
+                简单说：我们不是让跳动变得“动画更漂亮”，而是让右栏不再进入会跳的状态。
+              </p>
+            </div>
+          </section>
+        </main>
+
+        <aside aria-label="目录">
+          <h2>目录</h2>
+          <a href="#supporting-document">Supporting document</a>
+          <a href="#symptom">现象</a>
+          <a href="#root-cause">根因</a>
+          <a href="#model">新模型</a>
+          <a href="#proposal">方案</a>
+          <a href="#architecture">架构</a>
+          <a href="#rollout">落地顺序</a>
+          <a href="#pr-plan">PR 聚合计划</a>
+          <a href="#tradeoffs">取舍</a>
+          <a href="#result">最终效果</a>
+        </aside>
+      </article>
+
+      <footer>
+        docs/design/activity-panel-hot-reload-analysis.html · static technical
+        note
+      </footer>
+    </div>
+  </body>
+</html>

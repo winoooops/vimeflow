@@ -1,5 +1,6 @@
 // cspell:ignore Couldn
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
+import { ProgressBar } from '@/components/ProgressBar'
 import { Tooltip } from '@/components/Tooltip'
 import { useKimiUsageConsent } from '../hooks/useKimiUsageConsent'
 import { RateLimitBar } from './RateLimitBar'
@@ -155,7 +156,15 @@ const SkeletonBar = ({ label }: { label: string }): ReactElement => (
     <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-on-surface-muted">
       {label}
     </span>
-    <div className="h-[3px] w-full animate-pulse rounded-full bg-surface-container-highest" />
+    <ProgressBar
+      label={`${label} loading`}
+      value={100}
+      tone="custom"
+      height="thin"
+      decorative
+      className="bg-transparent"
+      fillClassName="animate-pulse bg-surface-container-highest"
+    />
   </div>
 )
 

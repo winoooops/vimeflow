@@ -2,6 +2,7 @@ import type { FileNode } from '../types'
 import type {
   DeletePathRequest,
   FileEntry,
+  FileExistsRequest,
   RenamePathRequest,
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
@@ -11,6 +12,7 @@ import { mockFileTree } from '../data/mockFileTree'
 export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
   readFile(path: string): Promise<string>
+  fileExists(path: string): Promise<boolean>
   writeFile(path: string, content: string): Promise<void>
   renamePath(path: string, newName: string): Promise<void>
   deletePath(path: string): Promise<void>
@@ -61,6 +63,12 @@ class DesktopFileSystemService implements IFileSystemService {
     })
   }
 
+  async fileExists(path: string): Promise<boolean> {
+    const request = { path } satisfies FileExistsRequest
+
+    return invoke<boolean>('file_exists', { request })
+  }
+
   async writeFile(path: string, content: string): Promise<void> {
     await invoke<void>('write_file', {
       request: { path, content },
@@ -97,6 +105,34 @@ const resolveMockPath = (nodes: FileNode[], segments: string[]): FileNode[] => {
   return resolveMockPath(match.children, rest)
 }
 
+/** Find a single mock node by path, returning null if not found. */
+const findMockNode = (
+  nodes: FileNode[],
+  segments: string[]
+): FileNode | null => {
+  if (segments.length === 0) {
+    return null
+  }
+
+  const [head, ...rest] = segments
+
+  const match = nodes.find((n) => n.name.replace(/\/$/, '') === head)
+
+  if (!match) {
+    return null
+  }
+
+  if (rest.length === 0) {
+    return match
+  }
+
+  if (!match.children) {
+    return null
+  }
+
+  return findMockNode(match.children, rest)
+}
+
 class MockFileSystemService implements IFileSystemService {
   listDir(path: string): Promise<FileNode[]> {
     // Split "~/src/middleware" → ["src", "middleware"]
@@ -110,6 +146,14 @@ class MockFileSystemService implements IFileSystemService {
     // Mock implementation — returns placeholder content for browser/test mode.
     // This service is only used in browser mode (not desktop).
     return Promise.resolve('// Mock file content')
+  }
+
+  fileExists(path: string): Promise<boolean> {
+    const normalized = path.replace(/^~\/?/, '').replace(/\/$/, '')
+    const segments = normalized ? normalized.split('/') : []
+    const node = findMockNode(mockFileTree, segments)
+
+    return Promise.resolve(node?.type === 'file')
   }
 
   writeFile(): Promise<void> {

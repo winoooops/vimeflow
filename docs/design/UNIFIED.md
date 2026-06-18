@@ -87,9 +87,9 @@ Separation is **tonal-first** with two planes:
 
 **`TerminalPane`** — a self-contained card (`bg-surface`, `radius 10`), `flex-col`:
 
-- **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · `StatusDot` (size 6) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
+- **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
 - **Body:** xterm.js, or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
-- **Footer** (`font-mono` 11px, `border-t outline-variant/20`): `StatusDot` + a click-to-focus prompt line (`>` in `accent` + state-aware placeholder).
+- **Footer** (`font-mono` 11px, `border-t outline-variant/20`): click-to-focus prompt line (`>` in `accent` + state-aware placeholder).
 - **Focus ring:** absolute `inset-0` span — resting `1px outline-variant/22`; focused `2px agent.accent` border + `6px accentDim` glow.
 - Keyed by `pane.ptyId` (clean remount on PTY restart); slot wrapper keyed by `pane.id`.
 
@@ -132,18 +132,18 @@ A throwaway terminal opens in a centered **`BurnerTerminalPopup`** (`role=dialog
 
 ## 4. Agent session states — the contract
 
-Users return _hours later_ and must answer "what happened?" at a glance. The five states are the contract; each surface signals them slightly differently — a `StatusDot` in pane headers and the activity panel, a status **text label** in the sidebar session list.
+Users return _hours later_ and must answer "what happened?" at a glance. The five states are the contract; shipped surfaces now signal them with status text, relative timestamps, active-action cards, and contextual chrome. Standalone status dots were removed in VIM-126 and should not be reintroduced.
 
-| State       | Meaning                                                               | `stateToken` contract               | Shipped `StatusDot`                      |
-| ----------- | --------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------- |
-| `running`   | Agent is working.                                                     | `success`, solid, glow, 2s pulse    | `success` solid + `0_0_4px` glow + pulse |
-| `awaiting`  | **Blocked on the user** — needs input; must read louder than running. | `tertiary`, solid, glow, 1.4s pulse | `warning` solid + pulse (no glow)        |
-| `completed` | Done; diff ready.                                                     | `success-muted`, hollow ring        | `success-muted` solid                    |
-| `errored`   | Broke; stacktrace in the activity panel.                              | `error`, solid                      | `error` solid                            |
-| `idle`      | Fresh / pure-shell pane, no activity.                                 | `on-surface-muted`, hollow ring     | `on-surface-muted/70` solid              |
+| State       | Meaning                                                               | `stateToken` contract               | Shipped cue                                    |
+| ----------- | --------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `running`   | Agent is working.                                                     | `success`, solid, glow, 2s pulse    | live action / running text + relative duration |
+| `awaiting`  | **Blocked on the user** — needs input; must read louder than running. | `tertiary`, solid, glow, 1.4s pulse | approval/action surface                        |
+| `completed` | Done; diff ready.                                                     | `success-muted`, hollow ring        | "Done" status text + relative time             |
+| `errored`   | Broke; stacktrace in the activity panel.                              | `error`, solid                      | error text/details in activity surfaces        |
+| `idle`      | Fresh / pure-shell pane, no activity.                                 | `on-surface-muted`, hollow ring     | idle/shell text state                          |
 
-- The canonical visual map is `tokens.ts::stateToken` (color · solid/hollow · pulse · glow · label tone); `SessionState` is its union. The **shipped `StatusDot` renders the solid form of every state, with a glow only on `running` and Tailwind's uniform pulse** — the hollow-ring + per-state-duration + awaiting-glow details of the contract are not yet wired (the dim/hollow variant has no live caller). Treat `stateToken` as the intent; if you wire it, match the table. Add a state in **all three** (union · this table · the component) or none.
-- **`StatusDot` is not used in the sidebar session list.** `SessionCard` shows status as a flat **text label** + tone (`STATUS_TEXT`, e.g. `completed → "Done"`) — no dot, no border, no accent bar. `StatusDot` appears in `TerminalPane` headers (size 6), the `AgentStatusPanel` header / `StatusCard`, and tabs (size 5).
+- The canonical visual map is `tokens.ts::stateToken` (color · solid/hollow · pulse · glow · label tone); `SessionState` is its union. It remains the semantic source for state coloring, but no shipped component renders standalone state pips.
+- `SessionCard` shows status as a flat **text label** + tone (`STATUS_TEXT`, e.g. `completed → "Done"`) — no dot, no border, no accent bar.
 - **Labels are always relative** (`running · 2m 14s`, `awaits you · 4h 12m`, `done · 7h ago`); absolute timestamps appear only on hover.
 - The sidebar **Sessions** tab groups **Active** (any non-terminal pane — `running` / `awaiting` / `idle`, reorderable, first) above **Recent** (terminal — `completed` / `errored`).
 
@@ -167,11 +167,11 @@ The canonical surfaces and their key contracts. Full props live in the code; thi
 
 `AgentStatusPanel` (`280px`, exported `PANEL_WIDTH_PX`) — `bg-surface`, three regions:
 
-1. **Header** — `linear-gradient(180deg, agent.accentDim, transparent 80%)`, 26×26 mono glyph chip, agent short name (13px), `StatusDot`.
+1. **Header** — `linear-gradient(180deg, agent.accentDim, transparent 80%)`, 26×26 mono glyph chip, agent short name (13px).
 2. **Budget zone** (`p-2`) — **`ContextReservoirCard`** renders the context window as a **reservoir**: a water-drop identity chip (**no emoji**), `CONTEXT` label + big %, a 104px `WaterTank` (depth-graded fill, animated dual-wave meniscus, `{windowSize}`/`0` scale ticks, a value pill riding the waterline) and a `{used} tokens · {headroom} left` footer. Fill color is the continuous **`ctxTone`** seafoam→gold→coral→rose HSL sweep keyed to fill — **interpolated, no tiers** (`utils/contextTone.ts`, shared with the rail); dark/light flips via `resolveContextTone`/`tankChrome`; the waves honor `prefers-reduced-motion`. Then **`TokenCache`** (28px % + `Sparkline` + cached/wrote/fresh `StackBar`, tone `≥70` healthy / `≥40` warming / `<40` cold). The two cards share chrome (radius 10, 135° tone wash, tinted border, no elevation) so they read as one family.
-3. **Scroll zone** — `ToolCallSummary` · conditional `LiveActionCard` (the running tool lifted into a **NOW** card — bolt + verb + path + diff + pulsing LIVE chip; opens the diff on click) · `ActivityFeed` (`role=feed`, vertical `outline-variant/40` rail, 10 newest + "N earlier", roving-tabindex) · `FilesChanged` · `TestResults`.
+3. **Scroll zone** — `ToolCallSummary` · conditional `LiveActionCard` (the running tool lifted into a **NOW** card — bolt + verb + path + diff + LIVE chip; opens the diff on click) · `ActivityFeed` (`role=feed`, vertical `outline-variant/40` rail, 10 newest + "N earlier", roving-tabindex) · `FilesChanged` · `TestResults`.
 
-`AgentStatusRail` (`44px`, `RAIL_WIDTH_PX`) — expand chevron + glyph chip + vertical `CONTEXT` + `CACHE` `RailMeter` gauges (the `CONTEXT` gauge fills with the same continuous `ctxTone` sweep as the panel reservoir, so collapsed + expanded agree on the context color; `CACHE` keeps its `≥70`/`≥40`/`<40` tones) + running dot. **`BudgetMetrics`** has three variants: `Subscriber` (5h + Weekly bars), `ApiKey` (Cost / API Time / Tokens), `Fallback` (Tokens only). `CollapsibleSection` is the shared `border-t` section primitive. `PANEL_WIDTH_PX`/`RAIL_WIDTH_PX` are the single source of truth for the shell's width animation.
+`AgentStatusRail` (`44px`, `RAIL_WIDTH_PX`) — expand chevron + glyph chip + vertical `CONTEXT` + `CACHE` `RailMeter` gauges (the `CONTEXT` gauge fills with the same continuous `ctxTone` sweep as the panel reservoir, so collapsed + expanded agree on the context color; `CACHE` keeps its `≥70`/`≥40`/`<40` tones). **`BudgetMetrics`** has three variants: `Subscriber` (5h + Weekly bars), `ApiKey` (Cost / API Time / Tokens), `Fallback` (Tokens only). `CollapsibleSection` is the shared `border-t` section primitive. `PANEL_WIDTH_PX`/`RAIL_WIDTH_PX` are the single source of truth for the shell's width animation.
 
 ### 5.3 Command palette
 
@@ -190,6 +190,62 @@ The canonical surfaces and their key contracts. Full props live in the code; thi
 ### 5.5 GitRefChip
 
 A rounded 22px pill in the pane header / session metadata: optional worktree segment (`account_tree` + name + `›`) then branch (`fork_right` + name); `primary-container` tint normally, two-tone coral (`tertiary`/`error`) when detached. Tooltip lists branch / detached-HEAD / worktree / full cwd verbatim. Props: `branch` (req), `worktree?`, `detached?`.
+
+### 5.5.1 Chip
+
+`Chip` lives at `src/components/Chip.tsx`; import via `@/components/Chip`. It is the shared primitive for compact labels, counters, badges, file/git pills, activity kind tags, and toolbar count pills.
+
+```ts
+interface ChipProps {
+  variant?: 'subtle' | 'tinted' | 'solid'
+  tone?:
+    | 'neutral'
+    | 'primary'
+    | 'secondary'
+    | 'success'
+    | 'error'
+    | 'warning'
+    | 'tertiary'
+    | 'custom'
+  radius?: 'chip' | 'pill' | 'md'
+  size?: 'xs' | 'sm' | 'md' | 'custom'
+  label?: ReactNode
+  leading?: ReactNode
+  leadingIcon?: string
+  trailingCount?: ReactNode
+}
+```
+
+Rules: use `leadingIcon` for Material Symbols, `trailingCount` for small numeric badges, and `custom` only when preserving a specialized existing chip geometry or dynamic agent/accent colors.
+
+### 5.5.2 ProgressBar
+
+`ProgressBar` lives at `src/components/ProgressBar.tsx`; import via `@/components/ProgressBar`. It owns thin single-fill bars and segmented distribution bars.
+
+```ts
+interface ProgressBarProps {
+  label: string
+  value?: number
+  max?: number
+  tone?:
+    | 'neutral'
+    | 'primary'
+    | 'secondary'
+    | 'success'
+    | 'error'
+    | 'warning'
+    | 'tertiary'
+    | 'kimi'
+    | 'custom'
+  height?: 'thin' | 'sm' | 'md'
+  radius?: 'chip' | 'pill'
+  gradient?: boolean
+  decorative?: boolean
+  segments?: readonly ProgressBarSegment[]
+}
+```
+
+Rules: non-decorative bars expose `role="progressbar"` with clamped `aria-valuenow`; segmented decorative bars are for compact visual distributions such as token-cache buckets and test summaries.
 
 ### 5.6 Tooltip
 
@@ -324,6 +380,115 @@ Rules:
 - Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
 - Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
 
+### 5.10 `Button`
+
+The text/primary foundation. Lives at `src/components/Button.tsx`; import via the alias: `import { Button } from '@/components/Button'`.
+
+```ts
+interface ButtonProps
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  leadingIcon?: string // optional Material Symbol ligature
+  className?: string // layout/positioning only
+  children: ReactNode // the label
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/Button`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Variant styling is a single `tailwind-variants` `tv()` definition in the package-private `base/button` substrate (`buttonVariants` + `BaseButton`); the five public variants are `ghost | default | toolbar | primary | danger`, plus `size` and `shape`. Prop types fall out of `VariantProps`, `Pick`ed to `variant`/`size` — `shape` is fixed per primitive (`pill` here), never a consumer prop.
+- `variant` defaults to `'default'`, `size` to `'md'`; use `variant="primary"` for the accent gradient/shadow CTA and `variant="danger"` for destructive actions.
+- Renders `BaseButton` (`shape="pill"`) with an optional leading icon span (`material-symbols-outlined`, `aria-hidden`) and `children` as the label.
+- `className` is for layout/positioning only — never restyle the variant tokens per call site.
+
+### 5.11 `IconButton`
+
+Icon-only. Required `label` is both the accessible name and the Tooltip text. Lives at `src/components/IconButton.tsx`; import via the alias: `import { IconButton } from '@/components/IconButton'`.
+
+```ts
+interface IconButtonProps
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<
+      React.ButtonHTMLAttributes<HTMLButtonElement>,
+      'className' | 'aria-label'
+    > {
+  icon: string // Material Symbol ligature
+  label: string // REQUIRED — sets aria-label AND the Tooltip content
+  pressed?: boolean // aria-pressed toggle state (standalone toggles / Popover anchors)
+  shortcut?: ShortcutInput // optional Zed-style key chip in the Tooltip
+  tooltipPlacement?: Placement // default 'bottom'
+  showTooltip?: boolean // default true; off when the trigger already has a disclosure affordance
+  className?: string // layout/positioning only
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/IconButton`; never import from `src/components/base/**` directly (`base/` is package-private).
+- `label` is **required** — it is the accessible name (`aria-label`) and the Tooltip content. An icon-only `<button>` must always have an accessible name; `showTooltip={false}` suppresses only the hover affordance, never the `aria-label`.
+- `variant` defaults to `'ghost'`; use `variant="danger"` for destructive icon actions.
+- Active state is **attribute-driven**: pass `pressed` for standalone toggles / `Popover` anchors (it sets `aria-pressed`); as a `Menu`/`Dropdown` trigger the open tint comes from the injected `aria-expanded` (no `pressed` prop). `BaseButton` keys both `aria-pressed:` and `aria-expanded:` variants off the same tint.
+- Icon geometry is square with `rounded-chip` radius. `BrowserToolbar` nav (`rounded-lg`) and `PriorityPlus` (`rounded-full` circle) are documented `className` radius exceptions.
+- `ref` + `...rest` forward to the `<button>`, so it composes as a `Menu`/`Dropdown` trigger or `Popover` anchor — `Tooltip` merges the injected ref/handlers (`useMergeRefs` + `cloneElement`). `Placement` / `ShortcutInput` come from the existing re-export points (`@/components/base/floating/glassSurface` / `../lib/formatShortcut`).
+
+### 5.12 `ToolbarButton`
+
+Icon + visible label pill — the diff-toolbar trigger shape. Lives at `src/components/ToolbarButton.tsx`; import via the alias: `import { ToolbarButton } from '@/components/ToolbarButton'`.
+
+```ts
+interface ToolbarButtonProps
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  label: string // visible text
+  icon?: string // optional leading Material Symbol
+  trailingIcon?: string // optional trailing symbol (e.g. 'expand_more' caret)
+  pressed?: boolean // aria-pressed; for Menu triggers the open tint comes from injected aria-expanded
+  className?: string // layout/positioning only
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/ToolbarButton`; never import from `src/components/base/**` directly (`base/` is package-private).
+- `variant` defaults to `'toolbar'`; `shape` is fixed `pill`.
+- Renders `BaseButton` with a leading icon (if any), the visible label, and an optional trailing caret. Forwards `ref` + `...rest`, so it serves as a `Menu` `trigger` (open tint via injected `aria-expanded`) or a `Popover` anchor (`pressed={open}`, consumer owns `open`) — active state is attribute-driven, same as `IconButton`.
+- `className` is for layout/positioning only.
+
+### 5.13 `SegmentedControl` / `Toggle`
+
+Grouped selection primitives from VIM-125. `SegmentedControl` covers mutually-exclusive pickers (`SidebarTabs`, `DockSwitcher`, `DockTab`, `LayoutSwitcher`, `ViewModeToggle`, diff split/unified); `Toggle` covers chip-style booleans in the diff toolbar.
+
+```ts
+interface SegmentedControlOption<T extends string | number> {
+  value: T
+  label: string
+  ariaLabel?: string
+  icon?: string
+  tooltip?: ReactNode
+  shortcut?: ShortcutInput
+}
+
+interface ToggleProps {
+  label: string
+  value?: boolean
+  onChange: (next: boolean) => void
+}
+```
+
+Rules:
+
+- Import via `@/components/SegmentedControl` and `@/components/Toggle`; feature-local wrappers may exist only to preserve older prop shapes.
+- `SegmentedControl` uses `role="group"` + per-button `aria-pressed`; it implements roving `tabIndex` and arrow/Home/End key movement. Use `skipActiveReselect` when the active option must not fire callbacks (for example `LayoutSwitcher`).
+- Visual variants are `pill`, `dock`, `framed`, `toolbar`, `toolbarInline`, and `sidebar`; they are a `tailwind-variants` matrix, matching the Button substrate approach.
+- `IconButton` is still the right primitive for icon-only controls embedded inside tab strips. VIM-125 consumes the VIM-124 grouped-control ratchet: no `-- VIM-125: grouped control` disables should remain.
+
 ---
 
 ## 6. Interactions & keyboard shortcuts
@@ -351,7 +516,7 @@ If more density is needed, tighten _content_ (abbreviate, collapse), not the tok
 
 - ❌ **An icon rail / 4th–5th outer zone** — the shell is three zones; the rail was removed (VIM-76).
 - ❌ **A top navigation bar spanning the window** — the only top bar is the 44px in-canvas top-chrome.
-- ❌ **A "Status: Running" string with a dot** — show the `StatusDot` + a relative time. State is semantic.
+- ❌ **A "Status: Running" string with a dot** — standalone status dots are removed; show semantic status text, relative time, and the relevant activity surface.
 - ❌ **Absolute timestamps as first-class data** — always relative; absolute only on hover.
 - ❌ **Emoji as iconography** — Material Symbols Outlined only; emoji is reserved for the `ContextSmiley`.
 - ❌ **Pure `#000`/`#fff`** — always a `surface-*` / `on-surface` token.
