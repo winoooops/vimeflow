@@ -14,6 +14,7 @@ export {
   DEFAULT_RATIOS,
   buildTrackTemplate,
   equalTrackRatios,
+  getTrackBoundaryBounds,
   getTrackBoundaryRatio,
   getTrackCssVar,
   updateTrackBoundaryRatio,

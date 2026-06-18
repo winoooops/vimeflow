@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { test, expect, describe, vi, beforeEach, afterEach } from 'vitest'
 import { useRef } from 'react'
 import { SplitDividers } from './SplitDividers'
-import { DEFAULT_RATIOS } from './resolveGrid'
+import { DEFAULT_RATIOS, SPLIT_DIVIDER_PX } from './resolveGrid'
 import type { LayoutId } from '../../../sessions/types'
 
 const CONTAINER_WIDTH = 1200
@@ -113,6 +113,24 @@ describe('SplitDividers', () => {
       'aria-orientation',
       'vertical'
     )
+  })
+
+  test('grid3x2 column controllers use per-boundary feasible ranges', () => {
+    // Regression for Codex P2: multi-column boundaries must not use the
+    // global 15%–85% bounds. With default [1,1,1] the first divider can only
+    // reach ~51.7% of the pane space because the middle column must stay at
+    // the 15% minimum; the second divider can only start at ~48.3%.
+    render(<Harness layout="grid3x2" />)
+    const handles = screen.getAllByTestId('split-resize-handle')
+    expect(handles).toHaveLength(5)
+
+    // Effective pane width = CONTAINER_WIDTH - SPLIT_DIVIDER_PX.
+    const effectiveWidth = CONTAINER_WIDTH - SPLIT_DIVIDER_PX
+    const firstMax = Number(handles[0].getAttribute('aria-valuemax'))
+    const secondMin = Number(handles[2].getAttribute('aria-valuemin'))
+
+    expect(firstMax).toBe(Math.floor(effectiveWidth * (1.55 / 3)))
+    expect(secondMin).toBe(Math.ceil(effectiveWidth * (1.45 / 3)))
   })
 
   test('parent re-render does not overwrite an in-progress drag preview', () => {

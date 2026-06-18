@@ -57,6 +57,45 @@ export const getTrackBoundaryRatio = (
   return total > 0 ? leading / total : 0.5
 }
 
+export const getTrackBoundaryBounds = (
+  tracks: readonly number[],
+  trackIndex: number
+): { readonly min: number; readonly max: number } => {
+  const pairStart = Math.max(trackIndex, 0)
+  const pairEnd = pairStart + 1
+
+  if (pairEnd >= tracks.length) {
+    return {
+      min: SPLIT_ELASTIC_CONFIG.minPercent,
+      max: SPLIT_ELASTIC_CONFIG.maxPercent,
+    }
+  }
+
+  const total = tracks.reduce((sum, track) => sum + track, 0)
+  if (total <= 0) {
+    return { min: 0.5, max: 0.5 }
+  }
+
+  const fixedLeading = tracks
+    .slice(0, pairStart)
+    .reduce((sum, track) => sum + track, 0)
+  const pairTotal = tracks[pairStart] + tracks[pairEnd]
+  const minTrackWeight = SPLIT_ELASTIC_CONFIG.minPercent * total
+
+  const min = (fixedLeading + minTrackWeight) / total
+  const max = (fixedLeading + pairTotal - minTrackWeight) / total
+
+  // Guard against degenerate narrow pairs so the elastic container never
+  // receives min >= max.
+  if (max <= min) {
+    const midpoint = (min + max) / 2
+
+    return { min: midpoint, max: midpoint + 0.0001 }
+  }
+
+  return { min, max }
+}
+
 export const updateTrackBoundaryRatio = (
   tracks: readonly number[],
   trackIndex: number,

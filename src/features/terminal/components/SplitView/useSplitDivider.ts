@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type KeyboardEvent,
   type RefObject,
@@ -13,6 +14,7 @@ import {
 } from '../../../workspace/panelConfig'
 import { SPLIT_DIVIDER_PX } from './resolveGrid'
 import {
+  getTrackBoundaryBounds,
   getTrackBoundaryRatio,
   getTrackCssVar,
   updateTrackBoundaryRatio,
@@ -58,6 +60,11 @@ export const useSplitDivider = ({
   initialRatiosRef.current = initialRatios
   const persistIntentRef = useRef(false)
 
+  const boundaryBounds = useMemo(
+    () => getTrackBoundaryBounds(initialRatios, trackIndex),
+    [initialRatios, trackIndex]
+  )
+
   const writeRatio = useCallback(
     (ratio: number): readonly number[] => {
       const el = containerRef.current
@@ -94,8 +101,8 @@ export const useSplitDivider = ({
   const elastic = useElasticContainer({
     containerRef,
     axis,
-    minPercent: SPLIT_ELASTIC_CONFIG.minPercent,
-    maxPercent: SPLIT_ELASTIC_CONFIG.maxPercent,
+    minPercent: boundaryBounds.min,
+    maxPercent: boundaryBounds.max,
     initialPercent: getTrackBoundaryRatio(initialRatios, trackIndex),
     reservedPx: SPLIT_DIVIDER_PX,
     updateMode: 'commit-on-end',
