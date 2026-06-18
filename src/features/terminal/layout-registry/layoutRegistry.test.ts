@@ -16,6 +16,7 @@ describe('layoutRegistry', () => {
       'hsplit',
       'threeRight',
       'quad',
+      'grid3x2',
     ])
     expect(LAYOUT_CYCLE).toEqual(LAYOUT_IDS)
     expect(VISIBLE_LAYOUTS.map((layout) => layout.id)).toEqual(LAYOUT_IDS)
@@ -24,12 +25,13 @@ describe('layoutRegistry', () => {
   test('exposes record lookup by layout id', () => {
     expect(LAYOUTS.single.name).toBe('Single')
     expect(LAYOUTS.quad.capacity).toBe(4)
+    expect(LAYOUTS.grid3x2.capacity).toBe(6)
   })
 
   test('recognizes known layout ids and rejects unknown ones', () => {
     expect(isKnownLayoutId('single')).toBe(true)
     expect(isKnownLayoutId('quad')).toBe(true)
-    expect(isKnownLayoutId('grid3x2')).toBe(false)
+    expect(isKnownLayoutId('grid3x2')).toBe(true)
   })
 
   test('centralizes the current auto-shrink policy', () => {
@@ -38,5 +40,7 @@ describe('layoutRegistry', () => {
     expect(autoShrinkLayoutFor(2, 'quad')).toBe('vsplit')
     expect(autoShrinkLayoutFor(3, 'quad')).toBe('threeRight')
     expect(autoShrinkLayoutFor(4, 'quad')).toBe('quad')
+    expect(autoShrinkLayoutFor(5, 'grid3x2')).toBe('grid3x2')
+    expect(autoShrinkLayoutFor(4, 'grid3x2')).toBe('quad')
   })
 })

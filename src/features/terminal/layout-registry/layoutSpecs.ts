@@ -6,7 +6,7 @@ export interface LayoutShape {
   readonly id: LayoutId
   readonly name: string
   /** Maximum pane count for this layout. SplitView clamps panes to capacity. */
-  readonly capacity: 1 | 2 | 3 | 4
+  readonly capacity: 1 | 2 | 3 | 4 | 6
   /** CSS grid-template-columns value. */
   readonly cols: string
   /** CSS grid-template-rows value. */
@@ -67,6 +67,17 @@ export const LAYOUTS: Record<LayoutId, LayoutShape> = {
     areas: [
       ['p0', 'p1'],
       ['p2', 'p3'],
+    ],
+  },
+  grid3x2: {
+    id: 'grid3x2',
+    name: '3x2 grid',
+    capacity: 6,
+    cols: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)',
+    rows: 'minmax(0,1fr) minmax(0,1fr)',
+    areas: [
+      ['p0', 'p1', 'p2'],
+      ['p3', 'p4', 'p5'],
     ],
   },
 } as const

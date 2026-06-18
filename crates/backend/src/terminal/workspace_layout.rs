@@ -94,7 +94,7 @@ const DEFAULT_BROWSER_URL: &str = "https://www.google.com/";
 // Mirrors the spawn-path session cap (`commands.rs` try_insert(..., 64)) so a
 // valid full workspace is never treated as malformed and partly dropped.
 const MAX_SESSIONS: usize = 64;
-const MAX_PANES: usize = 4; // quad capacity
+const MAX_PANES: usize = 6; // grid3x2 capacity
 const MAX_TABS: usize = 50;
 const MAX_HISTORY: usize = 100;
 const MAX_URL_LEN: usize = 4096;
@@ -107,6 +107,7 @@ fn layout_capacity(layout: &str) -> Option<usize> {
         "vsplit" | "hsplit" => Some(2),
         "threeRight" => Some(3),
         "quad" => Some(4),
+        "grid3x2" => Some(6),
         _ => None,
     }
 }
@@ -116,7 +117,8 @@ fn layout_for_count(n: usize) -> &'static str {
         0 | 1 => "single",
         2 => "vsplit",
         3 => "threeRight",
-        _ => "quad",
+        4 => "quad",
+        _ => "grid3x2",
     }
 }
 
@@ -246,7 +248,7 @@ pub fn repair_workspace_layout(
             continue; // session emptied by repair → drop (floor: ≥1 pane)
         }
 
-        // Layout: unknown → smallest fitting; widen to fit the pane count, cap quad.
+        // Layout: unknown → smallest fitting; widen to fit the pane count, cap grid3x2.
         let mut layout = str_field(rs, "layout")
             .filter(|l| layout_capacity(l).is_some())
             .unwrap_or_else(|| layout_for_count(panes.len()).to_string());
@@ -794,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn widens_layout_and_drops_panes_beyond_quad() {
+    fn widens_layout_and_preserves_panes_up_to_grid3x2() {
         let panes: Vec<_> = (0..6)
             .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 0, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
             .collect();
@@ -803,8 +805,8 @@ mod tests {
             "proj",
             "/",
         );
-        assert_eq!(store.sessions[0].panes.len(), 4); // dropped beyond quad
-        assert_eq!(store.sessions[0].layout, "quad"); // widened
+        assert_eq!(store.sessions[0].panes.len(), 6); // preserved up to grid3x2
+        assert_eq!(store.sessions[0].layout, "grid3x2"); // widened
     }
 
     #[test]
@@ -1025,22 +1027,22 @@ mod tests {
     }
 
     #[test]
-    fn active_pane_beyond_quad_still_leaves_exactly_one_active() {
-        let panes: Vec<_> = (0..6)
-            .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 5, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
+    fn active_pane_beyond_grid3x2_still_leaves_exactly_one_active() {
+        let panes: Vec<_> = (0..8)
+            .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 7, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
             .collect();
         let store = repair_workspace_layout(
             json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true, "panes": panes }] }),
             "proj",
             "/",
         );
-        assert_eq!(store.sessions[0].panes.len(), 4); // truncated to quad
+        assert_eq!(store.sessions[0].panes.len(), 6); // truncated to grid3x2
         let actives = store.sessions[0]
             .panes
             .iter()
             .filter(|p| pane_active(p))
             .count();
-        assert_eq!(actives, 1); // exactly one, never zero (the beyond-quad active was truncated)
+        assert_eq!(actives, 1); // exactly one, never zero (the beyond-grid3x2 active was truncated)
     }
 
     #[test]
@@ -1193,20 +1195,20 @@ mod tests {
 
     #[test]
     fn truncated_pane_does_not_poison_pty_id() {
-        let panes: Vec<_> = (0..5)
+        let panes: Vec<_> = (0..7)
             .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 0, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
             .collect();
         let store = repair_workspace_layout(
             json!({ "version": 1, "sessions": [
-                { "id": "s1", "layout": "quad", "active": true, "panes": panes },
-                // reuses pty4 (the 5th pane of s1, dropped by the quad cap) → must be KEPT
-                { "id": "s2", "layout": "single", "active": false, "panes": [{ "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "pty4", "cwd": "/", "agentType": "generic" }] } ] }),
+                { "id": "s1", "layout": "grid3x2", "active": true, "panes": panes },
+                // reuses pty6 (the 7th pane of s1, dropped by the grid3x2 cap) → must be KEPT
+                { "id": "s2", "layout": "single", "active": false, "panes": [{ "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "pty6", "cwd": "/", "agentType": "generic" }] } ] }),
             "proj",
             "/",
         );
-        assert_eq!(store.sessions[0].panes.len(), 4); // s1 capped to quad
-        assert_eq!(store.sessions.len(), 2); // s2 survived (pty4 un-reserved after the cap)
-        assert_eq!(shell(&store.sessions[1].panes[0]).pty_id, "pty4");
+        assert_eq!(store.sessions[0].panes.len(), 6); // s1 capped to grid3x2
+        assert_eq!(store.sessions.len(), 2); // s2 survived (pty6 un-reserved after the cap)
+        assert_eq!(shell(&store.sessions[1].panes[0]).pty_id, "pty6");
     }
 
     #[test]

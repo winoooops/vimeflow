@@ -45,8 +45,18 @@ describe('resolveGrid', () => {
     ])
   })
 
+  test('grid3x2 segments both column bars around the full-width row bar', () => {
+    const g = resolveGrid('grid3x2', { cols: [1, 1, 1], rows: [1, 1] })
+    expect(g.areas).toEqual([
+      ['p0', 'vdiv0a', 'p1', 'vdiv1a', 'p2'],
+      ['hdiv', 'hdiv', 'hdiv', 'hdiv', 'hdiv'],
+      ['p3', 'vdiv0b', 'p4', 'vdiv1b', 'p5'],
+    ])
+  })
+
   test('default ratios reproduce current proportions', () => {
     expect(DEFAULT_RATIOS.vsplit.cols).toEqual([1, 1])
     expect(DEFAULT_RATIOS.threeRight.cols).toEqual([1.4, 1])
+    expect(DEFAULT_RATIOS.grid3x2.cols).toEqual([1, 1, 1])
   })
 })

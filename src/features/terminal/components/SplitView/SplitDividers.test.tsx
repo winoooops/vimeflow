@@ -57,6 +57,7 @@ describe('SplitDividers', () => {
     ['hsplit', 1],
     ['threeRight', 2],
     ['quad', 3],
+    ['grid3x2', 5],
   ] as const)('%s renders %i handle element(s)', (layout, count) => {
     render(<Harness layout={layout} />)
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(count)

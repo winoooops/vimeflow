@@ -14,6 +14,7 @@ const cases: readonly (readonly [LayoutId, number])[] = [
   ['hsplit', 1],
   ['threeRight', 2],
   ['quad', 2],
+  ['grid3x2', 3],
 ]
 
 describe('LayoutGlyph', () => {

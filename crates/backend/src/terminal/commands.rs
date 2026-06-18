@@ -645,7 +645,8 @@ pub(crate) fn kill_pty_inner(
                         Some("single") => count == 1,
                         Some("vsplit") | Some("hsplit") => count == 2,
                         Some("threeRight") => count == 3,
-                        Some("quad") => count >= 4,
+                        Some("quad") => count == 4,
+                        Some("grid3x2") => count >= 5,
                         _ => false,
                     };
                     if compatible {
@@ -655,7 +656,8 @@ pub(crate) fn kill_pty_inner(
                             1 => Some("single".to_string()),
                             2 => Some("vsplit".to_string()),
                             3 => Some("threeRight".to_string()),
-                            _ => Some("quad".to_string()),
+                            4 => Some("quad".to_string()),
+                            _ => Some("grid3x2".to_string()),
                         }
                     }
                 };
@@ -2320,6 +2322,78 @@ mod tests {
         assert!(!d.active);
 
         for id in ["pty-a", "pty-b", "pty-d"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn kill_pty_keeps_grid3x2_layout_when_five_siblings_remain() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in ["pty-a", "pty-b", "pty-c", "pty-d", "pty-e", "pty-f"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-grid".into(),
+                    layout: "grid3x2".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot { pty_id: "pty-a".into(), pane_id: "p0".into(), pane_index: 0, agent_type: "generic".into(), active: true },
+                        WorkspacePaneSnapshot { pty_id: "pty-b".into(), pane_id: "p1".into(), pane_index: 1, agent_type: "generic".into(), active: false },
+                        WorkspacePaneSnapshot { pty_id: "pty-c".into(), pane_id: "p2".into(), pane_index: 2, agent_type: "generic".into(), active: false },
+                        WorkspacePaneSnapshot { pty_id: "pty-d".into(), pane_id: "p3".into(), pane_index: 3, agent_type: "generic".into(), active: false },
+                        WorkspacePaneSnapshot { pty_id: "pty-e".into(), pane_id: "p4".into(), pane_index: 4, agent_type: "generic".into(), active: false },
+                        WorkspacePaneSnapshot { pty_id: "pty-f".into(), pane_id: "p5".into(), pane_index: 5, agent_type: "generic".into(), active: false },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-c".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        let survivors = ["pty-a", "pty-b", "pty-d", "pty-e", "pty-f"];
+
+        for (idx, id) in survivors.iter().enumerate() {
+            let grouping = snap.groupings.get(*id).expect("survivor grouping");
+            assert_eq!(grouping.layout, "grid3x2");
+            assert_eq!(grouping.workspace_session_id, "ws-grid");
+            assert_eq!(grouping.pane_index, idx as u32);
+            assert_eq!(grouping.pane_id, format!("p{}", idx));
+        }
+
+        for id in ["pty-a", "pty-b", "pty-d", "pty-e", "pty-f"] {
             let _ = state.remove(&id.to_string());
         }
     }
