@@ -1150,10 +1150,8 @@ const applyDisplayData = (
       continue
     }
 
-    const cursorHorizontalAbsoluteControl = readCursorHorizontalAbsoluteSentinel(
-      data,
-      index
-    )
+    const cursorHorizontalAbsoluteControl =
+      readCursorHorizontalAbsoluteSentinel(data, index)
 
     if (cursorHorizontalAbsoluteControl) {
       const next = moveCursorToHorizontalAbsoluteColumn(

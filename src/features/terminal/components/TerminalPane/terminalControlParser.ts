@@ -73,9 +73,7 @@ export const getCursorPositionSentinel = (
 ): string =>
   `${CURSOR_POSITION_SENTINEL_START}${row};${column}${CURSOR_POSITION_SENTINEL_END}`
 
-export const getCursorHorizontalAbsoluteSentinel = (
-  column: number
-): string =>
+export const getCursorHorizontalAbsoluteSentinel = (column: number): string =>
   `${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START}${column}${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END}`
 
 export const getSaveCursorSentinel = (): string => SAVE_CURSOR_SENTINEL
@@ -191,9 +189,7 @@ export const readCursorHorizontalAbsoluteSentinel = (
   return {
     column: Number(columnText),
     length:
-      contentEnd +
-      CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END.length -
-      startIndex,
+      contentEnd + CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END.length - startIndex,
   }
 }
 
@@ -580,7 +576,8 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (column !== null) {
             const normalizedColumn = column === 0 ? 1 : column
 
-            const control = getCursorHorizontalAbsoluteSentinel(normalizedColumn)
+            const control =
+              getCursorHorizontalAbsoluteSentinel(normalizedColumn)
 
             visible += control
             display += control
