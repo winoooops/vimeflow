@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vimeflow 技术说明：3x2 Pane Layout 扩展方案</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f111a;
+        --panel: rgba(24, 27, 39, 0.9);
+        --panel-2: rgba(33, 38, 54, 0.9);
+        --text: #e8ecff;
+        --muted: #aab3d8;
+        --accent: #8bd5ca;
+        --accent-2: #f5c2e7;
+        --warn: #f9e2af;
+        --danger: #f38ba8;
+        --line: rgba(232, 236, 255, 0.09);
+        --shadow: 0 20px 70px rgba(0, 0, 0, 0.35);
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+        --sans:
+          'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'PingFang SC',
+          'Noto Serif SC', serif;
+        --radius: 22px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background:
+          radial-gradient(
+            circle at top left,
+            rgba(139, 213, 202, 0.13),
+            transparent 30%
+          ),
+          radial-gradient(
+            circle at top right,
+            rgba(245, 194, 231, 0.12),
+            transparent 28%
+          ),
+          linear-gradient(180deg, #090b11 0%, var(--bg) 100%);
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 40px 0 72px;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        padding: 36px;
+        background:
+          linear-gradient(135deg, rgba(139, 213, 202, 0.12), transparent 56%),
+          linear-gradient(
+            180deg,
+            rgba(24, 27, 39, 0.95),
+            rgba(13, 15, 24, 0.96)
+          );
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(139, 213, 202, 0.13);
+        color: var(--accent);
+        font: 600 12px/1.1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.12;
+      }
+
+      h1 {
+        font-size: clamp(34px, 5vw, 56px);
+        letter-spacing: -0.03em;
+      }
+
+      h2 {
+        font-size: 28px;
+        margin-bottom: 16px;
+      }
+
+      h3 {
+        font-size: 20px;
+        margin-bottom: 10px;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        font-size: 16px;
+        line-height: 1.78;
+      }
+
+      p,
+      li,
+      td {
+        color: var(--muted);
+      }
+
+      .lede {
+        max-width: 920px;
+        margin: 18px 0 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+
+      .hero-grid,
+      .cards,
+      .two-up {
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 24px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-up {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        align-items: start;
+      }
+
+      .stat,
+      .card,
+      .note,
+      .code,
+      .icon-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+      }
+
+      .stat,
+      .card,
+      .icon-card {
+        padding: 18px 20px;
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 30px;
+      }
+
+      .stat .label,
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-2);
+        font: 600 12px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--text);
+        font-size: 22px;
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid var(--warn);
+      }
+
+      .note strong {
+        color: var(--text);
+      }
+
+      .code {
+        margin-top: 14px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        background: rgba(8, 10, 18, 0.92);
+        color: #f6f8ff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font: 600 12px/1.3 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      ul {
+        margin: 12px 0 0 18px;
+        padding: 0;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .chip {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text);
+        font: 500 12px/1.2 var(--mono);
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      .icon-card {
+        display: grid;
+        gap: 14px;
+      }
+
+      .icon-frame {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(139, 213, 202, 0.06),
+            rgba(255, 255, 255, 0.02)
+          ),
+          rgba(6, 8, 14, 0.55);
+      }
+
+      .glyph-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .glyph-swatch {
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.025);
+        text-align: center;
+      }
+
+      .glyph-swatch svg {
+        display: block;
+        margin: 0 auto 10px;
+      }
+
+      .footer {
+        margin-top: 20px;
+        color: #99a3c7;
+        font-size: 14px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .cards,
+        .two-up,
+        .glyph-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">Technical Note</span>
+        <h1>Pane Layout 增加 <span class="mono">3x2</span> 的技术方案</h1>
+        <p class="lede">
+          这份说明聚焦 terminal zone 里的 pane layout 体系，先把当前结构、
+          真实耦合点、以及引入
+          <span class="mono">3x2</span> 时会撞到的限制梳理清楚。
+          结论很直接：现在加一个新 pill 很容易，但如果目标是一个真正可交互、可
+          resize、 可 restore、未来还可继续扩展的 layout 系统，就不该继续把
+          layout 元数据、 autoshrink 规则、divider 逻辑、ratio
+          结构散落在不同模块里。
+        </p>
+        <div class="chip-row">
+          <span class="chip">范围：top chrome + terminal zone</span>
+          <span class="chip">日期：2026-06-17</span>
+          <span class="chip">建议 id：<code>grid3x2</code></span>
+          <span class="chip">目标容量：<code>6</code> panes</span>
+        </div>
+        <div class="hero-grid">
+          <div class="stat">
+            <span class="label">当前状态</span>
+            <strong>5 个 layout</strong>
+            <span>single / vsplit / hsplit / threeRight / quad</span>
+          </div>
+          <div class="stat">
+            <span class="label">核心问题</span>
+            <strong>规则分散</strong>
+            <span
+              >layout id、文案、grid、shortcut、autoshrink 分别藏在多处</span
+            >
+          </div>
+          <div class="stat">
+            <span class="label">真正阻塞点</span>
+            <strong>ratio 模型过窄</strong>
+            <span>现在只支持一条列分割和一条行分割，不够支撑 3x2</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>现状结构</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="label">UI 入口</span>
+            <h3>Layout pill group 在 top chrome</h3>
+            <p>
+              <code>WorkspaceView.tsx</code> 里渲染
+              <code>LayoutSwitcher</code>。它直接遍历
+              <code>Object.values(LAYOUTS)</code>，所以只要往
+              <code>LAYOUTS</code> 里加一个 layout，新的 pill 就会出现。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label">状态归属</span>
+            <h3>layout 属于 Session</h3>
+            <p>
+              每个 session 都有一个 <code>layout: LayoutId</code>，由
+              <code>useSessionManager.setSessionLayout()</code> 修改。 所以
+              layout 不是纯视觉状态，而是 session shape 的一部分。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label">渲染路径</span>
+            <h3>TerminalZone -&gt; SplitView</h3>
+            <p>
+              <code>TerminalZone</code> 每个 session 渲染一个
+              <code>SplitView</code>，隐藏 inactive session 但不卸载它们，
+              以保持 PTY 活着。<code>SplitView</code> 再根据
+              <code>session.layout</code> 选择 grid、slot、divider。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label">隐式中心</span>
+            <h3>现在的“中心”其实是散的</h3>
+            <p>
+              <code>layouts.ts</code> 只是 layout 元数据的一部分来源， 但
+              autoshrink 在 <code>paneLifecycle.ts</code>， shortcut cycle 在
+              <code>usePaneShortcuts.ts</code>， restore whitelist 在
+              <code>groupSessionsFromInfos.ts</code>， divider 行为在
+              <code>SplitDividers.tsx</code>。这不是一个真正的中心注册表。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>你提出的方向是对的：需要中心 registry / controller</h2>
+        <div class="two-up">
+          <div>
+            <div class="card">
+              <span class="label">推荐方案</span>
+              <h3>不要只保留一个常量表，应该升级成 layout registry</h3>
+              <p>
+                这个 registry 不一定非得是 class；可以是一个深一点的模块，
+                但职责上要像一个 controller / registry。关键不是语法形式，
+                而是要把“layout 的所有规范性知识”集中起来。
+              </p>
+              <div class="code">
+                <pre>
+interface LayoutSpec {
+  id: LayoutId
+  label: string
+  capacity: number
+  icon: 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad' | 'grid3x2'
+  cycleOrder: number
+  resolveGrid: (ratios: LayoutRatiosModel) => ResolvedGrid
+  createDefaultRatios: () => LayoutRatiosModel
+  getDividerSpecs: (ratios: LayoutRatiosModel) => DividerSpec[]
+  autoShrinkTo: (nextPaneCount: number, ctx: AutoShrinkContext) => LayoutId
+}</pre
+                >
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <span class="label">应该收拢进 registry 的东西</span>
+              <ul>
+                <li><code>LayoutId</code> 与 label 文案</li>
+                <li>pill 排序与 shortcut cycle 顺序</li>
+                <li>capacity</li>
+                <li>grid area mapping</li>
+                <li>默认 ratio</li>
+                <li>divider 清单与 divider 绑定的 axis / css var</li>
+                <li>autoshrink 规则</li>
+                <li>restore 时的 layout 合法性判断</li>
+              </ul>
+            </div>
+            <div class="note">
+              <p>
+                <strong>重点：</strong>现在很多逻辑是“layout id
+                被传到各处，然后各处自己 switch 一遍”。 这会让每次新增 layout
+                都变成全仓库补 case。registry 的价值就是把这些 switch 收口。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>当前耦合点</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>当前假设</th>
+              <th>问题</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/features/sessions/types/index.ts</code></td>
+              <td><code>LayoutId</code> 固定为 5 个值</td>
+              <td>新增 layout 要先改 union，再触发一串编译/测试扩散</td>
+            </tr>
+            <tr>
+              <td><code>layouts.ts</code></td>
+              <td><code>capacity</code> 只允许 <code>1 | 2 | 3 | 4</code></td>
+              <td><code>3x2</code> 直接超出类型边界</td>
+            </tr>
+            <tr>
+              <td><code>usePaneShortcuts.ts</code></td>
+              <td>shortcut cycle 依赖 <code>LAYOUTS</code> 插入顺序</td>
+              <td>
+                一旦插入新 layout，用户的
+                <code>Cmd/Ctrl+\</code> 行为会被静默改写
+              </td>
+            </tr>
+            <tr>
+              <td><code>paneLifecycle.ts</code></td>
+              <td>autoshrink 只理解 1 / 2 / 3 / 4+</td>
+              <td>从 6 pane 关到 5 pane、再关到 4 pane 时没有清晰策略</td>
+            </tr>
+            <tr>
+              <td><code>groupSessionsFromInfos.ts</code></td>
+              <td>restore 只接受现有 5 个 layout id</td>
+              <td>
+                新 layout 落盘后，旧 restore 路径会退回 <code>single</code>
+              </td>
+            </tr>
+            <tr>
+              <td><code>SplitDividers.tsx</code></td>
+              <td>divider 组件是按 layout 写死分支</td>
+              <td>扩 layout 时要继续复制 case，系统只会越来越脆</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>更大的问题：LayoutRatios 不该再只服务 2x2 / 3x2</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="label">当前模型</span>
+            <div class="code">
+              <pre>
+interface LayoutRatios {
+  col: number
+  row: number
+}</pre
+              >
+            </div>
+            <p>
+              这个模型默认“每个 layout 最多只有一条垂直分割线和一条水平分割线”。
+              它对
+              <code>vsplit</code
+              >、<code>hsplit</code>、<code>threeRight</code>、
+              <code>quad</code> 够用，但只要遇到 3 列以上布局，就天然不够。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label">推荐模型</span>
+            <div class="code">
+              <pre>
+interface LayoutRatiosModel {
+  cols: number[]
+  rows: number[]
+}</pre
+              >
+            </div>
+            <p>
+              这里的语义应当是“pane track 比例”，不是“divider 的位置快照”。
+              例如：
+            </p>
+            <ul>
+              <li>
+                <code>single</code> - <code>{ cols: [1], rows: [1] }</code>
+              </li>
+              <li>
+                <code>vsplit</code> - <code>{ cols: [1, 1], rows: [1] }</code>
+              </li>
+              <li>
+                <code>hsplit</code> - <code>{ cols: [1], rows: [1, 1] }</code>
+              </li>
+              <li>
+                <code>quad</code> - <code>{ cols: [1, 1], rows: [1, 1] }</code>
+              </li>
+              <li>
+                <code>grid3x2</code> -
+                <code>{ cols: [1, 1, 1], rows: [1, 1] }</code>
+              </li>
+            </ul>
+          </article>
+        </div>
+        <div class="note">
+          <p>
+            <strong>关键收益：</strong>以后新增
+            <code>4x2</code>、<code>3x3</code>、 “主区 + 右侧 3 stack” 这类
+            layout，就不需要先重做 ratio 类型。 layout 的几何复杂度由 spec
+            决定，不再被一个固定的 <code>{ col, row }</code> 结构卡死。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>ratio 模型如何落地</h2>
+        <div class="two-up">
+          <div>
+            <div class="card">
+              <span class="label">新的思路</span>
+              <h3>用 track 数组，而不是单个分割比例</h3>
+              <p>
+                现在 <code>resolveGrid()</code> 拼的是
+                <code>--split-col</code> /
+                <code>--split-col-end</code> 这种二段式模板。
+                新模型应该改成：给定 cols / rows track 数组，生成完整的
+                <code>grid-template-columns</code> 和
+                <code>grid-template-rows</code>。
+              </p>
+              <div class="code">
+                <pre>
+cols: [1, 1, 1]
+-> "var(--col-0,1fr) 8px var(--col-1,1fr) 8px var(--col-2,1fr)"
+
+rows: [1, 1]
+-> "var(--row-0,1fr) 8px var(--row-1,1fr)"</pre
+                >
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <span class="label">divider 也要变成数据驱动</span>
+              <div class="code">
+                <pre>
+interface DividerSpec {
+  id: string
+  axis: 'horizontal' | 'vertical'
+  gridArea: string
+  trackIndex: number
+}</pre
+                >
+              </div>
+              <p>
+                对 <code>grid3x2</code> 来说，会有两条逻辑列 divider
+                和一条逻辑行 divider， 但因为横向整条 bar
+                会切断竖线，最终渲染层面可能是 5 个 handle：
+                上两段竖线、下两段竖线、以及中间一条横线。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>对 3x2 layout 的建议定义</h2>
+        <div class="two-up">
+          <div>
+            <div class="card">
+              <span class="label">layout id</span>
+              <h3><code>grid3x2</code></h3>
+              <p>
+                这个命名比纯数字或模糊文案更稳。它表达的是几何结构，而不是实现细节。
+              </p>
+            </div>
+            <div class="card" style="margin-top: 18px">
+              <span class="label">grid area 建议</span>
+              <div class="code">
+                <pre>
+areas: [
+  ['p0', 'vdiv0a', 'p1', 'vdiv1a', 'p2'],
+  ['hdiv', 'hdiv', 'hdiv', 'hdiv', 'hdiv'],
+  ['p3', 'vdiv0b', 'p4', 'vdiv1b', 'p5'],
+]</pre
+                >
+              </div>
+              <p>
+                这里显式把竖线切成上下两段，避免像现在
+                <code>quad</code> 那样需要组件里手动“一个逻辑
+                divider，渲染成两段”的特殊处理。 这更利于泛化。
+              </p>
+            </div>
+          </div>
+          <div class="icon-card">
+            <span class="label">3x2 图标</span>
+            <div class="icon-frame">
+              <svg
+                width="180"
+                height="140"
+                viewBox="0 0 140 100"
+                fill="none"
+                aria-label="3x2 pane layout icon"
+                role="img"
+              >
+                <rect
+                  x="10"
+                  y="10"
+                  width="120"
+                  height="80"
+                  rx="11"
+                  stroke="currentColor"
+                  stroke-width="7"
+                />
+                <line
+                  x1="50"
+                  y1="14"
+                  x2="50"
+                  y2="86"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="90"
+                  y1="14"
+                  x2="90"
+                  y2="86"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="14"
+                  y1="50"
+                  x2="126"
+                  y2="50"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </div>
+            <div class="glyph-grid">
+              <div class="glyph-swatch">
+                <svg
+                  width="28"
+                  height="22"
+                  viewBox="0 0 14 11"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="12"
+                    height="9"
+                    rx="1.4"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="5"
+                    y1="1.5"
+                    x2="5"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="9"
+                    y1="1.5"
+                    x2="9"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="1.5"
+                    y1="5.5"
+                    x2="12.5"
+                    y2="5.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                </svg>
+                <div class="mono">toolbar 尺寸</div>
+              </div>
+              <div class="glyph-swatch">
+                <svg
+                  width="56"
+                  height="44"
+                  viewBox="0 0 14 11"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="12"
+                    height="9"
+                    rx="1.4"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="5"
+                    y1="1.5"
+                    x2="5"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="9"
+                    y1="1.5"
+                    x2="9"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="1.5"
+                    y1="5.5"
+                    x2="12.5"
+                    y2="5.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                </svg>
+                <div class="mono">沿用现有 glyph 风格</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>autoshrink 也应注入到 registry，而不是散落在 paneLifecycle</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="label">当前问题</span>
+            <p>
+              <code>autoShrinkLayoutFor()</code> 现在是一个全局函数， 用 pane
+              count 和 current layout 直接推下一个 layout。 这在 layout
+              数量少时还能撑住，但 layout 一多，规则就会失控。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label">建议</span>
+            <p>
+              autoshrink 应该变成每个 layout spec 的一部分，或者由 registry
+              统一调度。例如：
+            </p>
+            <div class="code">
+              <pre>
+registry.getAutoShrinkTarget({
+  currentLayoutId,
+  nextPaneCount,
+  previousLayoutId,
+})</pre
+              >
+            </div>
+          </article>
+        </div>
+        <div class="note">
+          <p>
+            <strong>我的建议：</strong>
+            <code>grid3x2</code> 在 6 和 5 pane 时都保留自身； 到 4 pane 降为
+            <code>quad</code>； 3 pane 降为 <code>threeRight</code>； 2 pane
+            降为 <code>vsplit</code>，但如果当前就是纯纵向栈式语义，也可以保留
+            <code>hsplit</code>。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>推荐重构顺序</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>阶段</th>
+              <th>目标</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>引入中心 layout registry</td>
+              <td>
+                先把 layout 的定义收口，不然后面每加一个 layout 还是到处补
+                switch
+              </td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>把 <code>LayoutRatios</code> 改成 track 数组模型</td>
+              <td>这是未来扩展的根基，不改这一层，3x2 只是硬塞进去</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>
+                让 <code>resolveGrid</code> /
+                <code>SplitDividers</code> 数据驱动
+              </td>
+              <td>避免继续按 layout 写死组件分支</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>加入 <code>grid3x2</code> spec、glyph、pill</td>
+              <td>此时再加 layout，代价最低，也最干净</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>补 restore / shortcut / autoshrink / tests</td>
+              <td>把行为面收完整，防止 UI 出来但系统语义不闭合</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>会动到的主要文件</h2>
+        <div class="code">
+          <pre>
+src/features/sessions/types/index.ts
+src/features/terminal/components/SplitView/layouts.ts
+src/features/terminal/components/SplitView/resolveGrid.ts
+src/features/terminal/components/SplitView/SplitDividers.tsx
+src/features/terminal/components/SplitView/useSplitDivider.ts
+src/features/terminal/components/LayoutSwitcher/LayoutGlyph.tsx
+src/features/terminal/hooks/usePaneShortcuts.ts
+src/features/sessions/utils/paneLifecycle.ts
+src/features/sessions/utils/groupSessionsFromInfos.ts
+
+建议新增：
+src/features/terminal/layout-registry/
+  LayoutRegistry.ts
+  layoutSpecs.ts
+  ratioModel.ts
+  dividerSpecs.ts</pre
+          >
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>结论</h2>
+        <p>你提的两个判断都对。</p>
+        <ul>
+          <li>
+            第一，layout 体系确实需要一个更中心化的 registry / controller， 把
+            <code>LayoutId</code>、layout 文案、mapping、autoshrink、 divider
+            规则、shortcut 顺序统一收口。
+          </li>
+          <li>
+            第二，<code>LayoutRatios</code> 不能再继续假设世界只有
+            <code>{ col, row }</code> 这两个值。应该升级成可表达任意列轨道、
+            任意行轨道的 ratio / track 模型，才能让后续 layout 扩展是“自然增加
+            spec”， 而不是“每次都改底层结构”。
+          </li>
+        </ul>
+        <p>
+          所以如果下一步要实现，我建议不是“先把 3x2 按 case 塞进去”，
+          而是先做一轮小型 layout infrastructure 重构，再上新 layout。
+        </p>
+        <p class="footer">该说明基于当前仓库状态生成，未改动运行时代码。</p>
+      </section>
+    </main>
+  </body>
+</html>
