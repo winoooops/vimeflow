@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-17
+last_updated: 2026-06-18
 ref_count: 33
 ---
 
@@ -729,4 +729,13 @@ filesystem scope restrictions).
   only in the test file that actually exercises inert click behavior
   (`AgentStatusPanel/index.test.tsx`), removing the global side-effect from
   `src/test/setup.ts`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 71. Keyboard resize test loses explicit clamp-bounds verification
+
+- **Source:** github-claude | PR #526 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/useSplitDivider.test.tsx` L66-76
+- **Finding:** The keyboard resize assertion only checked `ratios[0] > ratios[1]`, verifying direction but not that the resulting boundary fraction stayed within `[SPLIT_ELASTIC_CONFIG.minPercent, SPLIT_ELASTIC_CONFIG.maxPercent]`. The old test was the only place in the file that validated the actual clamped bounds.
+- **Fix:** Derived the boundary fraction with `const frac = ratios[0] / (ratios[0] + ratios[1])` and added `toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)` / `toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)` assertions.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { test, expect, describe, vi, beforeEach, afterEach } from 'vitest'
 import { useRef } from 'react'
 import { useSplitDivider } from './useSplitDivider'
+import { SPLIT_ELASTIC_CONFIG } from '../../../workspace/panelConfig'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -70,6 +71,9 @@ describe('useSplitDivider', () => {
     const calls = onRatioChange.mock.calls
     const ratios = calls[calls.length - 1]?.[0] as readonly number[]
     expect(ratios[0]).toBeGreaterThan(ratios[1])
+    const frac = ratios[0] / (ratios[0] + ratios[1])
+    expect(frac).toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)
+    expect(frac).toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)
     const container = screen.getByTestId('container')
     expect(container.style.getPropertyValue('--split-cols-0')).toMatch(/fr$/)
     expect(container.style.getPropertyValue('--split-cols-1')).toMatch(/fr$/)

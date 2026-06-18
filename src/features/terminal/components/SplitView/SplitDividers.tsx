@@ -1,4 +1,4 @@
-// cspell:ignore vsplit hsplit vdiv hdiv subcomponent
+// cspell:ignore vsplit hsplit vdiv hdiv vcol subcomponent
 import { Fragment, useCallback, type ReactElement, type RefObject } from 'react'
 import { ResizeHandle } from '@/components/ResizeHandle'
 import type { LayoutId } from '../../../sessions/types'
@@ -19,7 +19,7 @@ type DividerOrientation = 'vertical' | 'horizontal'
 
 interface DividerHandleSpec {
   readonly id: string
-  readonly gridArea: string
+  readonly gridAreas: readonly string[]
   readonly dragAxis: DividerDragAxis
   readonly orientation: DividerOrientation
   readonly trackAxis: RatioAxis
@@ -31,7 +31,7 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   vsplit: [
     {
       id: 'vdiv',
-      gridArea: 'vdiv',
+      gridAreas: ['vdiv'],
       dragAxis: 'horizontal',
       orientation: 'vertical',
       trackAxis: 'cols',
@@ -41,7 +41,7 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   hsplit: [
     {
       id: 'hdiv',
-      gridArea: 'hdiv',
+      gridAreas: ['hdiv'],
       dragAxis: 'vertical',
       orientation: 'horizontal',
       trackAxis: 'rows',
@@ -51,7 +51,7 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   threeRight: [
     {
       id: 'vdiv',
-      gridArea: 'vdiv',
+      gridAreas: ['vdiv'],
       dragAxis: 'horizontal',
       orientation: 'vertical',
       trackAxis: 'cols',
@@ -59,7 +59,7 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
     },
     {
       id: 'hdiv',
-      gridArea: 'hdiv',
+      gridAreas: ['hdiv'],
       dragAxis: 'vertical',
       orientation: 'horizontal',
       trackAxis: 'rows',
@@ -68,8 +68,8 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   ],
   quad: [
     {
-      id: 'vdiv0',
-      gridArea: 'vdiv0',
+      id: 'vcol',
+      gridAreas: ['vdiv0', 'vdiv1'],
       dragAxis: 'horizontal',
       orientation: 'vertical',
       trackAxis: 'cols',
@@ -77,18 +77,10 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
     },
     {
       id: 'hdiv',
-      gridArea: 'hdiv',
+      gridAreas: ['hdiv'],
       dragAxis: 'vertical',
       orientation: 'horizontal',
       trackAxis: 'rows',
-      trackIndex: 0,
-    },
-    {
-      id: 'vdiv1',
-      gridArea: 'vdiv1',
-      dragAxis: 'horizontal',
-      orientation: 'vertical',
-      trackAxis: 'cols',
       trackIndex: 0,
     },
   ],
@@ -101,7 +93,7 @@ const SplitDividerHandle = ({
   trackIndex,
   dragAxis,
   orientation,
-  gridArea,
+  gridAreas,
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'> & DividerHandleSpec): ReactElement => {
   const onTrackChange = useCallback(
@@ -120,19 +112,24 @@ const SplitDividerHandle = ({
   })
 
   return (
-    <ResizeHandle
-      orientation={orientation}
-      testId={HANDLE_TEST_ID}
-      ariaLabel="Resize panes"
-      isDragging={binding.isDragging}
-      ariaValueNow={binding.size}
-      ariaValueMin={binding.pixelMin}
-      ariaValueMax={binding.pixelMax}
-      onMouseDown={binding.handleMouseDown}
-      onKeyDown={binding.onKeyDown}
-      className="h-full w-full"
-      style={{ gridArea }}
-    />
+    <>
+      {gridAreas.map((gridArea) => (
+        <ResizeHandle
+          key={gridArea}
+          orientation={orientation}
+          testId={HANDLE_TEST_ID}
+          ariaLabel="Resize panes"
+          isDragging={binding.isDragging}
+          ariaValueNow={binding.size}
+          ariaValueMin={binding.pixelMin}
+          ariaValueMax={binding.pixelMax}
+          onMouseDown={binding.handleMouseDown}
+          onKeyDown={binding.onKeyDown}
+          className="h-full w-full"
+          style={{ gridArea }}
+        />
+      ))}
+    </>
   )
 }
 
@@ -152,7 +149,7 @@ export const SplitDividers = ({
     <Fragment>
       {specs.map((spec) => (
         <SplitDividerHandle
-          key={spec.id}
+          key={`${layout}-${spec.id}`}
           containerRef={containerRef}
           ratios={ratios}
           onRatioChange={onRatioChange}
