@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 24       | 6    | 2026-06-17   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 46       | 20   | 2026-06-17   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 49       | 20   | 2026-06-18   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 70       | 33   | 2026-06-17   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 71       | 33   | 2026-06-18   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 25   | 2026-06-16   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 62       | 25   | 2026-06-17   |

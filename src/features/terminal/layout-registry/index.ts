@@ -9,3 +9,14 @@ export {
 export { LAYOUT_IDS } from './layoutIds'
 
 export { LAYOUT_SPECS, type LayoutShape } from './layoutSpecs'
+
+export {
+  DEFAULT_RATIOS,
+  buildTrackTemplate,
+  equalTrackRatios,
+  getTrackBoundaryRatio,
+  getTrackCssVar,
+  updateTrackBoundaryRatio,
+  type LayoutRatios,
+  type RatioAxis,
+} from './ratioModel'

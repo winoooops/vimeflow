@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-17
+last_updated: 2026-06-18
 ref_count: 20
 ---
 
@@ -435,4 +435,31 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
 - **Finding:** The round-1 fix computed `prependDelta = firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta`. When hot-loading delivered multiple new activity rows in one snapshot, the viewport adjusted by one row instead of the total inserted height, causing visible content jump and undermining scroll-stability.
 - **Fix:** Prefer total positive `scrollHeightDelta` for growing prepends and fall back to the measured first-row height only when the container does not grow. Added a regression test that stubs `offsetHeight` to a single-row value while growing `scrollHeight` by several rows' worth, asserting the viewport compensates by the full delta.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. quad layout: two useSplitDivider instances for same boundary cause render loop
+
+- **Source:** github-claude | PR #526 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L69-94
+- **Finding:** `DIVIDER_SPECS.quad` registered `vdiv0` and `vdiv1` as separate specs with the same `{ trackAxis: 'cols', trackIndex: 0 }`. Each spec rendered its own `SplitDividerHandle`, so two independent `useSplitDivider` instances controlled the same boundary. `useElasticContainer` captures `initialPercent` at mount, so the non-dragged segment kept a stale 50/50 size; after a drag committed, the sibling's commit effect wrote the old ratio back, creating an oscillating `setState` loop.
+- **Fix:** Replaced the two per-segment specs with a single `vcol` spec whose `gridAreas: ['vdiv0', 'vdiv1']` renders both DOM segments from one shared `useSplitDivider` binding.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Share the quad column divider binding
+
+- **Source:** github-codex-connector (P2) | PR #526 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L92
+- **Finding:** The second vertical segment in the `quad` layout created another `useSplitDivider` for the same `cols` boundary instead of sharing the first segment's binding. Dragging one segment updated `initialRatios` while the sibling's committed `size` remained at the old 50/50 value, so its commit effect snapped the column split back.
+- **Fix:** Collapsed both vertical segments into one `DividerHandleSpec` with `gridAreas: ['vdiv0', 'vdiv1']` rendered from a single binding.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. Remount divider handles on layout changes
+
+- **Source:** github-codex-connector (P2) | PR #526 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L154
+- **Finding:** Handles reused the same `spec.id` key across layouts (e.g. `hdiv` in `hsplit`/`threeRight`/`quad`, `vdiv` in `vsplit`/`threeRight`). Because `useElasticContainer` captures `initialPercent` at mount, switching layouts reused the existing instance and its old pixel size, which the commit effect then stored into the new layout's ratio.
+- **Fix:** Scoped the `SplitDividerHandle` key to the current layout with `key={`${layout}-${spec.id}`}`, forcing a remount and fresh mount-time state on every layout change.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

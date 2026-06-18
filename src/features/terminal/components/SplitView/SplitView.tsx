@@ -25,7 +25,13 @@ import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
 import { Tooltip } from '@/components/Tooltip'
 import { SplitDividers } from './SplitDividers'
-import { resolveGrid, DEFAULT_RATIOS, type LayoutRatios } from './resolveGrid'
+import { resolveGrid } from './resolveGrid'
+import {
+  DEFAULT_RATIOS,
+  equalTrackRatios,
+  type LayoutRatios,
+  type RatioAxis,
+} from '../../layout-registry'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 
@@ -133,14 +139,14 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const grid = resolveGrid(session.layout, currentRatios)
 
     const handleRatioChange = useCallback(
-      (axis: 'col' | 'row', value: number): void => {
+      (axis: RatioAxis, value: readonly number[]): void => {
         setRatios((prev) => {
           const base = prev[session.layout] ?? DEFAULT_RATIOS[session.layout]
-          if (base[axis] === value) {
+          if (equalTrackRatios(base[axis], value)) {
             return prev
           }
 
-          return { ...prev, [session.layout]: { ...base, [axis]: value } }
+          return { ...prev, [session.layout]: { ...base, [axis]: [...value] } }
         })
       },
       [session.layout]
