@@ -33,3 +33,12 @@ model and the rendered grid stay consistent and no pane becomes inaccessible.
   guaranteeing every track stays above the configured minimum.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this
   line)
+
+### 2. grid3x2 compatibility check accepts pane counts above its capacity
+
+- **Source:** github-claude | PR #528 round 2 | 2026-06-18
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/commands.rs` L649, `src/features/terminal/layout-registry/layoutRegistry.ts` L34
+- **Finding:** Both the Rust kill-pty re-layout check and the frontend `autoShrinkLayoutFor` used an open lower bound (`count >= 5` / `nextPaneCount >= 5`) for `grid3x2` compatibility. `grid3x2` capacity is 6, so malformed or migrated snapshots with 7+ panes would be accepted as valid and `resolveGrid` would reference non-existent named pane areas (p6, p7, …).
+- **Fix:** Tightened both checks to `count == 5 || count == 6` / `nextPaneCount === 5 || nextPaneCount === 6` so the compatibility test matches the layout's defined capacity.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

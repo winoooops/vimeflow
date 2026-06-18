@@ -54,13 +54,15 @@ export const useSplitDivider = ({
   const startVar = getTrackCssVar(trackAxis, trackIndex)
   const endVar = getTrackCssVar(trackAxis, trackIndex + 1)
   const effectiveDimensionRef = useRef(0)
+  const initialRatiosRef = useRef(initialRatios)
+  initialRatiosRef.current = initialRatios
 
   const writeRatio = useCallback(
     (ratio: number): readonly number[] => {
       const el = containerRef.current
 
       const nextRatios = updateTrackBoundaryRatio(
-        initialRatios,
+        initialRatiosRef.current,
         trackIndex,
         ratio
       )
@@ -74,7 +76,7 @@ export const useSplitDivider = ({
 
       return nextRatios
     },
-    [containerRef, endVar, initialRatios, startVar, trackIndex]
+    [containerRef, endVar, startVar, trackIndex]
   )
 
   // useElasticContainer hands us pixel previews during a drag; convert to a

@@ -646,7 +646,7 @@ pub(crate) fn kill_pty_inner(
                         Some("vsplit") | Some("hsplit") => count == 2,
                         Some("threeRight") => count == 3,
                         Some("quad") => count == 4,
-                        Some("grid3x2") => count >= 5,
+                        Some("grid3x2") => count == 5 || count == 6,
                         _ => false,
                     };
                     if compatible {

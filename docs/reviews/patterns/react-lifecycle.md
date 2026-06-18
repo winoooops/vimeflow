@@ -445,3 +445,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** In `quad` and `grid3x2` layouts, two visual divider segments represent the same logical column boundary (`trackAxis: 'cols'`, same `trackIndex`). Each segment created its own `useSplitDivider` instance, and each instance's commit-size effect wrote the same `--split-cols-*` CSS variables. Dragging one segment updated parent state, but the untouched segment's effect re-ran with its stale `size` and overwrote the live ratio, making the resize snap back or become inconsistent.
 - **Fix:** Group divider specs by `(trackAxis, trackIndex)` and create exactly one `useSplitDivider` binding per logical boundary. Render every visual segment in the group from that shared binding so all handles read the same live `size` and no two effects compete for the same CSS vars.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Unstable `initialRatios` dependency recreates `writeRatio` and triggers sibling divider feedback loop
+
+- **Source:** github-claude | PR #528 round 2 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/SplitView/useSplitDivider.ts` L58-78
+- **Finding:** `writeRatio` listed `initialRatios` in its `useCallback` deps. In `quad` and `grid3x2` layouts, sibling dividers on the same axis share the axis ratios; committing one divider created a new `ratios` array reference, which was passed as `initialRatios` to all sibling handles. Each sibling's `writeRatio` was recreated, firing its commit effect with a stale `size` from `useElasticContainer`, producing wrong track weights and an infinite state oscillation that ended in React's "Maximum update depth exceeded" crash.
+- **Fix:** Store `initialRatios` in a ref (`initialRatiosRef`) updated synchronously during render, and read `initialRatiosRef.current` inside `writeRatio`. Removed `initialRatios` from the `useCallback` deps so `writeRatio` stays stable across sibling commits.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
