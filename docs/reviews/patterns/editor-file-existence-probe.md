@@ -2,7 +2,7 @@
 id: editor-file-existence-probe
 category: files
 created: 2026-06-17
-last_updated: 2026-06-17
+last_updated: 2026-06-18
 ref_count: 0
 ---
 
@@ -36,4 +36,13 @@ cannot provide change notifications.
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1472
 - **Finding:** When the open file never appeared in `git status`, `selectedFileGitKey` stayed at the same `:none` value after the initial successful read. Deleting the file externally therefore did not re-run the existence probe, so `selectedEditorFileExists` remained `true` and the crumb never moved to `DELETED`.
 - **Fix:** When `selectedFileGitKey.endsWith(':none')`, set a 2-second interval that re-runs the `fileExists` probe so status-less paths are still monitored for deletion. The interval is cleared when the effect cleans up.
+- **Commit:** same commit as this entry
+
+### 3. Stale DELETED state after saving a recreated file
+
+- **Source:** github-codex-connector | PR #510 round 7 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1618-L1634
+- **Finding:** After saving a dirty buffer whose backing file had been externally deleted, `editorBuffer.saveFile()` recreated the file but `selectedEditorFileExists` stayed `false`. On the next render `isDirty` became `false`, `editorFileLifecycleStatus` remained `DELETED`, and the editor flipped to read-only until the 2-second statusless poll caught up.
+- **Fix:** In `handleVimSave`, set `selectedEditorFileExists(true)` immediately after a successful `editorBuffer.saveFile()` so the recreated file no longer derives a stale `DELETED` state before the next polling tick.
 - **Commit:** same commit as this entry

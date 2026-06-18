@@ -1620,6 +1620,11 @@ const WorkspaceViewContent = (): ReactElement => {
       await editorBuffer.saveFile()
       setFileError(null)
       setEditorSavedAt(Date.now())
+      // A successful save recreates the backing file if it was deleted
+      // externally. Refresh the existence signal immediately so the next
+      // render does not derive a stale DELETED/read-only state before the
+      // polling probe catches up.
+      setSelectedEditorFileExists(true)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to save: ${message}`)
