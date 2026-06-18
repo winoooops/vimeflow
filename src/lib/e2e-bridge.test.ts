@@ -1,6 +1,10 @@
 // cspell:ignore vsplit
 import { describe, test, expect, beforeEach, vi } from 'vitest'
-import { readPaneBuffer, writeOutputToVisibleTerminal } from './e2e-bridge'
+import {
+  getVisibleTerminalSize,
+  readPaneBuffer,
+  writeOutputToVisibleTerminal,
+} from './e2e-bridge'
 import { terminalCache } from '../features/terminal/terminalRegistry'
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
@@ -19,7 +23,7 @@ const makeMockEntry = (rows: readonly string[]): CacheEntry => {
   }
 
   return {
-    terminal: { dispose: (): void => undefined },
+    terminal: { cols: 80, dispose: (): void => undefined, rows: 24 },
     output: { writeOutput: vi.fn() },
     fitController: { fit: (): void => undefined },
     viewportReader,
@@ -219,6 +223,27 @@ describe('readPaneBuffer', () => {
       byteLen: 5,
       phase: 'live',
     })
+  })
+
+  test('returns the visible terminal size from the active cached renderer', () => {
+    const wrapper = buildSessionWrapper([''], 0)
+    wrapper.getBoundingClientRect = (): DOMRect =>
+      ({
+        bottom: 24,
+        height: 24,
+        left: 0,
+        right: 80,
+        top: 0,
+        width: 80,
+        x: 0,
+        y: 0,
+        toJSON: (): Record<string, never> => ({}),
+      }) as DOMRect
+
+    terminalCache.set('pty-0', makeMockEntry([])!)
+    document.body.append(wrapper)
+
+    expect(getVisibleTerminalSize()).toEqual({ cols: 80, rows: 24 })
   })
 
   test('does not write output when no visible terminal is mounted', () => {

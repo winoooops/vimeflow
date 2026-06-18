@@ -123,7 +123,9 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly resizeHandlers = new Set<(size: TerminalSize) => void>()
   private readonly selectionHandlers = new Set<() => void>()
   private readonly keyHandlers = new Set<TerminalKeyEventHandler>()
-  private readonly outputBuffer = new TerminalDisplayBuffer()
+  private readonly outputBuffer = new TerminalDisplayBuffer({
+    columns: DEFAULT_COLS,
+  })
   private container: HTMLElement | null = null
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
@@ -150,8 +152,8 @@ export class TerminalTextSurface implements TerminalSurface {
       margin: '0',
       minHeight: '100%',
       padding: '8px',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
+      whiteSpace: 'pre',
+      wordBreak: 'normal',
     })
 
     Object.assign(this.input.style, {
@@ -390,6 +392,7 @@ export class TerminalTextSurface implements TerminalSurface {
 
     this.colsValue = nextCols
     this.rowsValue = nextRows
+    this.outputBuffer.setColumns(nextCols)
     this.notifyResize()
   }
 
@@ -455,14 +458,18 @@ export class TerminalTextSurface implements TerminalSurface {
     cursor.setAttribute('aria-hidden', 'true')
 
     Object.assign(cursor.style, {
-      borderLeft: '2px solid var(--terminal-cursor-color)',
+      animationDuration: '1.1s',
+      animationIterationCount: 'infinite',
+      animationName: 'vfTerminalCursorBlink',
+      animationTimingFunction: 'steps(1, end)',
+      backgroundColor: 'var(--terminal-cursor-color)',
       display: 'inline-block',
       height: '1em',
-      marginRight: '-2px',
+      marginRight: '-0.62em',
       pointerEvents: 'none',
       userSelect: 'none',
       verticalAlign: '-0.12em',
-      width: '0',
+      width: '0.62em',
     })
 
     return cursor

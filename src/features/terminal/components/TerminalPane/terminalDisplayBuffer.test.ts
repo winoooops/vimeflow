@@ -1,8 +1,13 @@
+// cspell:ignore xhigh
 import { describe, expect, test } from 'vitest'
 import {
   getClearScreenSentinel,
+  getCursorDownSentinel,
   getCursorLeftSentinel,
+  getCursorPositionSentinel,
   getCursorRightSentinel,
+  getCursorUpSentinel,
+  getEraseDisplaySentinel,
   getEraseLineSentinel,
   getSgrStyleSentinel,
 } from './terminalControlParser'
@@ -71,6 +76,124 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write('!')
 
     expect(buffer.readVisibleText()).toBe('Started!')
+  })
+
+  test('soft-wraps printable output at the configured terminal column', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+
+    expect(buffer.readVisibleText()).toBe('abcde\nf')
+  })
+
+  test('keeps the previous soft-wrapped row when the wrapped tail redraws', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+    buffer.write(`\r${getEraseLineSentinel(0)}gh`)
+
+    expect(buffer.readVisibleText()).toBe('abcde\ngh')
+  })
+
+  test('moves the cursor vertically across existing rows', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('top one\nmid two\nend row')
+    buffer.write(getCursorUpSentinel().repeat(2))
+    buffer.write('\r')
+    buffer.write('new one')
+    buffer.write(getCursorDownSentinel())
+    buffer.write('\r')
+    buffer.write('new two')
+
+    expect(buffer.readVisibleText()).toBe('new one\nnew two\nend row')
+  })
+
+  test('moves the cursor to absolute screen positions', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(getCursorPositionSentinel(2, 5))
+    buffer.write('cell')
+    buffer.write(getCursorPositionSentinel(1, 1))
+    buffer.write('top')
+    buffer.write(getCursorPositionSentinel(2, 7))
+    buffer.write('XY')
+
+    expect(buffer.readVisibleText()).toBe('top\n    ceXY')
+  })
+
+  test('rewrites Codex MCP progress rows without duplicating stale fragments', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('Starting MCP servers (1/3): codex_apps\nlinear pending')
+    buffer.write(
+      getCursorUpSentinel() +
+        '\r' +
+        getEraseLineSentinel(2) +
+        'Starting MCP servers (2/3): codex_apps, linear\n' +
+        getEraseLineSentinel(2) +
+        'linear ready'
+    )
+
+    expect(buffer.readVisibleText()).toBe(
+      'Starting MCP servers (2/3): codex_apps, linear\nlinear ready'
+    )
+    expect(buffer.readVisibleText()).not.toContain('(1/3)')
+    expect(buffer.readVisibleText()).not.toContain('pending')
+  })
+
+  test('rewrites Codex startup TUI rows positioned by absolute cursor controls', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      getClearScreenSentinel() +
+        getCursorPositionSentinel(1, 1) +
+        '>_ OpenAI Codex' +
+        getCursorPositionSentinel(1, 42) +
+        'model: loading' +
+        getCursorPositionSentinel(2, 1) +
+        '~/projects/aws' +
+        getCursorPositionSentinel(3, 1) +
+        'Starting MCP servers (1/3): codex_apps'
+    )
+
+    buffer.write(
+      getCursorPositionSentinel(1, 42) +
+        getEraseLineSentinel(0) +
+        'model: gpt-5.5 default' +
+        getCursorPositionSentinel(3, 1) +
+        getEraseLineSentinel(2) +
+        'Starting MCP servers (2/3): codex_apps, linear'
+    )
+
+    const visibleText = buffer.readVisibleText()
+
+    expect(visibleText).toContain('>_ OpenAI Codex')
+    expect(visibleText).toContain('model: gpt-5.5 default')
+    expect(visibleText).toContain(
+      'Starting MCP servers (2/3): codex_apps, linear'
+    )
+    expect(visibleText).not.toContain('loading')
+    expect(visibleText).not.toContain('(1/3)')
+    expect(visibleText.match(/Starting MCP servers/g)).toHaveLength(1)
+  })
+
+  test('erases stale TUI rows from cursor to end of display', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('› Summarize recent commits\n')
+    buffer.write('› gpt-5.5 xhigh · ~/projects/aws\n')
+    buffer.write('  gpt-5.5 xhigh · ~/projects/aws')
+    buffer.write(getCursorPositionSentinel(2, 1))
+    buffer.write(getEraseDisplaySentinel(0))
+    buffer.write('› gpt-5.5 xhigh · ~/projects/aws')
+
+    const visibleText = buffer.readVisibleText()
+
+    expect(visibleText).toBe(
+      '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
+    )
+    expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
   })
 
   test('exposes the current cursor offset for renderer caret placement', () => {

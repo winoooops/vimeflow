@@ -1,12 +1,18 @@
 import {
+  getEraseDisplayModeFromSentinel,
   getEraseLineModeFromSentinel,
   isClearScreenSentinel,
   isCursorLeftSentinel,
   isCursorRightSentinel,
+  isCursorDownSentinel,
+  isCursorUpSentinel,
+  readCursorPositionSentinel,
   readSgrStyleSentinel,
 } from './terminalControlParser'
 
 const DEFAULT_MAX_SCROLLBACK_LINES = 10_000
+const MIN_SOFT_WRAP_COLUMNS = 2
+const MAX_CURSOR_POSITION_VALUE = 4_096
 const CSS_RGB_FUNCTION = 'rgb'
 const XTERM_COLOR_CUBE_FIRST_INDEX = 16
 const XTERM_COLOR_CUBE_LAST_INDEX = 231
@@ -44,6 +50,7 @@ interface DisplayCharacterResult {
 }
 
 export interface TerminalDisplayBufferOptions {
+  readonly columns?: number
   readonly maxScrollbackLines?: number
 }
 
@@ -314,6 +321,114 @@ const findLineEnd = (text: string, cursor: number): number => {
   const nextNewline = text.indexOf('\n', cursor)
 
   return nextNewline === -1 ? text.length : nextNewline
+}
+
+const moveCursorUp = (text: string, cursor: number): number => {
+  const currentLineStart = findLineStart(text, cursor)
+
+  if (currentLineStart === 0) {
+    return Math.min(cursor, findLineEnd(text, cursor))
+  }
+
+  const column = cursor - currentLineStart
+  const previousLineEnd = currentLineStart - 1
+  const previousLineStart = findLineStart(text, previousLineEnd)
+
+  return Math.min(previousLineStart + column, previousLineEnd)
+}
+
+const moveCursorDown = (text: string, cursor: number): number => {
+  const currentLineStart = findLineStart(text, cursor)
+  const column = cursor - currentLineStart
+  const currentLineEnd = findLineEnd(text, cursor)
+
+  if (currentLineEnd >= text.length) {
+    return Math.min(cursor, currentLineEnd)
+  }
+
+  const nextLineStart = currentLineEnd + 1
+  const nextLineEnd = findLineEnd(text, nextLineStart)
+
+  return Math.min(nextLineStart + column, nextLineEnd)
+}
+
+const normalizeCursorPositionValue = (value: number): number =>
+  Math.min(Math.max(value, 1), MAX_CURSOR_POSITION_VALUE)
+
+const normalizeSoftWrapColumns = (columns: number): number =>
+  Math.max(MIN_SOFT_WRAP_COLUMNS, Math.floor(columns))
+
+const moveCursorToPosition = (
+  text: string,
+  runs: readonly TerminalDisplayRun[],
+  row: number,
+  column: number,
+  style: TerminalDisplayStyle
+): DisplayCharacterResult => {
+  const targetRow = normalizeCursorPositionValue(row)
+  const targetColumn = normalizeCursorPositionValue(column)
+  let nextText = text
+  let nextRuns = runs
+  let cursor = 0
+  let currentRow = 1
+
+  while (currentRow < targetRow) {
+    const lineEnd = findLineEnd(nextText, cursor)
+
+    if (lineEnd < nextText.length) {
+      cursor = lineEnd + 1
+    } else {
+      nextRuns = insertRunText(nextRuns, nextText.length, '\n', style)
+      nextText = `${nextText}\n`
+      cursor = nextText.length
+    }
+
+    currentRow += 1
+  }
+
+  const lineEnd = findLineEnd(nextText, cursor)
+  const targetCursor = cursor + targetColumn - 1
+
+  if (targetCursor > lineEnd) {
+    const padding = ' '.repeat(targetCursor - lineEnd)
+
+    nextRuns = insertRunText(nextRuns, lineEnd, padding, style)
+    nextText = `${nextText.slice(0, lineEnd)}${padding}${nextText.slice(
+      lineEnd
+    )}`
+  }
+
+  return {
+    text: nextText,
+    cursor: targetCursor,
+    runs: nextRuns,
+  }
+}
+
+const softWrapAtCursor = (
+  text: string,
+  runs: readonly TerminalDisplayRun[],
+  cursor: number,
+  style: TerminalDisplayStyle,
+  columns: number | null
+): DisplayCharacterResult => {
+  if (columns === null) {
+    return { text, cursor, runs }
+  }
+
+  const lineStart = findLineStart(text, cursor)
+
+  if (cursor <= lineStart || cursor - lineStart < columns) {
+    return { text, cursor, runs }
+  }
+
+  const newText = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
+
+  return {
+    text: newText,
+    cursor: cursor + 1,
+    runs: insertRunText(runs, cursor, '\n', style),
+  }
 }
 
 const readCodePointLength = (text: string, cursor: number): number =>
@@ -595,7 +710,37 @@ const eraseLineInState = (
   }
 }
 
-const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
+const eraseDisplayInState = (
+  state: DisplayState,
+  mode: 0 | 1
+): DisplayState => {
+  const text = state.text
+  const cursor = state.cursor
+
+  if (mode === 0) {
+    return {
+      ...state,
+      text: text.slice(0, cursor),
+      runs: spliceRuns(state.runs, cursor, text.length),
+    }
+  }
+
+  const cursorCodePointLength = readCodePointLength(text, cursor)
+  const endOffset = Math.min(text.length, cursor + cursorCodePointLength)
+
+  return {
+    ...state,
+    text: text.slice(endOffset),
+    cursor: 0,
+    runs: spliceRuns(state.runs, 0, endOffset),
+  }
+}
+
+const applyDisplayData = (
+  state: DisplayState,
+  data: string,
+  columns: number | null
+): DisplayState => {
   let text = state.text
   let cursor = Math.min(Math.max(state.cursor, 0), text.length)
   let pendingCr = state.pendingCr
@@ -612,11 +757,43 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
       continue
     }
 
+    const cursorPositionControl = readCursorPositionSentinel(data, index)
+
+    if (cursorPositionControl) {
+      const next = moveCursorToPosition(
+        text,
+        runs,
+        cursorPositionControl.row,
+        cursorPositionControl.column,
+        style
+      )
+
+      text = next.text
+      runs = next.runs
+      cursor = next.cursor
+      pendingCr = false
+      index += cursorPositionControl.length
+      continue
+    }
+
     const characterLength = readCodePointLength(data, index)
     const character = data.slice(index, index + characterLength)
+    const eraseDisplayMode = getEraseDisplayModeFromSentinel(character)
     const eraseLineMode = getEraseLineModeFromSentinel(character)
 
     index += characterLength
+
+    if (eraseDisplayMode !== null) {
+      const nextState = eraseDisplayInState(
+        { text, cursor, pendingCr, style, runs },
+        eraseDisplayMode
+      )
+      text = nextState.text
+      runs = nextState.runs
+      cursor = nextState.cursor
+      pendingCr = false
+      continue
+    }
 
     if (eraseLineMode !== null) {
       const nextState = eraseLineInState(
@@ -656,6 +833,18 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
       continue
     }
 
+    if (isCursorUpSentinel(character)) {
+      cursor = moveCursorUp(text, cursor)
+      pendingCr = false
+      continue
+    }
+
+    if (isCursorDownSentinel(character)) {
+      cursor = moveCursorDown(text, cursor)
+      pendingCr = false
+      continue
+    }
+
     if (character === '\r') {
       cursor = findLineStart(text, cursor)
       pendingCr = true
@@ -665,6 +854,14 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
     if (character === '\n') {
       if (pendingCr) {
         cursor = findLineEnd(text, cursor)
+      }
+
+      const lineEnd = findLineEnd(text, cursor)
+
+      if (lineEnd < text.length) {
+        cursor = lineEnd + 1
+        pendingCr = false
+        continue
       }
 
       text = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
@@ -679,6 +876,11 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
       pendingCr = false
       continue
     }
+
+    const wrapped = softWrapAtCursor(text, runs, cursor, style, columns)
+    text = wrapped.text
+    runs = wrapped.runs
+    cursor = wrapped.cursor
 
     const next = writeDisplayCharacter(text, runs, cursor, character, style)
     text = next.text
@@ -728,11 +930,21 @@ const trimScrollbackLines = (
 
 export class TerminalDisplayBuffer {
   private state = createEmptyState()
+  private columns: number | null
   private readonly maxScrollbackLines: number
 
   constructor(options: TerminalDisplayBufferOptions = {}) {
+    this.columns =
+      options.columns === undefined
+        ? null
+        : normalizeSoftWrapColumns(options.columns)
+
     this.maxScrollbackLines =
       options.maxScrollbackLines ?? DEFAULT_MAX_SCROLLBACK_LINES
+  }
+
+  setColumns(columns: number): void {
+    this.columns = normalizeSoftWrapColumns(columns)
   }
 
   clear(): void {
@@ -745,7 +957,7 @@ export class TerminalDisplayBuffer {
     }
 
     this.state = trimScrollbackLines(
-      applyDisplayData(this.state, data),
+      applyDisplayData(this.state, data, this.columns),
       this.maxScrollbackLines
     )
   }
