@@ -68,6 +68,7 @@ const E2E_RUNTIME_ARG = '--vimeflow-e2e'
 // Kept local to the main process so Electron startup never depends on a renderer
 // feature module that may later gain browser-only runtime imports.
 const SETTINGS_SCHEMA_VERSION = 1
+const COMMAND_PALETTE_BINDING_MAX_LENGTH = 64
 
 const isCommandPaletteBindingSync = (
   value: unknown
@@ -495,12 +496,18 @@ const setupApp = async (): Promise<void> => {
     }
 
     if (typeof binding === 'string') {
-      setCommandPaletteShortcutBinding(win, binding)
+      if (binding.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH) {
+        setCommandPaletteShortcutBinding(win, binding)
+      }
 
       return
     }
 
-    if (isCommandPaletteBindingSync(binding)) {
+    if (
+      isCommandPaletteBindingSync(binding) &&
+      binding.palette.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH &&
+      binding.leader.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH
+    ) {
       setCommandPaletteShortcutBindings(win, binding)
     }
   })
