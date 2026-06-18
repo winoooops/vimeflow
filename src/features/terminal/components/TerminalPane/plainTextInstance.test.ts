@@ -114,6 +114,36 @@ describe('plainTextInstance', () => {
     expect(callback).toHaveBeenCalledOnce()
   })
 
+  test('renders a visual cursor without adding transcript text', () => {
+    const created = createTrackedPlainTextTerminal()
+    const container = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    created.terminal.open(container)
+
+    const output = created.terminal.element?.querySelector('pre')
+    const cursor = output?.querySelector('[data-terminal-cursor="true"]')
+
+    expect(cursor).not.toBeNull()
+    expect(output?.textContent).toBe('')
+    expect(created.viewportReader.readVisibleText()).toBe('')
+  })
+
+  test('places the visual cursor at the renderer buffer offset', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // cspell:disable-next-line
+    created.terminal.write('abc\x1b[2D')
+
+    const output = created.terminal.element?.querySelector('pre')
+    const cursor = output?.querySelector('[data-terminal-cursor="true"]')
+
+    expect(output?.textContent).toBe('abc')
+    expect(created.viewportReader.readVisibleText()).toBe('abc')
+    expect(cursor?.previousSibling?.textContent).toBe('a')
+    expect(cursor?.nextSibling?.textContent).toBe('bc')
+  })
+
   test('rewrites the current line when carriage return output arrives', () => {
     const created = createTrackedPlainTextTerminal()
 
@@ -563,5 +593,10 @@ describe('plainTextInstance', () => {
 
     expect(created.terminal.element?.style.background).not.toBe('')
     expect(created.terminal.element?.style.color).not.toBe('')
+    expect(
+      created.terminal.element?.style.getPropertyValue(
+        '--terminal-cursor-color'
+      )
+    ).toBe(terminalTheme.cursor)
   })
 })

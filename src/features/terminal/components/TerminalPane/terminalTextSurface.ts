@@ -161,6 +161,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.input.addEventListener('keydown', this.handleKeyDown)
     this.input.addEventListener('paste', this.handlePaste)
     this.applyTheme(themeService.current().terminal)
+    this.renderOutput()
   }
 
   get cols(): number {
@@ -307,6 +308,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.root.style.background = theme.background
     this.root.style.color = theme.foreground
     this.output.style.caretColor = theme.cursor
+    this.root.style.setProperty('--terminal-cursor-color', theme.cursor)
     this.root.style.setProperty(
       '--terminal-selection-background',
       theme.selectionBackground
@@ -396,8 +398,46 @@ export class TerminalTextSurface implements TerminalSurface {
     })
   }
 
+  private createCursorElement(): HTMLElement {
+    const cursor = document.createElement('span')
+    cursor.dataset.terminalCursor = 'true'
+    cursor.setAttribute('aria-hidden', 'true')
+
+    Object.assign(cursor.style, {
+      borderLeft: '2px solid var(--terminal-cursor-color)',
+      display: 'inline-block',
+      height: '1em',
+      marginRight: '-2px',
+      pointerEvents: 'none',
+      userSelect: 'none',
+      verticalAlign: '-0.12em',
+      width: '0',
+    })
+
+    return cursor
+  }
+
   private renderOutput(): void {
-    this.output.textContent = this.outputBuffer.readText()
+    const text = this.outputBuffer.readText()
+
+    const cursorOffset = Math.min(
+      this.outputBuffer.readCursorOffset(),
+      text.length
+    )
+
+    const fragments: Node[] = []
+
+    if (cursorOffset > 0) {
+      fragments.push(document.createTextNode(text.slice(0, cursorOffset)))
+    }
+
+    fragments.push(this.createCursorElement())
+
+    if (cursorOffset < text.length) {
+      fragments.push(document.createTextNode(text.slice(cursorOffset)))
+    }
+
+    this.output.replaceChildren(...fragments)
     this.root.scrollTop = this.root.scrollHeight
   }
 

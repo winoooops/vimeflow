@@ -199,6 +199,30 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('Start')
   })
 
+  test('renders a visual cursor from the Ghostty byte parser state', () => {
+    const created = createTrackedGhosttyTerminal()
+    const output = `abc${ESC}[2D`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const cursor = terminalOutput?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('abc')
+    expect(created.viewportReader.readVisibleText()).toBe('abc')
+    expect(cursor?.previousSibling?.textContent).toBe('a')
+    expect(cursor?.nextSibling?.textContent).toBe('bc')
+  })
+
   test('renders invalid byte payloads through the byte path', () => {
     const created = createTrackedGhosttyTerminal()
 

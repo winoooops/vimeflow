@@ -245,6 +245,10 @@ export class TerminalDisplayBuffer {
     return this.state.text
   }
 
+  readCursorOffset(): number {
+    return this.state.cursor
+  }
+
   readVisibleText(): string {
     return this.readText().replace(/\n+$/, '')
   }
