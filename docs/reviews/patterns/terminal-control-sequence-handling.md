@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-18
-ref_count: 6
+ref_count: 7
 ---
 
 # Terminal Control Sequence Handling
@@ -189,4 +189,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-443
 - **Finding:** `findOffsetForCellColumn` returned `cursor + readCodePointLength(...)` for both an exact column match and an overshoot. Overshoot only happens when the target terminal cell falls inside a two-cell glyph (CJK or emoji), so absolute cursor positioning landed after the glyph instead of at its boundary.
 - **Fix:** Changed the `nextColumn > targetColumn` branch to return the current glyph offset (`cursor`), matching the existing CHA-specific helper. Added a regression test that writes `a漢b`, positions the cursor at column 3 (the wide glyph's second cell), and asserts the cursor offset is the start of the wide glyph.
+- **Commit:** same commit as this entry
+
+### 20. ED mode 1 removes a prefix without rebasing savedCursor
+
+- **Source:** github-codex-connector | PR #534 round 4 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L1078-1106
+- **Finding:** `eraseDisplayInState(mode=1)` removes `text.slice(0, endOffset)` and sets `cursor` to 0, but preserves `savedCursor` from the old buffer via `...state`. A later restore can therefore land `endOffset` bytes too far into the remaining text when save/restore is combined with ESC[1J.
+- **Fix:** Rebased `savedCursor` by subtracting `endOffset` and clamping to 0 when the saved position was inside the removed prefix, mirroring the existing scrollback-trim adjustment. Added a regression test that saves the cursor, erases from display start through the current cursor, restores, and asserts subsequent output lands at the correct offset.
 - **Commit:** same commit as this entry

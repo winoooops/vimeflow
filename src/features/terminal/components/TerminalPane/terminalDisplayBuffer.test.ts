@@ -299,6 +299,20 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readVisibleText()).toBe('d')
   })
 
+  test('rebase saved cursor when erasing display from start through cursor', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('hello\nworld')
+    buffer.write(getCursorPositionSentinel(2, 1))
+    buffer.write(getSaveCursorSentinel())
+    buffer.write(getCursorPositionSentinel(2, 4))
+    buffer.write(getEraseDisplaySentinel(1))
+    buffer.write(getRestoreCursorSentinel())
+    buffer.write('X')
+
+    expect(buffer.readVisibleText()).toBe('X')
+  })
+
   test('exposes the current cursor offset for renderer caret placement', () => {
     const buffer = new TerminalDisplayBuffer()
 

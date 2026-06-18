@@ -1096,6 +1096,10 @@ const eraseDisplayInState = (
     ...state,
     text: text.slice(endOffset),
     cursor: 0,
+    savedCursor:
+      state.savedCursor === null
+        ? null
+        : Math.max(0, state.savedCursor - endOffset),
     runs: spliceRuns(state.runs, 0, endOffset),
     softWrapOffsets: updateSoftWrapOffsetsForEdit(
       state.softWrapOffsets,
