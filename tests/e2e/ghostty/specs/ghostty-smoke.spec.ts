@@ -32,6 +32,14 @@ const writeOutputToVisibleTerminal = async (data: string): Promise<void> => {
 const readTerminalBuffer = async (): Promise<string> =>
   browser.execute(() => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? '')
 
+const hasGhosttyCursor = async (): Promise<boolean> =>
+  browser.execute(
+    () =>
+      document.querySelector(
+        '[data-terminal-renderer="ghostty"] [data-terminal-cursor="true"]'
+      ) !== null
+  )
+
 describe('Ghostty renderer smoke', () => {
   before(async () => {
     await waitForE2eBridge()
@@ -54,6 +62,11 @@ describe('Ghostty renderer smoke', () => {
           'Ghostty renderer root was not mounted; rebuild with VITE_TERMINAL_RENDERER=ghostty',
       }
     )
+
+    await browser.waitUntil(hasGhosttyCursor, {
+      timeout: 20_000,
+      timeoutMsg: 'Ghostty renderer did not mount a visible cursor marker',
+    })
 
     await browser.waitUntil(
       async () => (await readTerminalBuffer()).trim().length > 0,
@@ -86,5 +99,6 @@ describe('Ghostty renderer smoke', () => {
     expect(buffer).not.toContain(']2;ghostty-e2e')
     expect(buffer).not.toContain('[38;2;243;139;168m')
     expect(buffer).not.toContain('[0m')
+    expect(await hasGhosttyCursor()).toBe(true)
   })
 })

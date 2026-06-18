@@ -68,6 +68,18 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readVisibleText()).toBe('Started!')
   })
 
+  test('exposes the current cursor offset for renderer caret placement', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('abc')
+
+    expect(buffer.readCursorOffset()).toBe(3)
+
+    buffer.write(getCursorLeftSentinel().repeat(2))
+
+    expect(buffer.readCursorOffset()).toBe(1)
+  })
+
   test('clears viewport text when a clear-screen display control arrives', () => {
     const buffer = new TerminalDisplayBuffer()
 
