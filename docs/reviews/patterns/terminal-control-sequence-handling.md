@@ -199,3 +199,12 @@ all required state through pure display-state helpers.
 - **Finding:** `eraseDisplayInState(mode=1)` removes `text.slice(0, endOffset)` and sets `cursor` to 0, but preserves `savedCursor` from the old buffer via `...state`. A later restore can therefore land `endOffset` bytes too far into the remaining text when save/restore is combined with ESC[1J.
 - **Fix:** Rebased `savedCursor` by subtracting `endOffset` and clamping to 0 when the saved position was inside the removed prefix, mirroring the existing scrollback-trim adjustment. Added a regression test that saves the cursor, erases from display start through the current cursor, restores, and asserts subsequent output lands at the correct offset.
 - **Commit:** same commit as this entry
+
+### 21. Track cursor row incrementally for CHA and cursor-down hot paths
+
+- **Source:** github-claude | PR #534 round 5 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L476
+- **Finding:** `readCursorRow` counted newlines from offset 0 to the cursor and was invoked for every cursor-horizontal-absolute sentinel and every cursor-down-at-EOF event in `applyDisplayData`. With large scrollback and frequent CHA repaint sequences, a single output batch could perform millions of redundant character comparisons.
+- **Fix:** Added `cursorRow` to `DisplayState` and threaded it through `applyDisplayData`. `moveCursorToPosition` and `moveCursorToHorizontalAbsoluteColumn` return the resolved row; cursor-left/backspace report a row delta when crossing a soft-wrap newline; other row-changing paths update or recompute `cursorRow` so CHA and cursor-down can read the current row in O(1).
+- **Commit:** same commit as this entry

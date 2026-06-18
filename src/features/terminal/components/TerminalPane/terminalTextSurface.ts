@@ -136,6 +136,7 @@ export class TerminalTextSurface implements TerminalSurface {
   private container: HTMLElement | null = null
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
+  private cachedCharacterWidth: number | null = null
   private lastSelectionText = ''
   private disposed = false
 
@@ -477,6 +478,10 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private measureCharacterWidth(): number {
+    if (this.cachedCharacterWidth !== null) {
+      return this.cachedCharacterWidth
+    }
+
     const probe = document.createElement('span')
     probe.textContent = '0'.repeat(MEASURED_CHAR_SAMPLE_LENGTH)
 
@@ -498,7 +503,9 @@ export class TerminalTextSurface implements TerminalSurface {
       return APPROXIMATE_CHAR_WIDTH
     }
 
-    return width / MEASURED_CHAR_SAMPLE_LENGTH
+    this.cachedCharacterWidth = width / MEASURED_CHAR_SAMPLE_LENGTH
+
+    return this.cachedCharacterWidth
   }
 
   private createCursorElement(): HTMLElement {

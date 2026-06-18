@@ -22,3 +22,12 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **Finding:** `createOutputFragments` split buffered text on `\n` and created a new `display: block` row for each line, but it did not insert any newline text into the DOM. `TerminalTextSurface.getSelection()` returned `Selection.toString()`, so selecting or copying `hello\nworld` produced `helloworld`.
 - **Fix:** In `appendNewline`, append a zero-font-size span containing a newline text node to the current row before pushing the next row. The span contributes a selectable newline without affecting the row's visual height.
 - **Commit:** same commit as this entry
+
+### 2. Cache measured terminal character width across fit() calls
+
+- **Source:** github-claude | PR #534 round 5 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L479
+- **Finding:** `measureCharacterWidth` appended a probe span, forced `getBoundingClientRect()`, and removed the span on every `fit()` call. During continuous pane/window resize this repeated a synchronous layout read for a font metric that is stable for the surface lifetime.
+- **Fix:** Added a nullable `cachedCharacterWidth` instance field. `measureCharacterWidth` returns the cached value after the first successful measurement; the cache is not invalidated because `TERMINAL_FONT_FAMILY` and `TERMINAL_FONT_SIZE` are constants for the surface.
+- **Commit:** same commit as this entry
