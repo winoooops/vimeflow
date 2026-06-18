@@ -1,5 +1,6 @@
 // cspell:ignore ghostty
 const ESCAPE_SEQUENCE_TIMEOUT_MS = 15_000
+const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
 
 const waitForE2eBridge = async (): Promise<void> => {
   await browser
@@ -38,6 +39,23 @@ const hasGhosttyCursor = async (): Promise<boolean> =>
       document.querySelector(
         '[data-terminal-renderer="ghostty"] [data-terminal-cursor="true"]'
       ) !== null
+  )
+
+interface GhosttyStyleRun {
+  readonly color: string
+  readonly text: string
+}
+
+const readGhosttyStyleRuns = async (): Promise<readonly GhosttyStyleRun[]> =>
+  browser.execute(() =>
+    Array.from(
+      document.querySelectorAll(
+        '[data-terminal-renderer="ghostty"] [data-terminal-style-run="true"]'
+      )
+    ).map((element) => ({
+      color: (element as HTMLElement).style.color,
+      text: element.textContent ?? '',
+    }))
   )
 
 describe('Ghostty renderer smoke', () => {
@@ -100,5 +118,13 @@ describe('Ghostty renderer smoke', () => {
     expect(buffer).not.toContain('[38;2;243;139;168m')
     expect(buffer).not.toContain('[0m')
     expect(await hasGhosttyCursor()).toBe(true)
+
+    const styleRuns = await readGhosttyStyleRuns()
+
+    expect(
+      styleRuns.some(
+        (run) => run.text.includes(marker) && run.color === TRUE_COLOR_PINK
+      )
+    ).toBe(true)
   })
 })

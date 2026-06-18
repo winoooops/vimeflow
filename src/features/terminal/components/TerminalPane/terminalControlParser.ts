@@ -18,6 +18,18 @@ const ERASE_LINE_SENTINELS = ['\u{F0000}', '\u{F0001}', '\u{F0002}']
 const CLEAR_SCREEN_SENTINEL = '\u{F0003}'
 const CURSOR_LEFT_SENTINEL = '\u{F0004}'
 const CURSOR_RIGHT_SENTINEL = '\u{F0005}'
+const SGR_STYLE_SENTINEL_START = '\u{F0006}'
+const SGR_STYLE_SENTINEL_END = '\u{F0007}'
+
+export interface TerminalControlSequenceOutput {
+  readonly visibleText: string
+  readonly displayText?: string
+}
+
+export interface SgrStyleSentinel {
+  readonly parameters: readonly number[]
+  readonly length: number
+}
 
 export const getEraseLineSentinel = (mode: 0 | 1 | 2): string =>
   ERASE_LINE_SENTINELS[mode]
@@ -27,6 +39,9 @@ export const getClearScreenSentinel = (): string => CLEAR_SCREEN_SENTINEL
 export const getCursorLeftSentinel = (): string => CURSOR_LEFT_SENTINEL
 
 export const getCursorRightSentinel = (): string => CURSOR_RIGHT_SENTINEL
+
+export const getSgrStyleSentinel = (parameters: readonly number[]): string =>
+  `${SGR_STYLE_SENTINEL_START}${parameters.join(';')}${SGR_STYLE_SENTINEL_END}`
 
 export const getEraseLineModeFromSentinel = (
   character: string
@@ -49,6 +64,56 @@ export const isCursorLeftSentinel = (character: string): boolean =>
 export const isCursorRightSentinel = (character: string): boolean =>
   character === CURSOR_RIGHT_SENTINEL
 
+const parseSgrParameters = (content: string): readonly number[] | null => {
+  if (content.length === 0) {
+    return [0]
+  }
+
+  const parameters: number[] = []
+
+  for (const parameter of content.split(';')) {
+    if (parameter.length === 0) {
+      parameters.push(0)
+      continue
+    }
+
+    if (!/^\d+$/.test(parameter)) {
+      return null
+    }
+
+    parameters.push(Number(parameter))
+  }
+
+  return parameters
+}
+
+export const readSgrStyleSentinel = (
+  data: string,
+  startIndex: number
+): SgrStyleSentinel | null => {
+  if (!data.startsWith(SGR_STYLE_SENTINEL_START, startIndex)) {
+    return null
+  }
+
+  const contentStart = startIndex + SGR_STYLE_SENTINEL_START.length
+  const contentEnd = data.indexOf(SGR_STYLE_SENTINEL_END, contentStart)
+
+  if (contentEnd === -1) {
+    return null
+  }
+
+  const parameters = parseSgrParameters(data.slice(contentStart, contentEnd))
+
+  if (!parameters) {
+    return null
+  }
+
+  return {
+    parameters,
+    length: contentEnd + SGR_STYLE_SENTINEL_END.length - startIndex,
+  }
+}
+
 interface SequenceTerminator {
   readonly index: number
   readonly length: number
@@ -56,6 +121,7 @@ interface SequenceTerminator {
 
 export interface TerminalControlSequenceParserOptions {
   readonly consumeControlsWithoutSubscribers?: boolean
+  readonly preserveSgrStyles?: boolean
 }
 
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
@@ -198,6 +264,13 @@ export class TerminalControlSequenceParser implements TerminalParser {
     data: string,
     output: TerminalParserOutputContext | null
   ): string {
+    return this.transformDisplayOutput(data, output).visibleText
+  }
+
+  transformDisplayOutput(
+    data: string,
+    output: TerminalParserOutputContext | null
+  ): TerminalControlSequenceOutput {
     if (
       this.handlers.size === 0 &&
       !this.options.consumeControlsWithoutSubscribers
@@ -205,7 +278,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
       const visible = `${this.pendingControlSequence}${data}`
       this.pendingControlSequence = ''
 
-      return visible
+      return { visibleText: visible }
     }
 
     const source = `${this.pendingControlSequence}${data}`
@@ -217,8 +290,9 @@ export class TerminalControlSequenceParser implements TerminalParser {
   private consumeControlSequences(
     data: string,
     output: TerminalParserOutputContext | null
-  ): string {
+  ): TerminalControlSequenceOutput {
     let visible = ''
+    let display = ''
     let cursor = 0
 
     while (cursor < data.length) {
@@ -226,10 +300,12 @@ export class TerminalControlSequenceParser implements TerminalParser {
 
       if (sequenceStart === -1) {
         visible += data.slice(cursor)
+        display += data.slice(cursor)
         break
       }
 
       visible += data.slice(cursor, sequenceStart)
+      display += data.slice(cursor, sequenceStart)
 
       if (data.startsWith(OSC_PREFIX, sequenceStart)) {
         const contentStart = sequenceStart + OSC_PREFIX.length
@@ -269,7 +345,10 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const mode = parseCsiIntegerParameter(content, 0)
 
           if (mode === 0 || mode === 1 || mode === 2) {
-            visible += getEraseLineSentinel(mode)
+            const sentinel = getEraseLineSentinel(mode)
+
+            visible += sentinel
+            display += sentinel
           }
         }
 
@@ -281,7 +360,10 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const mode = parseCsiIntegerParameter(content, 0)
 
           if (mode === 2) {
-            visible += getClearScreenSentinel()
+            const sentinel = getClearScreenSentinel()
+
+            visible += sentinel
+            display += sentinel
           }
         }
 
@@ -295,10 +377,13 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (count !== null) {
             const normalizedCount = count === 0 ? 1 : count
 
-            visible += repeatDisplayControl(
+            const control = repeatDisplayControl(
               getCursorLeftSentinel(),
               normalizedCount
             )
+
+            visible += control
+            display += control
           }
         }
 
@@ -312,10 +397,13 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (count !== null) {
             const normalizedCount = count === 0 ? 1 : count
 
-            visible += repeatDisplayControl(
+            const control = repeatDisplayControl(
               getCursorRightSentinel(),
               normalizedCount
             )
+
+            visible += control
+            display += control
           }
         }
 
@@ -329,10 +417,25 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (column !== null) {
             const normalizedColumn = column === 0 ? 1 : column
 
-            visible += `\r${repeatDisplayControl(
+            const control = `\r${repeatDisplayControl(
               getCursorRightSentinel(),
               normalizedColumn - 1
             )}`
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'm' && this.options.preserveSgrStyles) {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const parameters = parseSgrParameters(content)
+
+          if (parameters) {
+            display += getSgrStyleSentinel(parameters)
           }
         }
 
@@ -361,10 +464,14 @@ export class TerminalControlSequenceParser implements TerminalParser {
       this.pendingControlSequence.length > MAX_PENDING_CONTROL_SEQUENCE_LENGTH
     ) {
       visible += this.pendingControlSequence
+      display += this.pendingControlSequence
       this.pendingControlSequence = ''
     }
 
-    return visible
+    return {
+      visibleText: visible,
+      displayText: display === visible ? undefined : display,
+    }
   }
 
   private consumeOsc(

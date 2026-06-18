@@ -21,6 +21,7 @@ export class GhosttyControlSequenceParserEngine
     super({
       capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
       consumeControlsWithoutSubscribers: true,
+      preserveSgrStyles: true,
     })
   }
 }

@@ -6,7 +6,11 @@ import type {
   TerminalSurface,
   TerminalTheme,
 } from '../../types'
-import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
+import {
+  TerminalDisplayBuffer,
+  type TerminalDisplayRun,
+  type TerminalDisplayStyle,
+} from './terminalDisplayBuffer'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
 const DEFAULT_COLS = 80
@@ -30,7 +34,12 @@ const KEYBOARD_SEQUENCES = new Map<string, string>([
 
 export interface TerminalTextSurfaceOptions {
   readonly rendererId: string
-  readonly transformOutput: (data: string) => string
+  readonly transformOutput: (data: string) => TerminalTextSurfaceOutput
+}
+
+export interface TerminalTextSurfaceOutput {
+  readonly visibleText: string
+  readonly displayText?: string
 }
 
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
@@ -224,18 +233,27 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    this.writeVisible(this.options.transformOutput(data), callback)
+    this.writeParsedOutput(this.options.transformOutput(data), callback)
   }
 
   writeVisible(visibleData: string, callback?: () => void): void {
+    this.writeParsedOutput({ visibleText: visibleData }, callback)
+  }
+
+  writeParsedOutput(
+    output: TerminalTextSurfaceOutput,
+    callback?: () => void
+  ): void {
     if (this.disposed) {
       callback?.()
 
       return
     }
 
-    if (visibleData.length > 0) {
-      this.outputBuffer.write(visibleData)
+    const displayData = output.displayText ?? output.visibleText
+
+    if (displayData.length > 0) {
+      this.outputBuffer.write(displayData)
       this.renderOutput()
     }
 
@@ -307,6 +325,39 @@ export class TerminalTextSurface implements TerminalSurface {
   applyTheme(theme: TerminalTheme): void {
     this.root.style.background = theme.background
     this.root.style.color = theme.foreground
+    this.root.style.setProperty('--terminal-ansi-black', theme.black)
+    this.root.style.setProperty('--terminal-ansi-red', theme.red)
+    this.root.style.setProperty('--terminal-ansi-green', theme.green)
+    this.root.style.setProperty('--terminal-ansi-yellow', theme.yellow)
+    this.root.style.setProperty('--terminal-ansi-blue', theme.blue)
+    this.root.style.setProperty('--terminal-ansi-magenta', theme.magenta)
+    this.root.style.setProperty('--terminal-ansi-cyan', theme.cyan)
+    this.root.style.setProperty('--terminal-ansi-white', theme.white)
+    this.root.style.setProperty(
+      '--terminal-ansi-bright-black',
+      theme.brightBlack
+    )
+
+    this.root.style.setProperty('--terminal-ansi-bright-red', theme.brightRed)
+    this.root.style.setProperty(
+      '--terminal-ansi-bright-green',
+      theme.brightGreen
+    )
+
+    this.root.style.setProperty(
+      '--terminal-ansi-bright-yellow',
+      theme.brightYellow
+    )
+    this.root.style.setProperty('--terminal-ansi-bright-blue', theme.brightBlue)
+    this.root.style.setProperty(
+      '--terminal-ansi-bright-magenta',
+      theme.brightMagenta
+    )
+    this.root.style.setProperty('--terminal-ansi-bright-cyan', theme.brightCyan)
+    this.root.style.setProperty(
+      '--terminal-ansi-bright-white',
+      theme.brightWhite
+    )
     this.output.style.caretColor = theme.cursor
     this.root.style.setProperty('--terminal-cursor-color', theme.cursor)
     this.root.style.setProperty(
@@ -417,25 +468,143 @@ export class TerminalTextSurface implements TerminalSurface {
     return cursor
   }
 
+  private hasStyle(style: TerminalDisplayStyle): boolean {
+    return (
+      style.background !== undefined ||
+      style.bold === true ||
+      style.dim === true ||
+      style.foreground !== undefined ||
+      style.italic === true ||
+      style.underline === true
+    )
+  }
+
+  private applyStyleToElement(
+    element: HTMLElement,
+    style: TerminalDisplayStyle
+  ): void {
+    if (style.background) {
+      element.style.backgroundColor = style.background
+    }
+
+    if (style.bold) {
+      element.style.fontWeight = '700'
+    }
+
+    if (style.dim) {
+      element.style.opacity = '0.72'
+    }
+
+    if (style.foreground) {
+      element.style.color = style.foreground
+    }
+
+    if (style.italic) {
+      element.style.fontStyle = 'italic'
+    }
+
+    if (style.underline) {
+      element.style.textDecoration = 'underline'
+    }
+  }
+
+  private createTextNode(text: string, style: TerminalDisplayStyle): Node {
+    if (!this.hasStyle(style)) {
+      return document.createTextNode(text)
+    }
+
+    const span = document.createElement('span')
+    span.dataset.terminalStyleRun = 'true'
+    span.textContent = text
+    this.applyStyleToElement(span, style)
+
+    return span
+  }
+
+  private appendRunFragment(
+    fragments: Node[],
+    text: string,
+    style: TerminalDisplayStyle
+  ): void {
+    if (text.length === 0) {
+      return
+    }
+
+    fragments.push(this.createTextNode(text, style))
+  }
+
+  private createOutputFragments(
+    runs: readonly TerminalDisplayRun[],
+    cursorOffset: number
+  ): Node[] {
+    const fragments: Node[] = []
+    let offset = 0
+    let didRenderCursor = false
+
+    for (const run of runs) {
+      const runStart = offset
+      const runEnd = runStart + run.text.length
+
+      if (
+        !didRenderCursor &&
+        cursorOffset >= runStart &&
+        cursorOffset <= runEnd
+      ) {
+        const splitOffset = cursorOffset - runStart
+
+        if (
+          splitOffset > 0 &&
+          splitOffset < run.text.length &&
+          this.hasStyle(run.style)
+        ) {
+          const runElement = document.createElement('span')
+          runElement.dataset.terminalStyleRun = 'true'
+          this.applyStyleToElement(runElement, run.style)
+          runElement.append(
+            document.createTextNode(run.text.slice(0, splitOffset)),
+            this.createCursorElement(),
+            document.createTextNode(run.text.slice(splitOffset))
+          )
+          fragments.push(runElement)
+          didRenderCursor = true
+        } else {
+          this.appendRunFragment(
+            fragments,
+            run.text.slice(0, splitOffset),
+            run.style
+          )
+          fragments.push(this.createCursorElement())
+          didRenderCursor = true
+          this.appendRunFragment(
+            fragments,
+            run.text.slice(splitOffset),
+            run.style
+          )
+        }
+      } else {
+        this.appendRunFragment(fragments, run.text, run.style)
+      }
+
+      offset = runEnd
+    }
+
+    if (!didRenderCursor) {
+      fragments.push(this.createCursorElement())
+    }
+
+    return fragments
+  }
+
   private renderOutput(): void {
     const text = this.outputBuffer.readText()
+    const runs = this.outputBuffer.readStyledRuns()
 
     const cursorOffset = Math.min(
       this.outputBuffer.readCursorOffset(),
       text.length
     )
 
-    const fragments: Node[] = []
-
-    if (cursorOffset > 0) {
-      fragments.push(document.createTextNode(text.slice(0, cursorOffset)))
-    }
-
-    fragments.push(this.createCursorElement())
-
-    if (cursorOffset < text.length) {
-      fragments.push(document.createTextNode(text.slice(cursorOffset)))
-    }
+    const fragments = this.createOutputFragments(runs, cursorOffset)
 
     this.output.replaceChildren(...fragments)
     this.root.scrollTop = this.root.scrollHeight

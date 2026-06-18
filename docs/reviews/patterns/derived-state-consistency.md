@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-13
+last_updated: 2026-06-18
 ref_count: 6
 ---
 
@@ -121,4 +121,13 @@ base data is technically "correct."
 - **Finding:** The restore effect correctly recomputes `activePtyId` when `restartPersistedActiveShell` spawns a replacement PTY for the persisted active shell. That updated value is passed to `reconstructWorkspace`, but the subsequent `activate()` call still used the original `list.activeSessionId`. In the graceful-quit restart path that original value is `null`, so callers that rely on the active-PTY activation branch (no `onActivePersisted` handler) fall back to the first session instead of selecting the restarted active shell.
 - **Fix:** Pass the updated `activePtyId` local to `activate()` instead of `list.activeSessionId`.
 - **Verification:** Added regression test that restarts a persisted active shell without an `onActivePersisted` handler and asserts `onActiveResolved` is called with the workspace session id.
+- **Commit:** same commit as this entry
+
+### 9. `readStyledRuns()` rescans the entire display buffer on every `write()`
+
+- **Source:** github-claude | PR #530 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L577-609
+- **Finding:** `renderOutput()` called `readStyledRuns()` on every `writeParsedOutput()`, iterating every character in the display buffer to recompute style-run boundaries. With the default 10_000-line scrollback this produced ~800k style comparisons per write for a full buffer, and high-throughput terminal output could trigger 50-100+ such writes per second.
+- **Fix:** Removed the parallel `styles` array and made `DisplayState` maintain an incremental `runs` list. `applyDisplayData` now pushes, splits, and merges run entries as characters are appended or erased, so `readStyledRuns()` returns the pre-computed list in O(1) instead of rescanning the buffer.
 - **Commit:** same commit as this entry

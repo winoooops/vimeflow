@@ -4,6 +4,7 @@ import {
   getClearScreenSentinel,
   getCursorLeftSentinel,
   getCursorRightSentinel,
+  getSgrStyleSentinel,
 } from './terminalControlParser'
 
 const ESC = '\x1b'
@@ -99,6 +100,26 @@ describe('TerminalControlSequenceParser', () => {
 
     expect(visible).toBe('prompt branch done')
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves CSI style sequences as display-only sentinels when configured', () => {
+    const parser = new TerminalControlSequenceParser({
+      consumeControlsWithoutSubscribers: true,
+      preserveSgrStyles: true,
+    })
+
+    const output = parser.transformDisplayOutput(
+      `prompt ${ESC}[38;2;243;139;168${SGR_FINAL}` +
+        `branch${ESC}[1;4${SGR_FINAL}!${ESC}[0${SGR_FINAL} done`,
+      null
+    )
+
+    expect(output.visibleText).toBe('prompt branch! done')
+    expect(output.displayText).toBe(
+      `prompt ${getSgrStyleSentinel([38, 2, 243, 139, 168])}` +
+        `branch${getSgrStyleSentinel([1, 4])}!` +
+        `${getSgrStyleSentinel([0])} done`
+    )
   })
 
   test('strips short ESC mode controls from visible output', () => {
