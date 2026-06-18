@@ -27,6 +27,8 @@ const CURSOR_POSITION_SENTINEL_END = '\u{F000B}'
 const ERASE_DISPLAY_SENTINELS = ['\u{F000C}', '\u{F000D}']
 const SAVE_CURSOR_SENTINEL = '\u{F000E}'
 const RESTORE_CURSOR_SENTINEL = '\u{F000F}'
+const CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START = '\u{F0010}'
+const CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END = '\u{F0011}'
 
 export interface TerminalControlSequenceOutput {
   readonly visibleText: string
@@ -40,6 +42,11 @@ export interface SgrStyleSentinel {
 
 export interface CursorPositionSentinel {
   readonly row: number
+  readonly column: number
+  readonly length: number
+}
+
+export interface CursorHorizontalAbsoluteSentinel {
   readonly column: number
   readonly length: number
 }
@@ -65,6 +72,11 @@ export const getCursorPositionSentinel = (
   column: number
 ): string =>
   `${CURSOR_POSITION_SENTINEL_START}${row};${column}${CURSOR_POSITION_SENTINEL_END}`
+
+export const getCursorHorizontalAbsoluteSentinel = (
+  column: number
+): string =>
+  `${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START}${column}${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END}`
 
 export const getSaveCursorSentinel = (): string => SAVE_CURSOR_SENTINEL
 
@@ -118,6 +130,10 @@ export const isSaveCursorSentinel = (character: string): boolean =>
 export const isRestoreCursorSentinel = (character: string): boolean =>
   character === RESTORE_CURSOR_SENTINEL
 
+export const isCursorHorizontalAbsoluteSentinel = (
+  character: string
+): boolean => character === CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START
+
 export const readCursorPositionSentinel = (
   data: string,
   startIndex: number
@@ -143,6 +159,41 @@ export const readCursorPositionSentinel = (
     row: Number(rowText),
     column: Number(columnText),
     length: contentEnd + CURSOR_POSITION_SENTINEL_END.length - startIndex,
+  }
+}
+
+export const readCursorHorizontalAbsoluteSentinel = (
+  data: string,
+  startIndex: number
+): CursorHorizontalAbsoluteSentinel | null => {
+  if (!data.startsWith(CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START, startIndex)) {
+    return null
+  }
+
+  const contentStart =
+    startIndex + CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START.length
+
+  const contentEnd = data.indexOf(
+    CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END,
+    contentStart
+  )
+
+  if (contentEnd === -1) {
+    return null
+  }
+
+  const columnText = data.slice(contentStart, contentEnd)
+
+  if (!/^\d+$/.test(columnText)) {
+    return null
+  }
+
+  return {
+    column: Number(columnText),
+    length:
+      contentEnd +
+      CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END.length -
+      startIndex,
   }
 }
 
@@ -529,10 +580,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (column !== null) {
             const normalizedColumn = column === 0 ? 1 : column
 
-            const control = `\r${repeatDisplayControl(
-              getCursorRightSentinel(),
-              normalizedColumn - 1
-            )}`
+            const control = getCursorHorizontalAbsoluteSentinel(normalizedColumn)
 
             visible += control
             display += control

@@ -425,7 +425,7 @@ describe('ghosttyInstance', () => {
       created.viewportReader.readVisibleText()
 
     expect(created.terminal.cols).toBe(12)
-    expect(rows[0]?.textContent).toBe(prompt.slice(0, 12))
+    expect(rows[0]?.textContent).toBe(`${prompt.slice(0, 12)}\n`)
     expect(cursor?.parentElement).toBe(rows[1])
     expect(cursor?.previousSibling?.textContent).toBe(prompt.slice(12))
     expect(visibleTextBeforeExtraDelete).not.toContain(typedText)

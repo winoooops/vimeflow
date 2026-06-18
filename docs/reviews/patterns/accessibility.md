@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-13
-ref_count: 23
+ref_count: 24
 ---
 
 # Accessibility
@@ -532,3 +532,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 50. prefers-reduced-motion targets outer cursor span, not the animated marker
+
+- **Source:** github-claude | PR #534 round 2 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/index.css` L265-270
+- **Finding:** The `@media (prefers-reduced-motion: reduce)` rule targeted `[data-terminal-cursor='true']`, but the blinking `@keyframes vfTerminalCursorBlink` animation was applied inline to the child `[data-terminal-cursor-marker='true']` span. `animation` is not inherited, so reduced-motion users still saw the blinking cursor.
+- **Fix:** Changed the media-query selector to `[data-terminal-cursor-marker='true']` so the animation is actually disabled for users who prefer reduced motion.
+- **Commit:** same commit as this entry
+
+### 51. Disable cursor marker animation for reduced motion (connector duplicate)
+
+- **Source:** github-codex-connector | PR #534 round 2 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/index.css` L268
+- **Finding:** Same root cause as finding 50: the reduced-motion override targeted the wrapper span while the animation lived on the inner marker span, so the override had no effect.
+- **Fix:** Addressed by the same CSS selector change as finding 50.
+- **Commit:** same commit as this entry

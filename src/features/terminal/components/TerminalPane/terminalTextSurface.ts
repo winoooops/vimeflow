@@ -681,6 +681,10 @@ export class TerminalTextSurface implements TerminalSurface {
       }
 
       offset += 1
+      const newlineMarker = document.createElement('span')
+      newlineMarker.style.fontSize = '0'
+      newlineMarker.appendChild(document.createTextNode('\n'))
+      currentRow.appendChild(newlineMarker)
       currentRow = this.createOutputRow()
       rows.push(currentRow)
     }

@@ -8,6 +8,7 @@ import {
   isCursorUpSentinel,
   isRestoreCursorSentinel,
   isSaveCursorSentinel,
+  readCursorHorizontalAbsoluteSentinel,
   readCursorPositionSentinel,
   readSgrStyleSentinel,
 } from './terminalControlParser'
@@ -441,8 +442,48 @@ const findOffsetForCellColumn = (
   return lineEnd
 }
 
+const findOffsetForChaColumn = (
+  text: string,
+  lineStart: number,
+  lineEnd: number,
+  targetColumn: number
+): number => {
+  let cursor = lineStart
+  let column = 0
+
+  while (cursor < lineEnd) {
+    const width = readTerminalCellWidth(text, cursor)
+    const nextColumn = column + width
+
+    if (nextColumn > targetColumn) {
+      return cursor
+    }
+
+    if (nextColumn === targetColumn) {
+      return cursor + readCodePointLength(text, cursor)
+    }
+
+    column = nextColumn
+    cursor += readCodePointLength(text, cursor)
+  }
+
+  return lineEnd
+}
+
 const readCursorColumn = (text: string, cursor: number): number =>
   readCellWidth(text, findLineStart(text, cursor), cursor)
+
+const readCursorRow = (text: string, cursor: number): number => {
+  let row = 1
+
+  for (let index = 0; index < cursor; index += 1) {
+    if (text[index] === '\n') {
+      row += 1
+    }
+  }
+
+  return row
+}
 
 const moveCursorUp = (text: string, cursor: number): number => {
   const currentLineStart = findLineStart(text, cursor)
@@ -623,13 +664,85 @@ const moveCursorToPosition = (
   }
 }
 
+const moveCursorToHorizontalAbsoluteColumn = (
+  text: string,
+  runs: readonly TerminalDisplayRun[],
+  softWrapOffsets: readonly number[],
+  row: number,
+  column: number,
+  style: TerminalDisplayStyle
+): DisplayCharacterResult => {
+  const targetRow = normalizeCursorPositionValue(row)
+  const targetColumn = normalizeCursorPositionValue(column)
+  let nextText = text
+  let nextRuns = runs
+  let nextSoftWrapOffsets = softWrapOffsets
+  let cursor = 0
+  let currentRow = 1
+
+  while (currentRow < targetRow) {
+    const lineEnd = findLineEnd(nextText, cursor)
+
+    if (lineEnd < nextText.length) {
+      cursor = lineEnd + 1
+    } else {
+      nextRuns = insertRunText(nextRuns, nextText.length, '\n', style)
+      nextSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
+        nextSoftWrapOffsets,
+        nextText.length,
+        0,
+        1
+      )
+      nextText = `${nextText}\n`
+      cursor = nextText.length
+    }
+
+    currentRow += 1
+  }
+
+  const lineEnd = findLineEnd(nextText, cursor)
+  const targetCellColumn = targetColumn - 1
+  const lineCellWidth = readCellWidth(nextText, cursor, lineEnd)
+  let targetCursor = findOffsetForChaColumn(
+    nextText,
+    cursor,
+    lineEnd,
+    targetCellColumn
+  )
+
+  if (targetCellColumn > lineCellWidth) {
+    const padding = ' '.repeat(targetCellColumn - lineCellWidth)
+
+    nextRuns = insertRunText(nextRuns, lineEnd, padding, style)
+    nextSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
+      nextSoftWrapOffsets,
+      lineEnd,
+      0,
+      padding.length
+    )
+
+    nextText = `${nextText.slice(0, lineEnd)}${padding}${nextText.slice(
+      lineEnd
+    )}`
+    targetCursor = lineEnd + padding.length
+  }
+
+  return {
+    text: nextText,
+    cursor: targetCursor,
+    runs: nextRuns,
+    softWrapOffsets: nextSoftWrapOffsets,
+  }
+}
+
 const softWrapAtCursor = (
   text: string,
   runs: readonly TerminalDisplayRun[],
   softWrapOffsets: readonly number[],
   cursor: number,
   style: TerminalDisplayStyle,
-  columns: number | null
+  columns: number | null,
+  character: string
 ): DisplayCharacterResult => {
   if (columns === null) {
     return { text, cursor, runs, softWrapOffsets }
@@ -638,7 +751,10 @@ const softWrapAtCursor = (
   const lineStart = findLineStart(text, cursor)
   const lineCellWidth = readCellWidth(text, lineStart, cursor)
 
-  if (cursor <= lineStart || lineCellWidth < columns) {
+  if (
+    cursor <= lineStart ||
+    lineCellWidth + readTerminalCellWidth(character, 0) <= columns
+  ) {
     return { text, cursor, runs, softWrapOffsets }
   }
 
@@ -1034,6 +1150,30 @@ const applyDisplayData = (
       continue
     }
 
+    const cursorHorizontalAbsoluteControl = readCursorHorizontalAbsoluteSentinel(
+      data,
+      index
+    )
+
+    if (cursorHorizontalAbsoluteControl) {
+      const next = moveCursorToHorizontalAbsoluteColumn(
+        text,
+        runs,
+        softWrapOffsets,
+        readCursorRow(text, cursor),
+        cursorHorizontalAbsoluteControl.column,
+        style
+      )
+
+      text = next.text
+      runs = next.runs
+      softWrapOffsets = next.softWrapOffsets
+      cursor = next.cursor
+      pendingCr = false
+      index += cursorHorizontalAbsoluteControl.length
+      continue
+    }
+
     const characterLength = readCodePointLength(data, index)
     const character = data.slice(index, index + characterLength)
     const eraseDisplayMode = getEraseDisplayModeFromSentinel(character)
@@ -1098,7 +1238,26 @@ const applyDisplayData = (
     }
 
     if (isCursorDownSentinel(character)) {
-      cursor = moveCursorDown(text, cursor)
+      const currentLineEnd = findLineEnd(text, cursor)
+
+      if (currentLineEnd >= text.length) {
+        const next = moveCursorToPosition(
+          text,
+          runs,
+          softWrapOffsets,
+          readCursorRow(text, cursor) + 1,
+          readCursorColumn(text, cursor) + 1,
+          style
+        )
+
+        text = next.text
+        runs = next.runs
+        softWrapOffsets = next.softWrapOffsets
+        cursor = next.cursor
+      } else {
+        cursor = moveCursorDown(text, cursor)
+      }
+
       pendingCr = false
       continue
     }
@@ -1159,7 +1318,8 @@ const applyDisplayData = (
       softWrapOffsets,
       cursor,
       style,
-      columns
+      columns,
+      character
     )
     text = wrapped.text
     runs = wrapped.runs

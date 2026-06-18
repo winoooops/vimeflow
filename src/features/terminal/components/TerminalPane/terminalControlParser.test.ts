@@ -3,6 +3,7 @@ import {
   TerminalControlSequenceParser,
   getClearScreenSentinel,
   getCursorDownSentinel,
+  getCursorHorizontalAbsoluteSentinel,
   getCursorLeftSentinel,
   getCursorPositionSentinel,
   getCursorRightSentinel,
@@ -176,7 +177,7 @@ describe('TerminalControlSequenceParser', () => {
       `old${getClearScreenSentinel()}abc` +
         `${getCursorLeftSentinel()}${getCursorLeftSentinel()}` +
         `XY${getCursorRightSentinel()}z` +
-        `\r${getCursorRightSentinel()}${getCursorRightSentinel()}!`
+        `${getCursorHorizontalAbsoluteSentinel(3)}!`
     )
     expect(handler).not.toHaveBeenCalled()
   })
@@ -212,7 +213,9 @@ describe('TerminalControlSequenceParser', () => {
     )
 
     expect(visible).toBe(
-      `abc${getCursorLeftSentinel()}` + `XY${getCursorRightSentinel()}z` + `\r!`
+      `abc${getCursorLeftSentinel()}` +
+        `XY${getCursorRightSentinel()}z` +
+        `${getCursorHorizontalAbsoluteSentinel(1)}!`
     )
     expect(handler).not.toHaveBeenCalled()
   })

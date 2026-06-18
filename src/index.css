@@ -263,7 +263,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-terminal-cursor='true'] {
+  [data-terminal-cursor-marker='true'] {
     animation: none !important;
     opacity: 1 !important;
   }

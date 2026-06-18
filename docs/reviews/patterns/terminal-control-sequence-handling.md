@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-18
-ref_count: 4
+ref_count: 5
 ---
 
 # Terminal Control Sequence Handling
@@ -153,4 +153,31 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-430
 - **Finding:** When repainting an existing screen row that is exactly `columns` wide, the next printable cell should wrap onto the already-existing next row and overwrite there. This branch always inserts a new `\n` at the cursor, so a redraw like an existing `abcd...
 - **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 16. ESC[G (cursor horizontal absolute) skips columns inside wide characters
+
+- **Source:** github-claude | PR #534 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L522-540
+- **Finding:** The `ESC[nG` handler translated the sequence to `\r` plus cursor-right sentinels. `moveCursorRight` advances by whole glyphs, so when the target column fell inside a wide character the cursor overshot to the character after it.
+- **Fix:** Added a dedicated `CursorHorizontalAbsoluteSentinel` that carries only the target column. The display buffer resolves it on the current row using a column lookup that lands on the wide-glyph start when the target falls inside the glyph.
+- **Commit:** same commit as this entry
+
+### 17. Create missing rows for cursor-down moves
+
+- **Source:** github-codex-connector | PR #534 round 2 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L466-478
+- **Finding:** `moveCursorDown` returned the end of the last buffered line when asked to move below it. A subsequent `\r` then operated on the original line and overwrote it, so `line1\x1b[Eline2` rendered as `line2` instead of two rows.
+- **Fix:** In `applyDisplayData`, when a cursor-down sentinel is at the last line, route through `moveCursorToPosition(row + 1, current column + 1)` so the new row is materialized and padded to the original horizontal position.
+- **Commit:** same commit as this entry
+
+### 18. Wrap wide glyphs before appending them at the margin
+
+- **Source:** github-codex-connector | PR #534 round 2 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L626-643
+- **Finding:** `softWrapAtCursor` wrapped only when the current line width reached `columns`. A two-cell glyph written at `columns - 1` therefore produced a line wider than the terminal, clipping the glyph and throwing off later cursor math.
+- **Fix:** Pass the incoming character to `softWrapAtCursor` and wrap when `lineCellWidth + readTerminalCellWidth(character, 0) > columns`.
 - **Commit:** same commit as this entry

@@ -347,7 +347,7 @@ describe('plainTextInstance', () => {
     )
 
     expect(rows).toHaveLength(2)
-    expect(rows?.[0]?.textContent).toBe('abcde')
+    expect(rows?.[0]?.textContent).toBe('abcde\n')
     expect(rows?.[1]?.textContent).toBe('gh')
   })
 
