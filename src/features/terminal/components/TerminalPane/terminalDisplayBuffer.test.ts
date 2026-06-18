@@ -9,6 +9,8 @@ import {
   getCursorUpSentinel,
   getEraseDisplaySentinel,
   getEraseLineSentinel,
+  getRestoreCursorSentinel,
+  getSaveCursorSentinel,
   getSgrStyleSentinel,
 } from './terminalControlParser'
 import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
@@ -103,6 +105,25 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write(`\r${getEraseLineSentinel(2)}ghijkl`)
 
     expect(buffer.readVisibleText()).toBe('ghijk\nl')
+  })
+
+  test('deletes wrapped input back across soft-wrap boundaries', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 12 })
+    const prompt = '04:42 ❯ '
+    const typedText = 'hello world '.repeat(2)
+
+    buffer.write(prompt)
+    buffer.write(typedText)
+
+    expect(buffer.readVisibleText().split('\n')).toHaveLength(3)
+
+    typedText.split('').forEach(() => {
+      buffer.write('\b \b')
+    })
+
+    expect(buffer.readCursorOffset()).toBe(prompt.length)
+    expect(buffer.readVisibleText()).not.toContain('hello')
+    expect(buffer.readVisibleText()).not.toContain('world')
   })
 
   test('overwrites the existing next row when redrawing a full-width line', () => {
@@ -214,6 +235,25 @@ describe('TerminalDisplayBuffer', () => {
       '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
     )
     expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
+  })
+
+  test('restores the editable prompt cursor before right-prompt text', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('❯ ')
+    buffer.write(getSaveCursorSentinel())
+    buffer.write(getCursorPositionSentinel(1, 12))
+    buffer.write('03:52')
+    buffer.write(getRestoreCursorSentinel())
+
+    expect(buffer.readCursorOffset()).toBe('❯ '.length)
+
+    buffer.write('a')
+    buffer.write('\b \b')
+
+    expect(buffer.readCursorOffset()).toBe('❯ '.length)
+    expect(buffer.readText().startsWith('❯  ')).toBe(true)
+    expect(buffer.readVisibleText()).toContain('03:52')
   })
 
   test('erases display content from the start through the cursor', () => {

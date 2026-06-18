@@ -318,6 +318,136 @@ describe('ghosttyInstance', () => {
     expect(visibleText.match(/Starting MCP servers/g)).toHaveLength(1)
   })
 
+  test('restores the editable cursor after byte-path right-prompt controls', () => {
+    const created = createTrackedGhosttyTerminal()
+    const output = `❯ ${ESC}7${ESC}[1;12H03:52${ESC}8a\b \b`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const row = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )
+    const cursor = row?.querySelector('[data-terminal-cursor="true"]')
+
+    expect(created.viewportReader.readVisibleText()).toContain('03:52')
+    expect(row?.textContent?.startsWith('❯  ')).toBe(true)
+    expect(cursor?.previousSibling?.textContent).toBe('❯ ')
+  })
+
+  test('keeps the prompt cursor stable after narrow wrapped input deletes', () => {
+    const created = createTrackedGhosttyTerminal()
+    const dataHandler = vi.fn()
+    const container = document.createElement('div')
+    const prompt = '04:42 ❯ '
+    const typedText = 'hello world '.repeat(2)
+    const deleteEcho = '\b \b'.repeat(typedText.length)
+    const output = `${prompt}${typedText}${deleteEcho}`
+
+    setElementSize(container, 112, 180)
+    created.terminal.open(container)
+    created.terminal.onData(dataHandler)
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+    const cursorRow = cursor?.parentElement
+
+    const visibleTextBeforeExtraDelete =
+      created.viewportReader.readVisibleText()
+
+    expect(created.terminal.cols).toBe(12)
+    expect(visibleTextBeforeExtraDelete.split('\n')).toHaveLength(3)
+    expect(visibleTextBeforeExtraDelete).not.toContain('hello')
+    expect(visibleTextBeforeExtraDelete).not.toContain('world')
+    expect(cursorRow?.dataset.terminalRow).toBe('true')
+    expect(cursor?.previousSibling?.textContent).toBe(prompt)
+
+    const input = created.terminal.element?.querySelector('textarea')
+
+    input?.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(dataHandler).toHaveBeenCalledWith('\x7f')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      visibleTextBeforeExtraDelete
+    )
+  })
+
+  test('keeps the prompt cursor stable when the prompt also wraps', () => {
+    const created = createTrackedGhosttyTerminal()
+    const dataHandler = vi.fn()
+    const container = document.createElement('div')
+    const prompt = 'prompt row one $ ❯ '
+    const typedText = 'wrapped input '.repeat(2)
+    const deleteEcho = '\b \b'.repeat(typedText.length)
+    const output = `${prompt}${typedText}${deleteEcho}`
+
+    setElementSize(container, 112, 180)
+    created.terminal.open(container)
+    created.terminal.onData(dataHandler)
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const rows = Array.from(
+      created.terminal.element?.querySelectorAll(
+        '[data-terminal-row="true"]'
+      ) ?? []
+    )
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    const visibleTextBeforeExtraDelete =
+      created.viewportReader.readVisibleText()
+
+    expect(created.terminal.cols).toBe(12)
+    expect(rows[0]?.textContent).toBe(prompt.slice(0, 12))
+    expect(cursor?.parentElement).toBe(rows[1])
+    expect(cursor?.previousSibling?.textContent).toBe(prompt.slice(12))
+    expect(visibleTextBeforeExtraDelete).not.toContain(typedText)
+
+    const input = created.terminal.element?.querySelector('textarea')
+
+    input?.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(dataHandler).toHaveBeenCalledWith('\x7f')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      visibleTextBeforeExtraDelete
+    )
+    expect(cursor?.parentElement).toBe(rows[1])
+    expect(cursor?.previousSibling?.textContent).toBe(prompt.slice(12))
+  })
+
   test('renders a visual cursor from the Ghostty byte parser state', () => {
     const created = createTrackedGhosttyTerminal()
     const output = `abc${ESC}[2D`

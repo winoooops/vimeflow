@@ -173,11 +173,18 @@ describe('plainTextInstance', () => {
       '[data-terminal-cursor="true"]'
     ) as HTMLElement | null
 
+    const marker = cursor?.querySelector(
+      '[data-terminal-cursor-marker="true"]'
+    ) as HTMLElement | null
+
     expect(output?.textContent).toBe('abc')
-    expect(cursor?.style.backgroundColor).toBe('var(--terminal-cursor-color)')
-    expect(cursor?.style.borderLeft).toBe('')
-    expect(cursor?.style.animationName).toBe('vfTerminalCursorBlink')
-    expect(cursor?.style.width).toBe('0.62em')
+    expect(cursor?.style.position).toBe('relative')
+    expect(cursor?.style.width).toBe('0px')
+    expect(marker?.style.backgroundColor).toBe('var(--terminal-cursor-color)')
+    expect(marker?.style.borderLeft).toBe('')
+    expect(marker?.style.animationName).toBe('vfTerminalCursorBlink')
+    expect(marker?.style.position).toBe('absolute')
+    expect(marker?.style.width).toBe('0.62em')
     expect(created.viewportReader.readVisibleText()).toBe('abc')
   })
 

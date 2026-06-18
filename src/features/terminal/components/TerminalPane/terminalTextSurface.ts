@@ -503,23 +503,37 @@ export class TerminalTextSurface implements TerminalSurface {
 
   private createCursorElement(): HTMLElement {
     const cursor = document.createElement('span')
+    const marker = document.createElement('span')
+
     cursor.dataset.terminalCursor = 'true'
     cursor.setAttribute('aria-hidden', 'true')
+    marker.dataset.terminalCursorMarker = 'true'
 
     Object.assign(cursor.style, {
+      display: 'inline-block',
+      height: '1em',
+      pointerEvents: 'none',
+      position: 'relative',
+      userSelect: 'none',
+      verticalAlign: '-0.12em',
+      width: '0',
+    })
+
+    Object.assign(marker.style, {
       animationDuration: '1.1s',
       animationIterationCount: 'infinite',
       animationName: 'vfTerminalCursorBlink',
       animationTimingFunction: 'steps(1, end)',
       backgroundColor: 'var(--terminal-cursor-color)',
-      display: 'inline-block',
+      display: 'block',
       height: '1em',
-      marginRight: '-0.62em',
-      pointerEvents: 'none',
-      userSelect: 'none',
-      verticalAlign: '-0.12em',
+      left: '0',
+      position: 'absolute',
+      top: '0',
       width: '0.62em',
     })
+
+    cursor.append(marker)
 
     return cursor
   }

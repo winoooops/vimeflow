@@ -9,6 +9,8 @@ import {
   getCursorUpSentinel,
   getEraseDisplaySentinel,
   getEraseLineSentinel,
+  getRestoreCursorSentinel,
+  getSaveCursorSentinel,
   getSgrStyleSentinel,
 } from './terminalControlParser'
 
@@ -257,6 +259,30 @@ describe('TerminalControlSequenceParser', () => {
         `${getCursorPositionSentinel(1, 1)}home` +
         `${getCursorPositionSentinel(3, 4)}there` +
         `${getCursorPositionSentinel(1, 1)}reset`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves cursor save and restore controls as display sentinels', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const csiSave = `${ESC}[s`
+    const csiRestore = `${ESC}[u`
+
+    const visible = parser.transformOutput(
+      `prompt${ESC}7right${ESC}8input` +
+        `alt${csiSave}status${csiRestore}again`,
+      null
+    )
+
+    expect(visible).toBe(
+      `prompt${getSaveCursorSentinel()}right` +
+        `${getRestoreCursorSentinel()}input` +
+        `alt${getSaveCursorSentinel()}status` +
+        `${getRestoreCursorSentinel()}again`
     )
     expect(handler).not.toHaveBeenCalled()
   })

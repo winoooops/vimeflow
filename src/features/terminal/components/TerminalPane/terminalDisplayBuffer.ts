@@ -6,6 +6,8 @@ import {
   isCursorRightSentinel,
   isCursorDownSentinel,
   isCursorUpSentinel,
+  isRestoreCursorSentinel,
+  isSaveCursorSentinel,
   readCursorPositionSentinel,
   readSgrStyleSentinel,
 } from './terminalControlParser'
@@ -39,6 +41,8 @@ interface DisplayState {
   readonly text: string
   readonly cursor: number
   readonly pendingCr: boolean
+  readonly savedCursor: number | null
+  readonly softWrapOffsets: readonly number[]
   readonly style: TerminalDisplayStyle
   readonly runs: readonly TerminalDisplayRun[]
 }
@@ -47,6 +51,7 @@ interface DisplayCharacterResult {
   readonly text: string
   readonly cursor: number
   readonly runs: readonly TerminalDisplayRun[]
+  readonly softWrapOffsets: readonly number[]
 }
 
 export interface TerminalDisplayBufferOptions {
@@ -58,6 +63,8 @@ const createEmptyState = (): DisplayState => ({
   text: '',
   cursor: 0,
   pendingCr: false,
+  savedCursor: null,
+  softWrapOffsets: [],
   style: {},
   runs: [],
 })
@@ -358,9 +365,63 @@ const normalizeCursorPositionValue = (value: number): number =>
 const normalizeSoftWrapColumns = (columns: number): number =>
   Math.max(MIN_SOFT_WRAP_COLUMNS, Math.floor(columns))
 
+const updateSoftWrapOffsetsForEdit = (
+  softWrapOffsets: readonly number[],
+  startOffset: number,
+  removedLength: number,
+  insertedLength: number
+): readonly number[] => {
+  const endOffset = startOffset + removedLength
+  const delta = insertedLength - removedLength
+
+  return softWrapOffsets.flatMap((offset) => {
+    if (offset >= startOffset && offset < endOffset) {
+      return []
+    }
+
+    if (offset >= endOffset) {
+      return [offset + delta]
+    }
+
+    return [offset]
+  })
+}
+
+const isSoftWrapOffset = (
+  softWrapOffsets: readonly number[],
+  offset: number
+): boolean => softWrapOffsets.includes(offset)
+
+const moveCursorLeft = (
+  text: string,
+  cursor: number,
+  softWrapOffsets: readonly number[]
+): number => {
+  const lineStart = findLineStart(text, cursor)
+
+  if (cursor > lineStart) {
+    return cursor - readPreviousCodePointLength(text, cursor)
+  }
+
+  const previousNewline = cursor - 1
+
+  if (
+    previousNewline <= 0 ||
+    !isSoftWrapOffset(softWrapOffsets, previousNewline)
+  ) {
+    return lineStart
+  }
+
+  return Math.max(
+    findLineStart(text, previousNewline),
+    previousNewline - readPreviousCodePointLength(text, previousNewline)
+  )
+}
+
 const moveCursorToPosition = (
   text: string,
   runs: readonly TerminalDisplayRun[],
+  softWrapOffsets: readonly number[],
   row: number,
   column: number,
   style: TerminalDisplayStyle
@@ -369,6 +430,7 @@ const moveCursorToPosition = (
   const targetColumn = normalizeCursorPositionValue(column)
   let nextText = text
   let nextRuns = runs
+  let nextSoftWrapOffsets = softWrapOffsets
   let cursor = 0
   let currentRow = 1
 
@@ -379,6 +441,12 @@ const moveCursorToPosition = (
       cursor = lineEnd + 1
     } else {
       nextRuns = insertRunText(nextRuns, nextText.length, '\n', style)
+      nextSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
+        nextSoftWrapOffsets,
+        nextText.length,
+        0,
+        1
+      )
       nextText = `${nextText}\n`
       cursor = nextText.length
     }
@@ -393,6 +461,13 @@ const moveCursorToPosition = (
     const padding = ' '.repeat(targetCursor - lineEnd)
 
     nextRuns = insertRunText(nextRuns, lineEnd, padding, style)
+    nextSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
+      nextSoftWrapOffsets,
+      lineEnd,
+      0,
+      padding.length
+    )
+
     nextText = `${nextText.slice(0, lineEnd)}${padding}${nextText.slice(
       lineEnd
     )}`
@@ -402,36 +477,48 @@ const moveCursorToPosition = (
     text: nextText,
     cursor: targetCursor,
     runs: nextRuns,
+    softWrapOffsets: nextSoftWrapOffsets,
   }
 }
 
 const softWrapAtCursor = (
   text: string,
   runs: readonly TerminalDisplayRun[],
+  softWrapOffsets: readonly number[],
   cursor: number,
   style: TerminalDisplayStyle,
   columns: number | null
 ): DisplayCharacterResult => {
   if (columns === null) {
-    return { text, cursor, runs }
+    return { text, cursor, runs, softWrapOffsets }
   }
 
   const lineStart = findLineStart(text, cursor)
 
   if (cursor <= lineStart || cursor - lineStart < columns) {
-    return { text, cursor, runs }
+    return { text, cursor, runs, softWrapOffsets }
   }
 
   if (text[cursor] === '\n') {
-    return { text, cursor: cursor + 1, runs }
+    return { text, cursor: cursor + 1, runs, softWrapOffsets }
   }
 
   const newText = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
+
+  const shiftedSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
+    softWrapOffsets,
+    cursor,
+    0,
+    1
+  )
 
   return {
     text: newText,
     cursor: cursor + 1,
     runs: insertRunText(runs, cursor, '\n', style),
+    softWrapOffsets: [...shiftedSoftWrapOffsets, cursor].sort(
+      (left, right) => left - right
+    ),
   }
 }
 
@@ -643,6 +730,7 @@ const spliceRuns = (
 const writeDisplayCharacter = (
   text: string,
   runs: readonly TerminalDisplayRun[],
+  softWrapOffsets: readonly number[],
   cursor: number,
   character: string,
   style: TerminalDisplayStyle
@@ -658,6 +746,12 @@ const writeDisplayCharacter = (
       text: newText,
       cursor: cursor + character.length,
       runs: replaceRunText(runs, cursor, nextLength, character, style),
+      softWrapOffsets: updateSoftWrapOffsetsForEdit(
+        softWrapOffsets,
+        cursor,
+        nextLength,
+        character.length
+      ),
     }
   }
 
@@ -667,6 +761,12 @@ const writeDisplayCharacter = (
     text: newText,
     cursor: cursor + character.length,
     runs: insertRunText(runs, cursor, character, style),
+    softWrapOffsets: updateSoftWrapOffsetsForEdit(
+      softWrapOffsets,
+      cursor,
+      0,
+      character.length
+    ),
   }
 }
 
@@ -686,6 +786,12 @@ const eraseLineInState = (
       ...state,
       text: newText,
       runs: spliceRuns(state.runs, cursor, lineEnd),
+      softWrapOffsets: updateSoftWrapOffsetsForEdit(
+        state.softWrapOffsets,
+        cursor,
+        lineEnd - cursor,
+        0
+      ),
     }
   }
 
@@ -701,6 +807,12 @@ const eraseLineInState = (
       text: newText,
       cursor: lineStart,
       runs: spliceRuns(state.runs, lineStart, cursor + cursorCodePointLength),
+      softWrapOffsets: updateSoftWrapOffsetsForEdit(
+        state.softWrapOffsets,
+        lineStart,
+        cursor + cursorCodePointLength - lineStart,
+        0
+      ),
     }
   }
 
@@ -711,6 +823,12 @@ const eraseLineInState = (
     text: newText,
     cursor: lineStart,
     runs: spliceRuns(state.runs, lineStart, lineEnd),
+    softWrapOffsets: updateSoftWrapOffsetsForEdit(
+      state.softWrapOffsets,
+      lineStart,
+      lineEnd - lineStart,
+      0
+    ),
   }
 }
 
@@ -726,6 +844,12 @@ const eraseDisplayInState = (
       ...state,
       text: text.slice(0, cursor),
       runs: spliceRuns(state.runs, cursor, text.length),
+      softWrapOffsets: updateSoftWrapOffsetsForEdit(
+        state.softWrapOffsets,
+        cursor,
+        text.length - cursor,
+        0
+      ),
     }
   }
 
@@ -737,6 +861,12 @@ const eraseDisplayInState = (
     text: text.slice(endOffset),
     cursor: 0,
     runs: spliceRuns(state.runs, 0, endOffset),
+    softWrapOffsets: updateSoftWrapOffsetsForEdit(
+      state.softWrapOffsets,
+      0,
+      endOffset,
+      0
+    ),
   }
 }
 
@@ -748,6 +878,8 @@ const applyDisplayData = (
   let text = state.text
   let cursor = Math.min(Math.max(state.cursor, 0), text.length)
   let pendingCr = state.pendingCr
+  let savedCursor = state.savedCursor
+  let softWrapOffsets = state.softWrapOffsets
   let style = state.style
   let runs = state.runs
   let index = 0
@@ -767,6 +899,7 @@ const applyDisplayData = (
       const next = moveCursorToPosition(
         text,
         runs,
+        softWrapOffsets,
         cursorPositionControl.row,
         cursorPositionControl.column,
         style
@@ -774,6 +907,7 @@ const applyDisplayData = (
 
       text = next.text
       runs = next.runs
+      softWrapOffsets = next.softWrapOffsets
       cursor = next.cursor
       pendingCr = false
       index += cursorPositionControl.length
@@ -789,24 +923,28 @@ const applyDisplayData = (
 
     if (eraseDisplayMode !== null) {
       const nextState = eraseDisplayInState(
-        { text, cursor, pendingCr, style, runs },
+        { text, cursor, pendingCr, savedCursor, softWrapOffsets, style, runs },
         eraseDisplayMode
       )
       text = nextState.text
       runs = nextState.runs
       cursor = nextState.cursor
+      savedCursor = nextState.savedCursor
+      softWrapOffsets = nextState.softWrapOffsets
       pendingCr = false
       continue
     }
 
     if (eraseLineMode !== null) {
       const nextState = eraseLineInState(
-        { text, cursor, pendingCr, style, runs },
+        { text, cursor, pendingCr, savedCursor, softWrapOffsets, style, runs },
         eraseLineMode
       )
       text = nextState.text
       runs = nextState.runs
       cursor = nextState.cursor
+      savedCursor = nextState.savedCursor
+      softWrapOffsets = nextState.softWrapOffsets
       pendingCr = false
       continue
     }
@@ -815,15 +953,14 @@ const applyDisplayData = (
       text = ''
       runs = []
       cursor = 0
+      savedCursor = null
+      softWrapOffsets = []
       pendingCr = false
       continue
     }
 
     if (isCursorLeftSentinel(character)) {
-      cursor = Math.max(
-        findLineStart(text, cursor),
-        cursor - readPreviousCodePointLength(text, cursor)
-      )
+      cursor = moveCursorLeft(text, cursor, softWrapOffsets)
       pendingCr = false
       continue
     }
@@ -849,6 +986,18 @@ const applyDisplayData = (
       continue
     }
 
+    if (isSaveCursorSentinel(character)) {
+      savedCursor = cursor
+      pendingCr = false
+      continue
+    }
+
+    if (isRestoreCursorSentinel(character)) {
+      cursor = Math.min(savedCursor ?? cursor, text.length)
+      pendingCr = false
+      continue
+    }
+
     if (character === '\r') {
       cursor = findLineStart(text, cursor)
       pendingCr = true
@@ -870,30 +1019,60 @@ const applyDisplayData = (
 
       text = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
       runs = insertRunText(runs, cursor, '\n', style)
+      softWrapOffsets = updateSoftWrapOffsetsForEdit(
+        softWrapOffsets,
+        cursor,
+        0,
+        1
+      )
       cursor += 1
       pendingCr = false
       continue
     }
 
     if (character === '\b') {
-      cursor = Math.max(findLineStart(text, cursor), cursor - 1)
+      cursor = moveCursorLeft(text, cursor, softWrapOffsets)
       pendingCr = false
       continue
     }
 
-    const wrapped = softWrapAtCursor(text, runs, cursor, style, columns)
+    const wrapped = softWrapAtCursor(
+      text,
+      runs,
+      softWrapOffsets,
+      cursor,
+      style,
+      columns
+    )
     text = wrapped.text
     runs = wrapped.runs
+    softWrapOffsets = wrapped.softWrapOffsets
     cursor = wrapped.cursor
 
-    const next = writeDisplayCharacter(text, runs, cursor, character, style)
+    const next = writeDisplayCharacter(
+      text,
+      runs,
+      softWrapOffsets,
+      cursor,
+      character,
+      style
+    )
     text = next.text
     runs = next.runs
+    softWrapOffsets = next.softWrapOffsets
     cursor = next.cursor
     pendingCr = false
   }
 
-  return { text, cursor, pendingCr, style, runs }
+  return {
+    text,
+    cursor,
+    pendingCr,
+    savedCursor,
+    softWrapOffsets,
+    style,
+    runs,
+  }
 }
 
 const trimScrollbackLines = (
@@ -927,6 +1106,13 @@ const trimScrollbackLines = (
     text: text.slice(removedText.length),
     cursor: Math.max(0, state.cursor - removedText.length),
     pendingCr: state.pendingCr,
+    savedCursor:
+      state.savedCursor === null
+        ? null
+        : Math.max(0, state.savedCursor - removedText.length),
+    softWrapOffsets: state.softWrapOffsets.flatMap((offset) =>
+      offset >= removedText.length ? [offset - removedText.length] : []
+    ),
     style: state.style,
     runs: newRuns,
   }

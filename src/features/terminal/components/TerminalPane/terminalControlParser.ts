@@ -25,6 +25,8 @@ const CURSOR_DOWN_SENTINEL = '\u{F0009}'
 const CURSOR_POSITION_SENTINEL_START = '\u{F000A}'
 const CURSOR_POSITION_SENTINEL_END = '\u{F000B}'
 const ERASE_DISPLAY_SENTINELS = ['\u{F000C}', '\u{F000D}']
+const SAVE_CURSOR_SENTINEL = '\u{F000E}'
+const RESTORE_CURSOR_SENTINEL = '\u{F000F}'
 
 export interface TerminalControlSequenceOutput {
   readonly visibleText: string
@@ -63,6 +65,10 @@ export const getCursorPositionSentinel = (
   column: number
 ): string =>
   `${CURSOR_POSITION_SENTINEL_START}${row};${column}${CURSOR_POSITION_SENTINEL_END}`
+
+export const getSaveCursorSentinel = (): string => SAVE_CURSOR_SENTINEL
+
+export const getRestoreCursorSentinel = (): string => RESTORE_CURSOR_SENTINEL
 
 export const getSgrStyleSentinel = (parameters: readonly number[]): string =>
   `${SGR_STYLE_SENTINEL_START}${parameters.join(';')}${SGR_STYLE_SENTINEL_END}`
@@ -105,6 +111,12 @@ export const isCursorUpSentinel = (character: string): boolean =>
 
 export const isCursorDownSentinel = (character: string): boolean =>
   character === CURSOR_DOWN_SENTINEL
+
+export const isSaveCursorSentinel = (character: string): boolean =>
+  character === SAVE_CURSOR_SENTINEL
+
+export const isRestoreCursorSentinel = (character: string): boolean =>
+  character === RESTORE_CURSOR_SENTINEL
 
 export const readCursorPositionSentinel = (
   data: string,
@@ -617,6 +629,34 @@ export class TerminalControlSequenceParser implements TerminalParser {
           }
         }
 
+        if (finalByte === 's') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+
+          if (content.length === 0) {
+            const control = getSaveCursorSentinel()
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'u') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+
+          if (content.length === 0) {
+            const control = getRestoreCursorSentinel()
+
+            visible += control
+            display += control
+          }
+        }
+
         if (finalByte === 'm' && this.options.preserveSgrStyles) {
           const content = data.slice(
             sequenceStart + CSI_PREFIX.length,
@@ -648,6 +688,22 @@ export class TerminalControlSequenceParser implements TerminalParser {
       }
 
       cursor = terminator.index + terminator.length
+
+      const escFinalByte = data[terminator.index] ?? ''
+
+      if (escFinalByte === '7') {
+        const control = getSaveCursorSentinel()
+
+        visible += control
+        display += control
+      }
+
+      if (escFinalByte === '8') {
+        const control = getRestoreCursorSentinel()
+
+        visible += control
+        display += control
+      }
     }
 
     if (
