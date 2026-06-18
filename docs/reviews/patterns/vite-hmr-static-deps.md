@@ -33,6 +33,7 @@ paths, and keep any indexed callback logic consistent with the literal array's o
   module paths in the same order as `themeModules`, keeping the existing indexed
   callback logic intact.
 - **Commit:** same commit as this entry
+
 ### 2. themeModules.path undocumented coupling to static HMR accept array order
 
 - **Source:** github-claude | PR #532 round 2 | 2026-06-18

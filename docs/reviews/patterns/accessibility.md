@@ -595,6 +595,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** When `segments` was supplied and `decorative` was omitted, the component rendered proportional distribution segments but exposed `role="progressbar"` without `aria-valuenow`, which assistive technology treats as an indeterminate loading indicator. The co-located test also asserted the unsafe role, encoding the mismatch as the component's contract.
 - **Fix:** Derived an effective decorative state whenever `segments` is present (`const isDecorative = decorative || segments !== undefined`) so segmented bars are always `aria-hidden` and never emit progressbar semantics. Added a `trackTestId` prop to let tests query the track directly, and rewrote the segmented-bar test to assert `aria-hidden="true"` and the absence of a `progressbar` role.
 - **Commit:** same commit as this entry
+
 ### 57. Gruvbox Dark elevated surfaces fall below contrast threshold against text-on-surface
 
 - **Source:** github-codex-connector | PR #532 round 2 | 2026-06-18
