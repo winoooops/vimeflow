@@ -17,7 +17,6 @@ export type DockTabType = 'editor' | 'diff'
 interface DockTabProps {
   tab: DockTabType
   onTabChange: (next: DockTabType) => void
-  selectedFilePath: string | null
   onClose: () => void
   compactActions?: boolean
   /**
@@ -26,7 +25,7 @@ interface DockTabProps {
    * Defaults to 'right'.
    */
   menuAlign?: 'left' | 'right'
-  /** Slot rendered between the tab strip spacer and the file-path/close cluster. */
+  /** Slot rendered between the tab strip spacer and the action cluster. */
   children?: ReactNode
 }
 
@@ -55,7 +54,6 @@ const tabIconClass = (active: boolean): string =>
 export const DockTab = ({
   tab,
   onTabChange,
-  selectedFilePath,
   onClose,
   compactActions = false,
   menuAlign = 'right',
@@ -116,10 +114,6 @@ export const DockTab = ({
     }
   }, [compactActions])
 
-  const displayPath = selectedFilePath
-    ? selectedFilePath.replace(/^~\//, '')
-    : 'No file'
-
   const handleCompactKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape') {
       return
@@ -132,6 +126,7 @@ export const DockTab = ({
 
   return (
     <div
+      data-testid="dock-tab"
       className="relative flex h-[34px] min-w-0 items-center gap-1 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
       onKeyDown={compactActions ? handleCompactKeyDown : undefined}
       onBlurCapture={
@@ -194,17 +189,6 @@ export const DockTab = ({
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-lowest p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
-              {/* stopPropagation so clicking the read-only path label does not
-                  bubble to the container's onClick and close the menu */}
-              <Tooltip content={selectedFilePath} placement="bottom">
-                <span
-                  className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
-                  onClick={(e): void => e.stopPropagation()}
-                >
-                  {displayPath}
-                </span>
-              </Tooltip>
-
               <div className="flex items-center justify-between gap-2">
                 {children}
                 <Tooltip
@@ -228,12 +212,7 @@ export const DockTab = ({
         <>
           {children && <div className="shrink-0">{children}</div>}
 
-          <div className="ml-2 flex min-w-0 items-center gap-3">
-            <Tooltip content={selectedFilePath} placement="bottom">
-              <span className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline">
-                {displayPath}
-              </span>
-            </Tooltip>
+          <div className="ml-1 flex shrink-0 items-center">
             <Tooltip
               content="Collapse panel"
               shortcut={['Mod', '0']}

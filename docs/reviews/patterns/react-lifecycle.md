@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-17
 ref_count: 20
 ---
 
@@ -366,7 +366,15 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 37. Ref mutation + store write inside setStatus updater breaks React StrictMode
+### 37. `checkSelectedFile` existence probe re-runs on every git-watch poll
+
+- **Source:** github-claude | PR #510 round 5 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The `checkSelectedFile` effect in `WorkspaceView.tsx` listed `gitStatus.files` and `gitStatus.filesCwd` in its dependency array. With `watch: true`, `useGitStatus` emits a fresh `files` array reference on every poll, so the effect re-ran continuously even when nothing about the open file had changed. Each run reset `selectedEditorFileExists` to `null` and called `fileSystemService.readFile(editorBuffer.filePath)`, repeatedly transferring full file contents over IPC and transiently clearing the `DELETED` crumb state for deleted untracked buffers.
+- **Fix:** Introduced `buildSelectedFileGitKey` in `editorFileLifecycleStatus.ts` to derive a stable primitive key from the selected file's path, git cwd, repo root, and matching `ChangedFile` status/staging. The `checkSelectedFile` effect now depends on that key instead of the raw arrays, so the probe only runs when the selected file's relevant git state actually changes.
+
+### 38. Ref mutation + store write inside setStatus updater breaks React StrictMode
 
 - **Source:** github-claude | PR #456 round 1 | 2026-06-15
 - **Severity:** HIGH
@@ -375,7 +383,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure before `setStatus`, capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 38. Move seen-tool ID writes out of the state updater
+### 39. Move seen-tool ID writes out of the state updater
 
 - **Source:** github-codex-connector | PR #456 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
@@ -384,7 +392,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Same change as entry 37: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 39. Fragile newline separator in effect dependency signature
+### 40. Fragile newline separator in effect dependency signature
 
 - **Source:** github-claude | PR #459 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -393,7 +401,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Replaced the join/split signature with `JSON.stringify({ activePtyId, visiblePtyIds })` and parsed it inside the effect. JSON escapes any special characters, making the dependency string robust.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 40. Hook pre-plans then coordinator re-plans
+### 41. Hook pre-plans then coordinator re-plans
 
 - **Source:** github-claude | PR #459 round 1 | 2026-06-15
 - **Severity:** LOW
@@ -402,7 +410,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Removed the hook's pre-planning; it now serializes the raw `{ activePtyId, visiblePtyIds }` request as the effect dep and lets the coordinator do all planning internally.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 41. Hot-loading scope should match SplitView visibility
+### 42. Hot-loading scope should match SplitView visibility
 
 - **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
@@ -411,7 +419,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 42. Scroll-anchor compensation inferred prepend from list length
+### 43. Scroll-anchor compensation inferred prepend from list length
 
 - **Source:** github-claude + github-codex-connector (P2) | PR #464 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -420,7 +428,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` with `CSS.escape` and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 43. Batch prepends compensated by only the first inserted row height
+### 44. Batch prepends compensated by only the first inserted row height
 
 - **Source:** github-codex-connector (P2) | PR #464 round 2 | 2026-06-15
 - **Severity:** MEDIUM

@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-13
-ref_count: 12
+last_updated: 2026-06-17
+ref_count: 13
 ---
 
 # Error Surfacing
@@ -396,3 +396,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `copy-path` extracted `clipboard?.writeText` into a local `writeText` variable and later called `writeText(fullPath)`. Native Chromium DOM methods validate their receiver, so the detached call can throw `TypeError: Illegal invocation` in Electron even though the Vitest mock passes (vi.fn() does not enforce `this`). The existing try/catch surfaced the error via `actionError`, but the action failed every time in the real renderer.
 - **Fix:** Removed the intermediate `writeText` variable. The guard now checks `typeof clipboard?.writeText !== 'function'` and the call site uses `await clipboard.writeText(fullPath)` directly so the Clipboard object remains the receiver. (Related but distinct from #38, which was about silently discarding missing-API/rejection cases; this finding is about preserving the method's `this` binding.)
 - **Commit:** same commit as this entry
+
+### 41. `readFile` existence probe treats every failure as deleted, locking the editor on transient errors
+
+- **Source:** github-claude | PR #510 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1408-1418
+- **Finding:** A `fileSystemService.readFile` call was used as an existence probe for the selected editor file. The bare `catch` set `selectedEditorFileExists(false)` for any rejection, so `resolveEditorFileLifecycleStatus` mapped permission errors, IPC failures, disk I/O errors, and remote-mount hiccups to `DELETED`. `DockPanel` makes clean `DELETED` buffers read-only, so a transient non-not-found failure could incorrectly lock editing of an existing file until a later successful check.
+- **Fix:** Added `isNotFoundError` helper that matches explicit not-found signals (`ENOENT`, `No such file or directory`, `os error 2`, Windows file-not-found text) on both string rejections and `Error` objects. The catch block now sets `selectedEditorFileExists(false)` only for not-found errors and preserves `null` (unknown) state for all other failures. Added regression tests for the helper classification and for `WorkspaceView` keeping the lifecycle status null on a permission-denied rejection.
+- **Commit:** see current commit

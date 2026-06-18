@@ -101,6 +101,13 @@ import {
 } from './panelConfig'
 import { OverlayStackProvider } from './overlays/OverlayStackProvider'
 import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
+import {
+  parentPathForGitStatus,
+  parentPathForFileLookup,
+  relativePathFromCwd,
+  resolveEditorFileLifecycleStatus,
+  buildSelectedFileGitKey,
+} from './utils/editorFileLifecycleStatus'
 
 const rateLimitPercentage = (
   limit: RateLimitsState['fiveHour'] | null | undefined
@@ -185,36 +192,6 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
-
-const normalizePathForComparison = (path: string): string =>
-  path.replace(/\\/g, '/').replace(/\/+$/u, '')
-
-const relativePathFromCwd = (path: string, cwd: string): string | null => {
-  const normalizedPath = normalizePathForComparison(path)
-  const normalizedCwd = normalizePathForComparison(cwd)
-
-  if (normalizedCwd === '') {
-    return null
-  }
-
-  if (normalizedPath === normalizedCwd) {
-    return ''
-  }
-
-  if (normalizedCwd === '/') {
-    return normalizedPath.startsWith('/')
-      ? normalizedPath.replace(/^\/+/u, '')
-      : null
-  }
-
-  const cwdPrefix = `${normalizedCwd}/`
-
-  if (!normalizedPath.startsWith(cwdPrefix)) {
-    return null
-  }
-
-  return normalizedPath.slice(cwdPrefix.length)
-}
 
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
@@ -883,6 +860,7 @@ const WorkspaceViewContent = (): ReactElement => {
   >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isUnsavedDialogSaving, setIsUnsavedDialogSaving] = useState(false)
+  const [editorSavedAt, setEditorSavedAt] = useState<number | null>(null)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
@@ -1398,10 +1376,123 @@ const WorkspaceViewContent = (): ReactElement => {
     }
   }, [activeCwd, clearFeedbackBatch])
 
-  const gitStatus = useGitStatus(activeCwd, {
+  const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
+  const editorFileLookupCwd = parentPathForFileLookup(editorBuffer.filePath)
+
+  const [selectedEditorFileExists, setSelectedEditorFileExists] = useState<
+    boolean | null
+  >(null)
+
+  const activeCwdCanLoadGitStatus =
+    activeCwd !== '.' && activeCwd !== '~' && activeCwd.length > 0
+
+  const gitStatusCwd =
+    activeCwdCanLoadGitStatus || editorGitStatusCwd === null
+      ? activeCwd
+      : editorGitStatusCwd
+
+  const gitStatus = useGitStatus(gitStatusCwd, {
     watch: true,
-    enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
+    enabled:
+      agentStatus.isActive ||
+      (isDockOpen && (dockTab === 'diff' || editorBuffer.filePath !== null)),
   })
+
+  // Stable key for the selected file's relevant git state. The git watcher
+  // emits a new `files` array reference on each poll; this key collapses that
+  // down to a primitive that only changes when the selected file's status,
+  // staging, cwd, or presence in the changed-file list actually changes.
+  const selectedFileGitKey = useMemo(
+    () =>
+      buildSelectedFileGitKey(
+        editorBuffer.filePath,
+        gitStatus.files,
+        gitStatus.filesCwd,
+        gitStatus.repoRoot
+      ),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+    ]
+  )
+
+  useEffect(() => {
+    if (!editorBuffer.filePath || !editorFileLookupCwd) {
+      setSelectedEditorFileExists((current) =>
+        current === null ? current : null
+      )
+
+      return
+    }
+
+    let cancelled = false
+
+    const checkSelectedFile = async (initial = false): Promise<void> => {
+      if (initial) {
+        setSelectedEditorFileExists(null)
+      }
+
+      try {
+        const exists = await fileSystemService.fileExists(
+          editorBuffer.filePath ?? ''
+        )
+
+        if (!cancelled) {
+          setSelectedEditorFileExists(exists)
+        }
+      } catch {
+        if (!cancelled) {
+          setSelectedEditorFileExists(null)
+        }
+      }
+    }
+
+    void checkSelectedFile(true)
+
+    const isStatusLess = selectedFileGitKey.endsWith(':none')
+    let intervalId: ReturnType<typeof setInterval> | undefined
+
+    if (isStatusLess) {
+      intervalId = setInterval(() => {
+        void checkSelectedFile(false)
+      }, 2000)
+    }
+
+    return (): void => {
+      cancelled = true
+
+      if (intervalId !== undefined) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [
+    editorFileLookupCwd,
+    editorBuffer.filePath,
+    fileSystemService,
+    selectedFileGitKey,
+  ])
+
+  const editorFileLifecycleStatus = useMemo(
+    () =>
+      resolveEditorFileLifecycleStatus({
+        filePath: editorBuffer.filePath,
+        gitStatusCwd,
+        files: gitStatus.files,
+        filesCwd: gitStatus.filesCwd,
+        repoRoot: gitStatus.repoRoot,
+        selectedFileExists: selectedEditorFileExists,
+      }),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      gitStatusCwd,
+      selectedEditorFileExists,
+    ]
+  )
 
   const statusBarSession = useMemo<StatusBarSession | null>(() => {
     if (!activeSession || !isStatusBarAgentActive) {
@@ -1528,11 +1619,24 @@ const WorkspaceViewContent = (): ReactElement => {
     try {
       await editorBuffer.saveFile()
       setFileError(null)
+      setEditorSavedAt(Date.now())
+      // A successful save recreates the backing file if it was deleted
+      // externally. Refresh the existence signal immediately so the next
+      // render does not derive a stale DELETED/read-only state before the
+      // polling probe catches up.
+      setSelectedEditorFileExists(true)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to save: ${message}`)
     }
   }, [editorBuffer])
+
+  // Clear the explicit saved timestamp whenever the edited file or the scoped
+  // buffer identity changes, so a stale "SAVED · just now" never appears on a
+  // newly-selected file or after switching sessions.
+  useEffect(() => {
+    setEditorSavedAt((current) => (current === null ? current : null))
+  }, [editorBuffer.filePath, activeSessionId])
 
   // Handle file selection from FileExplorer. Memoized so its identity
   // is stable across the 4-level prop chain (WorkspaceView → Sidebar →
@@ -1924,6 +2028,8 @@ const WorkspaceViewContent = (): ReactElement => {
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
+      editorFileLifecycleStatus={editorFileLifecycleStatus}
+      savedAt={editorSavedAt}
       content={editorBuffer.currentContent}
       onContentChange={editorBuffer.updateContent}
       onSave={() => {

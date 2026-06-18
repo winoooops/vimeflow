@@ -293,6 +293,13 @@ impl BackendState {
         crate::filesystem::read::read_file_inner(request)
     }
 
+    pub fn file_exists(
+        &self,
+        request: crate::filesystem::types::FileExistsRequest,
+    ) -> Result<bool, String> {
+        crate::filesystem::exists::file_exists_inner(request)
+    }
+
     pub fn write_file(
         &self,
         request: crate::filesystem::types::WriteFileRequest,

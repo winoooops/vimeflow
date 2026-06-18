@@ -256,6 +256,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     vi.mocked(createFileSystemService).mockReturnValue({
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
+      fileExists: vi.fn().mockResolvedValue(true),
       writeFile: vi.fn().mockResolvedValue(undefined),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),

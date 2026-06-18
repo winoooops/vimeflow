@@ -2,8 +2,8 @@
 id: identifier-prefix-matching
 category: correctness
 created: 2026-06-12
-last_updated: 2026-06-12
-ref_count: 1
+last_updated: 2026-06-17
+ref_count: 2
 ---
 
 # Identifier Prefix Matching
@@ -68,3 +68,12 @@ the returned record really refers to the intended entity before reusing it.
   `null` when none match.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on
   this line)
+
+### 4. `isNotFoundError`: unbounded `os error 2` substring matches POSIX errno 20–29
+
+- **Source:** github-claude | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/utils/editorFileLifecycleStatus.ts` L127-148
+- **Finding:** `NOT_FOUND_PATTERNS` included the bare string `'os error 2'`, and `isNotFoundError` matched it with `String.prototype.includes`. Because `'os error 21'.includes('os error 2')` is `true`, any Rust-sidecar POSIX error whose code starts with 2 — such as `EISDIR (os error 21)` or `EINVAL (os error 22)` — was classified as not-found. This set `selectedEditorFileExists(false)` and drove the editor into a false `DELETED`/read-only lifecycle.
+- **Fix:** Replaced the loose string with the word-bounded regex `/\bos error 2\b/` and updated the matcher to test strings with `includes` and regexes with `RegExp.prototype.test`, so only errno 2 (ENOENT) triggers the not-found path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
