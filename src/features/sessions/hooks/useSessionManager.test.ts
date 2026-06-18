@@ -5414,7 +5414,7 @@ describe('useSessionManager', () => {
     // Rust briefly pointing at a dying PTY; the cleanest fix is to make
     // focus rotation a no-op while a lifecycle op holds pendingPaneOps.
     // Round 14, Claude LOW: the guarded early-return must also warn so
-    // a developer chasing a "⌘1-4 stopped working briefly" report sees
+    // a developer chasing a "⌘1-6 stopped working briefly" report sees
     // the suppression in devtools (parity with every other guard in the
     // file).
     test('setSessionActivePane is a no-op while removePane is in flight', async () => {

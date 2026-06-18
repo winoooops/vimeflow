@@ -9,7 +9,7 @@ export interface UseDockToggleShortcutParams {
 }
 
 // Workspace-global toggle for the editor/diff dock: ⌘0 on macOS, Ctrl+0 on
-// Linux. The 0 slot sits beside the pane-focus digits (⌘1-4 in
+// Linux. The 0 slot sits beside the pane-focus digits (⌘1-6 in
 // usePaneShortcuts) and the sidebar's ⌘B, so the panel controls read as one
 // number row. Matches the physical Digit0 key (event.code) — like the pane
 // shortcuts — so AZERTY/QWERTZ layouts that reach 0 via Shift still fire. The
