@@ -1,6 +1,9 @@
 import type { LayoutId, Pane, Session } from '../types'
+import { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { isShellPane } from './paneKind'
+
+export { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
 
 export interface ApplyAddPaneResult {
   sessions: Session[]
@@ -11,25 +14,6 @@ export interface ApplyRemovePaneResult {
   sessions: Session[]
   removedPtyId?: string
   newActivePtyId?: string
-}
-
-export const autoShrinkLayoutFor = (
-  nextPaneCount: number,
-  currentLayoutId: LayoutId
-): LayoutId => {
-  if (nextPaneCount <= 1) {
-    return 'single'
-  }
-
-  if (nextPaneCount === 2) {
-    return currentLayoutId === 'hsplit' ? 'hsplit' : 'vsplit'
-  }
-
-  if (nextPaneCount === 3) {
-    return 'threeRight'
-  }
-
-  return currentLayoutId
 }
 
 export const pickNextActivePaneId = (
