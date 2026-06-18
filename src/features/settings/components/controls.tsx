@@ -14,26 +14,42 @@ export const Row = ({
   hint,
   children,
   last = false,
-}: RowProps): ReactElement => (
-  <div
-    data-testid="row"
-    className={`flex items-center gap-6 py-3.5 ${
-      last ? '' : 'border-b border-outline-variant/18'
-    }`}
-  >
-    <div className="min-w-0 flex-1">
-      <div className="mb-1 font-display text-sm font-medium text-on-surface">
-        {label}
-      </div>
-      {hint && (
-        <div className="font-body text-xs leading-relaxed text-on-surface-muted">
-          {hint}
+  settingsTargetId = undefined,
+  settingsTargetActive = false,
+}: RowProps): ReactElement => {
+  const targetAttrs =
+    settingsTargetId === undefined
+      ? { 'data-testid': 'row' }
+      : {
+          'data-testid': `settings-target-${settingsTargetId}`,
+          'data-settings-target': settingsTargetId,
+          'data-settings-target-active': settingsTargetActive
+            ? 'true'
+            : undefined,
+          tabIndex: -1,
+        }
+
+  return (
+    <div
+      {...targetAttrs}
+      className={`flex scroll-mt-4 items-center gap-6 rounded-lg py-3.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary/65 ${
+        settingsTargetActive ? 'bg-primary-container/[0.08]' : ''
+      } ${last ? '' : 'border-b border-outline-variant/18'}`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 font-display text-sm font-medium text-on-surface">
+          {label}
         </div>
-      )}
+        {hint && (
+          <div className="font-body text-xs leading-relaxed text-on-surface-muted">
+            {hint}
+          </div>
+        )}
+      </div>
+      <div className="shrink-0">{children}</div>
     </div>
-    <div className="shrink-0">{children}</div>
-  </div>
-)
+  )
+}
 
 export const PaneTitle = ({ title, sub }: PaneTitleProps): ReactElement => (
   <div className="mb-4">

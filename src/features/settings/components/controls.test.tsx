@@ -40,6 +40,22 @@ describe('Row', () => {
 
     expect(screen.getByTestId('row')).not.toHaveClass('border-b')
   })
+
+  test('marks target rows as focusable settings targets', () => {
+    render(
+      <Row
+        label="Density"
+        settingsTargetId="appearance-density"
+        settingsTargetActive
+      />
+    )
+
+    const row = screen.getByTestId('settings-target-appearance-density')
+
+    expect(row).toHaveAttribute('data-settings-target', 'appearance-density')
+    expect(row).toHaveAttribute('data-settings-target-active', 'true')
+    expect(row).toHaveAttribute('tabindex', '-1')
+  })
 })
 
 describe('PaneTitle', () => {

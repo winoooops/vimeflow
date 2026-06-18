@@ -1,7 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import type { SettingsSectionId, SettingsDialogProps } from './types'
-import { SETTINGS_SECTIONS } from './sections'
+import type {
+  SettingsDialogProps,
+  SettingsSectionId,
+  SettingsTarget,
+  SettingsTargetId,
+} from './types'
+import { SETTINGS_SECTIONS, SETTINGS_TARGETS } from './sections'
 import { Icon } from './components/Icon'
 import { Tooltip } from '@/components/Tooltip'
 import { Kbd } from './components/Kbd'
@@ -20,6 +25,11 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'agents',
 ]
 
+const matchesQuery = (
+  value: string | undefined,
+  normalizedQuery: string
+): boolean => value?.toLowerCase().includes(normalizedQuery) ?? false
+
 export const SettingsDialog = ({
   open,
   onClose,
@@ -28,17 +38,51 @@ export const SettingsDialog = ({
   const [scope, setScope] = useState<'User' | 'vimeflow'>('User')
   const [query, setQuery] = useState('')
 
+  const [activeTargetId, setActiveTargetId] = useState<SettingsTargetId | null>(
+    null
+  )
+  const [targetNavigationKey, setTargetNavigationKey] = useState(0)
+
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
-  const filtered = query.trim()
-    ? SETTINGS_SECTIONS.filter((s) =>
-        s.label.toLowerCase().includes(query.toLowerCase())
+  const normalizedQuery = query.trim().toLowerCase()
+
+  const sectionMatches = normalizedQuery
+    ? SETTINGS_SECTIONS.filter((s) => matchesQuery(s.label, normalizedQuery))
+    : SETTINGS_SECTIONS
+
+  const targetMatches = normalizedQuery
+    ? SETTINGS_TARGETS.filter(
+        (target) =>
+          matchesQuery(target.label, normalizedQuery) ||
+          matchesQuery(target.hint, normalizedQuery)
       )
+    : []
+
+  const filteredSectionIds = new Set<SettingsSectionId>([
+    ...sectionMatches.map((s) => s.id),
+    ...targetMatches.map((target) => target.section),
+  ])
+
+  const filtered = normalizedQuery
+    ? SETTINGS_SECTIONS.filter((s) => filteredSectionIds.has(s.id))
     : SETTINGS_SECTIONS
 
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
+
+  const handlePickSection = (id: SettingsSectionId): void => {
+    setSection(id)
+    setActiveTargetId(null)
+  }
+
+  const handlePickTarget = (target: SettingsTarget): void => {
+    setSection(target.section)
+    setActiveTargetId(target.id)
+    setTargetNavigationKey((key) => key + 1)
+  }
 
   useEffect(() => {
     if (open) {
@@ -109,8 +153,26 @@ export const SettingsDialog = ({
   useEffect(() => {
     if (!open) {
       setQuery('')
+      setActiveTargetId(null)
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || activeTargetId === null) {
+      return
+    }
+
+    const target = contentRef.current?.querySelector<HTMLElement>(
+      `[data-settings-target="${activeTargetId}"]`
+    )
+
+    if (!target) {
+      return
+    }
+
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    target.focus({ preventScroll: true })
+  }, [activeTargetId, open, section, targetNavigationKey])
 
   return (
     <AnimatePresence>
@@ -162,8 +224,11 @@ export const SettingsDialog = ({
             <div className="flex min-h-0 flex-1">
               <SettingsSidebar
                 sections={filtered}
+                targets={targetMatches}
                 active={section}
-                onPick={setSection}
+                activeTargetId={activeTargetId}
+                onPick={handlePickSection}
+                onPickTarget={handlePickTarget}
                 query={query}
                 onQuery={setQuery}
               />
@@ -171,11 +236,22 @@ export const SettingsDialog = ({
               <div className="flex min-w-0 flex-1 flex-col">
                 <SettingsHeader scope={scope} onScope={setScope} />
 
-                <div className="thin-scrollbar flex-1 overflow-auto px-7 py-5">
-                  {section === 'general' && <GeneralPane />}
-                  {section === 'appearance' && <AppearancePane />}
-                  {section === 'keymap' && <KeymapPane />}
-                  {section === 'agents' && <AgentsPane />}
+                <div
+                  ref={contentRef}
+                  className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
+                >
+                  {section === 'general' && (
+                    <GeneralPane activeTargetId={activeTargetId} />
+                  )}
+                  {section === 'appearance' && (
+                    <AppearancePane activeTargetId={activeTargetId} />
+                  )}
+                  {section === 'keymap' && (
+                    <KeymapPane activeTargetId={activeTargetId} />
+                  )}
+                  {section === 'agents' && (
+                    <AgentsPane activeTargetId={activeTargetId} />
+                  )}
                   {!REAL_PANES.includes(section) && activeSection && (
                     <PlaceholderPane section={activeSection} />
                   )}

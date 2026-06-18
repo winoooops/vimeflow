@@ -5,8 +5,12 @@ import {
   useState,
   type ReactElement,
 } from 'react'
-import type { AgentAlias } from '../../types'
-import { DEFAULT_ALIASES } from '../../sections'
+import type {
+  AgentAlias,
+  SettingsPaneTargetProps,
+  SettingsTargetId,
+} from '../../types'
+import { DEFAULT_ALIASES, SETTINGS_TARGET_IDS } from '../../sections'
 import { useSettings } from '../../hooks/useSettings'
 import { Icon } from '../Icon'
 import { Tooltip } from '@/components/Tooltip'
@@ -19,7 +23,14 @@ import {
   Toggle,
 } from '../controls'
 
-export const AgentsPane = (): ReactElement => {
+const isActiveTarget = (
+  id: SettingsTargetId,
+  activeTargetId?: SettingsTargetId | null
+): boolean => activeTargetId === id
+
+export const AgentsPane = ({
+  activeTargetId = null,
+}: SettingsPaneTargetProps): ReactElement => {
   const { settings, update } = useSettings()
   const shimOn = settings.agentShimEnabled
   const [aliases, setAliases] = useState<AgentAlias[]>([])
@@ -27,6 +38,11 @@ export const AgentsPane = (): ReactElement => {
   const [saveError, setSaveError] = useState<string | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const hasInteractedRef = useRef(false)
+
+  const shellAliasesActive = isActiveTarget(
+    SETTINGS_TARGET_IDS.agentsShellAliases,
+    activeTargetId
+  )
 
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -133,6 +149,11 @@ export const AgentsPane = (): ReactElement => {
       <Row
         label="Manage agent shell aliases"
         hint="Vimeflow injects these into each pane's PTY environment. Your .bashrc / .zshrc is never touched."
+        settingsTargetId={SETTINGS_TARGET_IDS.agentsManageAliases}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.agentsManageAliases,
+          activeTargetId
+        )}
       >
         <Toggle
           on={shimOn}
@@ -141,7 +162,15 @@ export const AgentsPane = (): ReactElement => {
         />
       </Row>
 
-      <div className="mt-4">
+      <div
+        data-testid={`settings-target-${SETTINGS_TARGET_IDS.agentsShellAliases}`}
+        data-settings-target={SETTINGS_TARGET_IDS.agentsShellAliases}
+        data-settings-target-active={shellAliasesActive ? 'true' : undefined}
+        tabIndex={-1}
+        className={`mt-4 scroll-mt-4 rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary/65 ${
+          shellAliasesActive ? 'bg-primary-container/[0.08]' : ''
+        }`}
+      >
         <div className="mb-2.5 flex items-center">
           <div>
             <div className="font-display text-sm font-medium text-on-surface">

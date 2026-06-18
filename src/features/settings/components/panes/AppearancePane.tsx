@@ -1,20 +1,41 @@
 import { useState, type ReactElement } from 'react'
-import { BUILTIN_SCHEMES } from '../../sections'
+import { BUILTIN_SCHEMES, SETTINGS_TARGET_IDS } from '../../sections'
+import type { SettingsPaneTargetProps, SettingsTargetId } from '../../types'
 import { Icon } from '../Icon'
 import { GhostButton, PaneTitle, Row, Select } from '../controls'
 
-export const AppearancePane = (): ReactElement => {
+const isActiveTarget = (
+  id: SettingsTargetId,
+  activeTargetId?: SettingsTargetId | null
+): boolean => activeTargetId === id
+
+export const AppearancePane = ({
+  activeTargetId = null,
+}: SettingsPaneTargetProps): ReactElement => {
   const [activeScheme, setActiveScheme] = useState('obsidian')
   const [accentHue, setAccentHue] = useState(285)
   const [density, setDensity] = useState('comfortable')
   const [uiFont, setUiFont] = useState('instrument')
   const [monoFont, setMonoFont] = useState('jetbrains')
 
+  const colorSchemeActive = isActiveTarget(
+    SETTINGS_TARGET_IDS.appearanceColorScheme,
+    activeTargetId
+  )
+
   return (
     <>
       <PaneTitle title="Appearance" sub="Theme · Color Scheme · Typography" />
 
-      <div className="mb-4">
+      <div
+        data-testid={`settings-target-${SETTINGS_TARGET_IDS.appearanceColorScheme}`}
+        data-settings-target={SETTINGS_TARGET_IDS.appearanceColorScheme}
+        data-settings-target-active={colorSchemeActive ? 'true' : undefined}
+        tabIndex={-1}
+        className={`mb-4 scroll-mt-4 rounded-lg outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary/65 ${
+          colorSchemeActive ? 'bg-primary-container/[0.08]' : ''
+        }`}
+      >
         <div className="mb-1 font-display text-sm font-medium text-on-surface">
           Color Scheme
         </div>
@@ -102,6 +123,11 @@ export const AppearancePane = (): ReactElement => {
       <Row
         label="Accent Hue"
         hint={`Shift the primary accent around the wheel. Current: ${accentHue}°`}
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceAccentHue}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.appearanceAccentHue,
+          activeTargetId
+        )}
       >
         <input
           type="range"
@@ -118,6 +144,11 @@ export const AppearancePane = (): ReactElement => {
       <Row
         label="Density"
         hint="Compact for power users; comfortable for readability."
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceDensity}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.appearanceDensity,
+          activeTargetId
+        )}
       >
         <Select
           value={density}
@@ -133,6 +164,11 @@ export const AppearancePane = (): ReactElement => {
       <Row
         label="UI Font"
         hint="Sans-serif used for labels, sidebars, headings."
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.appearanceUiFont,
+          activeTargetId
+        )}
       >
         <Select
           value={uiFont}
@@ -149,6 +185,11 @@ export const AppearancePane = (): ReactElement => {
       <Row
         label="Mono Font"
         hint="Used in the terminal, editor, and all code blocks."
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceMonoFont}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.appearanceMonoFont,
+          activeTargetId
+        )}
         last
       >
         <Select

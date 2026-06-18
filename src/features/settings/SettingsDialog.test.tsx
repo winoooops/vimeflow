@@ -3,7 +3,11 @@ import { render as rtlRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
-import { SETTINGS_SECTIONS } from './sections'
+import {
+  SETTINGS_SECTIONS,
+  SETTINGS_TARGET_IDS,
+  keymapCommandTargetId,
+} from './sections'
 import { DEFAULT_SETTINGS } from './store/settingsDefaults'
 import { SettingsProvider } from './SettingsProvider'
 
@@ -109,6 +113,71 @@ describe('SettingsDialog', () => {
 
     expect(screen.getByRole('button', { name: 'Terminal' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+  })
+
+  test('navigates search result clicks to the matching settings row', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
+    await user.click(
+      screen.getByRole('button', { name: 'Redact Private Values' })
+    )
+
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveFocus()
+    })
+
+    expect(
+      screen.getByRole('button', { name: 'General', current: 'page' })
+    ).toBeInTheDocument()
+    expect(target).toHaveAttribute('data-settings-target-active', 'true')
+    expect(scrollIntoView).toHaveBeenCalled()
+
+    scrollIntoView.mockRestore()
+  })
+
+  test('keeps command palette and leader keymap targets independently navigable', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.type(
+      screen.getByPlaceholderText('Search settings...'),
+      'command palette'
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Open command palette' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Command palette leader' })
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Command palette leader' })
+    )
+
+    const target = screen.getByTestId(
+      `settings-target-${keymapCommandTargetId('palette-leader')}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveFocus()
+    })
+
+    expect(
+      screen.getByRole('button', { name: 'Keymap', current: 'page' })
+    ).toBeInTheDocument()
+    expect(target).toHaveAttribute('data-settings-target-active', 'true')
   })
 
   test('renders the footer hint and close shortcut', () => {

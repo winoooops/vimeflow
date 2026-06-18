@@ -23,6 +23,15 @@ export interface SettingsSection {
   icon: string
 }
 
+export type SettingsTargetId = string
+
+export interface SettingsTarget {
+  id: SettingsTargetId
+  section: SettingsSectionId
+  label: string
+  hint?: string
+}
+
 export interface SettingsDialogProps {
   open: boolean
   onClose: () => void
@@ -30,8 +39,11 @@ export interface SettingsDialogProps {
 
 export interface SettingsSidebarProps {
   sections: SettingsSection[]
+  targets?: SettingsTarget[]
   active: SettingsSectionId
+  activeTargetId?: SettingsTargetId | null
   onPick: (id: SettingsSectionId) => void
+  onPickTarget?: (target: SettingsTarget) => void
   query: string
   onQuery: (query: string) => void
 }
@@ -59,11 +71,17 @@ export interface RowProps {
   hint?: string
   children?: ReactNode
   last?: boolean
+  settingsTargetId?: SettingsTargetId
+  settingsTargetActive?: boolean
 }
 
 export interface PaneTitleProps {
   title: string
   sub?: string
+}
+
+export interface SettingsPaneTargetProps {
+  activeTargetId?: SettingsTargetId | null
 }
 
 export interface ToggleProps {

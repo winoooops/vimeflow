@@ -6,8 +6,12 @@ export {
   BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
+  SETTINGS_TARGET_IDS,
+  SETTINGS_TARGETS,
   SETTINGS_SECTIONS,
   VIM_KEYMAP_GROUPS,
+  keymapCommandTargetId,
+  keymapStaticTargetId,
 } from './sections'
 
 export type {
@@ -19,8 +23,11 @@ export type {
   KeymapGroup,
   SettingsDialogProps,
   SettingsHeaderProps,
+  SettingsPaneTargetProps,
   SettingsScope,
   SettingsSection,
   SettingsSectionId,
   SettingsSidebarProps,
+  SettingsTarget,
+  SettingsTargetId,
 } from './types'

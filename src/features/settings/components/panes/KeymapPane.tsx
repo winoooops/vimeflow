@@ -14,7 +14,13 @@ import {
   type ShortcutInput,
 } from '../../../../lib/formatShortcut'
 import { useSettings } from '../../hooks/useSettings'
-import { KEYMAP_GROUPS, VIM_KEYMAP_GROUPS } from '../../sections'
+import {
+  KEYMAP_GROUPS,
+  SETTINGS_TARGET_IDS,
+  VIM_KEYMAP_GROUPS,
+  keymapCommandTargetId,
+  keymapStaticTargetId,
+} from '../../sections'
 import { CATALOG, type CommandId } from '../../../keymap/catalog'
 import {
   eventToChord,
@@ -26,7 +32,13 @@ import {
   useKeybindings,
   type SetBindingResult,
 } from '../../../keymap/useKeybindings'
-import type { KeymapBinding, KeymapGroup, KeymapKeys } from '../../types'
+import type {
+  KeymapBinding,
+  KeymapGroup,
+  KeymapKeys,
+  SettingsPaneTargetProps,
+  SettingsTargetId,
+} from '../../types'
 import { Icon } from '../Icon'
 import { Kbd } from '../Kbd'
 import { PaneTitle, Row, Select } from '../controls'
@@ -94,10 +106,15 @@ const focusAfterTabCancel = (id: CommandId, direction: TabDirection): void => {
   focusable[nextIndex]?.focus()
 }
 
-const rowClass = (last: boolean): string =>
-  `flex items-center gap-3.5 px-3.5 py-2.5 ${
-    last ? '' : 'border-b border-outline-variant/15'
-  }`
+const isActiveTarget = (
+  id: SettingsTargetId,
+  activeTargetId?: SettingsTargetId | null
+): boolean => activeTargetId === id
+
+const rowClass = (last: boolean, active = false): string =>
+  `flex scroll-mt-4 items-center gap-3.5 rounded-lg px-3.5 py-2.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary/65 ${
+    active ? 'bg-primary-container/[0.08]' : ''
+  } ${last ? '' : 'border-b border-outline-variant/15'}`
 
 const groupShell = (zone: string, rows: ReactElement[]): ReactElement => (
   <div key={zone} className="mb-4">
@@ -143,7 +160,9 @@ const resultMessage = (
 const resolveKeys = (keys: KeymapKeys): ShortcutInput[] =>
   typeof keys === 'function' ? keys(isMacPlatform()) : keys
 
-export const KeymapPane = (): ReactElement => {
+export const KeymapPane = ({
+  activeTargetId = null,
+}: SettingsPaneTargetProps): ReactElement => {
   const { settings, update } = useSettings()
   const { bindingFor, resetBinding, setUserBinding } = useKeybindings()
   const [editingId, setEditingId] = useState<CommandId | null>(null)
@@ -336,9 +355,18 @@ export const KeymapPane = (): ReactElement => {
     const isEditing = editingId === cmd.id
     const isOverridden = settings.customKeybindings[cmd.id] !== undefined
     const rowFeedback = feedback?.id === cmd.id ? feedback : null
+    const targetId = keymapCommandTargetId(cmd.id)
+    const targetActive = isActiveTarget(targetId, activeTargetId)
 
     return (
-      <div key={cmd.id} className={rowClass(last)}>
+      <div
+        key={cmd.id}
+        data-testid={`settings-target-${targetId}`}
+        data-settings-target={targetId}
+        data-settings-target-active={targetActive ? 'true' : undefined}
+        tabIndex={-1}
+        className={rowClass(last, targetActive)}
+      >
         {labelCell(cmd.label)}
         <div className="flex shrink-0 items-center gap-2">
           <span className="flex min-w-[72px] justify-end gap-1">
@@ -417,16 +445,28 @@ export const KeymapPane = (): ReactElement => {
   const staticGroup = (group: KeymapGroup): ReactElement =>
     groupShell(
       group.zone,
-      group.bindings.map((b: KeymapBinding, i) => (
-        <div key={b.id} className={rowClass(i === group.bindings.length - 1)}>
-          {labelCell(b.label)}
-          <span className="flex gap-1">
-            {resolveKeys(b.keys).map((k, j) => (
-              <Kbd key={`${b.id}-${j}`}>{formatShortcut(k)}</Kbd>
-            ))}
-          </span>
-        </div>
-      ))
+      group.bindings.map((b: KeymapBinding, i) => {
+        const targetId = keymapStaticTargetId(b.id)
+        const targetActive = isActiveTarget(targetId, activeTargetId)
+
+        return (
+          <div
+            key={b.id}
+            data-testid={`settings-target-${targetId}`}
+            data-settings-target={targetId}
+            data-settings-target-active={targetActive ? 'true' : undefined}
+            tabIndex={-1}
+            className={rowClass(i === group.bindings.length - 1, targetActive)}
+          >
+            {labelCell(b.label)}
+            <span className="flex gap-1">
+              {resolveKeys(b.keys).map((k, j) => (
+                <Kbd key={`${b.id}-${j}`}>{formatShortcut(k)}</Kbd>
+              ))}
+            </span>
+          </div>
+        )
+      })
     )
 
   return (
@@ -436,6 +476,11 @@ export const KeymapPane = (): ReactElement => {
       <Row
         label="Preset"
         hint="Switch between the default Vimeflow binding set and Vim-style bindings."
+        settingsTargetId={SETTINGS_TARGET_IDS.keymapPreset}
+        settingsTargetActive={isActiveTarget(
+          SETTINGS_TARGET_IDS.keymapPreset,
+          activeTargetId
+        )}
       >
         <Select
           value={settings.keymapPreset}
