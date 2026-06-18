@@ -1,6 +1,5 @@
 // Session domain types — owned by src/features/sessions/.
 // cspell:ignore vsplit hsplit
-
 export type SessionStatus =
   | 'running'
   | 'awaiting'
