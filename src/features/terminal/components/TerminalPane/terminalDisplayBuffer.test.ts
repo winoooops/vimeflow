@@ -18,6 +18,7 @@ import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
 const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
 const INDEXED_COLOR_RED = ['rgb', '(255, 0, 0)'].join('')
 const INDEXED_COLOR_GRAY = ['rgb', '(238, 238, 238)'].join('')
+const NERD_FONT_ICON = String.fromCodePoint(0xf0954)
 
 describe('TerminalDisplayBuffer', () => {
   test('appends visible text and trims trailing newlines from viewport reads', () => {
@@ -86,6 +87,19 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write('abcdef')
 
     expect(buffer.readVisibleText()).toBe('abcde\nf')
+  })
+
+  test('counts supplementary private-use glyphs as one terminal column', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 4 })
+
+    buffer.write(`ab${NERD_FONT_ICON}c`)
+
+    expect(buffer.readVisibleText()).toBe(`ab${NERD_FONT_ICON}c`)
+    expect(buffer.readCursorOffset()).toBe(`ab${NERD_FONT_ICON}c`.length)
+
+    buffer.write('d')
+
+    expect(buffer.readVisibleText()).toBe(`ab${NERD_FONT_ICON}c\nd`)
   })
 
   test('keeps the previous soft-wrapped row when the wrapped tail redraws', () => {
@@ -161,6 +175,16 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write('XY')
 
     expect(buffer.readVisibleText()).toBe('top\n    ceXY')
+  })
+
+  test('moves absolute cursor positions by terminal cells, not utf-16 units', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(`a${NERD_FONT_ICON}c`)
+    buffer.write(getCursorPositionSentinel(1, 4))
+    buffer.write('!')
+
+    expect(buffer.readVisibleText()).toBe(`a${NERD_FONT_ICON}c!`)
   })
 
   test('rewrites Codex MCP progress rows without duplicating stale fragments', () => {

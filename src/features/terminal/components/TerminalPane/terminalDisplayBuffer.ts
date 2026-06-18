@@ -330,6 +330,120 @@ const findLineEnd = (text: string, cursor: number): number => {
   return nextNewline === -1 ? text.length : nextNewline
 }
 
+const readCodePointLength = (text: string, cursor: number): number =>
+  (text.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1
+
+const readPreviousCodePointLength = (text: string, cursor: number): number => {
+  if (cursor <= 0) {
+    return 0
+  }
+
+  const previous = text.charCodeAt(cursor - 1)
+  const beforePrevious = cursor >= 2 ? text.charCodeAt(cursor - 2) : 0
+
+  if (
+    previous >= 0xdc00 &&
+    previous <= 0xdfff &&
+    beforePrevious >= 0xd800 &&
+    beforePrevious <= 0xdbff
+  ) {
+    return 2
+  }
+
+  return 1
+}
+
+const isCombiningCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+  (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+  (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+  (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+  (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+  (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+
+const isPrivateUseCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0xe000 && codePoint <= 0xf8ff) ||
+  (codePoint >= 0xf0000 && codePoint <= 0xffffd) ||
+  (codePoint >= 0x100000 && codePoint <= 0x10fffd)
+
+const isWideCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0x1100 && codePoint <= 0x115f) ||
+  codePoint === 0x2329 ||
+  codePoint === 0x232a ||
+  (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+  (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+  (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+  (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+  (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+  (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+  (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+  (codePoint >= 0x1f300 && codePoint <= 0x1faff)
+
+const readTerminalCellWidth = (text: string, cursor: number): number => {
+  const codePoint = text.codePointAt(cursor)
+
+  if (codePoint === undefined || codePoint === 0 || codePoint === 0x0a) {
+    return 0
+  }
+
+  if (isCombiningCodePoint(codePoint)) {
+    return 0
+  }
+
+  if (isPrivateUseCodePoint(codePoint)) {
+    return 1
+  }
+
+  return isWideCodePoint(codePoint) ? 2 : 1
+}
+
+const readCellWidth = (text: string, start: number, end: number): number => {
+  let width = 0
+  let cursor = start
+
+  while (cursor < end) {
+    width += readTerminalCellWidth(text, cursor)
+    cursor += readCodePointLength(text, cursor)
+  }
+
+  return width
+}
+
+const findOffsetForCellColumn = (
+  text: string,
+  lineStart: number,
+  lineEnd: number,
+  targetColumn: number
+): number => {
+  if (targetColumn <= 0) {
+    return lineStart
+  }
+
+  let cursor = lineStart
+  let column = 0
+
+  while (cursor < lineEnd) {
+    const width = readTerminalCellWidth(text, cursor)
+    const nextColumn = column + width
+
+    if (nextColumn > targetColumn) {
+      return cursor + readCodePointLength(text, cursor)
+    }
+
+    if (nextColumn === targetColumn) {
+      return cursor + readCodePointLength(text, cursor)
+    }
+
+    column = nextColumn
+    cursor += readCodePointLength(text, cursor)
+  }
+
+  return lineEnd
+}
+
+const readCursorColumn = (text: string, cursor: number): number =>
+  readCellWidth(text, findLineStart(text, cursor), cursor)
+
 const moveCursorUp = (text: string, cursor: number): number => {
   const currentLineStart = findLineStart(text, cursor)
 
@@ -337,16 +451,20 @@ const moveCursorUp = (text: string, cursor: number): number => {
     return Math.min(cursor, findLineEnd(text, cursor))
   }
 
-  const column = cursor - currentLineStart
+  const column = readCursorColumn(text, cursor)
   const previousLineEnd = currentLineStart - 1
   const previousLineStart = findLineStart(text, previousLineEnd)
 
-  return Math.min(previousLineStart + column, previousLineEnd)
+  return findOffsetForCellColumn(
+    text,
+    previousLineStart,
+    previousLineEnd,
+    column
+  )
 }
 
 const moveCursorDown = (text: string, cursor: number): number => {
-  const currentLineStart = findLineStart(text, cursor)
-  const column = cursor - currentLineStart
+  const column = readCursorColumn(text, cursor)
   const currentLineEnd = findLineEnd(text, cursor)
 
   if (currentLineEnd >= text.length) {
@@ -356,7 +474,7 @@ const moveCursorDown = (text: string, cursor: number): number => {
   const nextLineStart = currentLineEnd + 1
   const nextLineEnd = findLineEnd(text, nextLineStart)
 
-  return Math.min(nextLineStart + column, nextLineEnd)
+  return findOffsetForCellColumn(text, nextLineStart, nextLineEnd, column)
 }
 
 const normalizeCursorPositionValue = (value: number): number =>
@@ -418,6 +536,22 @@ const moveCursorLeft = (
   )
 }
 
+const moveCursorRight = (text: string, cursor: number): number => {
+  const lineStart = findLineStart(text, cursor)
+  const lineEnd = findLineEnd(text, cursor)
+
+  if (cursor >= lineEnd) {
+    return lineEnd
+  }
+
+  return findOffsetForCellColumn(
+    text,
+    lineStart,
+    lineEnd,
+    readCursorColumn(text, cursor) + 1
+  )
+}
+
 const moveCursorToPosition = (
   text: string,
   runs: readonly TerminalDisplayRun[],
@@ -455,10 +589,17 @@ const moveCursorToPosition = (
   }
 
   const lineEnd = findLineEnd(nextText, cursor)
-  const targetCursor = cursor + targetColumn - 1
+  const targetCellColumn = targetColumn - 1
+  const lineCellWidth = readCellWidth(nextText, cursor, lineEnd)
+  let targetCursor = findOffsetForCellColumn(
+    nextText,
+    cursor,
+    lineEnd,
+    targetCellColumn
+  )
 
-  if (targetCursor > lineEnd) {
-    const padding = ' '.repeat(targetCursor - lineEnd)
+  if (targetCellColumn > lineCellWidth) {
+    const padding = ' '.repeat(targetCellColumn - lineCellWidth)
 
     nextRuns = insertRunText(nextRuns, lineEnd, padding, style)
     nextSoftWrapOffsets = updateSoftWrapOffsetsForEdit(
@@ -471,6 +612,7 @@ const moveCursorToPosition = (
     nextText = `${nextText.slice(0, lineEnd)}${padding}${nextText.slice(
       lineEnd
     )}`
+    targetCursor = lineEnd + padding.length
   }
 
   return {
@@ -494,8 +636,9 @@ const softWrapAtCursor = (
   }
 
   const lineStart = findLineStart(text, cursor)
+  const lineCellWidth = readCellWidth(text, lineStart, cursor)
 
-  if (cursor <= lineStart || cursor - lineStart < columns) {
+  if (cursor <= lineStart || lineCellWidth < columns) {
     return { text, cursor, runs, softWrapOffsets }
   }
 
@@ -520,29 +663,6 @@ const softWrapAtCursor = (
       (left, right) => left - right
     ),
   }
-}
-
-const readCodePointLength = (text: string, cursor: number): number =>
-  (text.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1
-
-const readPreviousCodePointLength = (text: string, cursor: number): number => {
-  if (cursor <= 0) {
-    return 0
-  }
-
-  const previous = text.charCodeAt(cursor - 1)
-  const beforePrevious = cursor >= 2 ? text.charCodeAt(cursor - 2) : 0
-
-  if (
-    previous >= 0xdc00 &&
-    previous <= 0xdfff &&
-    beforePrevious >= 0xd800 &&
-    beforePrevious <= 0xdbff
-  ) {
-    return 2
-  }
-
-  return 1
 }
 
 const findRunAtOffset = (
@@ -966,10 +1086,7 @@ const applyDisplayData = (
     }
 
     if (isCursorRightSentinel(character)) {
-      cursor = Math.min(
-        findLineEnd(text, cursor),
-        cursor + readCodePointLength(text, cursor)
-      )
+      cursor = moveCursorRight(text, cursor)
       pendingCr = false
       continue
     }
