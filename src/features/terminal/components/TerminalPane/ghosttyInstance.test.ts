@@ -172,7 +172,8 @@ describe('ghosttyInstance', () => {
       text: 'wrong',
       bytesBase64: encodeText(`before ${ESC}[0${SGR_FINAL}after`),
       offsetStart: 0,
-      byteLen: 15,
+      byteLen: new TextEncoder().encode(`before ${ESC}[0${SGR_FINAL}after`)
+        .length,
       phase: 'live',
     })
 

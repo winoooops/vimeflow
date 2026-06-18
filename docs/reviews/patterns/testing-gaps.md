@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-14
-ref_count: 31
+last_updated: 2026-06-18
+ref_count: 32
 ---
 
 # Testing Gaps
@@ -638,4 +638,13 @@ filesystem scope restrictions).
 - **File:** `src/features/editor/components/MarkdownReadingView.test.tsx` L226-266
 - **Finding:** The `falls back to execCommand copy` test replaced both `window.navigator.clipboard` and `document.execCommand`, but the `finally` block only restored the clipboard property. The leaked `execCommand` mock persisted in the shared jsdom document for every subsequent test in the file, creating a false-positive risk for any future test that exercised the textarea fallback path without its own mock.
 - **Fix:** Saved the original `document.execCommand` value before overriding it and restored it in the same `finally` block alongside `navigator.clipboard`, mirroring the symmetric cleanup already used by the `installClipboardMock` helper.
+- **Commit:** same commit as this entry
+
+### 64. byteLen off by one in test fixture for renderer-handle disposal
+
+- **Source:** github-claude | PR #524 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.test.ts` L171-177
+- **Finding:** The `continues stripping controls after renderer handle disposal` test hardcoded `byteLen: 15` for a payload that encodes to 16 UTF-8 bytes (`before ESC[0mafter`). The test passed only because `byteLen` was treated as opaque metadata, so it would silently assert the wrong length if the router ever validated it.
+- **Fix:** Replaced the hardcoded value with `new TextEncoder().encode(...).length` so the fixture is consistent with the surrounding tests and proof against future payload edits.
 - **Commit:** same commit as this entry

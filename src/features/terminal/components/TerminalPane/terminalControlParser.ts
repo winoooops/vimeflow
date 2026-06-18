@@ -280,7 +280,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
           )
           const mode = parseCsiIntegerParameter(content, 0)
 
-          if (mode === 2 || mode === 3) {
+          if (mode === 2) {
             visible += getClearScreenSentinel()
           }
         }

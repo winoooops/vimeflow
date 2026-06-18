@@ -30,7 +30,6 @@ export const config: WebdriverIO.Config = {
 
   onPrepare: () => {
     process.env.VIMEFLOW_DISABLE_AGENT_DETECTION = '1'
-    process.env.VITE_TERMINAL_RENDERER = 'ghostty'
   },
 
   beforeSession: (_config, capabilities) => {
