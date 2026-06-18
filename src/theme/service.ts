@@ -87,7 +87,12 @@ export const themeService = {
  * Flexoki value tuning shows on screen without a reload (spec §5). */
 if (import.meta.hot) {
   import.meta.hot.accept(
-    themeModules.map(({ path }) => path),
+    [
+      './themes/obsidian-lens',
+      './themes/flexoki',
+      './themes/gruvbox/gruvbox-dark',
+      './themes/gruvbox/gruvbox-light',
+    ],
     (mods) => {
       themes = themeModules.map((themeModule, index) => {
         const next = (
