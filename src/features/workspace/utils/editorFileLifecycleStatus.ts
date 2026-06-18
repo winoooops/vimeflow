@@ -48,7 +48,9 @@ const isCaseInsensitivePlatform = (): boolean => {
  * result is lowercased so equivalent case-insensitive paths compare equal.
  */
 export const normalizePathForComparison = (path: string): string => {
-  const normalized = expandTildePath(path).replace(/\\/g, '/').replace(/\/+$/u, '')
+  const normalized = expandTildePath(path)
+    .replace(/\\/g, '/')
+    .replace(/\/+$/u, '')
 
   if (isCaseInsensitivePlatform()) {
     return normalized.toLowerCase()

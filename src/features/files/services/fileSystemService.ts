@@ -116,9 +116,7 @@ const findMockNode = (
 
   const [head, ...rest] = segments
 
-  const match = nodes.find(
-    (n) => n.name.replace(/\/$/, '') === head
-  )
+  const match = nodes.find((n) => n.name.replace(/\/$/, '') === head)
 
   if (!match) {
     return null

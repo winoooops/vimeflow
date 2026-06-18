@@ -584,7 +584,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     const useAgentStatusMock = vi.mocked(useAgentStatus)
     const originalImpl = useAgentStatusMock.getMockImplementation()
     useAgentStatusMock.mockImplementation(() => idleAgentStatus)
-    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
+    fileSystemServiceOverride.current.fileExists = vi
+      .fn()
+      .mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/new.ts',
@@ -628,7 +630,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
       idle: false,
     }))
 
-    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
+    fileSystemServiceOverride.current.fileExists = vi
+      .fn()
+      .mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/dummy.ts',
@@ -640,7 +644,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
     changedFiles = []
-    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(false)
+    fileSystemServiceOverride.current.fileExists = vi
+      .fn()
+      .mockResolvedValue(false)
     view.rerender(<WorkspaceView />)
 
     await waitFor(() => {
@@ -662,7 +668,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
       idle: false,
     }))
 
-    fileSystemServiceOverride.current.fileExists = vi.fn().mockResolvedValue(true)
+    fileSystemServiceOverride.current.fileExists = vi
+      .fn()
+      .mockResolvedValue(true)
 
     editorBufferOverride.current = createMockEditorBuffer({
       filePath: '/repo/src/dummy.ts',
