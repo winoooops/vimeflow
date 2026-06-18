@@ -9,7 +9,13 @@ export type SessionStatus =
 
 export type SessionCloseResult = false | void
 
-export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
+export type LayoutId =
+  | 'single'
+  | 'vsplit'
+  | 'hsplit'
+  | 'threeRight'
+  | 'quad'
+  | 'grid3x2'
 
 export type PaneKind = 'shell' | 'browser'
 

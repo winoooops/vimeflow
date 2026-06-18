@@ -55,6 +55,7 @@ describe('autoShrinkLayoutFor', () => {
     expect(autoShrinkLayoutFor(2, 'vsplit')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'threeRight')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'quad')).toBe('vsplit')
+    expect(autoShrinkLayoutFor(2, 'grid3x2')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'single')).toBe('vsplit')
   })
 
@@ -63,9 +64,11 @@ describe('autoShrinkLayoutFor', () => {
     expect(autoShrinkLayoutFor(3, 'vsplit')).toBe('threeRight')
   })
 
-  test('4 or more panes preserves current layout defensively', () => {
+  test('4 panes shrink to quad and 5+ panes shrink to grid3x2', () => {
     expect(autoShrinkLayoutFor(4, 'quad')).toBe('quad')
-    expect(autoShrinkLayoutFor(5, 'quad')).toBe('quad')
+    expect(autoShrinkLayoutFor(4, 'grid3x2')).toBe('quad')
+    expect(autoShrinkLayoutFor(5, 'grid3x2')).toBe('grid3x2')
+    expect(autoShrinkLayoutFor(6, 'grid3x2')).toBe('grid3x2')
   })
 })
 

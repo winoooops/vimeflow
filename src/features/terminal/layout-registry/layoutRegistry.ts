@@ -27,5 +27,13 @@ export const autoShrinkLayoutFor = (
     return 'threeRight'
   }
 
+  if (nextPaneCount === 4) {
+    return 'quad'
+  }
+
+  if (nextPaneCount === 5 || nextPaneCount === 6) {
+    return 'grid3x2'
+  }
+
   return currentLayoutId
 }

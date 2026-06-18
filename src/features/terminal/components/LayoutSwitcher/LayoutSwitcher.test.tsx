@@ -4,10 +4,10 @@ import { describe, expect, test, vi } from 'vitest'
 import { LayoutSwitcher } from './LayoutSwitcher'
 
 describe('LayoutSwitcher', () => {
-  test('renders 5 buttons (one per LayoutId)', () => {
+  test('renders 6 buttons (one per LayoutId)', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
-    expect(screen.getAllByRole('button')).toHaveLength(5)
+    expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 
   test('marks the active button with data-active', () => {
@@ -28,6 +28,45 @@ describe('LayoutSwitcher', () => {
 
     expect(onPick).toHaveBeenCalledOnce()
     expect(onPick).toHaveBeenCalledWith('quad')
+  })
+
+  test('renders the new 3x2 grid pill', () => {
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
+  })
+
+  test('renders only the configured visible layouts in registry order', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        visibleLayoutIds={['single', 'threeRight', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Single' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Main + 2 stack' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Vertical split' })).toBeNull()
+  })
+
+  test('keeps the active layout visible even when it is not in the configured list', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(
+      screen.getByRole('button', { name: 'Vertical split' })
+    ).toBeInTheDocument()
   })
 
   test('clicking the already-active button does NOT fire onPick', async () => {
@@ -73,8 +112,8 @@ describe('LayoutSwitcher', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
     expect(screen.queryByTestId('layout-switcher-divider')).toBeNull()
-    // Still just the 5 layout pills — no stray trailing button.
-    expect(screen.getAllByRole('button')).toHaveLength(5)
+    // Still just the 6 layout pills — no stray trailing button.
+    expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 
   test('exposes role="group" with an aria-label', () => {

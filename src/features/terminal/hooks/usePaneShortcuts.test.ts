@@ -37,7 +37,7 @@ const makeSession = (
 // QWERTZ) work too; tests synthesize both fields the way a real
 // keypress would.
 const codeFor = (key: string): string | undefined => {
-  if (key >= '1' && key <= '4') {
+  if (key >= '1' && key <= '6') {
     return `Digit${key}`
   }
   if (key === '\\') {
@@ -85,11 +85,11 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('Ctrl+\\ from quad wraps to single (default modifier)', () => {
+  test('Ctrl+\\ from grid3x2 wraps to single (default modifier)', () => {
     const setSessionLayout = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
-        sessions: [makeSession('s1', 'quad', ['p0'])],
+        sessions: [makeSession('s1', 'grid3x2', ['p0'])],
         activeSessionId: 's1',
         setSessionActivePane: vi.fn(),
         setSessionLayout,
@@ -105,7 +105,7 @@ describe('usePaneShortcuts', () => {
   test('Ctrl+2 with only one pane is a no-op AND lets the event propagate', () => {
     // Out-of-range pane index: we deliberately do NOT preventDefault so
     // that terminal apps (vim buffers, tmux windows) can claim Cmd+N
-    // when there's no pane to focus. The toolbar advertises "⌘+1-4
+    // when there's no pane to focus. The toolbar advertises "⌘+1-6
     // focus pane" — claiming a slot we can't fill would silently
     // swallow user input with no visible action.
     const setSessionActivePane = vi.fn()
@@ -235,6 +235,27 @@ describe('usePaneShortcuts', () => {
 
     expect(setSessionActivePane).toHaveBeenCalledOnce()
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('Ctrl+5 / Ctrl+6 focus bottom-row panes in grid3x2', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [
+          makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'], 0),
+        ],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    fire('5', { ctrlKey: true })
+    fire('6', { ctrlKey: true })
+
+    expect(setSessionActivePane).toHaveBeenCalledTimes(2)
+    expect(setSessionActivePane).toHaveBeenNthCalledWith(1, 's1', 'p4')
+    expect(setSessionActivePane).toHaveBeenNthCalledWith(2, 's1', 'p5')
   })
 
   test('Ctrl+1 with already-active p0 lets the event propagate (no preventDefault)', () => {

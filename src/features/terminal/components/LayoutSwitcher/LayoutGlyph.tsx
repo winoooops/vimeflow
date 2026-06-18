@@ -66,6 +66,28 @@ export const LayoutGlyph = ({ layoutId }: LayoutGlyphProps): ReactElement => {
     />
   )
 
+  const grid3x2V1 = (
+    <line
+      x1="5.15"
+      y1="1.5"
+      x2="5.15"
+      y2="9.5"
+      stroke="currentColor"
+      strokeWidth={sw}
+    />
+  )
+
+  const grid3x2V2 = (
+    <line
+      x1="8.85"
+      y1="1.5"
+      x2="8.85"
+      y2="9.5"
+      stroke="currentColor"
+      strokeWidth={sw}
+    />
+  )
+
   return (
     <svg
       width="14"
@@ -86,6 +108,13 @@ export const LayoutGlyph = ({ layoutId }: LayoutGlyphProps): ReactElement => {
       {layoutId === 'quad' && (
         <>
           {v}
+          {h}
+        </>
+      )}
+      {layoutId === 'grid3x2' && (
+        <>
+          {grid3x2V1}
+          {grid3x2V2}
           {h}
         </>
       )}

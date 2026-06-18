@@ -55,5 +55,15 @@ export const resolveGrid = (
           ['p2', 'vdiv1', 'p3'],
         ],
       }
+    case 'grid3x2':
+      return {
+        cols,
+        rows,
+        areas: [
+          ['p0', 'vdiv0a', 'p1', 'vdiv1a', 'p2'],
+          ['hdiv', 'hdiv', 'hdiv', 'hdiv', 'hdiv'],
+          ['p3', 'vdiv0b', 'p4', 'vdiv1b', 'p5'],
+        ],
+      }
   }
 }

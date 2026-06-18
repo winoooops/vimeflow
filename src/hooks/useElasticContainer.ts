@@ -254,6 +254,42 @@ export const useElasticContainer = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Recompute bounds when the caller supplies new percent limits (e.g. a
+  // multi-column divider whose feasible range depends on the current track
+  // weights and the number of adjacent columns).
+  const initialBoundsSetRef = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!initialBoundsSetRef.current) {
+      initialBoundsSetRef.current = true
+
+      return
+    }
+
+    minPercentRef.current = minPercent
+    maxPercentRef.current = maxPercent
+
+    const dimension = dimensionRef.current
+    if (dimension <= 0) {
+      return
+    }
+
+    const { newMin, newMax } = computeBounds(dimension)
+    pixelMinRef.current = newMin
+    pixelMaxRef.current = newMax
+    setPixelMin(newMin)
+    setPixelMax(newMax)
+
+    const effective = Math.max(1, dimension - reservedPxRef.current)
+
+    const nextSize = clampSize(
+      effective * desiredPercentRef.current,
+      newMin,
+      newMax
+    )
+    resetToSize(nextSize, newMin, newMax)
+  }, [minPercent, maxPercent, computeBounds, resetToSize])
+
   return {
     ...resizable,
     pixelMin,

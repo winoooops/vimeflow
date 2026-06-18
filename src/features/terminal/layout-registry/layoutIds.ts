@@ -7,4 +7,5 @@ export const LAYOUT_IDS = [
   'hsplit',
   'threeRight',
   'quad',
+  'grid3x2',
 ] as const satisfies readonly LayoutId[]

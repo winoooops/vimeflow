@@ -1078,7 +1078,7 @@ export const useSessionManager = (
       // (the target pane may evaporate anyway when the remove commits).
       // Warn for parity with every other guarded early-return in this
       // function (and in addPane / removePane): otherwise a developer
-      // chasing a "⌘1-4 stopped working for 50–300ms" report sees
+      // chasing a "⌘1-6 stopped working for 50–300ms" report sees
       // nothing in devtools and can't distinguish the transient
       // suppression from a real bug.
       if (pendingPaneOps.current.has(sessionId)) {
