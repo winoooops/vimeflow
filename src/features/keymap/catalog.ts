@@ -8,19 +8,6 @@ export type BindingContext =
   | 'dock'
   | 'browser'
 
-export interface CommandDescriptor {
-  readonly id: string
-  readonly label: string
-  readonly group: string
-  readonly context: BindingContext
-  readonly matchPolicy: 'exact' | 'tolerant'
-  readonly defaultCombo: Chord | ((isMac: boolean) => Chord)
-  readonly rebindable: boolean
-  readonly preserveStoredOverrides?: boolean
-  readonly intentionalShadow?: boolean
-  readonly intentionalShadowWith?: readonly string[]
-}
-
 const c = (
   code: string,
   ...mods: ('Mod' | 'Ctrl' | 'Shift' | 'Alt')[]
@@ -31,7 +18,7 @@ const c = (
 // migrates the command-palette direct toggle and leader prefix. Their
 // defaultCombo MUST equal today's hardcoded combos (resolve.test asserts this).
 // Terminal-owned rows remain display-only.
-export const CATALOG = [
+const CATALOG_LITERAL = [
   // ── Panes & Layout (MIGRATED — rebindable) ──
   {
     id: 'focus-pane-1',
@@ -293,11 +280,30 @@ export const CATALOG = [
     preserveStoredOverrides: true,
     defaultCombo: c('KeyL', 'Mod'),
   },
-] as const satisfies readonly CommandDescriptor[]
+] as const
 
-export type CommandId = (typeof CATALOG)[number]['id']
+export type CommandId = (typeof CATALOG_LITERAL)[number]['id']
 
-const BY_ID = new Map<string, CommandDescriptor>(
+export interface CommandDescriptor {
+  readonly id: CommandId
+  readonly label: string
+  readonly group: string
+  readonly context: BindingContext
+  readonly matchPolicy: 'exact' | 'tolerant'
+  readonly defaultCombo: Chord | ((isMac: boolean) => Chord)
+  readonly rebindable: boolean
+  readonly preserveStoredOverrides?: boolean
+  readonly intentionalShadow?: boolean
+  readonly intentionalShadowWith?: readonly CommandId[]
+}
+
+// Exported catalog is widened to CommandDescriptor so consumers see a uniform
+// array type, while CommandId is derived from the literal catalog above. This
+// breaks the circular dependency and lets intentionalShadowWith reject typos
+// at compile time.
+export const CATALOG: readonly CommandDescriptor[] = CATALOG_LITERAL
+
+const BY_ID = new Map<CommandId, CommandDescriptor>(
   CATALOG.map((cmd) => [cmd.id, cmd])
 )
 

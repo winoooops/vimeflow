@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 23       | 4    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 37       | 16   | 2026-06-12   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 38       | 16   | 2026-06-18   |
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 2        | 0    | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
@@ -95,3 +95,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Modulo Correctness](patterns/modulo-correctness.md)                                                 | correctness        | 1        | 0    | 2026-06-15   |
+| [Catalog Identifier Safety](patterns/catalog-identifier-safety.md)                                   | correctness        | 1        | 0    | 2026-06-18   |

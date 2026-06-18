@@ -1451,10 +1451,13 @@ export const WorkspaceView = (): ReactElement => {
     [matches]
   )
 
+  const paletteToken = formatChord(paletteBinding)
+  const leaderToken = formatChord(paletteLeaderBinding)
+
   useEffect(() => {
     const bindings = {
-      palette: formatChord(paletteBinding),
-      leader: formatChord(paletteLeaderBinding),
+      palette: paletteToken,
+      leader: leaderToken,
     }
     const bridge = window.vimeflow
 
@@ -1465,7 +1468,7 @@ export const WorkspaceView = (): ReactElement => {
     }
 
     bridge?.setCommandPaletteBinding?.(bindings.leader)
-  }, [paletteBinding, paletteLeaderBinding])
+  }, [paletteToken, leaderToken])
 
   const settingsDialog = useSettingsDialog()
 
