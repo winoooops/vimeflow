@@ -428,7 +428,7 @@ const findOffsetForCellColumn = (
     const nextColumn = column + width
 
     if (nextColumn > targetColumn) {
-      return cursor + readCodePointLength(text, cursor)
+      return cursor
     }
 
     if (nextColumn === targetColumn) {

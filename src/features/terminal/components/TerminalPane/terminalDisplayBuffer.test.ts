@@ -187,6 +187,15 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readVisibleText()).toBe(`a${NERD_FONT_ICON}c!`)
   })
 
+  test('positions absolute cursor at wide glyph boundary when targeting its second cell', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(`a${'漢'}b`)
+    buffer.write(getCursorPositionSentinel(1, 3))
+
+    expect(buffer.readCursorOffset()).toBe(1)
+  })
+
   test('rewrites Codex MCP progress rows without duplicating stale fragments', () => {
     const buffer = new TerminalDisplayBuffer()
 

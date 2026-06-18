@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-18
-ref_count: 5
+ref_count: 6
 ---
 
 # Terminal Control Sequence Handling
@@ -180,4 +180,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L626-643
 - **Finding:** `softWrapAtCursor` wrapped only when the current line width reached `columns`. A two-cell glyph written at `columns - 1` therefore produced a line wider than the terminal, clipping the glyph and throwing off later cursor math.
 - **Fix:** Pass the incoming character to `softWrapAtCursor` and wrap when `lineCellWidth + readTerminalCellWidth(character, 0) > columns`.
+- **Commit:** same commit as this entry
+
+### 19. CSI H/CSI f absolute cursor snaps past wide glyphs when targeting their second cell
+
+- **Source:** github-claude | PR #534 round 3 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-443
+- **Finding:** `findOffsetForCellColumn` returned `cursor + readCodePointLength(...)` for both an exact column match and an overshoot. Overshoot only happens when the target terminal cell falls inside a two-cell glyph (CJK or emoji), so absolute cursor positioning landed after the glyph instead of at its boundary.
+- **Fix:** Changed the `nextColumn > targetColumn` branch to return the current glyph offset (`cursor`), matching the existing CHA-specific helper. Added a regression test that writes `a漢b`, positions the cursor at column 3 (the wide glyph's second cell), and asserts the cursor offset is the start of the wide glyph.
 - **Commit:** same commit as this entry
