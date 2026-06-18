@@ -49,6 +49,22 @@ const hasGhosttyCursor = async (): Promise<boolean> =>
       ) !== null
   )
 
+const hasGhosttyHorizontalOverflow = async (): Promise<boolean> =>
+  browser.execute(() => {
+    const root = document.querySelector<HTMLElement>(
+      '[data-terminal-renderer="ghostty"]'
+    )
+    const output = root?.querySelector<HTMLElement>('pre') ?? null
+    const overflowTolerance = 1
+
+    return (
+      (root !== null &&
+        root.scrollWidth - root.clientWidth > overflowTolerance) ||
+      (output !== null &&
+        output.scrollWidth - output.clientWidth > overflowTolerance)
+    )
+  })
+
 interface GhosttyStyleRun {
   readonly color: string
   readonly text: string
@@ -166,5 +182,6 @@ describe('Ghostty renderer smoke', () => {
         (run) => run.text.includes(marker) && run.color === TRUE_COLOR_PINK
       )
     ).toBe(true)
+    expect(await hasGhosttyHorizontalOverflow()).toBe(false)
   })
 })

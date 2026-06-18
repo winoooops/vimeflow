@@ -154,4 +154,3 @@ all required state through pure display-state helpers.
 - **Finding:** When repainting an existing screen row that is exactly `columns` wide, the next printable cell should wrap onto the already-existing next row and overwrite there. This branch always inserts a new `\n` at the cursor, so a redraw like an existing `abcd...
 - **Fix:** Addressed in the same commit that appended this entry.
 - **Commit:** same commit as this entry
-

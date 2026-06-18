@@ -84,16 +84,39 @@ describe('plainTextInstance', () => {
     created.terminal.open(container)
 
     expect(container.firstElementChild).toBe(created.terminal.element)
-    expect(created.terminal.cols).toBe(80)
+    expect(created.terminal.cols).toBe(78)
     expect(created.terminal.rows).toBe(20)
-    expect(resizeHandler).toHaveBeenCalledWith({ cols: 80, rows: 20 })
+    expect(resizeHandler).toHaveBeenCalledWith({ cols: 78, rows: 20 })
 
     setElementSize(container, 400, 180)
     created.fitController.fit()
 
-    expect(created.terminal.cols).toBe(50)
+    expect(created.terminal.cols).toBe(48)
     expect(created.terminal.rows).toBe(10)
-    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 50, rows: 10 })
+    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 48, rows: 10 })
+  })
+
+  test('clamps renderer output to the pane width', () => {
+    const created = createTrackedPlainTextTerminal()
+    const container = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    created.terminal.open(container)
+
+    const root = created.terminal.element
+    const output = root?.querySelector('pre')
+
+    expect(root?.style.overflowX).toBe('hidden')
+    expect(root?.style.overflowY).toBe('auto')
+    expect(root?.style.maxWidth).toBe('100%')
+    expect(root?.style.width).toBe('100%')
+    expect(output?.style.boxSizing).toBe('border-box')
+    expect(output?.style.maxWidth).toBe('100%')
+    expect(output?.style.overflowWrap).toBe('anywhere')
+    expect(output?.style.overflowX).toBe('hidden')
+    expect(output?.style.whiteSpace).toBe('pre-wrap')
+    expect(output?.style.width).toBe('100%')
+    expect(output?.style.wordBreak).toBe('break-word')
   })
 
   test('writes output chunks into the viewport reader', () => {
@@ -297,7 +320,7 @@ describe('plainTextInstance', () => {
     const created = createTrackedPlainTextTerminal()
     const container = document.createElement('div')
 
-    setElementSize(container, 40, 180)
+    setElementSize(container, 56, 180)
     created.terminal.open(container)
     created.terminal.write('abcdef')
     created.terminal.write('\r\x1b[Kgh')
@@ -306,7 +329,7 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('abcde\ngh')
     expect(
       created.terminal.element?.querySelector('pre')?.style.whiteSpace
-    ).toBe('pre')
+    ).toBe('pre-wrap')
   })
 
   test('rewrites Codex MCP progress output that redraws previous rows', () => {

@@ -316,11 +316,7 @@ const parseCsiCursorPosition = (
   const rowText = parts[0] ?? ''
   const columnText = parts[1] ?? ''
 
-  if (
-    !/^\d*$/.test(rowText) ||
-    !/^\d*$/.test(columnText) ||
-    parts.length > 2
-  ) {
+  if (!/^\d*$/.test(rowText) || !/^\d*$/.test(columnText) || parts.length > 2) {
     return null
   }
 

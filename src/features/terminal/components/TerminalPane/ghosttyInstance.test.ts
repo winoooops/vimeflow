@@ -246,7 +246,7 @@ describe('ghosttyInstance', () => {
     const container = document.createElement('div')
     const output = `abcdef\r${ESC}[Kgh`
 
-    setElementSize(container, 40, 180)
+    setElementSize(container, 56, 180)
     created.terminal.open(container)
     created.output.writeOutput({
       text: 'wrong',

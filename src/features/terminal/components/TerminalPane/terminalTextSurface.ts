@@ -19,6 +19,7 @@ const MIN_COLS = 2
 const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
+const MEASURED_CHAR_SAMPLE_LENGTH = 80
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -82,6 +83,12 @@ const readContainedSelection = (root: HTMLElement): string => {
   return selection.toString()
 }
 
+const parseCssPixels = (value: string): number => {
+  const parsed = Number.parseFloat(value)
+
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 const getKeyboardData = (event: KeyboardEvent): string | null => {
   if (event.metaKey || event.altKey) {
     return null
@@ -139,21 +146,29 @@ export class TerminalTextSurface implements TerminalSurface {
 
     Object.assign(this.root.style, {
       height: '100%',
+      maxWidth: '100%',
       minHeight: '0',
-      overflow: 'auto',
+      overflowX: 'hidden',
+      overflowY: 'auto',
       position: 'relative',
+      width: '100%',
     })
 
     Object.assign(this.output.style, {
       boxSizing: 'border-box',
+      display: 'block',
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: `${TERMINAL_FONT_SIZE}px`,
       lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
       margin: '0',
+      maxWidth: '100%',
       minHeight: '100%',
+      overflowWrap: 'anywhere',
+      overflowX: 'hidden',
       padding: '8px',
-      whiteSpace: 'pre',
-      wordBreak: 'normal',
+      whiteSpace: 'pre-wrap',
+      width: '100%',
+      wordBreak: 'break-word',
     })
 
     Object.assign(this.input.style, {
@@ -376,9 +391,11 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
+    const contentWidth = Math.max(0, width - this.readOutputHorizontalPadding())
+
     const nextCols = Math.max(
       MIN_COLS,
-      Math.floor(width / APPROXIMATE_CHAR_WIDTH)
+      Math.floor(contentWidth / this.measureCharacterWidth())
     )
 
     const nextRows = Math.max(
@@ -450,6 +467,39 @@ export class TerminalTextSurface implements TerminalSurface {
     this.dataHandlers.forEach((handler) => {
       handler(data)
     })
+  }
+
+  private readOutputHorizontalPadding(): number {
+    const style = window.getComputedStyle(this.output)
+
+    return (
+      parseCssPixels(style.paddingLeft) + parseCssPixels(style.paddingRight)
+    )
+  }
+
+  private measureCharacterWidth(): number {
+    const probe = document.createElement('span')
+    probe.textContent = '0'.repeat(MEASURED_CHAR_SAMPLE_LENGTH)
+
+    Object.assign(probe.style, {
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: `${TERMINAL_FONT_SIZE}px`,
+      lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      pointerEvents: 'none',
+      position: 'absolute',
+      visibility: 'hidden',
+      whiteSpace: 'pre',
+    })
+
+    this.root.append(probe)
+    const width = probe.getBoundingClientRect().width
+    probe.remove()
+
+    if (width <= 0) {
+      return APPROXIMATE_CHAR_WIDTH
+    }
+
+    return width / MEASURED_CHAR_SAMPLE_LENGTH
   }
 
   private createCursorElement(): HTMLElement {
