@@ -26,6 +26,13 @@ interface DividerHandleSpec {
   readonly trackIndex: number
 }
 
+interface DividerGroup {
+  readonly trackAxis: RatioAxis
+  readonly trackIndex: number
+  readonly dragAxis: DividerDragAxis
+  readonly handles: readonly DividerHandleSpec[]
+}
+
 const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   single: [],
   vsplit: [
@@ -76,14 +83,6 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
       trackIndex: 0,
     },
     {
-      id: 'hdiv',
-      gridArea: 'hdiv',
-      dragAxis: 'vertical',
-      orientation: 'horizontal',
-      trackAxis: 'rows',
-      trackIndex: 0,
-    },
-    {
       id: 'vdiv1',
       gridArea: 'vdiv1',
       dragAxis: 'horizontal',
@@ -91,11 +90,27 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
       trackAxis: 'cols',
       trackIndex: 0,
     },
+    {
+      id: 'hdiv',
+      gridArea: 'hdiv',
+      dragAxis: 'vertical',
+      orientation: 'horizontal',
+      trackAxis: 'rows',
+      trackIndex: 0,
+    },
   ],
   grid3x2: [
     {
       id: 'vdiv0a',
       gridArea: 'vdiv0a',
+      dragAxis: 'horizontal',
+      orientation: 'vertical',
+      trackAxis: 'cols',
+      trackIndex: 0,
+    },
+    {
+      id: 'vdiv0b',
+      gridArea: 'vdiv0b',
       dragAxis: 'horizontal',
       orientation: 'vertical',
       trackAxis: 'cols',
@@ -110,22 +125,6 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
       trackIndex: 1,
     },
     {
-      id: 'hdiv',
-      gridArea: 'hdiv',
-      dragAxis: 'vertical',
-      orientation: 'horizontal',
-      trackAxis: 'rows',
-      trackIndex: 0,
-    },
-    {
-      id: 'vdiv0b',
-      gridArea: 'vdiv0b',
-      dragAxis: 'horizontal',
-      orientation: 'vertical',
-      trackAxis: 'cols',
-      trackIndex: 0,
-    },
-    {
       id: 'vdiv1b',
       gridArea: 'vdiv1b',
       dragAxis: 'horizontal',
@@ -133,28 +132,56 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
       trackAxis: 'cols',
       trackIndex: 1,
     },
+    {
+      id: 'hdiv',
+      gridArea: 'hdiv',
+      dragAxis: 'vertical',
+      orientation: 'horizontal',
+      trackAxis: 'rows',
+      trackIndex: 0,
+    },
   ],
 }
 
-interface SplitBoundaryProps extends Omit<SplitDividersProps, 'layout'> {
-  readonly axis: DividerDragAxis
-  readonly trackAxis: RatioAxis
-  readonly trackIndex: number
-  readonly specs: readonly DividerHandleSpec[]
+const groupKey = (trackAxis: RatioAxis, trackIndex: number): string =>
+  `${trackAxis}:${trackIndex}`
+
+const groupSpecsByBoundary = (
+  specs: readonly DividerHandleSpec[]
+): readonly DividerGroup[] => {
+  const groups = new Map<string, DividerGroup>()
+
+  for (const spec of specs) {
+    const key = groupKey(spec.trackAxis, spec.trackIndex)
+    const existing = groups.get(key)
+
+    if (existing) {
+      groups.set(key, {
+        ...existing,
+        handles: [...existing.handles, spec],
+      })
+    } else {
+      groups.set(key, {
+        trackAxis: spec.trackAxis,
+        trackIndex: spec.trackIndex,
+        dragAxis: spec.dragAxis,
+        handles: [spec],
+      })
+    }
+  }
+
+  return Array.from(groups.values())
 }
 
-const boundaryKey = (spec: DividerHandleSpec): string =>
-  `${spec.trackAxis}-${spec.trackIndex}`
-
-const SplitBoundary = ({
+const SplitDividerGroup = ({
   containerRef,
-  axis,
+  ratios,
   trackAxis,
   trackIndex,
-  ratios,
+  dragAxis,
+  handles,
   onRatioChange,
-  specs,
-}: SplitBoundaryProps): ReactElement => {
+}: Omit<SplitDividersProps, 'layout'> & DividerGroup): ReactElement => {
   const onTrackChange = useCallback(
     (nextRatios: readonly number[]): void =>
       onRatioChange(trackAxis, nextRatios),
@@ -163,7 +190,7 @@ const SplitBoundary = ({
 
   const binding = useSplitDivider({
     containerRef,
-    axis,
+    axis: dragAxis,
     trackAxis,
     trackIndex,
     initialRatios: ratios[trackAxis],
@@ -172,10 +199,10 @@ const SplitBoundary = ({
 
   return (
     <Fragment>
-      {specs.map((spec) => (
+      {handles.map((handle) => (
         <ResizeHandle
-          key={spec.id}
-          orientation={spec.orientation}
+          key={handle.id}
+          orientation={handle.orientation}
           testId={HANDLE_TEST_ID}
           ariaLabel="Resize panes"
           isDragging={binding.isDragging}
@@ -185,7 +212,7 @@ const SplitBoundary = ({
           onMouseDown={binding.handleMouseDown}
           onKeyDown={binding.onKeyDown}
           className="h-full w-full"
-          style={{ gridArea: spec.gridArea }}
+          style={{ gridArea: handle.gridArea }}
         />
       ))}
     </Fragment>
@@ -204,29 +231,17 @@ export const SplitDividers = ({
     return null
   }
 
-  const grouped = specs.reduce<Record<string, DividerHandleSpec[]>>(
-    (acc, spec) => {
-      const key = boundaryKey(spec)
-      acc[key] ??= []
-      acc[key].push(spec)
-
-      return acc
-    },
-    {}
-  )
+  const groups = groupSpecsByBoundary(specs)
 
   return (
     <Fragment>
-      {Object.values(grouped).map((groupSpecs) => (
-        <SplitBoundary
-          key={boundaryKey(groupSpecs[0])}
+      {groups.map((group) => (
+        <SplitDividerGroup
+          key={groupKey(group.trackAxis, group.trackIndex)}
           containerRef={containerRef}
-          axis={groupSpecs[0].dragAxis}
-          trackAxis={groupSpecs[0].trackAxis}
-          trackIndex={groupSpecs[0].trackIndex}
           ratios={ratios}
           onRatioChange={onRatioChange}
-          specs={groupSpecs}
+          {...group}
         />
       ))}
     </Fragment>

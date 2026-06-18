@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-17
+last_updated: 2026-06-18
 ref_count: 20
 ---
 
@@ -435,4 +435,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
 - **Finding:** The round-1 fix computed `prependDelta = firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta`. When hot-loading delivered multiple new activity rows in one snapshot, the viewport adjusted by one row instead of the total inserted height, causing visible content jump and undermining scroll-stability.
 - **Fix:** Prefer total positive `scrollHeightDelta` for growing prepends and fall back to the measured first-row height only when the container does not grow. Added a regression test that stubs `offsetHeight` to a single-row value while growing `scrollHeight` by several rows' worth, asserting the viewport compensates by the full delta.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. Duplicate divider bindings write conflicting CSS vars for the same logical boundary
+
+- **Source:** github-codex-connector | PR #528 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx`
+- **Finding:** In `quad` and `grid3x2` layouts, two visual divider segments represent the same logical column boundary (`trackAxis: 'cols'`, same `trackIndex`). Each segment created its own `useSplitDivider` instance, and each instance's commit-size effect wrote the same `--split-cols-*` CSS variables. Dragging one segment updated parent state, but the untouched segment's effect re-ran with its stale `size` and overwrote the live ratio, making the resize snap back or become inconsistent.
+- **Fix:** Group divider specs by `(trackAxis, trackIndex)` and create exactly one `useSplitDivider` binding per logical boundary. Render every visual segment in the group from that shared binding so all handles read the same live `size` and no two effects compete for the same CSS vars.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
