@@ -1,12 +1,39 @@
 // src/theme/service.ts
 import { toCssVars } from './cssVars'
 import { flexoki } from './themes/flexoki'
+import { gruvboxDark } from './themes/gruvbox/gruvbox-dark'
+import { gruvboxLight } from './themes/gruvbox/gruvbox-light'
 import { obsidianLens } from './themes/obsidian-lens'
 import type { ThemeDefinition, ThemeId } from './types'
 
 export const THEME_STORAGE_KEY = 'vimeflow:theme'
 
-let themes: readonly ThemeDefinition[] = [obsidianLens, flexoki]
+const themeModules = [
+  {
+    path: './themes/obsidian-lens',
+    exportName: 'obsidianLens',
+    fallback: obsidianLens,
+  },
+  {
+    path: './themes/flexoki',
+    exportName: 'flexoki',
+    fallback: flexoki,
+  },
+  {
+    path: './themes/gruvbox/gruvbox-dark',
+    exportName: 'gruvboxDark',
+    fallback: gruvboxDark,
+  },
+  {
+    path: './themes/gruvbox/gruvbox-light',
+    exportName: 'gruvboxLight',
+    fallback: gruvboxLight,
+  },
+] as const
+
+let themes: readonly ThemeDefinition[] = themeModules.map(
+  ({ fallback }) => fallback
+)
 
 const DEFAULT_THEME = obsidianLens
 
@@ -60,20 +87,19 @@ export const themeService = {
  * Flexoki value tuning shows on screen without a reload (spec §5). */
 if (import.meta.hot) {
   import.meta.hot.accept(
-    ['./themes/obsidian-lens', './themes/flexoki'],
-    ([obsMod, flexMod]) => {
-      const nextObsidian =
-        (obsMod as { obsidianLens?: ThemeDefinition } | undefined)
-          ?.obsidianLens ??
-        themes.find((t) => t.id === 'obsidian-lens') ??
-        obsidianLens
+    themeModules.map(({ path }) => path),
+    (mods) => {
+      themes = themeModules.map((themeModule, index) => {
+        const next = (
+          mods[index] as Record<string, ThemeDefinition | undefined> | undefined
+        )?.[themeModule.exportName]
 
-      const nextFlexoki =
-        (flexMod as { flexoki?: ThemeDefinition } | undefined)?.flexoki ??
-        themes.find((t) => t.id === 'flexoki') ??
-        flexoki
-
-      themes = [nextObsidian, nextFlexoki]
+        return (
+          next ??
+          themes.find((t) => t.id === themeModule.fallback.id) ??
+          themeModule.fallback
+        )
+      })
       apply(active.id)
     }
   )

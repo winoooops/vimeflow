@@ -52,7 +52,7 @@ const KIND_COLOR: Record<ActivityEventKind, string> = {
   glob: 'text-on-surface-variant',
   think: 'text-primary-container',
   user: 'text-tertiary',
-  meta: 'text-outline',
+  meta: 'text-on-surface-muted',
 }
 
 export const getLabel = (event: ActivityEventType): string => {
@@ -493,7 +493,7 @@ export const ActivityEvent = ({
       >
         <div className="relative">
           <span
-            className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
+            className={`material-symbols-outlined flex h-6 w-6 items-center justify-center rounded-md bg-surface-container-high text-[16px] font-medium leading-none ${colorClass}`}
             aria-hidden="true"
           >
             {symbol}

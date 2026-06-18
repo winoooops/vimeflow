@@ -50,5 +50,7 @@ test('list exposes both themes for pickers', () => {
   expect(themeService.list().map((t) => t.id)).toEqual([
     'obsidian-lens',
     'flexoki',
+    'gruvbox-dark',
+    'gruvbox-light',
   ])
 })
