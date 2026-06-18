@@ -36,6 +36,40 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
   })
 
+  test('renders only the configured visible layouts in registry order', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        visibleLayoutIds={['single', 'threeRight', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Single' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Main + 2 stack' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Vertical split' })
+    ).toBeNull()
+  })
+
+  test('keeps the active layout visible even when it is not in the configured list', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(
+      screen.getByRole('button', { name: 'Vertical split' })
+    ).toBeInTheDocument()
+  })
   test('clicking the already-active button does NOT fire onPick', async () => {
     // The component's contract is that onPick fires only when the
     // active layout actually changes. setSessionLayout already no-ops

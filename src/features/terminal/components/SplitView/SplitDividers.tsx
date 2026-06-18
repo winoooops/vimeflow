@@ -146,6 +146,12 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
 const groupKey = (trackAxis: RatioAxis, trackIndex: number): string =>
   `${trackAxis}:${trackIndex}`
 
+const layoutGroupKey = (
+  layout: LayoutId,
+  trackAxis: RatioAxis,
+  trackIndex: number
+): string => `${layout}:${groupKey(trackAxis, trackIndex)}`
+
 const groupSpecsByBoundary = (
   specs: readonly DividerHandleSpec[]
 ): readonly DividerGroup[] => {
@@ -237,7 +243,7 @@ export const SplitDividers = ({
     <Fragment>
       {groups.map((group) => (
         <SplitDividerGroup
-          key={groupKey(group.trackAxis, group.trackIndex)}
+          key={layoutGroupKey(layout, group.trackAxis, group.trackIndex)}
           containerRef={containerRef}
           ratios={ratios}
           onRatioChange={onRatioChange}
