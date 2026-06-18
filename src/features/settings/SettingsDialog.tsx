@@ -30,6 +30,39 @@ const matchesQuery = (
   normalizedQuery: string
 ): boolean => value?.toLowerCase().includes(normalizedQuery) ?? false
 
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+const orderedFocusable = (dialog: HTMLElement): HTMLElement[] => {
+  const staticFocusable = Array.from(
+    dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+  ).filter(
+    (el) =>
+      !el.matches(':disabled') && el.getAttribute('aria-hidden') !== 'true'
+  )
+
+  const active = document.activeElement as HTMLElement | null
+  if (
+    active === null ||
+    !dialog.contains(active) ||
+    staticFocusable.includes(active)
+  ) {
+    return staticFocusable
+  }
+
+  // The active element is programmatically focused but not in the natural tab
+  // order (e.g. a settings target row with tabIndex={-1}). Include it in the
+  // ordering so the focus trap can Tab away from it naturally.
+  const all = [...staticFocusable, active]
+  all.sort((a, b) => {
+    const position = a.compareDocumentPosition(b)
+
+    return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+  })
+
+  return all
+}
+
 export const SettingsDialog = ({
   open,
   onClose,
@@ -112,14 +145,7 @@ export const SettingsDialog = ({
         return
       }
 
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter(
-        (el) =>
-          !el.matches(':disabled') && el.getAttribute('aria-hidden') !== 'true'
-      )
+      const focusable = orderedFocusable(dialog)
 
       if (focusable.length === 0) {
         event.preventDefault()

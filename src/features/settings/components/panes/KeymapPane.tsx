@@ -37,7 +37,6 @@ import type {
   KeymapGroup,
   KeymapKeys,
   SettingsPaneTargetProps,
-  SettingsTargetId,
 } from '../../types'
 import { Icon } from '../Icon'
 import { Kbd } from '../Kbd'
@@ -105,11 +104,6 @@ const focusAfterTabCancel = (id: CommandId, direction: TabDirection): void => {
   const nextIndex = (currentIndex + delta + focusable.length) % focusable.length
   focusable[nextIndex]?.focus()
 }
-
-const isActiveTarget = (
-  id: SettingsTargetId,
-  activeTargetId?: SettingsTargetId | null
-): boolean => activeTargetId === id
 
 const rowClass = (last: boolean, active = false): string =>
   `flex scroll-mt-4 items-center gap-3.5 rounded-lg px-3.5 py-2.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary/65 ${
@@ -356,7 +350,7 @@ export const KeymapPane = ({
     const isOverridden = settings.customKeybindings[cmd.id] !== undefined
     const rowFeedback = feedback?.id === cmd.id ? feedback : null
     const targetId = keymapCommandTargetId(cmd.id)
-    const targetActive = isActiveTarget(targetId, activeTargetId)
+    const targetActive = activeTargetId === targetId
 
     return (
       <div
@@ -447,7 +441,7 @@ export const KeymapPane = ({
       group.zone,
       group.bindings.map((b: KeymapBinding, i) => {
         const targetId = keymapStaticTargetId(b.id)
-        const targetActive = isActiveTarget(targetId, activeTargetId)
+        const targetActive = activeTargetId === targetId
 
         return (
           <div
@@ -477,10 +471,9 @@ export const KeymapPane = ({
         label="Preset"
         hint="Switch between the default Vimeflow binding set and Vim-style bindings."
         settingsTargetId={SETTINGS_TARGET_IDS.keymapPreset}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.keymapPreset,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.keymapPreset
+        }
       >
         <Select
           value={settings.keymapPreset}

@@ -5,11 +5,7 @@ import {
   useState,
   type ReactElement,
 } from 'react'
-import type {
-  AgentAlias,
-  SettingsPaneTargetProps,
-  SettingsTargetId,
-} from '../../types'
+import type { AgentAlias, SettingsPaneTargetProps } from '../../types'
 import { DEFAULT_ALIASES, SETTINGS_TARGET_IDS } from '../../sections'
 import { useSettings } from '../../hooks/useSettings'
 import { Icon } from '../Icon'
@@ -23,11 +19,6 @@ import {
   Toggle,
 } from '../controls'
 
-const isActiveTarget = (
-  id: SettingsTargetId,
-  activeTargetId?: SettingsTargetId | null
-): boolean => activeTargetId === id
-
 export const AgentsPane = ({
   activeTargetId = null,
 }: SettingsPaneTargetProps): ReactElement => {
@@ -39,10 +30,8 @@ export const AgentsPane = ({
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const hasInteractedRef = useRef(false)
 
-  const shellAliasesActive = isActiveTarget(
-    SETTINGS_TARGET_IDS.agentsShellAliases,
-    activeTargetId
-  )
+  const shellAliasesActive =
+    activeTargetId === SETTINGS_TARGET_IDS.agentsShellAliases
 
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -150,10 +139,9 @@ export const AgentsPane = ({
         label="Manage agent shell aliases"
         hint="Vimeflow injects these into each pane's PTY environment. Your .bashrc / .zshrc is never touched."
         settingsTargetId={SETTINGS_TARGET_IDS.agentsManageAliases}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.agentsManageAliases,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.agentsManageAliases
+        }
       >
         <Toggle
           on={shimOn}

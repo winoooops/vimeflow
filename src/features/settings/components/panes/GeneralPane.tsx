@@ -1,13 +1,8 @@
 import type { ReactElement } from 'react'
 import { SETTINGS_TARGET_IDS } from '../../sections'
 import { useSettings } from '../../hooks/useSettings'
-import type { SettingsPaneTargetProps, SettingsTargetId } from '../../types'
+import type { SettingsPaneTargetProps } from '../../types'
 import { PaneTitle, Row, Select, Toggle } from '../controls'
-
-const isActiveTarget = (
-  id: SettingsTargetId,
-  activeTargetId?: SettingsTargetId | null
-): boolean => activeTargetId === id
 
 export const GeneralPane = ({
   activeTargetId = null,
@@ -22,10 +17,9 @@ export const GeneralPane = ({
         label="When Closing With No Tabs"
         hint="What to do when using the 'close active item' action with no tabs."
         settingsTargetId={SETTINGS_TARGET_IDS.generalCloseWithNoTabs}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalCloseWithNoTabs
+        }
       >
         <Select
           value={settings.closeWithNoTabs}
@@ -43,10 +37,9 @@ export const GeneralPane = ({
         label="On Last Window Closed"
         hint="What to do when the last window is closed."
         settingsTargetId={SETTINGS_TARGET_IDS.generalOnLastWindowClosed}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalOnLastWindowClosed,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalOnLastWindowClosed
+        }
       >
         <Select
           value={settings.onLastWindowClosed}
@@ -63,10 +56,9 @@ export const GeneralPane = ({
         label="Use System Path Prompts"
         hint="Use native OS dialogs for 'Open' and 'Save As'."
         settingsTargetId={SETTINGS_TARGET_IDS.generalUseSystemPathPrompts}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalUseSystemPathPrompts,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalUseSystemPathPrompts
+        }
       >
         <Toggle
           on={settings.useSystemPathPrompts}
@@ -79,10 +71,9 @@ export const GeneralPane = ({
         label="Use System Prompts"
         hint="Use native OS dialogs for confirmations."
         settingsTargetId={SETTINGS_TARGET_IDS.generalUseSystemPrompts}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalUseSystemPrompts,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalUseSystemPrompts
+        }
       >
         <Toggle
           on={settings.useSystemPrompts}
@@ -95,10 +86,9 @@ export const GeneralPane = ({
         label="Redact Private Values"
         hint="Hide the values of variables in private files."
         settingsTargetId={SETTINGS_TARGET_IDS.generalRedactPrivateValues}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalRedactPrivateValues,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalRedactPrivateValues
+        }
       >
         <Toggle
           on={settings.redactPrivateValues}
@@ -111,10 +101,9 @@ export const GeneralPane = ({
         label="CLI Default Open Behavior"
         hint="How `vf <path>` opens directories when no flag is specified."
         settingsTargetId={SETTINGS_TARGET_IDS.generalCliOpenBehavior}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.generalCliOpenBehavior,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.generalCliOpenBehavior
+        }
         last
       >
         <Select

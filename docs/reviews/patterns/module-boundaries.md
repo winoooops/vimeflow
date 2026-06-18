@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-15
+last_updated: 2026-06-18
 ref_count: 3
 ---
 
@@ -193,4 +193,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1492-1509, `src/features/workspace/commands/buildWorkspaceCommands.ts` L187-204
 - **Finding:** Both files implemented an identical wrap-around session cycle (empty-sessions guard, `findIndex` on `activeSessionId`, modulo wrap, `setActiveSessionId`). The two closures differed only in variable names (`idx`/`nextIdx` vs `index`/`nextIndex`), making the duplication non-obvious in future diffs. A behavior change — different empty-list message, skip-locked-session guard, etc. — would have to be applied independently in both places, and the compiler would not warn on divergence.
 - **Fix:** Extracted a pure `cycleSession(items, activeId, delta)` utility into `src/features/sessions/utils/cycleSession.ts` with co-located `cycleSession.test.ts`. Replaced both closures with one-liner delegates that call the utility and surface the same "No open sessions" toast when it returns `null`.
+- **Commit:** same commit as this entry
+
+### 18. Trivial `isActiveTarget` helper duplicated across four settings pane files
+
+- **Source:** github-claude | PR #537 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx` L7-10, `GeneralPane.tsx` L7-10, `KeymapPane.tsx` L109-112, `AgentsPane.tsx` L26-29
+- **Finding:** The same one-line helper `const isActiveTarget = (id, activeTargetId) => activeTargetId === id` was copy-pasted into all four settings pane files. The body was a single equality comparison that needed no helper name to be readable; keeping it local in each pane created a four-file edit surface for any future semantic change to "active target" matching.
+- **Fix:** Removed the helper from each pane and inlined the equality as `activeTargetId === targetId` at every call site. This keeps each pane self-contained without the duplicated helper surface.
 - **Commit:** same commit as this entry

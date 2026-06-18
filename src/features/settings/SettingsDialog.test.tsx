@@ -180,6 +180,30 @@ describe('SettingsDialog', () => {
     expect(target).toHaveAttribute('data-settings-target-active', 'true')
   })
 
+  test('Tab from a focused search result moves to the setting control', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
+    await user.click(
+      screen.getByRole('button', { name: 'Redact Private Values' })
+    )
+
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveFocus()
+    })
+
+    await user.tab()
+
+    expect(
+      screen.getByRole('switch', { name: 'Redact Private Values' })
+    ).toHaveFocus()
+  })
+
   test('renders the footer hint and close shortcut', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 

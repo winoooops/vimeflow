@@ -1,13 +1,8 @@
 import { useState, type ReactElement } from 'react'
 import { BUILTIN_SCHEMES, SETTINGS_TARGET_IDS } from '../../sections'
-import type { SettingsPaneTargetProps, SettingsTargetId } from '../../types'
+import type { SettingsPaneTargetProps } from '../../types'
 import { Icon } from '../Icon'
 import { GhostButton, PaneTitle, Row, Select } from '../controls'
-
-const isActiveTarget = (
-  id: SettingsTargetId,
-  activeTargetId?: SettingsTargetId | null
-): boolean => activeTargetId === id
 
 export const AppearancePane = ({
   activeTargetId = null,
@@ -18,10 +13,8 @@ export const AppearancePane = ({
   const [uiFont, setUiFont] = useState('instrument')
   const [monoFont, setMonoFont] = useState('jetbrains')
 
-  const colorSchemeActive = isActiveTarget(
-    SETTINGS_TARGET_IDS.appearanceColorScheme,
-    activeTargetId
-  )
+  const colorSchemeActive =
+    activeTargetId === SETTINGS_TARGET_IDS.appearanceColorScheme
 
   return (
     <>
@@ -124,10 +117,9 @@ export const AppearancePane = ({
         label="Accent Hue"
         hint={`Shift the primary accent around the wheel. Current: ${accentHue}°`}
         settingsTargetId={SETTINGS_TARGET_IDS.appearanceAccentHue}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.appearanceAccentHue,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceAccentHue
+        }
       >
         <input
           type="range"
@@ -145,10 +137,9 @@ export const AppearancePane = ({
         label="Density"
         hint="Compact for power users; comfortable for readability."
         settingsTargetId={SETTINGS_TARGET_IDS.appearanceDensity}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.appearanceDensity,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceDensity
+        }
       >
         <Select
           value={density}
@@ -165,10 +156,9 @@ export const AppearancePane = ({
         label="UI Font"
         hint="Sans-serif used for labels, sidebars, headings."
         settingsTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.appearanceUiFont,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceUiFont
+        }
       >
         <Select
           value={uiFont}
@@ -186,10 +176,9 @@ export const AppearancePane = ({
         label="Mono Font"
         hint="Used in the terminal, editor, and all code blocks."
         settingsTargetId={SETTINGS_TARGET_IDS.appearanceMonoFont}
-        settingsTargetActive={isActiveTarget(
-          SETTINGS_TARGET_IDS.appearanceMonoFont,
-          activeTargetId
-        )}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceMonoFont
+        }
         last
       >
         <Select
