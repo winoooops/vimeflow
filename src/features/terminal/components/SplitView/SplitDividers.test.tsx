@@ -63,6 +63,37 @@ describe('SplitDividers', () => {
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(count)
   })
 
+  test('segmented column boundaries share one controller (grid3x2 mounts 3 controllers)', () => {
+    // Regression for Claude HIGH / Codex P2: quad and grid3x2 used to mount a
+    // separate useSplitDivider instance for each visual segment of a shared
+    // column boundary. The duplicated commit effects fought each other and
+    // caused an infinite update loop on drag. Grouping specs by logical
+    // boundary means grid3x2 now creates exactly three controllers:
+    // cols-0, cols-1, and rows-0 — even though it renders five handles.
+    const onRatioChange = vi.fn()
+
+    const GridHarness = (): React.ReactElement => {
+      const ref = useRef<HTMLDivElement>(document.createElement('div'))
+
+      return (
+        <div
+          ref={ref}
+          style={{ width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT }}
+        >
+          <SplitDividers
+            layout="grid3x2"
+            containerRef={ref}
+            ratios={DEFAULT_RATIOS.grid3x2}
+            onRatioChange={onRatioChange}
+          />
+        </div>
+      )
+    }
+
+    render(<GridHarness />)
+    expect(onRatioChange).toHaveBeenCalledTimes(3)
+  })
+
   test('vsplit handle is a vertical separator (col-resize)', () => {
     render(<Harness layout="vsplit" />)
     expect(screen.getByTestId('split-resize-handle')).toHaveAttribute(

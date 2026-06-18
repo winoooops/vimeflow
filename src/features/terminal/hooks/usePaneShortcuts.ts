@@ -9,7 +9,7 @@ import {
 /** Which modifier the toolbar hint advertises — and therefore the only
  *  one we intercept on this platform. Restricting to a single modifier
  *  per platform prevents a hidden shortcut steal: on macOS, the
- *  toolbar says "⌘+1-4 focus" but accepting `ctrlKey` would also
+ *  toolbar says "⌘+1-6 focus" but accepting `ctrlKey` would also
  *  swallow `Ctrl+1` (which terminal apps like vim / readline use).
  *  WorkspaceView derives this once from navigator + passes the same
  *  value to TerminalZone (for display) and this hook (for behavior). */
@@ -83,12 +83,12 @@ export const usePaneShortcuts = ({
         return
       }
 
-      const digitMatch = /^Digit([1-4])$/.exec(event.code)
+      const digitMatch = /^Digit([1-6])$/.exec(event.code)
       if (digitMatch) {
         const paneIndex = Number.parseInt(digitMatch[1], 10) - 1
 
         // Dialog guard covers the full digit-key path — both reclaim and
-        // pane-switch — so Ctrl+1-4 is fully suppressed while any modal is open.
+        // pane-switch — so Ctrl+1-6 is fully suppressed while any modal is open.
         if (document.querySelector(DIALOG_SELECTOR)) {
           return
         }
@@ -135,7 +135,7 @@ export const usePaneShortcuts = ({
 
         // Out-of-range: let the key propagate so terminal apps (vim,
         // tmux, etc.) can use ⌘N for their own purposes. The toolbar
-        // advertises "⌘+1-4 focus pane" — reserving the slot when
+        // advertises "⌘+1-6 focus pane" — reserving the slot when
         // there's no pane to focus would silently swallow user input
         // with no visible action. We intercept only when a pane
         // actually exists at the requested index.
