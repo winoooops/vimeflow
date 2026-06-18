@@ -112,13 +112,13 @@ describe('SplitDividers', () => {
     const container = screen.getByTestId('container')
 
     // Mount writes the default ratio (0.5fr / 0.5fr) via the commit-size effect.
-    expect(container.style.getPropertyValue('--split-col')).toBe('0.5fr')
-    expect(container.style.getPropertyValue('--split-col-end')).toBe('0.5fr')
+    expect(container.style.getPropertyValue('--split-cols-0')).toBe('1fr')
+    expect(container.style.getPropertyValue('--split-cols-1')).toBe('1fr')
 
     // Simulate an in-progress drag: `onDragPreview` → `writeRatio(0.8)` has
     // written the live ratio straight into the CSS var, bypassing React state.
-    container.style.setProperty('--split-col', '0.8fr')
-    container.style.setProperty('--split-col-end', '0.2fr')
+    container.style.setProperty('--split-cols-0', '1.6fr')
+    container.style.setProperty('--split-cols-1', '0.4fr')
 
     // Parent re-renders (mirrors SplitView re-rendering from a session prop
     // change while the user is still dragging). `onRatioChange` identity is
@@ -127,7 +127,7 @@ describe('SplitDividers', () => {
 
     // Without the useCallback fix the inline arrow in VSplitDividers would
     // have churned the effect dep and snapped these back to 0.5fr / 0.5fr.
-    expect(container.style.getPropertyValue('--split-col')).toBe('0.8fr')
-    expect(container.style.getPropertyValue('--split-col-end')).toBe('0.2fr')
+    expect(container.style.getPropertyValue('--split-cols-0')).toBe('1.6fr')
+    expect(container.style.getPropertyValue('--split-cols-1')).toBe('0.4fr')
   })
 })
