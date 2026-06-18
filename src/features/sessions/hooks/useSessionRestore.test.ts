@@ -724,6 +724,7 @@ describe('useSessionRestore', () => {
         status: 'running',
       })
     )
+
     expect(restoredSessions[1]).toEqual(
       expect.objectContaining({
         id: 'ws-background',
@@ -731,12 +732,72 @@ describe('useSessionRestore', () => {
         status: 'completed',
       })
     )
+
     expect(restoredSessions[1].panes[0]).toEqual(
       expect.objectContaining({
         ptyId: 'pty-background-old',
         status: 'completed',
       })
     )
+  })
+
+  test('does not spawn a PTY for the persisted-active session when it is closed', async () => {
+    const store: PersistedWorkspaceShape = {
+      sessions: [
+        {
+          id: 'ws-closed',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/closed',
+          active: true,
+          open: false,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-closed-old',
+              cwd: '/home/will/closed',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/closed',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActivePersisted = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(onRestore).toHaveBeenCalled()
+    expect(onActivePersisted).toHaveBeenCalledWith('ws-closed')
   })
 
   test('resolves active session from the restarted PTY id when no persisted-active handler is registered', async () => {

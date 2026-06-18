@@ -102,8 +102,27 @@ test('isOpenSession falls back to pane liveness when open is absent', () => {
       panes: [pane('completed')],
     } satisfies Pick<Session, 'open' | 'panes'>)
   ).toBe(false)
+
   expect(
     isOpenSession({
+      panes: [pane('running')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(true)
+})
+
+test('isOpenSession treats explicit open:false as closed when panes are dead', () => {
+  expect(
+    isOpenSession({
+      open: false,
+      panes: [pane('completed')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(false)
+})
+
+test('isOpenSession falls back to pane liveness when open:false but panes are live', () => {
+  expect(
+    isOpenSession({
+      open: false,
       panes: [pane('running')],
     } satisfies Pick<Session, 'open' | 'panes'>)
   ).toBe(true)
