@@ -738,4 +738,20 @@ filesystem scope restrictions).
 - **File:** `src/features/terminal/components/SplitView/useSplitDivider.test.tsx` L66-76
 - **Finding:** The keyboard resize assertion only checked `ratios[0] > ratios[1]`, verifying direction but not that the resulting boundary fraction stayed within `[SPLIT_ELASTIC_CONFIG.minPercent, SPLIT_ELASTIC_CONFIG.maxPercent]`. The old test was the only place in the file that validated the actual clamped bounds.
 - **Fix:** Derived the boundary fraction with `const frac = ratios[0] / (ratios[0] + ratios[1])` and added `toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)` / `toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)` assertions.
+### 72. Test script memory flag not mirrored to `test:coverage`
+
+- **Source:** github-claude | PR #528 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `package.json` L28-30
+- **Finding:** The `test` script was prefixed with `cross-env NODE_OPTIONS=--max-old-space-size=8192` to prevent CI OOM, but the `test:coverage` script was not. Coverage instrumentation holds more live objects than a plain run, so any CI step invoking `npm run test:coverage` would still hit the default heap limit and crash with the same OOM that the `test` change was meant to fix.
+- **Fix:** Added the identical `cross-env NODE_OPTIONS=--max-old-space-size=8192` prefix to the `test:coverage` script.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 73. `requestAnimationFrame` callback captured before effect scheduling races in CI
+
+- **Source:** deterministic-ci-failure | PR #528 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.test.tsx` L253-294
+- **Finding:** The test captured `window.requestAnimationFrame` callback in a local variable and invoked it once synchronously after `settle()`. In CI the effect that schedules the rAF loop could resolve after the single invocation, so `setBrowserPaneBounds` was never called and `waitFor` timed out.
+- **Fix:** Moved the callback invocation inside the `waitFor` poll so each retry ticks the latest captured animation-frame callback until the moved-bounds assertion passes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

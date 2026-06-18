@@ -27,6 +27,12 @@ export const LayoutSwitcher = ({
 }: LayoutSwitcherProps): ReactElement => (
   <div
     data-testid="layout-switcher"
+    // `role="group"` (not "toolbar") because we don't implement the
+    // roving-tabindex / arrow-key navigation pattern the ARIA toolbar
+    // role implies. `role="group"` + `aria-label` correctly names the
+    // region for screen readers without advertising an unimplemented
+    // keyboard contract. The layout buttons remain in the natural tab
+    // sequence — adequate for this small picker.
     role="group"
     aria-label="Pane layout"
     className="vf-app-no-drag inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"

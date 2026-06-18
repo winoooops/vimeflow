@@ -271,14 +271,23 @@ describe('BrowserPane', () => {
         <BrowserPaneHarness session={session} pane={browserPane} isActive />
       )
       await settle()
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalled()
+        expect(frameCallback).not.toBeNull()
+      })
       bridgeMocks.setBrowserPaneBounds.mockClear()
 
       rectSpy.mockReturnValue(movedRect)
-      act(() => {
-        frameCallback?.(performance.now())
-      })
 
+      // Poll while ticking the captured rAF callback. The effect that schedules
+      // requestAnimationFrame can resolve after settle() in CI, so a single
+      // synchronous invocation may run before the loop exists; waiting lets the
+      // latest callback drive syncBounds until the moved bounds land.
       await waitFor(() => {
+        act(() => {
+          frameCallback?.(performance.now())
+        })
+
         expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
           sessionId: 'session-1',
           paneId: 'p1',
@@ -340,6 +349,10 @@ describe('BrowserPane', () => {
         <BrowserPaneHarness session={session} pane={browserPane} isActive />
       )
       await settle()
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalled()
+        expect(frameCallback).not.toBeNull()
+      })
       bridgeMocks.setBrowserPaneBounds.mockClear()
 
       for (let i = 0; i < 60; i += 1) {
