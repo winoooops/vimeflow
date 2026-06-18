@@ -5,6 +5,7 @@ import {
   GHOSTTY_PARSER_ENGINE_ID,
   createGhosttyParserEngine,
 } from './ghosttyParserEngine'
+import { getSgrStyleSentinel } from './terminalControlParser'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 
 const encodeBase64 = (bytes: Uint8Array): string => {
@@ -108,6 +109,9 @@ describe('ghosttyParserEngine', () => {
 
     expect(engine.parseOutput(createByteChunk(output, 0, 'live'))).toEqual({
       visibleText: 'feat/ghostty-spike % ',
+      displayText:
+        `${getSgrStyleSentinel([38, 2, 243, 139, 168])}` +
+        `feat/ghostty-spike${getSgrStyleSentinel([0])} % `,
     })
     expect(handler).not.toHaveBeenCalled()
   })

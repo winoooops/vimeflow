@@ -12,7 +12,10 @@ import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import { createGhosttyParserEngine } from './ghosttyParserEngine'
 import type { TerminalParserEngine } from './terminalParserEngine'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
-import { TerminalTextSurface } from './terminalTextSurface'
+import {
+  TerminalTextSurface,
+  type TerminalTextSurfaceOutput,
+} from './terminalTextSurface'
 
 export { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 
@@ -32,8 +35,8 @@ class GhosttyTerminalModel {
 
     this.terminal = new TerminalTextSurface({
       rendererId: GHOSTTY_TERMINAL_RENDERER_ID,
-      transformOutput: (data): string =>
-        this.parserEngine.parseText(data, null).visibleText,
+      transformOutput: (data): TerminalTextSurfaceOutput =>
+        this.parserEngine.parseText(data, null),
     })
   }
 
@@ -45,9 +48,9 @@ class GhosttyTerminalModel {
         return
       }
 
-      const { visibleText } = this.parserEngine.parseOutput(chunk)
+      const output = this.parserEngine.parseOutput(chunk)
 
-      this.terminal.writeVisible(visibleText, callback)
+      this.terminal.writeParsedOutput(output, callback)
     },
   }
 

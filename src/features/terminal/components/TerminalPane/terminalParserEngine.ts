@@ -10,6 +10,7 @@ import { TerminalOutputPayloadRouter } from './terminalOutputPayload'
 
 export interface TerminalParserEngineOutput {
   readonly visibleText: string
+  readonly displayText?: string
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode
@@ -17,6 +18,7 @@ export type TerminalParserEngineInputMode = TerminalOutputInputMode
 export interface TerminalParserEngineOptions {
   readonly capabilities: TerminalRendererCapabilities
   readonly consumeControlsWithoutSubscribers?: boolean
+  readonly preserveSgrStyles?: boolean
 }
 
 export interface TerminalParserEngine {
@@ -48,6 +50,7 @@ export class TerminalControlSequenceParserEngine implements TerminalParserEngine
     this.parser = new TerminalControlSequenceParser({
       consumeControlsWithoutSubscribers:
         options.consumeControlsWithoutSubscribers,
+      preserveSgrStyles: options.preserveSgrStyles,
     })
     this.outputRouter = new TerminalOutputPayloadRouter(options.capabilities)
   }
@@ -60,9 +63,7 @@ export class TerminalControlSequenceParserEngine implements TerminalParserEngine
     text: string,
     output: TerminalParserOutputContext | null
   ): TerminalParserEngineOutput {
-    return {
-      visibleText: this.parser.transformOutput(text, output),
-    }
+    return this.parser.transformDisplayOutput(text, output)
   }
 
   parseOutput(chunk: TerminalOutputChunk): TerminalParserEngineOutput {

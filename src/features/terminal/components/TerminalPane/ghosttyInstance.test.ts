@@ -29,6 +29,7 @@ const encodeText = (text: string): string =>
 
 const ESC = '\x1b'
 const SGR_FINAL = 'm'
+const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
 
 const createdTerminals = new Set<ReturnType<typeof createGhosttyTerminal>>()
 
@@ -221,6 +222,33 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('abc')
     expect(cursor?.previousSibling?.textContent).toBe('a')
     expect(cursor?.nextSibling?.textContent).toBe('bc')
+  })
+
+  test('renders SGR true-color styles from Ghostty byte payloads', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      `prompt ${ESC}[38;2;243;139;168${SGR_FINAL}` +
+      `branch${ESC}[0${SGR_FINAL} done`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const styleRun = terminalOutput?.querySelector(
+      '[data-terminal-style-run="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('prompt branch done')
+    expect(created.viewportReader.readVisibleText()).toBe('prompt branch done')
+    expect(styleRun?.textContent).toBe('branch')
+    expect((styleRun as HTMLElement | null)?.style.color).toBe(TRUE_COLOR_PINK)
   })
 
   test('renders invalid byte payloads through the byte path', () => {

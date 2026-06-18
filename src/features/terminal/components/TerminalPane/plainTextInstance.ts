@@ -10,7 +10,10 @@ import type {
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 import { createControlSequenceTerminalParserEngine } from './terminalParserEngine'
 import { PLAIN_TEXT_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
-import { TerminalTextSurface } from './terminalTextSurface'
+import {
+  TerminalTextSurface,
+  type TerminalTextSurfaceOutput,
+} from './terminalTextSurface'
 
 export { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 
@@ -18,11 +21,12 @@ class PlainTextTerminalModel {
   private readonly parserEngine = createControlSequenceTerminalParserEngine({
     capabilities: PLAIN_TEXT_TERMINAL_CAPABILITIES,
     consumeControlsWithoutSubscribers: true,
+    preserveSgrStyles: true,
   })
   readonly terminal = new TerminalTextSurface({
     rendererId: PLAIN_TEXT_TERMINAL_RENDERER_ID,
-    transformOutput: (data): string =>
-      this.parserEngine.parseText(data, null).visibleText,
+    transformOutput: (data): TerminalTextSurfaceOutput =>
+      this.parserEngine.parseText(data, null),
   })
 
   readonly parser: TerminalParser = this.parserEngine.parser
@@ -35,9 +39,9 @@ class PlainTextTerminalModel {
         return
       }
 
-      const { visibleText } = this.parserEngine.parseOutput(chunk)
+      const output = this.parserEngine.parseOutput(chunk)
 
-      this.terminal.writeVisible(visibleText, callback)
+      this.terminal.writeParsedOutput(output, callback)
     },
   }
 

@@ -4,8 +4,13 @@ import {
   getCursorLeftSentinel,
   getCursorRightSentinel,
   getEraseLineSentinel,
+  getSgrStyleSentinel,
 } from './terminalControlParser'
 import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
+
+const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+const INDEXED_COLOR_RED = ['rgb', '(255, 0, 0)'].join('')
+const INDEXED_COLOR_GRAY = ['rgb', '(238, 238, 238)'].join('')
 
 describe('TerminalDisplayBuffer', () => {
   test('appends visible text and trims trailing newlines from viewport reads', () => {
@@ -78,6 +83,84 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write(getCursorLeftSentinel().repeat(2))
 
     expect(buffer.readCursorOffset()).toBe(1)
+  })
+
+  test('consumes SGR style controls into style runs without adding text', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      `plain ${getSgrStyleSentinel([38, 2, 243, 139, 168])}` +
+        `pink${getSgrStyleSentinel([1, 4])}!${getSgrStyleSentinel([0])} done`
+    )
+
+    expect(buffer.readText()).toBe('plain pink! done')
+    expect(buffer.readStyledRuns()).toEqual([
+      { text: 'plain ', style: {} },
+      { text: 'pink', style: { foreground: TRUE_COLOR_PINK } },
+      {
+        text: '!',
+        style: {
+          bold: true,
+          foreground: TRUE_COLOR_PINK,
+          underline: true,
+        },
+      },
+      { text: ' done', style: {} },
+    ])
+  })
+
+  test('maps ANSI and indexed SGR colors to terminal theme variables', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      `${getSgrStyleSentinel([31])}red` +
+        `${getSgrStyleSentinel([38, 5, 12])}bright-blue` +
+        `${getSgrStyleSentinel([0])}`
+    )
+
+    expect(buffer.readText()).toBe('redbright-blue')
+    expect(buffer.readStyledRuns()).toEqual([
+      { text: 'red', style: { foreground: 'var(--terminal-ansi-red)' } },
+      {
+        text: 'bright-blue',
+        style: { foreground: 'var(--terminal-ansi-bright-blue)' },
+      },
+    ])
+  })
+
+  test('maps xterm 256-color indexed SGR colors to RGB values', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      `${getSgrStyleSentinel([38, 5, 196])}cube-red ` +
+        `${getSgrStyleSentinel([48, 5, 255])}gray-background` +
+        `${getSgrStyleSentinel([0])}`
+    )
+
+    expect(buffer.readText()).toBe('cube-red gray-background')
+    expect(buffer.readStyledRuns()).toEqual([
+      { text: 'cube-red ', style: { foreground: INDEXED_COLOR_RED } },
+      {
+        text: 'gray-background',
+        style: {
+          background: INDEXED_COLOR_GRAY,
+          foreground: INDEXED_COLOR_RED,
+        },
+      },
+    ])
+  })
+
+  test('preserves split CRLF pairing across SGR style controls', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('hello\r')
+    buffer.write(getSgrStyleSentinel([0]))
+    buffer.write('\nworld')
+
+    expect(buffer.readVisibleText()).toBe('hello\nworld')
+    expect(buffer.readStyledRuns()).toEqual([
+      { text: 'hello\nworld', style: {} },
+    ])
   })
 
   test('clears viewport text when a clear-screen display control arrives', () => {

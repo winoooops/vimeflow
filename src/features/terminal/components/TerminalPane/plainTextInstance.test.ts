@@ -35,6 +35,8 @@ const encodeBase64 = (bytes: Uint8Array): string => {
 const encodeText = (text: string): string =>
   encodeBase64(new TextEncoder().encode(text))
 
+const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+
 const createdTerminals = new Set<ReturnType<typeof createPlainTextTerminal>>()
 
 const createTrackedPlainTextTerminal = (): ReturnType<
@@ -142,6 +144,42 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('abc')
     expect(cursor?.previousSibling?.textContent).toBe('a')
     expect(cursor?.nextSibling?.textContent).toBe('bc')
+  })
+
+  test('renders SGR true-color styles without adding transcript text', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // cspell:disable-next-line
+    created.terminal.write('prompt \x1b[38;2;243;139;168mbranch\x1b[0m done')
+
+    const output = created.terminal.element?.querySelector('pre')
+    const styleRun = output?.querySelector('[data-terminal-style-run="true"]')
+
+    expect(output?.textContent).toBe('prompt branch done')
+    expect(created.viewportReader.readVisibleText()).toBe('prompt branch done')
+    expect(styleRun?.textContent).toBe('branch')
+    expect((styleRun as HTMLElement | null)?.style.color).toBe(TRUE_COLOR_PINK)
+  })
+
+  test('renders ANSI styles from theme variables', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[1;4;31mred\x1b[0m')
+
+    const output = created.terminal.element?.querySelector('pre')
+    const styleRun = output?.querySelector('[data-terminal-style-run="true"]')
+
+    expect(output?.textContent).toBe('red')
+    expect(created.viewportReader.readVisibleText()).toBe('red')
+    expect(styleRun?.textContent).toBe('red')
+    expect((styleRun as HTMLElement | null)?.style.color).toBe(
+      'var(--terminal-ansi-red)'
+    )
+    expect((styleRun as HTMLElement | null)?.style.fontWeight).toBe('700')
+    expect((styleRun as HTMLElement | null)?.style.textDecoration).toBe(
+      'underline'
+    )
   })
 
   test('rewrites the current line when carriage return output arrives', () => {
