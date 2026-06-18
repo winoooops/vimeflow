@@ -34,7 +34,8 @@ export const LayoutSwitcher = ({
 
   const renderedLayoutIds = LAYOUT_IDS.filter(
     (layoutId) =>
-      layoutId === activeLayoutId || normalizedVisibleLayoutIds.includes(layoutId)
+      layoutId === activeLayoutId ||
+      normalizedVisibleLayoutIds.includes(layoutId)
   )
 
   return (

@@ -292,14 +292,17 @@ const MenuRoot = ({
 
   const { disabledIndices, setRowDisabled, clearRow } = useMenuDisabledIndices()
 
-  const handleOpenChange = useCallback((nextOpen: boolean): void => {
-    setOpen(nextOpen)
-    onOpenChange?.(nextOpen)
-    if (!nextOpen) {
-      setActiveIndex(null)
-      setOpenSubmenuId(null)
-    }
-  }, [onOpenChange])
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean): void => {
+      setOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+      if (!nextOpen) {
+        setActiveIndex(null)
+        setOpenSubmenuId(null)
+      }
+    },
+    [onOpenChange]
+  )
 
   // Keep a live ref so the stable dismissWhen callback can read the currently
   // open submenu id without re-registering the listener each time it changes.

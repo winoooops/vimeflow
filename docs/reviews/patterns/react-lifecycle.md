@@ -462,6 +462,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L154
 - **Finding:** Handles reused the same `spec.id` key across layouts (e.g. `hdiv` in `hsplit`/`threeRight`/`quad`, `vdiv` in `vsplit`/`threeRight`). Because `useElasticContainer` captures `initialPercent` at mount, switching layouts reused the existing instance and its old pixel size, which the commit effect then stored into the new layout's ratio.
 - **Fix:** Scoped the `SplitDividerHandle` key to the current layout with `key={`${layout}-${spec.id}`}`, forcing a remount and fresh mount-time state on every layout change.
+
 ### 48. Duplicate divider bindings write conflicting CSS vars for the same logical boundary
 
 - **Source:** github-codex-connector | PR #528 round 1 | 2026-06-18
