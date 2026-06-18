@@ -51,6 +51,7 @@ interface PendingTabFocus {
 }
 
 const KEYMAP_EDIT_BUTTON_ATTRIBUTE = 'data-keymap-edit-command'
+const FEEDBACK_TIMEOUT_MS = 1800
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -182,6 +183,26 @@ export const KeymapPane = (): ReactElement => {
     pendingTabFocusRef.current = null
     focusAfterTabCancel(pending.id, pending.direction)
   }, [editingId])
+
+  useEffect(() => {
+    if (feedback === null || feedback.tone === 'danger') {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setFeedback((current) =>
+        current?.id === feedback.id &&
+        current.tone === feedback.tone &&
+        current.text === feedback.text
+          ? null
+          : current
+      )
+    }, FEEDBACK_TIMEOUT_MS)
+
+    return (): void => {
+      window.clearTimeout(timeout)
+    }
+  }, [feedback])
 
   const stopEditing = (): void => {
     setEditingId(null)

@@ -46,15 +46,35 @@ describe('useKeybindings', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  test("setUserBinding rejects shadowing the fixed ⌘; leader as 'reserved'", () => {
+  test("setUserBinding rejects shadowing the palette defaults as 'conflict'", () => {
     const { result, update } = renderKeybindings()
     expect(
       result.current.setUserBinding('dock-toggle', {
         code: 'Semicolon',
         mods: new Set(['Mod']),
       })
-    ).toEqual({ ok: false, reason: 'reserved' })
+    ).toEqual({ ok: false, reason: 'conflict' })
     expect(update).not.toHaveBeenCalled()
+  })
+
+  test('setUserBinding allows the palette and leader to intentionally overlap', () => {
+    const { result, update } = renderKeybindings({
+      palette: 'Mod+KeyP',
+    })
+
+    expect(
+      result.current.setUserBinding('palette-leader', {
+        code: 'KeyP',
+        mods: new Set(['Mod']),
+      })
+    ).toEqual({ ok: true })
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: {
+        palette: 'Mod+KeyP',
+        'palette-leader': 'Mod+KeyP',
+      },
+    })
   })
 
   test("setUserBinding rejects shadowing the settings shortcut as 'reserved'", () => {
@@ -102,7 +122,7 @@ describe('useKeybindings', () => {
   test("setUserBinding rejects display-only commands as 'reserved'", () => {
     const { result, update } = renderKeybindings()
     expect(
-      result.current.setUserBinding('palette', {
+      result.current.setUserBinding('settings', {
         code: 'KeyP',
         mods: new Set(['Mod']),
       })

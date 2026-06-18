@@ -8,28 +8,17 @@ export type BindingContext =
   | 'dock'
   | 'browser'
 
-export interface CommandDescriptor {
-  readonly id: string
-  readonly label: string
-  readonly group: string
-  readonly context: BindingContext
-  readonly matchPolicy: 'exact' | 'tolerant'
-  readonly defaultCombo: Chord | ((isMac: boolean) => Chord)
-  readonly rebindable: boolean
-  readonly preserveStoredOverrides?: boolean
-  readonly intentionalShadow?: boolean
-}
-
 const c = (
   code: string,
   ...mods: ('Mod' | 'Ctrl' | 'Shift' | 'Alt')[]
 ): Chord => ({ code, mods: new Set(mods) })
 
 // PR1 migrated usePaneShortcuts (the focus-pane / cycle-layout commands) and
-// useDockToggleShortcut. PR2 migrates the remaining workspace hooks. Their
+// useDockToggleShortcut. PR2 migrates the remaining workspace hooks. PR3
+// migrates the command-palette direct toggle and leader prefix. Their
 // defaultCombo MUST equal today's hardcoded combos (resolve.test asserts this).
-// Terminal-owned rows and the SP3-owned palette leader remain display-only.
-export const CATALOG = [
+// Terminal-owned rows remain display-only.
+const CATALOG_LITERAL = [
   // ── Panes & Layout (MIGRATED — rebindable) ──
   {
     id: 'focus-pane-1',
@@ -113,7 +102,7 @@ export const CATALOG = [
     defaultCombo: c('Backslash', 'Mod'),
   },
 
-  // ── Global (dock-toggle MIGRATED; others display-only until PR2/SP3) ──
+  // ── Global (MIGRATED — rebindable except fixed settings shortcuts) ──
   {
     id: 'dock-toggle',
     label: 'Show / hide editor & diff dock',
@@ -129,7 +118,18 @@ export const CATALOG = [
     group: 'Global',
     context: 'global',
     matchPolicy: 'exact',
-    rebindable: false,
+    rebindable: true,
+    intentionalShadowWith: ['palette-leader'],
+    defaultCombo: c('Semicolon', 'Mod'),
+  },
+  {
+    id: 'palette-leader',
+    label: 'Command palette leader',
+    group: 'Global',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    intentionalShadowWith: ['palette'],
     defaultCombo: c('Semicolon', 'Mod'),
   },
   {
@@ -280,11 +280,30 @@ export const CATALOG = [
     preserveStoredOverrides: true,
     defaultCombo: c('KeyL', 'Mod'),
   },
-] as const satisfies readonly CommandDescriptor[]
+] as const
 
-export type CommandId = (typeof CATALOG)[number]['id']
+export type CommandId = (typeof CATALOG_LITERAL)[number]['id']
 
-const BY_ID = new Map<string, CommandDescriptor>(
+export interface CommandDescriptor {
+  readonly id: CommandId
+  readonly label: string
+  readonly group: string
+  readonly context: BindingContext
+  readonly matchPolicy: 'exact' | 'tolerant'
+  readonly defaultCombo: Chord | ((isMac: boolean) => Chord)
+  readonly rebindable: boolean
+  readonly preserveStoredOverrides?: boolean
+  readonly intentionalShadow?: boolean
+  readonly intentionalShadowWith?: readonly CommandId[]
+}
+
+// Exported catalog is widened to CommandDescriptor so consumers see a uniform
+// array type, while CommandId is derived from the literal catalog above. This
+// breaks the circular dependency and lets intentionalShadowWith reject typos
+// at compile time.
+export const CATALOG: readonly CommandDescriptor[] = CATALOG_LITERAL
+
+const BY_ID = new Map<CommandId, CommandDescriptor>(
   CATALOG.map((cmd) => [cmd.id, cmd])
 )
 

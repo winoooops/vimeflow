@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
+  COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_OPEN_FILE,
@@ -39,9 +40,21 @@ const BACKEND_EVENT_MAX_LISTENERS = 64
 
 ipcRenderer.setMaxListeners(BACKEND_EVENT_MAX_LISTENERS)
 
+type CommandPaletteShortcutSource = 'palette' | 'leader'
+
+interface CommandPaletteBindingSync {
+  palette: string
+  leader: string
+}
+
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
   | { ok: false; error: string; errorReason?: string }
+
+const isCommandPaletteShortcutSource = (
+  value: unknown
+): value is CommandPaletteShortcutSource =>
+  value === 'palette' || value === 'leader'
 
 const invoke = async <T>(
   method: string,
@@ -90,9 +103,11 @@ const listen = <T>(
   return Promise.resolve(unlisten)
 }
 
-const onCommandPaletteToggle = (callback: () => void): (() => void) => {
-  const handler = (): void => {
-    callback()
+const onCommandPaletteToggle = (
+  callback: (source?: CommandPaletteShortcutSource) => void
+): (() => void) => {
+  const handler = (_event: IpcRendererEvent, source: unknown): void => {
+    callback(isCommandPaletteShortcutSource(source) ? source : undefined)
   }
 
   ipcRenderer.on(COMMAND_PALETTE_TOGGLE, handler)
@@ -106,11 +121,23 @@ const setKeymapCaptureActive = (active: boolean): void => {
   ipcRenderer.send(KEYMAP_CAPTURE_ACTIVE, active)
 }
 
+const setCommandPaletteBinding = (binding: string): void => {
+  ipcRenderer.send(COMMAND_PALETTE_BINDING, binding)
+}
+
+const setCommandPaletteBindings = (
+  bindings: CommandPaletteBindingSync
+): void => {
+  ipcRenderer.send(COMMAND_PALETTE_BINDING, bindings)
+}
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
   onCommandPaletteToggle,
   setKeymapCaptureActive,
+  setCommandPaletteBinding,
+  setCommandPaletteBindings,
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CREATE, request),

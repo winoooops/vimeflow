@@ -7,6 +7,7 @@ import {
   chordsOverlap,
   contextsOverlap,
   detectConflicts,
+  intentionallyShadowed,
   type Conflict,
 } from './conflicts'
 import { eventMatchesChord, type PlatformSuper } from './match'
@@ -65,6 +66,9 @@ export const useKeybindings = (): Keybindings => {
           continue
         }
         const other = getCommand(otherId)
+        if (intentionallyShadowed(id, otherId)) {
+          continue
+        }
         if (
           contextsOverlap(me.context, other.context) &&
           chordsOverlap(

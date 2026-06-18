@@ -39,6 +39,16 @@ const intersects = (
   b: ReadonlySet<boolean>
 ): boolean => [...a].some((value) => b.has(value))
 
+export const intentionallyShadowed = (a: CommandId, b: CommandId): boolean => {
+  const cmdA = getCommand(a)
+  const cmdB = getCommand(b)
+
+  return (
+    cmdA.intentionalShadowWith?.includes(b) === true ||
+    cmdB.intentionalShadowWith?.includes(a) === true
+  )
+}
+
 // Two resolved bindings overlap iff same (super, code) AND a Shift/Alt
 // assignment matches both under their policies (spec §5.4).
 export const chordsOverlap = (
@@ -81,6 +91,9 @@ export const overrideCollides = (
     if (other.preserveStoredOverrides) {
       continue
     }
+    if (intentionallyShadowed(id, otherId)) {
+      continue
+    }
     if (
       contextsOverlap(me.context, other.context) &&
       chordsOverlap(
@@ -115,6 +128,9 @@ export const detectConflicts = (
         !b.rebindable &&
         (a.intentionalShadow || b.intentionalShadow)
       ) {
+        continue
+      }
+      if (intentionallyShadowed(ids[i], ids[j])) {
         continue
       }
       if (

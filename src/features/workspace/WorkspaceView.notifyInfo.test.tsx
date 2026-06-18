@@ -62,7 +62,12 @@ describe('WorkspaceView × notifyInfo banner', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     act(() => {
       document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: ';', ctrlKey: true })
+        new KeyboardEvent('keydown', {
+          key: ';',
+          code: 'Semicolon',
+          ctrlKey: true,
+          bubbles: true,
+        })
       )
     })
     await screen.findByRole('dialog')

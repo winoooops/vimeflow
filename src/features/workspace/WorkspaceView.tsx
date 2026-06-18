@@ -71,6 +71,8 @@ import {
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useKeybindings } from '../keymap/useKeybindings'
+import { formatChord } from '../keymap/chord'
+import { chordToShortcutInput } from '../keymap/displayKey'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
@@ -1428,15 +1430,53 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
+  // Keybinding registry matcher — keeps the palette and migrated workspace
+  // shortcuts aligned with persisted overrides.
+  const { bindingFor, matches } = useKeybindings()
+  const paletteBinding = bindingFor('palette')
+  const paletteLeaderBinding = bindingFor('palette-leader')
+
+  const paletteShortcut = useMemo(
+    () => chordToShortcutInput(paletteBinding),
+    [paletteBinding]
+  )
+
+  const isPaletteToggleEvent = useCallback(
+    (event: KeyboardEvent): boolean => matches(event, 'palette'),
+    [matches]
+  )
+
+  const isPaletteLeaderEvent = useCallback(
+    (event: KeyboardEvent): boolean => matches(event, 'palette-leader'),
+    [matches]
+  )
+
+  const paletteToken = formatChord(paletteBinding)
+  const leaderToken = formatChord(paletteLeaderBinding)
+
+  useEffect(() => {
+    const bindings = {
+      palette: paletteToken,
+      leader: leaderToken,
+    }
+    const bridge = window.vimeflow
+
+    if (bridge?.setCommandPaletteBindings) {
+      bridge.setCommandPaletteBindings(bindings)
+
+      return
+    }
+
+    bridge?.setCommandPaletteBinding?.(bindings.leader)
+  }, [paletteToken, leaderToken])
+
   const settingsDialog = useSettingsDialog()
 
   const commandPalette = useCommandPalette(workspaceCommands, {
     enabled: !showUnsavedDialog && !settingsDialog.isOpen,
+    isLeaderEvent: isPaletteLeaderEvent,
+    isPaletteToggleEvent,
   })
-
-  // Keybinding registry matcher — threaded into the migrated shortcut hooks so a
-  // persisted override changes the live shortcut (VIM-136 SP1).
-  const { matches } = useKeybindings()
 
   usePaneShortcuts({
     sessions,
@@ -2457,6 +2497,7 @@ export const WorkspaceView = (): ReactElement => {
           session={statusBarSession}
           contextPct={statusBarContextPct}
           onOpenPalette={commandPalette.open}
+          paletteShortcut={paletteShortcut}
           dockOpen={isDockOpen}
           onToggleDock={handleToggleDock}
           burnerCount={runningBurnerPaneKeys.size}

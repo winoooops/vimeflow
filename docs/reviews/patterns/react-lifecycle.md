@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-12
+last_updated: 2026-06-18
 ref_count: 16
 ---
 
@@ -347,3 +347,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The `update()` callback computed the merged settings and called `bridge.save(merged)` from inside the functional `setSettings` updater. React Strict Mode double-invokes updaters in development, so every user-triggered settings change would emit two `save_app_settings` IPC requests and break the `toHaveBeenCalledTimes(1)` test assertion under StrictMode.
 - **Fix:** Moved the merged-state computation and persistence out of the updater. A `settingsRef` tracks the latest state, `update()` computes `next` synchronously, calls `setSettings(next)` with a pure value setter, then enqueues `bridge.save(next)` through an async queue so saves remain ordered and the updater stays pure.
 - **Commit:** same commit as this entry
+
+### 35. useEffect syncs to Electron on every keybinding change, not just palette changes
+
+- **Source:** github-claude | PR #523 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1454-1468
+- **Finding:** `useEffect([paletteBinding, paletteLeaderBinding])` uses Chord object references as deps. `resolveBindings` (called inside `useMemo`) builds a new `Map` with freshly-constructed Chord instances on every invocation. Because `overrides` (the full `customKeybindings` record) is the memoization key, any
+- **Fix:** Hoisted `formatChord(paletteBinding)` and `formatChord(paletteLeaderBinding)` above the effect and used the resulting string tokens as dependencies, so the effect only re-runs when the actual binding values change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
