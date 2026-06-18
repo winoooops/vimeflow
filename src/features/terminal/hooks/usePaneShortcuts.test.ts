@@ -85,11 +85,11 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('Ctrl+\\ from quad wraps to single (default modifier)', () => {
+  test('Ctrl+\\ from grid3x2 wraps to single (default modifier)', () => {
     const setSessionLayout = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
-        sessions: [makeSession('s1', 'quad', ['p0'])],
+        sessions: [makeSession('s1', 'grid3x2', ['p0'])],
         activeSessionId: 's1',
         setSessionActivePane: vi.fn(),
         setSessionLayout,

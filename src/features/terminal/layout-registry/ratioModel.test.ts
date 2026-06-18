@@ -13,6 +13,7 @@ describe('ratioModel', () => {
     expect(DEFAULT_RATIOS.single).toEqual({ cols: [1], rows: [1] })
     expect(DEFAULT_RATIOS.threeRight.cols).toEqual([1.4, 1])
     expect(DEFAULT_RATIOS.quad.rows).toEqual([1, 1])
+    expect(DEFAULT_RATIOS.grid3x2.cols).toEqual([1, 1, 1])
   })
 
   test('builds CSS templates from track arrays', () => {

@@ -722,4 +722,28 @@ describe('reconstructWorkspace', () => {
     expect(sessions.map((s) => s.id)).toContain('pty-b')
     expect(sessions.find((s) => s.id === 'ws-valid')?.panes).toHaveLength(1)
   })
+
+  test('accepts grid3x2 from persisted groupings without falling back to single', () => {
+    const ws = 'ws-grid'
+
+    const live = Array.from({ length: 6 }, (_, index) => ({
+      ...alive(`pty-${index}`, '/home/will/repo'),
+      grouping: grouping({
+        workspaceSessionId: ws,
+        layout: 'grid3x2',
+        workspaceDirectory: '/home/will/repo',
+        paneId: `p${index}`,
+        paneIndex: index,
+        active: index === 0,
+        agentType: 'generic',
+      }),
+    }))
+
+    const sessions = reconstructWorkspace(null, live, 'pty-0')
+
+    expect(sessions).toHaveLength(1)
+
+    expect(sessions[0].layout).toBe('grid3x2')
+    expect(sessions[0].panes).toHaveLength(6)
+  })
 })

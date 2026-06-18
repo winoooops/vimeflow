@@ -289,6 +289,23 @@ describe('SplitView - multi-pane layouts', () => {
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(4)
   })
 
+  test('grid3x2 renders 6 slots', () => {
+    render(
+      <SplitView
+        session={makeSession('grid3x2', 6)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(screen.getByTestId('split-view')).toHaveStyle({
+      gridTemplateAreas:
+        '"p0 vdiv0a p1 vdiv1a p2" "hdiv hdiv hdiv hdiv hdiv" "p3 vdiv0b p4 vdiv1b p5"',
+    })
+    expect(screen.getAllByTestId('split-view-slot')).toHaveLength(6)
+    expect(screen.getAllByTestId('split-resize-handle')).toHaveLength(5)
+  })
+
   test('single layout renders no dividers', () => {
     render(
       <SplitView
@@ -480,6 +497,22 @@ describe('SplitView - under-capacity', () => {
     expect(screen.getByTestId('split-view')).toHaveStyle({
       gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
     })
+  })
+
+  test('grid3x2 with 5 panes renders one empty slot when add handler exists', () => {
+    render(
+      <SplitView
+        session={makeSession('grid3x2', 5)}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+      />
+    )
+
+    const emptySlots = screen.getAllByTestId('split-view-empty-slot')
+
+    expect(emptySlots).toHaveLength(1)
+    expect(emptySlots[0]).toHaveAttribute('data-slot-index', '5')
   })
 
   test('threeRight layout with 1 pane renders 1 slot', () => {

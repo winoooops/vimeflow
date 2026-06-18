@@ -14,6 +14,7 @@ export const DEFAULT_RATIOS: Record<LayoutId, LayoutRatios> = {
   hsplit: { cols: [1], rows: [1, 1] },
   threeRight: { cols: [1.4, 1], rows: [1, 1] },
   quad: { cols: [1, 1], rows: [1, 1] },
+  grid3x2: { cols: [1, 1, 1], rows: [1, 1] },
 }
 
 export const getTrackCssVar = (

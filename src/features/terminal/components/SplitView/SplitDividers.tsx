@@ -84,6 +84,48 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
       trackIndex: 0,
     },
   ],
+  grid3x2: [
+    {
+      id: 'vdiv0a',
+      gridArea: 'vdiv0a',
+      dragAxis: 'horizontal',
+      orientation: 'vertical',
+      trackAxis: 'cols',
+      trackIndex: 0,
+    },
+    {
+      id: 'vdiv1a',
+      gridArea: 'vdiv1a',
+      dragAxis: 'horizontal',
+      orientation: 'vertical',
+      trackAxis: 'cols',
+      trackIndex: 1,
+    },
+    {
+      id: 'hdiv',
+      gridArea: 'hdiv',
+      dragAxis: 'vertical',
+      orientation: 'horizontal',
+      trackAxis: 'rows',
+      trackIndex: 0,
+    },
+    {
+      id: 'vdiv0b',
+      gridArea: 'vdiv0b',
+      dragAxis: 'horizontal',
+      orientation: 'vertical',
+      trackAxis: 'cols',
+      trackIndex: 0,
+    },
+    {
+      id: 'vdiv1b',
+      gridArea: 'vdiv1b',
+      dragAxis: 'horizontal',
+      orientation: 'vertical',
+      trackAxis: 'cols',
+      trackIndex: 1,
+    },
+  ],
 }
 
 const SplitDividerHandle = ({

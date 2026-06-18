@@ -9,10 +9,11 @@ const layoutIds: LayoutId[] = [
   'hsplit',
   'threeRight',
   'quad',
+  'grid3x2',
 ]
 
 describe('LAYOUTS', () => {
-  test('exposes all 5 canonical layout ids', () => {
+  test('exposes all 6 canonical layout ids', () => {
     expect(Object.keys(LAYOUTS).sort()).toEqual([...layoutIds].sort())
   })
 
@@ -30,6 +31,7 @@ describe('LAYOUTS', () => {
       'hsplit',
       'threeRight',
       'quad',
+      'grid3x2',
     ])
   })
 
