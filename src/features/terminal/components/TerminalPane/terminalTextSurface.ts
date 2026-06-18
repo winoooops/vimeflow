@@ -163,12 +163,11 @@ export class TerminalTextSurface implements TerminalSurface {
       margin: '0',
       maxWidth: '100%',
       minHeight: '100%',
-      overflowWrap: 'anywhere',
       overflowX: 'hidden',
       padding: '8px',
-      whiteSpace: 'pre-wrap',
+      whiteSpace: 'normal',
       width: '100%',
-      wordBreak: 'break-word',
+      wordBreak: 'normal',
     })
 
     Object.assign(this.input.style, {
@@ -579,7 +578,7 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private appendRunFragment(
-    fragments: Node[],
+    parent: HTMLElement,
     text: string,
     style: TerminalDisplayStyle
   ): void {
@@ -587,69 +586,114 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    fragments.push(this.createTextNode(text, style))
+    parent.append(this.createTextNode(text, style))
+  }
+
+  private createOutputRow(): HTMLElement {
+    const row = document.createElement('span')
+    row.dataset.terminalRow = 'true'
+
+    Object.assign(row.style, {
+      display: 'block',
+      maxWidth: '100%',
+      minHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      overflowX: 'hidden',
+      whiteSpace: 'pre',
+      width: '100%',
+    })
+
+    return row
   }
 
   private createOutputFragments(
     runs: readonly TerminalDisplayRun[],
     cursorOffset: number
   ): Node[] {
-    const fragments: Node[] = []
+    const rows: HTMLElement[] = [this.createOutputRow()]
     let offset = 0
-    let didRenderCursor = false
+    const cursorState = { didRender: false }
+    let currentRow = rows[0]
 
-    for (const run of runs) {
-      const runStart = offset
-      const runEnd = runStart + run.text.length
+    const appendCursor = (): void => {
+      currentRow.append(this.createCursorElement())
+      cursorState.didRender = true
+    }
+
+    const appendSegment = (text: string, style: TerminalDisplayStyle): void => {
+      if (text.length === 0) {
+        return
+      }
+
+      const segmentStart = offset
+      const segmentEnd = segmentStart + text.length
 
       if (
-        !didRenderCursor &&
-        cursorOffset >= runStart &&
-        cursorOffset <= runEnd
+        !cursorState.didRender &&
+        cursorOffset >= segmentStart &&
+        cursorOffset <= segmentEnd
       ) {
-        const splitOffset = cursorOffset - runStart
+        const splitOffset = cursorOffset - segmentStart
 
         if (
           splitOffset > 0 &&
-          splitOffset < run.text.length &&
-          this.hasStyle(run.style)
+          splitOffset < text.length &&
+          this.hasStyle(style)
         ) {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
-          this.applyStyleToElement(runElement, run.style)
+          this.applyStyleToElement(runElement, style)
           runElement.append(
-            document.createTextNode(run.text.slice(0, splitOffset)),
+            document.createTextNode(text.slice(0, splitOffset)),
             this.createCursorElement(),
-            document.createTextNode(run.text.slice(splitOffset))
+            document.createTextNode(text.slice(splitOffset))
           )
-          fragments.push(runElement)
-          didRenderCursor = true
+          currentRow.append(runElement)
+          cursorState.didRender = true
         } else {
-          this.appendRunFragment(
-            fragments,
-            run.text.slice(0, splitOffset),
-            run.style
-          )
-          fragments.push(this.createCursorElement())
-          didRenderCursor = true
-          this.appendRunFragment(
-            fragments,
-            run.text.slice(splitOffset),
-            run.style
-          )
+          this.appendRunFragment(currentRow, text.slice(0, splitOffset), style)
+          appendCursor()
+          this.appendRunFragment(currentRow, text.slice(splitOffset), style)
         }
       } else {
-        this.appendRunFragment(fragments, run.text, run.style)
+        this.appendRunFragment(currentRow, text, style)
       }
 
-      offset = runEnd
+      offset = segmentEnd
     }
 
-    if (!didRenderCursor) {
-      fragments.push(this.createCursorElement())
+    const appendNewline = (): void => {
+      if (!cursorState.didRender && cursorOffset === offset) {
+        appendCursor()
+      }
+
+      offset += 1
+      currentRow = this.createOutputRow()
+      rows.push(currentRow)
     }
 
-    return fragments
+    for (const run of runs) {
+      let segmentStart = 0
+
+      while (segmentStart < run.text.length) {
+        const newlineIndex = run.text.indexOf('\n', segmentStart)
+
+        if (newlineIndex === -1) {
+          appendSegment(run.text.slice(segmentStart), run.style)
+          segmentStart = run.text.length
+          continue
+        }
+
+        appendSegment(run.text.slice(segmentStart, newlineIndex), run.style)
+        appendNewline()
+        segmentStart = newlineIndex + 1
+      }
+    }
+
+    if (!cursorState.didRender) {
+      appendCursor()
+    }
+
+    return rows
   }
 
   private renderOutput(): void {

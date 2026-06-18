@@ -112,11 +112,18 @@ describe('plainTextInstance', () => {
     expect(root?.style.width).toBe('100%')
     expect(output?.style.boxSizing).toBe('border-box')
     expect(output?.style.maxWidth).toBe('100%')
-    expect(output?.style.overflowWrap).toBe('anywhere')
     expect(output?.style.overflowX).toBe('hidden')
-    expect(output?.style.whiteSpace).toBe('pre-wrap')
+    expect(output?.style.whiteSpace).toBe('normal')
     expect(output?.style.width).toBe('100%')
-    expect(output?.style.wordBreak).toBe('break-word')
+    expect(output?.style.wordBreak).toBe('normal')
+
+    const row = output?.querySelector('[data-terminal-row="true"]')
+
+    expect(row).toBeInstanceOf(HTMLElement)
+    expect((row as HTMLElement | null)?.style.maxWidth).toBe('100%')
+    expect((row as HTMLElement | null)?.style.overflowX).toBe('hidden')
+    expect((row as HTMLElement | null)?.style.whiteSpace).toBe('pre')
+    expect((row as HTMLElement | null)?.style.width).toBe('100%')
   })
 
   test('writes output chunks into the viewport reader', () => {
@@ -327,9 +334,14 @@ describe('plainTextInstance', () => {
 
     expect(created.terminal.cols).toBe(5)
     expect(created.viewportReader.readVisibleText()).toBe('abcde\ngh')
-    expect(
-      created.terminal.element?.querySelector('pre')?.style.whiteSpace
-    ).toBe('pre-wrap')
+
+    const rows = created.terminal.element?.querySelectorAll(
+      '[data-terminal-row="true"]'
+    )
+
+    expect(rows).toHaveLength(2)
+    expect(rows?.[0]?.textContent).toBe('abcde')
+    expect(rows?.[1]?.textContent).toBe('gh')
   })
 
   test('rewrites Codex MCP progress output that redraws previous rows', () => {
@@ -680,8 +692,9 @@ describe('plainTextInstance', () => {
     created.terminal.write('inside terminal')
     sibling.textContent = 'outside pane'
 
-    const outputText =
-      created.terminal.element?.querySelector('pre')?.firstChild
+    const outputText = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )?.firstChild
     const siblingText = sibling.firstChild
 
     if (!outputText || !siblingText) {
@@ -711,8 +724,9 @@ describe('plainTextInstance', () => {
     created.terminal.write('inside terminal')
     created.terminal.onSelectionChange(listener)
 
-    const outputText =
-      created.terminal.element?.querySelector('pre')?.firstChild
+    const outputText = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )?.firstChild
 
     if (!outputText) {
       throw new Error('selection test requires terminal text node')
