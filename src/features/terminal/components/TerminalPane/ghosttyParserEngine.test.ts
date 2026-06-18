@@ -102,7 +102,7 @@ describe('ghosttyParserEngine', () => {
     const output =
       `${ESC}]2;user@host:~/project\x07` +
       `${ESC}[38;2;243;139;168${SGR_FINAL}` +
-      `feat/ghostty-spike${ESC}[0${SGR_FINAL} % `
+      `feat/ghostty-spike${ESC}[0${SGR_FINAL} % ${ESC}=`
 
     engine.parser.onEvent(handler)
 

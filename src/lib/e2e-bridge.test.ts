@@ -1,6 +1,6 @@
 // cspell:ignore vsplit
-import { describe, test, expect, beforeEach } from 'vitest'
-import { readPaneBuffer } from './e2e-bridge'
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { readPaneBuffer, writeOutputToVisibleTerminal } from './e2e-bridge'
 import { terminalCache } from '../features/terminal/terminalRegistry'
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
@@ -20,6 +20,7 @@ const makeMockEntry = (rows: readonly string[]): CacheEntry => {
 
   return {
     terminal: { dispose: (): void => undefined },
+    output: { writeOutput: vi.fn() },
     fitController: { fit: (): void => undefined },
     viewportReader,
   } as unknown as CacheEntry
@@ -76,6 +77,7 @@ const buildSessionWrapper = (
 
 describe('readPaneBuffer', () => {
   beforeEach(() => {
+    document.body.innerHTML = ''
     terminalCache.clear()
   })
 
@@ -187,5 +189,39 @@ describe('readPaneBuffer', () => {
     const wrapper = buildSessionWrapper([''], 0)
 
     expect(readPaneBuffer(wrapper)).toBe('')
+  })
+
+  test('writes output chunks to the visible terminal renderer', () => {
+    const wrapper = buildSessionWrapper([''], 0)
+    wrapper.getBoundingClientRect = (): DOMRect =>
+      ({
+        bottom: 24,
+        height: 24,
+        left: 0,
+        right: 80,
+        top: 0,
+        width: 80,
+        x: 0,
+        y: 0,
+        toJSON: (): Record<string, never> => ({}),
+      }) as DOMRect
+
+    const entry = makeMockEntry([])
+
+    terminalCache.set('pty-0', entry!)
+    document.body.append(wrapper)
+
+    expect(writeOutputToVisibleTerminal('hello')).toBe(true)
+    expect(entry?.output.writeOutput).toHaveBeenCalledWith({
+      text: 'hello',
+      bytesBase64: 'aGVsbG8=',
+      offsetStart: expect.any(Number),
+      byteLen: 5,
+      phase: 'live',
+    })
+  })
+
+  test('does not write output when no visible terminal is mounted', () => {
+    expect(writeOutputToVisibleTerminal('hello')).toBe(false)
   })
 })

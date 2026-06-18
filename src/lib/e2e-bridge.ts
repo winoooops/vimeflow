@@ -3,11 +3,22 @@ import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/terminalRegistry'
 
 const LEGACY_XTERM_ROWS_SELECTOR = '.xterm-rows'
+let e2eOutputOffset = 0
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
   return r.width > 0 && r.height > 0
+}
+
+const encodeBase64 = (bytes: Uint8Array): string => {
+  let binary = ''
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte)
+  })
+
+  return btoa(binary)
 }
 
 // terminalCache is keyed by `pane.ptyId` (Body's `sessionId` prop). Find Body's `data-pty-id` descendant; fall back to the container's own data-pty-id when callers pass it directly.
@@ -124,6 +135,37 @@ const getVisibleSessionId = (): string | null => {
   return pane?.dataset.sessionId ?? null
 }
 
+export const writeOutputToVisibleTerminal = (data: string): boolean => {
+  const pane = findActivePane()
+  if (!pane) {
+    return false
+  }
+
+  const sessionId = resolveCacheKey(pane)
+  if (!sessionId) {
+    return false
+  }
+
+  const entry = terminalCache.get(sessionId)
+  if (!entry) {
+    return false
+  }
+
+  const bytes = new TextEncoder().encode(data)
+  const offsetStart = e2eOutputOffset
+  e2eOutputOffset += bytes.length
+
+  entry.output.writeOutput({
+    text: data,
+    bytesBase64: encodeBase64(bytes),
+    offsetStart,
+    byteLen: bytes.length,
+    phase: 'live',
+  })
+
+  return true
+}
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
@@ -132,5 +174,6 @@ if (import.meta.env.VITE_E2E) {
     getActiveSessionIds: getAllPtySessionIds,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    writeOutputToVisibleTerminal,
   }
 }

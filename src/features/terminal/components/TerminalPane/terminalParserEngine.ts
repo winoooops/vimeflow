@@ -16,6 +16,7 @@ export type TerminalParserEngineInputMode = TerminalOutputInputMode
 
 export interface TerminalParserEngineOptions {
   readonly capabilities: TerminalRendererCapabilities
+  readonly consumeControlsWithoutSubscribers?: boolean
 }
 
 export interface TerminalParserEngine {
@@ -39,11 +40,15 @@ const outputContextFromChunk = (
 
 export class TerminalControlSequenceParserEngine implements TerminalParserEngine {
   readonly capabilities: TerminalRendererCapabilities
-  readonly parser = new TerminalControlSequenceParser()
+  readonly parser: TerminalControlSequenceParser
   private readonly outputRouter: TerminalOutputPayloadRouter
 
   constructor(options: TerminalParserEngineOptions) {
     this.capabilities = options.capabilities
+    this.parser = new TerminalControlSequenceParser({
+      consumeControlsWithoutSubscribers:
+        options.consumeControlsWithoutSubscribers,
+    })
     this.outputRouter = new TerminalOutputPayloadRouter(options.capabilities)
   }
 

@@ -8,6 +8,7 @@ declare global {
       getVisibleSessionId(): string | null
       getActiveSessionIds(): string[]
       listActivePtySessions(): Promise<string[]>
+      writeOutputToVisibleTerminal(data: string): boolean
     }
   }
 }

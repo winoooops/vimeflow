@@ -20,6 +20,7 @@ export class GhosttyControlSequenceParserEngine
   constructor() {
     super({
       capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
+      consumeControlsWithoutSubscribers: true,
     })
   }
 }
