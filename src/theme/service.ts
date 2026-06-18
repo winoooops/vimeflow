@@ -86,6 +86,9 @@ export const themeService = {
 /* Dev-only: editing a theme file re-applies the active theme live, so
  * Flexoki value tuning shows on screen without a reload (spec §5). */
 if (import.meta.hot) {
+  // The dependency array is a static literal because Vite's HMR boundary
+  // requires static analysis. Positions must match `themeModules` order:
+  // array index -> exportName mapping above.
   import.meta.hot.accept(
     [
       './themes/obsidian-lens',
