@@ -136,16 +136,25 @@ const DIVIDER_SPECS: Record<LayoutId, readonly DividerHandleSpec[]> = {
   ],
 }
 
-const SplitDividerHandle = ({
+interface SplitBoundaryProps extends Omit<SplitDividersProps, 'layout'> {
+  readonly axis: DividerDragAxis
+  readonly trackAxis: RatioAxis
+  readonly trackIndex: number
+  readonly specs: readonly DividerHandleSpec[]
+}
+
+const boundaryKey = (spec: DividerHandleSpec): string =>
+  `${spec.trackAxis}-${spec.trackIndex}`
+
+const SplitBoundary = ({
   containerRef,
-  ratios,
+  axis,
   trackAxis,
   trackIndex,
-  dragAxis,
-  orientation,
-  gridArea,
+  ratios,
   onRatioChange,
-}: Omit<SplitDividersProps, 'layout'> & DividerHandleSpec): ReactElement => {
+  specs,
+}: SplitBoundaryProps): ReactElement => {
   const onTrackChange = useCallback(
     (nextRatios: readonly number[]): void =>
       onRatioChange(trackAxis, nextRatios),
@@ -154,7 +163,7 @@ const SplitDividerHandle = ({
 
   const binding = useSplitDivider({
     containerRef,
-    axis: dragAxis,
+    axis,
     trackAxis,
     trackIndex,
     initialRatios: ratios[trackAxis],
@@ -162,19 +171,24 @@ const SplitDividerHandle = ({
   })
 
   return (
-    <ResizeHandle
-      orientation={orientation}
-      testId={HANDLE_TEST_ID}
-      ariaLabel="Resize panes"
-      isDragging={binding.isDragging}
-      ariaValueNow={binding.size}
-      ariaValueMin={binding.pixelMin}
-      ariaValueMax={binding.pixelMax}
-      onMouseDown={binding.handleMouseDown}
-      onKeyDown={binding.onKeyDown}
-      className="h-full w-full"
-      style={{ gridArea }}
-    />
+    <Fragment>
+      {specs.map((spec) => (
+        <ResizeHandle
+          key={spec.id}
+          orientation={spec.orientation}
+          testId={HANDLE_TEST_ID}
+          ariaLabel="Resize panes"
+          isDragging={binding.isDragging}
+          ariaValueNow={binding.size}
+          ariaValueMin={binding.pixelMin}
+          ariaValueMax={binding.pixelMax}
+          onMouseDown={binding.handleMouseDown}
+          onKeyDown={binding.onKeyDown}
+          className="h-full w-full"
+          style={{ gridArea: spec.gridArea }}
+        />
+      ))}
+    </Fragment>
   )
 }
 
@@ -190,15 +204,29 @@ export const SplitDividers = ({
     return null
   }
 
+  const grouped = specs.reduce<Record<string, DividerHandleSpec[]>>(
+    (acc, spec) => {
+      const key = boundaryKey(spec)
+      acc[key] ??= []
+      acc[key].push(spec)
+
+      return acc
+    },
+    {}
+  )
+
   return (
     <Fragment>
-      {specs.map((spec) => (
-        <SplitDividerHandle
-          key={spec.id}
+      {Object.values(grouped).map((groupSpecs) => (
+        <SplitBoundary
+          key={boundaryKey(groupSpecs[0])}
           containerRef={containerRef}
+          axis={groupSpecs[0].dragAxis}
+          trackAxis={groupSpecs[0].trackAxis}
+          trackIndex={groupSpecs[0].trackIndex}
           ratios={ratios}
           onRatioChange={onRatioChange}
-          {...spec}
+          specs={groupSpecs}
         />
       ))}
     </Fragment>

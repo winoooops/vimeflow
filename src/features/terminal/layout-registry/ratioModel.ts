@@ -1,5 +1,6 @@
 // cspell:ignore vsplit hsplit
 import type { LayoutId } from '../../sessions/types'
+import { SPLIT_ELASTIC_CONFIG } from '../../workspace/panelConfig'
 
 export type RatioAxis = 'cols' | 'rows'
 
@@ -76,8 +77,13 @@ export const updateTrackBoundaryRatio = (
     .slice(0, pairStart)
     .reduce((sum, track) => sum + track, 0)
   const pairTotal = left + right
+  const minTrackWeight = SPLIT_ELASTIC_CONFIG.minPercent * total
   const unclampedLeft = boundaryRatio * total - fixedLeading
-  const nextLeft = Math.min(Math.max(unclampedLeft, 0), pairTotal)
+
+  const nextLeft = Math.min(
+    Math.max(unclampedLeft, minTrackWeight),
+    pairTotal - minTrackWeight
+  )
   const nextRight = pairTotal - nextLeft
 
   return tracks.map((track, index) => {

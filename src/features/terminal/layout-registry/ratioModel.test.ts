@@ -40,6 +40,23 @@ describe('ratioModel', () => {
     ])
   })
 
+  test('enforces a minimum per-track weight so grid columns cannot collapse to zero', () => {
+    // Codex P2: dragging the first grid3x2 divider to an extreme ratio must
+    // keep every column above the 15% minimum. With tracks [1,1,1] and a
+    // requested boundary ratio of 0.85, the first pair is clamped to leave
+    // the second column at the minimum weight (0.45) instead of collapsing it.
+    const first = updateTrackBoundaryRatio([1, 1, 1], 0, 0.85)
+    expect(first[0]).toBe(1.55)
+    expect(first[1]).toBeCloseTo(0.45, 10)
+    expect(first[2]).toBe(1)
+
+    // Symmetric clamp on the right side of the second pair.
+    const second = updateTrackBoundaryRatio([1, 1, 1], 1, 0.15)
+    expect(second[0]).toBe(1)
+    expect(second[1]).toBeCloseTo(0.45, 10)
+    expect(second[2]).toBe(1.55)
+  })
+
   test('compares track arrays shallowly', () => {
     expect(equalTrackRatios([1, 1], [1, 1])).toBe(true)
     expect(equalTrackRatios([1, 1], [1, 0.9])).toBe(false)

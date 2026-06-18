@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-06
+last_updated: 2026-06-18
 ref_count: 1
 ---
 
@@ -278,4 +278,17 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/components/SidebarToggle.tsx`
 - **Finding:** The toggle button always rendered `'Show sidebar  ⌘B'` / `'Hide sidebar  ⌘B'` as the `title` tooltip, regardless of platform. On Linux and Windows the actual shortcut is `Ctrl+⇧B`, so hovering the button showed the wrong hint.
 - **Fix:** Added an optional `shortcutHint?: string` prop to `SidebarToggleProps` (defaulting to `'⌘B'`) and threaded a platform-appropriate value (`preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'`) from `WorkspaceView` through `AgentStatusCard` and `IconRail`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Wire shortcuts for all six grid panes
+
+- **Source:** github-codex-connector | PR #527 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** `usePaneShortcuts` matched only `Digit1` through `Digit4`, but
+  the new `grid3x2` layout has six panes and the per-pane tooltips advertise
+  `Mod+5` / `Mod+6`. Those shortcuts never fired, leaving the bottom middle and
+  right panes unreachable by keyboard.
+- **Fix:** Extended the regex from `^Digit([1-4])$` to `^Digit([1-6])$` and
+  added a test covering `Ctrl+5` / `Ctrl+6` focus in a `grid3x2` session.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
