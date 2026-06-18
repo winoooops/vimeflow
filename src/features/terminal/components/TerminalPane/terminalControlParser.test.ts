@@ -153,6 +153,23 @@ describe('TerminalControlSequenceParser', () => {
     expect(handler).not.toHaveBeenCalled()
   })
 
+  test('treats explicit zero cursor movement counts as the default of one', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const visible = parser.transformOutput(
+      `abc${ESC}[0DXY${ESC}[0Cz${ESC}[0G!`,
+      null
+    )
+
+    expect(visible).toBe(
+      `abc${getCursorLeftSentinel()}` + `XY${getCursorRightSentinel()}z` + `\r!`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
   test('reassembles short ESC controls split across output chunks', () => {
     const parser = new TerminalControlSequenceParser()
     const handler = vi.fn()

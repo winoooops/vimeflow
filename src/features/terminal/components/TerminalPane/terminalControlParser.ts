@@ -293,7 +293,12 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const count = parseCsiIntegerParameter(content, 1)
 
           if (count !== null) {
-            visible += repeatDisplayControl(getCursorLeftSentinel(), count)
+            const normalizedCount = count === 0 ? 1 : count
+
+            visible += repeatDisplayControl(
+              getCursorLeftSentinel(),
+              normalizedCount
+            )
           }
         }
 
@@ -305,7 +310,12 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const count = parseCsiIntegerParameter(content, 1)
 
           if (count !== null) {
-            visible += repeatDisplayControl(getCursorRightSentinel(), count)
+            const normalizedCount = count === 0 ? 1 : count
+
+            visible += repeatDisplayControl(
+              getCursorRightSentinel(),
+              normalizedCount
+            )
           }
         }
 
@@ -317,9 +327,11 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const column = parseCsiIntegerParameter(content, 1)
 
           if (column !== null) {
+            const normalizedColumn = column === 0 ? 1 : column
+
             visible += `\r${repeatDisplayControl(
               getCursorRightSentinel(),
-              column - 1
+              normalizedColumn - 1
             )}`
           }
         }

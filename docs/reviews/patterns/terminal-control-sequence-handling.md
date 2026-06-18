@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-18
-ref_count: 3
+ref_count: 4
 ---
 
 # Terminal Control Sequence Handling
@@ -90,4 +90,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L284
 - **Finding:** The parser emitted the same clear-screen sentinel for both `CSI 2 J` (erase whole display) and `CSI 3 J` (erase scrollback/saved lines). Because `TerminalDisplayBuffer` drops all buffered text on that sentinel, a program sending only `CSI 3 J` lost the currently visible prompt/output even though mode 3 should leave visible cells intact.
 - **Fix:** Narrowed the clear-screen sentinel branch to only `mode === 2`, so `CSI 3 J` no longer clears the visible buffer.
+- **Commit:** same commit as this entry
+
+### 9. CSI D/C/G explicit zero count is treated as no movement
+
+- **Source:** github-claude | PR #524 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L288-325
+- **Finding:** The parser passed `parseCsiIntegerParameter` results directly to sentinel emission for `CSI D`, `CSI C`, and `CSI G`. For cursor movement/count parameters, an omitted value and an explicit `0` should both behave as the default count/column `1`. The original code emitted no D/C movement for `CSI 0D`/`CSI 0C` and only a carriage return for `CSI 0G`, which corrupts progress or prompt redraw output.
+- **Fix:** Normalized parsed zero values to `1` in the D, C, and G branches before emitting cursor-left/cursor-right/carriage-return sentinels, and added a regression test that asserts `CSI 0D`, `CSI 0C`, and `CSI 0G` each produce the same result as the default value.
 - **Commit:** same commit as this entry
