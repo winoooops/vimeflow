@@ -98,6 +98,7 @@ export const LayoutDisplayMenu = ({
       <Menu.Section label="Displayed layouts">
         {LAYOUT_IDS.map((layoutId) => {
           const layout = LAYOUTS[layoutId]
+
           const checked =
             layoutId === 'single' || visibleLayoutIds.includes(layoutId)
           const isActive = layoutId === activeLayoutId

@@ -71,6 +71,16 @@ describe('SplitDividers', () => {
     // boundary means grid3x2 now creates exactly three controllers:
     // cols-0, cols-1, and rows-0 — even though it renders five handles.
     const onRatioChange = vi.fn()
+    const observerInstances: MockResizeObserver[] = []
+
+    class CountingResizeObserver extends MockResizeObserver {
+      constructor() {
+        super()
+        observerInstances.push(this)
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', CountingResizeObserver)
 
     const GridHarness = (): React.ReactElement => {
       const ref = useRef<HTMLDivElement>(document.createElement('div'))
@@ -91,7 +101,10 @@ describe('SplitDividers', () => {
     }
 
     render(<GridHarness />)
-    expect(onRatioChange).toHaveBeenCalledTimes(3)
+    expect(observerInstances).toHaveLength(3)
+    expect(onRatioChange).not.toHaveBeenCalled()
+
+    vi.stubGlobal('ResizeObserver', MockResizeObserver)
   })
 
   test('vsplit handle is a vertical separator (col-resize)', () => {

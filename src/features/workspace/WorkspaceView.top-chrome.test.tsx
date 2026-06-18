@@ -532,6 +532,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
         name: 'Configure displayed layouts',
       })
     )
+
     await user.click(
       await screen.findByRole('menuitemcheckbox', { name: '3x2 grid' })
     )
@@ -541,6 +542,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
         name: '3x2 grid',
       })
     ).toBeNull()
+
     expect(
       within(screen.getByTestId('layout-switcher')).getByRole('button', {
         name: 'Vertical split',

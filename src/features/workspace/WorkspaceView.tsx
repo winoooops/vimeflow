@@ -310,6 +310,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [isCompactViewport, setIsCompactViewport] =
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+
   const [visibleLayoutIds, setVisibleLayoutIds] =
     useState<readonly LayoutId[]>(LAYOUT_IDS)
   const [isLayoutDisplayMenuOpen, setIsLayoutDisplayMenuOpen] = useState(false)

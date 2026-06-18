@@ -411,7 +411,7 @@ describe('SplitView - multi-pane layouts', () => {
         .getAllByTestId('split-resize-handle')
         .map((handle) => handle.getAttribute('aria-valuenow') ?? '')
 
-    const pristine = render(
+    const view = render(
       <SplitView
         session={makeSession('grid3x2', 6)}
         service={makeMockService()}
@@ -419,7 +419,7 @@ describe('SplitView - multi-pane layouts', () => {
       />
     )
     const defaultGridValues = handleValues()
-    pristine.unmount()
+    view.unmount()
 
     const { rerender } = render(
       <SplitView

@@ -51,9 +51,7 @@ describe('LayoutSwitcher', () => {
       screen.getByRole('button', { name: 'Main + 2 stack' })
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Vertical split' })
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Vertical split' })).toBeNull()
   })
 
   test('keeps the active layout visible even when it is not in the configured list', () => {
@@ -70,6 +68,7 @@ describe('LayoutSwitcher', () => {
       screen.getByRole('button', { name: 'Vertical split' })
     ).toBeInTheDocument()
   })
+
   test('clicking the already-active button does NOT fire onPick', async () => {
     // The component's contract is that onPick fires only when the
     // active layout actually changes. setSessionLayout already no-ops
