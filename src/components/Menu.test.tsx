@@ -279,6 +279,54 @@ describe('Menu.Checkbox', () => {
     const indicator = checkbox.querySelector('.material-symbols-outlined')
     expect(indicator).not.toBeInTheDocument()
   })
+
+  test('a disabled checkbox ignores clicks', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn<(next: boolean) => void>()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Checkbox checked disabled onChange={onChange}>
+          Current layout
+        </Menu.Checkbox>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const checkbox = await screen.findByRole('menuitemcheckbox', {
+      name: 'Current layout',
+    })
+
+    expect(checkbox).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(checkbox)
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('a disabled checked checkbox uses muted indicator styling', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Checkbox checked disabled onChange={vi.fn()}>
+          Required layout
+        </Menu.Checkbox>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const checkbox = await screen.findByRole('menuitemcheckbox', {
+      name: 'Required layout',
+    })
+    // eslint-disable-next-line testing-library/no-node-access -- inspect the visual check indicator container
+    const indicator = checkbox.lastElementChild
+
+    expect(indicator).toHaveClass('bg-on-surface-variant/12')
+    expect(indicator).toHaveClass('text-on-surface-variant/55')
+  })
 })
 
 const indicatorOptions = [

@@ -54,6 +54,7 @@ export const useSplitDivider = ({
   const startVar = getTrackCssVar(trackAxis, trackIndex)
   const endVar = getTrackCssVar(trackAxis, trackIndex + 1)
   const effectiveDimensionRef = useRef(0)
+  const persistIntentRef = useRef(false)
 
   const writeRatio = useCallback(
     (ratio: number): readonly number[] => {
@@ -106,9 +107,10 @@ export const useSplitDivider = ({
     effectiveDimensionRef.current = effectiveDimension
   }, [effectiveDimension])
 
-  // Committed `size` change (drag end | keyboard | resize): set both fr tracks
-  // and mirror the ratio up for remember-within-session. Covers the keyboard /
-  // ResizeObserver paths where onDragPreview never fires.
+  // Committed `size` change (drag end | keyboard | resize): set both fr tracks.
+  // Only explicit user actions mirror the ratio up for remember-within-session;
+  // mount / ResizeObserver commits must keep untouched layouts on their model
+  // defaults instead of accidentally marking them customized.
   //
   // When the committed pixel size lines up with the ratio model (within the
   // one-pixel rounding of the ResizeObserver / getBoundingClientRect path),
@@ -129,7 +131,12 @@ export const useSplitDivider = ({
         ? impliedRatio
         : clampRatio(size / effectiveDimension)
 
-    onRatioChange(writeRatio(ratio))
+    const nextRatios = writeRatio(ratio)
+
+    if (persistIntentRef.current) {
+      persistIntentRef.current = false
+      onRatioChange(nextRatios)
+    }
   }, [
     size,
     effectiveDimension,
@@ -138,6 +145,12 @@ export const useSplitDivider = ({
     initialRatios,
     trackIndex,
   ])
+
+  useEffect(() => {
+    if (!isDragging) {
+      persistIntentRef.current = false
+    }
+  }, [isDragging])
 
   // Restore the fr fallback when this divider unmounts (session deactivates).
   useEffect(
@@ -156,15 +169,19 @@ export const useSplitDivider = ({
       const shrink = axis === 'horizontal' ? 'ArrowLeft' : 'ArrowUp'
       if (event.key === grow) {
         event.preventDefault()
+        persistIntentRef.current = true
         adjustBy(step)
       } else if (event.key === shrink) {
         event.preventDefault()
+        persistIntentRef.current = true
         adjustBy(-step)
       } else if (event.key === 'Home') {
         event.preventDefault()
+        persistIntentRef.current = true
         adjustBy(pixelMin - size)
       } else if (event.key === 'End') {
         event.preventDefault()
+        persistIntentRef.current = true
         adjustBy(pixelMax - size)
       }
     },
@@ -176,7 +193,10 @@ export const useSplitDivider = ({
     size,
     pixelMin,
     pixelMax,
-    handleMouseDown: elastic.handleMouseDown,
+    handleMouseDown: (event): void => {
+      persistIntentRef.current = true
+      elastic.handleMouseDown(event)
+    },
     onKeyDown,
   }
 }

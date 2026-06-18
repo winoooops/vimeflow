@@ -1,4 +1,4 @@
-import { render, screen, act, within } from '@testing-library/react'
+import { render, screen, act, waitFor, within } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -407,6 +407,35 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     })
   })
 
+  test('macOS top chrome click closes the layout display menu while it is open', async () => {
+    const user = userEvent.setup()
+
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    await setupSessionManager(mockSessions, 'session-2')
+    render(<WorkspaceView />)
+
+    const chrome = screen.getByTestId('top-chrome')
+    expect(chrome).toHaveClass('vf-app-drag-region')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(chrome).not.toHaveClass('vf-app-drag-region')
+
+    await user.click(chrome)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+    expect(chrome).toHaveClass('vf-app-drag-region')
+  })
+
   test('split layout: label-free pills right-aligned; config docked in the pillar (J3)', async () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)
@@ -485,6 +514,38 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(
       screen.queryByRole('button', { name: /keep top banner visible/i })
     ).toBeNull()
+  })
+
+  test('the layout display menu can hide a non-active layout pill from the pillar', async () => {
+    const user = userEvent.setup()
+
+    await setupSessionManager(mockSessions, 'session-2')
+    render(<WorkspaceView />)
+
+    const switcher = screen.getByTestId('layout-switcher')
+    expect(
+      within(switcher).getByRole('button', { name: '3x2 grid' })
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(switcher).getByRole('button', {
+        name: 'Configure displayed layouts',
+      })
+    )
+    await user.click(
+      await screen.findByRole('menuitemcheckbox', { name: '3x2 grid' })
+    )
+
+    expect(
+      within(screen.getByTestId('layout-switcher')).queryByRole('button', {
+        name: '3x2 grid',
+      })
+    ).toBeNull()
+    expect(
+      within(screen.getByTestId('layout-switcher')).getByRole('button', {
+        name: 'Vertical split',
+      })
+    ).toBeInTheDocument()
   })
 
   test('the sidebar toggle is one persistent root control — it never relocates on collapse (J4)', () => {

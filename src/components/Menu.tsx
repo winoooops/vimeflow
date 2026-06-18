@@ -86,15 +86,24 @@ const SHORTCUT_CHIP_CLASSES =
   'text-on-surface-variant'
 
 // 18×18 rounded check square ported from ViewSettingsDropdown's CheckIndicator:
-// checked => filled primary square with a `check` glyph; unchecked => thin
-// outline-variant border.
-const CheckIndicator = ({ checked }: { checked: boolean }): ReactElement => (
+// checked => filled square with a `check` glyph; unchecked => thin
+// outline-variant border. Disabled rows tone the checked state down so the
+// indicator visually matches the muted label.
+const CheckIndicator = ({
+  checked,
+  disabled,
+}: {
+  checked: boolean
+  disabled: boolean
+}): ReactElement => (
   <span
     aria-hidden="true"
     className={
       'inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] flex-shrink-0 ' +
       (checked
-        ? 'bg-primary text-on-primary'
+        ? disabled
+          ? 'bg-on-surface-variant/12 text-on-surface-variant/55 border-[1.5px] border-on-surface-variant/20'
+          : 'bg-primary text-on-primary'
         : 'bg-transparent border-[1.5px] border-on-surface-variant/30')
     }
     style={checked ? { fontVariationSettings: '"wght" 700' } : undefined}
@@ -256,6 +265,7 @@ interface MenuProps {
   // Opt out of scroll-dismiss where a consumer's behavior differs (spec §5.3).
   middleware?: { ancestorScroll?: boolean }
   'aria-label'?: string
+  onOpenChange?: (open: boolean) => void
   children: ReactNode
 }
 
@@ -270,6 +280,7 @@ const MenuRoot = ({
   width = undefined,
   middleware = undefined,
   'aria-label': ariaLabel = undefined,
+  onOpenChange = undefined,
   children,
 }: MenuProps): ReactElement => {
   const [open, setOpen] = useState(false)
@@ -283,11 +294,12 @@ const MenuRoot = ({
 
   const handleOpenChange = useCallback((nextOpen: boolean): void => {
     setOpen(nextOpen)
+    onOpenChange?.(nextOpen)
     if (!nextOpen) {
       setActiveIndex(null)
       setOpenSubmenuId(null)
     }
-  }, [])
+  }, [onOpenChange])
 
   // Keep a live ref so the stable dismissWhen callback can read the currently
   // open submenu id without re-registering the listener each time it changes.
@@ -488,6 +500,7 @@ const MenuItem = ({
 interface MenuCheckboxProps {
   icon?: string
   checked: boolean
+  disabled?: boolean
   onChange: (next: boolean) => void
   children: ReactNode
 }
@@ -495,23 +508,31 @@ interface MenuCheckboxProps {
 const MenuCheckbox = ({
   icon = undefined,
   checked,
+  disabled = false,
   onChange,
   children,
 }: MenuCheckboxProps): ReactElement => {
   const menu = useMenuContext()
   const label = typeof children === 'string' ? children : ''
-  const { index, ref } = useMenuRow(false, label)
+  const { index, ref } = useMenuRow(disabled, label)
 
   return (
     <button
       type="button"
       role="menuitemcheckbox"
       aria-checked={checked}
+      aria-disabled={disabled}
       ref={ref}
       tabIndex={menu.activeIndex === index ? 0 : -1}
-      className={ITEM_CLASSES}
+      className={`${ITEM_CLASSES} ${DISABLED_ITEM_CLASSES}`}
       {...menu.getItemProps({
-        onClick: (): void => onChange(!checked),
+        onClick: (): void => {
+          if (disabled) {
+            return
+          }
+
+          onChange(!checked)
+        },
       })}
     >
       <span className="flex items-center gap-2.5">
@@ -522,7 +543,7 @@ const MenuCheckbox = ({
         ) : null}
         {children}
       </span>
-      <CheckIndicator checked={checked} />
+      <CheckIndicator checked={checked} disabled={disabled} />
     </button>
   )
 }

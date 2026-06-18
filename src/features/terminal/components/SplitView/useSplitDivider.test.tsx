@@ -63,6 +63,16 @@ const Harness = ({
 }
 
 describe('useSplitDivider', () => {
+  test('mount sync writes CSS vars without persisting a custom ratio', () => {
+    const onRatioChange = vi.fn()
+    render(<Harness active onRatioChange={onRatioChange} />)
+
+    const container = screen.getByTestId('container')
+    expect(container.style.getPropertyValue('--split-cols-0')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-cols-1')).toMatch(/fr$/)
+    expect(onRatioChange).not.toHaveBeenCalled()
+  })
+
   test('keyboard resize mirrors updated track weights up and writes both fr vars', () => {
     const onRatioChange = vi.fn()
     render(<Harness active onRatioChange={onRatioChange} />)
