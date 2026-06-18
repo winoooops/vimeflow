@@ -112,7 +112,6 @@ const defaultProps = {
   cwd: '/test',
   onOpenDiff: vi.fn(),
   agent: AGENTS.shell,
-  status: 'idle' as const,
   onCollapse: (): void => undefined,
   cacheHistory: [],
 }
@@ -1253,7 +1252,6 @@ describe('AgentStatusPanel', () => {
         agentStatus={inactiveAgentStatus}
         cwd="/home/x"
         agent={AGENTS.claude}
-        status="idle"
         onCollapse={onCollapse}
       />
     )

@@ -221,23 +221,6 @@ describe('Tab — visual', () => {
     expect(container.querySelector('span.rounded-b-sm')).not.toBeInTheDocument()
   })
 
-  test('StatusDot rendered ONLY for running/paused (not completed/errored)', () => {
-    const { rerender } = renderTab({ session: session('a', 'running') })
-
-    expect(screen.getByLabelText('Status running')).toBeInTheDocument()
-
-    rerender(
-      <Tab
-        session={session('a', 'completed')}
-        agent={AGENTS.claude}
-        onSelect={vi.fn()}
-        onClose={vi.fn()}
-      />
-    )
-
-    expect(screen.queryByLabelText(/^Status/)).not.toBeInTheDocument()
-  })
-
   test('close button starts visually hidden on inactive tabs but keeps its accessible name', () => {
     renderTab({ isActive: false })
     const close = screen.getByTestId('close-tab-button')

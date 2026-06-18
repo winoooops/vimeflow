@@ -1,5 +1,6 @@
 // cspell:ignore cheatsheet incard powershell pwsh tcsh xonsh zsh
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 import { KimiUsageGate } from '../../agent-status/components/KimiUsageGate'
@@ -103,7 +104,12 @@ const shellCheatsheetUrl = (shellName: string): string =>
 
 const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
   <Tooltip content={`${turns ?? 0} turns`}>
-    <span className="inline-flex h-6 max-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant">
+    <Chip
+      tone="custom"
+      radius="pill"
+      size="custom"
+      className="h-6 max-w-[86px] justify-center rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant"
+    >
       {/* Both the Material icon and the descender-less mono label ride ~1px high
         in their own line-boxes. Wrap them in one flex row so items-center keeps
         them aligned to each other, then nudge the whole row down ~1px to center
@@ -118,7 +124,7 @@ const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
         </span>
         <span>{turns ?? 0} turns</span>
       </span>
-    </span>
+    </Chip>
   </Tooltip>
 )
 
@@ -144,7 +150,6 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
           No active agent
         </div>
         <div className="mt-1 flex items-center gap-1.5">
-          <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
           <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
             Idle · {shellName} shell
           </span>
@@ -231,12 +236,14 @@ export const AgentStatusCard = ({
               </span>
               {contextLabel !== null && (
                 <Tooltip content={`${contextLabel} context window`}>
-                  <span
+                  <Chip
                     data-testid="agent-card-context-badge"
+                    tone="custom"
+                    radius="chip"
+                    size="custom"
+                    label={contextLabel}
                     className="shrink-0 rounded-[5px] bg-surface-container-highest px-[5px] py-[2px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
-                  >
-                    {contextLabel}
-                  </span>
+                  />
                 </Tooltip>
               )}
             </div>

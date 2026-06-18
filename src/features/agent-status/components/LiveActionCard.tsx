@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import {
   ACTIVITY_CARD_SURFACE,
@@ -91,10 +92,14 @@ export const LiveActionCard = ({
           </>
         ) : null}
         <span className="flex-1" />
-        <span className="inline-flex items-center gap-1 rounded-full bg-success/[0.12] px-1.5 py-px font-mono text-[9px] font-semibold uppercase tracking-[0.06em] text-success-muted">
-          <span className="h-1 w-1 rounded-full bg-success-muted animate-pulse" />
+        <Chip
+          tone="custom"
+          radius="pill"
+          size="custom"
+          className="gap-1 rounded-full bg-success/[0.12] px-1.5 py-px font-mono text-[9px] font-semibold uppercase tracking-[0.06em] text-success-muted"
+        >
           LIVE
-        </span>
+        </Chip>
       </div>
     </div>
   )

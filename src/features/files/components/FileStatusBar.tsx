@@ -5,7 +5,6 @@ interface FileStatusBarProps {
   totalSize: string
   encoding: string
   gitBranch: string
-  liveSyncActive: boolean
 }
 
 /**
@@ -16,7 +15,6 @@ export const FileStatusBar = ({
   totalSize,
   encoding,
   gitBranch,
-  liveSyncActive,
 }: FileStatusBarProps): ReactElement => {
   const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`
 
@@ -32,12 +30,6 @@ export const FileStatusBar = ({
       <span aria-label={`Git branch ${gitBranch}`}>{gitBranch}</span>
       <div className="flex items-center gap-2" aria-label="Live sync status">
         <span>Live Sync</span>
-        {liveSyncActive && (
-          <div
-            className="w-2 h-2 bg-secondary rounded-full animate-pulse"
-            aria-label="Active"
-          />
-        )}
       </div>
     </div>
   )

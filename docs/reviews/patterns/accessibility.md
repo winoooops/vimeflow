@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-15
+last_updated: 2026-06-17
 ref_count: 25
 ---
 
@@ -551,16 +551,25 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 52. Non-standard `aria-readonly` on generic container div
+### 52. Disclosure button receives both `aria-pressed` and `aria-expanded`
 
-- **Source:** github-claude | PR #510 round 1 | 2026-06-17
+- **Source:** github-claude | PR #454 round 2 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** The overflow menu trigger passed `pressed={open}` to `IconButton` while also forwarding `aria-expanded={open}`. `BaseButton` emits `aria-pressed` from the `pressed` prop, so the button carried both ARIA states when open — screen readers announce a disclosure widget as a toggle button that is both pressed and expanded.
+- **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
+- **Commit:** same commit as this entry
+
+### 53. SegmentedControl unmatched value is visually coerced to the first option
+
+- **Source:** github-codex-connector | PR #461 round 2 | 2026-06-15
 - **Severity:** LOW
-- **File:** `src/features/editor/components/CodeEditor.tsx`
-- **Finding:** `aria-readonly={isReadOnly || undefined}` was applied to a plain wrapper `div`. WAI-ARIA only defines `aria-readonly` for roles that accept input; a generic div has implicit role `generic`, which does not support it. CodeMirror already sets the attribute on its inner editable surface.
-- **Fix:** Removed the redundant `aria-readonly` attribute from the container div.
-- **Commit:** see current commit
+- **File:** `src/components/SegmentedControl.tsx`
+- **Finding:** `activeIndex` was computed with `Math.max(0, options.findIndex(...))` and used for both the sidebar active-thumb transform and roving `tabIndex`. When a controlled `value` did not match any option, the control showed the thumb under option 0 and made option 0 tabbable while all buttons exposed `aria-pressed=false`, producing a visual/assistive-state mismatch.
+- **Fix:** Preserved the raw `findIndex` result as `activeIndex`, added a separate `focusIndex = Math.max(0, activeIndex)` used only for keyboard entry (`tabIndex`), and guarded thumb rendering with `activeIndex >= 0` so no thumb appears when no option is semantically selected. Added a regression test verifying the thumb is absent, the first option remains tabbable, and both options report `aria-pressed="false"` for an unmatched value.
+- **Commit:** same commit as this entry
 
-### 53. Reduced-motion media query leaves animated element visible at rest
+### 54. Reduced-motion media query leaves animated element visible at rest
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -569,7 +578,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 54. `aria-live` region announces completion on every refresh cycle
+### 55. `aria-live` region announces completion on every refresh cycle
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** LOW
@@ -577,3 +586,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The live region alternated between `Fetching latest agent status` and `Agent status updated`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
 - **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 56. Segmented ProgressBar exposes `role="progressbar"` without a value
+
+- **Source:** github-codex-connector | PR #509 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/components/ProgressBar.tsx`
+- **Finding:** When `segments` was supplied and `decorative` was omitted, the component rendered proportional distribution segments but exposed `role="progressbar"` without `aria-valuenow`, which assistive technology treats as an indeterminate loading indicator. The co-located test also asserted the unsafe role, encoding the mismatch as the component's contract.
+- **Fix:** Derived an effective decorative state whenever `segments` is present (`const isDecorative = decorative || segments !== undefined`) so segmented bars are always `aria-hidden` and never emit progressbar semantics. Added a `trackTestId` prop to let tests query the track directly, and rewrote the segmented-bar test to assert `aria-hidden="true"` and the absence of a `progressbar` role.
+- **Commit:** same commit as this entry

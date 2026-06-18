@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { EditorFile } from '../types'
+import { IconButton } from '@/components/IconButton'
 
 interface FileTabsProps {
   files: EditorFile[]
@@ -66,30 +67,28 @@ export const FileTabs = ({
                 {file.name}
                 {file.modified && <span className="ml-1 text-primary">●</span>}
               </span>
-              <button
+              <IconButton
+                icon="close"
+                label={`Close ${file.name}`}
                 onClick={(e) => handleCloseClick(e, index)}
-                aria-label={`Close ${file.name}`}
                 className={`
-                  material-symbols-outlined text-[14px] ml-3 transition-colors cursor-pointer
+                  ml-3 h-auto w-auto rounded-full p-0.5 text-[14px] transition-colors
                   ${
                     isActive
                       ? 'text-on-surface-variant hover:text-error'
                       : 'opacity-0 group-hover:opacity-100 text-on-surface-variant hover:text-error'
                   }
                 `}
-              >
-                close
-              </button>
+              />
             </div>
           )
         })}
-        <button
+        <IconButton
+          icon="add"
+          label="New file"
           onClick={onNewFile}
-          aria-label="New file"
-          className="flex items-center justify-center px-3 h-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest/20 transition-colors"
-        >
-          <span className="material-symbols-outlined text-[16px]">add</span>
-        </button>
+          className="h-full w-auto rounded-none px-3 text-[16px] text-on-surface-variant hover:bg-surface-container-highest/20 hover:text-on-surface"
+        />
       </div>
     </div>
   )

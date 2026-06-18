@@ -1,4 +1,5 @@
-import { type CSSProperties, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
+import { SegmentedControl } from '@/components/SegmentedControl'
 
 export interface SidebarTabItem<TId extends string = string> {
   id: TId
@@ -30,61 +31,21 @@ export const SidebarTabs = <TId extends string = string>({
   onChange,
   'aria-label': ariaLabel = 'Sidebar tabs',
   'data-testid': testId = 'sidebar-tabs',
-}: SidebarTabsProps<TId>): ReactElement => {
-  const activeIndex = Math.max(
-    0,
-    tabs.findIndex((tab) => tab.id === activeId)
-  )
-
-  const thumbStyle: CSSProperties = {
-    width: `calc((100% - 6px) / ${tabs.length})`,
-    transform: `translateX(${activeIndex * 100}%)`,
-  }
-
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      data-testid={testId}
-      style={{ width: SIDEBAR_TABS_W }}
-      className="relative flex min-w-0 shrink-0 rounded-[10px] border border-outline-variant/30 bg-surface-container-lowest/70 p-[3px] shadow-[inset_0_1px_2px_color-mix(in_srgb,var(--color-scrim)_40%,transparent)]"
-    >
-      <div
-        aria-hidden="true"
-        data-testid="sidebar-tabs-thumb"
-        style={thumbStyle}
-        className="pointer-events-none absolute bottom-[3px] left-[3px] top-[3px] z-0 rounded-[7px] border border-primary-container/40 bg-primary-container/16 shadow-[0_1px_2px_color-mix(in_srgb,var(--color-scrim)_25%,transparent)] transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)]"
-      />
-      {tabs.map((item) => {
-        const isActive = item.id === activeId
-
-        return (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={isActive}
-            onClick={() => {
-              onChange(item.id)
-            }}
-            className={`relative z-[1] flex h-[30px] min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] font-mono text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors ${
-              isActive
-                ? 'text-primary'
-                : 'text-on-surface-muted hover:text-on-surface-variant'
-            }`}
-          >
-            {item.icon ? (
-              <span
-                aria-hidden="true"
-                className="material-symbols-outlined text-[15px]"
-                style={{ fontVariationSettings: `'FILL' ${isActive ? 1 : 0}` }}
-              >
-                {item.icon}
-              </span>
-            ) : null}
-            {item.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+}: SidebarTabsProps<TId>): ReactElement => (
+  <SegmentedControl
+    aria-label={ariaLabel}
+    data-testid={testId}
+    variant="sidebar"
+    value={activeId}
+    options={tabs.map((tab) => ({
+      value: tab.id,
+      label: tab.label,
+      icon: tab.icon,
+    }))}
+    onChange={onChange}
+    style={{ width: SIDEBAR_TABS_W }}
+    thumbTestId="sidebar-tabs-thumb"
+    iconClassName="material-symbols-outlined text-[15px]"
+    fillActiveIcon
+  />
+)

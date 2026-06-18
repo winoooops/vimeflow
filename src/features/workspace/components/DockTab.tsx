@@ -7,7 +7,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
+import { SegmentedControl } from '@/components/SegmentedControl'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export type DockTabType = 'editor' | 'diff'
 
@@ -26,14 +29,22 @@ interface DockTabProps {
   children?: ReactNode
 }
 
-const tabButtonClass = (active: boolean, compact: boolean): string =>
-  `flex items-center justify-center font-mono text-[10.5px] h-[26px] rounded-md border transition-colors ${
-    compact ? 'w-[30px] px-0' : 'gap-1.5 px-[11px]'
-  } ${
-    active
-      ? 'bg-primary/[0.08] border-primary-container/30 text-primary'
-      : 'bg-transparent border-transparent text-on-surface-muted hover:text-primary'
-  }`
+const DOCK_TAB_OPTIONS = [
+  {
+    value: 'diff',
+    label: 'Diff Viewer',
+    icon: 'difference',
+    tooltip: 'Diff Viewer',
+    shortcut: ['Mod', 'G'] as const,
+  },
+  {
+    value: 'editor',
+    label: 'Editor',
+    icon: 'code',
+    tooltip: 'Editor',
+    shortcut: ['Mod', 'E'] as const,
+  },
+] as const
 
 const tabIconClass = (active: boolean): string =>
   `material-symbols-outlined text-[12px] ${
@@ -128,41 +139,22 @@ export const DockTab = ({
           : undefined
       }
     >
-      <div className="flex min-w-0 shrink-0 gap-1">
-        <Tooltip
-          content="Diff Viewer"
-          shortcut={['Mod', 'G']}
-          placement="bottom"
-        >
-          <button
-            type="button"
-            aria-pressed={tab === 'diff'}
-            onClick={() => onTabChange('diff')}
-            className={tabButtonClass(tab === 'diff', compactActions)}
-            aria-label="Diff Viewer"
-          >
-            <span className={tabIconClass(tab === 'diff')} aria-hidden="true">
-              difference
+      <SegmentedControl
+        aria-label="Dock tab"
+        variant="dock"
+        value={tab}
+        options={DOCK_TAB_OPTIONS}
+        onChange={onTabChange}
+        buttonClassName={compactActions ? 'w-[30px] px-0' : 'gap-1.5'}
+        renderOption={(option, active) => (
+          <>
+            <span className={tabIconClass(active)} aria-hidden="true">
+              {option.icon}
             </span>
-            {!compactActions && <span>Diff Viewer</span>}
-          </button>
-        </Tooltip>
-
-        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
-          <button
-            type="button"
-            aria-pressed={tab === 'editor'}
-            onClick={() => onTabChange('editor')}
-            className={tabButtonClass(tab === 'editor', compactActions)}
-            aria-label="Editor"
-          >
-            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
-              code
-            </span>
-            {!compactActions && <span>Editor</span>}
-          </button>
-        </Tooltip>
-      </div>
+            {!compactActions && <span>{option.label}</span>}
+          </>
+        )}
+      />
 
       <div className="min-w-0 flex-1" />
 
@@ -173,10 +165,11 @@ export const DockTab = ({
             placement="bottom"
             disabled={actionsOpen}
           >
-            <button
+            <IconButton
               ref={triggerRef}
-              type="button"
-              aria-label="More dock actions"
+              icon="more_horiz"
+              label="More dock actions"
+              showTooltip={TOOLTIP_SUPPRESSED}
               aria-expanded={actionsOpen}
               onMouseDown={(e): void => {
                 // Stop the document mousedown listener from firing so that
@@ -184,15 +177,8 @@ export const DockTab = ({
                 e.stopPropagation()
               }}
               onClick={(): void => setActionsOpen((prev) => !prev)}
-              className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
-            >
-              <span
-                className="material-symbols-outlined text-[16px]"
-                aria-hidden="true"
-              >
-                more_horiz
-              </span>
-            </button>
+              className="h-6 w-6 rounded-[5px] text-[16px] focus:bg-wash-subtle focus:text-primary"
+            />
           </Tooltip>
 
           {actionsOpen && (
@@ -210,19 +196,13 @@ export const DockTab = ({
                   shortcut={['Mod', '0']}
                   placement="bottom"
                 >
-                  <button
-                    type="button"
-                    aria-label="Collapse panel"
+                  <IconButton
+                    icon="minimize"
+                    label="Collapse panel"
+                    showTooltip={TOOLTIP_SUPPRESSED}
                     onClick={onClose}
-                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
-                  >
-                    <span
-                      className="material-symbols-outlined text-[14px]"
-                      aria-hidden="true"
-                    >
-                      minimize
-                    </span>
-                  </button>
+                    className="h-6 w-6 rounded-[5px] text-[14px]"
+                  />
                 </Tooltip>
               </div>
             </div>
@@ -238,19 +218,13 @@ export const DockTab = ({
               shortcut={['Mod', '0']}
               placement="bottom"
             >
-              <button
-                type="button"
-                aria-label="Collapse panel"
+              <IconButton
+                icon="minimize"
+                label="Collapse panel"
+                showTooltip={TOOLTIP_SUPPRESSED}
                 onClick={onClose}
-                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
-              >
-                <span
-                  className="material-symbols-outlined text-[14px]"
-                  aria-hidden="true"
-                >
-                  minimize
-                </span>
-              </button>
+                className="h-6 w-6 rounded-[5px] text-[14px]"
+              />
             </Tooltip>
           </div>
         </>

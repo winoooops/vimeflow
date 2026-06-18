@@ -43,7 +43,6 @@ const session: Session = {
 const baseProps = {
   agent: AGENTS.claude,
   session,
-  pipStatus: 'running' as const,
   worktreeName: null,
   branch: 'feat/jose-auth',
   added: 48,

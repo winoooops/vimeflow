@@ -1,5 +1,6 @@
 // cspell:ignore worktree
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 
 export interface GitRefChipProps {
@@ -101,7 +102,13 @@ export const GitRefChip = ({
       }
       placement="bottom"
     >
-      <span data-testid="git-ref-chip" className={frameClasses}>
+      <Chip
+        data-testid="git-ref-chip"
+        tone="custom"
+        size="custom"
+        radius="chip"
+        className={frameClasses}
+      >
         {hasWorktree && (
           <>
             <span
@@ -135,7 +142,7 @@ export const GitRefChip = ({
         <span data-testid="git-ref-chip-br-label" className={brLabelClasses}>
           {branch}
         </span>
-      </span>
+      </Chip>
     </Tooltip>
   )
 }

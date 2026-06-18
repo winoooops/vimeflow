@@ -6,7 +6,6 @@ import { Footer } from './Footer'
 
 const baseProps = {
   agent: AGENTS.claude,
-  pipStatus: 'running' as const,
   isFocused: false,
   isIdle: false,
   onClickFocus: vi.fn(),
@@ -26,7 +25,7 @@ describe('Footer', () => {
   })
 
   test('placeholder when focused and idle shows idle', () => {
-    render(<Footer {...baseProps} isFocused isIdle pipStatus="idle" />)
+    render(<Footer {...baseProps} isFocused isIdle />)
 
     expect(screen.getByText('idle')).toBeInTheDocument()
   })

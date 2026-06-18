@@ -556,6 +556,38 @@ describe('PriorityPlus', () => {
     expect(tray).toBeInTheDocument()
   })
 
+  test('overflow chip (IconButton anchor) drives the dialog via aria-expanded + aria-haspopup', () => {
+    render(
+      <PriorityPlus maxRows={1}>
+        {renderStatefulItems(['a', 'b', 'c'])}
+      </PriorityPlus>
+    )
+
+    stubLayout(
+      rootContainer('stateful-a'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    const chip = screen.getByRole('button', { name: /more controls/i })
+    // The migrated IconButton forwards the dialog disclosure attributes through
+    // ...rest; closed reads aria-expanded=false.
+    expect(chip).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(chip)
+
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('dialog', { name: 'More controls' })
+    ).toBeInTheDocument()
+  })
+
   test('a stateful child toggles inside the tray without closing it', () => {
     render(
       <PriorityPlus maxRows={1}>

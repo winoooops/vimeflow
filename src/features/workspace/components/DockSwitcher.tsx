@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '@/components/Tooltip'
+import { SegmentedControl } from '@/components/SegmentedControl'
 
 export type DockPosition = 'top' | 'bottom' | 'left' | 'right'
 
@@ -19,33 +19,18 @@ export const DockSwitcher = ({
   position,
   onPick,
 }: DockSwitcherProps): ReactElement => (
-  <div className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/30 bg-surface-container-lowest/60 p-[3px]">
-    {OPTIONS.map((option) => {
-      const active = option.id === position
-
-      return (
-        <Tooltip
-          key={option.id}
-          content={`Dock: ${option.label}`}
-          placement="bottom"
-        >
-          <button
-            type="button"
-            aria-label={`Dock: ${option.label}`}
-            aria-pressed={active}
-            onClick={() => onPick(option.id)}
-            className={`inline-flex h-[22px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] border transition-colors ${
-              active
-                ? 'bg-primary-container/15 border-primary-container/45 text-primary-container'
-                : 'border-transparent bg-transparent text-on-surface-muted hover:text-primary'
-            }`}
-          >
-            <DockGlyph position={option.id} />
-          </button>
-        </Tooltip>
-      )
-    })}
-  </div>
+  <SegmentedControl
+    aria-label="Dock position"
+    variant="framed"
+    value={position}
+    options={OPTIONS.map((option) => ({
+      value: option.id,
+      label: `Dock: ${option.label}`,
+      tooltip: `Dock: ${option.label}`,
+    }))}
+    onChange={onPick}
+    renderOption={(option) => <DockGlyph position={option.value} />}
+  />
 )
 
 const DockGlyph = ({ position }: { position: DockPosition }): ReactElement => {
