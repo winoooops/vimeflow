@@ -1,26 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { LayoutId, Session } from '../../sessions/types'
-// Source the data constant directly from its module rather than the
-// SplitView barrel — keeps usePaneShortcuts decoupled from a
-// sibling component's re-export surface.
-import { LAYOUTS } from '../components/SplitView/layouts'
+import { LAYOUT_CYCLE } from '../layout-registry/layoutRegistry'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
 } from '../../workspace/containerIds'
-
-// Derive the cycle order from the canonical LAYOUTS record so a future
-// LayoutId added in `layouts.ts` automatically participates in ⌘\
-// cycling. Hardcoding the list would let new layouts appear in the
-// LayoutSwitcher (which renders from `Object.values(LAYOUTS)`) but
-// silently reset to `'single'` on ⌘\ — `LAYOUT_CYCLE.indexOf(newId)`
-// would return -1 and the modulo would wrap to index 0. The
-// `Object.values(...).map(l => l.id)` form is type-safe: each entry's
-// `id` is typed `LayoutId`, so the resulting array carries the same
-// type without an unchecked cast.
-const LAYOUT_CYCLE: readonly LayoutId[] = Object.values(LAYOUTS).map(
-  (layout) => layout.id
-)
 
 /** Which modifier the toolbar hint advertises — and therefore the only
  *  one we intercept on this platform. Restricting to a single modifier

@@ -14,6 +14,7 @@
 
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { isKnownLayoutId } from '../../terminal/layout-registry/layoutRegistry'
 import { createLogger } from '../../../lib/log'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
@@ -39,23 +40,13 @@ const KNOWN_AGENT_TYPES: readonly AgentType[] = [
   'generic',
 ]
 
-const KNOWN_LAYOUT_IDS: readonly LayoutId[] = [
-  'single',
-  'vsplit',
-  'hsplit',
-  'threeRight',
-  'quad',
-]
-
 const toAgentType = (value: string): AgentType =>
   (KNOWN_AGENT_TYPES as readonly string[]).includes(value)
     ? (value as AgentType)
     : 'generic'
 
 const toLayoutId = (value: string): LayoutId =>
-  (KNOWN_LAYOUT_IDS as readonly string[]).includes(value)
-    ? (value as LayoutId)
-    : 'single'
+  isKnownLayoutId(value) ? value : 'single'
 
 interface GroupedEntry {
   info: SessionInfo
