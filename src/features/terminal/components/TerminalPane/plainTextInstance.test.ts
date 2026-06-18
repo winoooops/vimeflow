@@ -189,7 +189,10 @@ describe('plainTextInstance', () => {
     created.terminal.write('\x1b[38;2;243;139;168mabc\x1b[2D')
 
     const output = created.terminal.element?.querySelector('pre')
-    const styleRuns = output?.querySelectorAll('[data-terminal-style-run="true"]')
+
+    const styleRuns = output?.querySelectorAll(
+      '[data-terminal-style-run="true"]'
+    )
     const cursor = output?.querySelector('[data-terminal-cursor="true"]')
 
     expect(output?.textContent).toBe('abc')

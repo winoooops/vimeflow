@@ -150,6 +150,24 @@ describe('TerminalDisplayBuffer', () => {
     ])
   })
 
+  test('ignores malformed true-color and indexed SGR sub-params without misreading them as style codes', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      `${getSgrStyleSentinel([38, 2, 256, 0, 0])}invalid-true-color ` +
+        `${getSgrStyleSentinel([38, 5])}invalid-indexed` +
+        `${getSgrStyleSentinel([0])}`
+    )
+
+    expect(buffer.readText()).toBe('invalid-true-color invalid-indexed')
+    expect(buffer.readStyledRuns()).toEqual([
+      {
+        text: 'invalid-true-color invalid-indexed',
+        style: {},
+      },
+    ])
+  })
+
   test('preserves split CRLF pairing across SGR style controls', () => {
     const buffer = new TerminalDisplayBuffer()
 

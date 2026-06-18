@@ -267,9 +267,9 @@ const applySgrStyle = (
           parameter === 38
             ? styleWith(next, { foreground: color })
             : styleWith(next, { background: color })
-        index += 5
-        continue
       }
+      index += 5
+      continue
     }
 
     if ((parameter === 38 || parameter === 48) && colorMode === 5) {
@@ -280,9 +280,9 @@ const applySgrStyle = (
           parameter === 38
             ? styleWith(next, { foreground: color })
             : styleWith(next, { background: color })
-        index += 3
-        continue
       }
+      index += 3
+      continue
     }
 
     index += 1
