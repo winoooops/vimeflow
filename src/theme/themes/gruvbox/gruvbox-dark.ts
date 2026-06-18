@@ -13,7 +13,7 @@ export const gruvboxDark: ThemeDefinition = {
     'surface-container-low': dark.bg1,
     'surface-container': dark.bg2,
     'surface-container-high': dark.bg3,
-    'surface-container-highest': dark.bg2,
+    'surface-container-highest': dark.bg4,
     'surface-bright': dark.bg3,
     'surface-tint': bright.orange,
     'browser-bar': dark.bg0Hard,

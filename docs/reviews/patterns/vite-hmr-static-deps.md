@@ -3,7 +3,7 @@ id: vite-hmr-static-deps
 category: code-quality
 created: 2026-06-18
 last_updated: 2026-06-18
-ref_count: 1
+ref_count: 2
 ---
 
 # Vite HMR Static Dependencies
@@ -41,4 +41,13 @@ paths, and keep any indexed callback logic consistent with the literal array's o
 - **File:** `src/theme/service.ts`
 - **Finding:** Each `themeModules` entry carries a `path` field that visually implies it drives the HMR dependency list, but `import.meta.hot.accept` indexes `mods` positionally via `mods[index]`; `path` is never accessed outside the object literal. The invariant that `themeModules` and the static accept-array remain in identical order is undocumented.
 - **Fix:** Added a comment directly above the static dependency array stating that positions must match `themeModules` order and referencing the index → exportName mapping.
+- **Commit:** same commit as this entry
+
+### 3. themeModules.path is dead code after HMR refactor
+
+- **Source:** github-claude | PR #532 round 3 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/theme/service.ts`
+- **Finding:** The `path` field on each `themeModules` entry was never read after the dynamic `.map()` dependency list was replaced by a static literal array. It survived as a misleading breadcrumb that suggested the field drove `import.meta.hot.accept`, when in fact the dependency array and the indexed callback rely only on positional order and `exportName`.
+- **Fix:** Removed the `path` key from all four `themeModules` entries and kept the existing comment that documents the positional coupling between the array and the module list.
 - **Commit:** same commit as this entry

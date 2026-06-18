@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-18
-ref_count: 26
+ref_count: 27
 ---
 
 # Accessibility
@@ -603,4 +603,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
 - **Finding:** `surface-container-highest` mapped to `dark.bg4` (#7c6f64) and `surface-bright` mapped to `dark.fg4` (#a89984). Combined with `on-surface` (#ebdbb2) these produced ~3.4:1 and ~1.8:1 contrast ratios, below WCAG AA. Existing components (chips, command badges, file-tree hover rows) use those exact surface/text pairs, making labels hard to read.
 - **Fix:** Moved both tokens down the darker `bg` ramp while preserving elevation order: `surface-container-highest` → `dark.bg2` (#504945, ~6.4:1) and `surface-bright` → `dark.bg3` (#665c54, ~4.75:1).
+- **Commit:** same commit as this entry
+
+### 58. Gruvbox Dark `surface-container-highest` inverted elevation hierarchy
+
+- **Source:** github-claude | PR #532 round 3 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** The round-2 contrast fix mapped `surface-container-highest` to `dark.bg2`, making it identical to `surface-container` and darker than `surface-container-high` (`dark.bg3`). In a dark theme, "highest" elevation must be the lightest step, so the elevation ramp was inverted for that tier and components relying on layered depth cues rendered with the wrong visual hierarchy.
+- **Fix:** Restored monotonic elevation order by mapping `surface-container-highest` → `dark.bg4` (#7c6f64). The `surface-bright` token already moved to `dark.bg3` in round 2, so the bg0 < bg1 < bg2 < bg3 < bg4 ramp is preserved across all surface tiers.
 - **Commit:** same commit as this entry

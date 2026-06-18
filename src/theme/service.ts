@@ -10,22 +10,18 @@ export const THEME_STORAGE_KEY = 'vimeflow:theme'
 
 const themeModules = [
   {
-    path: './themes/obsidian-lens',
     exportName: 'obsidianLens',
     fallback: obsidianLens,
   },
   {
-    path: './themes/flexoki',
     exportName: 'flexoki',
     fallback: flexoki,
   },
   {
-    path: './themes/gruvbox/gruvbox-dark',
     exportName: 'gruvboxDark',
     fallback: gruvboxDark,
   },
   {
-    path: './themes/gruvbox/gruvbox-light',
     exportName: 'gruvboxLight',
     fallback: gruvboxLight,
   },
