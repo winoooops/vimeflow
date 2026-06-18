@@ -312,12 +312,14 @@ const parseCsiIntegerParameter = (
 const parseCsiCursorPosition = (
   content: string
 ): { readonly row: number; readonly column: number } | null => {
-  const [rowText = '', columnText = ''] = content.split(';')
+  const parts = content.split(';')
+  const rowText = parts[0] ?? ''
+  const columnText = parts[1] ?? ''
 
   if (
     !/^\d*$/.test(rowText) ||
     !/^\d*$/.test(columnText) ||
-    content.split(';').length > 2
+    parts.length > 2
   ) {
     return null
   }

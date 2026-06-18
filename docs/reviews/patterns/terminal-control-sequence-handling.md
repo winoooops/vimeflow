@@ -118,3 +118,40 @@ all required state through pure display-state helpers.
 - **Finding:** When a `38;2;R;G;B` true-color sequence has invalid or missing component values, the guard rejected the color but did not advance the parameter index past the sub-parameters. Control fell through to `index += 1`, so the color-mode byte (`2` or `5`) was consumed as a standalone SGR attribute in the next iteration, applying `dim` or corrupting subsequent styles.
 - **Fix:** Restructured the true-color and indexed branches to advance `index` by the full arity (5 for mode 2, 3 for mode 5) unconditionally, applying the style only when the color resolves. Added a regression test for out-of-range RGB and truncated indexed sequences.
 - **Commit:** same commit as this entry
+
+### 12. eraseDisplayInState mode 1 (ESC[1J) has no buffer-level test
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L728-736
+- **Finding:** `eraseDisplayInState` is called for both mode 0 and mode 1, but `terminalDisplayBuffer.test.ts` only exercises mode 0 (`getEraseDisplaySentinel(0)`). The mode 1 branch (lines 728–736) — which removes text from position 0 through the cursor character ...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 13. softWrapAtCursor inserts duplicate newline after erase on wrapped line
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L408-431
+- **Finding:** `eraseLineInState` mode 2 splices `[lineStart, lineEnd)` where `lineEnd` is the index of `\n`, so the soft-wrap `\n` is kept as the first character of remaining text. When new content is then written from `cursor = 0`, `writeDisplayCharacter` inserts...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 14. parseCsiCursorPosition calls content.split(';') twice
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L312-332
+- **Finding:** `parseCsiCursorPosition` destructures `content.split(';')` into `[rowText, columnText]` and then calls `content.split(';')` again solely to check `.length > 2`. Use `const parts = content.split(';')` once, destructure from `parts`, and compare `parts...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 15. Avoid inserting wrap rows over existing TUI rows
+
+- **Source:** github-codex-connector | PR #534 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-430
+- **Finding:** When repainting an existing screen row that is exactly `columns` wide, the next printable cell should wrap onto the already-existing next row and overwrite there. This branch always inserts a new `\n` at the cursor, so a redraw like an existing `abcd...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+

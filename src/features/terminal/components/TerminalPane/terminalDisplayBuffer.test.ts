@@ -1,4 +1,4 @@
-// cspell:ignore xhigh
+// cspell:ignore xhigh,ghijkl,ghijk
 import { describe, expect, test } from 'vitest'
 import {
   getClearScreenSentinel,
@@ -93,6 +93,26 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write(`\r${getEraseLineSentinel(0)}gh`)
 
     expect(buffer.readVisibleText()).toBe('abcde\ngh')
+  })
+
+  test('does not insert a second soft-wrap newline after a full-line erase', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+    buffer.write(getCursorUpSentinel())
+    buffer.write(`\r${getEraseLineSentinel(2)}ghijkl`)
+
+    expect(buffer.readVisibleText()).toBe('ghijk\nl')
+  })
+
+  test('overwrites the existing next row when redrawing a full-width line', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcde\nrow2')
+    buffer.write(getCursorPositionSentinel(1, 1))
+    buffer.write('123456')
+
+    expect(buffer.readVisibleText()).toBe('12345\n6ow2')
   })
 
   test('moves the cursor vertically across existing rows', () => {
@@ -194,6 +214,16 @@ describe('TerminalDisplayBuffer', () => {
       '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
     )
     expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
+  })
+
+  test('erases display content from the start through the cursor', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('hello\nworld')
+    buffer.write(getCursorPositionSentinel(2, 4))
+    buffer.write(getEraseDisplaySentinel(1))
+
+    expect(buffer.readVisibleText()).toBe('d')
   })
 
   test('exposes the current cursor offset for renderer caret placement', () => {

@@ -422,6 +422,10 @@ const softWrapAtCursor = (
     return { text, cursor, runs }
   }
 
+  if (text[cursor] === '\n') {
+    return { text, cursor: cursor + 1, runs }
+  }
+
   const newText = `${text.slice(0, cursor)}\n${text.slice(cursor)}`
 
   return {
