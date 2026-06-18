@@ -6,10 +6,10 @@ import {
   onWorkspaceRequestFinalShape,
   pushWorkspaceShape,
   type WorkspaceLayoutBridge,
-  type WorkspaceShapeDto,
+  type PersistedWorkspaceShape,
 } from './workspaceLayoutBridge'
 
-const shape: WorkspaceShapeDto = { sessions: [] }
+const shape: PersistedWorkspaceShape = { sessions: [] }
 
 interface TestWindow {
   vimeflow?: { workspaceLayout?: WorkspaceLayoutBridge }

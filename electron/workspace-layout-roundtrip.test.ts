@@ -8,7 +8,7 @@ import { WorkspaceTeardown } from './workspace-teardown'
 import type {
   PersistedTab,
   PersistedWorkspaceLayoutStore,
-  WorkspaceShapeDto,
+  PersistedWorkspaceShape,
 } from './workspace-layout-types'
 
 const browserOnlyTabs: PersistedTab[] = [
@@ -39,7 +39,7 @@ const mixedTabs: PersistedTab[] = [
   },
 ]
 
-const roundTripShape = (): WorkspaceShapeDto => ({
+const roundTripShape = (): PersistedWorkspaceShape => ({
   sessions: [
     {
       id: 'ws-browser',
@@ -189,7 +189,7 @@ describe('workspace layout round trip', () => {
     const harness = makeRoundTripHarness()
     const shape = roundTripShape()
 
-    const browserOnlyShape: WorkspaceShapeDto = {
+    const browserOnlyShape: PersistedWorkspaceShape = {
       sessions: [shape.sessions[0]],
     }
 

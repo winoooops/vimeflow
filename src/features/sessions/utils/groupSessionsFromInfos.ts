@@ -19,9 +19,9 @@ import { createLogger } from '../../../lib/log'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
 import type {
-  WorkspaceShapeDto,
-  WorkspaceShapeSession,
-  WorkspaceShapeShellPane,
+  PersistedWorkspaceShape,
+  PersistedWorkspaceSessionShape,
+  PersistedShellPane,
 } from '../workspaceLayoutBridge'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { sessionFromInfo } from './sessionFromInfo'
@@ -293,14 +293,14 @@ const reconcileActivePane = (
 // store pane's `paneId` / `agentType` / `active`.
 const buildReattachedShellPane = (
   live: SessionInfo,
-  shape: WorkspaceShapeShellPane
+  shape: PersistedShellPane
 ): Pane =>
   buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active)
 
 // A shell pane whose PTY is gone (graceful quit / crash) returns as a
 // restartable `completed` placeholder seeded with the persisted cwd + agent —
 // the existing Restart UX spawns a fresh shell there.
-const buildPlaceholderShellPane = (shape: WorkspaceShapeShellPane): Pane => ({
+const buildPlaceholderShellPane = (shape: PersistedShellPane): Pane => ({
   id: shape.paneId,
   ptyId: shape.ptyId,
   cwd: shape.cwd,
@@ -327,7 +327,7 @@ const buildRestoredBrowserPane = (
 })
 
 const buildStoreSession = (
-  shape: WorkspaceShapeSession,
+  shape: PersistedWorkspaceSessionShape,
   liveByPtyId: Map<string, SessionInfo>,
   fallbackIndex: number
 ): Session => {
@@ -381,7 +381,7 @@ const buildStoreSession = (
 // `groupSessionsFromInfos` (+ active-pane reconcile) so a reload with no store
 // behaves exactly like #290.
 export const reconstructWorkspace = (
-  storeShape: WorkspaceShapeDto | null,
+  storeShape: PersistedWorkspaceShape | null,
   liveSessions: readonly SessionInfo[],
   activeSessionId: string | null
 ): Session[] => {

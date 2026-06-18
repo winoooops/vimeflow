@@ -3,9 +3,12 @@ import {
   CURRENT_WORKSPACE_LAYOUT_VERSION,
   WorkspaceLayoutWriter,
 } from './workspace-layout-writer'
-import type { PersistedTab, WorkspaceShapeDto } from './workspace-layout-types'
+import type {
+  PersistedTab,
+  PersistedWorkspaceShape,
+} from './workspace-layout-types'
 
-const shape = (): WorkspaceShapeDto => ({
+const shape = (): PersistedWorkspaceShape => ({
   sessions: [
     {
       id: 's1',

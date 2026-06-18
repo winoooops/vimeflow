@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Session } from '../types'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
 import { useSessionRestore } from './useSessionRestore'
 
 const loadWorkspaceForRestore = vi.hoisted(() =>
-  vi.fn((): Promise<WorkspaceShapeDto | null> => Promise.resolve(null))
+  vi.fn((): Promise<PersistedWorkspaceShape | null> => Promise.resolve(null))
 )
 const beginWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const endWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
@@ -468,7 +468,7 @@ describe('useSessionRestore', () => {
   test('restores a browser-only session from the durable store', async () => {
     const order: string[] = []
 
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-browser',
@@ -543,7 +543,7 @@ describe('useSessionRestore', () => {
   })
 
   test('restarts the persisted active shell workspace when graceful quit left no live PTYs', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -636,7 +636,7 @@ describe('useSessionRestore', () => {
   })
 
   test('resolves active session from the restarted PTY id when no persisted-active handler is registered', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -691,7 +691,7 @@ describe('useSessionRestore', () => {
   })
 
   test('kills restarted PTY when restore is cancelled while spawn is in flight', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -759,7 +759,7 @@ describe('useSessionRestore', () => {
   })
 
   test('kills restarted PTY when restore is cancelled after spawn resolves', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -830,7 +830,7 @@ describe('useSessionRestore', () => {
   })
 
   test('does not restart an inactive shell when a browser pane is active', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -905,7 +905,7 @@ describe('useSessionRestore', () => {
   // so restore must reconstruct the browser workspace and must NOT spawn a
   // background shell.
   test('does not restart shell when mixed workspace has browser normalized active', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -979,7 +979,7 @@ describe('useSessionRestore', () => {
   // Exited SessionInfo rows after the cached PTY is gone. Those rows are not
   // live sessions, so restore must still restart the persisted active shell.
   test('restarts persisted active shell when listSessions only returns Exited rows', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',

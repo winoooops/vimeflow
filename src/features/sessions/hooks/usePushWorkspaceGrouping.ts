@@ -21,8 +21,8 @@ import { createLogger } from '../../../lib/log'
 import {
   onWorkspaceRequestFinalShape,
   pushWorkspaceShape,
-  type WorkspaceShapeDto,
-  type WorkspaceShapePane,
+  type PersistedWorkspaceShape,
+  type PersistedWorkspacePane,
 } from '../workspaceLayoutBridge'
 import { isShellPane } from '../utils/paneKind'
 import type { Session } from '../types'
@@ -31,7 +31,9 @@ const log = createLogger('grouping')
 
 const DRIFT_DEBOUNCE_MS = 500
 
-const pushShapeWithLog = async (shape: WorkspaceShapeDto): Promise<void> => {
+const pushShapeWithLog = async (
+  shape: PersistedWorkspaceShape
+): Promise<void> => {
   try {
     await pushWorkspaceShape(shape)
   } catch (err) {
@@ -48,7 +50,7 @@ const pushShapeWithLog = async (shape: WorkspaceShapeDto): Promise<void> => {
 export const buildWorkspaceShape = (
   sessions: readonly Session[],
   activeSessionId: string | null
-): WorkspaceShapeDto => ({
+): PersistedWorkspaceShape => ({
   sessions: sessions.map((session) => ({
     id: session.id,
     projectId: session.projectId,
@@ -56,7 +58,7 @@ export const buildWorkspaceShape = (
     workingDirectory: session.workingDirectory,
     active: session.id === activeSessionId,
     panes: session.panes.map(
-      (pane, paneIndex): WorkspaceShapePane =>
+      (pane, paneIndex): PersistedWorkspacePane =>
         isShellPane(pane)
           ? {
               kind: 'shell',
@@ -80,7 +82,7 @@ export const buildWorkspaceShape = (
 
 // Signature of the structural half (everything except cwd/agentType drift), so
 // a `cd` or agent-detection update debounces instead of pushing eagerly.
-const structuralSignature = (shape: WorkspaceShapeDto): string =>
+const structuralSignature = (shape: PersistedWorkspaceShape): string =>
   JSON.stringify(
     shape.sessions.map((session) => ({
       id: session.id,
