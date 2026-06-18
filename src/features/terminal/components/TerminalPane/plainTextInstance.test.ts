@@ -165,6 +165,25 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('done')
   })
 
+  test('applies clear-screen CSI output to the visible buffer', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('old prompt\nold output')
+    // cspell:disable-next-line
+    created.terminal.write('\x1b[H\x1b[2Jnew prompt')
+
+    expect(created.viewportReader.readVisibleText()).toBe('new prompt')
+  })
+
+  test('rewrites progress output that uses CSI cursor-left movement', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    // cspell:disable-next-line
+    created.terminal.write('S\x1b[1DSt\x1b[2DSta\x1b[3DStart')
+
+    expect(created.viewportReader.readVisibleText()).toBe('Start')
+  })
+
   test('erases from line start to cursor inclusive in erase-line mode 1', () => {
     const created = createTrackedPlainTextTerminal()
 

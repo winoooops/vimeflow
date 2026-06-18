@@ -1,4 +1,9 @@
-import { getEraseLineModeFromSentinel } from './terminalControlParser'
+import {
+  getEraseLineModeFromSentinel,
+  isClearScreenSentinel,
+  isCursorLeftSentinel,
+  isCursorRightSentinel,
+} from './terminalControlParser'
 
 const DEFAULT_MAX_SCROLLBACK_LINES = 10_000
 
@@ -39,6 +44,26 @@ const findLineEnd = (text: string, cursor: number): number => {
 
 const readCodePointLength = (text: string, cursor: number): number =>
   (text.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1
+
+const readPreviousCodePointLength = (text: string, cursor: number): number => {
+  if (cursor <= 0) {
+    return 0
+  }
+
+  const previous = text.charCodeAt(cursor - 1)
+  const beforePrevious = cursor >= 2 ? text.charCodeAt(cursor - 2) : 0
+
+  if (
+    previous >= 0xdc00 &&
+    previous <= 0xdfff &&
+    beforePrevious >= 0xd800 &&
+    beforePrevious <= 0xdbff
+  ) {
+    return 2
+  }
+
+  return 1
+}
 
 const writeDisplayCharacter = (
   text: string,
@@ -110,6 +135,31 @@ const applyDisplayData = (state: DisplayState, data: string): DisplayState => {
       )
       text = nextState.text
       cursor = nextState.cursor
+      pendingCr = false
+      continue
+    }
+
+    if (isClearScreenSentinel(character)) {
+      text = ''
+      cursor = 0
+      pendingCr = false
+      continue
+    }
+
+    if (isCursorLeftSentinel(character)) {
+      cursor = Math.max(
+        findLineStart(text, cursor),
+        cursor - readPreviousCodePointLength(text, cursor)
+      )
+      pendingCr = false
+      continue
+    }
+
+    if (isCursorRightSentinel(character)) {
+      cursor = Math.min(
+        findLineEnd(text, cursor),
+        cursor + readCodePointLength(text, cursor)
+      )
       pendingCr = false
       continue
     }

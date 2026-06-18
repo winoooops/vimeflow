@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { getEraseLineSentinel } from './terminalControlParser'
+import {
+  getClearScreenSentinel,
+  getCursorLeftSentinel,
+  getCursorRightSentinel,
+  getEraseLineSentinel,
+} from './terminalControlParser'
 import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
 
 describe('TerminalDisplayBuffer', () => {
@@ -47,6 +52,30 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write('ab\bcd')
 
     expect(buffer.readVisibleText()).toBe('acd')
+  })
+
+  test('moves the output cursor with parser display controls', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('S')
+    buffer.write(getCursorLeftSentinel())
+    buffer.write('St')
+    buffer.write(getCursorLeftSentinel().repeat(2))
+    buffer.write('Started')
+    buffer.write(getCursorRightSentinel())
+    buffer.write('!')
+
+    expect(buffer.readVisibleText()).toBe('Started!')
+  })
+
+  test('clears viewport text when a clear-screen display control arrives', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('old prompt\nold output')
+    buffer.write(getClearScreenSentinel())
+    buffer.write('new prompt')
+
+    expect(buffer.readVisibleText()).toBe('new prompt')
   })
 
   test('clears the current line when an erase-line sentinel arrives', () => {

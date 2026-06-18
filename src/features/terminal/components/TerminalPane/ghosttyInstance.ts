@@ -1,6 +1,5 @@
 // cspell:ignore ghostty
 import type {
-  TerminalDisposable,
   TerminalFitController,
   TerminalInstance,
   TerminalRendererAdapter,
@@ -23,7 +22,6 @@ export interface GhosttyTerminalOptions {
 
 class GhosttyTerminalModel {
   private readonly parserEngine: TerminalParserEngine
-  private readonly noOpParserDisposable: TerminalDisposable
   readonly terminal: TerminalTextSurface
   readonly parser: TerminalParser
 
@@ -36,13 +34,6 @@ class GhosttyTerminalModel {
       rendererId: GHOSTTY_TERMINAL_RENDERER_ID,
       transformOutput: (data): string =>
         this.parserEngine.parseText(data, null).visibleText,
-    })
-
-    // The Ghostty spike relies on the adapter parser stripping control
-    // sequences from the viewport even before app code subscribes to events.
-    this.noOpParserDisposable = this.parserEngine.parser.onEvent(() => {
-      // Intentionally empty: app-facing consumers subscribe separately through
-      // the exposed parser, while the surface consumes parsed visible text.
     })
   }
 
@@ -72,7 +63,7 @@ class GhosttyTerminalModel {
 
   readonly rendererHandle: TerminalRendererHandle = {
     dispose: (): void => {
-      this.noOpParserDisposable.dispose()
+      // The current Ghostty spike has no renderer addon lifecycle.
     },
   }
 

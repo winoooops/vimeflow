@@ -12,11 +12,21 @@ const CSI_PREFIX = `${ESC}[`
 const OSC_PREFIX = `${ESC}]`
 const STRING_TERMINATOR = `${ESC}\\`
 const MAX_PENDING_CONTROL_SEQUENCE_LENGTH = 16_384
+const MAX_REPEATED_DISPLAY_CONTROL_COUNT = 4_096
 
 const ERASE_LINE_SENTINELS = ['\u{F0000}', '\u{F0001}', '\u{F0002}']
+const CLEAR_SCREEN_SENTINEL = '\u{F0003}'
+const CURSOR_LEFT_SENTINEL = '\u{F0004}'
+const CURSOR_RIGHT_SENTINEL = '\u{F0005}'
 
 export const getEraseLineSentinel = (mode: 0 | 1 | 2): string =>
   ERASE_LINE_SENTINELS[mode]
+
+export const getClearScreenSentinel = (): string => CLEAR_SCREEN_SENTINEL
+
+export const getCursorLeftSentinel = (): string => CURSOR_LEFT_SENTINEL
+
+export const getCursorRightSentinel = (): string => CURSOR_RIGHT_SENTINEL
 
 export const getEraseLineModeFromSentinel = (
   character: string
@@ -30,9 +40,22 @@ export const getEraseLineModeFromSentinel = (
   return index as 0 | 1 | 2
 }
 
+export const isClearScreenSentinel = (character: string): boolean =>
+  character === CLEAR_SCREEN_SENTINEL
+
+export const isCursorLeftSentinel = (character: string): boolean =>
+  character === CURSOR_LEFT_SENTINEL
+
+export const isCursorRightSentinel = (character: string): boolean =>
+  character === CURSOR_RIGHT_SENTINEL
+
 interface SequenceTerminator {
   readonly index: number
   readonly length: number
+}
+
+export interface TerminalControlSequenceParserOptions {
+  readonly consumeControlsWithoutSubscribers?: boolean
 }
 
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
@@ -82,6 +105,37 @@ const findCsiTerminator = (
   return null
 }
 
+const isEscIntermediateByte = (char: string): boolean => {
+  const code = char.charCodeAt(0)
+
+  return code >= 0x20 && code <= 0x2f
+}
+
+const isEscFinalByte = (char: string): boolean => {
+  const code = char.charCodeAt(0)
+
+  return code >= 0x30 && code <= 0x7e
+}
+
+const findEscTerminator = (
+  data: string,
+  startIndex: number
+): SequenceTerminator | null => {
+  for (let index = startIndex; index < data.length; index += 1) {
+    const char = data[index] ?? ''
+
+    if (isEscFinalByte(char)) {
+      return { index, length: 1 }
+    }
+
+    if (!isEscIntermediateByte(char)) {
+      return { index, length: 0 }
+    }
+  }
+
+  return null
+}
+
 const parseOscIdentifier = (content: string): string | null => {
   const separatorIndex = content.indexOf(';')
 
@@ -102,9 +156,35 @@ const parseOscPayload = (content: string): string | null => {
   return content.slice(separatorIndex + 1)
 }
 
+const parseCsiIntegerParameter = (
+  content: string,
+  fallback: number
+): number | null => {
+  const firstParameter = content.split(';')[0] ?? ''
+
+  if (firstParameter.length === 0) {
+    return fallback
+  }
+
+  if (!/^\d+$/.test(firstParameter)) {
+    return null
+  }
+
+  return Number(firstParameter)
+}
+
+const repeatDisplayControl = (control: string, count: number): string =>
+  control.repeat(
+    Math.min(Math.max(count, 0), MAX_REPEATED_DISPLAY_CONTROL_COUNT)
+  )
+
 export class TerminalControlSequenceParser implements TerminalParser {
   private readonly handlers = new Set<TerminalParserEventHandler>()
   private pendingControlSequence = ''
+
+  constructor(
+    private readonly options: TerminalControlSequenceParserOptions = {}
+  ) {}
 
   onEvent(handler: TerminalParserEventHandler): TerminalDisposable {
     this.handlers.add(handler)
@@ -118,7 +198,10 @@ export class TerminalControlSequenceParser implements TerminalParser {
     data: string,
     output: TerminalParserOutputContext | null
   ): string {
-    if (this.handlers.size === 0) {
+    if (
+      this.handlers.size === 0 &&
+      !this.options.consumeControlsWithoutSubscribers
+    ) {
       const visible = `${this.pendingControlSequence}${data}`
       this.pendingControlSequence = ''
 
@@ -183,11 +266,73 @@ export class TerminalControlSequenceParser implements TerminalParser {
             sequenceStart + CSI_PREFIX.length,
             terminator.index
           )
-          const parameterMatch = /^(\d*)/.exec(content)
-          const mode = Number(parameterMatch?.[1] ?? '0')
+          const mode = parseCsiIntegerParameter(content, 0)
 
           if (mode === 0 || mode === 1 || mode === 2) {
             visible += getEraseLineSentinel(mode)
+          }
+        }
+
+        if (finalByte === 'J') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const mode = parseCsiIntegerParameter(content, 0)
+
+          if (mode === 2) {
+            visible += getClearScreenSentinel()
+          }
+        }
+
+        if (finalByte === 'D') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const normalizedCount = count === 0 ? 1 : count
+
+            visible += repeatDisplayControl(
+              getCursorLeftSentinel(),
+              normalizedCount
+            )
+          }
+        }
+
+        if (finalByte === 'C') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const normalizedCount = count === 0 ? 1 : count
+
+            visible += repeatDisplayControl(
+              getCursorRightSentinel(),
+              normalizedCount
+            )
+          }
+        }
+
+        if (finalByte === 'G') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const column = parseCsiIntegerParameter(content, 1)
+
+          if (column !== null) {
+            const normalizedColumn = column === 0 ? 1 : column
+
+            visible += `\r${repeatDisplayControl(
+              getCursorRightSentinel(),
+              normalizedColumn - 1
+            )}`
           }
         }
 
@@ -202,8 +347,14 @@ export class TerminalControlSequenceParser implements TerminalParser {
         break
       }
 
-      visible += ESC
-      cursor = sequenceStart + ESC.length
+      const terminator = findEscTerminator(data, sequenceStart + ESC.length)
+
+      if (!terminator) {
+        this.pendingControlSequence = data.slice(sequenceStart)
+        break
+      }
+
+      cursor = terminator.index + terminator.length
     }
 
     if (

@@ -27,6 +27,9 @@ const encodeBase64 = (bytes: Uint8Array): string => {
 const encodeText = (text: string): string =>
   encodeBase64(new TextEncoder().encode(text))
 
+const ESC = '\x1b'
+const SGR_FINAL = 'm'
+
 const createdTerminals = new Set<ReturnType<typeof createGhosttyTerminal>>()
 
 const createTrackedGhosttyTerminal = (
@@ -137,6 +140,63 @@ describe('ghosttyInstance', () => {
     })
 
     expect(created.viewportReader.readVisibleText()).toBe('bytes win')
+  })
+
+  test('strips zsh title and color controls without app parser subscribers', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      `${ESC}]2;user@host:~/project\x07` +
+      `${ESC}[38;2;243;139;168${SGR_FINAL}` +
+      `feat/ghostty-spike${ESC}[0${SGR_FINAL} % ${ESC}=`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'feat/ghostty-spike % '
+    )
+  })
+
+  test('continues stripping controls after renderer handle disposal', () => {
+    const created = createTrackedGhosttyTerminal()
+    const rendererHandle = created.attachRenderer()
+
+    rendererHandle.dispose()
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(`before ${ESC}[0${SGR_FINAL}after`),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(`before ${ESC}[0${SGR_FINAL}after`)
+        .length,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('before after')
+  })
+
+  test('applies clear-screen and cursor movement controls from byte payloads', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      `old prompt\nold output` +
+      `${ESC}[H${ESC}[2J` +
+      `S${ESC}[1DSt${ESC}[2DSta${ESC}[3DStart`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('Start')
   })
 
   test('renders invalid byte payloads through the byte path', () => {
