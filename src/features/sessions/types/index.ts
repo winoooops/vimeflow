@@ -104,6 +104,12 @@ export interface Session {
   id: string
   projectId: string
   name: string // user-assigned or derived from prompt
+  /**
+   * Sidebar Active-section membership. Undefined means derive from live panes
+   * for legacy/runtime sessions; restored lazy placeholders set this true even
+   * before their PTY is rehydrated.
+   */
+  open?: boolean
   status: SessionStatus
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string

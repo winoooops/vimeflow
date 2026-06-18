@@ -33,6 +33,7 @@ pub struct WorkspaceSession {
     pub layout: String,
     pub working_directory: String,
     pub active: bool,
+    pub open: bool,
     pub panes: Vec<WorkspacePane>,
 }
 
@@ -257,7 +258,11 @@ pub fn repair_workspace_layout(
         }
 
         // At most one active session in the loop (first active:true wins).
+        // `open` is independent: it records Active-section membership, so many
+        // sessions can be open while only one is selected. Old stores lacked
+        // the field; fall back to raw_active to preserve selected-only restore.
         let raw_active = bool_field(rs, "active").unwrap_or(false);
+        let open = bool_field(rs, "open").unwrap_or(raw_active);
         let active = raw_active && !active_session_seen;
         if active {
             active_session_seen = true;
@@ -272,6 +277,7 @@ pub fn repair_workspace_layout(
             layout,
             working_directory,
             active,
+            open,
             panes,
         });
     }
@@ -598,6 +604,7 @@ mod tests {
                 layout: "vsplit".into(),
                 working_directory: "/w".into(),
                 active: true,
+                open: true,
                 panes: vec![
                     WorkspacePane::Shell(ShellPane {
                         pane_id: "p0".into(),
@@ -631,6 +638,7 @@ mod tests {
         assert!(json.contains("\"historyIndex\":0"), "json: {json}");
         assert!(json.contains("\"kind\":\"shell\""), "json: {json}");
         assert!(json.contains("\"kind\":\"browser\""), "json: {json}");
+        assert!(json.contains("\"open\":true"), "json: {json}");
         let back: WorkspaceLayoutStore = serde_json::from_str(&json).unwrap();
         assert_eq!(back, store);
     }
@@ -655,6 +663,32 @@ mod tests {
         let store = repair_workspace_layout(json!({ "version": 999, "sessions": [] }), "proj", "/");
         assert!(store.sessions.is_empty());
         assert_eq!(store.version, CURRENT_WORKSPACE_LAYOUT_VERSION);
+    }
+
+    #[test]
+    fn preserves_many_open_sessions_but_normalizes_one_active() {
+        let store = repair_workspace_layout(
+            json!({
+              "version": 1,
+              "sessions": [
+                { "id": "s1", "projectId": "p", "layout": "single",
+                  "workingDirectory": "/", "active": true, "open": true,
+                  "panes": [ { "kind": "browser", "paneId": "b1",
+                    "paneIndex": 0, "active": true } ] },
+                { "id": "s2", "projectId": "p", "layout": "single",
+                  "workingDirectory": "/", "active": true, "open": true,
+                  "panes": [ { "kind": "browser", "paneId": "b2",
+                    "paneIndex": 0, "active": true } ] }
+              ]}),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.sessions.len(), 2);
+        assert!(store.sessions[0].active);
+        assert!(!store.sessions[1].active);
+        assert!(store.sessions[0].open);
+        assert!(store.sessions[1].open);
     }
 
     #[test]
@@ -839,6 +873,7 @@ mod tests {
                 layout: "single".into(),
                 working_directory: "/".into(),
                 active: true,
+                open: true,
                 panes: vec![WorkspacePane::Shell(ShellPane {
                     pane_id: "p0".into(),
                     pane_index: 0,
@@ -874,6 +909,7 @@ mod tests {
                     layout: "single".into(),
                     working_directory: "/".into(),
                     active: true,
+                    open: true,
                     panes: vec![WorkspacePane::Browser(BrowserPane {
                         pane_id: "p0".into(),
                         pane_index: 0,
@@ -915,6 +951,7 @@ mod tests {
                 layout: "single".into(),
                 working_directory: "/".into(),
                 active: true,
+                open: true,
                 panes: vec![WorkspacePane::Browser(BrowserPane {
                     pane_id: "p0".into(),
                     pane_index: 0,
@@ -970,6 +1007,7 @@ mod tests {
                 layout: "single".into(),
                 working_directory: "/".into(),
                 active: true,
+                open: true,
                 panes: vec![WorkspacePane::Shell(ShellPane {
                     pane_id: "p0".into(),
                     pane_index: 0,

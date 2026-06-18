@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-18
-ref_count: 33
+ref_count: 34
 ---
 
 # Testing Gaps
@@ -756,3 +756,19 @@ filesystem scope restrictions).
 - **Finding:** The test captured `window.requestAnimationFrame` callback in a local variable and invoked it once synchronously after `settle()`. In CI the effect that schedules the rAF loop could resolve after the single invocation, so `setBrowserPaneBounds` was never called and `waitFor` timed out.
 - **Fix:** Moved the callback invocation inside the `waitFor` poll so each retry ticks the latest captured animation-frame callback until the moved-bounds assertion passes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 74. `findActiveStoreShell` open guard lacks coverage for active-but-closed session
+
+- **Source:** github-claude | PR #538 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L47-49
+- **Finding:** The `!activeSession?.open` guard added to `findActiveStoreShell` prevents spawning a PTY when the persisted active session was already closed. Every existing restore test used `active: true, open: true`; the `active: true, open: false` branch that exercises the guard had no coverage, so dropping or inverting the condition would not fail any test.
+- **Fix:** Added a restore test with `active: true, open: false` in the store fixture, asserting `service.spawn` is never called and the persisted active session is still activated via `onActivePersisted`.
+
+### 75. `isOpenSession` unit tests omit explicit `open: false` cases
+
+- **Source:** github-claude | PR #538 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/sessions/utils/sessionStatus.test.ts` L90-110
+- **Finding:** The unit tests covered `open: true` (placeholder treated as open) and `open: undefined` (fallback to pane liveness), but not the explicit `open: false` path. Both `open: false, dead panes → false` and `open: false, live panes → true via hasLivePane` were untested, leaving the defensive fallback undocumented.
+- **Fix:** Added two focused tests: one asserting `isOpenSession({ open: false, panes: [completed] }) === false`, and one asserting `isOpenSession({ open: false, panes: [running] }) === true`.

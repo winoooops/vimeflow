@@ -47,6 +47,7 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
       layout: 'single',
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [{ kind: 'browser', paneId: 'p0', paneIndex: 0, active: true }],
     },
     {
@@ -55,6 +56,7 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
       layout: 'vsplit',
       workingDirectory: '/repo',
       active: false,
+      open: true,
       panes: [
         {
           kind: 'shell',

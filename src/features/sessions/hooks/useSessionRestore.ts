@@ -45,7 +45,7 @@ const findActiveStoreShell = (
   storeShape: PersistedWorkspaceShape | null
 ): StoreShellSelection | null => {
   const activeSession = storeShape?.sessions.find((session) => session.active)
-  if (!activeSession) {
+  if (!activeSession?.open) {
     return null
   }
 

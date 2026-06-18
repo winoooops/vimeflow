@@ -1,13 +1,12 @@
 import type { Session } from '../types'
-import { hasLivePane } from './sessionStatus'
+import { isOpenSession } from './sessionStatus'
 
 /**
  * Returns the sessions visible in the SessionTabs strip — sessions with a
- * live (running/awaiting/idle) pane plus the currently active one (so a
- * just-exited active session keeps its tab even after status flips to
- * completed/errored). Liveness is pane-level, not the errored-dominant
- * aggregate status, so a split session with one crashed pane and one live
- * pane stays visible. Single source of truth for "open" semantics; both
+ * open pane plus the currently active one (so a just-exited active session
+ * keeps its tab even after status flips to completed/errored). Open state is
+ * pane-level liveness plus restore-time lazy placeholders, not the
+ * errored-dominant aggregate status. Single source of truth for "open" semantics; both
  * `SessionTabs` and `pickNextVisibleSessionId` consume it so the visible-set
  * definition can never drift between render and close-fallback navigation.
  */
@@ -15,7 +14,7 @@ export const getVisibleSessions = (
   sessions: Session[],
   activeSessionId: string | null
 ): Session[] =>
-  sessions.filter((s) => hasLivePane(s.panes) || s.id === activeSessionId)
+  sessions.filter((s) => isOpenSession(s) || s.id === activeSessionId)
 
 /**
  * Pick the next visible session id when the user removes the currently

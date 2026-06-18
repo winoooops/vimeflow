@@ -72,6 +72,7 @@ const storeToShape = (
     layout: session.layout,
     workingDirectory: session.workingDirectory,
     active: session.active,
+    open: session.open,
     panes: session.panes.map(paneToShape),
   })),
 })
@@ -136,6 +137,7 @@ const isPersistedWorkspaceSessionShape = (
     typeof session.layout === 'string' &&
     typeof session.workingDirectory === 'string' &&
     typeof session.active === 'boolean' &&
+    typeof session.open === 'boolean' &&
     Array.isArray(session.panes) &&
     session.panes.every(isPersistedWorkspacePaneShape)
   )

@@ -167,6 +167,7 @@ export class WorkspaceLayoutWriter
         layout: session.layout,
         workingDirectory: session.workingDirectory,
         active: session.active,
+        open: session.open,
         panes,
       })
     }

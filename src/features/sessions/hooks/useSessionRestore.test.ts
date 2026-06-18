@@ -476,6 +476,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],
@@ -551,6 +552,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -635,6 +637,169 @@ describe('useSessionRestore', () => {
     expect(onActiveResolved).not.toHaveBeenCalled()
   })
 
+  test('keeps non-selected previously open shell workspaces open as lazy placeholders', async () => {
+    const store: PersistedWorkspaceShape = {
+      sessions: [
+        {
+          id: 'ws-selected',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/selected',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-selected-old',
+              cwd: '/home/will/selected',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+        {
+          id: 'ws-background',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/background',
+          active: false,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-background-old',
+              cwd: '/home/will/background',
+              agentType: 'claude-code',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-selected-new',
+        pid: 4321,
+        cwd: '/home/will/selected',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).toHaveBeenCalledTimes(1)
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+
+    expect(restoredSessions).toHaveLength(2)
+    expect(restoredSessions[0]).toEqual(
+      expect.objectContaining({
+        id: 'ws-selected',
+        open: true,
+        status: 'running',
+      })
+    )
+
+    expect(restoredSessions[1]).toEqual(
+      expect.objectContaining({
+        id: 'ws-background',
+        open: true,
+        status: 'completed',
+      })
+    )
+
+    expect(restoredSessions[1].panes[0]).toEqual(
+      expect.objectContaining({
+        ptyId: 'pty-background-old',
+        status: 'completed',
+      })
+    )
+  })
+
+  test('does not spawn a PTY for the persisted-active session when it is closed', async () => {
+    const store: PersistedWorkspaceShape = {
+      sessions: [
+        {
+          id: 'ws-closed',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/closed',
+          active: true,
+          open: false,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-closed-old',
+              cwd: '/home/will/closed',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/closed',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActivePersisted = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(onRestore).toHaveBeenCalled()
+    expect(onActivePersisted).toHaveBeenCalledWith('ws-closed')
+  })
+
   test('resolves active session from the restarted PTY id when no persisted-active handler is registered', async () => {
     const store: PersistedWorkspaceShape = {
       sessions: [
@@ -644,6 +809,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -699,6 +865,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -767,6 +934,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -838,6 +1006,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
             {
@@ -913,6 +1082,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
             {
@@ -987,6 +1157,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',

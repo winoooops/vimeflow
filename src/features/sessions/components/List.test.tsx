@@ -202,6 +202,29 @@ describe('List', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('keeps lazy-restored open placeholders in Active', () => {
+    const restoredOpen: Session = {
+      ...mockSessions[2],
+      id: 'sess-restored-open',
+      name: 'resume after reopen',
+      open: true,
+    }
+
+    render(
+      <List
+        sessions={[restoredOpen]}
+        activeSessionId="sess-restored-open"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    const activeList = screen.getByTestId('session-list')
+    expect(
+      within(activeList).getByText('resume after reopen')
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('session-group-recent')).not.toBeInTheDocument()
+  })
+
   test('renders empty state when no active sessions', () => {
     render(
       <List

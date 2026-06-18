@@ -25,6 +25,7 @@ import {
   type PersistedWorkspacePaneShape,
 } from '../workspaceLayoutBridge'
 import { isShellPane } from '../utils/paneKind'
+import { isOpenSession } from '../utils/sessionStatus'
 import type { Session } from '../types'
 
 const log = createLogger('grouping')
@@ -57,6 +58,7 @@ export const buildWorkspaceShape = (
     layout: session.layout,
     workingDirectory: session.workingDirectory,
     active: session.id === activeSessionId,
+    open: isOpenSession(session),
     panes: session.panes.map(
       (pane, paneIndex): PersistedWorkspacePaneShape =>
         isShellPane(pane)
@@ -90,6 +92,7 @@ const structuralSignature = (shape: PersistedWorkspaceShape): string =>
       layout: session.layout,
       workingDirectory: session.workingDirectory,
       active: session.active,
+      open: session.open,
       panes: session.panes.map((pane) => ({
         kind: pane.kind,
         paneId: pane.paneId,

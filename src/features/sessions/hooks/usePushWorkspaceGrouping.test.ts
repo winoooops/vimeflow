@@ -87,6 +87,7 @@ describe('buildWorkspaceShape', () => {
           layout: 'vsplit',
           workingDirectory: '/repo',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',

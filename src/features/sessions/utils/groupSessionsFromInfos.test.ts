@@ -350,6 +350,7 @@ const storeSession = (
   layout: 'single',
   workingDirectory: '/home/will/repo',
   active: true,
+  open: true,
   panes: [shellShape({ active: true })],
   ...overrides,
 })
@@ -437,6 +438,29 @@ describe('reconstructWorkspace', () => {
     expect(pane.pid).toBeUndefined()
     expect(sessions[0].status).toBe('completed')
     expect(sessions[0].agentType).toBe('codex')
+  })
+
+  test('preserves store open state for lazy restored shell placeholders', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-open',
+        open: true,
+        panes: [shellShape({ ptyId: 'pty-open', active: true })],
+      }),
+      storeSession({
+        id: 'ws-recent',
+        active: false,
+        open: false,
+        panes: [shellShape({ ptyId: 'pty-recent', active: true })],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions.map((session) => [session.id, session.open])).toEqual([
+      ['ws-open', true],
+      ['ws-recent', false],
+    ])
   })
 
   // A persisted `agentType: 'kimi'` must survive restore (not coerce to
