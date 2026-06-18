@@ -613,3 +613,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The round-2 contrast fix mapped `surface-container-highest` to `dark.bg2`, making it identical to `surface-container` and darker than `surface-container-high` (`dark.bg3`). In a dark theme, "highest" elevation must be the lightest step, so the elevation ramp was inverted for that tier and components relying on layered depth cues rendered with the wrong visual hierarchy.
 - **Fix:** Restored monotonic elevation order by mapping `surface-container-highest` → `dark.bg4` (#7c6f64). The `surface-bright` token already moved to `dark.bg3` in round 2, so the bg0 < bg1 < bg2 < bg3 < bg4 ramp is preserved across all surface tiers.
 - **Commit:** same commit as this entry
+
+### 59. Layout display trigger is missing the required shared Tooltip hover label
+
+- **Source:** github-codex-connector | PR #535 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
+- **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry

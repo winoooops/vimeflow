@@ -9,7 +9,10 @@ import {
   useState,
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
-import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
+import {
+  LayoutDisplayMenu,
+  LayoutSwitcher,
+} from '../terminal/components/LayoutSwitcher'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '@/components/sidebar/Sidebar'
@@ -18,7 +21,6 @@ import {
   type SidebarTabItem,
 } from '@/components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '@/components/StatusBar'
-import { Tooltip } from '@/components/Tooltip'
 import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
@@ -80,6 +82,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { LAYOUTS, selectVisiblePanes } from '../terminal/components/SplitView'
+import { LAYOUT_IDS } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -308,6 +311,10 @@ const WorkspaceViewContent = (): ReactElement => {
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
 
+  const [visibleLayoutIds, setVisibleLayoutIds] =
+    useState<readonly LayoutId[]>(LAYOUT_IDS)
+  const [isLayoutDisplayMenuOpen, setIsLayoutDisplayMenuOpen] = useState(false)
+
   useEffect(() => {
     if (
       typeof window === 'undefined' ||
@@ -468,6 +475,16 @@ const WorkspaceViewContent = (): ReactElement => {
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
+
+  // If the active session disappears while the layout-display menu is open,
+  // the menu unmounts without firing onOpenChange(false). Reset the flag so
+  // the top chrome restores the draggable region on macOS.
+  useEffect(() => {
+    if (!activeSession) {
+      setIsLayoutDisplayMenuOpen(false)
+    }
+  }, [activeSession])
+
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
@@ -2333,7 +2350,9 @@ const WorkspaceViewContent = (): ReactElement => {
         <div
           data-testid="top-chrome"
           className={`relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px] ${
-            reserveWindowControls ? 'vf-app-drag-region' : ''
+            reserveWindowControls && !isLayoutDisplayMenuOpen
+              ? 'vf-app-drag-region'
+              : ''
           }`}
         >
           {reserveWindowControls && isSidebarClosed && (
@@ -2356,61 +2375,15 @@ const WorkspaceViewContent = (): ReactElement => {
           {activeSession && (
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
+              visibleLayoutIds={visibleLayoutIds}
               onPick={handlePickLayout}
               trailing={
-                // Disabled controls swallow pointer events in Chromium, so the
-                // hover target is a wrapper span rather than the button itself.
-                <Tooltip
-                  content="Configure displayed layouts"
-                  placement="bottom"
-                >
-                  <span className="inline-flex">
-                    <button
-                      type="button"
-                      aria-label="Configure displayed layouts"
-                      disabled
-                      aria-disabled="true"
-                      tabIndex={-1}
-                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                          stroke="currentColor"
-                          strokeWidth="1.35"
-                          strokeLinecap="round"
-                        />
-                        <circle
-                          cx="8"
-                          cy="4.5"
-                          r="1.6"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="10.7"
-                          cy="8"
-                          r="1.45"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="6.5"
-                          cy="11.5"
-                          r="1.55"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                      </svg>
-                    </button>
-                  </span>
-                </Tooltip>
+                <LayoutDisplayMenu
+                  activeLayoutId={activeSession.layout}
+                  visibleLayoutIds={visibleLayoutIds}
+                  onVisibleLayoutIdsChange={setVisibleLayoutIds}
+                  onOpenChange={setIsLayoutDisplayMenuOpen}
+                />
               }
             />
           )}

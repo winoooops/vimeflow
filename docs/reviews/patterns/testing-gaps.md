@@ -738,6 +738,7 @@ filesystem scope restrictions).
 - **File:** `src/features/terminal/components/SplitView/useSplitDivider.test.tsx` L66-76
 - **Finding:** The keyboard resize assertion only checked `ratios[0] > ratios[1]`, verifying direction but not that the resulting boundary fraction stayed within `[SPLIT_ELASTIC_CONFIG.minPercent, SPLIT_ELASTIC_CONFIG.maxPercent]`. The old test was the only place in the file that validated the actual clamped bounds.
 - **Fix:** Derived the boundary fraction with `const frac = ratios[0] / (ratios[0] + ratios[1])` and added `toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)` / `toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)` assertions.
+
 ### 72. Test script memory flag not mirrored to `test:coverage`
 
 - **Source:** github-claude | PR #528 round 2 | 2026-06-18

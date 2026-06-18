@@ -405,6 +405,45 @@ describe('SplitView - multi-pane layouts', () => {
     expect(valueNow()).toBe(resized)
   })
 
+  test('an untouched layout returns to its default ratios after another layout was resized', () => {
+    const handleValues = (): string[] =>
+      screen
+        .getAllByTestId('split-resize-handle')
+        .map((handle) => handle.getAttribute('aria-valuenow') ?? '')
+
+    const view = render(
+      <SplitView
+        session={makeSession('grid3x2', 6)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    const defaultGridValues = handleValues()
+    view.unmount()
+
+    const { rerender } = render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
+      key: 'ArrowRight',
+    })
+
+    rerender(
+      <SplitView
+        session={makeSession('grid3x2', 6)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(handleValues()).toEqual(defaultGridValues)
+  })
+
   test('each slot gets gridArea by index regardless of pane.id naming', () => {
     const session = makeSession('quad', 4)
 
