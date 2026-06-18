@@ -59,7 +59,7 @@ export interface PersistedWorkspaceLayoutStore {
 
 // Shape-only DTO (renderer <-> main). No browser tab/history.
 
-export interface PersistedShellPane {
+export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
   paneIndex: number
@@ -70,7 +70,7 @@ export interface PersistedShellPane {
   agentSessionId: string | null
 }
 
-export interface PersistedBrowserPane {
+export interface PersistedBrowserPaneShape {
   kind: 'browser'
   paneId: string
   paneIndex: number
@@ -78,8 +78,8 @@ export interface PersistedBrowserPane {
 }
 
 export type PersistedWorkspacePaneShape =
-  | PersistedShellPane
-  | PersistedBrowserPane
+  | PersistedShellPaneShape
+  | PersistedBrowserPaneShape
 
 export interface PersistedWorkspaceSessionShape {
   id: string

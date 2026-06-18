@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 1
+last_updated: 2026-06-18
+ref_count: 2
 ---
 
 # Type Contract Safety
@@ -50,4 +50,13 @@ expands.
 - **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
 - **Finding:** The proxy object in `useLayoutEffect` is cast to `OverlayDescriptor` via `as` (line 27) rather than satisfying the discriminated union. Because `get nativeOcclusion()` reads `latestDescriptorRef.current.nativeOcclusion` live, the runtime variant can shift from `'none'`/`'global'` to `'intersects'` without re-running the effect (only `id` and `plane` changes trigger a re-run). When that shift occurs, `overlayOccludesNativeSurface` branches into `rectsIntersect` but `overlay.getRect()` returns `null` (the proxy calls `latestDescriptorRef.current.getRect?.() ?? null`), so the overlay silently fails to occlude. Fix: include `nativeOcclusion` in the effect deps so re-registration fires on variant changes, or close over it in the proxy to hold it stable.
 - **Fix:** Added nativeOcclusion to the useLayoutEffect dependency array so the proxy re-registers when the occlusion variant changes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Duplicate `PersistedBrowserPane` interface declarations silently merge
+
+- **Source:** github-claude | PR #531 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `electron/workspace-layout-types.ts`
+- **Finding:** The shape-only DTO pane interface was renamed to `PersistedBrowserPane`, but a `PersistedBrowserPane` store pane interface already existed in the same file. TypeScript merges the two declarations, so the merged type requires `tabs: PersistedTab[]` even for the shape-only DTO. This erased the distinction between the persisted store pane type and the shape-only DTO type, causing `tsc` errors wherever a browser shape was constructed without tabs.
+- **Fix:** Renamed the shape-only interfaces to `PersistedShellPaneShape` and `PersistedBrowserPaneShape`, then updated `PersistedWorkspacePaneShape` to reference the new names so it no longer merges with the store-side types.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
