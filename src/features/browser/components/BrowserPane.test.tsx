@@ -271,6 +271,10 @@ describe('BrowserPane', () => {
         <BrowserPaneHarness session={session} pane={browserPane} isActive />
       )
       await settle()
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalled()
+        expect(frameCallback).not.toBeNull()
+      })
       bridgeMocks.setBrowserPaneBounds.mockClear()
 
       rectSpy.mockReturnValue(movedRect)
@@ -340,6 +344,10 @@ describe('BrowserPane', () => {
         <BrowserPaneHarness session={session} pane={browserPane} isActive />
       )
       await settle()
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalled()
+        expect(frameCallback).not.toBeNull()
+      })
       bridgeMocks.setBrowserPaneBounds.mockClear()
 
       for (let i = 0; i < 60; i += 1) {
