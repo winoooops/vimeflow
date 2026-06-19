@@ -1,9 +1,17 @@
-import { useRef, type KeyboardEvent, type ReactElement } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import type {
   SettingsSearchNavigationDirection,
   SettingsSectionId,
   SettingsSidebarProps,
+  SettingsSubsection,
+  SettingsSubsectionId,
   SettingsTargetId,
 } from '../types'
 import { resultKeyToAriaId } from '../search'
@@ -17,14 +25,19 @@ const sectionResultId = (id: SettingsSectionId): string =>
 const targetResultId = (id: SettingsTargetId): string =>
   `settings-search-result-target-${id}`
 
+const subsectionResultId = (id: SettingsSubsectionId): string =>
+  `settings-search-result-subsection-${id}`
+
 export const SettingsSidebar = ({
   sections,
   targets = [],
+  subsections = [],
   active,
   activeTargetId = null,
   activeSearchResultKey = null,
   onPick,
   onPickTarget = (): void => undefined,
+  onPickSubsection = (): void => undefined,
   onClearQuery = (): void => undefined,
   onNavigateSearchResult = (): void => undefined,
   onConfirmSearchResult = (): void => undefined,
@@ -33,13 +46,41 @@ export const SettingsSidebar = ({
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  const [expandedSectionIds, setExpandedSectionIds] = useState<
+    Set<SettingsSectionId>
+  >(() => new Set([active]))
+  const searchActive = query.trim() !== ''
+  const treeActive = subsections.length > 0 && !searchActive
+
+  useEffect(() => {
+    setExpandedSectionIds((current) => {
+      if (current.has(active)) {
+        return current
+      }
+
+      return new Set([...current, active])
+    })
+  }, [active])
+
+  const activeSubsection =
+    activeTargetId === null
+      ? undefined
+      : subsections.find(
+          (subsection) =>
+            subsection.section === active &&
+            subsection.targetIds.includes(activeTargetId)
+        )
+
   const fallbackActiveResultId =
     activeTargetId !== null &&
+    !treeActive &&
     targets.some((target) => target.id === activeTargetId)
       ? targetResultId(activeTargetId)
-      : sections.some((section) => section.id === active)
-        ? sectionResultId(active)
-        : undefined
+      : activeSubsection !== undefined
+        ? subsectionResultId(activeSubsection.id)
+        : sections.some((section) => section.id === active)
+          ? sectionResultId(active)
+          : undefined
 
   const activeResultId =
     activeSearchResultKey === null
@@ -51,6 +92,27 @@ export const SettingsSidebar = ({
   const handleClearQuery = (): void => {
     onClearQuery()
     searchInputRef.current?.focus()
+  }
+
+  const handlePickSection = (
+    id: SettingsSectionId,
+    sectionSubsections: SettingsSubsection[]
+  ): void => {
+    onPick(id)
+
+    if (treeActive && sectionSubsections.length > 0) {
+      setExpandedSectionIds((current) => {
+        const next = new Set(current)
+
+        if (id === active && next.has(id)) {
+          next.delete(id)
+        } else {
+          next.add(id)
+        }
+
+        return next
+      })
+    }
   }
 
   const handleNavigate = (
@@ -135,6 +197,13 @@ export const SettingsSidebar = ({
             (target) => target.section === s.id
           )
 
+          const sectionSubsections = treeActive
+            ? subsections.filter((subsection) => subsection.section === s.id)
+            : []
+          const isExpanded = searchActive || expandedSectionIds.has(s.id)
+          const hasTreeChildren = sectionSubsections.length > 0
+          const shouldShowTargets = !treeActive && sectionTargets.length > 0
+
           return (
             <div key={s.id} className="mb-px">
               <button
@@ -143,7 +212,7 @@ export const SettingsSidebar = ({
                 role="option"
                 aria-selected={isActive}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => onPick(s.id)}
+                onClick={() => handlePickSection(s.id, sectionSubsections)}
                 className={`relative flex w-full items-center gap-2 rounded-md border-none px-2.5 py-1.5 text-left font-body text-[13px] transition-colors ${
                   isActive
                     ? 'bg-primary-container/10 text-primary'
@@ -156,16 +225,57 @@ export const SettingsSidebar = ({
                 <Icon
                   name="chevron_right"
                   size={13}
-                  className={
+                  className={`transition-transform ${
                     isActive
                       ? 'text-primary-container'
                       : 'text-on-surface-muted'
-                  }
+                  } ${hasTreeChildren && isExpanded ? 'rotate-90' : ''}`}
                 />
                 {s.label}
               </button>
 
-              {sectionTargets.length > 0 && (
+              {treeActive && hasTreeChildren && isExpanded && (
+                <div className="mt-0.5 mb-1 space-y-px pl-5">
+                  {sectionSubsections.map((subsection) => {
+                    const isSubsectionActive =
+                      activeSubsection?.id === subsection.id
+
+                    return (
+                      <button
+                        id={subsectionResultId(subsection.id)}
+                        key={subsection.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isSubsectionActive}
+                        aria-current={
+                          isSubsectionActive ? 'location' : undefined
+                        }
+                        onClick={() => onPickSubsection(subsection)}
+                        className={`flex w-full items-center gap-1.5 rounded-md border-none px-2 py-1.5 text-left font-body text-[12px] transition-colors ${
+                          isSubsectionActive
+                            ? 'bg-primary-container/[0.08] text-primary'
+                            : 'bg-transparent text-on-surface-muted hover:bg-on-surface/[0.03] hover:text-on-surface-variant'
+                        }`}
+                      >
+                        <Icon
+                          name="subdirectory_arrow_right"
+                          size={12}
+                          className={
+                            isSubsectionActive
+                              ? 'text-primary-container'
+                              : 'text-on-surface-muted'
+                          }
+                        />
+                        <span className="min-w-0 truncate">
+                          {subsection.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {shouldShowTargets && (
                 <div className="mt-0.5 mb-1 space-y-px pl-5">
                   {sectionTargets.map((target) => {
                     const isTargetActive = target.id === activeTargetId

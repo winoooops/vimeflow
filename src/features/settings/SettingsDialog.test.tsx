@@ -147,6 +147,33 @@ describe('SettingsDialog', () => {
     scrollIntoView.mockRestore()
   })
 
+  test('navigates subsection clicks to the first matching settings row', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.click(screen.getByRole('option', { name: 'Fonts' }))
+
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveFocus()
+    })
+
+    expect(
+      screen.getByRole('option', { name: 'Fonts', current: 'location' })
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(target).toHaveAttribute('data-settings-target-active', 'true')
+    expect(scrollIntoView).toHaveBeenCalled()
+
+    scrollIntoView.mockRestore()
+  })
+
   test('clears search from the search field button', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)

@@ -693,3 +693,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** For contextual queries such as `appearance fonts`, the settings sidebar still renders the Appearance section as a clickable `role="option"` because it is in `filteredSections`, but the navigable `results` array contains only the matching target rows. With no explicit selection, `activeSearchResultKey` was `null`, so `SettingsSidebar` fell back to `aria-activedescendant` for the active Appearance section while `handleConfirmSearchResult` would confirm `searchResults[0]` (a target). Keyboard/screen-reader users were told one option was active but a different one was activated on Enter.
 - **Fix:** In `SettingsDialog`, default `activeSearchResultKey` to `searchResults[0].key` when the query is non-empty and no explicit selection exists, so the announced active descendant always matches the result that Enter confirms. Preserved the empty-query no-op behavior fixed in #74.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 76. Invalid aria-expanded on role="option" for expandable settings sections
+
+- **Source:** github-codex-connector | PR #549 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L212
+- **Finding:** The PR added `aria-expanded` to section buttons that also carry `role="option"`. `aria-expanded` is not a supported attribute on `option` elements, so assistive technology may ignore the expanded state and screen-reader users get no reliable expand/collapse signal for the new subsection navigation.
+- **Fix:** Removed the invalid `aria-expanded` attribute from the `role="option"` section button as the minimal localized fix. The visual chevron rotation still communicates state to sighted users; a fuller migration to valid `tree`/`treeitem` semantics is left for future refactor.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

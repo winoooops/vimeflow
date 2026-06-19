@@ -33,6 +33,16 @@ export interface SettingsTarget {
   subsection?: string
 }
 
+export type SettingsSubsectionId = string
+
+export interface SettingsSubsection {
+  id: SettingsSubsectionId
+  section: SettingsSectionId
+  label: string
+  targetId: SettingsTargetId
+  targetIds: SettingsTargetId[]
+}
+
 export type SettingsSearchNavigationDirection = 'next' | 'previous'
 
 export interface SettingsDialogProps {
@@ -43,11 +53,13 @@ export interface SettingsDialogProps {
 export interface SettingsSidebarProps {
   sections: SettingsSection[]
   targets?: SettingsTarget[]
+  subsections?: SettingsSubsection[]
   active: SettingsSectionId
   activeTargetId?: SettingsTargetId | null
   activeSearchResultKey?: string | null
   onPick: (id: SettingsSectionId) => void
   onPickTarget?: (target: SettingsTarget) => void
+  onPickSubsection?: (subsection: SettingsSubsection) => void
   onClearQuery?: () => void
   onNavigateSearchResult?: (
     direction: SettingsSearchNavigationDirection
