@@ -345,21 +345,58 @@ describe('SettingsDialog', () => {
     }
   })
 
-  test('navigates settings sections with arrow keys outside search input', async () => {
+  test('navigates settings sections and subsections with arrow keys outside search input', async () => {
     const user = userEvent.setup()
-    render(<SettingsDialog open onClose={vi.fn()} />)
 
-    await user.keyboard('{ArrowDown}')
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
 
-    expect(
-      screen.getByRole('option', { name: 'Keymap', current: 'page' })
-    ).toBeInTheDocument()
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
 
-    await user.keyboard('{ArrowUp}')
+      await user.keyboard('{ArrowDown}')
 
-    expect(
-      screen.getByRole('option', { name: 'Appearance', current: 'page' })
-    ).toBeInTheDocument()
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Theme', current: 'location' })
+        ).toHaveAttribute('aria-selected', 'true')
+      })
+
+      await user.keyboard('{ArrowDown}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Interface', current: 'location' })
+        ).toHaveAttribute('aria-selected', 'true')
+      })
+
+      await user.keyboard('{ArrowDown}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Fonts', current: 'location' })
+        ).toHaveAttribute('aria-selected', 'true')
+      })
+
+      await user.keyboard('{ArrowDown}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Keymap', current: 'page' })
+        ).toBeInTheDocument()
+      })
+
+      await user.keyboard('{ArrowUp}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Fonts', current: 'location' })
+        ).toHaveAttribute('aria-selected', 'true')
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
   })
 
   test('does not confirm a search result on Enter with an empty query and no selection', async () => {

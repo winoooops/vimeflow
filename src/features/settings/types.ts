@@ -57,9 +57,13 @@ export interface SettingsSidebarProps {
   active: SettingsSectionId
   activeTargetId?: SettingsTargetId | null
   activeSearchResultKey?: string | null
+  expandedSectionIds?: ReadonlySet<SettingsSectionId>
   onPick: (id: SettingsSectionId) => void
   onPickTarget?: (target: SettingsTarget) => void
   onPickSubsection?: (subsection: SettingsSubsection) => void
+  onExpandedSectionIdsChange?: (
+    expandedSectionIds: ReadonlySet<SettingsSectionId>
+  ) => void
   onClearQuery?: () => void
   onNavigateSearchResult?: (
     direction: SettingsSearchNavigationDirection

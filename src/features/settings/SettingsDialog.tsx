@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type {
   SettingsDialogProps,
   SettingsSearchNavigationDirection,
+  SettingsSection,
   SettingsSectionId,
   SettingsSubsection,
   SettingsTarget,
@@ -44,6 +45,10 @@ const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 const SETTINGS_SCROLL_STEP = 96
+
+type SettingsNavigationEntry =
+  | { kind: 'section'; section: SettingsSection }
+  | { kind: 'subsection'; subsection: SettingsSubsection }
 
 const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   target instanceof Element &&
@@ -99,6 +104,10 @@ export const SettingsDialog = ({
 
   const [targetNavigationKey, setTargetNavigationKey] = useState(0)
 
+  const [expandedSectionIds, setExpandedSectionIds] = useState<
+    ReadonlySet<SettingsSectionId>
+  >(() => new Set(['appearance']))
+
   const [targetFocusMode, setTargetFocusMode] =
     useState<TargetFocusMode>('focus-target')
 
@@ -130,7 +139,62 @@ export const SettingsDialog = ({
 
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
 
+  const activeSubsection =
+    activeTargetId === null
+      ? undefined
+      : SETTINGS_SUBSECTIONS.find(
+          (subsection) =>
+            subsection.section === section &&
+            subsection.targetIds.includes(activeTargetId)
+        )
+
+  const sidebarNavigationEntries = useMemo(() => {
+    const navigationSections =
+      filtered.length > 0 ? filtered : SETTINGS_SECTIONS
+
+    return navigationSections.flatMap(
+      (candidate): SettingsNavigationEntry[] => {
+        const sectionEntry: SettingsNavigationEntry = {
+          kind: 'section',
+          section: candidate,
+        }
+
+        if (query.trim() !== '' || !expandedSectionIds.has(candidate.id)) {
+          return [sectionEntry]
+        }
+
+        return [
+          sectionEntry,
+          ...SETTINGS_SUBSECTIONS.filter(
+            (subsection) => subsection.section === candidate.id
+          ).map(
+            (subsection): SettingsNavigationEntry => ({
+              kind: 'subsection',
+              subsection,
+            })
+          ),
+        ]
+      }
+    )
+  }, [expandedSectionIds, filtered, query])
+
+  const activeNavigationKey =
+    activeSubsection === undefined
+      ? `section:${section}`
+      : `subsection:${activeSubsection.id}`
+
+  const expandSection = (id: SettingsSectionId): void => {
+    setExpandedSectionIds((current) => {
+      if (current.has(id)) {
+        return current
+      }
+
+      return new Set([...current, id])
+    })
+  }
+
   const handlePickSection = (id: SettingsSectionId): void => {
+    expandSection(id)
     setSection(id)
     setActiveTargetId(null)
     setSelectedSearchResultKey(settingsSectionResultKey(id))
@@ -163,6 +227,7 @@ export const SettingsDialog = ({
     }
 
     const { target } = result
+    expandSection(target.section)
     setSection(target.section)
     setActiveTargetId(target.id)
     setTargetNavigationKey((key) => key + 1)
@@ -309,7 +374,6 @@ export const SettingsDialog = ({
       }
 
       const content = contentRef.current
-      const visibleSections = filtered.length > 0 ? filtered : SETTINGS_SECTIONS
 
       const scrollContent = (top: number): void => {
         if (!content) {
@@ -325,26 +389,56 @@ export const SettingsDialog = ({
         content.scrollTop += top
       }
 
-      const navigateSection = (direction: 1 | -1): void => {
-        if (visibleSections.length === 0) {
+      const navigationEntryKey = (entry: SettingsNavigationEntry): string =>
+        entry.kind === 'section'
+          ? `section:${entry.section.id}`
+          : `subsection:${entry.subsection.id}`
+
+      const navigateSidebar = (direction: 1 | -1): void => {
+        if (sidebarNavigationEntries.length === 0) {
           return
         }
 
-        const currentIndex = visibleSections.findIndex(
-          (candidate) => candidate.id === section
+        const currentIndex = sidebarNavigationEntries.findIndex(
+          (entry) => navigationEntryKey(entry) === activeNavigationKey
         )
 
         const baseIndex =
           currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex
 
         const nextIndex =
-          (baseIndex + direction + visibleSections.length) %
-          visibleSections.length
-        const next = visibleSections[nextIndex]
+          (baseIndex + direction + sidebarNavigationEntries.length) %
+          sidebarNavigationEntries.length
+        const next = sidebarNavigationEntries[nextIndex]
 
-        setSection(next.id)
+        if (next.kind === 'subsection') {
+          const target = SETTINGS_TARGETS.find(
+            (candidate) => candidate.id === next.subsection.targetId
+          )
+
+          if (target === undefined) {
+            return
+          }
+
+          setTargetFocusMode('focus-target')
+          setSelectedSearchResultKey(settingsTargetResultKey(target))
+          setSection(target.section)
+          setActiveTargetId(target.id)
+          setTargetNavigationKey((key) => key + 1)
+
+          return
+        }
+
+        setExpandedSectionIds((current) => {
+          if (current.has(next.section.id)) {
+            return current
+          }
+
+          return new Set([...current, next.section.id])
+        })
+        setSection(next.section.id)
         setActiveTargetId(null)
-        setSelectedSearchResultKey(settingsSectionResultKey(next.id))
+        setSelectedSearchResultKey(settingsSectionResultKey(next.section.id))
       }
 
       if (event.key === 'j') {
@@ -363,14 +457,14 @@ export const SettingsDialog = ({
 
       if (event.key === 'ArrowDown') {
         event.preventDefault()
-        navigateSection(1)
+        navigateSidebar(1)
 
         return
       }
 
       if (event.key === 'ArrowUp') {
         event.preventDefault()
-        navigateSection(-1)
+        navigateSidebar(-1)
       }
     }
 
@@ -379,15 +473,16 @@ export const SettingsDialog = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [filtered, open, section])
+  }, [activeNavigationKey, open, section, sidebarNavigationEntries])
 
   useEffect(() => {
     if (!open) {
       setQuery('')
       setActiveTargetId(null)
       setSelectedSearchResultKey(null)
+      setExpandedSectionIds(new Set([section]))
     }
-  }, [open])
+  }, [open, section])
 
   useEffect(() => {
     if (!open || activeTargetId === null) {
@@ -463,9 +558,11 @@ export const SettingsDialog = ({
                 active={section}
                 activeTargetId={activeTargetId}
                 activeSearchResultKey={activeSearchResultKey}
+                expandedSectionIds={expandedSectionIds}
                 onPick={handlePickSection}
                 onPickTarget={handlePickTarget}
                 onPickSubsection={handlePickSubsection}
+                onExpandedSectionIdsChange={setExpandedSectionIds}
                 onClearQuery={handleClearQuery}
                 onNavigateSearchResult={handleNavigateSearchResult}
                 onConfirmSearchResult={handleConfirmSearchResult}

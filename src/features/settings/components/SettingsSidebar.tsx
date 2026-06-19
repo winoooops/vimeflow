@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -28,6 +29,8 @@ const targetResultId = (id: SettingsTargetId): string =>
 const subsectionResultId = (id: SettingsSubsectionId): string =>
   `settings-search-result-subsection-${id}`
 
+const noop = (): void => undefined
+
 export const SettingsSidebar = ({
   sections,
   targets = [],
@@ -35,9 +38,11 @@ export const SettingsSidebar = ({
   active,
   activeTargetId = null,
   activeSearchResultKey = null,
+  expandedSectionIds: controlledExpandedSectionIds,
   onPick,
   onPickTarget = (): void => undefined,
   onPickSubsection = (): void => undefined,
+  onExpandedSectionIdsChange = noop,
   onClearQuery = (): void => undefined,
   onNavigateSearchResult = (): void => undefined,
   onConfirmSearchResult = (): void => undefined,
@@ -45,22 +50,57 @@ export const SettingsSidebar = ({
   onQuery,
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const previousActiveRef = useRef<SettingsSectionId | null>(null)
 
-  const [expandedSectionIds, setExpandedSectionIds] = useState<
-    Set<SettingsSectionId>
-  >(() => new Set([active]))
+  const [uncontrolledExpandedSectionIds, setUncontrolledExpandedSectionIds] =
+    useState<Set<SettingsSectionId>>(() => new Set([active]))
+
+  const expandedSectionIds =
+    controlledExpandedSectionIds ?? uncontrolledExpandedSectionIds
   const searchActive = query.trim() !== ''
   const treeActive = subsections.length > 0 && !searchActive
 
+  const updateExpandedSectionIds = useCallback(
+    (
+      updater: (
+        current: ReadonlySet<SettingsSectionId>
+      ) => ReadonlySet<SettingsSectionId>
+    ): void => {
+      const next = updater(expandedSectionIds)
+
+      if (next === expandedSectionIds) {
+        return
+      }
+
+      if (controlledExpandedSectionIds === undefined) {
+        setUncontrolledExpandedSectionIds(new Set(next))
+
+        return
+      }
+
+      onExpandedSectionIdsChange(next)
+    },
+    [
+      controlledExpandedSectionIds,
+      expandedSectionIds,
+      onExpandedSectionIdsChange,
+    ]
+  )
+
   useEffect(() => {
-    setExpandedSectionIds((current) => {
+    if (previousActiveRef.current === active) {
+      return
+    }
+
+    previousActiveRef.current = active
+    updateExpandedSectionIds((current) => {
       if (current.has(active)) {
         return current
       }
 
       return new Set([...current, active])
     })
-  }, [active])
+  }, [active, updateExpandedSectionIds])
 
   const activeSubsection =
     activeTargetId === null
@@ -101,7 +141,7 @@ export const SettingsSidebar = ({
     onPick(id)
 
     if (treeActive && sectionSubsections.length > 0) {
-      setExpandedSectionIds((current) => {
+      updateExpandedSectionIds((current) => {
         const next = new Set(current)
 
         if (id === active && next.has(id)) {
