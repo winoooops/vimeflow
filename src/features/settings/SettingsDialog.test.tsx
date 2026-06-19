@@ -315,6 +315,49 @@ describe('SettingsDialog', () => {
     ).toBeInTheDocument()
   })
 
+  test('exits search on Enter and uses slash to resume editing', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
+
+      const input = screen.getByPlaceholderText('Search settings...')
+
+      await user.type(input, 'redact')
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => {
+        expect(input).not.toHaveFocus()
+      })
+
+      expect(
+        screen.getByTestId('settings-search-resume-hint')
+      ).toBeInTheDocument()
+
+      await user.keyboard('j')
+
+      expect(input).toHaveValue('redact')
+      expect(input).not.toHaveFocus()
+
+      await user.keyboard('/')
+
+      expect(input).toHaveFocus()
+      expect(
+        screen.queryByTestId('settings-search-resume-hint')
+      ).not.toBeInTheDocument()
+
+      await user.keyboard('s')
+
+      expect(input).toHaveValue('redacts')
+    } finally {
+      scrollIntoView.mockRestore()
+    }
+  })
+
   test('scrolls active settings content with d and u', async () => {
     const user = userEvent.setup()
     const { scrollBy, restore } = installScrollByMock()

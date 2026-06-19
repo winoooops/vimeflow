@@ -56,6 +56,8 @@ export const SettingsSidebar = ({
   const [uncontrolledExpandedSectionIds, setUncontrolledExpandedSectionIds] =
     useState<Set<SettingsSectionId>>(() => new Set([active]))
 
+  const [searchFocused, setSearchFocused] = useState(false)
+
   const expandedSectionIds =
     controlledExpandedSectionIds ?? uncontrolledExpandedSectionIds
   const searchActive = query.trim() !== ''
@@ -199,6 +201,9 @@ export const SettingsSidebar = ({
       event.preventDefault()
       event.stopPropagation()
       onConfirmSearchResult()
+      if (query.trim() !== '') {
+        searchInputRef.current?.blur()
+      }
     }
   }
 
@@ -210,9 +215,12 @@ export const SettingsSidebar = ({
           <input
             ref={searchInputRef}
             type="text"
+            data-settings-search-input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder="Search settings..."
             aria-label="Search settings"
             role="combobox"
@@ -222,6 +230,17 @@ export const SettingsSidebar = ({
             aria-activedescendant={activeResultId}
             className="min-w-0 flex-1 border-none bg-transparent font-body text-xs text-on-surface outline-none placeholder:text-on-surface-muted"
           />
+          {query.trim() !== '' && !searchFocused && (
+            <span
+              data-testid="settings-search-resume-hint"
+              className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-on-surface-muted"
+            >
+              <span className="rounded border border-outline-variant/45 px-1 py-px text-[9px] leading-none text-on-surface-variant">
+                /
+              </span>
+              search
+            </span>
+          )}
           {query.trim() !== '' && (
             <Tooltip content="Clear search">
               <button

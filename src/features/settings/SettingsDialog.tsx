@@ -395,6 +395,24 @@ export const SettingsDialog = ({
         return
       }
 
+      if (event.key === '/') {
+        const searchInput = dialogRef.current?.querySelector<HTMLInputElement>(
+          '[data-settings-search-input]'
+        )
+        if (!searchInput) {
+          return
+        }
+
+        event.preventDefault()
+        searchInput.focus()
+        searchInput.setSelectionRange(
+          searchInput.value.length,
+          searchInput.value.length
+        )
+
+        return
+      }
+
       const content = contentRef.current
 
       const scrollContent = (top: number): void => {
