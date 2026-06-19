@@ -52,5 +52,7 @@ test('list exposes both themes for pickers', () => {
     'flexoki',
     'gruvbox-dark',
     'gruvbox-light',
+    'tokyo-night',
+    'dracula',
   ])
 })

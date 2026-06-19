@@ -128,6 +128,8 @@ export type ThemeId =
   | 'flexoki'
   | 'gruvbox-dark'
   | 'gruvbox-light'
+  | 'tokyo-night'
+  | 'dracula'
 
 export type ThemeKind = 'dark' | 'light'
 
