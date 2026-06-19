@@ -47,12 +47,16 @@ describe('isAllowedBackendMethod', () => {
     expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(false)
     expect(isAllowedBackendMethod('e2e_agent_bridge_info')).toBe(false)
     expect(isAllowedBackendMethod('e2e_seed_live_agent')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_start_codex_watcher')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_start_kimi_watcher')).toBe(false)
   })
 
   test.each([
     'list_active_pty_sessions',
     'e2e_agent_bridge_info',
     'e2e_seed_live_agent',
+    'e2e_start_codex_watcher',
+    'e2e_start_kimi_watcher',
   ])('allows e2e-only method %s when explicitly enabled', (method) => {
     expect(isAllowedBackendMethod(method, { allowE2eMethods: true })).toBe(true)
   })

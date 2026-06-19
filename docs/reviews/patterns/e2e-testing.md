@@ -236,3 +236,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** The Claude status test wrote a real `status.json`, started the real file watcher, and waited for the sidebar to update. The Codex/Kimi equivalent injected `agent-status`/`agent-turn` events directly through the renderer E2E bridge, testing React rendering but not the Rust-to-frontend event pipeline or the agent-specific filesystem/watcher paths.
 - **Fix:** Added backend E2E helpers `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` that seed a hermetic agent home (`~/.codex` or `KIMI_CODE_HOME`), create the locator-recognizable session directories and metadata, start the real agent watcher, restore the original env, and return the fixture path for the test to write. The spec now exercises real watcher ingestion for both Codex and Kimi before emitting agent-turn events.
 - **Commit:** same commit as this entry
+
+### 22. e2e_start_codex/kimi_watcher missing from Electron preload allowlist
+
+- **Source:** github-claude | PR #563 round 2 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `electron/backend-methods.ts`, `electron/backend-methods.test.ts`
+- **Finding:** The Rust IPC router adds `e2e_start_codex_watcher` and `e2e_start_kimi_watcher`, and `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts` calls both via `window.__VIMEFLOW_E2E__.invokeBackend`. `electron/backend-methods.ts` only allows `list_active_pty_sessions`, `e2e_agent_bridge_info`, and `e2e_seed_live_agent` when `allowE2eMethods` is enabled, so the preload gate rejects both calls.
+- **Fix:** Added `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` to `e2eBackendMethods` in `electron/backend-methods.ts` and covered them in `electron/backend-methods.test.ts` for default denial and explicit E2E enablement.
+- **Commit:** same commit as this entry
