@@ -1,13 +1,15 @@
 import { useCallback, type ReactElement } from 'react'
-import type { PaneKind } from '../../../sessions/types'
+import type { LayoutSlotId, PaneKind } from '../../../sessions/types'
 
 export interface EmptySlotProps {
   sessionId: string
-  onAddPane: (sessionId: string, kind?: PaneKind) => void
+  slotId: LayoutSlotId
+  onAddPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
 }
 
 export const EmptySlot = ({
   sessionId,
+  slotId,
   onAddPane,
 }: EmptySlotProps): ReactElement => {
   // Round 13, Claude LOW: dropped the previous `event.stopPropagation()`.
@@ -17,12 +19,12 @@ export const EmptySlot = ({
   // place to gate it; the empty slot's button shouldn't silently
   // suppress unknown future handlers.
   const handleShellClick = useCallback((): void => {
-    onAddPane(sessionId, 'shell')
-  }, [onAddPane, sessionId])
+    onAddPane(sessionId, 'shell', slotId)
+  }, [onAddPane, sessionId, slotId])
 
   const handleBrowserClick = useCallback((): void => {
-    onAddPane(sessionId, 'browser')
-  }, [onAddPane, sessionId])
+    onAddPane(sessionId, 'browser', slotId)
+  }, [onAddPane, sessionId, slotId])
 
   return (
     <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-outline-variant/35 bg-surface-container/35">

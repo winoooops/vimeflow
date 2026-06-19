@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type {
+  LayoutSlotId,
   Pane,
   PaneKind,
   PaneLayoutId,
@@ -86,7 +87,7 @@ export interface SessionManager {
   ) => void
   setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
-  addPane: (sessionId: string, kind?: PaneKind) => void
+  addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
@@ -1234,7 +1235,11 @@ export const useSessionManager = (
   )
 
   const addPane = useCallback(
-    (sessionId: string, kind: PaneKind = 'shell'): void => {
+    (
+      sessionId: string,
+      kind: PaneKind = 'shell',
+      slotId?: LayoutSlotId
+    ): void => {
       if (pendingPaneOps.current.has(sessionId)) {
         log.warn(
           `addPane: another pane op in flight for ${sessionId}; ignoring`
@@ -1294,7 +1299,14 @@ export const useSessionManager = (
               const capacity = target
                 ? layoutRegistry.capacityFor(target.layout)
                 : 0
-              const update = applyAddPane(prev, sessionId, newPane, capacity)
+
+              const update = applyAddPane(
+                prev,
+                sessionId,
+                newPane,
+                capacity,
+                slotId
+              )
               appended = update.appended
 
               return update.sessions
@@ -1377,7 +1389,14 @@ export const useSessionManager = (
               const capacity = target
                 ? layoutRegistry.capacityFor(target.layout)
                 : 0
-              const update = applyAddPane(prev, sessionId, newPane, capacity)
+
+              const update = applyAddPane(
+                prev,
+                sessionId,
+                newPane,
+                capacity,
+                slotId
+              )
               appended = update.appended
 
               return update.sessions

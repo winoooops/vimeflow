@@ -646,7 +646,7 @@ describe('SplitView - under-capacity', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('clicking empty slot add button calls onAddPane with session id', async () => {
+  test('clicking empty slot add button calls onAddPane with session id and empty slot', async () => {
     const user = userEvent.setup()
     const onAddPane = vi.fn()
 
@@ -662,7 +662,7 @@ describe('SplitView - under-capacity', () => {
     await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(onAddPane).toHaveBeenCalledOnce()
-    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell')
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell', 'slot:p1')
   })
 })
 

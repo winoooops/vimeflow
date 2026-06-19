@@ -254,6 +254,22 @@ describe('applyAddPane', () => {
 
     expect(result.sessions[1]).toBe(untouched)
   })
+
+  test('records a placement for the requested slot when slotId is provided', () => {
+    const result = applyAddPane(
+      [mockSession()],
+      's0',
+      newPane,
+      2,
+      'slot:right'
+    )
+
+    expect(result.appended).toBe(true)
+    expect(result.sessions[0].placements).toContainEqual({
+      paneId: 'p1',
+      slotId: 'slot:right',
+    })
+  })
 })
 
 describe('applyRemovePane', () => {

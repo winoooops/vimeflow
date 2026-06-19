@@ -6,7 +6,7 @@ import {
   type PointerEvent,
   type ReactElement,
 } from 'react'
-import type { PaneKind, Session } from '../../sessions/types'
+import type { LayoutSlotId, PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
 import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
@@ -56,7 +56,7 @@ export interface TerminalZoneProps {
     paneId: string,
     browserUrl: string
   ) => void
-  addPane: (sessionId: string, kind?: PaneKind) => void
+  addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
   isZoneFocused?: boolean
   onContainerFocus?: () => void

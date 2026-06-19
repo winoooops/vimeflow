@@ -58,7 +58,7 @@ export interface SplitViewProps {
     browserUrl: string
   ) => void
   onRequestFocus?: () => void
-  onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
+  onAddPane?: (sessionId: string, kind?: Pane['kind'], slotId?: LayoutSlotId) => void
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
@@ -288,7 +288,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
         >
           {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
           <AnimatePresence initial={false}>
-            {visiblePaneAssignments.map(({ pane, slotId }, i) => {
+            {visiblePaneAssignments.map(({ pane, slotId }) => {
               const isBrowserPane = !isShellPane(pane)
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
               const slotIndex = layout.definition.addOrder.indexOf(slotId)
@@ -336,8 +336,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   nothing to hint at, and overlaying an active
                   terminal with a popover would interfere. */}
                   <Tooltip
-                    content={`Focus pane ${i + 1}`}
-                    shortcut={['Mod', String(i + 1)]}
+                    content={`Focus pane ${slotIndex + 1}`}
+                    shortcut={['Mod', String(slotIndex + 1)]}
                     disabled={pane.active}
                     placement="top"
                   >
@@ -412,7 +412,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                       className="relative min-h-0 min-w-0"
                       style={{ gridArea: gridAreaForSlotId(slotId) }}
                     >
-                      <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
+                      <EmptySlot
+                        sessionId={session.id}
+                        slotId={slotId}
+                        onAddPane={onAddPane}
+                      />
                     </motion.div>
                   )
                 })
