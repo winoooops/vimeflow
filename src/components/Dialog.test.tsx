@@ -164,12 +164,7 @@ describe('Dialog', () => {
         <Dialog open onOpenChange={onCloseBottom} aria-label="Bottom">
           <button type="button">Bottom</button>
         </Dialog>
-        <Dialog
-          open
-          dismissDisabled
-          onOpenChange={onCloseTop}
-          aria-label="Top"
-        >
+        <Dialog open dismissDisabled onOpenChange={onCloseTop} aria-label="Top">
           <button type="button">Top</button>
         </Dialog>
       </>
