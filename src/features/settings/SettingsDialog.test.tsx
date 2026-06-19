@@ -177,18 +177,20 @@ describe('SettingsDialog', () => {
       screen.getByRole('option', { name: 'Mono Font' })
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('option', { name: 'UI Font' }))
+    const result = screen.getByRole('option', { name: 'UI Font' })
+    await user.click(result)
 
     const target = screen.getByTestId(
       `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
     )
 
     await waitFor(() => {
-      expect(target).toHaveFocus()
+      expect(scrollIntoView).toHaveBeenCalled()
     })
 
-    expect(target).toHaveAttribute('data-settings-target-active', 'true')
-    expect(scrollIntoView).toHaveBeenCalled()
+    expect(result).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
     scrollIntoView.mockRestore()
   })
@@ -201,21 +203,23 @@ describe('SettingsDialog', () => {
       .mockImplementation(() => undefined)
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    await user.click(screen.getByRole('option', { name: 'Fonts' }))
+    const subsection = screen.getByRole('option', { name: 'Fonts' })
+    await user.click(subsection)
 
     const target = screen.getByTestId(
       `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
     )
 
     await waitFor(() => {
-      expect(target).toHaveFocus()
+      expect(scrollIntoView).toHaveBeenCalled()
     })
 
     expect(
       screen.getByRole('option', { name: 'Fonts', current: 'location' })
     ).toHaveAttribute('aria-selected', 'true')
-    expect(target).toHaveAttribute('data-settings-target-active', 'true')
-    expect(scrollIntoView).toHaveBeenCalled()
+    expect(subsection).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
     scrollIntoView.mockRestore()
   })
@@ -249,23 +253,23 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
-    await user.click(
-      screen.getByRole('option', { name: 'Redact Private Values' })
-    )
+    const result = screen.getByRole('option', { name: 'Redact Private Values' })
+    await user.click(result)
 
     const target = screen.getByTestId(
       `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
     )
 
     await waitFor(() => {
-      expect(target).toHaveFocus()
+      expect(scrollIntoView).toHaveBeenCalled()
     })
 
     expect(
       screen.getByRole('option', { name: 'General', current: 'page' })
     ).toBeInTheDocument()
-    expect(target).toHaveAttribute('data-settings-target-active', 'true')
-    expect(scrollIntoView).toHaveBeenCalled()
+    expect(result).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
     scrollIntoView.mockRestore()
   })
@@ -548,45 +552,49 @@ describe('SettingsDialog', () => {
       screen.getByRole('option', { name: 'Command palette leader' })
     ).toBeInTheDocument()
 
-    await user.click(
-      screen.getByRole('option', { name: 'Command palette leader' })
-    )
+    const result = screen.getByRole('option', {
+      name: 'Command palette leader',
+    })
+    await user.click(result)
 
     const target = screen.getByTestId(
       `settings-target-${keymapCommandTargetId('palette-leader')}`
     )
 
     await waitFor(() => {
-      expect(target).toHaveFocus()
+      expect(
+        screen.getByRole('option', { name: 'Keymap', current: 'page' })
+      ).toBeInTheDocument()
     })
 
     expect(
       screen.getByRole('option', { name: 'Keymap', current: 'page' })
     ).toBeInTheDocument()
-    expect(target).toHaveAttribute('data-settings-target-active', 'true')
+    expect(result).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
   })
 
-  test('Tab from a focused search result moves to the setting control', async () => {
+  test('Tab from a clicked search result follows the dialog order', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
-    await user.click(
-      screen.getByRole('option', { name: 'Redact Private Values' })
-    )
+    const result = screen.getByRole('option', { name: 'Redact Private Values' })
+    await user.click(result)
 
     const target = screen.getByTestId(
       `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
     )
 
-    await waitFor(() => {
-      expect(target).toHaveFocus()
-    })
+    expect(result).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
     await user.tab()
 
     expect(
-      screen.getByRole('switch', { name: 'Redact Private Values' })
+      screen.getByRole('button', { name: 'Edit in settings.json' })
     ).toHaveFocus()
   })
 

@@ -40,7 +40,7 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'agents',
 ]
 
-type TargetActivationMode = 'focus-target' | 'preserve-search-focus'
+type TargetSelectionMode = 'scroll-target' | 'preserve-search-focus'
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -100,7 +100,7 @@ export const SettingsDialog = ({
   const [section, setSection] = useState<SettingsSectionId>('appearance')
   const [query, setQuery] = useState('')
 
-  const [activeTargetId, setActiveTargetId] = useState<SettingsTargetId | null>(
+  const [scrollTargetId, setScrollTargetId] = useState<SettingsTargetId | null>(
     null
   )
 
@@ -111,14 +111,9 @@ export const SettingsDialog = ({
     string | null
   >(null)
 
-  const [targetNavigationKey, setTargetNavigationKey] = useState(0)
-
   const [expandedSectionIds, setExpandedSectionIds] = useState<
     ReadonlySet<SettingsSectionId>
   >(() => new Set(['appearance']))
-
-  const [targetActivationMode, setTargetActivationMode] =
-    useState<TargetActivationMode>('focus-target')
 
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -148,18 +143,9 @@ export const SettingsDialog = ({
 
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
 
-  const activeContentSubsection =
-    activeTargetId === null
-      ? undefined
-      : SETTINGS_SUBSECTIONS.find(
-          (subsection) =>
-            subsection.section === section &&
-            subsection.targetIds.includes(activeTargetId)
-        )
-
   const activeSidebarSubsection =
     activeSidebarSubsectionId === null
-      ? activeContentSubsection
+      ? undefined
       : SETTINGS_SUBSECTIONS.find(
           (subsection) =>
             subsection.id === activeSidebarSubsectionId &&
@@ -214,31 +200,29 @@ export const SettingsDialog = ({
   const handlePickSection = (id: SettingsSectionId): void => {
     expandSection(id)
     setSection(id)
-    setActiveTargetId(null)
+    setScrollTargetId(null)
     setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(settingsSectionResultKey(id))
   }
 
   const handleQuery = (nextQuery: string): void => {
     setQuery(nextQuery)
-    setActiveTargetId(null)
+    setScrollTargetId(null)
     setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(null)
   }
 
   const handleClearQuery = (): void => {
     setQuery('')
-    setActiveTargetId(null)
+    setScrollTargetId(null)
     setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(null)
-    setTargetActivationMode('focus-target')
   }
 
   const applySearchResult = (
     result: SettingsSearchResult,
-    activationMode: TargetActivationMode
+    selectionMode: TargetSelectionMode
   ): void => {
-    setTargetActivationMode(activationMode)
     setSelectedSearchResultKey(result.key)
 
     if (result.kind === 'section') {
@@ -251,22 +235,21 @@ export const SettingsDialog = ({
     expandSection(target.section)
     setSection(target.section)
 
-    if (activationMode === 'preserve-search-focus') {
-      const subsection = SETTINGS_SUBSECTIONS.find(
-        (candidate) =>
-          candidate.section === target.section &&
-          candidate.targetIds.includes(target.id)
-      )
+    const subsection = SETTINGS_SUBSECTIONS.find(
+      (candidate) =>
+        candidate.section === target.section &&
+        candidate.targetIds.includes(target.id)
+    )
 
-      setActiveTargetId(null)
-      setActiveSidebarSubsectionId(subsection?.id ?? null)
+    setActiveSidebarSubsectionId(subsection?.id ?? null)
+
+    if (selectionMode === 'preserve-search-focus') {
+      setScrollTargetId(null)
 
       return
     }
 
-    setActiveTargetId(target.id)
-    setActiveSidebarSubsectionId(null)
-    setTargetNavigationKey((key) => key + 1)
+    setScrollTargetId(target.id)
   }
 
   const handlePickTarget = (target: SettingsTarget): void => {
@@ -283,7 +266,7 @@ export const SettingsDialog = ({
         target,
         score: 0,
       },
-      'focus-target'
+      'scroll-target'
     )
   }
 
@@ -522,7 +505,7 @@ export const SettingsDialog = ({
 
           setSelectedSearchResultKey(null)
           setSection(target.section)
-          setActiveTargetId(null)
+          setScrollTargetId(null)
           setActiveSidebarSubsectionId(next.subsection.id)
 
           return
@@ -536,7 +519,7 @@ export const SettingsDialog = ({
           return new Set([...current, next.section.id])
         })
         setSection(next.section.id)
-        setActiveTargetId(null)
+        setScrollTargetId(null)
         setActiveSidebarSubsectionId(null)
         setSelectedSearchResultKey(settingsSectionResultKey(next.section.id))
       }
@@ -578,7 +561,7 @@ export const SettingsDialog = ({
   useEffect(() => {
     if (!open) {
       setQuery('')
-      setActiveTargetId(null)
+      setScrollTargetId(null)
       setActiveSidebarSubsectionId(null)
       setSelectedSearchResultKey(null)
       setExpandedSectionIds(new Set([section]))
@@ -586,12 +569,12 @@ export const SettingsDialog = ({
   }, [open, section])
 
   useEffect(() => {
-    if (!open || activeTargetId === null) {
+    if (!open || scrollTargetId === null) {
       return
     }
 
     const target = contentRef.current?.querySelector<HTMLElement>(
-      `[data-settings-target="${activeTargetId}"]`
+      `[data-settings-target="${scrollTargetId}"]`
     )
 
     if (!target) {
@@ -599,10 +582,8 @@ export const SettingsDialog = ({
     }
 
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    if (targetActivationMode === 'focus-target') {
-      target.focus({ preventScroll: true })
-    }
-  }, [activeTargetId, open, section, targetActivationMode, targetNavigationKey])
+    setScrollTargetId(null)
+  }, [open, scrollTargetId, section])
 
   return (
     <AnimatePresence>
@@ -658,7 +639,6 @@ export const SettingsDialog = ({
                 subsections={SETTINGS_SUBSECTIONS}
                 active={section}
                 activeSubsectionId={activeSidebarSubsection?.id ?? null}
-                activeTargetId={activeTargetId}
                 activeSearchResultKey={activeSearchResultKey}
                 expandedSectionIds={expandedSectionIds}
                 onPick={handlePickSection}
@@ -680,18 +660,10 @@ export const SettingsDialog = ({
                   data-testid="settings-dialog-content"
                   className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
                 >
-                  {section === 'general' && (
-                    <GeneralPane activeTargetId={activeTargetId} />
-                  )}
-                  {section === 'appearance' && (
-                    <AppearancePane activeTargetId={activeTargetId} />
-                  )}
-                  {section === 'keymap' && (
-                    <KeymapPane activeTargetId={activeTargetId} />
-                  )}
-                  {section === 'agents' && (
-                    <AgentsPane activeTargetId={activeTargetId} />
-                  )}
+                  {section === 'general' && <GeneralPane />}
+                  {section === 'appearance' && <AppearancePane />}
+                  {section === 'keymap' && <KeymapPane />}
+                  {section === 'agents' && <AgentsPane />}
                   {!REAL_PANES.includes(section) && activeSection && (
                     <PlaceholderPane section={activeSection} />
                   )}
