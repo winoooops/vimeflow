@@ -91,6 +91,23 @@ describe('SettingsSidebar', () => {
     )
   })
 
+  test('points aria-activedescendant at the active subsection result', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      'settings-search-result-subsection-appearance-fonts'
+    )
+  })
+
   test('uses the selected search result key for aria-activedescendant', () => {
     render(
       <SettingsSidebar

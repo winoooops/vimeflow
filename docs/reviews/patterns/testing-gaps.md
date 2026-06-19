@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-16
-ref_count: 31
+last_updated: 2026-06-19
+ref_count: 32
 ---
 
 # Testing Gaps
@@ -700,4 +700,13 @@ filesystem scope restrictions).
 - **File:** `docs/superpowers/plans/2026-06-15-keybinding-engine-pr1.md`
 - **Finding:** Task 3's `catalog.test.ts` checks descriptor invariants per entry but never asserts that `detectConflicts(resolveBindings({}, isMac, superKey), superKey)` returns `[]`. A future catalog addition that reuses a default `(super, code)` would produce a permanently non-empty `conflicts` array in `useKeybindings` before the user changes anything.
 - **Fix:** Added a `default catalog is conflict-free for both platforms` test to Task 5's `resolve.test.ts` plan, importing `detectConflicts` and asserting zero conflicts for both `isMac` values.
+- **Commit:** same commit as this entry
+
+### 68. New subsection navigation branch lacks parallel aria-activedescendant regression test
+
+- **Source:** github-codex-connector | PR #549 round 2 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L74-83, `src/features/settings/components/SettingsSidebar.test.tsx`
+- **Finding:** The PR introduced a new `activeSubsection` path in `fallbackActiveResultId` that routes the combobox's `aria-activedescendant` to `settings-search-result-subsection-${id}` when subsection tree mode is active. Existing tests covered subsection rendering, click handling, and selected/current state, but none asserted the combobox attribute itself — the actual screen-reader focus signal. A future refactor to the ternary or subsection id helper could silently break AT focus announcements for the new subsection UI.
+- **Fix:** Added a focused `SettingsSidebar.test.tsx` case that renders subsection tree mode with `activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}` and asserts the combobox `aria-activedescendant` equals `settings-search-result-subsection-appearance-fonts`.
 - **Commit:** same commit as this entry
