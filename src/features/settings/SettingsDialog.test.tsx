@@ -14,6 +14,39 @@ import { SettingsProvider } from './SettingsProvider'
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
 
+const installScrollByMock = (): {
+  scrollBy: ReturnType<typeof vi.fn>
+  restore: () => void
+} => {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollBy'
+  )
+  const scrollBy = vi.fn()
+
+  Object.defineProperty(HTMLElement.prototype, 'scrollBy', {
+    configurable: true,
+    value: scrollBy,
+  })
+
+  return {
+    scrollBy,
+    restore: (): void => {
+      if (descriptor !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollBy', descriptor)
+
+        return
+      }
+
+      delete (
+        HTMLElement.prototype as unknown as {
+          scrollBy?: HTMLElement['scrollBy']
+        }
+      ).scrollBy
+    },
+  }
+}
+
 const DialogWithTrigger = ({
   initialOpen = false,
 }: {
@@ -269,6 +302,66 @@ describe('SettingsDialog', () => {
     ).toBeInTheDocument()
   })
 
+  test('scrolls active settings content with j and k', async () => {
+    const user = userEvent.setup()
+    const { scrollBy, restore } = installScrollByMock()
+
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
+
+      await user.keyboard('j')
+
+      expect(scrollBy).toHaveBeenLastCalledWith({
+        behavior: 'smooth',
+        top: 96,
+      })
+
+      await user.keyboard('k')
+
+      expect(scrollBy).toHaveBeenLastCalledWith({
+        behavior: 'smooth',
+        top: -96,
+      })
+    } finally {
+      restore()
+    }
+  })
+
+  test('does not scroll settings content when j and k are typed in search', async () => {
+    const user = userEvent.setup()
+    const { scrollBy, restore } = installScrollByMock()
+
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
+
+      const input = screen.getByPlaceholderText('Search settings...')
+
+      await user.type(input, 'jk')
+
+      expect(input).toHaveValue('jk')
+      expect(scrollBy).not.toHaveBeenCalled()
+    } finally {
+      restore()
+    }
+  })
+
+  test('navigates settings sections with arrow keys outside search input', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.keyboard('{ArrowDown}')
+
+    expect(
+      screen.getByRole('option', { name: 'Keymap', current: 'page' })
+    ).toBeInTheDocument()
+
+    await user.keyboard('{ArrowUp}')
+
+    expect(
+      screen.getByRole('option', { name: 'Appearance', current: 'page' })
+    ).toBeInTheDocument()
+  })
+
   test('does not confirm a search result on Enter with an empty query and no selection', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)
@@ -348,6 +441,12 @@ describe('SettingsDialog', () => {
 
     expect(screen.queryByText('Focus')).toBeNull()
     expect(screen.queryByText('Navbar')).toBeNull()
+    expect(screen.getByText('j')).toBeInTheDocument()
+    expect(screen.getByText('k')).toBeInTheDocument()
+    expect(screen.getByText('scroll')).toBeInTheDocument()
+    expect(screen.getByText('↑')).toBeInTheDocument()
+    expect(screen.getByText('↓')).toBeInTheDocument()
+    expect(screen.getByText('navigate')).toBeInTheDocument()
     expect(screen.getByText('esc')).toBeInTheDocument()
   })
 

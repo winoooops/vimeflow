@@ -29,6 +29,7 @@ import { AppearancePane } from './components/panes/AppearancePane'
 import { GeneralPane } from './components/panes/GeneralPane'
 import { KeymapPane } from './components/panes/KeymapPane'
 import { PlaceholderPane } from './components/panes/PlaceholderPane'
+import { isKeymapCaptureTarget } from '../keymap/capture'
 
 const REAL_PANES: readonly SettingsSectionId[] = [
   'general',
@@ -41,6 +42,15 @@ type TargetFocusMode = 'focus-target' | 'preserve-search-focus'
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+const SETTINGS_SCROLL_STEP = 96
+
+const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  (target.closest(
+    'input, select, textarea, [contenteditable], [role="textbox"]'
+  ) !== null ||
+    isKeymapCaptureTarget(target))
 
 const orderedFocusable = (dialog: HTMLElement): HTMLElement[] => {
   const staticFocusable = Array.from(
@@ -254,37 +264,114 @@ export const SettingsDialog = ({
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Tab') {
-        return
-      }
+      if (event.key === 'Tab') {
+        const dialog = dialogRef.current
+        if (!dialog) {
+          return
+        }
 
-      const dialog = dialogRef.current
-      if (!dialog) {
-        return
-      }
+        const focusable = orderedFocusable(dialog)
 
-      const focusable = orderedFocusable(dialog)
+        if (focusable.length === 0) {
+          event.preventDefault()
 
-      if (focusable.length === 0) {
+          return
+        }
+
+        const currentIndex = focusable.indexOf(
+          document.activeElement as HTMLElement
+        )
+        const delta = event.shiftKey ? -1 : 1
+
+        let nextIndex: number
+        if (currentIndex === -1) {
+          nextIndex = event.shiftKey ? focusable.length - 1 : 0
+        } else {
+          nextIndex =
+            (currentIndex + delta + focusable.length) % focusable.length
+        }
+
         event.preventDefault()
+        focusable[nextIndex]?.focus()
 
         return
       }
 
-      const currentIndex = focusable.indexOf(
-        document.activeElement as HTMLElement
-      )
-      const delta = event.shiftKey ? -1 : 1
-
-      let nextIndex: number
-      if (currentIndex === -1) {
-        nextIndex = event.shiftKey ? focusable.length - 1 : 0
-      } else {
-        nextIndex = (currentIndex + delta + focusable.length) % focusable.length
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        shortcutTargetOwnsKey(event.target)
+      ) {
+        return
       }
 
-      event.preventDefault()
-      focusable[nextIndex]?.focus()
+      const content = contentRef.current
+      const visibleSections = filtered.length > 0 ? filtered : SETTINGS_SECTIONS
+
+      const scrollContent = (top: number): void => {
+        if (!content) {
+          return
+        }
+
+        if (typeof content.scrollBy === 'function') {
+          content.scrollBy({ top, behavior: 'smooth' })
+
+          return
+        }
+
+        content.scrollTop += top
+      }
+
+      const navigateSection = (direction: 1 | -1): void => {
+        if (visibleSections.length === 0) {
+          return
+        }
+
+        const currentIndex = visibleSections.findIndex(
+          (candidate) => candidate.id === section
+        )
+
+        const baseIndex =
+          currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex
+
+        const nextIndex =
+          (baseIndex + direction + visibleSections.length) %
+          visibleSections.length
+        const next = visibleSections[nextIndex]
+
+        setSection(next.id)
+        setActiveTargetId(null)
+        setSelectedSearchResultKey(settingsSectionResultKey(next.id))
+      }
+
+      if (event.key === 'j') {
+        event.preventDefault()
+        scrollContent(SETTINGS_SCROLL_STEP)
+
+        return
+      }
+
+      if (event.key === 'k') {
+        event.preventDefault()
+        scrollContent(-SETTINGS_SCROLL_STEP)
+
+        return
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        navigateSection(1)
+
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        navigateSection(-1)
+      }
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -292,7 +379,7 @@ export const SettingsDialog = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open])
+  }, [filtered, open, section])
 
   useEffect(() => {
     if (!open) {
@@ -414,6 +501,12 @@ export const SettingsDialog = ({
 
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">
+              <Kbd>j</Kbd>
+              <Kbd>k</Kbd>
+              <span>scroll</span>
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              <span>navigate</span>
               <span className="min-w-0 flex-1" />
               <Kbd>esc</Kbd>
               <span>close</span>
