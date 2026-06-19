@@ -497,9 +497,8 @@ describe('Agent runtime regressions', () => {
         async () => {
           const buffer = await browser.execute(
             (sessionId: string) =>
-              window.__VIMEFLOW_E2E__?.getTerminalBufferForSession(
-                sessionId
-              ) ?? '',
+              window.__VIMEFLOW_E2E__?.getTerminalBufferForSession(sessionId) ??
+              '',
             ptyId
           )
 
