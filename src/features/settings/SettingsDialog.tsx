@@ -492,28 +492,28 @@ export const SettingsDialog = ({
         setSelectedSearchResultKey(settingsSectionResultKey(next.section.id))
       }
 
-      if (event.key === 'j') {
+      if (event.key === 'd') {
         event.preventDefault()
         scrollContent(SETTINGS_SCROLL_STEP)
 
         return
       }
 
-      if (event.key === 'k') {
+      if (event.key === 'u') {
         event.preventDefault()
         scrollContent(-SETTINGS_SCROLL_STEP)
 
         return
       }
 
-      if (event.key === 'ArrowDown') {
+      if (event.key === 'j' || event.key === 'ArrowDown') {
         event.preventDefault()
         navigateSidebar(1)
 
         return
       }
 
-      if (event.key === 'ArrowUp') {
+      if (event.key === 'k' || event.key === 'ArrowUp') {
         event.preventDefault()
         navigateSidebar(-1)
       }
@@ -651,11 +651,14 @@ export const SettingsDialog = ({
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">
               <Kbd>j</Kbd>
-              <Kbd>k</Kbd>
-              <span>scroll</span>
-              <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>
-              <span>navigate</span>
+              <span>next</span>
+              <Kbd>k</Kbd>
+              <Kbd>↑</Kbd>
+              <span>prev</span>
+              <Kbd>u</Kbd>
+              <Kbd>d</Kbd>
+              <span>scroll</span>
               <span className="min-w-0 flex-1" />
               <Kbd>esc</Kbd>
               <span>close</span>

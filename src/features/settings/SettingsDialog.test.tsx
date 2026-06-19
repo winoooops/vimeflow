@@ -315,21 +315,21 @@ describe('SettingsDialog', () => {
     ).toBeInTheDocument()
   })
 
-  test('scrolls active settings content with j and k', async () => {
+  test('scrolls active settings content with d and u', async () => {
     const user = userEvent.setup()
     const { scrollBy, restore } = installScrollByMock()
 
     try {
       render(<SettingsDialog open onClose={vi.fn()} />)
 
-      await user.keyboard('j')
+      await user.keyboard('d')
 
       expect(scrollBy).toHaveBeenLastCalledWith({
         behavior: 'smooth',
         top: 96,
       })
 
-      await user.keyboard('k')
+      await user.keyboard('u')
 
       expect(scrollBy).toHaveBeenLastCalledWith({
         behavior: 'smooth',
@@ -340,7 +340,7 @@ describe('SettingsDialog', () => {
     }
   })
 
-  test('does not scroll settings content when j and k are typed in search', async () => {
+  test('does not scroll settings content when local shortcuts are typed in search', async () => {
     const user = userEvent.setup()
     const { scrollBy, restore } = installScrollByMock()
 
@@ -348,17 +348,18 @@ describe('SettingsDialog', () => {
       render(<SettingsDialog open onClose={vi.fn()} />)
 
       const input = screen.getByPlaceholderText('Search settings...')
+      const shortcutText = ['j', 'k', 'u', 'd'].join('')
 
-      await user.type(input, 'jk')
+      await user.type(input, shortcutText)
 
-      expect(input).toHaveValue('jk')
+      expect(input).toHaveValue(shortcutText)
       expect(scrollBy).not.toHaveBeenCalled()
     } finally {
       restore()
     }
   })
 
-  test('navigates settings sections and subsections with arrow keys outside search input', async () => {
+  test('navigates settings sections and subsections with j, k, and arrow keys outside search input', async () => {
     const user = userEvent.setup()
 
     const scrollIntoView = vi
@@ -368,7 +369,7 @@ describe('SettingsDialog', () => {
     try {
       render(<SettingsDialog open onClose={vi.fn()} />)
 
-      await user.keyboard('{ArrowDown}')
+      await user.keyboard('j')
 
       await waitFor(() => {
         expect(
@@ -384,7 +385,7 @@ describe('SettingsDialog', () => {
         ).toHaveAttribute('aria-selected', 'true')
       })
 
-      await user.keyboard('{ArrowDown}')
+      await user.keyboard('j')
 
       await waitFor(() => {
         expect(
@@ -400,7 +401,7 @@ describe('SettingsDialog', () => {
         ).toBeInTheDocument()
       })
 
-      await user.keyboard('{ArrowUp}')
+      await user.keyboard('k')
 
       await waitFor(() => {
         expect(
@@ -412,7 +413,7 @@ describe('SettingsDialog', () => {
     }
   })
 
-  test('starts arrow navigation from the scrolled content viewport', async () => {
+  test('starts navigation from the scrolled content viewport', async () => {
     const user = userEvent.setup()
 
     const scrollIntoView = vi
@@ -458,8 +459,8 @@ describe('SettingsDialog', () => {
         'getBoundingClientRect'
       ).mockReturnValue(makeRect(170, 210))
 
+      await user.keyboard('d')
       await user.keyboard('j')
-      await user.keyboard('{ArrowDown}')
 
       await waitFor(() => {
         expect(
@@ -552,10 +553,13 @@ describe('SettingsDialog', () => {
     expect(screen.queryByText('Navbar')).toBeNull()
     expect(screen.getByText('j')).toBeInTheDocument()
     expect(screen.getByText('k')).toBeInTheDocument()
-    expect(screen.getByText('scroll')).toBeInTheDocument()
+    expect(screen.getByText('u')).toBeInTheDocument()
+    expect(screen.getByText('d')).toBeInTheDocument()
     expect(screen.getByText('↑')).toBeInTheDocument()
     expect(screen.getByText('↓')).toBeInTheDocument()
-    expect(screen.getByText('navigate')).toBeInTheDocument()
+    expect(screen.getByText('next')).toBeInTheDocument()
+    expect(screen.getByText('prev')).toBeInTheDocument()
+    expect(screen.getByText('scroll')).toBeInTheDocument()
     expect(screen.getByText('esc')).toBeInTheDocument()
   })
 
