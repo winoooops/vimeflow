@@ -2,7 +2,7 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-13
+last_updated: 2026-06-19
 ref_count: 4
 ---
 
@@ -84,4 +84,22 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** `restartPersistedActiveShell` used `liveSessions.length > 0` as the "session is live" guard. The backend's lazy-reconciliation path can return a non-empty `listSessions()` result where every row has `status.kind === 'Exited'`. The guard treated this as a live restore and skipped restarting the persisted active shell, leaving a `completed` placeholder and forcing auto-create to open a second terminal.
 - **Fix:** Replace the length check with `liveSessions.some((session) => session.status.kind === 'Alive')` so only actually alive PTYs block the restart path. Added a regression test where `listSessions()` returns a single `Exited` record.
+- **Commit:** same commit as this entry
+
+### 9. Rust `valid_layout_tracks` accepts whitespace-only track IDs
+
+- **Source:** github-claude | PR #542 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/workspace_layout.rs`
+- **Finding:** `valid_layout_tracks` only checked `!track.id.is_empty()`, so a hand-crafted persisted layout with a whitespace-only track id (e.g., `" "`) passed validation. The resulting CSS grid track name would be invisible and produce no diagnostics.
+- **Fix:** Changed the guard to `!track.id.trim().is_empty()` so whitespace-only ids are rejected, matching the TypeScript validation.
+- **Commit:** same commit as this entry
+
+### 10. Custom slot ids can collide after grid-area sanitization
+
+- **Source:** github-codex-connector | PR #542 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/layout-registry/layoutDefinition.ts`
+- **Finding:** `gridAreaNameForSlotId` replaces non-alphanumeric characters with `-`, so distinct ids such as `slot:a b` and `slot:a-b` map to the same CSS grid-area name. A persisted custom layout passing validation could therefore place multiple panes in one grid area, causing overlap or an invalid grid template at runtime.
+- **Fix:** Added `duplicate-grid-area` validation in `validateSlots` that rejects layouts whose sanitized slot ids produce colliding grid-area names.
 - **Commit:** same commit as this entry

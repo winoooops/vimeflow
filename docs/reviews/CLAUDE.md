@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 15       | 12   | 2026-06-16   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 3    | 2026-06-17   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 10       | 9    | 2026-06-17   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 11       | 9    | 2026-06-19   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
@@ -85,14 +85,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 11       | 8    | 2026-06-12   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 8        | 4    | 2026-06-13   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 10       | 4    | 2026-06-19   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 1        | 0    | 2026-06-11   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)                                 | correctness        | 4        | 2    | 2026-06-17   |
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 3        | 1    | 2026-06-18   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 4        | 1    | 2026-06-19   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 6        | 3    | 2026-06-18   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
@@ -103,5 +103,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 3        | 0    | 2026-06-17   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 1    | 2026-06-18   |
+| [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |

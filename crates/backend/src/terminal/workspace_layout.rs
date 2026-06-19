@@ -14,6 +14,7 @@ use std::sync::Mutex;
 // ts-rs is a dev-dependency; derive TS only under cfg(test), matching `terminal/types.rs`.
 
 pub const CURRENT_WORKSPACE_LAYOUT_VERSION: u32 = 1;
+const PANE_LAYOUT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -264,7 +265,7 @@ fn valid_layout_tracks(tracks: &[PaneLayoutTrack]) -> bool {
 
     let mut ids = std::collections::HashSet::new();
     tracks.iter().all(|track| {
-        !track.id.is_empty()
+        !track.id.trim().is_empty()
             && ids.insert(track.id.as_str())
             && track.units.is_finite()
             && track.units > 0.0
@@ -275,7 +276,7 @@ fn valid_layout_tracks(tracks: &[PaneLayoutTrack]) -> bool {
 }
 
 fn is_valid_custom_pane_layout(definition: &PaneLayoutDefinition) -> bool {
-    if definition.schema_version != CURRENT_WORKSPACE_LAYOUT_VERSION {
+    if definition.schema_version != PANE_LAYOUT_SCHEMA_VERSION {
         return false;
     }
     if definition.source != "workspace"
@@ -972,6 +973,34 @@ mod tests {
         assert_eq!(store.custom_pane_layouts.len(), 1);
         assert_eq!(store.custom_pane_layouts[0].id, "custom:main-side");
         assert_eq!(store.sessions.len(), 1);
+    }
+
+    #[test]
+    fn rejects_custom_layout_with_whitespace_only_track_id() {
+        let store = repair_workspace_layout(
+            json!({
+                "version": 1,
+                "customPaneLayouts": [{
+                    "schemaVersion": 1,
+                    "id": "custom:bad-track",
+                    "title": "Bad track",
+                    "source": "workspace",
+                    "tracks": {
+                        "columns": [{ "id": "   ", "units": 24 }],
+                        "rows": [{ "id": "only", "units": 24 }]
+                    },
+                    "slots": [
+                        { "id": "slot:only", "rect": { "col": 0, "row": 0, "colSpan": 1, "rowSpan": 1 } }
+                    ],
+                    "addOrder": ["slot:only"]
+                }],
+                "sessions": []
+            }),
+            "proj",
+            "/",
+        );
+
+        assert!(store.custom_pane_layouts.is_empty());
     }
 
     #[test]

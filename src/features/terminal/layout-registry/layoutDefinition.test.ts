@@ -113,6 +113,38 @@ describe('layoutDefinition', () => {
     expect(codes).toContain('layout-hole')
   })
 
+  test('rejects slots whose sanitized ids collide in the CSS grid', () => {
+    const colliding: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:colliding',
+      title: 'Colliding',
+      source: 'workspace',
+      tracks: {
+        columns: [{ id: 'only', units: 24 }],
+        rows: [
+          { id: 'top', units: 12 },
+          { id: 'bottom', units: 12 },
+        ],
+      },
+      slots: [
+        {
+          id: createPaneSlotId('a b'),
+          rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+        },
+        {
+          id: createPaneSlotId('a-b'),
+          rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 },
+        },
+      ],
+      addOrder: [createPaneSlotId('a b'), createPaneSlotId('a-b')],
+    }
+
+    const codes = validatePaneLayoutDefinition(colliding).errors.map(
+      (error) => error.code
+    )
+    expect(codes).toContain('duplicate-grid-area')
+  })
+
   test('rejects invalid track units and non-unique add order', () => {
     const invalid: PaneLayoutDefinition = {
       ...mainWithSideStack(),

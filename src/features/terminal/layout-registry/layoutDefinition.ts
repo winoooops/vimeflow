@@ -58,6 +58,7 @@ export type PaneLayoutValidationCode =
   | 'invalid-slot-count'
   | 'invalid-slot-id'
   | 'duplicate-slot-id'
+  | 'duplicate-grid-area'
   | 'invalid-slot-rect'
   | 'slot-out-of-bounds'
   | 'slot-overlap'
@@ -353,6 +354,7 @@ const validateSlots = (
 
   const seenSlots = new Set<LayoutSlotId>()
   const occupiedCells = new Map<string, LayoutSlotId>()
+  const seenGridAreas = new Map<string, LayoutSlotId>()
 
   slots.forEach((slot, index) => {
     const path = `slots.${index}`
@@ -376,6 +378,21 @@ const validateSlots = (
       )
     }
     seenSlots.add(slot.id)
+
+    if (isLayoutSlotId(slot.id)) {
+      const gridArea = gridAreaNameForSlotId(slot.id)
+      const existing = seenGridAreas.get(gridArea)
+      if (existing !== undefined) {
+        errors.push(
+          validationError(
+            'duplicate-grid-area',
+            `${path}.id`,
+            `Slot ${slot.id} produces the same grid area as ${existing} after sanitization.`
+          )
+        )
+      }
+      seenGridAreas.set(gridArea, slot.id)
+    }
 
     for (const paneKind of slot.accepts ?? []) {
       if (!isSupportedPaneKind(paneKind)) {

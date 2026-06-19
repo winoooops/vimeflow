@@ -241,11 +241,13 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       .join(' ')
 
     const gridAreaForSlotIndex = (slotIndex: number): string => {
-      if (slotIndex < 0 || slotIndex >= layout.definition.slots.length) {
-        return `p${slotIndex}`
+      if (slotIndex < 0 || slotIndex >= layout.definition.addOrder.length) {
+        throw new Error(
+          `Slot index ${slotIndex} is out of bounds for layout ${layout.definition.id}`
+        )
       }
 
-      return gridAreaNameForSlotId(layout.definition.slots[slotIndex].id)
+      return gridAreaNameForSlotId(layout.definition.addOrder[slotIndex])
     }
 
     return (
