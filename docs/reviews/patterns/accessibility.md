@@ -667,7 +667,6 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Promoted the search input to `role="combobox"` with `aria-expanded`, `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant` pointing at the active result. Gave every section and target result button a stable id so the active-descendant reference is valid. Added co-located tests asserting the combobox attributes and active-descendant targets.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-
 ### 73. Combobox popup has role=navigation, not a valid ARIA popup role
 
 - **Source:** github-claude | PR #540 round 1 | 2026-06-19

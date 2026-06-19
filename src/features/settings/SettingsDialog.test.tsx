@@ -83,14 +83,14 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
     SETTINGS_SECTIONS.forEach((s) => {
-      expect(screen.getByRole('button', { name: s.label })).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: s.label })).toBeInTheDocument()
     })
   })
 
   test('defaults to the appearance pane', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: 'Appearance' })).toHaveClass(
+    expect(screen.getByRole('option', { name: 'Appearance' })).toHaveClass(
       'text-primary'
     )
     expect(screen.getByText('Color Scheme')).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('SettingsDialog', () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    await user.click(screen.getByRole('button', { name: 'Keymap' }))
+    await user.click(screen.getByRole('option', { name: 'Keymap' }))
 
     expect(screen.getByText('Keyboard shortcuts')).toBeInTheDocument()
   })
@@ -111,8 +111,8 @@ describe('SettingsDialog', () => {
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'term')
 
-    expect(screen.getByRole('button', { name: 'Terminal' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'Terminal' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'General' })).toBeNull()
   })
 
   test('clears search from the search field button', async () => {
@@ -124,7 +124,7 @@ describe('SettingsDialog', () => {
     await user.type(input, 'term')
 
     expect(input).toHaveValue('term')
-    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'General' })).toBeNull()
 
     await user.click(
       screen.getByRole('button', { name: 'Clear settings search' })
@@ -132,7 +132,7 @@ describe('SettingsDialog', () => {
 
     expect(input).toHaveValue('')
     expect(input).toHaveFocus()
-    expect(screen.getByRole('button', { name: 'General' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'General' })).toBeInTheDocument()
   })
 
   test('navigates search result clicks to the matching settings row', async () => {
@@ -145,7 +145,7 @@ describe('SettingsDialog', () => {
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
     await user.click(
-      screen.getByRole('button', { name: 'Redact Private Values' })
+      screen.getByRole('option', { name: 'Redact Private Values' })
     )
 
     const target = screen.getByTestId(
@@ -157,7 +157,7 @@ describe('SettingsDialog', () => {
     })
 
     expect(
-      screen.getByRole('button', { name: 'General', current: 'page' })
+      screen.getByRole('option', { name: 'General', current: 'page' })
     ).toBeInTheDocument()
     expect(target).toHaveAttribute('data-settings-target-active', 'true')
     expect(scrollIntoView).toHaveBeenCalled()
@@ -188,7 +188,7 @@ describe('SettingsDialog', () => {
 
     expect(input).toHaveFocus()
     expect(
-      screen.getByRole('button', { name: 'General', current: 'page' })
+      screen.getByRole('option', { name: 'General', current: 'page' })
     ).toBeInTheDocument()
     expect(scrollIntoView).toHaveBeenCalled()
 
@@ -206,7 +206,7 @@ describe('SettingsDialog', () => {
 
     expect(input).toHaveFocus()
     expect(
-      screen.getByRole('button', { name: 'General', current: 'page' })
+      screen.getByRole('option', { name: 'General', current: 'page' })
     ).toBeInTheDocument()
   })
 
@@ -220,15 +220,15 @@ describe('SettingsDialog', () => {
     )
 
     expect(
-      screen.getByRole('button', { name: 'Open command palette' })
+      screen.getByRole('option', { name: 'Open command palette' })
     ).toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: 'Command palette leader' })
+      screen.getByRole('option', { name: 'Command palette leader' })
     ).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', { name: 'Command palette leader' })
+      screen.getByRole('option', { name: 'Command palette leader' })
     )
 
     const target = screen.getByTestId(
@@ -240,7 +240,7 @@ describe('SettingsDialog', () => {
     })
 
     expect(
-      screen.getByRole('button', { name: 'Keymap', current: 'page' })
+      screen.getByRole('option', { name: 'Keymap', current: 'page' })
     ).toBeInTheDocument()
     expect(target).toHaveAttribute('data-settings-target-active', 'true')
   })
@@ -251,7 +251,7 @@ describe('SettingsDialog', () => {
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'redact')
     await user.click(
-      screen.getByRole('button', { name: 'Redact Private Values' })
+      screen.getByRole('option', { name: 'Redact Private Values' })
     )
 
     const target = screen.getByTestId(
@@ -282,7 +282,7 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
     // Click a placeholder section (Terminal)
-    await user.click(screen.getByRole('button', { name: 'Terminal' }))
+    await user.click(screen.getByRole('option', { name: 'Terminal' }))
 
     // Type a query that filters Terminal out of the sidebar
     await user.type(
@@ -291,7 +291,7 @@ describe('SettingsDialog', () => {
     )
 
     // Terminal button should be gone from sidebar
-    expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Terminal' })).toBeNull()
 
     // But the placeholder pane for Terminal should still render
     expect(
@@ -326,7 +326,7 @@ describe('SettingsDialog', () => {
     const user = userEvent.setup()
     render(<DialogWithTrigger initialOpen />)
 
-    await user.click(screen.getByRole('button', { name: 'Keymap' }))
+    await user.click(screen.getByRole('option', { name: 'Keymap' }))
     await user.click(
       screen.getByRole('button', { name: 'Edit Focus pane 1 binding' })
     )
@@ -368,15 +368,15 @@ describe('SettingsDialog', () => {
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'term')
 
-    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'General' })).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Close' }))
     await user.click(trigger)
 
-    expect(screen.getByRole('button', { name: 'General' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'General' })).toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: 'Appearance' })
+      screen.getByRole('option', { name: 'Appearance' })
     ).toBeInTheDocument()
   })
 })

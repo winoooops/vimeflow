@@ -453,7 +453,6 @@ against three classes of false-fire:
 - **Fix:** Added `!event.altKey && !event.shiftKey` to the platform-super matcher so only the bare `Cmd/Ctrl+Comma` chord toggles Settings. Added tests for `Ctrl+Alt+Comma` and `Cmd+Shift+Comma` to confirm they pass through.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-
 ### 36. Bypass search shortcuts during IME composition
 
 - **Source:** github-codex-connector | PR #540 round 1 | 2026-06-19
