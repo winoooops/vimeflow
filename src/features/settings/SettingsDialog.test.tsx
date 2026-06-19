@@ -408,6 +408,8 @@ describe('SettingsDialog', () => {
           screen.getByRole('option', { name: 'Fonts', current: 'location' })
         ).toHaveAttribute('aria-selected', 'true')
       })
+
+      expect(scrollIntoView).not.toHaveBeenCalled()
     } finally {
       scrollIntoView.mockRestore()
     }
@@ -434,11 +436,13 @@ describe('SettingsDialog', () => {
         },
       })
 
+      const scrollBy = vi.fn((options: ScrollToOptions) => {
+        scrollTop += options.top ?? 0
+      })
+
       Object.defineProperty(content, 'scrollBy', {
         configurable: true,
-        value: vi.fn((options: ScrollToOptions) => {
-          scrollTop += options.top ?? 0
-        }),
+        value: scrollBy,
       })
 
       vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(
@@ -467,6 +471,9 @@ describe('SettingsDialog', () => {
           screen.getByRole('option', { name: 'Keymap', current: 'page' })
         ).toBeInTheDocument()
       })
+
+      expect(scrollBy).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView).not.toHaveBeenCalled()
     } finally {
       scrollIntoView.mockRestore()
     }
@@ -557,8 +564,9 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('d')).toBeInTheDocument()
     expect(screen.getByText('↑')).toBeInTheDocument()
     expect(screen.getByText('↓')).toBeInTheDocument()
-    expect(screen.getByText('next')).toBeInTheDocument()
-    expect(screen.getByText('prev')).toBeInTheDocument()
+    expect(screen.queryByText('next')).toBeNull()
+    expect(screen.queryByText('prev')).toBeNull()
+    expect(screen.getAllByText('nav')).toHaveLength(2)
     expect(screen.getByText('scroll')).toBeInTheDocument()
     expect(screen.getByText('esc')).toBeInTheDocument()
   })

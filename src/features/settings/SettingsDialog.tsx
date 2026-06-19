@@ -39,7 +39,10 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'agents',
 ]
 
-type TargetFocusMode = 'focus-target' | 'preserve-search-focus'
+type TargetActivationMode =
+  | 'focus-target'
+  | 'preserve-search-focus'
+  | 'select-sidebar'
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -113,8 +116,8 @@ export const SettingsDialog = ({
     ReadonlySet<SettingsSectionId>
   >(() => new Set(['appearance']))
 
-  const [targetFocusMode, setTargetFocusMode] =
-    useState<TargetFocusMode>('focus-target')
+  const [targetActivationMode, setTargetActivationMode] =
+    useState<TargetActivationMode>('focus-target')
 
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -215,14 +218,14 @@ export const SettingsDialog = ({
     setQuery('')
     setActiveTargetId(null)
     setSelectedSearchResultKey(null)
-    setTargetFocusMode('focus-target')
+    setTargetActivationMode('focus-target')
   }
 
   const applySearchResult = (
     result: SettingsSearchResult,
-    focusMode: TargetFocusMode
+    activationMode: TargetActivationMode
   ): void => {
-    setTargetFocusMode(focusMode)
+    setTargetActivationMode(activationMode)
     setSelectedSearchResultKey(result.key)
 
     if (result.kind === 'section') {
@@ -471,11 +474,10 @@ export const SettingsDialog = ({
             return
           }
 
-          setTargetFocusMode('focus-target')
+          setTargetActivationMode('select-sidebar')
           setSelectedSearchResultKey(settingsTargetResultKey(target))
           setSection(target.section)
           setActiveTargetId(target.id)
-          setTargetNavigationKey((key) => key + 1)
 
           return
         }
@@ -540,6 +542,10 @@ export const SettingsDialog = ({
       return
     }
 
+    if (targetActivationMode === 'select-sidebar') {
+      return
+    }
+
     const target = contentRef.current?.querySelector<HTMLElement>(
       `[data-settings-target="${activeTargetId}"]`
     )
@@ -549,10 +555,10 @@ export const SettingsDialog = ({
     }
 
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    if (targetFocusMode === 'focus-target') {
+    if (targetActivationMode === 'focus-target') {
       target.focus({ preventScroll: true })
     }
-  }, [activeTargetId, open, section, targetFocusMode, targetNavigationKey])
+  }, [activeTargetId, open, section, targetActivationMode, targetNavigationKey])
 
   return (
     <AnimatePresence>
@@ -651,11 +657,11 @@ export const SettingsDialog = ({
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">
               <Kbd>j</Kbd>
-              <Kbd>↓</Kbd>
-              <span>next</span>
               <Kbd>k</Kbd>
+              <span>nav</span>
               <Kbd>↑</Kbd>
-              <span>prev</span>
+              <Kbd>↓</Kbd>
+              <span>nav</span>
               <Kbd>u</Kbd>
               <Kbd>d</Kbd>
               <span>scroll</span>
