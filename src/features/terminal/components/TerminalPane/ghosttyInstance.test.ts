@@ -219,6 +219,47 @@ describe('ghosttyInstance', () => {
     expect(cursor?.previousSibling?.textContent).toBe('rendered')
   })
 
+  test('syncs terminal size and clear resets into the VT render-state driver', () => {
+    const reset = vi.fn()
+    const resize = vi.fn()
+    const container = document.createElement('div')
+
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: [],
+        }),
+        reset,
+        resize,
+      }),
+    })
+
+    expect(resize).toHaveBeenCalledWith({ cols: 80, rows: 24 })
+
+    setElementSize(container, 256, 180)
+    created.terminal.open(container)
+
+    expect(resize).toHaveBeenLastCalledWith({ cols: 30, rows: 10 })
+    expect(resize).toHaveBeenCalledTimes(2)
+
+    created.fitController.fit()
+
+    expect(resize).toHaveBeenCalledTimes(2)
+
+    setElementSize(container, 336, 216)
+    created.fitController.fit()
+
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenCalledTimes(3)
+
+    created.terminal.clear()
+
+    expect(reset).toHaveBeenCalledOnce()
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenCalledTimes(4)
+  })
+
   test('keeps VT render-state driver cwd effects on the terminal parser event path', () => {
     const bytes = new Uint8Array([0x1b, 0x5d, 0x37])
     const writeBytes = vi.fn()

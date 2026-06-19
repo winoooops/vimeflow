@@ -5,6 +5,7 @@ import type {
   TerminalParserEvent,
   TerminalParserOutputContext,
   TerminalRendererCapabilities,
+  TerminalSize,
 } from '../../types'
 import { TerminalControlSequenceParser } from './terminalControlParser'
 import {
@@ -42,6 +43,8 @@ export interface TerminalParserEngine {
   ) => TerminalParserEngineOutput
   parseInput: (input: TerminalParserEngineInput) => TerminalParserEngineOutput
   parseOutput: (chunk: TerminalOutputChunk) => TerminalParserEngineOutput
+  reset?: () => void
+  resize?: (size: TerminalSize) => void
   dispose?: () => void
 }
 
@@ -99,6 +102,10 @@ export class TerminalControlSequenceParserEngine implements TerminalParserEngine
       ...selection,
       output: outputContextFromChunk(chunk),
     })
+  }
+
+  reset(): void {
+    this.parser.reset()
   }
 
   protected emitParserEvent(event: TerminalParserEvent): void {

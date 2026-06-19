@@ -4,6 +4,7 @@ import {
   type GhosttyByteParserAdapter,
   type GhosttyParserEngine,
 } from './ghosttyParserEngine'
+import type { TerminalSize } from '../../types'
 import {
   createGhosttyVtByteParserAdapter,
   type GhosttyVtParserDriver,
@@ -31,6 +32,7 @@ export interface GhosttyVtRenderStateDriver {
   writeBytes: (bytes: Uint8Array) => void
   readSnapshot: () => GhosttyVtRenderSnapshot
   reset?: () => void
+  resize?: (size: TerminalSize) => void
   dispose?: () => void
 }
 
@@ -55,6 +57,9 @@ export const createGhosttyVtRenderStateParserDriverFactory =
       },
       reset: (): void => {
         renderStateDriver.reset?.()
+      },
+      resize: (size): void => {
+        renderStateDriver.resize?.(size)
       },
       dispose: (): void => {
         renderStateDriver.dispose?.()

@@ -439,6 +439,10 @@ export class TerminalControlSequenceParser implements TerminalParser {
     return this.consumeControlSequences(source, output)
   }
 
+  reset(): void {
+    this.pendingControlSequence = ''
+  }
+
   private consumeControlSequences(
     data: string,
     output: TerminalParserOutputContext | null
