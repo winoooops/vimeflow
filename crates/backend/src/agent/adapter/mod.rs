@@ -48,6 +48,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
     /// instead of an adapter-private side channel.
     fn located_status_source(
         &self,
+        app_data_dir: &Path,
         cwd: &Path,
         session_id: &str,
     ) -> Result<LocatedStatusSource, String>;
@@ -81,37 +82,45 @@ pub trait AgentAdapter: Send + Sync + 'static {
 // transitional decode/locate/validate/tail façade, unused in
 // production lifecycle paths.
 
-/// Stateless `StatusSourceLocator` for Claude Code.
+/// App-data scoped `StatusSourceLocator` for Claude Code.
 ///
 /// Step B' (#246): per frozen constraint #1, this type is
-/// **trivial and stateless** — no `dirs::home_dir()` lookups inside,
-/// no held fields, and `static_transcript_hint` is always `None`
-/// because Claude's transcript path is purely dynamic (arrives via
-/// the statusline JSON on every update).
-///
-/// Kept as a separate unit struct because `bindings.rs` constructs
-/// it directly (as `Arc<ClaudeStatusFileLocator>`), independent of
-/// the adapter. Both this impl and `ClaudeCodeAdapter`'s
-/// `StatusSourceLocator::locate` impl now route through
-/// `claude_code::claude_status_path` so a future Claude session-path
-/// schema change is a single-site edit (PR #261 cycle 3 review F10
-/// — both impls were previously byte-for-byte duplicates).
-pub(crate) struct ClaudeStatusFileLocator;
+/// Claude's transcript path is purely dynamic (arrives via the
+/// statusline JSON on every update), so `static_transcript_hint` is
+/// always `None`. The locator carries the Vimeflow app-data root so
+/// generated status bridge files stay out of the user's project tree.
+pub(crate) struct ClaudeStatusFileLocator {
+    app_data_dir: PathBuf,
+}
+
+impl ClaudeStatusFileLocator {
+    pub(crate) fn new(app_data_dir: PathBuf) -> Self {
+        Self { app_data_dir }
+    }
+}
 
 impl traits::StatusSourceLocator for ClaudeStatusFileLocator {
     fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
-        Ok(claude_code::claude_status_path(cwd, session_id))
+        Ok(claude_code::claude_status_path(
+            &self.app_data_dir,
+            cwd,
+            session_id,
+        ))
     }
 }
 
 /// Fallback adapter for agents whose real adapter has not shipped yet.
 pub(crate) struct NoOpAdapter {
     agent_type: AgentType,
+    app_data_dir: PathBuf,
 }
 
 impl NoOpAdapter {
-    pub(crate) fn new(agent_type: AgentType) -> Self {
-        Self { agent_type }
+    pub(crate) fn new(agent_type: AgentType, app_data_dir: PathBuf) -> Self {
+        Self {
+            agent_type,
+            app_data_dir,
+        }
     }
 }
 
@@ -122,16 +131,15 @@ impl TranscriptPathSource for NoOpAdapter {}
 impl traits::StatusSourceLocator for NoOpAdapter {
     fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
         // Same shape as ClaudeStatusFileLocator — gives the no-op
-        // adapter a plausible status path under cwd. The watcher
-        // never actually reads it because NoOp's decoder/streamer
-        // Errs out below.
+        // adapter a plausible app-data status path. The watcher never
+        // actually reads it because NoOp's decoder/streamer Errs out below.
         Ok(LocatedStatusSource {
-            status_path: cwd
-                .join(".vimeflow")
-                .join("sessions")
-                .join(session_id)
-                .join("status.json"),
-            trust_root: cwd.to_path_buf(),
+            status_path: crate::terminal::bridge::session_status_file(
+                &self.app_data_dir,
+                cwd,
+                session_id,
+            ),
+            trust_root: self.app_data_dir.clone(),
             static_transcript_hint: None,
             agent_session_id: None,
         })
@@ -182,6 +190,7 @@ impl AgentAdapter for NoOpAdapter {
 
     fn located_status_source(
         &self,
+        _app_data_dir: &Path,
         cwd: &Path,
         session_id: &str,
     ) -> Result<LocatedStatusSource, String> {
@@ -224,6 +233,7 @@ pub(crate) async fn start_agent_watcher_inner(
     watcher_state: AgentWatcherState,
     transcript_state: TranscriptState,
     events: Arc<dyn EventSink>,
+    app_data_dir: PathBuf,
     session_id: String,
 ) -> Result<(), String> {
     // Step F.5: delegate to `SessionLifecycle`. The service owns the
@@ -234,12 +244,13 @@ pub(crate) async fn start_agent_watcher_inner(
     // trust boundary and inlined orchestration; PR #302 cycle 3 docs
     // refresh).
     session_lifecycle::SessionLifecycle::new(pty_state, watcher_state, transcript_state, events)
-        .start(session_id)
+        .start(session_id, app_data_dir)
         .await
 }
 
 fn resolve_bind_inputs<F>(
     pty_state: &PtyState,
+    app_data_dir: &Path,
     session_id: &SessionId,
     detect: F,
 ) -> Result<AttachContext, String>
@@ -273,6 +284,7 @@ where
         agent_pid,
         pty_start,
         agent_type,
+        app_data_dir: app_data_dir.to_path_buf(),
         provider_home: spec.provider_home(),
         proc_root: crate::agent::config::default_proc_root(),
     })
@@ -373,6 +385,7 @@ pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
         writer,
         child,
         cwd: "/tmp/workspace".into(),
+        bridge_dir: None,
         shim_dir: None,
         generation: 0,
         ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
@@ -387,7 +400,7 @@ mod noop_tests {
 
     #[test]
     fn agent_type_round_trips() {
-        let adapter = NoOpAdapter::new(AgentType::Codex);
+        let adapter = NoOpAdapter::new(AgentType::Codex, PathBuf::from("/tmp/vimeflow-data"));
         assert!(matches!(
             <NoOpAdapter as AgentAdapter>::agent_type(&adapter),
             AgentType::Codex
@@ -395,19 +408,22 @@ mod noop_tests {
     }
 
     #[test]
-    fn located_status_source_uses_claude_shaped_path() {
-        let adapter = NoOpAdapter::new(AgentType::Aider);
+    fn located_status_source_uses_app_data_bridge_path() {
+        let app_data_dir = PathBuf::from("/tmp/vimeflow-data");
+        let adapter = NoOpAdapter::new(AgentType::Aider, app_data_dir.clone());
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <NoOpAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
-            .expect("noop adapter always resolves a status source");
+        let src = <NoOpAdapter as AgentAdapter>::located_status_source(
+            &adapter,
+            &app_data_dir,
+            &cwd,
+            "sid",
+        )
+        .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.status_path,
-            cwd.join(".vimeflow")
-                .join("sessions")
-                .join("sid")
-                .join("status.json")
+            crate::terminal::bridge::session_status_file(&app_data_dir, &cwd, "sid")
         );
-        assert_eq!(src.trust_root, cwd);
+        assert_eq!(src.trust_root, app_data_dir);
         // NoOp adapters never know a static transcript path — Step 0c
         // contract: only Codex's locator returns Some.
         assert_eq!(src.static_transcript_hint, None);
@@ -420,7 +436,7 @@ mod noop_tests {
     /// agent — Aider, Generic).
     #[test]
     fn noop_transcript_path_source_returns_none_for_both_hints() {
-        let adapter = NoOpAdapter::new(AgentType::Aider);
+        let adapter = NoOpAdapter::new(AgentType::Aider, PathBuf::from("/tmp/vimeflow-data"));
         // Step B' (round 1 codex fix): the former
         // `AgentAdapter::transcript_path_source` accessor was
         // removed; reach the trait via a `&dyn TranscriptPathSource`
@@ -438,7 +454,7 @@ mod noop_tests {
 
     #[test]
     fn parse_status_returns_err() {
-        let adapter = NoOpAdapter::new(AgentType::Generic);
+        let adapter = NoOpAdapter::new(AgentType::Generic, PathBuf::from("/tmp/vimeflow-data"));
         assert!(<NoOpAdapter as AgentAdapter>::parse_status(&adapter, "sid", "{}").is_err());
     }
 
@@ -474,6 +490,7 @@ mod noop_tests {
             agent_pid: 12345,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Codex,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.codex")),
             proc_root: None,
         };
@@ -491,14 +508,17 @@ mod noop_tests {
 
     #[test]
     fn resolve_bind_inputs_uses_detected_agent_pid_not_shell_pid() {
+        let app_data = tempfile::tempdir().expect("app data");
         let state = PtyState::new();
         let session_id = "sid".to_string();
         state
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
-            .expect("bind inputs");
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+            Some((AgentType::Codex, 4242))
+        })
+        .expect("bind inputs");
 
         assert!(matches!(attach.agent_type, AgentType::Codex));
         assert_ne!(attach.shell_pid, attach.agent_pid);
@@ -507,14 +527,17 @@ mod noop_tests {
 
     #[test]
     fn resolve_bind_inputs_populates_attach_context_fields() {
+        let app_data = tempfile::tempdir().expect("app data");
         let state = PtyState::new();
         let session_id = "sid-populate".to_string();
         state
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
-            .expect("bind inputs");
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+            Some((AgentType::Codex, 4242))
+        })
+        .expect("bind inputs");
 
         // Identity / attach facts surfaced into the typed struct.
         assert_eq!(attach.session_id, "sid-populate");
@@ -522,6 +545,7 @@ mod noop_tests {
         assert_eq!(attach.pty_start, SystemTime::UNIX_EPOCH);
         assert_eq!(attach.agent_pid, 4242);
         assert_eq!(attach.agent_type, AgentType::Codex);
+        assert_eq!(attach.app_data_dir, app_data.path());
 
         // `provider_home` resolves from the central registry; for Codex
         // it ends with `.codex`. Structural assertion (not pinning the
@@ -541,14 +565,17 @@ mod noop_tests {
 
     #[test]
     fn resolve_bind_inputs_provider_home_none_for_agents_without_subdir() {
+        let app_data = tempfile::tempdir().expect("app data");
         let state = PtyState::new();
         let session_id = "sid-aider".to_string();
         state
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Aider, 9999)))
-            .expect("bind inputs");
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+            Some((AgentType::Aider, 9999))
+        })
+        .expect("bind inputs");
 
         assert_eq!(attach.agent_type, AgentType::Aider);
         // Aider has no `home_subdir` in the registry → provider_home is None.

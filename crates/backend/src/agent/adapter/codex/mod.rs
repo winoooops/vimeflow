@@ -172,6 +172,7 @@ impl AgentAdapter for CodexAdapter {
 
     fn located_status_source(
         &self,
+        _app_data_dir: &Path,
         cwd: &Path,
         session_id: &str,
     ) -> Result<LocatedStatusSource, String> {
@@ -445,8 +446,13 @@ mod status_source_tests {
         )));
         let cwd = codex_home.path().to_path_buf();
 
-        let src = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
-            .expect("located_status_source should resolve");
+        let src = <CodexAdapter as AgentAdapter>::located_status_source(
+            &adapter,
+            codex_home.path(),
+            &cwd,
+            "sid",
+        )
+        .expect("located_status_source should resolve");
 
         assert_eq!(src.status_path, rollout_path);
         assert_eq!(src.trust_root, codex_home.path());
@@ -473,8 +479,13 @@ mod status_source_tests {
         )));
         let cwd = codex_home.path().to_path_buf();
 
-        let err = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
-            .expect_err("empty codex_home should exhaust retry");
+        let err = <CodexAdapter as AgentAdapter>::located_status_source(
+            &adapter,
+            codex_home.path(),
+            &cwd,
+            "sid",
+        )
+        .expect_err("empty codex_home should exhaust retry");
         assert!(err.contains("retry exhausted"), "got: {}", err);
     }
 }

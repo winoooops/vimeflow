@@ -750,6 +750,30 @@ mod router {
             }
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
+            #[cfg(feature = "e2e-test")]
+            "e2e_agent_bridge_info" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.e2e_agent_bridge_info(p.session_id)?)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_seed_live_agent" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                    agent_type: crate::agent::types::AgentType,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.e2e_seed_live_agent(p.session_id, p.agent_type)?;
+                Ok(Value::Null)
+            }
             #[cfg(test)]
             "__test_sleep_then_null" => {
                 #[derive(Deserialize)]

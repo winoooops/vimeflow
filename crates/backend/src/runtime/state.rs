@@ -7,9 +7,9 @@ use crate::agent::types::{
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
-use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
+use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 
 use super::event_sink::EventSink;
 
@@ -37,6 +37,7 @@ fn ensure_rename_supported(agent_type: &AgentType) -> Result<(), RenameAgentSess
 
 /// Consolidated runtime-neutral backend state.
 pub struct BackendState {
+    app_data_dir: PathBuf,
     pty: PtyState,
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
@@ -53,10 +54,17 @@ pub struct BackendState {
 
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
+        if let Err(err) = std::fs::create_dir_all(&app_data_dir) {
+            log::warn!(
+                "BackendState::new: failed to create app data dir {}: {err}",
+                app_data_dir.display()
+            );
+        }
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
+            app_data_dir,
             pty: PtyState::new(),
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
@@ -368,7 +376,22 @@ impl BackendState {
         &self,
         session_id: String,
     ) -> Result<Option<crate::agent::types::AgentDetectedEvent>, String> {
-        crate::agent::commands::detect_agent_in_session_inner(&self.pty, session_id).await
+        let detected =
+            crate::agent::commands::detect_agent_in_session_inner(&self.pty, session_id.clone())
+                .await?;
+
+        #[cfg(feature = "e2e-test")]
+        if detected.is_none() {
+            if let Some(agent_type) = self.agents.agent_type_for_pty(&session_id) {
+                return Ok(Some(crate::agent::types::AgentDetectedEvent {
+                    pid: self.pty.get_pid(&session_id).unwrap_or(0),
+                    session_id,
+                    agent_type,
+                }));
+            }
+        }
+
+        Ok(detected)
     }
 
     pub async fn start_agent_watcher(&self, session_id: String) -> Result<(), String> {
@@ -377,6 +400,7 @@ impl BackendState {
             self.agents.clone(),
             self.transcripts.clone(),
             self.events.clone(),
+            self.app_data_dir.clone(),
             session_id,
         )
         .await
@@ -397,6 +421,71 @@ impl BackendState {
     pub fn list_active_pty_sessions(&self) -> Vec<String> {
         self.pty.active_ids()
     }
+
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_agent_bridge_info(&self, session_id: String) -> Result<E2eAgentBridgeInfo, String> {
+        let (cwd, bridge_dir, shim_dir) = {
+            let sessions = self
+                .pty
+                .inner_sessions()
+                .lock()
+                .map_err(|_| "failed to lock sessions".to_string())?;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("session not found: {session_id}"))?;
+
+            (
+                session.cwd.clone(),
+                session.bridge_dir.clone(),
+                session.shim_dir.clone(),
+            )
+        };
+        let status_file = bridge_dir.as_ref().map(|dir| {
+            PathBuf::from(dir.as_str())
+                .join("status.json")
+                .to_string_lossy()
+                .to_string()
+        });
+
+        Ok(E2eAgentBridgeInfo {
+            session_id: session_id.clone(),
+            cwd,
+            app_data_dir: self.app_data_dir.to_string_lossy().to_string(),
+            bridge_dir,
+            status_file,
+            shim_dir,
+            agent_type: self.agents.agent_type_for_pty(&session_id),
+        })
+    }
+
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_seed_live_agent(
+        &self,
+        session_id: String,
+        agent_type: AgentType,
+    ) -> Result<(), String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        self.agents
+            .insert_agent_type_for_test(self.transcripts.clone(), session_id, agent_type);
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "e2e-test")]
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eAgentBridgeInfo {
+    pub session_id: String,
+    pub cwd: String,
+    pub app_data_dir: String,
+    pub bridge_dir: Option<String>,
+    pub status_file: Option<String>,
+    pub shim_dir: Option<String>,
+    pub agent_type: Option<AgentType>,
 }
 
 #[cfg(test)]
@@ -509,6 +598,7 @@ mod tests {
             }),
             child: Box::new(NoopChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
@@ -581,7 +671,10 @@ mod tests {
         // Reloading the same app-data dir (e.g. next launch) recovers ON;
         // file-independent recovery is proven in the consent module's tests.
         state.load_kimi_usage_consent();
-        assert!(state.get_kimi_usage_consent(), "reload keeps persisted true");
+        assert!(
+            state.get_kimi_usage_consent(),
+            "reload keeps persisted true"
+        );
 
         state.set_kimi_usage_consent(false).expect("persist off");
         assert!(!state.get_kimi_usage_consent());
@@ -620,10 +713,7 @@ mod tests {
             session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
-        assert!(
-            write.is_err(),
-            "shutdown should have reaped the burner PTY"
-        );
+        assert!(write.is_err(), "shutdown should have reaped the burner PTY");
     }
 
     #[test]

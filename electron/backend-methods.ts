@@ -37,7 +37,11 @@ const backendMethods = new Set([
   'discard_file',
 ])
 
-const e2eBackendMethods = new Set(['list_active_pty_sessions'])
+const e2eBackendMethods = new Set([
+  'list_active_pty_sessions',
+  'e2e_agent_bridge_info',
+  'e2e_seed_live_agent',
+])
 
 interface BackendMethodOptions {
   allowE2eMethods?: boolean

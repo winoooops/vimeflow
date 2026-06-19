@@ -88,7 +88,7 @@ impl AgentBindings {
                 let adapter: Arc<ClaudeCodeAdapter> = Arc::new(ClaudeCodeAdapter);
                 Ok(Self {
                     agent_type: ctx.agent_type,
-                    locator: Arc::new(ClaudeStatusFileLocator),
+                    locator: Arc::new(ClaudeStatusFileLocator::new(ctx.app_data_dir.clone())),
                     decoder: adapter.clone(),
                     transcript_paths: adapter.clone(),
                     validator: adapter.clone(),
@@ -210,7 +210,8 @@ impl AgentBindings {
                 // refusal mode; today's behavior matches the
                 // pre-B' `<dyn AgentAdapter>::for_attach` (always
                 // returns Ok with a NoOp wrapper).
-                let adapter: Arc<NoOpAdapter> = Arc::new(NoOpAdapter::new(other));
+                let adapter: Arc<NoOpAdapter> =
+                    Arc::new(NoOpAdapter::new(other, ctx.app_data_dir.clone()));
                 Ok(Self {
                     agent_type: other,
                     locator: adapter.clone(),
@@ -239,6 +240,7 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::ClaudeCode,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
             proc_root: None,
         }
@@ -252,6 +254,7 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Codex,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: home,
             proc_root: None,
         }
@@ -265,6 +268,7 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Kimi,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: home,
             proc_root: None,
         }
@@ -278,6 +282,7 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Aider,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: None,
             proc_root: None,
         }
@@ -368,9 +373,8 @@ mod tests {
     // which asserts `CodexAdapter::with_locator` stores the exact `Arc`
     // it was handed rather than rebuilding one.
 
-    /// Claude's locator is the stateless `ClaudeStatusFileLocator` —
-    /// `locate(cwd, sid)` should return the same path shape the
-    /// pre-B' `ClaudeCodeAdapter::located_status_source` did, with
+    /// Claude's locator writes Vimeflow-owned status bridge files under
+    /// app data rather than the user's project tree, with
     /// `static_transcript_hint == None`.
     #[test]
     fn for_attach_claude_locator_returns_static_path() {
@@ -383,12 +387,9 @@ mod tests {
             .expect("locator infallible for claude");
         assert_eq!(
             located.status_path,
-            cwd.join(".vimeflow")
-                .join("sessions")
-                .join("sess-1")
-                .join("status.json"),
+            crate::terminal::bridge::session_status_file(&ctx.app_data_dir, &cwd, "sess-1"),
         );
-        assert_eq!(located.trust_root, cwd);
+        assert_eq!(located.trust_root, ctx.app_data_dir);
         assert_eq!(located.static_transcript_hint, None);
     }
 

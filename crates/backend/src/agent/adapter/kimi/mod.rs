@@ -110,7 +110,13 @@ impl TranscriptStreamer for KimiAdapter {
         let cwd = self.locator.resolved_cwd().or(cwd);
         // Hand the supervisor the locator so its status poll merges the fetched
         // plan-usage (and pushes it to idle sessions).
-        transcript::start_tailing(events, session_id, transcript_path, cwd, self.locator.clone())
+        transcript::start_tailing(
+            events,
+            session_id,
+            transcript_path,
+            cwd,
+            self.locator.clone(),
+        )
     }
 }
 
@@ -121,6 +127,7 @@ impl AgentAdapter for KimiAdapter {
 
     fn located_status_source(
         &self,
+        _app_data_dir: &Path,
         cwd: &Path,
         session_id: &str,
     ) -> Result<LocatedStatusSource, String> {

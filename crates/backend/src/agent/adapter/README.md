@@ -16,8 +16,8 @@ and the backend pushes a uniform stream of events:
 - `agent-cwd` — workspace cwd transitions reported by the agent
 - `test-run` — structured test-runner snapshots (cargo, vitest, …)
 
-The frontend never needs to know that Claude Code writes JSON to
-`.vimeflow/sessions/<sid>/status.json` while Codex writes JSONL to
+The frontend never needs to know that Claude Code writes JSON to a
+Vimeflow-owned app-data bridge status file while Codex writes JSONL to
 `~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*.jsonl` and indexes its sessions
 through `~/.codex/state.sqlite` + `~/.codex/logs.sqlite`.
 

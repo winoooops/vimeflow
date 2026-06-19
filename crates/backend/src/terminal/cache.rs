@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const SCHEMA_VERSION: u32 = 1;
@@ -82,6 +82,10 @@ impl SessionCache {
             path,
             data: Mutex::new(data),
         })
+    }
+
+    pub fn app_data_dir(&self) -> Option<PathBuf> {
+        self.path.parent().map(Path::to_path_buf)
     }
 
     /// Load from disk; if corrupted, move aside and start empty.
@@ -230,8 +234,8 @@ impl SessionCache {
             .parent()
             .ok_or_else(|| "cache path has no parent".to_string())?;
         fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)
-            .map_err(|e| format!("create tempfile: {e}"))?;
+        let mut tmp =
+            tempfile::NamedTempFile::new_in(parent).map_err(|e| format!("create tempfile: {e}"))?;
         let bytes = serde_json::to_vec_pretty(data).map_err(|e| format!("serialize: {e}"))?;
         tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
         tmp.persist(&self.path)

@@ -45,13 +45,15 @@ describe('isAllowedBackendMethod', () => {
 
   test('rejects e2e-only methods by default', () => {
     expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_agent_bridge_info')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_seed_live_agent')).toBe(false)
   })
 
-  test('allows e2e-only methods when explicitly enabled', () => {
-    expect(
-      isAllowedBackendMethod('list_active_pty_sessions', {
-        allowE2eMethods: true,
-      })
-    ).toBe(true)
+  test.each([
+    'list_active_pty_sessions',
+    'e2e_agent_bridge_info',
+    'e2e_seed_live_agent',
+  ])('allows e2e-only method %s when explicitly enabled', (method) => {
+    expect(isAllowedBackendMethod(method, { allowE2eMethods: true })).toBe(true)
   })
 })

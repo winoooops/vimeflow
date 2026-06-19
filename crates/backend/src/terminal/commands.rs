@@ -1,6 +1,6 @@
 //! PTY operation helpers consumed by the runtime-neutral backend state.
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -172,10 +172,10 @@ pub(crate) async fn spawn_pty_inner(
     // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
     let bridge_enabled = request.enable_agent_bridge && !request.ephemeral;
     let (bridge_files, bridge_cleanup_dir, shim_cleanup_dir) = if bridge_enabled {
-        let dir = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&request.session_id);
+        let app_data_dir = cache
+            .app_data_dir()
+            .ok_or_else(|| "session cache path has no app data parent".to_string())?;
+        let dir = super::bridge::session_bridge_dir(&app_data_dir, &cwd, &request.session_id);
         let cleanup_dir = (!dir.exists()).then_some(dir.clone());
         let shim_dir = dirs::cache_dir()
             .map(|c| c.join("vimeflow-shims"))
@@ -371,6 +371,9 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
+        bridge_dir: bridge_files
+            .as_ref()
+            .map(|f| f.agent_status_dir_path.to_string_lossy().to_string()),
         shim_dir: bridge_files
             .as_ref()
             .map(|f| f.shim_dir_path.to_string_lossy().to_string()),
@@ -559,15 +562,9 @@ pub(crate) fn kill_pty_inner(
 
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
-        let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&request.session_id);
-        let _ = super::bridge::cleanup_bridge_files(
-            &bridge_dir.to_string_lossy(),
-            session.shim_dir.as_deref(),
-        );
+        if let Some(bridge_dir) = session.bridge_dir.as_deref() {
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
+        }
     }
 
     // Clean up cache: remove from sessions map and session_order
@@ -667,12 +664,9 @@ pub(crate) fn kill_pty_inner(
                     // killed pane held the active flag. Otherwise preserve
                     // whatever active marker already exists on a survivor.
                     let needs_active_promotion = was_active
-                        && !sibling_ids.iter().any(|id| {
-                            data.groupings
-                                .get(id)
-                                .map(|g| g.active)
-                                .unwrap_or(false)
-                        });
+                        && !sibling_ids
+                            .iter()
+                            .any(|id| data.groupings.get(id).map(|g| g.active).unwrap_or(false));
 
                     for (idx, sibling_id) in sibling_ids.iter().enumerate() {
                         if let Some(grouping) = data.groupings.get_mut(sibling_id) {
@@ -1223,12 +1217,9 @@ async fn read_pty_output(
 
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
-        let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
-        let _ = super::bridge::cleanup_bridge_files(
-            &bridge_dir.to_string_lossy(),
-            session.shim_dir.as_deref(),
-        );
+        if let Some(bridge_dir) = session.bridge_dir.as_deref() {
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
+        }
     }
 
     Ok(())
@@ -1435,7 +1426,13 @@ mod tests {
         let cwd = temp_dir.path().join("burner-workspace");
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "burner-no-bridge".to_string();
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+        let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
+        let bridge_dir = crate::terminal::bridge::session_bridge_dir(
+            temp_dir.path(),
+            &canonical_cwd,
+            &session_id,
+        );
+        let workspace_bridge_dir = cwd.join(".vimeflow");
 
         let request = SpawnPtyRequest {
             session_id: session_id.clone(),
@@ -1451,6 +1448,10 @@ mod tests {
         assert!(
             !bridge_dir.exists(),
             "ephemeral PTY must not create a bridge dir even when enable_agent_bridge is true"
+        );
+        assert!(
+            !workspace_bridge_dir.exists(),
+            "ephemeral PTY must not create project-local .vimeflow"
         );
 
         let _ = state.remove(&session_id);
@@ -1526,11 +1527,12 @@ mod tests {
         let cwd = temp_dir.path().join("workspace with spaces and quote's");
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "bridge-live-test".to_string();
-        let status_path = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&session_id)
-            .join("status.json");
+        let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
+        let status_path = crate::terminal::bridge::session_status_file(
+            temp_dir.path(),
+            &canonical_cwd,
+            &session_id,
+        );
 
         let request = SpawnPtyRequest {
             session_id: session_id.clone(),
@@ -1547,6 +1549,10 @@ mod tests {
         assert!(
             status_path.parent().expect("status parent").exists(),
             "spawn_pty should create the bridge session directory"
+        );
+        assert!(
+            !cwd.join(".vimeflow").exists(),
+            "spawn_pty should not create project-local .vimeflow"
         );
 
         write_pty_inner(
@@ -1578,6 +1584,10 @@ mod tests {
             },
         )
         .expect("kill bridge test session");
+        assert!(
+            !status_path.parent().expect("status parent").exists(),
+            "kill_pty should clean up the app-data bridge session directory"
+        );
     }
 
     #[tokio::test]
@@ -1854,7 +1864,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_pty_caps_at_64_active_sessions() {
-        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
 
         let cwd_temp_dir = TempDir::new().expect("failed to create cwd temp dir");
         let cwd = cwd_temp_dir.path().to_string_lossy().to_string();
@@ -1884,11 +1894,12 @@ mod tests {
             enable_agent_bridge: true,
             ephemeral: false,
         };
-        let rejected_bridge_dir = cwd_temp_dir
-            .path()
-            .join(".vimeflow")
-            .join("sessions")
-            .join("session-65");
+        let canonical_cwd = std::fs::canonicalize(cwd_temp_dir.path()).expect("canonical cwd");
+        let rejected_bridge_dir = crate::terminal::bridge::session_bridge_dir(
+            temp_dir.path(),
+            &canonical_cwd,
+            "session-65",
+        );
 
         let result =
             spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request_65).await;
@@ -1901,6 +1912,10 @@ mod tests {
         assert!(
             !rejected_bridge_dir.exists(),
             "failed spawn should remove generated bridge directory"
+        );
+        assert!(
+            !cwd_temp_dir.path().join(".vimeflow").exists(),
+            "failed spawn should not leave project-local .vimeflow"
         );
 
         // Cleanup: remove all 64 sessions
@@ -1957,7 +1972,7 @@ mod tests {
 
     fn make_failing_kill_session() -> crate::terminal::state::ManagedSession {
         use crate::terminal::state::{ManagedSession, RingBuffer};
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
         let pty_system = native_pty_system();
         let pty_pair = pty_system
             .openpty(PtySize {
@@ -1979,6 +1994,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
@@ -2361,12 +2377,48 @@ mod tests {
                     layout: "grid3x2".into(),
                     working_directory: Some(cwd.clone()),
                     panes: vec![
-                        WorkspacePaneSnapshot { pty_id: "pty-a".into(), pane_id: "p0".into(), pane_index: 0, agent_type: "generic".into(), active: true },
-                        WorkspacePaneSnapshot { pty_id: "pty-b".into(), pane_id: "p1".into(), pane_index: 1, agent_type: "generic".into(), active: false },
-                        WorkspacePaneSnapshot { pty_id: "pty-c".into(), pane_id: "p2".into(), pane_index: 2, agent_type: "generic".into(), active: false },
-                        WorkspacePaneSnapshot { pty_id: "pty-d".into(), pane_id: "p3".into(), pane_index: 3, agent_type: "generic".into(), active: false },
-                        WorkspacePaneSnapshot { pty_id: "pty-e".into(), pane_id: "p4".into(), pane_index: 4, agent_type: "generic".into(), active: false },
-                        WorkspacePaneSnapshot { pty_id: "pty-f".into(), pane_id: "p5".into(), pane_index: 5, agent_type: "generic".into(), active: false },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-c".into(),
+                            pane_id: "p2".into(),
+                            pane_index: 2,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-d".into(),
+                            pane_id: "p3".into(),
+                            pane_index: 3,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-e".into(),
+                            pane_id: "p4".into(),
+                            pane_index: 4,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-f".into(),
+                            pane_id: "p5".into(),
+                            pane_index: 5,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
                     ],
                 }],
             },
