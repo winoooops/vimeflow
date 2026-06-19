@@ -3,6 +3,7 @@ import {
   LAYOUT_CYCLE,
   LAYOUT_IDS,
   LAYOUTS,
+  MAX_BUILTIN_PANE_COUNT,
   PaneLayoutRegistry,
   VISIBLE_LAYOUTS,
   autoShrinkLayoutFor,
@@ -96,5 +97,15 @@ describe('layoutRegistry', () => {
     expect(autoShrinkLayoutFor(3, 'custom:grid-2x2', registry)).toBe(
       'custom:grid-2x2'
     )
+  })
+
+  test('exposes the maximum builtin pane count', () => {
+    expect(MAX_BUILTIN_PANE_COUNT).toBe(6)
+  })
+
+  test('workspace layout with zero panes falls through to single', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2()])
+
+    expect(registry.autoShrinkLayoutFor(0, 'custom:grid-2x2')).toBe('single')
   })
 })

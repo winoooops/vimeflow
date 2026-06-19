@@ -76,6 +76,7 @@ export class PaneLayoutRegistry {
 
     if (
       current?.definition.source === 'workspace' &&
+      nextPaneCount >= 1 &&
       nextPaneCount <= current.capacity
     ) {
       return currentLayoutId
@@ -108,6 +109,11 @@ export class PaneLayoutRegistry {
 }
 
 export const BUILTIN_PANE_LAYOUT_REGISTRY = new PaneLayoutRegistry()
+
+/** Maximum pane count supported by any builtin layout (grid3x2). */
+export const MAX_BUILTIN_PANE_COUNT = Math.max(
+  ...BUILTIN_PANE_LAYOUT_REGISTRY.layouts.map((layout) => layout.capacity)
+)
 
 export const VISIBLE_LAYOUTS: readonly LayoutShape[] = LAYOUT_SPECS
 

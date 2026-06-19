@@ -2,7 +2,7 @@
 id: guard-branch-correctness
 category: correctness
 created: 2026-06-11
-last_updated: 2026-06-11
+last_updated: 2026-06-19
 ref_count: 0
 ---
 
@@ -23,4 +23,13 @@ Review every branch whose two arms return the same expression. Either remove the
 - **File:** `src/features/workspace/components/AgentStatusCard.tsx` L81-85
 - **Finding:** `normalizeShellName` branched on `KNOWN_SHELLS.has(stripped)` but both the `true` and `false` arms returned `stripped`. Unknown shells such as `nushell` or a company wrapper were passed directly to `shellCheatsheetUrl`, producing a `https://cheat.sh/<name>` link for a topic cheat.sh does not populate.
 - **Fix:** Changed the fallback arm to return the `'shell'` sentinel, which `CHEATSHEET_TOPIC` maps to the populated POSIX `sh` cheatsheet topic. Added a regression test for an unknown shell path.
+- **Commit:** same commit as this entry
+
+### 2. Workspace-source auto-shrink guard implicitly includes zero panes
+
+- **Source:** github-claude | PR #546 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/layout-registry/layoutRegistry.ts` L77-82
+- **Finding:** `autoShrinkLayoutFor` returned the current custom layout for every `nextPaneCount <= current.capacity`, including `0`. The builtin `nextPaneCount <= 1 -> 'single'` guard ran only after the workspace early-return, so a caller relying on `autoShrinkLayoutFor(0, 'custom:X')` returning `'single'` would silently get the custom id instead.
+- **Fix:** Changed the workspace early-return condition to `nextPaneCount >= 1 && nextPaneCount <= current.capacity` so the zero-pane case falls through to `'single'` explicitly. Added a regression test for `autoShrinkLayoutFor(0, 'custom:grid-2x2')`.
 - **Commit:** same commit as this entry

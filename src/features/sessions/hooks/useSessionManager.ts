@@ -17,6 +17,8 @@ import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import {
   PaneLayoutRegistry,
+  isCustomPaneLayoutId,
+  MAX_BUILTIN_PANE_COUNT,
   type PaneLayoutDefinition,
 } from '../../terminal/layout-registry'
 import type {
@@ -263,10 +265,58 @@ export const useSessionManager = (
     () => new PaneLayoutRegistry(customPaneLayouts),
     [customPaneLayouts]
   )
+  const layoutRegistryRef = useRef(layoutRegistry)
+  layoutRegistryRef.current = layoutRegistry
 
   const setCustomPaneLayouts = useCallback(
     (nextCustomPaneLayouts: readonly PaneLayoutDefinition[]): void => {
-      const nextRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+      // Custom layouts that support more panes than any builtin layout must be
+      // preserved while sessions still depend on them. Otherwise
+      // autoShrinkLayoutFor falls back to grid3x2, and the backend durable
+      // repair caps non-custom layouts at six panes — silently dropping extra
+      // panes on the next save/reload.
+      const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+
+      const neededLayoutIds = new Set(
+        sessionsRef.current
+          .filter(
+            (session) =>
+              isCustomPaneLayoutId(session.layout) &&
+              session.panes.length > MAX_BUILTIN_PANE_COUNT
+          )
+          .map((session) => session.layout)
+      )
+
+      const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
+        (layout) => {
+          if (!neededLayoutIds.has(layout.id)) {
+            return false
+          }
+
+          const dependentPaneCount = Math.max(
+            ...sessionsRef.current
+              .filter((session) => session.layout === layout.id)
+              .map((session) => session.panes.length)
+          )
+
+          const candidateFits =
+            candidateRegistry.hasLayoutId(layout.id) &&
+            candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+
+          return !candidateFits
+        }
+      )
+
+      const preservedIds = new Set(preservedLayouts.map((layout) => layout.id))
+
+      const mergedCustomPaneLayouts = [
+        ...nextCustomPaneLayouts.filter(
+          (layout) => !preservedIds.has(layout.id)
+        ),
+        ...preservedLayouts,
+      ]
+
+      const nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
 
       setCustomPaneLayoutsState(nextRegistry.customLayouts)
       setSessions((prev) =>

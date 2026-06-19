@@ -498,3 +498,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The destructuring default `customPaneLayouts = []` created a new array every time callers omitted the option. Because `customPaneLayouts` was listed in the `useMemo` dependency array, the workspace shape and its structural JSON signature were recomputed on every render even when the semantic input had not changed.
 - **Fix:** Introduced a module-scope `EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []` constant and used it as the destructuring default. The array reference is now stable across renders, so omitted layouts no longer trigger `buildWorkspaceShape` and `structuralSignature` recomputation.
 - **Commit:** same commit as this entry
+
+### 52. LayoutSwitcher rebuilds layout lookup Map on every render
+
+- **Source:** github-claude | PR #546 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx` L33-37
+- **Finding:** `LayoutSwitcher` created `const layoutById = new Map(layouts.map(...))` and `const layoutIds = layouts.map(...)` on every render. Because the component re-renders on every active-session change, fresh Map and array references prevented any downstream `React.memo` or `useMemo` that depended on those identities from firing.
+- **Fix:** Wrapped both `layoutIds` and `layoutById` in `useMemo(() => ..., [layouts])` so the references stay stable across unrelated re-renders.
+- **Commit:** same commit as this entry

@@ -53,6 +53,45 @@ const shadowSingleCustomLayout = (): PaneLayoutDefinition => ({
   title: 'Shadow single',
 })
 
+const customGrid4x2 = (): PaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:grid-4x2',
+  title: 'Custom grid 4x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+      { id: 'c2', units: 12 },
+      { id: 'c3', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 2, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 3, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p4', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p5', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p6', rect: { col: 2, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p7', rect: { col: 3, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: [
+    'slot:p0',
+    'slot:p1',
+    'slot:p2',
+    'slot:p3',
+    'slot:p4',
+    'slot:p5',
+    'slot:p6',
+    'slot:p7',
+  ],
+})
+
 const mockListen = vi.hoisted(() =>
   vi.fn(
     (
@@ -5281,6 +5320,113 @@ describe('useSessionManager', () => {
 
       expect(result.current.customPaneLayouts).toEqual([])
       expect(result.current.sessions[0].layout).toBe('vsplit')
+    })
+
+    test('removing an over-capacity custom layout preserves it while sessions depend on it', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      act(() => result.current.setCustomPaneLayouts([]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
+    })
+
+    test('rejected replacement for an over-capacity custom layout preserves the old definition', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      const rejectedReplacement: PaneLayoutDefinition = {
+        ...largeLayout,
+        title: '',
+      }
+
+      act(() => result.current.setCustomPaneLayouts([rejectedReplacement]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
+    })
+
+    test('under-capacity replacement for an over-capacity custom layout preserves the old definition', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+      const smallLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      const smallReplacement: PaneLayoutDefinition = {
+        ...smallLayout,
+        id: 'custom:grid-4x2',
+      }
+
+      act(() => result.current.setCustomPaneLayouts([smallReplacement]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
     })
 
     test('addPane spawns in the session cwd and appends an active pane', async () => {

@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { useMemo, type ReactElement, type ReactNode } from 'react'
 import type { PaneLayoutId } from '../../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
@@ -30,8 +30,12 @@ export const LayoutSwitcher = ({
   onPick,
   trailing = undefined,
 }: LayoutSwitcherProps): ReactElement => {
-  const layoutIds = layouts.map((layout) => layout.id)
-  const layoutById = new Map(layouts.map((layout) => [layout.id, layout]))
+  const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
+
+  const layoutById = useMemo(
+    () => new Map(layouts.map((layout) => [layout.id, layout])),
+    [layouts]
+  )
 
   const normalizedVisibleLayoutIds = layoutIds.filter(
     (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)

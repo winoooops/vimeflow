@@ -2,6 +2,7 @@ export {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
   LAYOUTS,
+  MAX_BUILTIN_PANE_COUNT,
   PaneLayoutRegistry,
   VISIBLE_LAYOUTS,
   autoShrinkLayoutFor,
