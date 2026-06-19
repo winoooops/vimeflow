@@ -306,7 +306,7 @@ describe('BrowserPane', () => {
     let frameCallback: FrameRequestCallback | null = null
     let nextFrameId = 1
     let intervalCallback: (() => void) | null = null
-    let intervalId: number | undefined
+    let intervalId: ReturnType<typeof window.setInterval> | undefined
     let intervalCleared = false
 
     const disconnectSpy = vi
@@ -334,12 +334,12 @@ describe('BrowserPane', () => {
           handler: unknown,
           delay?: number,
           ...rest: unknown[]
-        ): number => {
+        ): ReturnType<typeof window.setInterval> => {
           const id = originalSetInterval(
             handler as TimerHandler,
             delay,
             ...rest
-          )
+          ) as unknown as ReturnType<typeof window.setInterval>
           // Capture only the post-idle polling interval (250 ms) used by the
           // pane; let other intervals (e.g. waitFor polling) delegate to the
           // real timer so earlier waitFor calls can retry.
@@ -360,7 +360,7 @@ describe('BrowserPane', () => {
         if (id === intervalId) {
           intervalCleared = true
         }
-        originalClearInterval(id as number)
+        originalClearInterval(id as ReturnType<typeof window.setInterval>)
       })
 
     try {

@@ -77,7 +77,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 41       | 13   | 2026-06-17   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 22       | 9    | 2026-06-19   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 24       | 10   | 2026-06-19   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 16       | 3    | 2026-06-15   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 20       | 1    | 2026-06-18   |
@@ -92,7 +92,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 4        | 1    | 2026-06-19   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 5        | 2    | 2026-06-19   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 7        | 3    | 2026-06-19   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |

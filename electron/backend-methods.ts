@@ -43,6 +43,7 @@ const e2eBackendMethods = new Set([
   'e2e_seed_live_agent',
   'e2e_start_codex_watcher',
   'e2e_start_kimi_watcher',
+  'e2e_emit_agent_status',
 ])
 
 interface BackendMethodOptions {

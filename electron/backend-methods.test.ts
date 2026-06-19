@@ -49,6 +49,7 @@ describe('isAllowedBackendMethod', () => {
     expect(isAllowedBackendMethod('e2e_seed_live_agent')).toBe(false)
     expect(isAllowedBackendMethod('e2e_start_codex_watcher')).toBe(false)
     expect(isAllowedBackendMethod('e2e_start_kimi_watcher')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_emit_agent_status')).toBe(false)
   })
 
   test.each([
@@ -57,6 +58,7 @@ describe('isAllowedBackendMethod', () => {
     'e2e_seed_live_agent',
     'e2e_start_codex_watcher',
     'e2e_start_kimi_watcher',
+    'e2e_emit_agent_status',
   ])('allows e2e-only method %s when explicitly enabled', (method) => {
     expect(isAllowedBackendMethod(method, { allowE2eMethods: true })).toBe(true)
   })

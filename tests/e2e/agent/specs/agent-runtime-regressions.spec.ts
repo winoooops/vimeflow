@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { clickBySelector } from '../../shared/actions.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -17,45 +18,6 @@ interface E2eAgentBridgeInfo {
   statusFile: string | null
   shimDir: string | null
   agentType: E2eAgentType | null
-}
-
-interface AgentStatusPayload {
-  sessionId: string
-  agentSessionId: string
-  modelId: string
-  modelDisplayName: string
-  version: string
-  contextWindow: {
-    usedPercentage: number
-    remainingPercentage: number
-    contextWindowSize: number
-    totalInputTokens: number
-    totalOutputTokens: number
-    currentUsage: {
-      inputTokens: number
-      outputTokens: number
-      cacheCreationInputTokens: number
-      cacheReadInputTokens: number
-    }
-  }
-  cost: {
-    totalCostUsd: number
-    totalDurationMs: number
-    totalApiDurationMs: number
-    totalLinesAdded: number
-    totalLinesRemoved: number
-  }
-  rateLimits: {
-    fiveHour: {
-      usedPercentage: number
-      resetsAt: number
-    }
-    sevenDay: {
-      usedPercentage: number
-      resetsAt: number
-    }
-  }
-  usageFetched: boolean
 }
 
 interface AgentStatusScenario {
@@ -173,63 +135,6 @@ const createClaudeStatusline = (): string => {
         resets_at: reset + 86_400,
       },
     },
-  })
-}
-
-const createAgentStatusPayload = (
-  sessionId: string,
-  scenario: AgentStatusScenario
-): AgentStatusPayload => {
-  const reset = Math.floor(Date.now() / 1000) + 3600
-
-  return {
-    sessionId,
-    agentSessionId: `e2e-${scenario.agentType}-session`,
-    modelId: scenario.modelId,
-    modelDisplayName: scenario.modelDisplayName,
-    version: 'e2e',
-    contextWindow: {
-      usedPercentage: 31,
-      remainingPercentage: 69,
-      contextWindowSize: 200_000,
-      totalInputTokens: 62_000,
-      totalOutputTokens: 5_000,
-      currentUsage: {
-        inputTokens: 1100,
-        outputTokens: 250,
-        cacheCreationInputTokens: 150,
-        cacheReadInputTokens: 650,
-      },
-    },
-    cost: {
-      totalCostUsd: 0.91,
-      totalDurationMs: 95_000,
-      totalApiDurationMs: 70_000,
-      totalLinesAdded: 8,
-      totalLinesRemoved: 2,
-    },
-    rateLimits: {
-      fiveHour: {
-        usedPercentage: 19,
-        resetsAt: reset,
-      },
-      sevenDay: {
-        usedPercentage: 27,
-        resetsAt: reset + 86_400,
-      },
-    },
-    usageFetched: scenario.usageFetched ?? false,
-  }
-}
-
-const emitAgentStatus = async (
-  payload: AgentStatusPayload,
-  turns: number
-): Promise<void> => {
-  await invokeBackend<null>('e2e_emit_agent_status', {
-    sessionId: payload.sessionId,
-    status: payload,
-    numTurns: turns,
   })
 }
 
@@ -534,56 +439,92 @@ describe('Agent runtime regressions', () => {
   })
 
   it('ingests app-data status files through the watcher into the sidebar card and status panel', async () => {
-    const ptyId = await waitForVisiblePtyId()
-    await seedClaudeAgent(ptyId)
+    const initialPtyId = await waitForVisiblePtyId()
     const cardSelector = '[data-testid="sidebar-agent-status-card"]'
 
-    await invokeBackend<null>('start_agent_watcher', { sessionId: ptyId })
-    const info = await invokeBackend<E2eAgentBridgeInfo>(
-      'e2e_agent_bridge_info',
-      { sessionId: ptyId }
-    )
-
-    assert.equal(info.agentType, 'claudeCode')
-    assert.ok(info.statusFile, 'statusFile should be populated')
-    assert.ok(
-      path
-        .relative(info.appDataDir, info.statusFile)
-        .split(path.sep)
-        .includes('runtime'),
-      `status file should live under the app-data runtime bucket: ${info.statusFile}`
-    )
-
-    fs.mkdirSync(path.dirname(info.statusFile), { recursive: true })
-    fs.writeFileSync(info.statusFile, createClaudeStatusline(), 'utf8')
-    await emitAgentTurn(ptyId, 4)
-
+    // Spawn a dedicated bridge-enabled PTY through the frontend session manager
+    // so the test controls its own precondition and the UI observes it as active.
+    await clickBySelector('button[aria-label="New session"]')
+    let ptyId: string | undefined
     await browser.waitUntil(
       async () => {
-        const cardText = await textForSelector(cardSelector)
-
-        return (
-          cardText.includes('Claude Sonnet 4.5') &&
-          cardText.includes('4 turns') &&
-          !cardText.includes('No active agent')
-        )
+        const visible = await waitForVisiblePtyId()
+        if (visible !== initialPtyId) {
+          ptyId = visible
+          return true
+        }
+        return false
       },
       {
         timeout: 15_000,
-        interval: 500,
-        timeoutMsg:
-          'sidebar agent status card did not render watcher-ingested metrics',
+        interval: 250,
+        timeoutMsg: 'new bridge-enabled session did not become the visible PTY',
       }
     )
 
-    const panel = await $('[data-testid="agent-status-panel"]')
-    await panel.waitForDisplayed({ timeout: 10_000 })
-    await (
-      await $('[data-testid="agent-status-panel-body-content"]')
-    ).waitForDisplayed({ timeout: 10_000 })
+    assert.ok(ptyId, 'spawned PTY id should be resolved')
 
-    const cardText = await textForSelector(cardSelector)
-    assert.equal(cardText.includes('No active agent'), false)
+    try {
+      await seedClaudeAgent(ptyId)
+
+      await invokeBackend<null>('start_agent_watcher', { sessionId: ptyId })
+      const info = await invokeBackend<E2eAgentBridgeInfo>(
+        'e2e_agent_bridge_info',
+        { sessionId: ptyId }
+      )
+
+      assert.equal(info.agentType, 'claudeCode')
+      assert.ok(info.statusFile, 'statusFile should be populated')
+      assert.ok(
+        path
+          .relative(info.appDataDir, info.statusFile)
+          .split(path.sep)
+          .includes('runtime'),
+        `status file should live under the app-data runtime bucket: ${info.statusFile}`
+      )
+
+      fs.mkdirSync(path.dirname(info.statusFile), { recursive: true })
+      fs.writeFileSync(info.statusFile, createClaudeStatusline(), 'utf8')
+      await emitAgentTurn(ptyId, 4)
+
+      await browser.waitUntil(
+        async () => {
+          const cardText = await textForSelector(cardSelector)
+
+          return (
+            cardText.includes('Claude Sonnet 4.5') &&
+            cardText.includes('4 turns') &&
+            !cardText.includes('No active agent')
+          )
+        },
+        {
+          timeout: 15_000,
+          interval: 500,
+          timeoutMsg:
+            'sidebar agent status card did not render watcher-ingested metrics',
+        }
+      )
+
+      const panel = await $('[data-testid="agent-status-panel"]')
+      await panel.waitForDisplayed({ timeout: 10_000 })
+      await (
+        await $('[data-testid="agent-status-panel-body-content"]')
+      ).waitForDisplayed({ timeout: 10_000 })
+
+      const cardText = await textForSelector(cardSelector)
+      assert.equal(cardText.includes('No active agent'), false)
+    } finally {
+      await browser.execute(() => {
+        const tabs = Array.from(
+          document.querySelectorAll<HTMLElement>('[data-testid="session-tab"]')
+        )
+        const latestTab = tabs[tabs.length - 1]
+        const closeButton = latestTab?.querySelector<HTMLButtonElement>(
+          '[data-testid="close-tab-button"]'
+        )
+        closeButton?.click()
+      })
+    }
   })
 
   it('renders seeded Codex and Kimi statuses in the sidebar card and status panel', async () => {

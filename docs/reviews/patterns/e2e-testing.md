@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-06-19
-ref_count: 9
+ref_count: 10
 ---
 
 # E2E Testing
@@ -244,4 +244,22 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `electron/backend-methods.ts`, `electron/backend-methods.test.ts`
 - **Finding:** The Rust IPC router adds `e2e_start_codex_watcher` and `e2e_start_kimi_watcher`, and `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts` calls both via `window.__VIMEFLOW_E2E__.invokeBackend`. `electron/backend-methods.ts` only allows `list_active_pty_sessions`, `e2e_agent_bridge_info`, and `e2e_seed_live_agent` when `allowE2eMethods` is enabled, so the preload gate rejects both calls.
 - **Fix:** Added `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` to `e2eBackendMethods` in `electron/backend-methods.ts` and covered them in `electron/backend-methods.test.ts` for default denial and explicit E2E enablement.
+- **Commit:** same commit as this entry
+
+### 23. e2e_emit_agent_status missing from Electron preload allowlist
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `electron/backend-methods.ts`, `electron/backend-methods.test.ts`
+- **Finding:** The Rust IPC router added `e2e_emit_agent_status` behind `#[cfg(feature = "e2e-test")]`, and the new E2E spec defined a helper that called `invokeBackend('e2e_emit_agent_status', ...)`. The PR extended `e2eBackendMethods` for four other new E2E probe methods but omitted `e2e_emit_agent_status`, so the Electron main process would reject the call with "Method not allowed" before it reached Rust.
+- **Fix:** Added `e2e_emit_agent_status` to `e2eBackendMethods` and covered it in both the default-denial test and the `allowE2eMethods` `test.each` block in `electron/backend-methods.test.ts`.
+- **Commit:** same commit as this entry
+
+### 24. Watcher E2E test assumes ambient PTY has agent bridge enabled
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The "ingests app-data status files" scenario called `waitForVisiblePtyId()` to reuse the app's initial terminal PTY, then asserted `info.statusFile` was populated. `statusFile` is only non-null when the PTY was spawned with `enable_agent_bridge: true`. The assertion therefore depended on the E2E launch configuration rather than the test itself, and a violation would fail with a confusing "statusFile should be populated" message.
+- **Fix:** Replaced the ambient-PTY reuse with a frontend-driven new session (`button[aria-label="New session"]`), waited for the visible PTY to change, and used that dedicated bridge-enabled session for the watcher/UI assertions. Added cleanup that closes the spawned tab after the scenario.
 - **Commit:** same commit as this entry
