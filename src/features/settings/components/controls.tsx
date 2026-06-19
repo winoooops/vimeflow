@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import type {
   GhostButtonProps,
   PaneTitleProps,
@@ -53,6 +53,10 @@ export const Row = ({
 
 export const PaneTitle = ({ title, sub }: PaneTitleProps): ReactElement => {
   const [openError, setOpenError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setOpenError(null)
+  }, [title])
 
   const handleOpenFile = (): void => {
     setOpenError(null)

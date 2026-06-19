@@ -118,6 +118,31 @@ describe('PaneTitle', () => {
     )
   })
 
+  test('clears the open error when the title changes', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockRejectedValue(new Error('failed'))
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    const { rerender } = render(<PaneTitle title="General" />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    rerender(<PaneTitle title="Appearance" />)
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   afterEach(() => {
     delete window.vimeflow
   })
