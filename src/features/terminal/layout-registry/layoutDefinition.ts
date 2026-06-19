@@ -133,6 +133,13 @@ export const getPaneLayoutCapacity = (
   definition: PaneLayoutDefinition
 ): number => definition.slots.length
 
+/**
+ * Returns the raw track units from a layout definition. For prebuilt layouts
+ * these are normalized to the same scale as the canonical default ratios; for
+ * custom layouts they reflect the values supplied by the caller. Callers that
+ * need the canonical default ratios for drag-state initialization should read
+ * `layout.defaultRatios` instead.
+ */
 export const getPaneLayoutRatios = (
   definition: PaneLayoutDefinition
 ): LayoutRatios => ({

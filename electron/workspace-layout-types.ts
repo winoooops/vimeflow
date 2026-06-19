@@ -43,7 +43,37 @@ export interface PersistedBrowserPane {
 
 export type PersistedWorkspacePane = PersistedShellPane | PersistedBrowserPane
 
-export type PersistedPaneLayoutDefinition = Record<string, unknown>
+export interface PersistedTrackSpec {
+  readonly id: string
+  readonly units: number
+  readonly minPx?: number
+}
+
+export interface PersistedPaneSlotRect {
+  readonly col: number
+  readonly row: number
+  readonly colSpan: number
+  readonly rowSpan: number
+}
+
+export interface PersistedPaneSlotSpec {
+  readonly id: string
+  readonly rect: PersistedPaneSlotRect
+  readonly accepts?: readonly string[]
+}
+
+export interface PersistedPaneLayoutDefinition {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly title: string
+  readonly source: 'builtin' | 'workspace'
+  readonly tracks: {
+    readonly columns: readonly PersistedTrackSpec[]
+    readonly rows: readonly PersistedTrackSpec[]
+  }
+  readonly slots: readonly PersistedPaneSlotSpec[]
+  readonly addOrder: readonly string[]
+}
 
 export interface PersistedWorkspaceSession {
   id: string

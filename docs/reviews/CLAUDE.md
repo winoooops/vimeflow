@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 15       | 12   | 2026-06-16   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 3    | 2026-06-17   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 11       | 9    | 2026-06-19   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 12       | 9    | 2026-06-19   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
@@ -94,7 +94,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 4        | 1    | 2026-06-19   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 6        | 3    | 2026-06-18   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 7        | 3    | 2026-06-19   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 5        | 4    | 2026-06-17   |

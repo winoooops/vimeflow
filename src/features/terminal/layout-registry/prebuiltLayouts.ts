@@ -52,8 +52,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'single',
     title: 'Single',
     tracks: {
-      columns: columns(24),
-      rows: rows(24),
+      columns: columns(1),
+      rows: rows(1),
     },
     slots: [slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 1 })],
   }),
@@ -61,8 +61,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'vsplit',
     title: 'Vertical split',
     tracks: {
-      columns: columns(12, 12),
-      rows: rows(24),
+      columns: columns(1, 1),
+      rows: rows(1),
     },
     slots: [
       slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 1 }),
@@ -73,8 +73,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'hsplit',
     title: 'Horizontal split',
     tracks: {
-      columns: columns(24),
-      rows: rows(12, 12),
+      columns: columns(1),
+      rows: rows(1, 1),
     },
     slots: [
       slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 1 }),
@@ -85,8 +85,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'threeRight',
     title: 'Main + 2 stack',
     tracks: {
-      columns: columns(14, 10),
-      rows: rows(12, 12),
+      columns: columns(1.4, 1),
+      rows: rows(1, 1),
     },
     slots: [
       slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 2 }),
@@ -98,8 +98,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'quad',
     title: 'Quad',
     tracks: {
-      columns: columns(12, 12),
-      rows: rows(12, 12),
+      columns: columns(1, 1),
+      rows: rows(1, 1),
     },
     slots: [
       slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 1 }),
@@ -112,8 +112,8 @@ export const PREBUILT_PANE_LAYOUTS_BY_ID: Record<
     id: 'grid3x2',
     title: '3x2 grid',
     tracks: {
-      columns: columns(8, 8, 8),
-      rows: rows(12, 12),
+      columns: columns(1, 1, 1),
+      rows: rows(1, 1),
     },
     slots: [
       slot(0, { col: 0, row: 0, colSpan: 1, rowSpan: 1 }),
