@@ -21,6 +21,13 @@ export type CustomPaneLayoutId = `custom:${string}`
 
 export type PaneLayoutId = LayoutId | CustomPaneLayoutId
 
+export type LayoutSlotId = `slot:${string}`
+
+export interface PanePlacement {
+  paneId: string
+  slotId: LayoutSlotId
+}
+
 export type PaneKind = 'shell' | 'browser'
 
 export interface Pane {
@@ -121,6 +128,12 @@ export interface Session {
   agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
   /** Per-session canvas layout. Builtin ids or validated workspace custom ids. */
   layout: PaneLayoutId
+  /**
+   * Optional explicit pane-to-layout-slot mapping. Older sessions and PTY-only
+   * restores omit this; render/persistence derive a compatible mapping from
+   * `panes[]` order and the layout's `addOrder`.
+   */
+  placements?: PanePlacement[]
   /** Session-scoped collapse state for the right agent activity panel.
    *  Shared by every pane so switching pane within a session never
    *  jumps the bar. UI-only: hydrated from localStorage by session id

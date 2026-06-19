@@ -89,6 +89,7 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
       id: 'ws-browser',
       projectId: 'proj-1',
       layout: 'single',
+      placements: [{ paneId: 'p0', slotId: 'slot:p0' }],
       workingDirectory: '/repo',
       active: true,
       open: true,
@@ -97,7 +98,11 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
     {
       id: 'ws-mixed',
       projectId: 'proj-1',
-      layout: 'vsplit',
+      layout: 'custom:main-side-stack',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:main' },
+        { paneId: 'p1', slotId: 'slot:side-top' },
+      ],
       workingDirectory: '/repo',
       active: false,
       open: true,

@@ -6,6 +6,7 @@ import {
 } from '../../terminal/layout-registry/layoutRegistry'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { isShellPane } from './paneKind'
+import { normalizePanePlacements } from './panePlacements'
 
 export { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
 
@@ -130,10 +131,21 @@ export const applyRemovePane = (
 
   const activePane = panes.find((pane) => pane.active)
 
+  const layout = autoShrinkLayoutFor(
+    panes.length,
+    currentLayoutId,
+    layoutRegistry
+  )
+
   const updated: Session = {
     ...session,
     panes,
-    layout: autoShrinkLayoutFor(panes.length, currentLayoutId, layoutRegistry),
+    layout,
+    placements: normalizePanePlacements(
+      panes,
+      layoutRegistry.getFallbackLayout(layout),
+      session.placements?.filter((placement) => placement.paneId !== paneId)
+    ),
     status: deriveShellSessionStatus(panes),
     agentType: activePane?.agentType ?? session.agentType,
   }

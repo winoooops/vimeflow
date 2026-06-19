@@ -88,10 +88,21 @@ pub struct WorkspaceSession {
     pub id: String,
     pub project_id: String,
     pub layout: String,
+    #[serde(default)]
+    pub placements: Vec<PanePlacement>,
     pub working_directory: String,
     pub active: bool,
     pub open: bool,
     pub panes: Vec<WorkspacePane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, ts(export))]
+pub struct PanePlacement {
+    pub pane_id: String,
+    pub slot_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -188,6 +199,30 @@ fn custom_layout_capacity(
 
 fn layout_capacity(layout: &str, custom_pane_layouts: &[PaneLayoutDefinition]) -> Option<usize> {
     builtin_layout_capacity(layout).or_else(|| custom_layout_capacity(custom_pane_layouts, layout))
+}
+
+fn builtin_layout_slot_ids(layout: &str) -> Option<Vec<String>> {
+    builtin_layout_capacity(layout).map(|capacity| {
+        (0..capacity)
+            .map(|index| format!("slot:p{index}"))
+            .collect()
+    })
+}
+
+fn custom_layout_slot_ids(
+    custom_pane_layouts: &[PaneLayoutDefinition],
+    layout: &str,
+) -> Option<Vec<String>> {
+    custom_pane_layouts
+        .iter()
+        .find(|definition| definition.id == layout)
+        .map(|definition| definition.add_order.clone())
+}
+
+fn layout_slot_ids(layout: &str, custom_pane_layouts: &[PaneLayoutDefinition]) -> Vec<String> {
+    builtin_layout_slot_ids(layout)
+        .or_else(|| custom_layout_slot_ids(custom_pane_layouts, layout))
+        .unwrap_or_else(|| vec!["slot:p0".to_string()])
 }
 
 fn layout_for_count(n: usize) -> &'static str {
@@ -384,6 +419,72 @@ fn pane_active(pane: &WorkspacePane) -> bool {
     }
 }
 
+fn pane_id(pane: &WorkspacePane) -> &str {
+    match pane {
+        WorkspacePane::Shell(s) => &s.pane_id,
+        WorkspacePane::Browser(b) => &b.pane_id,
+    }
+}
+
+fn repair_placements(
+    raw_placements: &[serde_json::Value],
+    panes: &[WorkspacePane],
+    layout: &str,
+    custom_pane_layouts: &[PaneLayoutDefinition],
+) -> Vec<PanePlacement> {
+    let pane_ids: std::collections::HashSet<String> =
+        panes.iter().map(|pane| pane_id(pane).to_string()).collect();
+    let slot_order = layout_slot_ids(layout, custom_pane_layouts);
+    let slot_ids: std::collections::HashSet<String> = slot_order.iter().cloned().collect();
+    let mut used_pane_ids = std::collections::HashSet::new();
+    let mut used_slot_ids = std::collections::HashSet::new();
+    let mut placements = Vec::new();
+
+    for raw in raw_placements {
+        let Some(pane_id) = str_field(raw, "paneId").filter(|id| pane_ids.contains(id)) else {
+            continue;
+        };
+        let Some(slot_id) =
+            str_field(raw, "slotId").filter(|id| id.starts_with("slot:") && slot_ids.contains(id))
+        else {
+            continue;
+        };
+        if used_pane_ids.contains(&pane_id) || used_slot_ids.contains(&slot_id) {
+            continue;
+        }
+
+        used_pane_ids.insert(pane_id.clone());
+        used_slot_ids.insert(slot_id.clone());
+        placements.push(PanePlacement { pane_id, slot_id });
+    }
+
+    let mut available_slot_ids = slot_order
+        .into_iter()
+        .filter(|slot_id| !used_slot_ids.contains(slot_id))
+        .collect::<Vec<_>>()
+        .into_iter();
+
+    for pane in panes {
+        let pane_id = pane_id(pane);
+        if used_pane_ids.contains(pane_id) {
+            continue;
+        }
+
+        let Some(slot_id) = available_slot_ids.next() else {
+            break;
+        };
+
+        used_pane_ids.insert(pane_id.to_string());
+        used_slot_ids.insert(slot_id.clone());
+        placements.push(PanePlacement {
+            pane_id: pane_id.to_string(),
+            slot_id,
+        });
+    }
+
+    placements
+}
+
 /// Lenient decode + repair (spec §2.2). Reads each field tolerantly from
 /// `raw` (never hard-fails on missing/wrong-typed values), then repairs into
 /// the strict model. `active_project_id` / `active_cwd` supply the defaults
@@ -472,6 +573,12 @@ pub fn repair_workspace_layout(
         if layout_capacity(&layout, &custom_pane_layouts).unwrap_or(1) < panes.len() {
             layout = layout_for_count(panes.len()).to_string();
         }
+        let raw_placements = rs
+            .get("placements")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let placements = repair_placements(&raw_placements, &panes, &layout, &custom_pane_layouts);
 
         // At most one active session in the loop (first active:true wins).
         // `open` is independent: it records Active-section membership, so many
@@ -491,6 +598,7 @@ pub fn repair_workspace_layout(
             id,
             project_id,
             layout,
+            placements,
             working_directory,
             active,
             open,
@@ -821,6 +929,16 @@ mod tests {
                 id: "s1".into(),
                 project_id: "p".into(),
                 layout: "vsplit".into(),
+                placements: vec![
+                    PanePlacement {
+                        pane_id: "p0".into(),
+                        slot_id: "slot:p0".into(),
+                    },
+                    PanePlacement {
+                        pane_id: "p1".into(),
+                        slot_id: "slot:p1".into(),
+                    },
+                ],
                 working_directory: "/w".into(),
                 active: true,
                 open: true,
@@ -857,6 +975,7 @@ mod tests {
         assert!(json.contains("\"historyIndex\":0"), "json: {json}");
         assert!(json.contains("\"kind\":\"shell\""), "json: {json}");
         assert!(json.contains("\"kind\":\"browser\""), "json: {json}");
+        assert!(json.contains("\"slotId\":\"slot:p1\""), "json: {json}");
         assert!(json.contains("\"open\":true"), "json: {json}");
         let back: WorkspaceLayoutStore = serde_json::from_str(&json).unwrap();
         assert_eq!(back, store);
@@ -1025,6 +1144,67 @@ mod tests {
 
         assert_eq!(store.sessions[0].layout, "custom:grid2x2");
         assert_eq!(store.sessions[0].panes.len(), 4);
+    }
+
+    #[test]
+    fn repairs_placements_against_layout_slots_and_pane_ids() {
+        let custom_layout = json!({
+            "schemaVersion": 1,
+            "id": "custom:main-side",
+            "title": "Main side",
+            "source": "workspace",
+            "tracks": {
+                "columns": [{ "id": "main", "units": 16 }, { "id": "side", "units": 8 }],
+                "rows": [{ "id": "top", "units": 12 }, { "id": "bottom", "units": 12 }]
+            },
+            "slots": [
+                { "id": "slot:main", "rect": { "col": 0, "row": 0, "colSpan": 1, "rowSpan": 2 }},
+                { "id": "slot:side-top", "rect": { "col": 1, "row": 0, "colSpan": 1, "rowSpan": 1 }},
+                { "id": "slot:side-bottom", "rect": { "col": 1, "row": 1, "colSpan": 1, "rowSpan": 1 }}
+            ],
+            "addOrder": ["slot:main", "slot:side-top", "slot:side-bottom"]
+        });
+        let store = repair_workspace_layout(
+            json!({
+              "version": 1,
+              "customPaneLayouts": [custom_layout],
+              "sessions": [{
+                "id": "s",
+                "projectId": "p",
+                "layout": "custom:main-side",
+                "workingDirectory": "/",
+                "active": true,
+                "open": true,
+                "placements": [
+                    { "paneId": "p1", "slotId": "slot:side-top" },
+                    { "paneId": "missing", "slotId": "slot:main" },
+                    { "paneId": "p0", "slotId": "slot:side-top" },
+                    { "paneId": "p2", "slotId": "slot:missing" }
+                ],
+                "panes": browser_panes_json(3)
+              }]
+            }),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(
+            store.sessions[0].placements,
+            vec![
+                PanePlacement {
+                    pane_id: "p1".into(),
+                    slot_id: "slot:side-top".into(),
+                },
+                PanePlacement {
+                    pane_id: "p0".into(),
+                    slot_id: "slot:main".into(),
+                },
+                PanePlacement {
+                    pane_id: "p2".into(),
+                    slot_id: "slot:side-bottom".into(),
+                },
+            ]
+        );
     }
 
     #[test]
@@ -1282,6 +1462,10 @@ mod tests {
                 id: "s".into(),
                 project_id: "proj".into(),
                 layout: "single".into(),
+                placements: vec![PanePlacement {
+                    pane_id: "p0".into(),
+                    slot_id: "slot:p0".into(),
+                }],
                 working_directory: "/".into(),
                 active: true,
                 open: true,
@@ -1319,6 +1503,10 @@ mod tests {
                     id: "s".into(),
                     project_id: "proj".into(),
                     layout: "single".into(),
+                    placements: vec![PanePlacement {
+                        pane_id: "p0".into(),
+                        slot_id: "slot:p0".into(),
+                    }],
                     working_directory: "/".into(),
                     active: true,
                     open: true,
@@ -1363,6 +1551,10 @@ mod tests {
                 id: "s".into(),
                 project_id: "proj".into(),
                 layout: "single".into(),
+                placements: vec![PanePlacement {
+                    pane_id: "p0".into(),
+                    slot_id: "slot:p0".into(),
+                }],
                 working_directory: "/".into(),
                 active: true,
                 open: true,
@@ -1420,6 +1612,10 @@ mod tests {
                 id: "s".into(),
                 project_id: "proj".into(),
                 layout: "single".into(),
+                placements: vec![PanePlacement {
+                    pane_id: "p0".into(),
+                    slot_id: "slot:p0".into(),
+                }],
                 working_directory: "/".into(),
                 active: true,
                 open: true,

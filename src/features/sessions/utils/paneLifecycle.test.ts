@@ -308,6 +308,35 @@ describe('applyRemovePane', () => {
     expect(result.newActivePtyId).toBeUndefined()
   })
 
+  test('drops removed pane placement and reflows against the next layout', () => {
+    const result = applyRemovePane(
+      [
+        mockSession({
+          layout: 'quad',
+          placements: [
+            { paneId: 'p0', slotId: 'slot:p3' },
+            { paneId: 'p1', slotId: 'slot:p0' },
+            { paneId: 'p2', slotId: 'slot:p1' },
+          ],
+          panes: [
+            mockPane({ id: 'p0', ptyId: 'pty-0', active: true }),
+            mockPane({ id: 'p1', ptyId: 'pty-1', active: false }),
+            mockPane({ id: 'p2', ptyId: 'pty-2', active: false }),
+          ],
+        }),
+      ],
+      's0',
+      'p1',
+      'quad'
+    )
+
+    expect(result.sessions[0].layout).toBe('vsplit')
+    expect(result.sessions[0].placements).toEqual([
+      { paneId: 'p2', slotId: 'slot:p1' },
+      { paneId: 'p0', slotId: 'slot:p0' },
+    ])
+  })
+
   test('closing in quad shrinks to threeRight', () => {
     const result = applyRemovePane(
       [

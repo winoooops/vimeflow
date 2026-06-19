@@ -471,6 +471,25 @@ describe('SplitView - multi-pane layouts', () => {
     expect(slots[3]).toHaveStyle({ gridArea: 'p3' })
   })
 
+  test('explicit placements choose grid areas independently of pane order', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p3' })
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[1]).toHaveStyle({ gridArea: 'p0' })
+  })
+
   test('focus marker follows pane.active and inactive panes are dimmed', () => {
     render(
       <SplitView
