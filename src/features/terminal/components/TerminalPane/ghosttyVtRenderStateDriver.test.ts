@@ -1,0 +1,148 @@
+// cspell:ignore ghostty libghostty
+import { describe, expect, test, vi } from 'vitest'
+import type { GhosttyByteParserAdapterInput } from './ghosttyParserEngine'
+import { createGhosttyParserEngine } from './ghosttyParserEngine'
+import {
+  createGhosttyVtRenderStateByteParserAdapter,
+  type GhosttyVtRenderStateDriver,
+} from './ghosttyVtRenderStateDriver'
+import type { GhosttyVtRenderSnapshot } from './ghosttyVtRenderSnapshot'
+
+const createInput = (
+  bytes: Uint8Array,
+  emitEvent = vi.fn()
+): GhosttyByteParserAdapterInput => ({
+  bytes,
+  decodedText: 'decoded fallback',
+  output: {
+    offsetStart: 13,
+    byteLen: bytes.length,
+    phase: 'live',
+  },
+  emitEvent,
+})
+
+describe('ghosttyVtRenderStateDriver', () => {
+  test('bridges driver-owned render state into replace snapshot output', () => {
+    const writeBytes = vi.fn()
+
+    const readSnapshot = vi.fn(() => ({
+      rows: ['prompt', 'output'],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 3,
+      },
+    }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(() => ({
+      writeBytes,
+      readSnapshot,
+    }))
+
+    const bytes = new Uint8Array([0x70, 0x74, 0x79])
+
+    expect(adapter.parseBytes(createInput(bytes))).toEqual({
+      visibleText: 'prompt\noutput',
+      displayDelta: {
+        operations: [
+          {
+            type: 'replace',
+            text: 'prompt\noutput',
+            cursorOffset: 10,
+          },
+        ],
+      },
+    })
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+    expect(readSnapshot).toHaveBeenCalledOnce()
+  })
+
+  test('can be injected behind the Ghostty parser engine byte path', () => {
+    const writeBytes = vi.fn()
+
+    const byteParserAdapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot: () => ({
+          rows: ['vt prompt'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+        }),
+      })
+    )
+
+    const parserEngine = createGhosttyParserEngine({ byteParserAdapter })
+    const bytes = new Uint8Array([0xff, 0xfe])
+
+    expect(
+      parserEngine.parseInput({
+        inputMode: 'bytes',
+        bytes,
+        text: 'lossy fallback',
+        output: null,
+      })
+    ).toEqual({
+      visibleText: 'vt prompt',
+      displayDelta: {
+        operations: [
+          {
+            type: 'replace',
+            text: 'vt prompt',
+            cursorOffset: 2,
+          },
+        ],
+      },
+    })
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+  })
+
+  test('keeps cwd effects on the parser event path', () => {
+    const adapter = createGhosttyVtRenderStateByteParserAdapter((effects) => ({
+      writeBytes: (): void => {
+        effects.onCwdChange('file://localhost/tmp/render-state')
+      },
+      readSnapshot: (): GhosttyVtRenderSnapshot => ({
+        rows: ['rendered'],
+      }),
+    }))
+
+    const emitEvent = vi.fn()
+
+    adapter.parseBytes(createInput(new Uint8Array([0x1b]), emitEvent))
+
+    expect(emitEvent).toHaveBeenCalledWith({
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/render-state',
+      output: {
+        offsetStart: 13,
+        byteLen: 1,
+        phase: 'live',
+      },
+    })
+  })
+
+  test('forwards lifecycle to the render-state driver', () => {
+    const reset = vi.fn()
+    const dispose = vi.fn()
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(() => ({
+      writeBytes: vi.fn(),
+      readSnapshot: (): GhosttyVtRenderSnapshot => ({
+        rows: [],
+      }),
+      reset,
+      dispose,
+    }))
+
+    adapter.reset?.()
+    adapter.dispose?.()
+    adapter.dispose?.()
+    adapter.reset?.()
+
+    expect(reset).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+})
