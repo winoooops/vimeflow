@@ -2,6 +2,7 @@ import type {
   TerminalOutputInputMode,
   TerminalOutputChunk,
   TerminalParser,
+  TerminalParserEvent,
   TerminalParserOutputContext,
   TerminalRendererCapabilities,
 } from '../../types'
