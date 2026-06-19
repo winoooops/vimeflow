@@ -178,6 +178,21 @@ describe('ghosttyInstance', () => {
     expect(cursor?.previousSibling?.textContent).toBe('rendered')
   })
 
+  test('renders direct terminal status writes when the VT render-state driver is byte-only', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: ['vt prompt'] }),
+      }),
+    })
+
+    created.terminal.write('process exited with code 0')
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'process exited with code 0'
+    )
+  })
+
   test('prefers an injected parser engine over a VT render-state driver option', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),

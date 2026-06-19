@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-19
-ref_count: 0
+ref_count: 1
 ---
 
 # Terminal Render-State Driver Contract
@@ -37,4 +37,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L78
 - **Finding:** `createGhosttyVtRenderStateParserEngine` wrapped the render-state driver in the generic Ghostty parser engine, which falls back to the text parser and resets the byte adapter when a chunk arrives without `bytesBase64`. During restore, `useTerminal` synthesizes replay chunks as text, so the VT driver was reset before later byte chunks arrived; subsequent replace snapshots were generated from driver state that never saw the replayed bytes.
 - **Fix:** Added a `byteOnly` option to `GhosttyParserEngineOptions` and enabled it for VT render-state engines. Text-mode input now throws instead of falling back to the text parser, keeping the driver byte-only until restore supplies byte-preserving replay data.
+- **Commit:** same commit as this entry
+
+### 3. Bypass byte-only parser for direct terminal status writes
+
+- **Source:** github-codex-connector | PR #559 round 1 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.ts` L58-L62
+- **Finding:** `GhosttyTerminalModel` wired `TerminalTextSurface.transformOutput` to `parserEngine.parseText` for every raw `terminal.write` call. With a VT render-state driver, the parser engine is configured as `byteOnly`, so `parseText` throws on synthetic status strings such as PTY exit/error messages instead of rendering them.
+- **Fix:** Added an `acceptsTextInput` flag to `TerminalParserEngine` and set it to `false` for byte-only Ghostty engines. `GhosttyTerminalModel.transformOutput` now returns plain `{ visibleText: data }` when the engine does not accept text input, bypassing the byte-only parser for direct terminal status writes.
 - **Commit:** same commit as this entry

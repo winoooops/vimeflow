@@ -58,7 +58,9 @@ class GhosttyTerminalModel {
     this.terminal = new TerminalTextSurface({
       rendererId: GHOSTTY_TERMINAL_RENDERER_ID,
       transformOutput: (data): TerminalTextSurfaceOutput =>
-        this.parserEngine.parseText(data, null),
+        this.parserEngine.acceptsTextInput === false
+          ? { visibleText: data }
+          : this.parserEngine.parseText(data, null),
     })
 
     const originalTerminalDispose = this.terminal.dispose.bind(this.terminal)

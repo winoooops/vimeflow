@@ -33,6 +33,7 @@ export interface TerminalParserEngineOptions {
 
 export interface TerminalParserEngine {
   readonly inputMode: TerminalParserEngineInputMode
+  readonly acceptsTextInput?: boolean
   readonly capabilities: TerminalRendererCapabilities
   readonly parser: TerminalParser
   parseText: (
@@ -59,6 +60,7 @@ class EngineTerminalControlSequenceParser extends TerminalControlSequenceParser 
 }
 
 export class TerminalControlSequenceParserEngine implements TerminalParserEngine {
+  readonly acceptsTextInput: boolean = true
   readonly capabilities: TerminalRendererCapabilities
   readonly parser: TerminalControlSequenceParser
   private readonly emittableParser: EngineTerminalControlSequenceParser

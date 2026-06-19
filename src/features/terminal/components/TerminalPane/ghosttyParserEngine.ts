@@ -64,6 +64,7 @@ export class GhosttyControlSequenceParserEngine
   implements GhosttyParserEngine
 {
   readonly id: typeof GHOSTTY_PARSER_ENGINE_ID = GHOSTTY_PARSER_ENGINE_ID
+  readonly acceptsTextInput: boolean
   private readonly byteParserAdapter: GhosttyByteParserAdapter
   private readonly byteOnly: boolean
   private isDisposed = false
@@ -76,6 +77,14 @@ export class GhosttyControlSequenceParserEngine
     })
 
     this.byteOnly = options.byteOnly ?? false
+    this.acceptsTextInput = !this.byteOnly
+
+    if (this.byteOnly && !options.byteParserAdapter) {
+      throw new Error(
+        'Ghostty parser engine byteOnly mode requires a byteParserAdapter'
+      )
+    }
+
     this.byteParserAdapter =
       options.byteParserAdapter ??
       new ControlSequenceGhosttyByteParserAdapter((text, output) =>

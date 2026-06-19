@@ -59,6 +59,12 @@ describe('ghosttyParserEngine', () => {
     expect(engine.capabilities).toBe(GHOSTTY_TERMINAL_CAPABILITIES)
   })
 
+  test('rejects byteOnly mode without an explicit byte parser adapter', () => {
+    expect(() => createGhosttyParserEngine({ byteOnly: true })).toThrow(
+      'byteOnly mode requires a byteParserAdapter'
+    )
+  })
+
   test('parses visible output from bytes before text fallback', () => {
     const engine = createGhosttyParserEngine()
 
