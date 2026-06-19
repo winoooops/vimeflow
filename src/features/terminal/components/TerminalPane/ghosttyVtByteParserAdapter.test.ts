@@ -68,6 +68,34 @@ describe('ghosttyVtByteParserAdapter', () => {
     })
   })
 
+  test('passes VT render deltas back to the parser engine caller', () => {
+    const adapter = createGhosttyVtByteParserAdapter(() => ({
+      writeBytes: (): TerminalParserEngineOutput => ({
+        visibleText: 'screen snapshot two',
+        displayDelta: {
+          operations: [
+            {
+              type: 'replace',
+              text: 'screen snapshot two',
+            },
+          ],
+        },
+      }),
+    }))
+
+    expect(adapter.parseBytes(createInput(new Uint8Array([0x67])))).toEqual({
+      visibleText: 'screen snapshot two',
+      displayDelta: {
+        operations: [
+          {
+            type: 'replace',
+            text: 'screen snapshot two',
+          },
+        ],
+      },
+    })
+  })
+
   test('ignores VT cwd effects fired outside an active byte write', () => {
     const capturedEffects: {
       onCwdChange?: GhosttyVtParserEffects['onCwdChange']

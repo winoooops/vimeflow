@@ -38,6 +38,20 @@ export interface TerminalDisplayRun {
   readonly style: TerminalDisplayStyle
 }
 
+export type TerminalDisplayDeltaOperation =
+  | {
+      readonly type: 'append'
+      readonly text: string
+    }
+  | {
+      readonly type: 'replace'
+      readonly text: string
+    }
+
+export interface TerminalDisplayDelta {
+  readonly operations: readonly TerminalDisplayDeltaOperation[]
+}
+
 interface DisplayState {
   readonly text: string
   readonly cursor: number
@@ -1488,6 +1502,11 @@ export class TerminalDisplayBuffer {
     this.state = createEmptyState()
   }
 
+  replace(data: string): void {
+    this.clear()
+    this.write(data)
+  }
+
   write(data: string): void {
     if (data.length === 0) {
       return
@@ -1497,6 +1516,18 @@ export class TerminalDisplayBuffer {
       applyDisplayData(this.state, data, this.columns),
       this.maxScrollbackLines
     )
+  }
+
+  applyDelta(delta: TerminalDisplayDelta): void {
+    delta.operations.forEach((operation) => {
+      if (operation.type === 'replace') {
+        this.replace(operation.text)
+
+        return
+      }
+
+      this.write(operation.text)
+    })
   }
 
   readText(): string {

@@ -11,10 +11,12 @@ import {
   TerminalOutputPayloadRouter,
   type TerminalOutputPayloadSelection,
 } from './terminalOutputPayload'
+import type { TerminalDisplayDelta } from './terminalDisplayBuffer'
 
 export interface TerminalParserEngineOutput {
   readonly visibleText: string
   readonly displayText?: string
+  readonly displayDelta?: TerminalDisplayDelta
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode

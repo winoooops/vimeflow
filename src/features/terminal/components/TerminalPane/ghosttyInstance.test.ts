@@ -135,6 +135,70 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })
 
+  test('applies parser display replace deltas without appending snapshots', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parseOutput = vi
+      .fn<(chunk: TerminalOutputChunk) => TerminalParserEngineOutput>()
+      .mockReturnValueOnce({
+        visibleText: 'screen snapshot one',
+        displayDelta: {
+          operations: [
+            {
+              type: 'replace',
+              text: 'screen snapshot one',
+            },
+          ],
+        },
+      })
+      .mockReturnValueOnce({
+        visibleText: 'screen snapshot two',
+        displayDelta: {
+          operations: [
+            {
+              type: 'replace',
+              text: 'screen snapshot two',
+            },
+          ],
+        },
+      })
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput,
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    created.output.writeOutput({
+      text: 'first',
+      offsetStart: 0,
+      byteLen: 5,
+      phase: 'live',
+    })
+
+    created.output.writeOutput({
+      text: 'second',
+      offsetStart: 5,
+      byteLen: 6,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('screen snapshot two')
+  })
+
   test('disposes the parser engine once through terminal disposal', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
