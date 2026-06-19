@@ -30,6 +30,32 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readVisibleText()).toBe('hello\nworld')
   })
 
+  test('applies append and replace display delta operations', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.applyDelta({
+      operations: [{ type: 'append', text: 'snapshot one' }],
+    })
+
+    buffer.applyDelta({
+      operations: [{ type: 'replace', text: 'snapshot two' }],
+    })
+
+    expect(buffer.readVisibleText()).toBe('snapshot two')
+  })
+
+  test('applies empty replace display deltas as a clear operation', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('old snapshot')
+    buffer.applyDelta({
+      operations: [{ type: 'replace', text: '' }],
+    })
+
+    expect(buffer.readVisibleText()).toBe('')
+    expect(buffer.readCursorOffset()).toBe(0)
+  })
+
   test('rewrites the current line when carriage return output arrives', () => {
     const buffer = new TerminalDisplayBuffer()
 

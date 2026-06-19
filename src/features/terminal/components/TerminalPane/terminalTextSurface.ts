@@ -8,6 +8,7 @@ import type {
 } from '../../types'
 import {
   TerminalDisplayBuffer,
+  type TerminalDisplayDelta,
   type TerminalDisplayRun,
   type TerminalDisplayStyle,
 } from './terminalDisplayBuffer'
@@ -41,6 +42,7 @@ export interface TerminalTextSurfaceOptions {
 export interface TerminalTextSurfaceOutput {
   readonly visibleText: string
   readonly displayText?: string
+  readonly displayDelta?: TerminalDisplayDelta
 }
 
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
@@ -262,6 +264,14 @@ export class TerminalTextSurface implements TerminalSurface {
     callback?: () => void
   ): void {
     if (this.disposed) {
+      callback?.()
+
+      return
+    }
+
+    if (output.displayDelta) {
+      this.outputBuffer.applyDelta(output.displayDelta)
+      this.renderOutput()
       callback?.()
 
       return
