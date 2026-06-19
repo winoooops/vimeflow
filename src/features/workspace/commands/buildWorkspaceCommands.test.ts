@@ -52,6 +52,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       'theme-flexoki',
       'theme-gruvbox-dark',
       'theme-gruvbox-light',
+      'theme-tokyo-night',
+      'theme-dracula',
     ])
 
     themeCmd?.children?.find((c) => c.id === 'theme-flexoki')?.execute?.('')
@@ -66,6 +68,12 @@ describe('buildWorkspaceCommands - happy paths', () => {
       ?.find((c) => c.id === 'theme-gruvbox-light')
       ?.execute?.('')
     expect(themeService.current().id).toBe('gruvbox-light')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.execute?.('')
+    expect(themeService.current().id).toBe('tokyo-night')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.execute?.('')
+    expect(themeService.current().id).toBe('dracula')
 
     themeCmd?.children
       ?.find((c) => c.id === 'theme-obsidian-lens')

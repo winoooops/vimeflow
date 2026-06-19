@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 ref_count: 27
 ---
 
@@ -621,4 +621,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
 - **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry
+
+### 60. Tokyo Night muted text falls below contrast threshold
+
+- **Source:** github-codex-connector | PR #557 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/themes/tokyo-night.ts` L62
+- **Finding:** `on-surface-muted` was mapped to the raw comment color `#565f89`, yielding only ~2.76:1 contrast against the theme surface `#1a1b26` and even less on `surface-container` backgrounds. Status-bar and agent-panel labels using this token became hard to read.
+- **Fix:** Changed `on-surface-muted` to `#7f88b3`, raising contrast to ~4.94:1 on the theme surface while preserving the muted hierarchy below `on-surface-variant`.
 - **Commit:** same commit as this entry
