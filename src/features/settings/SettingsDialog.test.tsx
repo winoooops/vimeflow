@@ -93,7 +93,20 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('option', { name: 'Appearance' })).toHaveClass(
       'text-primary'
     )
+
+    expect(
+      screen.getByRole('heading', { name: 'Appearance' })
+    ).toBeInTheDocument()
     expect(screen.getByText('Color Scheme')).toBeInTheDocument()
+  })
+
+  test('renders edit config action in the pane title instead of a standalone header', () => {
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    expect(screen.queryByRole('heading', { name: 'Settings' })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    ).toBeInTheDocument()
   })
 
   test('switches panes when a sidebar section is clicked', async () => {

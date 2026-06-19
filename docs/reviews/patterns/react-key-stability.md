@@ -3,7 +3,7 @@ id: react-key-stability
 category: react-patterns
 created: 2026-06-11
 last_updated: 2026-06-11
-ref_count: 0
+ref_count: 1
 ---
 
 # React Key Stability
@@ -34,4 +34,13 @@ stable composite keys derived from item identity.
 - **File:** `src/features/settings/components/panes/KeymapPane.tsx`
 - **Finding:** `b.keys.map((k, j) => <Kbd key={j}>{k}</Kbd>)` used the array index as the React key. If the key array is ever reordered (e.g., by a future preset editor), React may misplace chip DOM nodes and apply stale transitions.
 - **Fix:** Replaced the index key with a stable composite key `` `key={\`${b.id}-${k}\`}` `` derived from the binding id and the key character.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. PaneTitle error state leaks when placeholder pane is reused without a key
+
+- **Source:** github-claude | PR #552 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/settings/components/controls.tsx`
+- **Finding:** `PlaceholderPane` renders `<PaneTitle title={section.label} ... />` without a `key`, and `PaneTitle` stores the `openError` from `settings.openFile()` locally. Switching between placeholder sections reuses the same `PaneTitle` instance, so a stale error from the previous section remains visible under the new title.
+- **Fix:** Added a `useEffect` keyed by `title` that resets `openError` to `null` whenever the title changes, covering the reused-component case without requiring consumers to pass a key.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

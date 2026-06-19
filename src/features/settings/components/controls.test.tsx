@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
@@ -62,8 +62,89 @@ describe('PaneTitle', () => {
   test('renders title and optional sub eyebrow', () => {
     render(<PaneTitle title="General" sub="General Settings" />)
 
-    expect(screen.getByText('General')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
     expect(screen.getByText('General Settings')).toBeInTheDocument()
+  })
+
+  test('renders the Edit in settings.json action on the title row', () => {
+    render(<PaneTitle title="General" sub="General Settings" />)
+
+    expect(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    ).toBeInTheDocument()
+  })
+
+  test('clicking Edit in settings.json calls window.vimeflow.settings.openFile()', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    render(<PaneTitle title="General" sub="General Settings" />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(openFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows an error message when opening settings.json fails', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockRejectedValue(new Error('failed'))
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    render(<PaneTitle title="General" sub="General Settings" />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not open settings.json'
+    )
+  })
+
+  test('clears the open error when the title changes', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockRejectedValue(new Error('failed'))
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    const { rerender } = render(<PaneTitle title="General" />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    rerender(<PaneTitle title="Appearance" />)
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
   })
 })
 
