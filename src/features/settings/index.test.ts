@@ -4,6 +4,7 @@ import {
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
+  SETTINGS_SUBSECTIONS,
   SettingsDialog,
   VIM_KEYMAP_GROUPS,
   useSettingsDialog,
@@ -20,6 +21,7 @@ describe('settings feature barrel', () => {
 
   test('exports section and scheme constants', () => {
     expect(SETTINGS_SECTIONS.length).toBeGreaterThan(0)
+    expect(SETTINGS_SUBSECTIONS.length).toBeGreaterThan(0)
     expect(BUILTIN_SCHEMES.length).toBeGreaterThan(0)
     expect(KEYMAP_GROUPS.length).toBeGreaterThan(0)
     expect(VIM_KEYMAP_GROUPS.length).toBeGreaterThan(0)

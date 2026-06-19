@@ -4,10 +4,15 @@ import type {
   SettingsDialogProps,
   SettingsSearchNavigationDirection,
   SettingsSectionId,
+  SettingsSubsection,
   SettingsTarget,
   SettingsTargetId,
 } from './types'
-import { SETTINGS_SECTIONS, SETTINGS_TARGETS } from './sections'
+import {
+  SETTINGS_SECTIONS,
+  SETTINGS_SUBSECTIONS,
+  SETTINGS_TARGETS,
+} from './sections'
 import {
   searchSettings,
   settingsSectionResultKey,
@@ -170,6 +175,18 @@ export const SettingsDialog = ({
       },
       'focus-target'
     )
+  }
+
+  const handlePickSubsection = (subsection: SettingsSubsection): void => {
+    const target = SETTINGS_TARGETS.find(
+      (candidate) => candidate.id === subsection.targetId
+    )
+
+    if (target === undefined) {
+      return
+    }
+
+    handlePickTarget(target)
   }
 
   const handleNavigateSearchResult = (
@@ -356,11 +373,13 @@ export const SettingsDialog = ({
               <SettingsSidebar
                 sections={filtered}
                 targets={targetMatches}
+                subsections={SETTINGS_SUBSECTIONS}
                 active={section}
                 activeTargetId={activeTargetId}
                 activeSearchResultKey={activeSearchResultKey}
                 onPick={handlePickSection}
                 onPickTarget={handlePickTarget}
+                onPickSubsection={handlePickSubsection}
                 onClearQuery={handleClearQuery}
                 onNavigateSearchResult={handleNavigateSearchResult}
                 onConfirmSearchResult={handleConfirmSearchResult}

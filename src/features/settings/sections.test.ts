@@ -4,10 +4,12 @@ import {
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
+  SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
   SETTINGS_SECTIONS,
   VIM_KEYMAP_GROUPS,
   keymapCommandTargetId,
+  settingsSubsectionId,
 } from './sections'
 
 describe('SETTINGS_SECTIONS', () => {
@@ -64,6 +66,37 @@ describe('SETTINGS_TARGETS', () => {
           id: keymapCommandTargetId('palette-leader'),
           section: 'keymap',
           label: 'Command palette leader',
+        }),
+      ])
+    )
+  })
+})
+
+describe('SETTINGS_SUBSECTIONS', () => {
+  test('derives unique subsection ids from section and label', () => {
+    const ids = SETTINGS_SUBSECTIONS.map((subsection) => subsection.id)
+
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(settingsSubsectionId('appearance', 'Fonts')).toBe('appearance-fonts')
+  })
+
+  test('contains subsection target groups in source order', () => {
+    expect(SETTINGS_SUBSECTIONS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'appearance-fonts',
+          section: 'appearance',
+          label: 'Fonts',
+          targetId: SETTINGS_TARGET_IDS.appearanceUiFont,
+          targetIds: [
+            SETTINGS_TARGET_IDS.appearanceUiFont,
+            SETTINGS_TARGET_IDS.appearanceMonoFont,
+          ],
+        }),
+        expect.objectContaining({
+          id: 'keymap-global',
+          section: 'keymap',
+          label: 'Global',
         }),
       ])
     )

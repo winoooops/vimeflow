@@ -7,11 +7,13 @@ export {
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
+  SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
   SETTINGS_SECTIONS,
   VIM_KEYMAP_GROUPS,
   keymapCommandTargetId,
   keymapStaticTargetId,
+  settingsSubsectionId,
 } from './sections'
 
 export type {
@@ -28,6 +30,8 @@ export type {
   SettingsSection,
   SettingsSectionId,
   SettingsSidebarProps,
+  SettingsSubsection,
+  SettingsSubsectionId,
   SettingsTarget,
   SettingsTargetId,
 } from './types'

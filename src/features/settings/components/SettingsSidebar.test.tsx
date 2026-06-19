@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   SETTINGS_SECTIONS,
+  SETTINGS_SUBSECTIONS,
   SETTINGS_TARGET_IDS,
   SETTINGS_TARGETS,
 } from '../sections'
@@ -11,6 +12,10 @@ import { SettingsSidebar } from './SettingsSidebar'
 
 const redactTarget = SETTINGS_TARGETS.find(
   (target) => target.id === SETTINGS_TARGET_IDS.generalRedactPrivateValues
+)!
+
+const fontsSubsection = SETTINGS_SUBSECTIONS.find(
+  (subsection) => subsection.id === 'appearance-fonts'
 )!
 
 const StatefulSidebar = (): ReactElement => {
@@ -122,6 +127,83 @@ describe('SettingsSidebar', () => {
     SETTINGS_SECTIONS.forEach((s) => {
       expect(screen.getByRole('option', { name: s.label })).toBeInTheDocument()
     })
+  })
+
+  test('renders subsections under the active expanded section', () => {
+    render(
+      <SettingsSidebar {...baseProps} subsections={SETTINGS_SUBSECTIONS} />
+    )
+
+    expect(screen.getByRole('option', { name: 'Theme' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: 'Interface' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Fonts' })).toBeInTheDocument()
+  })
+
+  test('collapses and expands subsection rows from the section option', async () => {
+    const user = userEvent.setup()
+    render(
+      <SettingsSidebar {...baseProps} subsections={SETTINGS_SUBSECTIONS} />
+    )
+
+    await user.click(screen.getByRole('option', { name: 'Appearance' }))
+
+    expect(screen.queryByRole('option', { name: 'Fonts' })).toBeNull()
+
+    await user.click(screen.getByRole('option', { name: 'Appearance' }))
+
+    expect(screen.getByRole('option', { name: 'Fonts' })).toBeInTheDocument()
+  })
+
+  test('calls onPickSubsection when a subsection is clicked', async () => {
+    const user = userEvent.setup()
+    const onPickSubsection = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        onPickSubsection={onPickSubsection}
+      />
+    )
+
+    await user.click(screen.getByRole('option', { name: 'Fonts' }))
+
+    expect(onPickSubsection).toHaveBeenCalledWith(fontsSubsection)
+  })
+
+  test('marks the active subsection with aria-current and aria-selected', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
+      />
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'Fonts', current: 'location' })
+    ).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('keeps search target rows instead of subsection rows while searching', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        subsections={SETTINGS_SUBSECTIONS}
+        active="general"
+        query="redact"
+      />
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'Redact Private Values' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Privacy' })).toBeNull()
   })
 
   test('forwards query changes', async () => {

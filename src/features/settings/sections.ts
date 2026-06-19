@@ -3,6 +3,8 @@ import type {
   AppearanceScheme,
   KeymapGroup,
   SettingsSection,
+  SettingsSubsection,
+  SettingsSubsectionId,
   SettingsTarget,
   SettingsTargetId,
 } from './types'
@@ -47,6 +49,19 @@ export const keymapCommandTargetId = (id: CommandId): SettingsTargetId =>
 
 export const keymapStaticTargetId = (id: string): SettingsTargetId =>
   `keymap-static-${id}`
+
+const slugifySubsection = (label: string): string =>
+  label
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+export const settingsSubsectionId = (
+  section: SettingsSection['id'],
+  label: string
+): SettingsSubsectionId => `${section}-${slugifySubsection(label)}`
 
 /* eslint-disable vimeflow/no-hardcoded-colors -- literal preview swatches for the
    appearance scheme picker (AppearancePane): each entry intentionally shows that
@@ -350,6 +365,32 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     subsection: 'Aliases',
   },
 ]
+
+export const SETTINGS_SUBSECTIONS: SettingsSubsection[] =
+  SETTINGS_TARGETS.reduce<SettingsSubsection[]>((subsections, target) => {
+    if (target.subsection === undefined) {
+      return subsections
+    }
+
+    const id = settingsSubsectionId(target.section, target.subsection)
+    const existing = subsections.find((subsection) => subsection.id === id)
+
+    if (existing !== undefined) {
+      existing.targetIds.push(target.id)
+
+      return subsections
+    }
+
+    subsections.push({
+      id,
+      section: target.section,
+      label: target.subsection,
+      targetId: target.id,
+      targetIds: [target.id],
+    })
+
+    return subsections
+  }, [])
 
 export const DEFAULT_ALIASES: AgentAlias[] = [
   {
