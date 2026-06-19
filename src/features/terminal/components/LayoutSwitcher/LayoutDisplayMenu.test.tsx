@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
 import { useState, type ReactElement } from 'react'
-import type { LayoutId } from '../../../sessions/types'
+import type { LayoutId, PaneLayoutId } from '../../../sessions/types'
 import { LayoutDisplayMenu } from './LayoutDisplayMenu'
 
 interface HarnessProps {
@@ -22,7 +22,7 @@ const LayoutDisplayMenuHarness = ({
   ],
 }: HarnessProps): ReactElement => {
   const [visibleLayoutIds, setVisibleLayoutIds] = useState(
-    initialVisibleLayoutIds
+    initialVisibleLayoutIds as readonly PaneLayoutId[]
   )
 
   return (

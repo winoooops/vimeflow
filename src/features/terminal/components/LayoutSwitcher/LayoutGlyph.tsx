@@ -1,11 +1,67 @@
 import type { ReactElement } from 'react'
-import type { LayoutId } from '../../../sessions/types'
+import type { PaneLayoutId } from '../../../sessions/types'
+import {
+  isBuiltinPaneLayoutId,
+  type PaneLayoutDefinition,
+} from '../../layout-registry'
 
 export interface LayoutGlyphProps {
-  layoutId: LayoutId
+  layoutId: PaneLayoutId
+  definition?: PaneLayoutDefinition | undefined
 }
 
-export const LayoutGlyph = ({ layoutId }: LayoutGlyphProps): ReactElement => {
+const GenericLayoutGlyph = ({
+  definition,
+}: {
+  definition: PaneLayoutDefinition
+}): ReactElement => {
+  const frameX = 1
+  const frameY = 1
+  const frameWidth = 12
+  const frameHeight = 9
+  const colCount = definition.tracks.columns.length
+  const rowCount = definition.tracks.rows.length
+
+  return (
+    <svg
+      width="14"
+      height="11"
+      viewBox="0 0 14 11"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {definition.slots.map((slot) => {
+        const x = frameX + (slot.rect.col / colCount) * frameWidth
+        const y = frameY + (slot.rect.row / rowCount) * frameHeight
+        const width = (slot.rect.colSpan / colCount) * frameWidth
+        const height = (slot.rect.rowSpan / rowCount) * frameHeight
+
+        return (
+          <rect
+            key={slot.id}
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            rx="0.9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="0.8"
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+export const LayoutGlyph = ({
+  layoutId,
+  definition = undefined,
+}: LayoutGlyphProps): ReactElement => {
+  if (definition && !isBuiltinPaneLayoutId(layoutId)) {
+    return <GenericLayoutGlyph definition={definition} />
+  }
+
   const sw = 1.4
   const r = 1.4
 

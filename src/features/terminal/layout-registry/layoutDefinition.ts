@@ -1,12 +1,15 @@
-import type { LayoutId, PaneKind } from '../../sessions/types'
+import type {
+  CustomPaneLayoutId,
+  LayoutId,
+  PaneKind,
+  PaneLayoutId,
+} from '../../sessions/types'
 import { LAYOUT_IDS } from './layoutIds'
 import type { LayoutRatios } from './ratioModel'
 
 export type BuiltinPaneLayoutId = LayoutId
 
-export type CustomPaneLayoutId = `custom:${string}`
-
-export type PaneLayoutId = BuiltinPaneLayoutId | CustomPaneLayoutId
+export type { CustomPaneLayoutId, PaneLayoutId }
 
 export type LayoutSlotId = `slot:${string}`
 

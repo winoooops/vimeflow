@@ -10,10 +10,12 @@ import {
   SplitView,
   selectVisiblePanes,
   canClosePane,
+  resolveLayoutRatios,
   type SplitViewHandle,
 } from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
+import { LAYOUTS } from '../../layout-registry'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -974,6 +976,22 @@ describe('selectVisiblePanes', () => {
   // Note: capacity=0 isn't a real input — `LayoutShape.capacity` is typed
   // `1 | 2 | 3 | 4` — so no test for it. The helper's behavior in that
   // degenerate case isn't load-bearing.
+})
+
+describe('resolveLayoutRatios', () => {
+  test('keeps saved ratios when track counts still match the layout', () => {
+    const saved = { cols: [1, 2, 3], rows: [4, 5] }
+
+    expect(resolveLayoutRatios(LAYOUTS.grid3x2, saved)).toBe(saved)
+  })
+
+  test('falls back to default ratios when a layout definition changes track counts', () => {
+    const staleSaved = { cols: [1, 1], rows: [1, 1] }
+
+    expect(resolveLayoutRatios(LAYOUTS.grid3x2, staleSaved)).toBe(
+      LAYOUTS.grid3x2.defaultRatios
+    )
+  })
 })
 
 describe('SplitView - over-capacity rescued active render', () => {

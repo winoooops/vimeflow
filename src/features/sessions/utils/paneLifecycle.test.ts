@@ -3,6 +3,10 @@ import { describe, expect, test } from 'vitest'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
 import {
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../../terminal/layout-registry'
+import {
   applyAddPane,
   applyRemovePane,
   autoShrinkLayoutFor,
@@ -35,6 +39,30 @@ const mockSession = (overrides: Partial<Session> = {}): Session => ({
   activity: { ...emptyActivity },
   ...overrides,
 })
+
+const customGrid2x2: PaneLayoutDefinition = {
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+}
 
 describe('autoShrinkLayoutFor', () => {
   test('1 pane shrinks to single', () => {
@@ -69,6 +97,14 @@ describe('autoShrinkLayoutFor', () => {
     expect(autoShrinkLayoutFor(4, 'grid3x2')).toBe('quad')
     expect(autoShrinkLayoutFor(5, 'grid3x2')).toBe('grid3x2')
     expect(autoShrinkLayoutFor(6, 'grid3x2')).toBe('grid3x2')
+  })
+
+  test('custom layouts preserve empty slots after pane removal', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2])
+
+    expect(autoShrinkLayoutFor(3, 'custom:grid-2x2', registry)).toBe(
+      'custom:grid-2x2'
+    )
   })
 })
 

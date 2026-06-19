@@ -3,6 +3,7 @@ import type { SessionInfo } from '../../../bindings'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
@@ -158,6 +159,9 @@ export interface UseSessionRestoreOptions {
   onActiveFallback?: (sessionId: string) => void
   /** Activate the store's persisted-active session (browser-capable, §5). */
   onActivePersisted?: (sessionId: string) => void
+  onCustomPaneLayoutsRestore?: (
+    customPaneLayouts: readonly PaneLayoutDefinition[]
+  ) => void
   /** Active project context for the load command's repair defaults (§2.2). */
   projectId?: string
   workingDirectory?: string
@@ -204,6 +208,7 @@ export const useSessionRestore = ({
   onActiveResolved,
   onActiveFallback,
   onActivePersisted,
+  onCustomPaneLayoutsRestore,
   projectId = 'proj-1',
   workingDirectory = '~',
 }: UseSessionRestoreOptions): SessionRestoreState => {
@@ -213,12 +218,14 @@ export const useSessionRestore = ({
   const onActiveResolvedRef = useRef(onActiveResolved)
   const onActiveFallbackRef = useRef(onActiveFallback)
   const onActivePersistedRef = useRef(onActivePersisted)
+  const onCustomPaneLayoutsRestoreRef = useRef(onCustomPaneLayoutsRestore)
 
   bufferRef.current = buffer
   onRestoreRef.current = onRestore
   onActiveResolvedRef.current = onActiveResolved
   onActiveFallbackRef.current = onActiveFallback
   onActivePersistedRef.current = onActivePersisted
+  onCustomPaneLayoutsRestoreRef.current = onCustomPaneLayoutsRestore
 
   useEffect(() => {
     let cancelled = false
@@ -368,6 +375,9 @@ export const useSessionRestore = ({
           projectId,
           workingDirectory,
         })
+        onCustomPaneLayoutsRestoreRef.current?.(
+          storeShape?.customPaneLayouts ?? []
+        )
         const list = await service.listSessions()
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {

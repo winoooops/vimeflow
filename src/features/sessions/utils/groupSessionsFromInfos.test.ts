@@ -9,6 +9,7 @@ import {
   groupSessionsFromInfos,
   reconstructWorkspace,
 } from './groupSessionsFromInfos'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 
 const alive = (id: string, cwd: string): SessionInfo => ({
   id,
@@ -26,6 +27,30 @@ const grouping = (
   active: false,
   ...overrides,
 })
+
+const customGrid2x2: PaneLayoutDefinition = {
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+}
 
 describe('groupSessionsFromInfos', () => {
   test('ungrouped PTYs each become a single-pane session (back-compat)', () => {
@@ -339,8 +364,9 @@ const browserShape = (
 })
 
 const storeOf = (
-  sessions: PersistedWorkspaceShape['sessions']
-): PersistedWorkspaceShape => ({ sessions })
+  sessions: PersistedWorkspaceShape['sessions'],
+  customPaneLayouts: PersistedWorkspaceShape['customPaneLayouts'] = []
+): PersistedWorkspaceShape => ({ customPaneLayouts, sessions })
 
 const storeSession = (
   overrides: Partial<PersistedWorkspaceShape['sessions'][number]> = {}
@@ -538,6 +564,42 @@ describe('reconstructWorkspace', () => {
     expect(s.panes.find((p) => p.active)?.id).toBe('p1')
     expect(s.status).toBe('completed')
     expect(s.layout).toBe('vsplit')
+  })
+
+  test('preserves a persisted custom layout when its definition is present', () => {
+    const store = storeOf(
+      [
+        storeSession({
+          id: 'ws-custom',
+          layout: 'custom:grid-2x2',
+          panes: [
+            browserShape({ paneId: 'p0', paneIndex: 0, active: true }),
+            browserShape({ paneId: 'p1', paneIndex: 1, active: false }),
+          ],
+        }),
+      ],
+      [customGrid2x2]
+    )
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].layout).toBe('custom:grid-2x2')
+  })
+
+  test('falls back to single for a persisted custom layout missing its definition', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-custom-missing',
+        layout: 'custom:missing',
+        panes: [browserShape({ paneId: 'p0', paneIndex: 0, active: true })],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].layout).toBe('single')
   })
 
   test('reload shape restores browser-only and mixed browser sessions together', () => {

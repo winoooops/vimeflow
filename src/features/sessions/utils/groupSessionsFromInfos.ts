@@ -14,10 +14,13 @@
 
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
-import { isKnownLayoutId } from '../../terminal/layout-registry/layoutRegistry'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  PaneLayoutRegistry,
+} from '../../terminal/layout-registry/layoutRegistry'
 import { createLogger } from '../../../lib/log'
 import { emptyActivity } from '../constants'
-import type { LayoutId, Pane, Session } from '../types'
+import type { Pane, PaneLayoutId, Session } from '../types'
 import type {
   PersistedWorkspaceShape,
   PersistedWorkspaceSessionShape,
@@ -45,8 +48,10 @@ const toAgentType = (value: string): AgentType =>
     ? (value as AgentType)
     : 'generic'
 
-const toLayoutId = (value: string): LayoutId =>
-  isKnownLayoutId(value) ? value : 'single'
+const toLayoutId = (
+  value: string,
+  registry: PaneLayoutRegistry
+): PaneLayoutId => registry.resolveLayoutId(value)
 
 interface GroupedEntry {
   info: SessionInfo
@@ -59,8 +64,18 @@ interface GroupedEntry {
 // future refactor that adds a new `kind` or reorders arms fails at compile
 // time instead of silently widening into wrong-shape entries at runtime.
 type Bucket =
-  | { kind: 'grouped'; id: string; entries: GroupedEntry[]; layout: LayoutId }
-  | { kind: 'ungrouped'; id: string; entries: SessionInfo[]; layout: LayoutId }
+  | {
+      kind: 'grouped'
+      id: string
+      entries: GroupedEntry[]
+      layout: PaneLayoutId
+    }
+  | {
+      kind: 'ungrouped'
+      id: string
+      entries: SessionInfo[]
+      layout: PaneLayoutId
+    }
 
 const buildPane = (
   info: SessionInfo,
@@ -100,7 +115,7 @@ const buildPane = (
 
 const buildGroupedSession = (
   workspaceId: string,
-  layout: LayoutId,
+  layout: PaneLayoutId,
   entries: GroupedEntry[],
   fallbackIndex: number
 ): Session => {
@@ -162,7 +177,8 @@ const buildGroupedSession = (
 }
 
 export const groupSessionsFromInfos = (
-  infos: readonly SessionInfo[]
+  infos: readonly SessionInfo[],
+  registry: PaneLayoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY
 ): Session[] => {
   // First pass: bucket by workspace id (or singleton for ungrouped). Use a
   // Map keyed by bucket key for stable insertion order, so the bucket order
@@ -182,7 +198,7 @@ export const groupSessionsFromInfos = (
           kind: 'grouped',
           id: key,
           entries: [],
-          layout: toLayoutId(grouping.layout),
+          layout: toLayoutId(grouping.layout, registry),
         })
         order.push(key)
       }
@@ -192,7 +208,7 @@ export const groupSessionsFromInfos = (
         // panes disagree (rare race), the first non-`single` wins so a quad
         // workspace doesn't collapse to single because one pane was pushed
         // before the layout change.
-        const incomingLayout = toLayoutId(grouping.layout)
+        const incomingLayout = toLayoutId(grouping.layout, registry)
         buckets.set(key, {
           ...bucket,
           entries: [...bucket.entries, { info, grouping }],
@@ -329,7 +345,8 @@ const buildRestoredBrowserPane = (
 const buildStoreSession = (
   shape: PersistedWorkspaceSessionShape,
   liveByPtyId: Map<string, SessionInfo>,
-  fallbackIndex: number
+  fallbackIndex: number,
+  registry: PaneLayoutRegistry
 ): Session => {
   const ordered = [...shape.panes].sort((a, b) => a.paneIndex - b.paneIndex)
 
@@ -367,7 +384,7 @@ const buildStoreSession = (
     status: deriveShellSessionStatus(panes),
     workingDirectory: shape.workingDirectory,
     agentType: activePane.agentType,
-    layout: toLayoutId(shape.layout),
+    layout: toLayoutId(shape.layout, registry),
     activityPanelCollapsed: readActivityPanelCollapsed(shape.id),
     panes,
     createdAt: now,
@@ -384,11 +401,14 @@ const buildStoreSession = (
 export const reconstructWorkspace = (
   storeShape: PersistedWorkspaceShape | null,
   liveSessions: readonly SessionInfo[],
-  activeSessionId: string | null
+  activeSessionId: string | null,
+  registry: PaneLayoutRegistry = new PaneLayoutRegistry(
+    storeShape?.customPaneLayouts ?? []
+  )
 ): Session[] => {
   if (!storeShape || storeShape.sessions.length === 0) {
     return reconcileActivePane(
-      groupSessionsFromInfos(liveSessions),
+      groupSessionsFromInfos(liveSessions, registry),
       liveSessions,
       activeSessionId
     )
@@ -415,7 +435,7 @@ export const reconstructWorkspace = (
   }
 
   const storeSessions = validStoreSessions.map((session, index) =>
-    buildStoreSession(session, liveByPtyId, index)
+    buildStoreSession(session, liveByPtyId, index, registry)
   )
   const storeSessionIds = new Set(validStoreSessions.map((s) => s.id))
 
@@ -431,7 +451,7 @@ export const reconstructWorkspace = (
   // dropped — re-key the collider to its first PTY (the #290 solo convention,
   // a distinct id space from store UUIDs) so the running agent keeps a tab.
   const liveOnly = reconcileActivePane(
-    groupSessionsFromInfos(unreferencedLive),
+    groupSessionsFromInfos(unreferencedLive, registry),
     unreferencedLive,
     activeSessionId
   ).map((session) =>

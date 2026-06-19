@@ -8,7 +8,7 @@ import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 import { subtitle } from '../utils/subtitle'
 import { LayoutGlyph } from '../../terminal/components/LayoutSwitcher'
-import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../terminal/layout-registry'
 
 export interface CardProps {
   session: Session
@@ -123,14 +123,14 @@ const CardComponent = ({
   const subtitleText = subtitle(session)
   const status = STATUS_TEXT[session.status]
 
-  // Guard against a persisted/stale layout id that is no longer in LAYOUTS so
-  // a restored session can't crash the sidebar on the `.name` lookup below.
-  const showGlyph =
-    session.layout !== 'single' &&
-    Object.prototype.hasOwnProperty.call(LAYOUTS, session.layout)
+  // Use the builtin registry fallback here because custom definitions are
+  // workspace-level state that the sidebar card does not own yet. This keeps a
+  // stale/custom id from crashing the card while preserving current builtin UI.
+  const layout = BUILTIN_PANE_LAYOUT_REGISTRY.getFallbackLayout(session.layout)
+  const showGlyph = layout.id !== 'single'
 
   const ariaLabel = showGlyph
-    ? `${session.name} (${LAYOUTS[session.layout].capacity} panes)`
+    ? `${session.name} (${layout.capacity} panes)`
     : session.name
   const hasActions = onRename !== undefined || onRemove !== undefined
 
@@ -228,18 +228,21 @@ const CardComponent = ({
           </span>
           <span className="flex-1" />
           {showGlyph && (
-            <Tooltip content={LAYOUTS[session.layout].name}>
+            <Tooltip content={layout.name}>
               <span
                 data-testid="session-layout-glyph"
                 aria-hidden="true"
                 className={`inline-flex shrink-0 items-center gap-1 ${isActive ? 'text-primary-container' : 'text-on-surface-muted'}`}
               >
-                <LayoutGlyph layoutId={session.layout} />
+                <LayoutGlyph
+                  layoutId={layout.id}
+                  definition={layout.definition}
+                />
                 <span
                   data-testid="session-pane-count"
                   className="font-mono text-[10px] font-semibold leading-none"
                 >
-                  {LAYOUTS[session.layout].capacity}
+                  {layout.capacity}
                 </span>
               </span>
             </Tooltip>

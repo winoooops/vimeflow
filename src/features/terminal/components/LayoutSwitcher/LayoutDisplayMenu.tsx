@@ -1,50 +1,65 @@
 import { useEffect, type ReactElement } from 'react'
 import { Menu } from '@/components/Menu'
-import type { LayoutId } from '../../../sessions/types'
-import { LAYOUT_IDS, LAYOUTS } from '../../layout-registry'
+import type { PaneLayoutId } from '../../../sessions/types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  type LayoutShape,
+} from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
 
 export interface LayoutDisplayMenuProps {
-  activeLayoutId: LayoutId
-  visibleLayoutIds: readonly LayoutId[]
-  onVisibleLayoutIdsChange: (next: readonly LayoutId[]) => void
+  activeLayoutId: PaneLayoutId
+  visibleLayoutIds: readonly PaneLayoutId[]
+  layouts?: readonly LayoutShape[]
+  onVisibleLayoutIdsChange: (next: readonly PaneLayoutId[]) => void
   onOpenChange?: (open: boolean) => void
 }
 
 const normalizeVisibleLayoutIds = (
-  visibleLayoutIds: readonly LayoutId[]
-): readonly LayoutId[] =>
-  LAYOUT_IDS.filter(
-    (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
-  )
+  visibleLayoutIds: readonly PaneLayoutId[],
+  layouts: readonly LayoutShape[]
+): readonly PaneLayoutId[] =>
+  layouts
+    .map((layout) => layout.id)
+    .filter(
+      (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
+    )
 
 const buildNextVisibleLayoutIds = (
-  visibleLayoutIds: readonly LayoutId[],
-  layoutId: LayoutId,
-  checked: boolean
-): readonly LayoutId[] => {
-  const normalized = normalizeVisibleLayoutIds(visibleLayoutIds)
+  visibleLayoutIds: readonly PaneLayoutId[],
+  layoutId: PaneLayoutId,
+  checked: boolean,
+  layouts: readonly LayoutShape[]
+): readonly PaneLayoutId[] => {
+  const normalized = normalizeVisibleLayoutIds(visibleLayoutIds, layouts)
 
   return checked
-    ? LAYOUT_IDS.filter(
-        (candidate) => candidate === layoutId || normalized.includes(candidate)
-      )
+    ? layouts
+        .map((layout) => layout.id)
+        .filter(
+          (candidate) =>
+            candidate === layoutId || normalized.includes(candidate)
+        )
     : normalized.filter((candidate) => candidate !== layoutId)
 }
 
 export const LayoutDisplayMenu = ({
   activeLayoutId,
   visibleLayoutIds,
+  layouts = BUILTIN_PANE_LAYOUT_REGISTRY.layouts,
   onVisibleLayoutIdsChange,
   onOpenChange = undefined,
 }: LayoutDisplayMenuProps): ReactElement => {
   useEffect(() => {
-    const normalized = normalizeVisibleLayoutIds(visibleLayoutIds)
+    const normalized = normalizeVisibleLayoutIds(visibleLayoutIds, layouts)
 
-    if (normalized.length !== visibleLayoutIds.length) {
+    if (
+      normalized.length !== visibleLayoutIds.length ||
+      normalized.some((layoutId, index) => layoutId !== visibleLayoutIds[index])
+    ) {
       onVisibleLayoutIdsChange(normalized)
     }
-  }, [onVisibleLayoutIdsChange, visibleLayoutIds])
+  }, [layouts, onVisibleLayoutIdsChange, visibleLayoutIds])
 
   return (
     <Menu
@@ -98,8 +113,8 @@ export const LayoutDisplayMenu = ({
       }
     >
       <Menu.Section label="Displayed layouts">
-        {LAYOUT_IDS.map((layoutId) => {
-          const layout = LAYOUTS[layoutId]
+        {layouts.map((layout) => {
+          const layoutId = layout.id
 
           const checked =
             layoutId === 'single' || visibleLayoutIds.includes(layoutId)
@@ -112,7 +127,12 @@ export const LayoutDisplayMenu = ({
               disabled={layoutId === 'single' || isActive}
               onChange={(next): void =>
                 onVisibleLayoutIdsChange(
-                  buildNextVisibleLayoutIds(visibleLayoutIds, layoutId, next)
+                  buildNextVisibleLayoutIds(
+                    visibleLayoutIds,
+                    layoutId,
+                    next,
+                    layouts
+                  )
                 )
               }
             >
@@ -121,7 +141,10 @@ export const LayoutDisplayMenu = ({
                   aria-hidden="true"
                   className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-on-surface-variant"
                 >
-                  <LayoutGlyph layoutId={layoutId} />
+                  <LayoutGlyph
+                    layoutId={layoutId}
+                    definition={layout.definition}
+                  />
                 </span>
                 <span>{layout.name}</span>
               </span>

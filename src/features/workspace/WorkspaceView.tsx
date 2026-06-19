@@ -81,13 +81,13 @@ import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
-import { LAYOUTS, selectVisiblePanes } from '../terminal/components/SplitView'
+import { selectVisiblePanes } from '../terminal/components/SplitView'
 import { LAYOUT_IDS } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { LayoutId, SessionCloseResult } from '../sessions/types'
+import type { PaneLayoutId, SessionCloseResult } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -226,6 +226,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const {
     sessions,
     activeSessionId,
+    layoutRegistry,
     setActiveSessionId,
     createSession,
     createBrowserSession,
@@ -312,7 +313,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
 
   const [visibleLayoutIds, setVisibleLayoutIds] =
-    useState<readonly LayoutId[]>(LAYOUT_IDS)
+    useState<readonly PaneLayoutId[]>(LAYOUT_IDS)
   const [isLayoutDisplayMenuOpen, setIsLayoutDisplayMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -525,11 +526,11 @@ const WorkspaceViewContent = (): ReactElement => {
         ? []
         : selectVisiblePanes(
             activeSession.panes,
-            LAYOUTS[activeSession.layout].capacity
+            layoutRegistry.capacityFor(activeSession.layout)
           )
             .filter((pane) => isShellPane(pane))
             .map((pane) => pane.ptyId),
-    [activeSession]
+    [activeSession, layoutRegistry]
   )
 
   const isAgentStatusRefreshing = useAgentStatusHotLoading({
@@ -1159,7 +1160,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // forward to the same setSessionLayout the TerminalZone toolbar used, so
   // pane add/remove, active-pane, and layout semantics are untouched.
   const handlePickLayout = useCallback(
-    (layoutId: LayoutId): void => {
+    (layoutId: PaneLayoutId): void => {
       if (!activeSessionId) {
         return
       }
@@ -2376,11 +2377,13 @@ const WorkspaceViewContent = (): ReactElement => {
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
               visibleLayoutIds={visibleLayoutIds}
+              layouts={layoutRegistry.layouts}
               onPick={handlePickLayout}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}
                   visibleLayoutIds={visibleLayoutIds}
+                  layouts={layoutRegistry.layouts}
                   onVisibleLayoutIdsChange={setVisibleLayoutIds}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
                 />
@@ -2404,6 +2407,7 @@ const WorkspaceViewContent = (): ReactElement => {
               ref={terminalZoneRef}
               sessions={sessions}
               activeSessionId={activeSessionId}
+              layoutRegistry={layoutRegistry}
               onSessionCwdChange={updatePaneCwd}
               deferTerminalFit={terminalFitDeferred}
               loading={loading}

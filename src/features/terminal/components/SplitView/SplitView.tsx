@@ -10,7 +10,7 @@ import {
   type ReactElement,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import type { Pane, PaneLayoutId, Session } from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
@@ -22,14 +22,15 @@ import {
   type TerminalPaneMode,
 } from '../TerminalPane'
 import { EmptySlot } from './EmptySlot'
-import { LAYOUTS } from './layouts'
 import { Tooltip } from '@/components/Tooltip'
 import { SplitDividers } from './SplitDividers'
 import { resolveGrid } from './resolveGrid'
 import {
-  DEFAULT_RATIOS,
+  BUILTIN_PANE_LAYOUT_REGISTRY,
   equalTrackRatios,
   gridAreaNameForSlotId,
+  type LayoutShape,
+  type PaneLayoutRegistry,
   type LayoutRatios,
   type RatioAxis,
 } from '../../layout-registry'
@@ -55,6 +56,7 @@ export interface SplitViewProps {
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
+  layoutRegistry?: PaneLayoutRegistry
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
@@ -103,6 +105,20 @@ export const selectVisiblePanes = (
   return sliced
 }
 
+export const resolveLayoutRatios = (
+  layout: LayoutShape,
+  saved: LayoutRatios | undefined
+): LayoutRatios => {
+  if (
+    saved?.cols.length === layout.defaultRatios.cols.length &&
+    saved.rows.length === layout.defaultRatios.rows.length
+  ) {
+    return saved
+  }
+
+  return layout.defaultRatios
+}
+
 export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
   function SplitView(
     {
@@ -119,6 +135,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onAddPane = undefined,
       onClosePane = undefined,
       onBurner = undefined,
+      layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       deferTerminalFit = false,
@@ -126,31 +143,30 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     }: SplitViewProps,
     ref
   ): ReactElement {
-    const layout = LAYOUTS[session.layout]
+    const layout = layoutRegistry.getFallbackLayout(session.layout)
     const outerDivRef = useRef<HTMLDivElement>(null)
 
     const browserSessionId = session.id
 
     const [ratios, setRatios] = useState<
-      Partial<Record<LayoutId, LayoutRatios>>
+      Partial<Record<PaneLayoutId, LayoutRatios>>
     >({})
 
-    const currentRatios =
-      ratios[session.layout] ?? DEFAULT_RATIOS[session.layout]
-    const grid = resolveGrid(session.layout, currentRatios)
+    const currentRatios = resolveLayoutRatios(layout, ratios[layout.id])
+    const grid = resolveGrid(layout, currentRatios)
 
     const handleRatioChange = useCallback(
       (axis: RatioAxis, value: readonly number[]): void => {
         setRatios((prev) => {
-          const base = prev[session.layout] ?? DEFAULT_RATIOS[session.layout]
+          const base = resolveLayoutRatios(layout, prev[layout.id])
           if (equalTrackRatios(base[axis], value)) {
             return prev
           }
 
-          return { ...prev, [session.layout]: { ...base, [axis]: [...value] } }
+          return { ...prev, [layout.id]: { ...base, [axis]: [...value] } }
         })
       },
-      [session.layout]
+      [layout]
     )
 
     // Mount SplitDividers (and their useElasticContainer hooks) only once the
@@ -395,7 +411,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           </AnimatePresence>
           {isActive && hasSize ? (
             <SplitDividers
-              layout={session.layout}
+              layout={layout}
               containerRef={outerDivRef}
               ratios={currentRatios}
               onRatioChange={handleRatioChange}

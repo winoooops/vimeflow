@@ -1,17 +1,16 @@
 // cspell:ignore vsplit hsplit vdiv hdiv subcomponent
 import { Fragment, useCallback, type ReactElement, type RefObject } from 'react'
 import { ResizeHandle } from '@/components/ResizeHandle'
-import type { LayoutId } from '../../../sessions/types'
 import { useSplitDivider } from './useSplitDivider'
 import {
-  LAYOUTS,
   type DividerHandleSpec,
+  type LayoutShape,
   type LayoutRatios,
   type RatioAxis,
 } from '../../layout-registry'
 
 export interface SplitDividersProps {
-  layout: LayoutId
+  layout: LayoutShape
   containerRef: RefObject<HTMLElement | null>
   ratios: LayoutRatios
   onRatioChange: (axis: RatioAxis, ratios: readonly number[]) => void
@@ -30,10 +29,10 @@ const groupKey = (trackAxis: RatioAxis, trackIndex: number): string =>
   `${trackAxis}:${trackIndex}`
 
 const layoutGroupKey = (
-  layout: LayoutId,
+  layout: LayoutShape,
   trackAxis: RatioAxis,
   trackIndex: number
-): string => `${layout}:${groupKey(trackAxis, trackIndex)}`
+): string => `${layout.id}:${groupKey(trackAxis, trackIndex)}`
 
 const groupSpecsByBoundary = (
   specs: readonly DividerHandleSpec[]
@@ -114,7 +113,7 @@ export const SplitDividers = ({
   ratios,
   onRatioChange,
 }: SplitDividersProps): ReactElement | null => {
-  const specs = LAYOUTS[layout].dividers
+  const specs = layout.dividers
 
   if (specs.length === 0) {
     return null

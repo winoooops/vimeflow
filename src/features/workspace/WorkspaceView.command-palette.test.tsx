@@ -8,6 +8,7 @@ import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
 import type { TerminalZoneProps } from './components/TerminalZone'
 import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 const overlayRegistrationPropsSpy = vi.hoisted(() => vi.fn())
@@ -208,6 +209,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
+      customPaneLayouts: [],
+      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
+      setCustomPaneLayouts: vi.fn(),
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),

@@ -1,17 +1,18 @@
 // cspell:ignore vdiv hdiv
 import { test, expect, describe } from 'vitest'
 import { resolveGrid, DEFAULT_RATIOS, SPLIT_DIVIDER_PX } from './resolveGrid'
+import { LAYOUTS } from '../../layout-registry'
 
 describe('resolveGrid', () => {
   test('single has no divider tracks', () => {
-    const g = resolveGrid('single', DEFAULT_RATIOS.single)
+    const g = resolveGrid(LAYOUTS.single, DEFAULT_RATIOS.single)
     expect(g.cols).toBe('minmax(0,1fr)')
     expect(g.rows).toBe('minmax(0,1fr)')
     expect(g.areas).toEqual([['p0']])
   })
 
   test('vsplit emits two column fr vars summing to 1 (grid always fills)', () => {
-    const g = resolveGrid('vsplit', { cols: [1, 1], rows: [1] })
+    const g = resolveGrid(LAYOUTS.vsplit, { cols: [1, 1], rows: [1] })
     expect(g.cols).toBe(
       `var(--split-cols-0, 1fr) ${SPLIT_DIVIDER_PX}px var(--split-cols-1, 1fr)`
     )
@@ -20,7 +21,7 @@ describe('resolveGrid', () => {
   })
 
   test('hsplit emits two row fr vars summing to 1', () => {
-    const g = resolveGrid('hsplit', { cols: [1], rows: [0.4, 0.6] })
+    const g = resolveGrid(LAYOUTS.hsplit, { cols: [1], rows: [0.4, 0.6] })
     expect(g.rows).toBe(
       `var(--split-rows-0, 0.4fr) ${SPLIT_DIVIDER_PX}px var(--split-rows-1, 0.6fr)`
     )
@@ -28,7 +29,10 @@ describe('resolveGrid', () => {
   })
 
   test('threeRight spans p0 + vdiv across all rows; hdiv only in right column', () => {
-    const g = resolveGrid('threeRight', { cols: [1.4, 1], rows: [1, 1] })
+    const g = resolveGrid(LAYOUTS.threeRight, {
+      cols: [1.4, 1],
+      rows: [1, 1],
+    })
     expect(g.areas).toEqual([
       ['p0', 'vdiv-c0', 'p1'],
       ['p0', 'vdiv-c0', 'hdiv-r0-c1'],
@@ -37,7 +41,7 @@ describe('resolveGrid', () => {
   })
 
   test('quad segments the column bar around the full-width row bar', () => {
-    const g = resolveGrid('quad', { cols: [1, 1], rows: [1, 1] })
+    const g = resolveGrid(LAYOUTS.quad, { cols: [1, 1], rows: [1, 1] })
     expect(g.areas).toEqual([
       ['p0', 'vdiv-c0-r0', 'p1'],
       ['hdiv-r0', 'hdiv-r0', 'hdiv-r0'],
@@ -46,7 +50,10 @@ describe('resolveGrid', () => {
   })
 
   test('grid3x2 segments both column bars around the full-width row bar', () => {
-    const g = resolveGrid('grid3x2', { cols: [1, 1, 1], rows: [1, 1] })
+    const g = resolveGrid(LAYOUTS.grid3x2, {
+      cols: [1, 1, 1],
+      rows: [1, 1],
+    })
     expect(g.areas).toEqual([
       ['p0', 'vdiv-c0-r0', 'p1', 'vdiv-c1-r0', 'p2'],
       ['hdiv-r0', 'hdiv-r0', 'hdiv-r0', 'hdiv-r0', 'hdiv-r0'],

@@ -21,6 +21,37 @@ import {
 } from '../workspaceLayoutBridge'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { createBrowserPane } from '../../browser/browserBridge'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
+
+const customGrid2x2 = (): PaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+})
+
+const shadowSingleCustomLayout = (): PaneLayoutDefinition => ({
+  ...customGrid2x2(),
+  id: 'single',
+  title: 'Shadow single',
+})
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -5182,6 +5213,75 @@ describe('useSessionManager', () => {
         expect(session?.panes).toHaveLength(2)
       })
     }
+
+    test('setCustomPaneLayouts installs accepted workspace layouts', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() => result.current.setCustomPaneLayouts([customLayout]))
+
+      expect(result.current.customPaneLayouts).toEqual([customLayout])
+      expect(
+        result.current.layoutRegistry.getLayout('custom:grid-2x2')
+      ).toMatchObject({
+        id: 'custom:grid-2x2',
+        capacity: 4,
+        name: 'Custom grid 2x2',
+      })
+    })
+
+    test('setCustomPaneLayouts drops definitions rejected by the registry', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() =>
+        result.current.setCustomPaneLayouts([
+          customLayout,
+          shadowSingleCustomLayout(),
+        ])
+      )
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-2x2'])
+
+      expect(
+        result.current.layoutRegistry.getLayout('custom:grid-2x2')
+      ).not.toBeNull()
+    })
+
+    test('removing a custom layout falls affected sessions back to a fitting builtin layout', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+
+      act(() => result.current.setCustomPaneLayouts([customLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-2x2'))
+
+      expect(result.current.sessions[0].layout).toBe('custom:grid-2x2')
+
+      act(() => result.current.setCustomPaneLayouts([]))
+
+      expect(result.current.customPaneLayouts).toEqual([])
+      expect(result.current.sessions[0].layout).toBe('vsplit')
+    })
 
     test('addPane spawns in the session cwd and appends an active pane', async () => {
       const service = createSequentialSpawnService()

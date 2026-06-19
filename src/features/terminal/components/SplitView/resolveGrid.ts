@@ -1,10 +1,9 @@
 // cspell:ignore vsplit hsplit vdiv hdiv
-import type { LayoutId } from '../../../sessions/types'
 import {
   DEFAULT_RATIOS,
-  LAYOUTS,
   SPLIT_DIVIDER_PX,
   buildTrackTemplate,
+  type LayoutShape,
   type LayoutRatios,
 } from '../../layout-registry'
 
@@ -17,12 +16,11 @@ export interface ResolvedGrid {
 }
 
 export const resolveGrid = (
-  layoutId: LayoutId,
+  layout: LayoutShape,
   ratios: LayoutRatios
 ): ResolvedGrid => {
   const cols = buildTrackTemplate('cols', ratios.cols, SPLIT_DIVIDER_PX)
   const rows = buildTrackTemplate('rows', ratios.rows, SPLIT_DIVIDER_PX)
-  const layout = LAYOUTS[layoutId]
 
   return { cols, rows, areas: layout.gridAreas }
 }

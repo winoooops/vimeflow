@@ -17,6 +17,10 @@ export type LayoutId =
   | 'quad'
   | 'grid3x2'
 
+export type CustomPaneLayoutId = `custom:${string}`
+
+export type PaneLayoutId = LayoutId | CustomPaneLayoutId
+
 export type PaneKind = 'shell' | 'browser'
 
 export interface Pane {
@@ -115,8 +119,8 @@ export interface Session {
   workingDirectory: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
-  /** Per-session canvas layout. Default 'single' in step 5a. */
-  layout: LayoutId
+  /** Per-session canvas layout. Builtin ids or validated workspace custom ids. */
+  layout: PaneLayoutId
   /** Session-scoped collapse state for the right agent activity panel.
    *  Shared by every pane so switching pane within a session never
    *  jumps the bar. UI-only: hydrated from localStorage by session id
