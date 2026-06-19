@@ -1,18 +1,17 @@
-import type { ReactElement, ReactNode } from 'react'
-import type { LayoutId } from '../../../sessions/types'
-import { LAYOUT_IDS } from '../../layout-registry'
-// Source the data constant directly from its module rather than the
-// `SplitView` component barrel — otherwise LayoutSwitcher silently
-// breaks if `SplitView/index.ts` ever narrows its re-exports. The
-// `layouts.ts` module is the canonical home for `LAYOUTS`.
-import { LAYOUTS } from '../SplitView/layouts'
+import { useMemo, type ReactElement, type ReactNode } from 'react'
+import type { PaneLayoutId } from '../../../sessions/types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  type LayoutShape,
+} from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
 import { SegmentedControl } from '@/components/SegmentedControl'
 
 export interface LayoutSwitcherProps {
-  activeLayoutId: LayoutId
-  visibleLayoutIds?: readonly LayoutId[]
-  onPick: (next: LayoutId) => void
+  activeLayoutId: PaneLayoutId
+  visibleLayoutIds?: readonly PaneLayoutId[]
+  layouts?: readonly LayoutShape[]
+  onPick: (next: PaneLayoutId) => void
   /**
    * Optional control docked INSIDE the pill container, after a hairline
    * divider. The workspace top chrome uses it to seat the layout-display
@@ -24,15 +23,25 @@ export interface LayoutSwitcherProps {
 
 export const LayoutSwitcher = ({
   activeLayoutId,
-  visibleLayoutIds = LAYOUT_IDS,
+  visibleLayoutIds = BUILTIN_PANE_LAYOUT_REGISTRY.layouts.map(
+    (layout) => layout.id
+  ),
+  layouts = BUILTIN_PANE_LAYOUT_REGISTRY.layouts,
   onPick,
   trailing = undefined,
 }: LayoutSwitcherProps): ReactElement => {
-  const normalizedVisibleLayoutIds = LAYOUT_IDS.filter(
+  const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
+
+  const layoutById = useMemo(
+    () => new Map(layouts.map((layout) => [layout.id, layout])),
+    [layouts]
+  )
+
+  const normalizedVisibleLayoutIds = layoutIds.filter(
     (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
   )
 
-  const renderedLayoutIds = LAYOUT_IDS.filter(
+  const renderedLayoutIds = layoutIds.filter(
     (layoutId) =>
       layoutId === activeLayoutId ||
       normalizedVisibleLayoutIds.includes(layoutId)
@@ -58,12 +67,17 @@ export const LayoutSwitcher = ({
         value={activeLayoutId}
         options={renderedLayoutIds.map((layoutId) => ({
           value: layoutId,
-          label: LAYOUTS[layoutId].name,
-          tooltip: LAYOUTS[layoutId].name,
+          label: layoutById.get(layoutId)?.name ?? layoutId,
+          tooltip: layoutById.get(layoutId)?.name ?? layoutId,
         }))}
         onChange={onPick}
         skipActiveReselect
-        renderOption={(layout) => <LayoutGlyph layoutId={layout.value} />}
+        renderOption={(layout) => (
+          <LayoutGlyph
+            layoutId={layout.value}
+            definition={layoutById.get(layout.value)?.definition}
+          />
+        )}
       />
       {trailing !== undefined && (
         <>

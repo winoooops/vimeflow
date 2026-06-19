@@ -3,10 +3,37 @@ import {
   LAYOUT_CYCLE,
   LAYOUT_IDS,
   LAYOUTS,
+  MAX_BUILTIN_PANE_COUNT,
+  PaneLayoutRegistry,
   VISIBLE_LAYOUTS,
   autoShrinkLayoutFor,
   isKnownLayoutId,
+  type PaneLayoutDefinition,
 } from '.'
+
+const customGrid2x2 = (): PaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+})
 
 describe('layoutRegistry', () => {
   test('exports the canonical layout order once', () => {
@@ -42,5 +69,43 @@ describe('layoutRegistry', () => {
     expect(autoShrinkLayoutFor(4, 'quad')).toBe('quad')
     expect(autoShrinkLayoutFor(5, 'grid3x2')).toBe('grid3x2')
     expect(autoShrinkLayoutFor(4, 'grid3x2')).toBe('quad')
+  })
+
+  test('assembles runtime builtin plus custom layouts', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2()])
+
+    expect(registry.layouts.map((layout) => layout.id)).toEqual([
+      ...LAYOUT_IDS,
+      'custom:grid-2x2',
+    ])
+
+    expect(registry.customLayouts.map((layout) => layout.id)).toEqual([
+      'custom:grid-2x2',
+    ])
+    expect(registry.getLayout('custom:grid-2x2')?.capacity).toBe(4)
+    expect(registry.resolveLayoutId('custom:grid-2x2')).toBe('custom:grid-2x2')
+    expect(registry.resolveLayoutId('custom:missing')).toBe('single')
+  })
+
+  test('custom layouts preserve empty slots on pane removal', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2()])
+
+    expect(registry.autoShrinkLayoutFor(3, 'custom:grid-2x2')).toBe(
+      'custom:grid-2x2'
+    )
+
+    expect(autoShrinkLayoutFor(3, 'custom:grid-2x2', registry)).toBe(
+      'custom:grid-2x2'
+    )
+  })
+
+  test('exposes the maximum builtin pane count', () => {
+    expect(MAX_BUILTIN_PANE_COUNT).toBe(6)
+  })
+
+  test('workspace layout with zero panes falls through to single', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2()])
+
+    expect(registry.autoShrinkLayoutFor(0, 'custom:grid-2x2')).toBe('single')
   })
 })

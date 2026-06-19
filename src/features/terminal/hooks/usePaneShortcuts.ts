@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
-import type { LayoutId, Session } from '../../sessions/types'
-import { LAYOUT_CYCLE } from '../layout-registry/layoutRegistry'
+import type { PaneLayoutId, Session } from '../../sessions/types'
+import {
+  LAYOUT_CYCLE,
+  isKnownLayoutId,
+} from '../layout-registry/layoutRegistry'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -19,7 +22,7 @@ export interface UsePaneShortcutsOptions {
   sessions: Session[]
   activeSessionId: string | null
   setSessionActivePane: (sessionId: string, paneId: string) => void
-  setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
   /** Defaults to `'ctrl'` — the safer behavior for non-Mac shells
    *  where the toolbar already shows `Ctrl`. */
   preferModifier?: PaneShortcutModifier
@@ -164,7 +167,6 @@ export const usePaneShortcuts = ({
       }
 
       if (event.code === 'Backslash') {
-        const currentIndex = LAYOUT_CYCLE.indexOf(activeSession.layout)
         // Persisted sessions can carry a layout id that no longer
         // exists in the current LAYOUTS record (e.g., a layout was
         // renamed between app versions). `indexOf` returns -1 then,
@@ -172,9 +174,10 @@ export const usePaneShortcuts = ({
         // and silently reset to 'single'. Treat the unknown layout
         // as a no-op so the user keeps their existing state and can
         // recover via the LayoutSwitcher buttons.
-        if (currentIndex === -1) {
+        if (!isKnownLayoutId(activeSession.layout)) {
           return
         }
+        const currentIndex = LAYOUT_CYCLE.indexOf(activeSession.layout)
         event.preventDefault()
         event.stopPropagation()
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length

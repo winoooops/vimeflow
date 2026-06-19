@@ -478,6 +478,12 @@ mod tests {
     fn load_or_recover_does_not_panic_when_rename_fails() {
         use std::os::unix::fs::PermissionsExt;
 
+        // Permission-based EACCES simulation is ineffective when running as
+        // root, so skip rather than assert behavior the OS will not produce.
+        if unsafe { libc::getuid() } == 0 {
+            return;
+        }
+
         let dir = TempDir::new().unwrap();
         let parent = dir.path().join("readonly");
         std::fs::create_dir(&parent).unwrap();

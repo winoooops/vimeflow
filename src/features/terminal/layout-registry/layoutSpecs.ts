@@ -1,8 +1,10 @@
 // cspell:ignore vsplit hsplit
-import type { LayoutId } from '../../sessions/types'
+import type { LayoutId, PaneLayoutId } from '../../sessions/types'
 import { LAYOUT_IDS } from './layoutIds'
 import {
   getPaneLayoutCapacity,
+  getPaneLayoutRatios,
+  isBuiltinPaneLayoutId,
   type PaneLayoutDefinition,
 } from './layoutDefinition'
 import { PREBUILT_PANE_LAYOUTS_BY_ID } from './prebuiltLayouts'
@@ -15,7 +17,7 @@ import {
 } from './layoutGeometry'
 
 export interface LayoutShape {
-  readonly id: LayoutId
+  readonly id: PaneLayoutId
   readonly name: string
   /** Maximum pane count for this layout. SplitView clamps panes to capacity. */
   readonly capacity: number
@@ -39,13 +41,18 @@ const logicalTrackTemplate = (tracks: readonly number[]): string =>
     ? 'minmax(0,1fr)'
     : tracks.map((track) => `minmax(0,${track}fr)`).join(' ')
 
-const defineLayout = (id: LayoutId): LayoutShape => {
-  const definition = PREBUILT_PANE_LAYOUTS_BY_ID[id]
+export const createLayoutShape = (
+  definition: PaneLayoutDefinition
+): LayoutShape => {
   const geometry = resolvePaneLayoutGeometry(definition)
-  const defaultRatios = DEFAULT_RATIOS[id]
+
+  const defaultRatios =
+    definition.source === 'builtin' && isBuiltinPaneLayoutId(definition.id)
+      ? DEFAULT_RATIOS[definition.id]
+      : getPaneLayoutRatios(definition)
 
   return {
-    id,
+    id: definition.id,
     name: definition.title,
     capacity: getPaneLayoutCapacity(definition),
     cols: logicalTrackTemplate(defaultRatios.cols),
@@ -57,6 +64,9 @@ const defineLayout = (id: LayoutId): LayoutShape => {
     definition,
   }
 }
+
+const defineLayout = (id: LayoutId): LayoutShape =>
+  createLayoutShape(PREBUILT_PANE_LAYOUTS_BY_ID[id])
 
 /**
  * Canonical prebuilt layout definitions for the current terminal layout

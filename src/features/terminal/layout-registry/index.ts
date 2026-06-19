@@ -1,14 +1,22 @@
 export {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
   LAYOUTS,
+  MAX_BUILTIN_PANE_COUNT,
+  PaneLayoutRegistry,
   VISIBLE_LAYOUTS,
   autoShrinkLayoutFor,
   isKnownLayoutId,
+  type RuntimePaneLayoutRegistrySnapshot,
 } from './layoutRegistry'
 
 export { LAYOUT_IDS } from './layoutIds'
 
-export { LAYOUT_SPECS, type LayoutShape } from './layoutSpecs'
+export {
+  LAYOUT_SPECS,
+  createLayoutShape,
+  type LayoutShape,
+} from './layoutSpecs'
 
 export {
   assemblePaneLayoutRegistry,

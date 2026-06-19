@@ -5,6 +5,7 @@ import { useRef } from 'react'
 import { SplitDividers } from './SplitDividers'
 import { DEFAULT_RATIOS, SPLIT_DIVIDER_PX } from './resolveGrid'
 import type { LayoutId } from '../../../sessions/types'
+import { LAYOUTS } from '../../layout-registry'
 
 const CONTAINER_WIDTH = 1200
 const CONTAINER_HEIGHT = 800
@@ -41,7 +42,7 @@ const Harness = ({ layout }: { layout: LayoutId }): React.ReactElement => {
   return (
     <div ref={ref} style={{ width: 1200, height: 800 }}>
       <SplitDividers
-        layout={layout}
+        layout={LAYOUTS[layout]}
         containerRef={ref}
         ratios={DEFAULT_RATIOS[layout]}
         onRatioChange={vi.fn()}
@@ -91,7 +92,7 @@ describe('SplitDividers', () => {
           style={{ width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT }}
         >
           <SplitDividers
-            layout="grid3x2"
+            layout={LAYOUTS.grid3x2}
             containerRef={ref}
             ratios={DEFAULT_RATIOS.grid3x2}
             onRatioChange={onRatioChange}
@@ -163,7 +164,7 @@ describe('SplitDividers', () => {
           style={{ width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT }}
         >
           <SplitDividers
-            layout="vsplit"
+            layout={LAYOUTS.vsplit}
             containerRef={ref}
             ratios={DEFAULT_RATIOS.vsplit}
             onRatioChange={onRatioChange}

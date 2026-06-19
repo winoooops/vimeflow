@@ -1,5 +1,9 @@
-import type { LayoutId, Pane, Session } from '../types'
-import { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
+import type { Pane, PaneLayoutId, Session } from '../types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  autoShrinkLayoutFor,
+  type PaneLayoutRegistry,
+} from '../../terminal/layout-registry/layoutRegistry'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { isShellPane } from './paneKind'
 
@@ -90,7 +94,8 @@ export const applyRemovePane = (
   sessions: Session[],
   sessionId: string,
   paneId: string,
-  currentLayoutId: LayoutId
+  currentLayoutId: PaneLayoutId,
+  layoutRegistry: PaneLayoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY
 ): ApplyRemovePaneResult => {
   const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
   if (sessionIndex === -1) {
@@ -128,7 +133,7 @@ export const applyRemovePane = (
   const updated: Session = {
     ...session,
     panes,
-    layout: autoShrinkLayoutFor(panes.length, currentLayoutId),
+    layout: autoShrinkLayoutFor(panes.length, currentLayoutId, layoutRegistry),
     status: deriveShellSessionStatus(panes),
     agentType: activePane?.agentType ?? session.agentType,
   }

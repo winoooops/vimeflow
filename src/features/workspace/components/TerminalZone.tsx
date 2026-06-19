@@ -9,6 +9,7 @@ import {
 import type { PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
+import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
@@ -65,6 +66,7 @@ export interface TerminalZoneProps {
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
+  layoutRegistry?: PaneLayoutRegistry
 }
 
 export interface TerminalZoneHandle {
@@ -92,6 +94,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
+      layoutRegistry = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -194,6 +197,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onAddPane={addPane}
                     onClosePane={removePane}
                     onBurner={onBurner}
+                    layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     deferTerminalFit={deferTerminalFit}

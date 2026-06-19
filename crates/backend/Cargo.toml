@@ -36,7 +36,9 @@ regex = "1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 once_cell = "1.19"
-env_logger = "0.11"
+# Pinned to 0.11.5: 0.11.10 pulls in `jiff`, which currently fails to download
+# in CI due to transient SSL errors, blocking the Rust test job.
+env_logger = "=0.11.5"
 # Pinned < 2.5 to avoid pulling url 2.5+ / idna 1.x / ICU4X (zerovec), an
 # unplanned dependency-tree churn out of scope for this crate. 2.4.x uses
 # idna 0.4 (no ICU).

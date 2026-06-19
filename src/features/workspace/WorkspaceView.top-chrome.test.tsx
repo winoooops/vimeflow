@@ -6,6 +6,7 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session, SessionStatus, LayoutId } from '../sessions/types'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 
 // Mock all WorkspaceView dependencies
@@ -174,6 +175,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
+      customPaneLayouts: [],
+      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
+      setCustomPaneLayouts: vi.fn(),
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
