@@ -306,6 +306,7 @@ describe('BrowserPane', () => {
     let frameCallback: FrameRequestCallback | null = null
     let nextFrameId = 1
     let intervalCallback: (() => void) | null = null
+    let intervalId: number | undefined
     let intervalCleared = false
 
     const disconnectSpy = vi
@@ -324,24 +325,42 @@ describe('BrowserPane', () => {
       .spyOn(window, 'cancelAnimationFrame')
       .mockImplementation(() => undefined)
 
+    const originalSetInterval = window.setInterval
+
     const setIntervalSpy = vi
       .spyOn(window, 'setInterval')
       .mockImplementation(
-        (handler: unknown): ReturnType<typeof window.setInterval> => {
-          if (typeof handler === 'function') {
+        (
+          handler: unknown,
+          delay?: number,
+          ...rest: unknown[]
+        ): number => {
+          const id = originalSetInterval(
+            handler as TimerHandler,
+            delay,
+            ...rest
+          )
+          // Capture only the post-idle polling interval (250 ms) used by the
+          // pane; let other intervals (e.g. waitFor polling) delegate to the
+          // real timer so earlier waitFor calls can retry.
+          if (delay === 250 && typeof handler === 'function') {
             intervalCallback = handler as () => void
+            intervalId = id
           }
 
-          return 123 as unknown as ReturnType<typeof window.setInterval>
+          return id
         }
       )
+
+    const originalClearInterval = window.clearInterval
 
     const clearIntervalSpy = vi
       .spyOn(window, 'clearInterval')
       .mockImplementation((id: unknown): void => {
-        if (id === 123) {
+        if (id === intervalId) {
           intervalCleared = true
         }
+        originalClearInterval(id as number)
       })
 
     try {
