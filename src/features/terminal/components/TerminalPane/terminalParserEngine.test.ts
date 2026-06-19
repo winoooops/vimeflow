@@ -269,6 +269,29 @@ describe('byte-capable control sequence parser engine', () => {
     })
   })
 
+  test('reset clears pending split control sequences', () => {
+    const engine = createByteEngine()
+    const handler = vi.fn()
+
+    engine.parser.onEvent(handler)
+
+    expect(
+      engine.parseOutput(
+        createByteChunk('before \x1b]7;file://local', 0, 'live')
+      )
+    ).toEqual({ visibleText: 'before ' })
+
+    engine.reset()
+
+    expect(
+      engine.parseOutput(
+        createByteChunk('host/tmp/ghostty\x07 after', 25, 'live')
+      )
+    ).toEqual({ visibleText: 'host/tmp/ghostty\x07 after' })
+
+    expect(handler).not.toHaveBeenCalled()
+  })
+
   test('supports OSC 7 sequences terminated with string terminator', () => {
     const engine = createByteEngine()
     const handler = vi.fn()

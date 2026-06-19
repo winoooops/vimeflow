@@ -4,6 +4,7 @@ import type {
   GhosttyByteParserAdapterInput,
 } from './ghosttyParserEngine'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
+import type { TerminalSize } from '../../types'
 
 export interface GhosttyVtParserEffects {
   readonly onCwdChange: (uri: string) => void
@@ -18,6 +19,7 @@ export interface GhosttyVtParserDriver {
    */
   writeBytes: (bytes: Uint8Array) => TerminalParserEngineOutput
   reset?: () => void
+  resize?: (size: TerminalSize) => void
   dispose?: () => void
 }
 
@@ -54,6 +56,14 @@ export class GhosttyVtByteParserAdapter implements GhosttyByteParserAdapter {
     }
 
     this.driver.reset?.()
+  }
+
+  resize(size: TerminalSize): void {
+    if (this.isDisposed) {
+      return
+    }
+
+    this.driver.resize?.(size)
   }
 
   dispose(): void {

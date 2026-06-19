@@ -2,6 +2,7 @@
 import type {
   TerminalParserEvent,
   TerminalParserOutputContext,
+  TerminalSize,
 } from '../../types'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 import {
@@ -25,6 +26,7 @@ export interface GhosttyByteParserAdapter {
     input: GhosttyByteParserAdapterInput
   ) => TerminalParserEngineOutput
   reset?: () => void
+  resize?: (size: TerminalSize) => void
   dispose?: () => void
 }
 
@@ -126,6 +128,23 @@ export class GhosttyControlSequenceParserEngine
     this.byteParserAdapter.reset?.()
 
     return super.parseInput(input)
+  }
+
+  reset(): void {
+    if (this.isDisposed) {
+      return
+    }
+
+    super.reset()
+    this.byteParserAdapter.reset?.()
+  }
+
+  resize(size: TerminalSize): void {
+    if (this.isDisposed) {
+      return
+    }
+
+    this.byteParserAdapter.resize?.(size)
   }
 
   dispose(): void {

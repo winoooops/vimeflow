@@ -125,8 +125,9 @@ describe('ghosttyVtRenderStateDriver', () => {
     })
   })
 
-  test('forwards lifecycle to the render-state driver', () => {
+  test('forwards lifecycle and size changes to the render-state driver', () => {
     const reset = vi.fn()
+    const resize = vi.fn()
     const dispose = vi.fn()
 
     const adapter = createGhosttyVtRenderStateByteParserAdapter(() => ({
@@ -135,14 +136,19 @@ describe('ghosttyVtRenderStateDriver', () => {
         rows: [],
       }),
       reset,
+      resize,
       dispose,
     }))
 
+    adapter.resize?.({ cols: 132, rows: 43 })
     adapter.reset?.()
     adapter.dispose?.()
     adapter.dispose?.()
+    adapter.resize?.({ cols: 80, rows: 24 })
     adapter.reset?.()
 
+    expect(resize).toHaveBeenCalledOnce()
+    expect(resize).toHaveBeenCalledWith({ cols: 132, rows: 43 })
     expect(reset).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
   })

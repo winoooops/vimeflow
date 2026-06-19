@@ -125,6 +125,45 @@ describe('ghosttyParserEngine', () => {
     expect(reset).not.toHaveBeenCalled()
   })
 
+  test('forwards resize and reset to the Ghostty byte parser adapter', () => {
+    const reset = vi.fn()
+    const resize = vi.fn()
+
+    const adapter: GhosttyByteParserAdapter = {
+      parseBytes: vi.fn(() => ({ visibleText: '' })),
+      reset,
+      resize,
+    }
+
+    const engine = createGhosttyParserEngine({ byteParserAdapter: adapter })
+
+    engine.resize?.({ cols: 120, rows: 30 })
+    engine.reset?.()
+
+    expect(resize).toHaveBeenCalledWith({ cols: 120, rows: 30 })
+    expect(reset).toHaveBeenCalledOnce()
+  })
+
+  test('ignores resize and reset after disposal', () => {
+    const reset = vi.fn()
+    const resize = vi.fn()
+
+    const adapter: GhosttyByteParserAdapter = {
+      parseBytes: vi.fn(() => ({ visibleText: '' })),
+      reset,
+      resize,
+    }
+
+    const engine = createGhosttyParserEngine({ byteParserAdapter: adapter })
+
+    engine.dispose?.()
+    engine.resize?.({ cols: 120, rows: 30 })
+    engine.reset?.()
+
+    expect(resize).not.toHaveBeenCalled()
+    expect(reset).not.toHaveBeenCalled()
+  })
+
   test('routes adapter parser events through the existing parser surface', () => {
     const parseBytes = vi.fn((input: GhosttyByteParserAdapterInput) => {
       input.emitEvent({

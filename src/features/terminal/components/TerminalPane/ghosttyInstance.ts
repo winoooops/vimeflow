@@ -6,6 +6,7 @@ import type {
   TerminalRendererHandle,
   TerminalOutputWriter,
   TerminalParser,
+  TerminalSize,
   TerminalViewportReader,
 } from '../../types'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
@@ -48,6 +49,7 @@ class GhosttyTerminalModel {
   private readonly parserEngine: TerminalParserEngine
   private isDisposed = false
   private isRendererDisposed = false
+  private syncedParserEngineSize: TerminalSize | null = null
   readonly terminal: TerminalTextSurface
   readonly parser: TerminalParser
 
@@ -63,6 +65,19 @@ class GhosttyTerminalModel {
           : this.parserEngine.parseText(data, null),
     })
 
+    const originalTerminalOpen = this.terminal.open.bind(this.terminal)
+    this.terminal.open = (container): void => {
+      originalTerminalOpen(container)
+      this.syncParserEngineSize()
+    }
+
+    const originalTerminalClear = this.terminal.clear.bind(this.terminal)
+    this.terminal.clear = (): void => {
+      originalTerminalClear()
+      this.parserEngine.reset?.()
+      this.syncParserEngineSize({ force: true })
+    }
+
     const originalTerminalDispose = this.terminal.dispose.bind(this.terminal)
     this.terminal.dispose = (): void => {
       if (this.isDisposed) {
@@ -73,6 +88,8 @@ class GhosttyTerminalModel {
       originalTerminalDispose()
       this.parserEngine.dispose?.()
     }
+
+    this.syncParserEngineSize()
   }
 
   readonly output: TerminalOutputWriter = {
@@ -96,6 +113,7 @@ class GhosttyTerminalModel {
   readonly fitController: TerminalFitController = {
     fit: (): void => {
       this.terminal.fit()
+      this.syncParserEngineSize()
     },
   }
 
@@ -118,6 +136,24 @@ class GhosttyTerminalModel {
       fitController: this.fitController,
       attachRenderer: (): TerminalRendererHandle => this.rendererHandle,
     }
+  }
+
+  private syncParserEngineSize(options: { force?: boolean } = {}): void {
+    const size = {
+      cols: this.terminal.cols,
+      rows: this.terminal.rows,
+    }
+
+    if (
+      !options.force &&
+      this.syncedParserEngineSize?.cols === size.cols &&
+      this.syncedParserEngineSize.rows === size.rows
+    ) {
+      return
+    }
+
+    this.syncedParserEngineSize = size
+    this.parserEngine.resize?.(size)
   }
 }
 

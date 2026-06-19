@@ -126,38 +126,46 @@ describe('ghosttyVtByteParserAdapter', () => {
     expect(emitEvent).not.toHaveBeenCalled()
   })
 
-  test('resets and disposes the VT parser driver once', () => {
+  test('forwards resize, reset, and dispose to the VT parser driver', () => {
     const reset = vi.fn()
+    const resize = vi.fn()
     const dispose = vi.fn()
 
     const adapter = createGhosttyVtByteParserAdapter(() => ({
       writeBytes: (): TerminalParserEngineOutput => ({ visibleText: '' }),
       reset,
+      resize,
       dispose,
     }))
 
+    adapter.resize?.({ cols: 120, rows: 30 })
     adapter.reset?.()
     adapter.dispose?.()
     adapter.dispose?.()
 
+    expect(resize).toHaveBeenCalledWith({ cols: 120, rows: 30 })
     expect(reset).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
   })
 
-  test('ignores reset after disposal', () => {
+  test('ignores resize and reset after disposal', () => {
     const reset = vi.fn()
+    const resize = vi.fn()
     const dispose = vi.fn()
 
     const adapter = createGhosttyVtByteParserAdapter(() => ({
       writeBytes: (): TerminalParserEngineOutput => ({ visibleText: '' }),
       reset,
+      resize,
       dispose,
     }))
 
     adapter.dispose?.()
+    adapter.resize?.({ cols: 120, rows: 30 })
     adapter.reset?.()
 
     expect(dispose).toHaveBeenCalledOnce()
+    expect(resize).not.toHaveBeenCalled()
     expect(reset).not.toHaveBeenCalled()
   })
 })
