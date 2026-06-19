@@ -7,6 +7,10 @@ import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session, SessionStatus, LayoutId } from '../sessions/types'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
+import {
+  HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+  SHOWN_LAYOUTS_STORAGE_KEY,
+} from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 
 // Mock all WorkspaceView dependencies
@@ -191,6 +195,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   }
 
   beforeEach(async () => {
+    window.localStorage.removeItem(SHOWN_LAYOUTS_STORAGE_KEY)
+    window.localStorage.removeItem(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY)
     Object.defineProperty(navigator, 'platform', {
       value: '',
       configurable: true,
@@ -295,6 +301,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   })
 
   afterEach(() => {
+    window.localStorage.removeItem(SHOWN_LAYOUTS_STORAGE_KEY)
+    window.localStorage.removeItem(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY)
     act(() => {
       setSidebarCollapsed(false)
     })
@@ -514,6 +522,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   test('layout picks forward to setSessionLayout without touching pane semantics (J6)', async () => {
     const user = userEvent.setup()
     await setupSessionManager(mockSessions, 'session-2')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'quad', 'grid3x2'])
+    )
     render(<WorkspaceView />)
 
     await user.click(screen.getByRole('button', { name: 'Quad' }))
@@ -556,11 +568,15 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const user = userEvent.setup()
 
     await setupSessionManager(mockSessions, 'session-2')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'hsplit', 'grid3x2'])
+    )
     render(<WorkspaceView />)
 
     const switcher = screen.getByTestId('layout-switcher')
     expect(
-      within(switcher).getByRole('button', { name: '3x2 grid' })
+      within(switcher).getByRole('button', { name: 'Horizontal split' })
     ).toBeInTheDocument()
 
     await user.click(
@@ -570,18 +586,18 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     )
 
     await user.click(
-      await screen.findByRole('menuitemcheckbox', { name: '3x2 grid' })
+      await screen.findByRole('menuitemcheckbox', { name: 'Horizontal split' })
     )
 
     expect(
       within(screen.getByTestId('layout-switcher')).queryByRole('button', {
-        name: '3x2 grid',
+        name: 'Horizontal split',
       })
     ).toBeNull()
 
     expect(
       within(screen.getByTestId('layout-switcher')).getByRole('button', {
-        name: 'Vertical split',
+        name: '3x2 grid',
       })
     ).toBeInTheDocument()
   })

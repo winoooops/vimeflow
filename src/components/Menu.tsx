@@ -86,7 +86,7 @@ const SHORTCUT_CHIP_CLASSES =
   'shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] ' +
   'text-on-surface-variant'
 
-// 18×18 rounded check square ported from ViewSettingsDropdown's CheckIndicator:
+// 16×16 rounded check square ported from ViewSettingsDropdown's CheckIndicator:
 // checked => filled square with a `check` glyph; unchecked => thin
 // outline-variant border. Disabled rows tone the checked state down so the
 // indicator visually matches the muted label.
@@ -100,17 +100,17 @@ const CheckIndicator = ({
   <span
     aria-hidden="true"
     className={
-      'inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] flex-shrink-0 ' +
+      'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[4px] ' +
       (checked
         ? disabled
-          ? 'bg-on-surface-variant/12 text-on-surface-variant/55 border-[1.5px] border-on-surface-variant/20'
+          ? 'border border-on-surface-variant/20 bg-on-surface-variant/12 text-on-surface-variant/55'
           : 'bg-primary text-on-primary'
-        : 'bg-transparent border-[1.5px] border-on-surface-variant/30')
+        : 'border border-on-surface-variant/30 bg-transparent')
     }
     style={checked ? { fontVariationSettings: '"wght" 700' } : undefined}
   >
     {checked ? (
-      <span className="material-symbols-outlined text-[14px] leading-none">
+      <span className="material-symbols-outlined text-[12px] leading-none">
         check
       </span>
     ) : null}

@@ -99,7 +99,7 @@ export const PANE_LAYOUT_SCHEMA_VERSION: PaneLayoutSchemaVersion = 1
 
 export const MIN_LAYOUT_TRACKS = 1
 
-export const MAX_LAYOUT_TRACKS = 4
+export const MAX_LAYOUT_TRACKS = 24
 
 export const MIN_LAYOUT_SLOTS = 1
 

@@ -19,8 +19,25 @@ const GenericLayoutGlyph = ({
   const frameY = 1
   const frameWidth = 12
   const frameHeight = 9
-  const colCount = definition.tracks.columns.length
-  const rowCount = definition.tracks.rows.length
+  const columns = definition.tracks.columns.map((track) => track.units)
+  const rows = definition.tracks.rows.map((track) => track.units)
+  const colTotal = columns.reduce((total, unit) => total + unit, 0) || 1
+  const rowTotal = rows.reduce((total, unit) => total + unit, 0) || 1
+
+  const offset = (
+    tracks: readonly number[],
+    total: number,
+    start: number,
+    span: number
+  ): { readonly start: number; readonly size: number } => {
+    const leading = tracks.slice(0, start).reduce((sum, unit) => sum + unit, 0)
+
+    const size = tracks
+      .slice(start, start + span)
+      .reduce((sum, unit) => sum + unit, 0)
+
+    return { start: leading / total, size: size / total }
+  }
 
   return (
     <svg
@@ -30,11 +47,13 @@ const GenericLayoutGlyph = ({
       aria-hidden="true"
       focusable="false"
     >
-      {definition.slots.map((slot) => {
-        const x = frameX + (slot.rect.col / colCount) * frameWidth
-        const y = frameY + (slot.rect.row / rowCount) * frameHeight
-        const width = (slot.rect.colSpan / colCount) * frameWidth
-        const height = (slot.rect.rowSpan / rowCount) * frameHeight
+      {definition.slots.map((slot, slotIndex) => {
+        const col = offset(columns, colTotal, slot.rect.col, slot.rect.colSpan)
+        const row = offset(rows, rowTotal, slot.rect.row, slot.rect.rowSpan)
+        const x = frameX + col.start * frameWidth
+        const y = frameY + row.start * frameHeight
+        const width = col.size * frameWidth
+        const height = row.size * frameHeight
 
         return (
           <rect
@@ -44,7 +63,8 @@ const GenericLayoutGlyph = ({
             width={width}
             height={height}
             rx="0.9"
-            fill="none"
+            fill="currentColor"
+            fillOpacity={0.18 + (slotIndex % 3) * 0.1}
             stroke="currentColor"
             strokeWidth="0.8"
           />

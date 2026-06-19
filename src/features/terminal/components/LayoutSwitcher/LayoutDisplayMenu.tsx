@@ -1,4 +1,5 @@
-import { useEffect, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
 import type { PaneLayoutId } from '../../../sessions/types'
 import {
@@ -10,19 +11,39 @@ import { LayoutGlyph } from './LayoutGlyph'
 export interface LayoutDisplayMenuProps {
   activeLayoutId: PaneLayoutId
   visibleLayoutIds: readonly PaneLayoutId[]
+  hiddenCustomLayoutIds?: readonly PaneLayoutId[]
   layouts?: readonly LayoutShape[]
   onVisibleLayoutIdsChange: (next: readonly PaneLayoutId[]) => void
+  onHiddenCustomLayoutIdsChange?: (next: readonly PaneLayoutId[]) => void
+  onPickLayout?: (layoutId: PaneLayoutId) => void
+  onCreateCustomLayout?: () => void
+  onEditCustomLayout?: (layoutId: PaneLayoutId) => void
+  onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onOpenChange?: (open: boolean) => void
 }
+
+const LOCKED_DISPLAY_LAYOUT_IDS = new Set<PaneLayoutId>(['single'])
+
+const isLockedDisplayLayout = (layoutId: PaneLayoutId): boolean =>
+  LOCKED_DISPLAY_LAYOUT_IDS.has(layoutId)
+
+const customDisplayCheckboxClass = (checked: boolean): string =>
+  `inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-primary ${
+    checked
+      ? 'bg-primary text-on-primary'
+      : 'border border-on-surface-variant/30 bg-transparent text-on-surface-muted hover:border-primary/45 hover:text-primary'
+  }`
 
 const normalizeVisibleLayoutIds = (
   visibleLayoutIds: readonly PaneLayoutId[],
   layouts: readonly LayoutShape[]
 ): readonly PaneLayoutId[] =>
   layouts
+    .filter((layout) => layout.definition.source === 'builtin')
     .map((layout) => layout.id)
     .filter(
-      (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
+      (layoutId) =>
+        isLockedDisplayLayout(layoutId) || visibleLayoutIds.includes(layoutId)
     )
 
 const buildNextVisibleLayoutIds = (
@@ -46,10 +67,23 @@ const buildNextVisibleLayoutIds = (
 export const LayoutDisplayMenu = ({
   activeLayoutId,
   visibleLayoutIds,
+  hiddenCustomLayoutIds = [],
   layouts = BUILTIN_PANE_LAYOUT_REGISTRY.layouts,
   onVisibleLayoutIdsChange,
+  onHiddenCustomLayoutIdsChange = undefined,
+  onPickLayout = undefined,
+  onCreateCustomLayout = undefined,
+  onEditCustomLayout = undefined,
+  onDeleteCustomLayout = undefined,
   onOpenChange = undefined,
 }: LayoutDisplayMenuProps): ReactElement => {
+  const [menuVersion, setMenuVersion] = useState(0)
+
+  const closeMenu = (): void => {
+    setMenuVersion((version) => version + 1)
+    onOpenChange?.(false)
+  }
+
   useEffect(() => {
     const normalized = normalizeVisibleLayoutIds(visibleLayoutIds, layouts)
 
@@ -63,6 +97,7 @@ export const LayoutDisplayMenu = ({
 
   return (
     <Menu
+      key={menuVersion}
       placement="bottom-end"
       aria-label="Displayed layouts"
       onOpenChange={onOpenChange}
@@ -113,45 +148,147 @@ export const LayoutDisplayMenu = ({
       }
     >
       <Menu.Section label="Displayed layouts">
-        {layouts.map((layout) => {
-          const layoutId = layout.id
+        {layouts
+          .filter((layout) => layout.definition.source === 'builtin')
+          .map((layout) => {
+            const layoutId = layout.id
 
-          const checked =
-            layoutId === 'single' || visibleLayoutIds.includes(layoutId)
-          const isActive = layoutId === activeLayoutId
+            const checked =
+              isLockedDisplayLayout(layoutId) ||
+              visibleLayoutIds.includes(layoutId)
+            const isActive = layoutId === activeLayoutId
+            const disabled = isLockedDisplayLayout(layoutId) || isActive
 
-          return (
-            <Menu.Checkbox
-              key={layoutId}
-              checked={checked || isActive}
-              disabled={layoutId === 'single' || isActive}
-              onChange={(next): void =>
-                onVisibleLayoutIdsChange(
-                  buildNextVisibleLayoutIds(
-                    visibleLayoutIds,
-                    layoutId,
-                    next,
-                    layouts
+            return (
+              <Menu.Checkbox
+                key={layoutId}
+                checked={checked || isActive}
+                disabled={disabled}
+                onChange={(next): void =>
+                  onVisibleLayoutIdsChange(
+                    buildNextVisibleLayoutIds(
+                      visibleLayoutIds,
+                      layoutId,
+                      next,
+                      layouts
+                    )
                   )
-                )
-              }
-            >
-              <span className="flex items-center gap-2.5">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-on-surface-variant"
-                >
-                  <LayoutGlyph
-                    layoutId={layoutId}
-                    definition={layout.definition}
-                  />
+                }
+              >
+                <span className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-on-surface-variant"
+                  >
+                    <LayoutGlyph
+                      layoutId={layoutId}
+                      definition={layout.definition}
+                    />
+                  </span>
+                  <span>{layout.name}</span>
                 </span>
-                <span>{layout.name}</span>
-              </span>
-            </Menu.Checkbox>
-          )
-        })}
+              </Menu.Checkbox>
+            )
+          })}
       </Menu.Section>
+      {layouts.some((layout) => layout.definition.source === 'workspace') && (
+        <Menu.Section label="Custom">
+          <div className="mx-1 my-1 h-px bg-outline-variant/25" />
+          {layouts
+            .filter((layout) => layout.definition.source === 'workspace')
+            .map((layout) => {
+              const checked = !hiddenCustomLayoutIds.includes(layout.id)
+              const isActive = layout.id === activeLayoutId
+
+              return (
+                <div
+                  key={layout.id}
+                  className="flex min-h-8 items-center gap-1 rounded px-2 py-1 text-xs text-on-surface transition-colors hover:bg-on-surface/10"
+                >
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    onClick={(): void => {
+                      onPickLayout?.(layout.id)
+                      closeMenu()
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${
+                        isActive ? 'text-primary' : 'text-on-surface-variant'
+                      }`}
+                    >
+                      <LayoutGlyph
+                        layoutId={layout.id}
+                        definition={layout.definition}
+                      />
+                    </span>
+                    <span className="truncate">{layout.name}</span>
+                  </button>
+                  <IconButton
+                    icon="edit"
+                    label={`Edit ${layout.name}`}
+                    size="sm"
+                    className="h-5 w-5 text-on-surface-muted hover:text-primary"
+                    onClick={(): void => {
+                      onEditCustomLayout?.(layout.id)
+                      closeMenu()
+                    }}
+                  />
+                  <IconButton
+                    icon="delete"
+                    label={`Delete ${layout.name}`}
+                    size="sm"
+                    className="h-5 w-5 text-on-surface-muted hover:text-error"
+                    onClick={(): void => {
+                      onDeleteCustomLayout?.(layout.id)
+                      closeMenu()
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label={
+                      checked
+                        ? `Hide ${layout.name} from switcher`
+                        : `Show ${layout.name} in switcher`
+                    }
+                    aria-pressed={checked}
+                    className={customDisplayCheckboxClass(checked)}
+                    onClick={(): void => {
+                      if (onHiddenCustomLayoutIdsChange === undefined) {
+                        return
+                      }
+
+                      onHiddenCustomLayoutIdsChange(
+                        checked
+                          ? [...hiddenCustomLayoutIds, layout.id]
+                          : hiddenCustomLayoutIds.filter(
+                              (layoutId) => layoutId !== layout.id
+                            )
+                      )
+                    }}
+                  >
+                    {checked && (
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current"
+                      />
+                    )}
+                  </button>
+                </div>
+              )
+            })}
+        </Menu.Section>
+      )}
+      {onCreateCustomLayout !== undefined && (
+        <Menu.Section>
+          <div className="mx-1 my-1 h-px bg-outline-variant/25" />
+          <Menu.Item icon="dashboard_customize" onSelect={onCreateCustomLayout}>
+            Create custom layout
+          </Menu.Item>
+        </Menu.Section>
+      )}
     </Menu>
   )
 }

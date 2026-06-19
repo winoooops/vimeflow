@@ -166,7 +166,7 @@ const MAX_SESSIONS: usize = 64;
 const MAX_BUILTIN_PANES: usize = 6; // grid3x2 capacity
 const MAX_CUSTOM_PANE_LAYOUTS: usize = 32;
 const MIN_LAYOUT_TRACKS: usize = 1;
-const MAX_LAYOUT_TRACKS: usize = 4;
+const MAX_LAYOUT_TRACKS: usize = 24;
 const MIN_LAYOUT_SLOTS: usize = 1;
 const MAX_LAYOUT_SLOTS: usize = 16;
 const MAX_TABS: usize = 50;
@@ -1253,6 +1253,38 @@ mod tests {
 
         assert_eq!(store.sessions[0].layout, "custom:grid4x2");
         assert_eq!(store.sessions[0].panes.len(), 8);
+    }
+
+    #[test]
+    fn repairs_custom_layout_with_twenty_four_tracks() {
+        let columns: Vec<serde_json::Value> = (0..24)
+            .map(|index| json!({ "id": format!("col-{index}"), "units": 1 }))
+            .collect();
+        let store = repair_workspace_layout(
+            json!({
+              "version": 1,
+              "customPaneLayouts": [{
+                "schemaVersion": 1,
+                "id": "custom:wide",
+                "title": "Wide",
+                "source": "workspace",
+                "tracks": {
+                  "columns": columns,
+                  "rows": [{ "id": "row-0", "units": 24 }]
+                },
+                "slots": [
+                  { "id": "slot:p0", "rect": { "col": 0, "row": 0, "colSpan": 24, "rowSpan": 1 } }
+                ],
+                "addOrder": ["slot:p0"]
+              }],
+              "sessions": []
+            }),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.custom_pane_layouts.len(), 1);
+        assert_eq!(store.custom_pane_layouts[0].id, "custom:wide");
     }
 
     #[test]

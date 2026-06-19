@@ -13,6 +13,13 @@ import {
   LayoutDisplayMenu,
   LayoutSwitcher,
 } from '../terminal/components/LayoutSwitcher'
+import {
+  HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+  SHOWN_LAYOUTS_STORAGE_KEY,
+  readLayoutDisplayPreference,
+  writeLayoutDisplayPreference,
+} from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
+import { LayoutCreatorModal } from '../terminal/components/LayoutCreator'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '@/components/sidebar/Sidebar'
@@ -82,7 +89,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
-import { LAYOUT_IDS } from '../terminal/layout-registry'
+import { type PaneLayoutDefinition } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -186,6 +193,11 @@ const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
 
+const DEFAULT_VISIBLE_LAYOUT_IDS: readonly PaneLayoutId[] = [
+  'single',
+  'grid3x2',
+]
+
 const readCompactViewport = (): boolean =>
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
@@ -226,7 +238,9 @@ const WorkspaceViewContent = (): ReactElement => {
   const {
     sessions,
     activeSessionId,
+    customPaneLayouts,
     layoutRegistry,
+    setCustomPaneLayouts,
     setActiveSessionId,
     createSession,
     createBrowserSession,
@@ -312,9 +326,23 @@ const WorkspaceViewContent = (): ReactElement => {
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
 
-  const [visibleLayoutIds, setVisibleLayoutIds] =
-    useState<readonly PaneLayoutId[]>(LAYOUT_IDS)
+  const [visibleLayoutIds, setVisibleLayoutIds] = useState<
+    readonly PaneLayoutId[]
+  >(() =>
+    readLayoutDisplayPreference(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      DEFAULT_VISIBLE_LAYOUT_IDS
+    )
+  )
+
+  const [hiddenCustomLayoutIds, setHiddenCustomLayoutIds] = useState<
+    readonly PaneLayoutId[]
+  >(() => readLayoutDisplayPreference(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY, []))
   const [isLayoutDisplayMenuOpen, setIsLayoutDisplayMenuOpen] = useState(false)
+  const [layoutCreatorOpen, setLayoutCreatorOpen] = useState(false)
+
+  const [layoutCreatorEditId, setLayoutCreatorEditId] =
+    useState<PaneLayoutId | null>(null)
 
   useEffect(() => {
     if (
@@ -337,6 +365,17 @@ const WorkspaceViewContent = (): ReactElement => {
       mediaQuery.removeEventListener('change', applyViewport)
     }
   }, [])
+
+  useEffect(() => {
+    writeLayoutDisplayPreference(SHOWN_LAYOUTS_STORAGE_KEY, visibleLayoutIds)
+  }, [visibleLayoutIds])
+
+  useEffect(() => {
+    writeLayoutDisplayPreference(
+      HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+      hiddenCustomLayoutIds
+    )
+  }, [hiddenCustomLayoutIds])
 
   // Imperative ref to the persistent SidebarToggle so keyboard/scrim closes can
   // restore focus without relying on data-testid selectors.
@@ -477,6 +516,38 @@ const WorkspaceViewContent = (): ReactElement => {
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
 
+  const visibleLayoutSwitcherIds = useMemo(() => {
+    const hiddenCustomIds = new Set(hiddenCustomLayoutIds)
+
+    return layoutRegistry.layouts
+      .filter((layout) => {
+        if (layout.id === 'single') {
+          return true
+        }
+
+        if (layout.definition.source === 'workspace') {
+          return !hiddenCustomIds.has(layout.id)
+        }
+
+        return visibleLayoutIds.includes(layout.id)
+      })
+      .map((layout) => layout.id)
+  }, [hiddenCustomLayoutIds, layoutRegistry.layouts, visibleLayoutIds])
+
+  const layoutCreatorEditLayout = useMemo(() => {
+    if (layoutCreatorEditId === null) {
+      return undefined
+    }
+
+    const layout = layoutRegistry.getLayout(layoutCreatorEditId)?.definition
+
+    return layout?.source === 'workspace' ? layout : undefined
+  }, [layoutCreatorEditId, layoutRegistry])
+
+  const layoutCreatorSeedLayout = activeSession
+    ? layoutRegistry.getFallbackLayout(activeSession.layout).definition
+    : undefined
+
   // If the active session disappears while the layout-display menu is open,
   // the menu unmounts without firing onOpenChange(false). Reset the flag so
   // the top chrome restores the draggable region on macOS.
@@ -485,6 +556,16 @@ const WorkspaceViewContent = (): ReactElement => {
       setIsLayoutDisplayMenuOpen(false)
     }
   }, [activeSession])
+
+  useEffect(() => {
+    const customIds = new Set(
+      layoutRegistry.customLayouts.map((layout) => layout.id)
+    )
+
+    setHiddenCustomLayoutIds((previous) =>
+      previous.filter((layoutId) => customIds.has(layoutId))
+    )
+  }, [layoutRegistry.customLayouts])
 
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
@@ -1167,6 +1248,59 @@ const WorkspaceViewContent = (): ReactElement => {
       setSessionLayout(activeSessionId, layoutId)
     },
     [activeSessionId, setSessionLayout]
+  )
+
+  const handleCreateCustomLayout = useCallback((): void => {
+    setLayoutCreatorEditId(null)
+    setLayoutCreatorOpen(true)
+    setIsLayoutDisplayMenuOpen(false)
+  }, [])
+
+  const handleEditCustomLayout = useCallback((layoutId: PaneLayoutId): void => {
+    setLayoutCreatorEditId(layoutId)
+    setLayoutCreatorOpen(true)
+    setIsLayoutDisplayMenuOpen(false)
+  }, [])
+
+  const handleSaveCustomLayout = useCallback(
+    (definition: PaneLayoutDefinition): void => {
+      setCustomPaneLayouts([
+        ...customPaneLayouts.filter((layout) => layout.id !== definition.id),
+        definition,
+      ])
+
+      setHiddenCustomLayoutIds((previous) =>
+        previous.filter((layoutId) => layoutId !== definition.id)
+      )
+      if (activeSessionId) {
+        setSessionLayout(activeSessionId, definition.id)
+      }
+      setLayoutCreatorOpen(false)
+      setLayoutCreatorEditId(null)
+    },
+    [activeSessionId, customPaneLayouts, setCustomPaneLayouts, setSessionLayout]
+  )
+
+  const handleDeleteCustomLayout = useCallback(
+    (layoutId: PaneLayoutId): void => {
+      if (activeSession?.layout === layoutId && activeSessionId) {
+        setSessionLayout(activeSessionId, 'single')
+      }
+      setCustomPaneLayouts(
+        customPaneLayouts.filter((layout) => layout.id !== layoutId)
+      )
+
+      setHiddenCustomLayoutIds((previous) =>
+        previous.filter((hiddenLayoutId) => hiddenLayoutId !== layoutId)
+      )
+    },
+    [
+      activeSession?.layout,
+      activeSessionId,
+      customPaneLayouts,
+      setCustomPaneLayouts,
+      setSessionLayout,
+    ]
   )
 
   // Main-stage handoff J8: one bottom-bar affordance for both directions.
@@ -2127,6 +2261,7 @@ const WorkspaceViewContent = (): ReactElement => {
         unsavedChangesDialogOpen={showUnsavedDialog}
         burnerTerminalOpen={hasVisibleBurner}
         paneRenameOpen={paneRenameNode !== null}
+        layoutCreatorOpen={layoutCreatorOpen}
         dragOverlayOpen={isDragging}
         dockDragOverlayOpen={
           verticalDockElastic.isDragging || horizontalDockElastic.isDragging
@@ -2376,15 +2511,21 @@ const WorkspaceViewContent = (): ReactElement => {
           {activeSession && (
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
-              visibleLayoutIds={visibleLayoutIds}
+              visibleLayoutIds={visibleLayoutSwitcherIds}
               layouts={layoutRegistry.layouts}
               onPick={handlePickLayout}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}
                   visibleLayoutIds={visibleLayoutIds}
+                  hiddenCustomLayoutIds={hiddenCustomLayoutIds}
                   layouts={layoutRegistry.layouts}
                   onVisibleLayoutIdsChange={setVisibleLayoutIds}
+                  onHiddenCustomLayoutIdsChange={setHiddenCustomLayoutIds}
+                  onPickLayout={handlePickLayout}
+                  onCreateCustomLayout={handleCreateCustomLayout}
+                  onEditCustomLayout={handleEditCustomLayout}
+                  onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
                 />
               }
@@ -2537,6 +2678,18 @@ const WorkspaceViewContent = (): ReactElement => {
           void handleDiscard()
         }}
         onCancel={handleCancel}
+      />
+
+      <LayoutCreatorModal
+        isOpen={layoutCreatorOpen}
+        existingLayouts={customPaneLayouts}
+        seedLayout={layoutCreatorSeedLayout}
+        editLayout={layoutCreatorEditLayout}
+        onSave={handleSaveCustomLayout}
+        onCancel={(): void => {
+          setLayoutCreatorOpen(false)
+          setLayoutCreatorEditId(null)
+        }}
       />
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
