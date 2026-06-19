@@ -684,3 +684,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** In `handleConfirmSearchResult`, when `activeSearchResultKey` is null the code always falls back to `searchResults[0]`. With an empty query, `searchResults` contains all settings sections, so pressing Enter while the empty search field is focused switches the user to General even when they were on another section. This is unexpected for keyboard users who merely press Enter in the empty search box.
 - **Fix:** Guarded the fallback so it only applies when `normalizedQuery` is non-empty; when the query is empty and no active search result exists, Enter is now a no-op. Added a co-located test asserting that pressing Enter in an empty search field preserves the current pane and focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 75. Active descendant and Enter confirmation disagree for target-only section matches
+
+- **Source:** github-codex-connector | PR #544 round 2 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx` L109-114
+- **Finding:** For contextual queries such as `appearance fonts`, the settings sidebar still renders the Appearance section as a clickable `role="option"` because it is in `filteredSections`, but the navigable `results` array contains only the matching target rows. With no explicit selection, `activeSearchResultKey` was `null`, so `SettingsSidebar` fell back to `aria-activedescendant` for the active Appearance section while `handleConfirmSearchResult` would confirm `searchResults[0]` (a target). Keyboard/screen-reader users were told one option was active but a different one was activated on Enter.
+- **Fix:** In `SettingsDialog`, default `activeSearchResultKey` to `searchResults[0].key` when the query is non-empty and no explicit selection exists, so the announced active descendant always matches the result that Enter confirms. Preserved the empty-query no-op behavior fixed in #74.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

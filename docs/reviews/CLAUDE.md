@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 23       | 4    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 38       | 16   | 2026-06-18   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 39       | 17   | 2026-06-19   |
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 2        | 0    | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
@@ -57,7 +57,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 71       | 31   | 2026-06-16   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 26   | 2026-06-16   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 74       | 27   | 2026-06-19   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 75       | 27   | 2026-06-19   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 67       | 22   | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
@@ -96,3 +96,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Modulo Correctness](patterns/modulo-correctness.md)                                                 | correctness        | 1        | 0    | 2026-06-15   |
 | [Catalog Identifier Safety](patterns/catalog-identifier-safety.md)                                   | correctness        | 1        | 0    | 2026-06-18   |
+| [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 1        | 0    | 2026-06-19   |

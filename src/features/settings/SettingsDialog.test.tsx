@@ -115,6 +115,38 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('option', { name: 'General' })).toBeNull()
   })
 
+  test('surfaces font setting rows and jumps to the selected result', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.type(screen.getByPlaceholderText('Search settings...'), 'font')
+
+    expect(screen.getByRole('option', { name: 'UI Font' })).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('option', { name: 'Mono Font' })
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('option', { name: 'UI Font' }))
+
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveFocus()
+    })
+
+    expect(target).toHaveAttribute('data-settings-target-active', 'true')
+    expect(scrollIntoView).toHaveBeenCalled()
+
+    scrollIntoView.mockRestore()
+  })
+
   test('clears search from the search field button', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)

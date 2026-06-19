@@ -30,6 +30,7 @@ export interface SettingsTarget {
   section: SettingsSectionId
   label: string
   hint?: string
+  subsection?: string
 }
 
 export type SettingsSearchNavigationDirection = 'next' | 'previous'
@@ -44,6 +45,7 @@ export interface SettingsSidebarProps {
   targets?: SettingsTarget[]
   active: SettingsSectionId
   activeTargetId?: SettingsTargetId | null
+  activeSearchResultKey?: string | null
   onPick: (id: SettingsSectionId) => void
   onPickTarget?: (target: SettingsTarget) => void
   onClearQuery?: () => void

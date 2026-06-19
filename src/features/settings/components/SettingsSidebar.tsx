@@ -6,6 +6,7 @@ import type {
   SettingsSidebarProps,
   SettingsTargetId,
 } from '../types'
+import { resultKeyToAriaId } from '../search'
 import { Icon } from './Icon'
 
 const SEARCH_RESULTS_ID = 'settings-search-results'
@@ -21,6 +22,7 @@ export const SettingsSidebar = ({
   targets = [],
   active,
   activeTargetId = null,
+  activeSearchResultKey = null,
   onPick,
   onPickTarget = (): void => undefined,
   onClearQuery = (): void => undefined,
@@ -31,13 +33,18 @@ export const SettingsSidebar = ({
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  const activeResultId =
+  const fallbackActiveResultId =
     activeTargetId !== null &&
     targets.some((target) => target.id === activeTargetId)
       ? targetResultId(activeTargetId)
       : sections.some((section) => section.id === active)
         ? sectionResultId(active)
         : undefined
+
+  const activeResultId =
+    activeSearchResultKey === null
+      ? fallbackActiveResultId
+      : resultKeyToAriaId(activeSearchResultKey)
 
   const hasResults = sections.length > 0 || targets.length > 0
 
