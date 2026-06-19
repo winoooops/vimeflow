@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vimeflow 技术说明：Dialog / ModalDialog 全局化重构</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f111a;
+        --surface: rgba(22, 25, 36, 0.94);
+        --surface-2: rgba(31, 36, 52, 0.94);
+        --surface-3: rgba(42, 48, 68, 0.9);
+        --text: #e8ecff;
+        --muted: #aab3d8;
+        --accent: #8bd5ca;
+        --accent-2: #f5c2e7;
+        --warn: #f9e2af;
+        --danger: #f38ba8;
+        --line: rgba(232, 236, 255, 0.1);
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.35);
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+        --sans:
+          'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'PingFang SC',
+          'Noto Serif SC', serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background: linear-gradient(180deg, #090b11 0%, var(--bg) 100%);
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 40px 0 72px;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 34px;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(139, 213, 202, 0.13);
+        color: var(--accent);
+        font: 600 12px/1.1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        max-width: 900px;
+        font-size: 46px;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 28px;
+      }
+
+      h3 {
+        margin-bottom: 10px;
+        font-size: 20px;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        font-size: 16px;
+        line-height: 1.78;
+      }
+
+      p,
+      li,
+      td {
+        color: var(--muted);
+      }
+
+      .lede {
+        max-width: 920px;
+        margin: 18px 0 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+
+      .meta,
+      .cards,
+      .two-up,
+      .timeline {
+        display: grid;
+        gap: 18px;
+      }
+
+      .meta {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 24px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .two-up {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: start;
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 30px;
+      }
+
+      .stat,
+      .card,
+      .note,
+      .code {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface-2);
+      }
+
+      .stat,
+      .card {
+        padding: 18px 20px;
+      }
+
+      .stat .label,
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-2);
+        font: 600 12px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--text);
+        font-size: 21px;
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid var(--warn);
+      }
+
+      .note strong {
+        color: var(--text);
+      }
+
+      .code {
+        margin-top: 14px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        background: rgba(8, 10, 18, 0.92);
+        color: #f6f8ff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 13px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font: 700 12px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        margin: 2px 6px 2px 0;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--surface-3);
+        color: var(--text);
+        font: 600 12px/1.2 var(--mono);
+      }
+
+      .yes {
+        color: var(--accent);
+      }
+
+      .warn {
+        color: var(--warn);
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      @media (max-width: 860px) {
+        .page {
+          width: min(100vw - 28px, 720px);
+          padding-top: 24px;
+        }
+
+        h1 {
+          font-size: 34px;
+        }
+
+        .meta,
+        .cards,
+        .two-up {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <span class="eyebrow">VIM-116 follow-up</span>
+        <h1>Dialog / ModalDialog 全局化重构技术说明</h1>
+        <p class="lede">
+          VIM-116 已经完成 Tooltip、Floating Surface、Button、Grouped Control、
+          Chip 和 ProgressBar 的抽取。剩下最值得继续做的组件族，是全屏 dialog /
+          modal dialog 壳层：现在多个 feature 在重复实现遮罩、
+          面板、焦点管理、Escape、backdrop dismiss 和 aria 语义。
+        </p>
+        <div class="meta">
+          <div class="stat">
+            <span class="label">Branch</span>
+            <strong>refactor/vim-116-dialog-primitive</strong>
+          </div>
+          <div class="stat">
+            <span class="label">Base</span>
+            <strong>main @ a91bd9ff</strong>
+          </div>
+          <div class="stat">
+            <span class="label">Scope</span>
+            <strong>技术说明 + 组件边界文档</strong>
+          </div>
+          <div class="stat">
+            <span class="label">Recommendation</span>
+            <strong>先抽 Dialog，再迁移 Unsaved / Palette</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="section">
+        <h2>1. 当前有哪些“dialog”</h2>
+        <p>
+          这里要先分清两个层级：<code>role="dialog"</code> 是语义，modal dialog
+          是行为。Vimeflow 里既有 anchored 的 dialog card，也有真正挡住
+          workspace 的 modal overlay。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>当前文件</th>
+              <th>行为</th>
+              <th>是否进入这次抽取</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <span class="tag">Anchored Popover</span>
+              </td>
+              <td>
+                <code>src/components/Popover.tsx</code><br />
+                <code>DiffChipToolbar</code> confirm<br />
+                <code>FinishFeedbackPopover</code><br />
+                <code>PriorityPlus</code>
+              </td>
+              <td>
+                由 anchor 元素定位，走 <code>base/floating</code> substrate，
+                使用 <code>role="dialog"</code> 和 modal focus manager。
+              </td>
+              <td class="warn">
+                不抽成 Dialog。它已经是全局 primitive，解决的是“锚点旁边的
+                dialog card”；后续非阻塞、anchored 的 dialog-like surface
+                应继续走 <code>Popover</code>。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="tag">Blocking Modal</span>
+              </td>
+              <td>
+                <code
+                  >src/features/editor/components/UnsavedChangesDialog.tsx</code
+                >
+              </td>
+              <td>
+                全屏固定 overlay，居中 panel，backdrop 点击取消，Escape 取消，
+                保存中禁止 dismiss，手写焦点捕获、焦点恢复和 Tab trap。
+              </td>
+              <td class="yes">
+                第一迁移目标。重复逻辑最多，也有 raw text button 漂移。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="tag">Command Modal</span>
+              </td>
+              <td>
+                <code>src/features/command-palette/CommandPalette.tsx</code>
+              </td>
+              <td>
+                全屏固定 overlay，top placement，backdrop 点击关闭，panel 壳层和
+                UnsavedChangesDialog 高度相似，内部是 input / results / footer。
+              </td>
+              <td class="yes">
+                第二迁移目标。保留 palette 的 input 和结果列表，只替换 shell。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="tag">Workspace Overlay</span>
+              </td>
+              <td>
+                <code
+                  >src/features/terminal/components/BurnerTerminalPopup/index.tsx</code
+                >
+              </td>
+              <td>
+                全屏 overlay，但不会 unmount，隐藏只是
+                <code>display: none</code>。 打开时把焦点交给
+                xterm，关闭时恢复之前焦点；Tooltip 还需要 提升到
+                <code>z-[110]</code>。
+              </td>
+              <td class="warn">
+                先作为设计约束，不建议第一轮迁移。它验证 primitive
+                是否足够通用。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="tag">Inline Dialog</span>
+              </td>
+              <td>
+                <code
+                  >src/features/diff/components/ReviewCommentComposer.tsx</code
+                >
+              </td>
+              <td>
+                在 diff 行内渲染，虽然有 <code>role="dialog"</code>，但不是
+                overlay， 不控制背景、stacking、focus trap。
+              </td>
+              <td class="danger">
+                不进入本 primitive。后续可单独考虑 inline composer 的 Button
+                化。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>2. Dialog 和 ModalDialog 应该如何分工</h2>
+        <div class="two-up">
+          <div class="card">
+            <h3>Dialog 是语义和结构</h3>
+            <p>
+              Web / ARIA 层面，dialog 只说明“这是一个独立交互区域”。它可以是
+              anchored popover，也可以是 inline composer，也可以是全屏 modal。
+              因此 <code>Popover</code> 继续保留：它是 anchored dialog card，
+              不是 app-level modal。
+            </p>
+            <p>
+              新 primitive 如果命名为 <code>Dialog</code>，语义上仍然合理，
+              但文档必须明确：它负责的是 app-level modal shell，不替代
+              <code>Popover</code>。
+            </p>
+          </div>
+          <div class="card">
+            <h3>ModalDialog 是行为集合</h3>
+            <p>
+              modal 的关键不是视觉上像弹窗，而是背景不可交互、焦点被限制在内部、
+              Escape / backdrop 有明确 dismiss 策略、关闭后能恢复原焦点。
+              这些行为现在散落在 feature 里，应该集中到全局组件。
+            </p>
+            <p>
+              代码命名建议先用 <code>Dialog</code>，因为项目里的 public
+              primitive 都是短名；如果未来确实需要 non-modal app dialog，再扩展
+              <code>modal={false}</code> 或拆出 <code>ModalDialog</code>。
+            </p>
+          </div>
+        </div>
+        <div class="note">
+          <strong>结论：</strong>
+          不要把 <code>Popover</code> 改造成全屏 modal。它依赖 anchor 定位和
+          <code>base/floating</code>，适合小型 card。新的 <code>Dialog</code>
+          应该拥有自己的 overlay substrate，专门处理 viewport-level modal。
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>3. 和 floating surface 的共享边界</h2>
+        <p>
+          你的疑问是关键：非阻塞 dialog 和 menu / popover 的确共享很多逻辑，
+          但共享点在“anchored floating surface”，不是在“所有 overlay 都做成一个
+          Dialog”。因此规划里要把 substrate 分清。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>层</th>
+              <th>负责什么</th>
+              <th>使用者</th>
+              <th>规划决策</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>base/floating</code></td>
+              <td>
+                anchor / cursor 定位、flip / shift、outside press、portal、 list
+                navigation、anchored focus manager。
+              </td>
+              <td>
+                <code>Dropdown</code>、<code>Menu</code>、<code>Popover</code>
+              </td>
+              <td class="yes">
+                保持为非阻塞 anchored surface 的默认路径。缺功能时优先扩展
+                <code>Popover</code> 或 <code>Menu</code>。
+              </td>
+            </tr>
+            <tr>
+              <td><code>Dialog</code></td>
+              <td>
+                viewport-level fixed overlay、scrim、modal stacking、focus
+                trap/restore、Escape/backdrop dismiss、aria-modal。
+              </td>
+              <td>
+                <code>UnsavedChangesDialog</code>、<code>CommandPalette</code>，
+                后续 settings-style app dialog。
+              </td>
+              <td class="yes">
+                新增 public primitive，但不吞并 <code>Popover</code>。它只处理
+                全屏 app modal shell。
+              </td>
+            </tr>
+            <tr>
+              <td>共享视觉语言</td>
+              <td>
+                Lens glass panel、backdrop 色彩、z-index 策略、motion timing、
+                focus/dismiss 纪律。
+              </td>
+              <td>所有 overlay primitive</td>
+              <td class="warn">
+                可以抽 token / className helper，但不要让 <code>Dialog</code>
+                依赖不需要的 anchor-positioning machinery。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="note">
+          <strong>规划约束：</strong>
+          如果一个 surface 需要 anchor 或 cursor 定位，它不应该使用
+          <code>Dialog</code>；如果一个 surface 需要挡住整个 workspace
+          并限制背景交互， 它不应该使用 <code>Popover</code>。
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>4. 共同逻辑应该放进全局组件</h2>
+        <div class="cards">
+          <div class="card">
+            <h3>Stacking 与遮罩</h3>
+            <ul>
+              <li>
+                统一 <code>fixed inset-0</code> root 和
+                <code>z-[100]</code> 层级。
+              </li>
+              <li>统一 backdrop 颜色、blur、点击 dismiss 策略。</li>
+              <li>
+                支持 center / top 两种 placement，覆盖 Unsaved 和 Palette。
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Focus 与键盘</h3>
+            <ul>
+              <li>打开时记录 previous focus，关闭后恢复。</li>
+              <li>
+                支持 <code>initialFocusRef</code>，没有则聚焦第一个 tabbable
+                元素。
+              </li>
+              <li>统一 Tab trap、Shift+Tab 循环、Escape dismiss。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>ARIA 与可访问性</h3>
+            <ul>
+              <li>
+                统一 <code>role="dialog"</code> 和
+                <code>aria-modal="true"</code>。
+              </li>
+              <li>
+                支持 <code>aria-label</code> 或 <code>aria-labelledby</code>。
+              </li>
+              <li>
+                支持 <code>aria-describedby</code>，让确认弹窗能被完整读出。
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Motion 与面板壳层</h3>
+            <ul>
+              <li>
+                集中 <code>AnimatePresence</code>、backdrop fade、panel spring。
+              </li>
+              <li>
+                统一 glass panel chrome，避免每个 feature 复制 className。
+              </li>
+              <li>
+                面板尺寸走受控的 <code>size</code> /
+                <code>placement</code>，不开放任意皮肤。
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Dismiss 策略</h3>
+            <ul>
+              <li>
+                <code>closeOnBackdrop</code> 和
+                <code>closeOnEscape</code> 默认开启。
+              </li>
+              <li>
+                <code>dismissDisabled</code>
+                支持保存中、提交中、危险操作中锁定关闭。
+              </li>
+              <li>
+                所有关闭都通过同一个 <code>onOpenChange(false)</code> 或
+                <code>onDismiss</code>。
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>测试边界</h3>
+            <ul>
+              <li>
+                primitive 测 focus trap、Escape、backdrop、aria 和 restore
+                focus。
+              </li>
+              <li>
+                feature 测业务文案、按钮回调、query/results 或 terminal
+                lifecycle。
+              </li>
+              <li>避免每个 consumer 重测 primitive 已覆盖的键盘细节。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>5. 不应该放进全局组件的东西</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>不要放入 Dialog</th>
+              <th>原因</th>
+              <th>保留在哪里</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>“保存 / 丢弃 / 取消”的业务动作</td>
+              <td>这是 editor 的文件状态语义，不是 dialog 的通用能力。</td>
+              <td><code>UnsavedChangesDialog</code> consumer</td>
+            </tr>
+            <tr>
+              <td>Command palette 的 query、selectedIndex、activeDescendant</td>
+              <td>这是 command registry 和 combobox/listbox 行为。</td>
+              <td><code>CommandPalette</code> 及其 hook</td>
+            </tr>
+            <tr>
+              <td>xterm attach、focusTerminal、Tab pass-through</td>
+              <td>这是 terminal workspace overlay 的生命周期和输入模型。</td>
+              <td><code>BurnerTerminalPopup</code></td>
+            </tr>
+            <tr>
+              <td>任意 panel className 皮肤</td>
+              <td>会重新打开 VIM-116 要关闭的视觉漂移。</td>
+              <td>Dialog 只允许尺寸、placement、布局级 className 逃生口</td>
+            </tr>
+            <tr>
+              <td>anchor positioning / cursor positioning</td>
+              <td>
+                这些已经由 <code>base/floating</code> 和 <code>Popover</code> /
+                <code>Menu.Context</code> 解决。
+              </td>
+              <td>
+                <code>Popover</code>、<code>Menu</code>、<code>Dropdown</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>6. 建议的 public API 草案</h2>
+        <p>
+          这个 API 的目标是：足够 generic，可以承载 Unsaved、CommandPalette
+          和后续 Settings dialog；同时不把 feature 逻辑塞进 primitive。
+        </p>
+        <pre class="code"><code>interface DialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) =&gt; void
+  placement?: 'center' | 'top'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
+  closeOnBackdrop?: boolean
+  closeOnEscape?: boolean
+  dismissDisabled?: boolean
+  restoreFocus?: boolean
+  initialFocusRef?: React.RefObject&lt;HTMLElement | null&gt;
+  'aria-label'?: string
+  'aria-labelledby'?: string
+  'aria-describedby'?: string
+  testId?: string
+  backdropTestId?: string
+  children: React.ReactNode
+}
+
+// 可选结构 helpers，保持 spacing / divider / footer 对齐。
+Dialog.Header
+Dialog.Body
+Dialog.Footer</code></pre>
+        <div class="note">
+          <strong>API 原则：</strong>
+          <code>Dialog</code> owns shell and behavior；consumer owns content and
+          callbacks。只把跨 feature 重复、可测试、和 accessibility
+          相关的逻辑放进 primitive。
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>7. 与 <code>src/components</code> 架构保持一致</h2>
+        <div class="two-up">
+          <div class="card">
+            <h3>现有模式</h3>
+            <p>
+              <code>Dropdown</code>、<code>Menu</code>、<code>Popover</code>
+              是 public primitive，底层共享
+              <code>src/components/base/floating</code>。<code>Button</code>、
+              <code>IconButton</code>、<code>ToolbarButton</code> 共享
+              <code>base/button</code>。feature 只能 import public primitive，
+              不能 import <code>base/**</code>。
+            </p>
+          </div>
+          <div class="card">
+            <h3>Dialog 应该遵守</h3>
+            <p>
+              <code>Dialog.tsx</code> 平铺在 <code>src/components/</code>，
+              和其他 public primitive 同级。若需要 low-level focus/overlay
+              helper， 放在 <code>src/components/base/dialog/</code>，继续遵守
+              <code>base/**</code> package-private 边界。
+            </p>
+            <p>
+              不建议让 <code>Dialog</code> 直接复用 <code>SurfacePanel</code>：
+              现在 <code>SurfacePanel</code> 需要 <code>FloatingContext</code>，
+              强行复用会让 viewport modal 依赖 anchor 定位栈。更合理的是抽小型
+              chrome helper，或在 <code>Dialog</code> 中保持同一套 token。
+            </p>
+          </div>
+        </div>
+        <p>
+          这次 branch 也新增了 <code>src/components/README.md</code> 和
+          <code>src/components/AGENTS.md</code>，把这些边界直接放进组件目录，
+          以后做新的 shared primitive 时不需要重新从设计文档里拼规则。
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>8. 推荐迁移顺序</h2>
+        <div class="timeline">
+          <div class="card">
+            <span class="label">PR 1</span>
+            <h3>实现 <code>Dialog</code> primitive 和测试</h3>
+            <p>
+              添加 <code>src/components/Dialog.tsx</code> 和
+              <code>Dialog.test.tsx</code>。测试覆盖 open/closed、aria name /
+              description、backdrop、Escape、dismissDisabled、initial focus、
+              Tab trap、restore focus。
+            </p>
+            <p>
+              先不迁移任何 feature。PR 1 的验收标准是 primitive 自己稳定：
+              API、focus 行为、dismiss 行为、motion 和 Lens chrome 都可测试。
+            </p>
+          </div>
+          <div class="card">
+            <span class="label">PR 2</span>
+            <h3>迁移 UnsavedChangesDialog</h3>
+            <p>
+              删除手写 focus trap 和 motion shell，改用 <code>Dialog</code>。
+              同时用 <code>Button</code> 替换 raw Save / Discard / Cancel 按钮。
+              保留保存中禁止 dismiss 的行为。
+            </p>
+          </div>
+          <div class="card">
+            <span class="label">PR 3</span>
+            <h3>迁移 CommandPalette shell</h3>
+            <p>
+              保留 <code>CommandInput</code>、<code>CommandResults</code>、
+              <code>CommandFooter</code>，只替换 overlay、backdrop 和 panel
+              wrapper。确认 input focus、selected option 和 backdrop close
+              行为不变。
+            </p>
+          </div>
+          <div class="card">
+            <span class="label">PR 4</span>
+            <h3>评估 BurnerTerminalPopup</h3>
+            <p>
+              只有在 <code>Dialog</code> 能干净支持 persistent mount、 terminal
+              focus handoff、tooltip z-lift 和 Tab pass-through 时才迁移。
+              否则保留 bespoke，但记录清楚为什么它是 workspace overlay 例外。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>9. 旁支：Context menu cleanup</h2>
+        <p>
+          审计中还发现 editor / files / sessions / reading style 仍有部分手写
+          menu。 这也是值得做的 VIM-116 后续，但它不是新 primitive：<code
+            >Menu</code
+          >
+          已经存在，后续应该作为“迁移 straggler 到 Menu”的独立 issue。
+        </p>
+        <div class="note">
+          <strong>优先级判断：</strong>
+          先做 <code>Dialog</code>，因为它补的是缺失 primitive，并且包含真实的
+          accessibility / focus 风险；menu cleanup 是关闭剩余漂移的第二条线。
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
