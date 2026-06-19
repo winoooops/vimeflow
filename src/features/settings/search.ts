@@ -43,6 +43,18 @@ export const settingsSectionResultKey = (id: SettingsSectionId): string =>
 export const settingsTargetResultKey = (target: SettingsTarget): string =>
   `target:${target.id}`
 
+export const resultKeyToAriaId = (key: string): string | undefined => {
+  if (key.startsWith('section:')) {
+    return `settings-search-result-section-${key.slice('section:'.length)}`
+  }
+
+  if (key.startsWith('target:')) {
+    return `settings-search-result-target-${key.slice('target:'.length)}`
+  }
+
+  return undefined
+}
+
 const normalizeSearchText = (value: string | undefined): string =>
   value
     ?.toLowerCase()

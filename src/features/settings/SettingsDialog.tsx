@@ -110,7 +110,9 @@ export const SettingsDialog = ({
     selectedSearchResultKey !== null &&
     searchResults.some((result) => result.key === selectedSearchResultKey)
       ? selectedSearchResultKey
-      : null
+      : query.trim() !== '' && searchResults.length > 0
+        ? searchResults[0].key
+        : null
 
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
 
