@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 16
+last_updated: 2026-06-19
+ref_count: 17
 ---
 
 # React Lifecycle
@@ -355,4 +355,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1454-1468
 - **Finding:** `useEffect([paletteBinding, paletteLeaderBinding])` uses Chord object references as deps. `resolveBindings` (called inside `useMemo`) builds a new `Map` with freshly-constructed Chord instances on every invocation. Because `overrides` (the full `customKeybindings` record) is the memoization key, any
 - **Fix:** Hoisted `formatChord(paletteBinding)` and `formatChord(paletteLeaderBinding)` above the effect and used the resulting string tokens as dependencies, so the effect only re-runs when the actual binding values change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Settings search model recomputes on every unrelated render
+
+- **Source:** github-claude | PR #544 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx` L96-103
+- **Finding:** `SettingsDialog` called `searchSettings({ sections: SETTINGS_SECTIONS, targets: SETTINGS_TARGETS, query })` directly in the render body, so navigation, focus state, and selection updates reran the full scoring, sorting, and map construction even when `query` was unchanged.
+- **Fix:** Wrapped the `searchSettings` call in `useMemo` with `[query]` as its dependency so the search model is only recomputed when the query changes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

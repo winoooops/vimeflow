@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type {
   SettingsDialogProps,
   SettingsSearchNavigationDirection,
@@ -93,11 +93,15 @@ export const SettingsDialog = ({
   const contentRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
-  const searchModel = searchSettings({
-    sections: SETTINGS_SECTIONS,
-    targets: SETTINGS_TARGETS,
-    query,
-  })
+  const searchModel = useMemo(
+    () =>
+      searchSettings({
+        sections: SETTINGS_SECTIONS,
+        targets: SETTINGS_TARGETS,
+        query,
+      }),
+    [query]
+  )
   const filtered = searchModel.sections
   const targetMatches = searchModel.targets
   const searchResults = searchModel.results
