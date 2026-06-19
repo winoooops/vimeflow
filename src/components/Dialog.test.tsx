@@ -1,0 +1,270 @@
+import { createRef, useState, type ReactElement } from 'react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, test, vi } from 'vitest'
+import { Dialog } from './Dialog'
+
+describe('Dialog', () => {
+  test('renders nothing when open is false', () => {
+    const open = false
+
+    render(
+      <Dialog open={open} onOpenChange={vi.fn()} aria-label="Settings">
+        <p>Hidden body</p>
+      </Dialog>
+    )
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hidden body')).not.toBeInTheDocument()
+  })
+
+  test('renders children with modal dialog aria wiring', () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <p>Dialog body</p>
+      </Dialog>
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByText('Dialog body')).toBeInTheDocument()
+  })
+
+  test('supports aria-labelledby and aria-describedby wiring', () => {
+    render(
+      <Dialog
+        open
+        onOpenChange={vi.fn()}
+        aria-labelledby="dialog-title"
+        aria-describedby="dialog-description"
+      >
+        <Dialog.Header>
+          <h2 id="dialog-title">Unsaved Changes</h2>
+        </Dialog.Header>
+        <Dialog.Body>
+          <p id="dialog-description">example.ts has unsaved changes.</p>
+        </Dialog.Body>
+      </Dialog>
+    )
+
+    expect(
+      screen.getByRole('dialog', {
+        name: 'Unsaved Changes',
+        description: /example\.ts/,
+      })
+    ).toBeInTheDocument()
+  })
+
+  test('calls onOpenChange(false) when backdrop is clicked', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+
+    render(
+      <Dialog
+        open
+        onOpenChange={onOpenChange}
+        aria-label="Command palette"
+        backdropTestId="dialog-backdrop"
+      >
+        <button type="button">Inside</button>
+      </Dialog>
+    )
+
+    await user.click(screen.getByTestId('dialog-backdrop'))
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('does not dismiss from backdrop when closeOnBackdrop is false', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const closeOnBackdrop = false
+
+    render(
+      <Dialog
+        open
+        closeOnBackdrop={closeOnBackdrop}
+        onOpenChange={onOpenChange}
+        aria-label="Command palette"
+        backdropTestId="dialog-backdrop"
+      >
+        <button type="button">Inside</button>
+      </Dialog>
+    )
+
+    await user.click(screen.getByTestId('dialog-backdrop'))
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  test('calls onOpenChange(false) when Escape is pressed', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+
+    render(
+      <Dialog open onOpenChange={onOpenChange} aria-label="Settings">
+        <button type="button">Inside</button>
+      </Dialog>
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('does not dismiss from Escape while dismiss is disabled', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+
+    render(
+      <Dialog
+        open
+        dismissDisabled
+        onOpenChange={onOpenChange}
+        aria-label="Settings"
+      >
+        <button type="button">Inside</button>
+      </Dialog>
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  test('moves focus to initialFocusRef on open', async () => {
+    const initialFocusRef = createRef<HTMLButtonElement>()
+
+    render(
+      <Dialog
+        open
+        onOpenChange={vi.fn()}
+        initialFocusRef={initialFocusRef}
+        aria-label="Unsaved Changes"
+      >
+        <button type="button">Save</button>
+        <button ref={initialFocusRef} type="button">
+          Cancel
+        </button>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    )
+  })
+
+  test('moves focus to first focusable child when no initialFocusRef is supplied', async () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Unsaved Changes">
+        <button type="button">Save</button>
+        <button type="button">Cancel</button>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus()
+    )
+  })
+
+  test('traps Tab navigation inside the dialog', async () => {
+    const user = userEvent.setup()
+    const outside = document.createElement('button')
+    outside.textContent = 'Outside'
+    document.body.appendChild(outside)
+
+    try {
+      render(
+        <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+          <button type="button">First</button>
+          <button type="button">Second</button>
+        </Dialog>
+      )
+
+      const dialog = screen.getByRole('dialog', { name: 'Settings' })
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'First' })
+        ).toHaveFocus()
+      )
+
+      await user.tab()
+      expect(
+        within(dialog).getByRole('button', { name: 'Second' })
+      ).toHaveFocus()
+
+      await user.tab()
+      expect(
+        within(dialog).getByRole('button', { name: 'First' })
+      ).toHaveFocus()
+      expect(outside).not.toHaveFocus()
+    } finally {
+      outside.remove()
+    }
+  })
+
+  test('restores focus to the previously focused element after close', async () => {
+    const prior = document.createElement('button')
+    prior.textContent = 'Prior'
+    document.body.appendChild(prior)
+    prior.focus()
+
+    const Harness = (): ReactElement => {
+      const [open, setOpen] = useState(true)
+
+      return (
+        <Dialog open={open} onOpenChange={setOpen} aria-label="Settings">
+          <button type="button" onClick={(): void => setOpen(false)}>
+            Close
+          </button>
+        </Dialog>
+      )
+    }
+
+    try {
+      const user = userEvent.setup()
+      render(<Harness />)
+
+      await user.click(screen.getByRole('button', { name: 'Close' }))
+
+      await waitFor(() => expect(prior).toHaveFocus())
+    } finally {
+      prior.remove()
+    }
+  })
+
+  test('applies placement, sizing, and section chrome', () => {
+    render(
+      <Dialog
+        open
+        placement="top"
+        size="lg"
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <Dialog.Header>
+          <h2>Palette</h2>
+        </Dialog.Header>
+        <Dialog.Body>
+          <p>Search</p>
+        </Dialog.Body>
+        <Dialog.Footer>
+          <button type="button">Done</button>
+        </Dialog.Footer>
+      </Dialog>
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Command palette' })
+    expect(dialog).toHaveClass('items-start')
+    expect(dialog).toHaveClass('pt-[15vh]')
+
+    // eslint-disable-next-line testing-library/no-node-access -- asserting primitive panel chrome
+    const panel = screen.getByText('Palette').closest('.max-w-2xl')
+    expect(panel).not.toBeNull()
+    // eslint-disable-next-line testing-library/no-node-access -- asserting primitive section chrome
+    expect(screen.getByText('Palette').parentElement).toHaveClass('border-b')
+    // eslint-disable-next-line testing-library/no-node-access -- asserting primitive section chrome
+    const footer = screen.getByRole('button', { name: 'Done' }).parentElement
+    expect(footer).toHaveClass('justify-end')
+  })
+})
