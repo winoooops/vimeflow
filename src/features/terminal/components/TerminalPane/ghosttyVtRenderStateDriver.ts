@@ -73,6 +73,7 @@ export const createGhosttyVtRenderStateParserEngine = (
   createRenderStateDriver: GhosttyVtRenderStateDriverFactory
 ): GhosttyParserEngine =>
   createGhosttyParserEngine({
+    byteOnly: true,
     byteParserAdapter: createGhosttyVtRenderStateByteParserAdapter(
       createRenderStateDriver
     ),
