@@ -4,6 +4,7 @@ import type { GhosttyByteParserAdapterInput } from './ghosttyParserEngine'
 import { createGhosttyParserEngine } from './ghosttyParserEngine'
 import {
   createGhosttyVtRenderStateByteParserAdapter,
+  createGhosttyVtRenderStateParserEngine,
   type GhosttyVtRenderStateDriver,
 } from './ghosttyVtRenderStateDriver'
 import type { GhosttyVtRenderSnapshot } from './ghosttyVtRenderSnapshot'
@@ -144,5 +145,33 @@ describe('ghosttyVtRenderStateDriver', () => {
 
     expect(reset).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  test('rejects text input instead of falling back to the text parser', () => {
+    const writeBytes = vi.fn()
+    const reset = vi.fn()
+
+    const engine = createGhosttyVtRenderStateParserEngine(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot: () => ({
+          rows: ['vt text path'],
+          cursor: { rowIndex: 0, columnOffset: 4 },
+        }),
+        reset,
+      })
+    )
+
+    expect(() =>
+      engine.parseInput({
+        inputMode: 'text',
+        text: 'hello',
+        output: null,
+      })
+    ).toThrow(
+      'Ghostty VT render-state parser engine does not accept text input; use byte output chunks'
+    )
+    expect(writeBytes).not.toHaveBeenCalled()
+    expect(reset).not.toHaveBeenCalled()
   })
 })

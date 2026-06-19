@@ -16,11 +16,32 @@ import {
   TerminalTextSurface,
   type TerminalTextSurfaceOutput,
 } from './terminalTextSurface'
+import {
+  createGhosttyVtRenderStateParserEngine,
+  type GhosttyVtRenderStateDriverFactory,
+} from './ghosttyVtRenderStateDriver'
 
 export { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 
 export interface GhosttyTerminalOptions {
   readonly createParserEngine?: () => TerminalParserEngine
+  readonly createVtRenderStateDriver?: GhosttyVtRenderStateDriverFactory
+}
+
+const createParserEngineForGhosttyTerminal = (
+  options: GhosttyTerminalOptions
+): TerminalParserEngine => {
+  if (options.createParserEngine) {
+    return options.createParserEngine()
+  }
+
+  if (options.createVtRenderStateDriver) {
+    return createGhosttyVtRenderStateParserEngine(
+      options.createVtRenderStateDriver
+    )
+  }
+
+  return createGhosttyParserEngine()
 }
 
 class GhosttyTerminalModel {
@@ -31,14 +52,15 @@ class GhosttyTerminalModel {
   readonly parser: TerminalParser
 
   constructor(options: GhosttyTerminalOptions = {}) {
-    this.parserEngine =
-      options.createParserEngine?.() ?? createGhosttyParserEngine()
+    this.parserEngine = createParserEngineForGhosttyTerminal(options)
     this.parser = this.parserEngine.parser
 
     this.terminal = new TerminalTextSurface({
       rendererId: GHOSTTY_TERMINAL_RENDERER_ID,
       transformOutput: (data): TerminalTextSurfaceOutput =>
-        this.parserEngine.parseText(data, null),
+        this.parserEngine.acceptsTextInput === false
+          ? { visibleText: data }
+          : this.parserEngine.parseText(data, null),
     })
 
     const originalTerminalDispose = this.terminal.dispose.bind(this.terminal)

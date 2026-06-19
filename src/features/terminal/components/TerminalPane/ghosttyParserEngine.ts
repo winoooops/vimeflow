@@ -30,6 +30,7 @@ export interface GhosttyByteParserAdapter {
 
 export interface GhosttyParserEngineOptions {
   readonly byteParserAdapter?: GhosttyByteParserAdapter
+  readonly byteOnly?: boolean
 }
 
 export interface GhosttyParserEngine extends TerminalParserEngine {
@@ -63,7 +64,9 @@ export class GhosttyControlSequenceParserEngine
   implements GhosttyParserEngine
 {
   readonly id: typeof GHOSTTY_PARSER_ENGINE_ID = GHOSTTY_PARSER_ENGINE_ID
+  readonly acceptsTextInput: boolean
   private readonly byteParserAdapter: GhosttyByteParserAdapter
+  private readonly byteOnly: boolean
   private isDisposed = false
 
   constructor(options: GhosttyParserEngineOptions = {}) {
@@ -73,11 +76,33 @@ export class GhosttyControlSequenceParserEngine
       preserveSgrStyles: true,
     })
 
+    this.byteOnly = options.byteOnly ?? false
+    this.acceptsTextInput = !this.byteOnly
+
+    if (this.byteOnly && !options.byteParserAdapter) {
+      throw new Error(
+        'Ghostty parser engine byteOnly mode requires a byteParserAdapter'
+      )
+    }
+
     this.byteParserAdapter =
       options.byteParserAdapter ??
       new ControlSequenceGhosttyByteParserAdapter((text, output) =>
         this.parseText(text, output)
       )
+  }
+
+  parseText(
+    text: string,
+    output: TerminalParserOutputContext | null
+  ): TerminalParserEngineOutput {
+    if (this.byteOnly) {
+      throw new Error(
+        'Ghostty VT render-state parser engine does not accept text input; use byte output chunks'
+      )
+    }
+
+    return super.parseText(text, output)
   }
 
   parseInput(input: TerminalParserEngineInput): TerminalParserEngineOutput {
@@ -90,6 +115,12 @@ export class GhosttyControlSequenceParserEngine
           this.emitParserEvent(event)
         },
       })
+    }
+
+    if (this.byteOnly) {
+      throw new Error(
+        'Ghostty VT render-state parser engine does not accept text input; use byte output chunks'
+      )
     }
 
     this.byteParserAdapter.reset?.()

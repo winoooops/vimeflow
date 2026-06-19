@@ -1,5 +1,9 @@
 // cspell:ignore ghostty libghostty
-import type { GhosttyByteParserAdapter } from './ghosttyParserEngine'
+import {
+  createGhosttyParserEngine,
+  type GhosttyByteParserAdapter,
+  type GhosttyParserEngine,
+} from './ghosttyParserEngine'
 import {
   createGhosttyVtByteParserAdapter,
   type GhosttyVtParserDriver,
@@ -64,3 +68,13 @@ export const createGhosttyVtRenderStateByteParserAdapter = (
   createGhosttyVtByteParserAdapter(
     createGhosttyVtRenderStateParserDriverFactory(createRenderStateDriver)
   )
+
+export const createGhosttyVtRenderStateParserEngine = (
+  createRenderStateDriver: GhosttyVtRenderStateDriverFactory
+): GhosttyParserEngine =>
+  createGhosttyParserEngine({
+    byteOnly: true,
+    byteParserAdapter: createGhosttyVtRenderStateByteParserAdapter(
+      createRenderStateDriver
+    ),
+  })

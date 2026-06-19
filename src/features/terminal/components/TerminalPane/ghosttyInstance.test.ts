@@ -16,6 +16,7 @@ import {
   ghosttyTerminalRenderer,
   type GhosttyTerminalOptions,
 } from './ghosttyInstance'
+import type { GhosttyVtRenderStateDriver } from './ghosttyVtRenderStateDriver'
 import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 
@@ -134,6 +135,108 @@ describe('ghosttyInstance', () => {
     expect(createParserEngine).toHaveBeenCalledOnce()
     expect(parseOutput).toHaveBeenCalledWith(chunk)
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
+  })
+
+  test('wires a VT render-state driver option through the Ghostty byte parser path', () => {
+    const writeBytes = vi.fn()
+
+    const readSnapshot = vi.fn(() => ({
+      rows: ['vt prompt', 'rendered output'],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 8,
+      },
+    }))
+
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot,
+      }),
+    })
+
+    const bytes = new Uint8Array([0xff, 0xfe])
+
+    created.output.writeOutput({
+      text: 'lossy fallback',
+      bytesBase64: encodeBase64(bytes),
+      offsetStart: 17,
+      byteLen: bytes.length,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+    expect(readSnapshot).toHaveBeenCalledOnce()
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'vt prompt\nrendered output'
+    )
+    expect(cursor?.parentElement?.textContent).toBe('rendered output')
+    expect(cursor?.previousSibling?.textContent).toBe('rendered')
+  })
+
+  test('renders direct terminal status writes when the VT render-state driver is byte-only', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: ['vt prompt'] }),
+      }),
+    })
+
+    created.terminal.write('process exited with code 0')
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'process exited with code 0'
+    )
+  })
+
+  test('prefers an injected parser engine over a VT render-state driver option', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const createVtRenderStateDriver = vi.fn(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: ['from-vt'] }),
+      })
+    )
+
+    const createParserEngine = vi.fn(
+      (): TerminalParserEngine => ({
+        inputMode: 'bytes',
+        capabilities: ghosttyTerminalRenderer.capabilities,
+        parser,
+        parseText: (text): TerminalParserEngineOutput => ({
+          visibleText: text,
+        }),
+        parseInput: (input): TerminalParserEngineOutput => ({
+          visibleText: input.text,
+        }),
+        parseOutput: (): TerminalParserEngineOutput => ({
+          visibleText: 'from-parser-engine',
+        }),
+      })
+    )
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine,
+      createVtRenderStateDriver,
+    })
+
+    created.output.writeOutput({
+      text: 'input',
+      offsetStart: 0,
+      byteLen: 5,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe('from-parser-engine')
+    expect(createParserEngine).toHaveBeenCalledOnce()
+    expect(createVtRenderStateDriver).not.toHaveBeenCalled()
   })
 
   test('applies parser display replace deltas without appending snapshots', () => {

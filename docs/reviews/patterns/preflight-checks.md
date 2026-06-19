@@ -2,8 +2,8 @@
 id: preflight-checks
 category: error-handling
 created: 2026-04-20
-last_updated: 2026-05-31
-ref_count: 0
+last_updated: 2026-06-19
+ref_count: 1
 ---
 
 # Preflight Checks
@@ -47,4 +47,13 @@ When adding / removing / refactoring preflight checks:
 - **File:** `scripts/qa-runner/watch.mjs`
 - **Finding:** `computeState()` enumerated negative states (missing, pending, fail) to block on Claude check status, but `skipping` and `cancel` buckets bypassed the gate. An old clean Claude comment could still let the PR reach `GOOD_SHAPE` and auto-merge without a fresh review.
 - **Fix:** Replaced negative-state enumeration with a single positive gate `claudeReady = claudeCheck?.bucket === 'pass'`; block on `!claudeReady` so any non-pass state (including skipped/cancelled) waits.
+- **Commit:** same commit as this entry
+
+### 4. Reject byteOnly parser engine mode without an explicit byte adapter
+
+- **Source:** github-codex-connector | PR #559 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyParserEngine.ts` L71-L84
+- **Finding:** `GhosttyParserEngineOptions` exported `byteOnly`, but when `byteOnly` was used without an explicit `byteParserAdapter`, the default adapter decoded bytes and re-entered `parseText`, which now throws. The invalid combination was accepted at construction and failed later with a misleading text-input error.
+- **Fix:** Added a constructor assertion that throws immediately when `byteOnly` is enabled without a `byteParserAdapter`, turning the latent misconfiguration into a fail-fast error at engine creation.
 - **Commit:** same commit as this entry
