@@ -343,11 +343,11 @@ describe('SettingsDialog', () => {
     ).toHaveFocus()
   })
 
-  test('renders the footer hint and close shortcut', () => {
+  test('renders the close shortcut without a dead navbar focus hint', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    expect(screen.getByText('Focus')).toBeInTheDocument()
-    expect(screen.getByText('Navbar')).toBeInTheDocument()
+    expect(screen.queryByText('Focus')).toBeNull()
+    expect(screen.queryByText('Navbar')).toBeNull()
     expect(screen.getByText('esc')).toBeInTheDocument()
   })
 
