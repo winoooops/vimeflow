@@ -63,6 +63,7 @@ const FOCUSABLE_SELECTOR = [
   'input:not([disabled])',
   'select:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable]:not([contenteditable="false"])',
 ].join(',')
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
@@ -72,7 +73,9 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
     (element) =>
       !element.hasAttribute('disabled') &&
       element.getAttribute('aria-hidden') !== 'true' &&
-      element.tabIndex >= 0
+      (element.tabIndex >= 0 ||
+        (element.hasAttribute('contenteditable') &&
+          element.getAttribute('contenteditable') !== 'false'))
   )
 
 const focusInitialElement = (
@@ -171,6 +174,8 @@ const DialogRoot = ({
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
+  const restoreFocusRef = useRef(restoreFocus)
+  restoreFocusRef.current = restoreFocus
 
   const requestClose = useCallback((): void => {
     if (dismissDisabled) {
@@ -202,6 +207,15 @@ const DialogRoot = ({
       previousFocusRef.current = null
     }
   }, [initialFocusRef, open, restoreFocus])
+
+  useEffect(
+    () => (): void => {
+      if (wasOpenRef.current && restoreFocusRef.current) {
+        previousFocusRef.current?.focus()
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     if (!open) {

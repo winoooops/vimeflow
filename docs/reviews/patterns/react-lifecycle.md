@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-19
-ref_count: 22
+ref_count: 23
 ---
 
 # React Lifecycle
@@ -497,4 +497,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts` L124-134
 - **Finding:** The destructuring default `customPaneLayouts = []` created a new array every time callers omitted the option. Because `customPaneLayouts` was listed in the `useMemo` dependency array, the workspace shape and its structural JSON signature were recomputed on every render even when the semantic input had not changed.
 - **Fix:** Introduced a module-scope `EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []` constant and used it as the destructuring default. The array reference is now stable across renders, so omitted layouts no longer trigger `buildWorkspaceShape` and `structuralSignature` recomputation.
+- **Commit:** same commit as this entry
+
+### 52. Open Dialog unmount leaves focus on document.body
+
+- **Source:** github-claude | PR #548 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/components/Dialog.tsx` L183-204
+- **Finding:** Focus restoration only ran when the controlled `open` prop transitioned from `true` to `false`. If a parent conditionally rendered `<Dialog open>` and removed the component while it was open, no cleanup restored the previously focused element, leaving keyboard focus on `document.body`.
+- **Fix:** Added a dedicated `useEffect` with an empty dependency array whose cleanup restores `previousFocusRef.current` when `wasOpenRef.current` is true and `restoreFocus` is enabled. Captured `restoreFocus` in a ref so the cleanup closure sees the latest value. Added a co-located test that unmounts an open Dialog and asserts focus returns to the prior element.
 - **Commit:** same commit as this entry

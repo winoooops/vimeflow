@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 27
+last_updated: 2026-06-19
+ref_count: 28
 ---
 
 # Accessibility
@@ -621,4 +621,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
 - **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry
+
+### 60. Dialog focus trap misses contenteditable elements
+
+- **Source:** github-claude | PR #548 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L59-66
+- **Finding:** `FOCUSABLE_SELECTOR` omitted `[contenteditable]:not([contenteditable="false"])`, so CodeMirror or rich-text surfaces inside a Dialog were skipped by the manual Tab trap and focus could escape the modal.
+- **Fix:** Added the contenteditable selector to `FOCUSABLE_SELECTOR` and updated `getFocusableElements` filter to treat contenteditable surfaces as focusable even when `tabIndex` is implicitly `-1`. Added a co-located test that tabs through a contenteditable element inside a Dialog and asserts focus stays trapped.
 - **Commit:** same commit as this entry

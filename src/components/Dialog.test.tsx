@@ -203,6 +203,73 @@ describe('Dialog', () => {
     }
   })
 
+  test('includes contenteditable elements in Tab focus trap', async () => {
+    const user = userEvent.setup()
+    const outside = document.createElement('button')
+    outside.textContent = 'Outside'
+    document.body.appendChild(outside)
+
+    try {
+      render(
+        <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+          <button type="button">First</button>
+          <div contentEditable role="textbox" aria-label="Editor" />
+          <button type="button">Last</button>
+        </Dialog>
+      )
+
+      const dialog = screen.getByRole('dialog', { name: 'Settings' })
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'First' })
+        ).toHaveFocus()
+      )
+
+      await user.tab()
+      expect(
+        within(dialog).getByRole('textbox', { name: 'Editor' })
+      ).toHaveFocus()
+
+      await user.tab()
+      expect(
+        within(dialog).getByRole('button', { name: 'Last' })
+      ).toHaveFocus()
+
+      await user.tab()
+      expect(
+        within(dialog).getByRole('button', { name: 'First' })
+      ).toHaveFocus()
+      expect(outside).not.toHaveFocus()
+    } finally {
+      outside.remove()
+    }
+  })
+
+  test('restores focus when an open Dialog unmounts', async () => {
+    const prior = document.createElement('button')
+    prior.textContent = 'Prior'
+    document.body.appendChild(prior)
+    prior.focus()
+
+    const { unmount } = render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <button type="button">Inside</button>
+      </Dialog>
+    )
+
+    try {
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Inside' })).toHaveFocus()
+      )
+
+      unmount()
+
+      await waitFor(() => expect(prior).toHaveFocus())
+    } finally {
+      prior.remove()
+    }
+  })
+
   test('restores focus to the previously focused element after close', async () => {
     const prior = document.createElement('button')
     prior.textContent = 'Prior'
