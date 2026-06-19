@@ -420,6 +420,22 @@ describe('Dialog', () => {
     )
   })
 
+  test('focuses visible descendants of visibility:hidden ancestors', async () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <div style={{ visibility: 'hidden' }}>
+          <button style={{ visibility: 'visible' }} type="button">
+            Visible
+          </button>
+        </div>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Visible' })).toHaveFocus()
+    )
+  })
+
   test('restores focus to the previously focused element after close', async () => {
     const prior = document.createElement('button')
     prior.textContent = 'Prior'

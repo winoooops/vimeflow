@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-19
-ref_count: 29
+ref_count: 30
 ---
 
 # Accessibility
@@ -639,4 +639,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/components/Dialog.tsx` L69-79
 - **Finding:** `getFocusableElements` filtered disabled, `aria-hidden`, and explicit `tabindex` state, but not `display: none`, `visibility: hidden`, or hidden ancestors. `focusInitialElement` also focused `initialFocusRef.current` without checking visibility. Conditionally hidden controls inside dialogs could receive invisible/no-op initial focus or be included in the Tab cycle, leaving keyboard users with no visible focus target or an apparent skipped focus step.
 - **Fix:** Added `isVisibleFocusableElement`, which walks from the element up through its ancestors and checks `window.getComputedStyle` for `display: none` and `visibility: hidden`. Applied the guard to both `getFocusableElements` and the `initialFocusRef` branch in `focusInitialElement`. Added co-located tests asserting that `display:none`, `visibility:hidden`, and hidden-ancestor elements are skipped when choosing initial focus.
+- **Commit:** same commit as this entry
+
+### 62. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
+
+- **Source:** github-codex-connector | PR #548 round 4 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L69-91
+- **Finding:** `isVisibleFocusableElement` walked ancestors and rejected any ancestor with `visibility: hidden`. CSS `visibility` is inherited but can be overridden by a descendant with `visibility: visible`, so an element's own computed visibility is the authoritative check for that property. In that valid CSS layout, a visibly focusable control would be skipped by initial focus and the Tab trap.
+- **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
 - **Commit:** same commit as this entry

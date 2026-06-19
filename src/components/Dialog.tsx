@@ -67,20 +67,16 @@ const FOCUSABLE_SELECTOR = [
 ].join(',')
 
 const isVisibleFocusableElement = (element: HTMLElement): boolean => {
-  const isNodeVisible = (node: Element): boolean => {
-    const style = window.getComputedStyle(node)
+  const elementStyle = window.getComputedStyle(element)
 
-    return style.display !== 'none' && style.visibility !== 'hidden'
-  }
-
-  if (!isNodeVisible(element)) {
+  if (elementStyle.display === 'none' || elementStyle.visibility === 'hidden') {
     return false
   }
 
   let ancestor: Element | null = element.parentElement
 
   while (ancestor !== null) {
-    if (!isNodeVisible(ancestor)) {
+    if (window.getComputedStyle(ancestor).display === 'none') {
       return false
     }
 
