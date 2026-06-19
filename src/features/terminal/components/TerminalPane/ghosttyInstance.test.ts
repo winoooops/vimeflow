@@ -12,6 +12,7 @@ import type {
 } from './terminalParserEngine'
 import {
   GHOSTTY_TERMINAL_RENDERER_ID,
+  createGhosttyTerminalRenderer,
   createGhosttyTerminal,
   ghosttyTerminalRenderer,
   type GhosttyTerminalOptions,
@@ -86,6 +87,46 @@ describe('ghosttyInstance', () => {
       GHOSTTY_TERMINAL_CAPABILITIES
     )
     expect(ghosttyTerminalRenderer.createInstance).toBe(createGhosttyTerminal)
+  })
+
+  test('creates configured renderer instances with a VT render-state driver option', () => {
+    const writeBytes = vi.fn()
+
+    const renderer = createGhosttyTerminalRenderer({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot: () => ({
+          rows: ['factory vt screen'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 7,
+          },
+        }),
+      }),
+    })
+
+    const created = renderer.createInstance()
+    createdTerminals.add(created)
+
+    const bytes = new Uint8Array([0x76, 0x74])
+
+    created.output.writeOutput({
+      text: 'lossy fallback',
+      bytesBase64: encodeBase64(bytes),
+      offsetStart: 11,
+      byteLen: bytes.length,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(renderer.id).toBe(GHOSTTY_TERMINAL_RENDERER_ID)
+    expect(renderer.capabilities).toBe(GHOSTTY_TERMINAL_CAPABILITIES)
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+    expect(created.viewportReader.readVisibleText()).toBe('factory vt screen')
+    expect(cursor?.previousSibling?.textContent).toBe('factory')
   })
 
   test('delegates output parsing through an injected parser engine', () => {
