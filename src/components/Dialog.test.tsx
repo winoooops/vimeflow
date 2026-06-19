@@ -340,6 +340,86 @@ describe('Dialog', () => {
     }
   })
 
+  test('preserves dialog stack order when a parent re-renders', async () => {
+    const user = userEvent.setup()
+    const onCloseBottom = vi.fn()
+    const onCloseTop = vi.fn()
+
+    const Harness = (): ReactElement => {
+      const [, setTick] = useState(0)
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={(): void => setTick((value) => value + 1)}
+          >
+            Re-render
+          </button>
+          <Dialog open onOpenChange={onCloseBottom} aria-label="Bottom">
+            <button type="button">Bottom</button>
+          </Dialog>
+          <Dialog open onOpenChange={onCloseTop} aria-label="Top">
+            <button type="button">Top</button>
+          </Dialog>
+        </>
+      )
+    }
+
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: 'Re-render' }))
+    await user.keyboard('{Escape}')
+
+    expect(onCloseTop).toHaveBeenCalledWith(false)
+    expect(onCloseBottom).not.toHaveBeenCalled()
+  })
+
+  test('skips display:none elements when choosing initial focus', async () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <button style={{ display: 'none' }} type="button">
+          Hidden
+        </button>
+        <button type="button">Visible</button>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Visible' })).toHaveFocus()
+    )
+  })
+
+  test('skips visibility:hidden elements when choosing initial focus', async () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <button style={{ visibility: 'hidden' }} type="button">
+          Hidden
+        </button>
+        <button type="button">Visible</button>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Visible' })).toHaveFocus()
+    )
+  })
+
+  test('skips elements inside a display:none ancestor when choosing initial focus', async () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} aria-label="Settings">
+        <div style={{ display: 'none' }}>
+          <button type="button">Hidden</button>
+        </div>
+        <button type="button">Visible</button>
+      </Dialog>
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Visible' })).toHaveFocus()
+    )
+  })
+
   test('restores focus to the previously focused element after close', async () => {
     const prior = document.createElement('button')
     prior.textContent = 'Prior'

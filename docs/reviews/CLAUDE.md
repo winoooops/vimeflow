@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 24       | 6    | 2026-06-17   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 53       | 24   | 2026-06-19   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 54       | 25   | 2026-06-19   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 74       | 34   | 2026-06-18   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 25   | 2026-06-16   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 68       | 28   | 2026-06-19   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 69       | 29   | 2026-06-19   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 64       | 23   | 2026-06-17   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |

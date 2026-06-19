@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-19
-ref_count: 24
+ref_count: 25
 ---
 
 # React Lifecycle
@@ -515,4 +515,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/components/Dialog.tsx` L220-250
 - **Finding:** Each open `Dialog` registered its own `document.addEventListener('keydown', ...)` listener. When two or more dialogs were open, every instance processed the same `Escape` press, so pressing Escape could close the wrong layer or multiple layers at once. The same per-instance listener pattern also meant Tab focus-trapping ran in every open dialog, not just the topmost.
 - **Fix:** Introduced a module-level LIFO `dialogStack` of open dialog layers. A single document listener reads the top layer on each `keydown`; Escape calls only the top layer's close handler and `stopImmediatePropagation()`, and Tab only traps focus inside the top layer's container. Each Dialog pushes its layer on open and removes it on close/unmount. Added regression tests covering (a) Escape closes only the topmost dialog, (b) Escape does not propagate to a lower dialog when the topmost is `dismissDisabled`, and (c) Escape does not propagate when the topmost has `closeOnEscape={false}`.
+- **Commit:** same commit as this entry
+
+### 54. Dialog layer registration reorders the stack on parent re-renders
+
+- **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx` L266-291
+- **Finding:** The layer-registration `useEffect` listed `requestClose` (which depends on `onOpenChange`) and `closeOnEscape` in its dependency array. Because parents often pass an inline `onOpenChange` callback, every parent re-render unregistered and re-registered an already-open lower dialog, pushing it to the top of the module-level `dialogStack`. In stacked modal use, Escape and Tab then targeted the background dialog instead of the visible top dialog.
+- **Fix:** Captured `requestClose` and `closeOnEscape` in refs that are updated synchronously each render, and keyed the registration effect only to `open`. The layer's close handler now reads the latest ref values, so prop changes are honored without re-registering the layer and corrupting stack order. Added a regression test that re-renders a parent with two open dialogs and asserts Escape still closes only the topmost.
 - **Commit:** same commit as this entry

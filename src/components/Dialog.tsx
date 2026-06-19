@@ -66,6 +66,30 @@ const FOCUSABLE_SELECTOR = [
   '[contenteditable]:not([contenteditable="false"])',
 ].join(',')
 
+const isVisibleFocusableElement = (element: HTMLElement): boolean => {
+  const isNodeVisible = (node: Element): boolean => {
+    const style = window.getComputedStyle(node)
+
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  }
+
+  if (!isNodeVisible(element)) {
+    return false
+  }
+
+  let ancestor: Element | null = element.parentElement
+
+  while (ancestor !== null) {
+    if (!isNodeVisible(ancestor)) {
+      return false
+    }
+
+    ancestor = ancestor.parentElement
+  }
+
+  return true
+}
+
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
     container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
@@ -75,7 +99,8 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
       element.getAttribute('aria-hidden') !== 'true' &&
       (element.tabIndex >= 0 ||
         (element.hasAttribute('contenteditable') &&
-          element.getAttribute('contenteditable') !== 'false'))
+          element.getAttribute('contenteditable') !== 'false')) &&
+      isVisibleFocusableElement(element)
   )
 
 interface DialogLayer {
@@ -133,7 +158,8 @@ const focusInitialElement = (
   if (
     initial !== null &&
     initial !== undefined &&
-    !initial.hasAttribute('disabled')
+    !initial.hasAttribute('disabled') &&
+    isVisibleFocusableElement(initial)
   ) {
     initial.focus()
 
@@ -231,6 +257,12 @@ const DialogRoot = ({
     onOpenChange(false)
   }, [dismissDisabled, onOpenChange])
 
+  const requestCloseRef = useRef(requestClose)
+  requestCloseRef.current = requestClose
+
+  const closeOnEscapeRef = useRef(closeOnEscape)
+  closeOnEscapeRef.current = closeOnEscape
+
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       previousFocusRef.current =
@@ -276,8 +308,8 @@ const DialogRoot = ({
 
     const layer: DialogLayer = {
       close: (): void => {
-        if (closeOnEscape) {
-          requestClose()
+        if (closeOnEscapeRef.current) {
+          requestCloseRef.current()
         }
       },
       container: dialog,
@@ -288,7 +320,7 @@ const DialogRoot = ({
     return (): void => {
       unregisterDialogLayer(layer)
     }
-  }, [closeOnEscape, open, requestClose])
+  }, [open])
 
   if (typeof document === 'undefined') {
     return null
