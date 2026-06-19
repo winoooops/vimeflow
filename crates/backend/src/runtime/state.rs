@@ -672,10 +672,12 @@ impl BackendState {
         std::fs::write(
             &index_path,
             format!(
-                "{{\"sessionId\":\"{}\",\"sessionDir\":\"{}\",\"workDir\":\"{}\"}}\n",
-                session_dir_name,
-                session_dir.to_str().ok_or("session dir is not utf-8")?,
-                cwd,
+                "{}\n",
+                serde_json::json!({
+                    "sessionId": session_dir_name,
+                    "sessionDir": session_dir.to_str().ok_or("session dir is not utf-8")?,
+                    "workDir": cwd,
+                })
             ),
         )
         .map_err(|e| format!("create kimi index: {e}"))?;
