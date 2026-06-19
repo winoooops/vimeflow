@@ -471,6 +471,25 @@ describe('SplitView - multi-pane layouts', () => {
     expect(slots[3]).toHaveStyle({ gridArea: 'p3' })
   })
 
+  test('explicit placements choose grid areas independently of pane order', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p3' })
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[1]).toHaveStyle({ gridArea: 'p0' })
+  })
+
   test('focus marker follows pane.active and inactive panes are dimmed', () => {
     render(
       <SplitView
@@ -627,7 +646,7 @@ describe('SplitView - under-capacity', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('clicking empty slot add button calls onAddPane with session id', async () => {
+  test('clicking empty slot add button calls onAddPane with session id and empty slot', async () => {
     const user = userEvent.setup()
     const onAddPane = vi.fn()
 
@@ -643,7 +662,7 @@ describe('SplitView - under-capacity', () => {
     await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(onAddPane).toHaveBeenCalledOnce()
-    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell')
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell', 'slot:p1')
   })
 })
 

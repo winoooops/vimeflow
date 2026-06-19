@@ -10,8 +10,14 @@ import {
   type ReactElement,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { Pane, PaneLayoutId, Session } from '../../../sessions/types'
+import type {
+  LayoutSlotId,
+  Pane,
+  PaneLayoutId,
+  Session,
+} from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
+import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
@@ -52,7 +58,11 @@ export interface SplitViewProps {
     browserUrl: string
   ) => void
   onRequestFocus?: () => void
-  onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
+  onAddPane?: (
+    sessionId: string,
+    kind?: Pane['kind'],
+    slotId?: LayoutSlotId
+  ) => void
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
@@ -244,26 +254,21 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
     const visiblePanes = selectVisiblePanes(session.panes, layout.capacity)
 
-    const emptySlotIndices =
-      session.panes.length < layout.capacity
-        ? Array.from(
-            { length: layout.capacity - session.panes.length },
-            (_, index) => session.panes.length + index
-          )
-        : []
+    const { assignments: visiblePaneAssignments, emptySlotIds } =
+      resolvePanePlacement(visiblePanes, layout, session.placements)
 
     const gridTemplateAreas = grid.areas
       .map((row) => `"${row.join(' ')}"`)
       .join(' ')
 
-    const gridAreaForSlotIndex = (slotIndex: number): string => {
-      if (slotIndex < 0 || slotIndex >= layout.definition.addOrder.length) {
+    const gridAreaForSlotId = (slotId: LayoutSlotId): string => {
+      if (!layout.definition.addOrder.includes(slotId)) {
         throw new Error(
-          `Slot index ${slotIndex} is out of bounds for layout ${layout.definition.id}`
+          `Slot ${slotId} is unknown for layout ${layout.definition.id}`
         )
       }
 
-      return gridAreaNameForSlotId(layout.definition.addOrder[slotIndex])
+      return gridAreaNameForSlotId(slotId)
     }
 
     return (
@@ -287,9 +292,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
         >
           {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
           <AnimatePresence initial={false}>
-            {visiblePanes.map((pane, i) => {
+            {visiblePaneAssignments.map(({ pane, slotId }) => {
               const isBrowserPane = !isShellPane(pane)
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
+              const slotIndex = layout.definition.addOrder.indexOf(slotId)
 
               const closeHandler =
                 onClosePane && canClosePane(session) ? onClosePane : undefined
@@ -319,8 +325,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   data-pty-id={pane.ptyId}
                   data-mode={mode}
                   data-cwd={pane.cwd}
+                  data-slot-id={slotId}
+                  data-slot-index={slotIndex}
                   className="relative min-h-0 min-w-0"
-                  style={{ gridArea: gridAreaForSlotIndex(i) }}
+                  style={{ gridArea: gridAreaForSlotId(slotId) }}
                 >
                   {/* Inner Tooltip wrapper. The motion.div above carries
                   the click handler + grid placement; this inner Tooltip
@@ -332,8 +340,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   nothing to hint at, and overlaying an active
                   terminal with a popover would interfere. */}
                   <Tooltip
-                    content={`Focus pane ${i + 1}`}
-                    shortcut={['Mod', String(i + 1)]}
+                    content={`Focus pane ${slotIndex + 1}`}
+                    shortcut={['Mod', String(slotIndex + 1)]}
                     disabled={pane.active}
                     placement="top"
                   >
@@ -392,21 +400,30 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               )
             })}
             {onAddPane
-              ? emptySlotIndices.map((slotIndex) => (
-                  <motion.div
-                    key={`empty-${slotIndex}`}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={SLOT_FADE_TRANSITION}
-                    data-testid="split-view-empty-slot"
-                    data-slot-index={slotIndex}
-                    className="relative min-h-0 min-w-0"
-                    style={{ gridArea: gridAreaForSlotIndex(slotIndex) }}
-                  >
-                    <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
-                  </motion.div>
-                ))
+              ? emptySlotIds.map((slotId) => {
+                  const slotIndex = layout.definition.addOrder.indexOf(slotId)
+
+                  return (
+                    <motion.div
+                      key={`empty-${slotId}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={SLOT_FADE_TRANSITION}
+                      data-testid="split-view-empty-slot"
+                      data-slot-id={slotId}
+                      data-slot-index={slotIndex}
+                      className="relative min-h-0 min-w-0"
+                      style={{ gridArea: gridAreaForSlotId(slotId) }}
+                    >
+                      <EmptySlot
+                        sessionId={session.id}
+                        slotId={slotId}
+                        onAddPane={onAddPane}
+                      />
+                    </motion.div>
+                  )
+                })
               : null}
           </AnimatePresence>
           {isActive && hasSize ? (

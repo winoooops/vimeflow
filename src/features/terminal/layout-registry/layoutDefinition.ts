@@ -1,6 +1,7 @@
 import type {
   CustomPaneLayoutId,
   LayoutId,
+  LayoutSlotId,
   PaneKind,
   PaneLayoutId,
 } from '../../sessions/types'
@@ -9,9 +10,7 @@ import type { LayoutRatios } from './ratioModel'
 
 export type BuiltinPaneLayoutId = LayoutId
 
-export type { CustomPaneLayoutId, PaneLayoutId }
-
-export type LayoutSlotId = `slot:${string}`
+export type { CustomPaneLayoutId, LayoutSlotId, PaneLayoutId }
 
 export type PaneLayoutSource = 'builtin' | 'workspace'
 

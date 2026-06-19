@@ -6,6 +6,7 @@
 // pane existence + shell fields, never browser tab/history (main owns those).
 
 import type { PaneLayoutDefinition } from '../terminal/layout-registry'
+import type { PanePlacement } from './types'
 
 export interface PersistedShellPaneShape {
   kind: 'shell'
@@ -33,6 +34,7 @@ export interface PersistedWorkspaceSessionShape {
   id: string
   projectId: string
   layout: string
+  placements?: readonly PanePlacement[]
   workingDirectory: string
   active: boolean
   open: boolean
