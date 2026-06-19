@@ -666,3 +666,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The PR added ArrowUp/ArrowDown handling that changes the selected sidebar result while keyboard focus remains on the search input, but the input stayed a plain textbox. Screen-reader users had no reliable announcement of the active sidebar option when navigating results, so the new keyboard workflow was effectively invisible to assistive technology.
 - **Fix:** Promoted the search input to `role="combobox"` with `aria-expanded`, `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant` pointing at the active result. Gave every section and target result button a stable id so the active-descendant reference is valid. Added co-located tests asserting the combobox attributes and active-descendant targets.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+
+### 73. Combobox popup has role=navigation, not a valid ARIA popup role
+
+- **Source:** github-claude | PR #540 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L115-117
+- **Finding:** The search input was promoted to `role="combobox"` with `aria-controls="settings-search-results"`, but the referenced element was a `<nav>` whose implicit ARIA role is `navigation`. ARIA 1.2 requires a combobox's controlled popup to have role `listbox`, `tree`, `grid`, or `dialog`; with `navigation` as the popup role, screen readers that validate the popup role may ignore `aria-activedescendant` updates and leave the keyboard navigation workflow invisible to assistive technology.
+- **Fix:** Added `role="listbox"` to the search results `<nav>` and `role="option"` with `aria-selected` to each navigable section and target `<button>`. Updated co-located tests to query the listbox and option roles and assert `aria-selected` state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

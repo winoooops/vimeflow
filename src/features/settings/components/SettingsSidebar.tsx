@@ -58,6 +58,10 @@ export const SettingsSidebar = ({
   const handleSearchKeyDown = (
     event: KeyboardEvent<HTMLInputElement>
   ): void => {
+    if (event.nativeEvent.isComposing) {
+      return
+    }
+
     if (event.key === 'ArrowDown') {
       handleNavigate(event, 'next')
 
@@ -114,6 +118,7 @@ export const SettingsSidebar = ({
 
       <nav
         id={SEARCH_RESULTS_ID}
+        role="listbox"
         className="thin-scrollbar flex-1 overflow-auto px-2 pb-3.5"
       >
         {sections.map((s) => {
@@ -128,6 +133,8 @@ export const SettingsSidebar = ({
               <button
                 id={sectionResultId(s.id)}
                 type="button"
+                role="option"
+                aria-selected={isActive}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => onPick(s.id)}
                 className={`relative flex w-full items-center gap-2 rounded-md border-none px-2.5 py-1.5 text-left font-body text-[13px] transition-colors ${
@@ -161,6 +168,8 @@ export const SettingsSidebar = ({
                         id={targetResultId(target.id)}
                         key={target.id}
                         type="button"
+                        role="option"
+                        aria-selected={isTargetActive}
                         aria-current={isTargetActive ? 'location' : undefined}
                         onClick={() => onPickTarget(target)}
                         className={`flex w-full items-center gap-1.5 rounded-md border-none px-2 py-1.5 text-left font-body text-[12px] transition-colors ${

@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { describe, expect, test, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   SETTINGS_SECTIONS,
@@ -86,11 +86,20 @@ describe('SettingsSidebar', () => {
     )
   })
 
-  test('renders all section buttons', () => {
+  test('renders the result list as a listbox', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(screen.getByRole('listbox')).toHaveAttribute(
+      'id',
+      'settings-search-results'
+    )
+  })
+
+  test('renders all section options', () => {
     render(<SettingsSidebar {...baseProps} />)
 
     SETTINGS_SECTIONS.forEach((s) => {
-      expect(screen.getByRole('button', { name: s.label })).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: s.label })).toBeInTheDocument()
     })
   })
 
@@ -152,12 +161,33 @@ describe('SettingsSidebar', () => {
     expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
   })
 
-  test('calls onPick with the section id when a button is clicked', async () => {
+  test('bypasses search shortcuts while IME composition is active', () => {
+    const onNavigateSearchResult = vi.fn()
+    const onConfirmSearchResult = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="redact"
+        onNavigateSearchResult={onNavigateSearchResult}
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+
+    expect(onNavigateSearchResult).not.toHaveBeenCalled()
+    expect(onConfirmSearchResult).not.toHaveBeenCalled()
+  })
+
+  test('calls onPick with the section id when an option is clicked', async () => {
     const user = userEvent.setup()
     const onPick = vi.fn()
     render(<SettingsSidebar {...baseProps} onPick={onPick} />)
 
-    await user.click(screen.getByRole('button', { name: 'Keymap' }))
+    await user.click(screen.getByRole('option', { name: 'Keymap' }))
 
     expect(onPick).toHaveBeenCalledWith('keymap')
   })
@@ -165,20 +195,25 @@ describe('SettingsSidebar', () => {
   test('marks the active section with primary text', () => {
     render(<SettingsSidebar {...baseProps} />)
 
-    expect(screen.getByRole('button', { name: 'Appearance' })).toHaveClass(
+    expect(screen.getByRole('option', { name: 'Appearance' })).toHaveClass(
       'text-primary'
     )
   })
 
-  test('marks the active section with aria-current', () => {
+  test('marks the active section with aria-current and aria-selected', () => {
     render(<SettingsSidebar {...baseProps} />)
 
     expect(
-      screen.getByRole('button', { name: 'Appearance', current: 'page' })
-    ).toBeInTheDocument()
+      screen.getByRole('option', { name: 'Appearance', current: 'page' })
+    ).toHaveAttribute('aria-selected', 'true')
 
-    expect(screen.getByRole('button', { name: 'Keymap' })).not.toHaveAttribute(
+    expect(screen.getByRole('option', { name: 'Keymap' })).not.toHaveAttribute(
       'aria-current'
+    )
+
+    expect(screen.getByRole('option', { name: 'Keymap' })).toHaveAttribute(
+      'aria-selected',
+      'false'
     )
   })
 
@@ -194,7 +229,7 @@ describe('SettingsSidebar', () => {
     )
 
     expect(
-      screen.getByRole('button', { name: 'Redact Private Values' })
+      screen.getByRole('option', { name: 'Redact Private Values' })
     ).toBeInTheDocument()
   })
 
@@ -213,13 +248,13 @@ describe('SettingsSidebar', () => {
     )
 
     await user.click(
-      screen.getByRole('button', { name: 'Redact Private Values' })
+      screen.getByRole('option', { name: 'Redact Private Values' })
     )
 
     expect(onPickTarget).toHaveBeenCalledWith(redactTarget)
   })
 
-  test('marks the active option target with aria-current', () => {
+  test('marks the active option target with aria-current and aria-selected', () => {
     render(
       <SettingsSidebar
         {...baseProps}
@@ -232,10 +267,10 @@ describe('SettingsSidebar', () => {
     )
 
     expect(
-      screen.getByRole('button', {
+      screen.getByRole('option', {
         name: 'Redact Private Values',
         current: 'location',
       })
-    ).toBeInTheDocument()
+    ).toHaveAttribute('aria-selected', 'true')
   })
 })
