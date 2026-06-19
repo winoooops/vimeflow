@@ -87,7 +87,7 @@ export class GhosttyControlSequenceParserEngine
         decodedText: input.text,
         output: input.output,
         emitEvent: (event) => {
-          this.parser.emitEvent(event)
+          this.emitParserEvent(event)
         },
       })
     }

@@ -227,3 +227,11 @@ all required state through pure display-state helpers.
 - **Fix:** Moved `parserEngine.dispose()` into a wrapper around `terminal.dispose()` and added an idempotent `isDisposed` guard so the engine is disposed exactly once when the terminal surface is disposed. `rendererHandle.dispose()` now only tracks renderer-addon detachment.
 - **Commit:** same commit as this entry (see `git blame` / `git log`)
 
+### 24. emitEvent made public on TerminalControlSequenceParser unnecessarily
+
+- **Source:** github-claude | PR #547 round 2 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L787-791
+- **Finding:** `private emit` was renamed `emitEvent` and widened to public so `GhosttyControlSequenceParserEngine` could forward adapter parser events via `this.parser.emitEvent(event)`. Any holder of a `TerminalControlSequenceParser` reference could then inject synthetic parser events without going through a parse path.
+- **Fix:** Changed `emitEvent` to `protected emit`, introduced a file-local `EngineTerminalControlSequenceParser` subclass exposing a typed `emitParserEvent` method, and routed Ghostty adapter events through the engine's protected `emitParserEvent`.
+- **Commit:** same commit as this entry (see `git blame` / `git log`)

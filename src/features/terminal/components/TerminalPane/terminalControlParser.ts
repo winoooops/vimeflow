@@ -776,7 +776,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
       return
     }
 
-    this.emitEvent({
+    this.emit({
       type: 'cwd',
       source: 'osc7',
       uri: payload,
@@ -784,7 +784,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
     })
   }
 
-  emitEvent(event: TerminalParserEvent): void {
+  protected emit(event: TerminalParserEvent): void {
     this.handlers.forEach((handler) => {
       handler(event)
     })
