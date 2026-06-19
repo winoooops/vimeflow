@@ -1,6 +1,9 @@
 // cspell:ignore ghostty
 const ESCAPE_SEQUENCE_TIMEOUT_MS = 15_000
+const NARROW_TERMINAL_WIDTH_PX = 360
+const MAX_NARROW_PROMPT_COLS = 60
 const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+const NERD_FONT_PROMPT_ICON = String.fromCodePoint(0xf0954)
 
 const waitForE2eBridge = async (): Promise<void> => {
   await browser
@@ -40,6 +43,64 @@ const readTerminalSize = async (): Promise<{
   browser.execute(
     () => window.__VIMEFLOW_E2E__?.getVisibleTerminalSize() ?? null
   )
+
+const waitForGhosttyRenderer = async (): Promise<void> => {
+  const pane = await $('[data-testid="terminal-pane"]')
+  await pane.waitForDisplayed({ timeout: 20_000 })
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () =>
+          document.querySelector('[data-terminal-renderer="ghostty"]') !== null
+      ),
+    {
+      timeout: 20_000,
+      timeoutMsg:
+        'Ghostty renderer root was not mounted; rebuild with VITE_TERMINAL_RENDERER=ghostty',
+    }
+  )
+}
+
+const waitForGhosttyPrompt = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () => (await readTerminalBuffer()).trim().length > 0,
+    { timeout: 20_000, timeoutMsg: 'Ghostty PTY never produced a prompt' }
+  )
+}
+
+const setTerminalContentWidth = async (width: number | null): Promise<void> => {
+  await browser.execute((nextWidth: number | null) => {
+    const content = document.querySelector<HTMLElement>(
+      '[data-testid="terminal-content"]'
+    )
+
+    if (!content) {
+      return
+    }
+
+    content.style.width = nextWidth === null ? '' : `${nextWidth}px`
+  }, width)
+}
+
+const waitForTerminalColsAtMost = async (maxCols: number): Promise<number> => {
+  let cols = 0
+
+  await browser.waitUntil(
+    async () => {
+      cols = (await readTerminalSize())?.cols ?? 0
+
+      return cols > 3 && cols <= maxCols
+    },
+    {
+      timeout: 10_000,
+      interval: 250,
+      timeoutMsg: `Ghostty pane did not settle at or below ${maxCols} columns`,
+    }
+  )
+
+  return cols
+}
 
 const hasGhosttyCursor = async (): Promise<boolean> =>
   browser.execute(
@@ -88,32 +149,14 @@ describe('Ghostty renderer smoke', () => {
   })
 
   it('boots the Ghostty adapter and strips zsh-style OSC/CSI controls', async () => {
-    const pane = await $('[data-testid="terminal-pane"]')
-    await pane.waitForDisplayed({ timeout: 20_000 })
-
-    await browser.waitUntil(
-      async () =>
-        await browser.execute(
-          () =>
-            document.querySelector('[data-terminal-renderer="ghostty"]') !==
-            null
-        ),
-      {
-        timeout: 20_000,
-        timeoutMsg:
-          'Ghostty renderer root was not mounted; rebuild with VITE_TERMINAL_RENDERER=ghostty',
-      }
-    )
+    await waitForGhosttyRenderer()
 
     await browser.waitUntil(hasGhosttyCursor, {
       timeout: 20_000,
       timeoutMsg: 'Ghostty renderer did not mount a visible cursor marker',
     })
 
-    await browser.waitUntil(
-      async () => (await readTerminalBuffer()).trim().length > 0,
-      { timeout: 20_000, timeoutMsg: 'Ghostty PTY never produced a prompt' }
-    )
+    await waitForGhosttyPrompt()
 
     const marker = `GHOSTTY_E2E_${Date.now()}`
     const terminalSize = await readTerminalSize()
@@ -183,5 +226,38 @@ describe('Ghostty renderer smoke', () => {
       )
     ).toBe(true)
     expect(await hasGhosttyHorizontalOverflow()).toBe(false)
+  })
+
+  it('keeps a full-width Nerd Font prompt on one row after narrowing', async () => {
+    await waitForGhosttyRenderer()
+    await waitForGhosttyPrompt()
+    await setTerminalContentWidth(NARROW_TERMINAL_WIDTH_PX)
+
+    try {
+      const terminalCols = await waitForTerminalColsAtMost(
+        MAX_NARROW_PROMPT_COLS
+      )
+      const prompt = `${'x'.repeat(terminalCols - 3)}${NERD_FONT_PROMPT_ICON}> `
+
+      await writeOutputToVisibleTerminal(`\x1b[2J\x1b[1;1H${prompt}`)
+
+      await browser.waitUntil(
+        async () =>
+          (await readTerminalBuffer()).includes(NERD_FONT_PROMPT_ICON),
+        {
+          timeout: ESCAPE_SEQUENCE_TIMEOUT_MS,
+          timeoutMsg:
+            'Ghostty prompt icon never appeared in the terminal buffer',
+        }
+      )
+
+      const buffer = await readTerminalBuffer()
+
+      expect(buffer).toBe(prompt)
+      expect(buffer).not.toContain('\n')
+      expect(await hasGhosttyHorizontalOverflow()).toBe(false)
+    } finally {
+      await setTerminalContentWidth(null)
+    }
   })
 })
