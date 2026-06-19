@@ -46,6 +46,7 @@ export type TerminalDisplayDeltaOperation =
   | {
       readonly type: 'replace'
       readonly text: string
+      readonly cursorOffset?: number
     }
 
 export interface TerminalDisplayDelta {
@@ -460,6 +461,26 @@ const findOffsetForCellColumn = (
   }
 
   return lineEnd
+}
+
+export const findTextOffsetForCellColumn = (
+  text: string,
+  targetColumn: number
+): number => {
+  const offset = findOffsetForCellColumn(text, 0, text.length, targetColumn)
+  let cursor = offset
+
+  while (cursor < text.length) {
+    const codePoint = text.codePointAt(cursor) ?? 0
+
+    if (!isCombiningCodePoint(codePoint)) {
+      break
+    }
+
+    cursor += codePoint > 0xffff ? 2 : 1
+  }
+
+  return cursor
 }
 
 const findOffsetForChaColumn = (
@@ -1502,9 +1523,19 @@ export class TerminalDisplayBuffer {
     this.state = createEmptyState()
   }
 
-  replace(data: string): void {
+  replace(data: string, cursorOffset?: number): void {
     this.clear()
     this.write(data)
+
+    if (cursorOffset !== undefined) {
+      const cursor = Math.min(Math.max(cursorOffset, 0), this.state.text.length)
+
+      this.state = {
+        ...this.state,
+        cursor,
+        cursorRow: readCursorRow(this.state.text, cursor),
+      }
+    }
   }
 
   write(data: string): void {
@@ -1521,7 +1552,7 @@ export class TerminalDisplayBuffer {
   applyDelta(delta: TerminalDisplayDelta): void {
     delta.operations.forEach((operation) => {
       if (operation.type === 'replace') {
-        this.replace(operation.text)
+        this.replace(operation.text, operation.cursorOffset)
 
         return
       }
