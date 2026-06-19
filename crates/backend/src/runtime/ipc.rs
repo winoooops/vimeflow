@@ -556,7 +556,7 @@ mod router {
                 }
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.start_agent_watcher(p.session_id).await?;
+                state.start_agent_watcher(p.session_id, None).await?;
                 Ok(Value::Null)
             }
             "stop_agent_watcher" => {

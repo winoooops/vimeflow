@@ -401,7 +401,11 @@ impl BackendState {
         Ok(detected)
     }
 
-    pub async fn start_agent_watcher(&self, session_id: String) -> Result<(), String> {
+    pub async fn start_agent_watcher(
+        &self,
+        session_id: String,
+        provider_home_override: Option<PathBuf>,
+    ) -> Result<(), String> {
         crate::agent::adapter::start_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),
@@ -409,6 +413,7 @@ impl BackendState {
             self.events.clone(),
             self.app_data_dir.clone(),
             session_id,
+            provider_home_override,
         )
         .await
     }
@@ -515,9 +520,9 @@ impl BackendState {
 
     /// Set up a hermetic Codex home under `home_dir`, seed the locator
     /// SQLite databases so the Codex watcher can resolve a rollout file for
-    /// `session_id`, start the watcher, then restore the original `HOME`.
-    /// Returns the absolute path to the empty rollout file the test should
-    /// write to.
+    /// `session_id`, and start the watcher with `home_dir/.codex` threaded
+    /// as an explicit provider-home override. Returns the absolute path to
+    /// the empty rollout file the test should write to.
     #[cfg(feature = "e2e-test")]
     pub async fn e2e_start_codex_watcher(
         &self,
@@ -598,13 +603,9 @@ impl BackendState {
         )
         .map_err(|e| format!("create logs table: {e}"))?;
 
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", &home_dir);
-        let result = self.start_agent_watcher(session_id.clone()).await;
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        let result = self
+            .start_agent_watcher(session_id.clone(), Some(codex_home))
+            .await;
         result?;
 
         Ok(rollout_path)
@@ -612,9 +613,9 @@ impl BackendState {
 
     /// Set up a hermetic Kimi home under `home_dir`, seed the locator
     /// filesystem layout so the Kimi watcher can resolve a wire file for
-    /// `session_id`, start the watcher, then restore the original
-    /// `KIMI_CODE_HOME`. Returns the absolute path to the wire file the test
-    /// should write to.
+    /// `session_id`, and start the watcher with `home_dir` threaded as an
+    /// explicit provider-home override. Returns the absolute path to the wire
+    /// file the test should write to.
     #[cfg(feature = "e2e-test")]
     pub async fn e2e_start_kimi_watcher(
         &self,
@@ -679,13 +680,9 @@ impl BackendState {
         )
         .map_err(|e| format!("create kimi index: {e}"))?;
 
-        let prev_kimi_home = std::env::var_os("KIMI_CODE_HOME");
-        std::env::set_var("KIMI_CODE_HOME", &home_dir);
-        let result = self.start_agent_watcher(session_id).await;
-        match prev_kimi_home {
-            Some(v) => std::env::set_var("KIMI_CODE_HOME", v),
-            None => std::env::remove_var("KIMI_CODE_HOME"),
-        }
+        let result = self
+            .start_agent_watcher(session_id, Some(home_dir))
+            .await;
         result?;
 
         Ok(wire_path)

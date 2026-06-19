@@ -79,6 +79,7 @@ mod tests {
             agent_type: AgentType::ClaudeCode,
             app_data_dir: cwd.join("vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
+            provider_home_override: None,
             proc_root: None,
         }
     }
@@ -163,7 +164,7 @@ mod tests {
         );
 
         let attach = lifecycle
-            .resolve_attach(&sid, app_data.path(), |_pid| Some((AgentType::Codex, 4242)))
+            .resolve_attach(&sid, app_data.path(), None, |_pid| Some((AgentType::Codex, 4242)))
             .expect("resolve_attach");
 
         // resolve_attach is a thin delegate to resolve_bind_inputs; this test
@@ -189,6 +190,7 @@ mod tests {
             agent_type: AgentType::Codex,
             app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.codex")),
+            provider_home_override: None,
             proc_root: None,
         };
 
@@ -217,6 +219,7 @@ mod tests {
             agent_type: AgentType::ClaudeCode,
             app_data_dir: app_data.path().to_path_buf(),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
+            provider_home_override: None,
             proc_root: None,
         };
         let bindings = AgentBindings::for_attach(&ctx).expect("for_attach");
@@ -264,6 +267,7 @@ mod tests {
             agent_type: AgentType::Kimi,
             app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: spec.provider_home(),
+            provider_home_override: None,
             proc_root: crate::agent::config::default_proc_root(),
         };
         eprintln!(
@@ -406,6 +410,7 @@ mod tests {
             agent_type: AgentType::ClaudeCode,
             app_data_dir: app_data.path().to_path_buf(),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
+            provider_home_override: None,
             proc_root: None,
         };
         let bindings = AgentBindings::for_attach(&ctx).expect("for_attach");
@@ -591,12 +596,19 @@ impl SessionLifecycle {
         &self,
         sid: &SessionId,
         app_data_dir: &Path,
+        provider_home_override: Option<PathBuf>,
         detect: F,
     ) -> Result<AttachContext, String>
     where
         F: FnOnce(u32) -> Option<(AgentType, u32)>,
     {
-        resolve_bind_inputs(&self.pty_state, app_data_dir, sid, detect)
+        resolve_bind_inputs(
+            &self.pty_state,
+            app_data_dir,
+            sid,
+            provider_home_override,
+            detect,
+        )
     }
 
     fn bind_services(&self, ctx: &AttachContext) -> Result<AgentBindings, String> {
@@ -738,9 +750,14 @@ impl SessionLifecycle {
         &self,
         session_id: String,
         app_data_dir: PathBuf,
+        provider_home_override: Option<PathBuf>,
     ) -> Result<(), String> {
         crate::debug::debug_log("agent-attach", &format!("start session={}", session_id));
-        let attach = match self.resolve_attach(&session_id, &app_data_dir, |shell_pid| {
+        let attach = match self.resolve_attach(
+            &session_id,
+            &app_data_dir,
+            provider_home_override,
+            |shell_pid| {
             let detected = detect_agent(shell_pid);
 
             #[cfg(feature = "e2e-test")]

@@ -235,6 +235,7 @@ pub(crate) async fn start_agent_watcher_inner(
     events: Arc<dyn EventSink>,
     app_data_dir: PathBuf,
     session_id: String,
+    provider_home_override: Option<PathBuf>,
 ) -> Result<(), String> {
     // Step F.5: delegate to `SessionLifecycle`. The service owns the
     // attach-resolution, the `AgentBindings::for_attach` +
@@ -244,7 +245,7 @@ pub(crate) async fn start_agent_watcher_inner(
     // trust boundary and inlined orchestration; PR #302 cycle 3 docs
     // refresh).
     session_lifecycle::SessionLifecycle::new(pty_state, watcher_state, transcript_state, events)
-        .start(session_id, app_data_dir)
+        .start(session_id, app_data_dir, provider_home_override)
         .await
 }
 
@@ -252,6 +253,7 @@ fn resolve_bind_inputs<F>(
     pty_state: &PtyState,
     app_data_dir: &Path,
     session_id: &SessionId,
+    provider_home_override: Option<PathBuf>,
     detect: F,
 ) -> Result<AttachContext, String>
 where
@@ -286,6 +288,7 @@ where
         agent_type,
         app_data_dir: app_data_dir.to_path_buf(),
         provider_home: spec.provider_home(),
+        provider_home_override,
         proc_root: crate::agent::config::default_proc_root(),
     })
 }
@@ -492,6 +495,7 @@ mod noop_tests {
             agent_type: AgentType::Codex,
             app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.codex")),
+            provider_home_override: None,
             proc_root: None,
         };
         let bindings = bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
@@ -515,7 +519,7 @@ mod noop_tests {
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, None, |_| {
             Some((AgentType::Codex, 4242))
         })
         .expect("bind inputs");
@@ -534,7 +538,7 @@ mod noop_tests {
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, None, |_| {
             Some((AgentType::Codex, 4242))
         })
         .expect("bind inputs");
@@ -572,7 +576,7 @@ mod noop_tests {
             .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, |_| {
+        let attach = resolve_bind_inputs(&state, app_data.path(), &session_id, None, |_| {
             Some((AgentType::Aider, 9999))
         })
         .expect("bind inputs");
