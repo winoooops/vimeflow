@@ -178,6 +178,46 @@ describe('ghosttyInstance', () => {
     expect(cursor?.previousSibling?.textContent).toBe('rendered')
   })
 
+  test('keeps VT render-state driver cwd effects on the terminal parser event path', () => {
+    const bytes = new Uint8Array([0x1b, 0x5d, 0x37])
+    const writeBytes = vi.fn()
+    const handler = vi.fn()
+
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (effects): GhosttyVtRenderStateDriver => ({
+        writeBytes: (incomingBytes): void => {
+          writeBytes(incomingBytes)
+          effects.onCwdChange('file://localhost/tmp/vt-option-cwd')
+        },
+        readSnapshot: () => ({
+          rows: ['cwd-aware vt screen'],
+        }),
+      }),
+    })
+
+    created.parser.onEvent(handler)
+    created.output.writeOutput({
+      text: 'lossy fallback',
+      bytesBase64: encodeBase64(bytes),
+      offsetStart: 29,
+      byteLen: bytes.length,
+      phase: 'restore',
+    })
+
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+    expect(handler).toHaveBeenCalledWith({
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/vt-option-cwd',
+      output: {
+        offsetStart: 29,
+        byteLen: bytes.length,
+        phase: 'restore',
+      },
+    })
+    expect(created.viewportReader.readVisibleText()).toBe('cwd-aware vt screen')
+  })
+
   test('renders direct terminal status writes when the VT render-state driver is byte-only', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
