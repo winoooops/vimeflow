@@ -55,6 +55,7 @@ export interface SettingsSidebarProps {
   targets?: SettingsTarget[]
   subsections?: SettingsSubsection[]
   active: SettingsSectionId
+  activeSubsectionId?: SettingsSubsectionId | null
   activeTargetId?: SettingsTargetId | null
   activeSearchResultKey?: string | null
   expandedSectionIds?: ReadonlySet<SettingsSectionId>

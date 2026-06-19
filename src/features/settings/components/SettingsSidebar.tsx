@@ -36,6 +36,7 @@ export const SettingsSidebar = ({
   targets = [],
   subsections = [],
   active,
+  activeSubsectionId = null,
   activeTargetId = null,
   activeSearchResultKey = null,
   expandedSectionIds: controlledExpandedSectionIds,
@@ -102,7 +103,16 @@ export const SettingsSidebar = ({
     })
   }, [active, updateExpandedSectionIds])
 
-  const activeSubsection =
+  const activeSubsectionFromId =
+    activeSubsectionId === null
+      ? undefined
+      : subsections.find(
+          (subsection) =>
+            subsection.id === activeSubsectionId &&
+            subsection.section === active
+        )
+
+  const activeSubsectionFromTarget =
     activeTargetId === null
       ? undefined
       : subsections.find(
@@ -110,6 +120,8 @@ export const SettingsSidebar = ({
             subsection.section === active &&
             subsection.targetIds.includes(activeTargetId)
         )
+
+  const activeSubsection = activeSubsectionFromId ?? activeSubsectionFromTarget
 
   const fallbackActiveResultId =
     activeTargetId !== null &&

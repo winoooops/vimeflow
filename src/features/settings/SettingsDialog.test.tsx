@@ -377,6 +377,12 @@ describe('SettingsDialog', () => {
         ).toHaveAttribute('aria-selected', 'true')
       })
 
+      expect(
+        screen.getByTestId(
+          `settings-target-${SETTINGS_TARGET_IDS.appearanceColorScheme}`
+        )
+      ).not.toHaveAttribute('data-settings-target-active', 'true')
+
       await user.keyboard('{ArrowDown}')
 
       await waitFor(() => {
@@ -409,6 +415,11 @@ describe('SettingsDialog', () => {
         ).toHaveAttribute('aria-selected', 'true')
       })
 
+      expect(
+        screen.getByTestId(
+          `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+        )
+      ).not.toHaveAttribute('data-settings-target-active', 'true')
       expect(scrollIntoView).not.toHaveBeenCalled()
     } finally {
       scrollIntoView.mockRestore()

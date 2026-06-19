@@ -6,6 +6,7 @@ import type {
   SettingsSection,
   SettingsSectionId,
   SettingsSubsection,
+  SettingsSubsectionId,
   SettingsTarget,
   SettingsTargetId,
 } from './types'
@@ -39,10 +40,7 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'agents',
 ]
 
-type TargetActivationMode =
-  | 'focus-target'
-  | 'preserve-search-focus'
-  | 'select-sidebar'
+type TargetActivationMode = 'focus-target' | 'preserve-search-focus'
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -106,6 +104,9 @@ export const SettingsDialog = ({
     null
   )
 
+  const [activeSidebarSubsectionId, setActiveSidebarSubsectionId] =
+    useState<SettingsSubsectionId | null>(null)
+
   const [selectedSearchResultKey, setSelectedSearchResultKey] = useState<
     string | null
   >(null)
@@ -147,13 +148,22 @@ export const SettingsDialog = ({
 
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
 
-  const activeSubsection =
+  const activeContentSubsection =
     activeTargetId === null
       ? undefined
       : SETTINGS_SUBSECTIONS.find(
           (subsection) =>
             subsection.section === section &&
             subsection.targetIds.includes(activeTargetId)
+        )
+
+  const activeSidebarSubsection =
+    activeSidebarSubsectionId === null
+      ? activeContentSubsection
+      : SETTINGS_SUBSECTIONS.find(
+          (subsection) =>
+            subsection.id === activeSidebarSubsectionId &&
+            subsection.section === section
         )
 
   const sidebarNavigationEntries = useMemo(() => {
@@ -187,9 +197,9 @@ export const SettingsDialog = ({
   }, [expandedSectionIds, filtered, query])
 
   const activeNavigationKey =
-    activeSubsection === undefined
+    activeSidebarSubsection === undefined
       ? `section:${section}`
-      : `subsection:${activeSubsection.id}`
+      : `subsection:${activeSidebarSubsection.id}`
 
   const expandSection = (id: SettingsSectionId): void => {
     setExpandedSectionIds((current) => {
@@ -205,18 +215,21 @@ export const SettingsDialog = ({
     expandSection(id)
     setSection(id)
     setActiveTargetId(null)
+    setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(settingsSectionResultKey(id))
   }
 
   const handleQuery = (nextQuery: string): void => {
     setQuery(nextQuery)
     setActiveTargetId(null)
+    setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(null)
   }
 
   const handleClearQuery = (): void => {
     setQuery('')
     setActiveTargetId(null)
+    setActiveSidebarSubsectionId(null)
     setSelectedSearchResultKey(null)
     setTargetActivationMode('focus-target')
   }
@@ -238,6 +251,7 @@ export const SettingsDialog = ({
     expandSection(target.section)
     setSection(target.section)
     setActiveTargetId(target.id)
+    setActiveSidebarSubsectionId(null)
     setTargetNavigationKey((key) => key + 1)
   }
 
@@ -474,10 +488,10 @@ export const SettingsDialog = ({
             return
           }
 
-          setTargetActivationMode('select-sidebar')
-          setSelectedSearchResultKey(settingsTargetResultKey(target))
+          setSelectedSearchResultKey(null)
           setSection(target.section)
-          setActiveTargetId(target.id)
+          setActiveTargetId(null)
+          setActiveSidebarSubsectionId(next.subsection.id)
 
           return
         }
@@ -491,6 +505,7 @@ export const SettingsDialog = ({
         })
         setSection(next.section.id)
         setActiveTargetId(null)
+        setActiveSidebarSubsectionId(null)
         setSelectedSearchResultKey(settingsSectionResultKey(next.section.id))
       }
 
@@ -532,6 +547,7 @@ export const SettingsDialog = ({
     if (!open) {
       setQuery('')
       setActiveTargetId(null)
+      setActiveSidebarSubsectionId(null)
       setSelectedSearchResultKey(null)
       setExpandedSectionIds(new Set([section]))
     }
@@ -539,10 +555,6 @@ export const SettingsDialog = ({
 
   useEffect(() => {
     if (!open || activeTargetId === null) {
-      return
-    }
-
-    if (targetActivationMode === 'select-sidebar') {
       return
     }
 
@@ -613,6 +625,7 @@ export const SettingsDialog = ({
                 targets={targetMatches}
                 subsections={SETTINGS_SUBSECTIONS}
                 active={section}
+                activeSubsectionId={activeSidebarSubsection?.id ?? null}
                 activeTargetId={activeTargetId}
                 activeSearchResultKey={activeSearchResultKey}
                 expandedSectionIds={expandedSectionIds}
