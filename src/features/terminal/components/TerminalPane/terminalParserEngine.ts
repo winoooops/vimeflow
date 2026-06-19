@@ -2,6 +2,7 @@ import type {
   TerminalOutputInputMode,
   TerminalOutputChunk,
   TerminalParser,
+  TerminalParserEvent,
   TerminalParserOutputContext,
   TerminalRendererCapabilities,
 } from '../../types'
@@ -38,6 +39,7 @@ export interface TerminalParserEngine {
   ) => TerminalParserEngineOutput
   parseInput: (input: TerminalParserEngineInput) => TerminalParserEngineOutput
   parseOutput: (chunk: TerminalOutputChunk) => TerminalParserEngineOutput
+  dispose?: () => void
 }
 
 const outputContextFromChunk = (
@@ -48,18 +50,26 @@ const outputContextFromChunk = (
   phase: chunk.phase,
 })
 
+class EngineTerminalControlSequenceParser extends TerminalControlSequenceParser {
+  emitParserEvent(event: TerminalParserEvent): void {
+    this.emit(event)
+  }
+}
+
 export class TerminalControlSequenceParserEngine implements TerminalParserEngine {
   readonly capabilities: TerminalRendererCapabilities
   readonly parser: TerminalControlSequenceParser
+  private readonly emittableParser: EngineTerminalControlSequenceParser
   private readonly outputRouter: TerminalOutputPayloadRouter
 
   constructor(options: TerminalParserEngineOptions) {
     this.capabilities = options.capabilities
-    this.parser = new TerminalControlSequenceParser({
+    this.emittableParser = new EngineTerminalControlSequenceParser({
       consumeControlsWithoutSubscribers:
         options.consumeControlsWithoutSubscribers,
       preserveSgrStyles: options.preserveSgrStyles,
     })
+    this.parser = this.emittableParser
     this.outputRouter = new TerminalOutputPayloadRouter(options.capabilities)
   }
 
@@ -85,6 +95,10 @@ export class TerminalControlSequenceParserEngine implements TerminalParserEngine
       ...selection,
       output: outputContextFromChunk(chunk),
     })
+  }
+
+  protected emitParserEvent(event: TerminalParserEvent): void {
+    this.emittableParser.emitParserEvent(event)
   }
 }
 

@@ -784,7 +784,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
     })
   }
 
-  private emit(event: TerminalParserEvent): void {
+  protected emit(event: TerminalParserEvent): void {
     this.handlers.forEach((handler) => {
       handler(event)
     })
