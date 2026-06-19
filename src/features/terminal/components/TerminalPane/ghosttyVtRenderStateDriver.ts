@@ -18,6 +18,11 @@ export interface GhosttyVtRenderStateDriver {
    *
    * A native libghostty-vt bridge should keep cursor, scrollback, attributes,
    * and OSC effects inside this driver boundary.
+   *
+   * Any `effects` callbacks, such as `effects.onCwdChange`, must be invoked
+   * synchronously before `writeBytes` returns, because the adapter path clears
+   * active input immediately after the call and will drop asynchronously
+   * dispatched events.
    */
   writeBytes: (bytes: Uint8Array) => void
   readSnapshot: () => GhosttyVtRenderSnapshot
