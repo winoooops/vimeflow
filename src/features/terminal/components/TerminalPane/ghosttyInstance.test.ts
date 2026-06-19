@@ -16,6 +16,7 @@ import {
   ghosttyTerminalRenderer,
   type GhosttyTerminalOptions,
 } from './ghosttyInstance'
+import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 
 const setElementSize = (
@@ -197,6 +198,52 @@ describe('ghosttyInstance', () => {
     })
 
     expect(created.viewportReader.readVisibleText()).toBe('screen snapshot two')
+  })
+
+  test('renders the cursor from parser display snapshot coordinates', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', 'output'],
+          cursor: {
+            rowIndex: 1,
+            columnOffset: 2,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(created.viewportReader.readVisibleText()).toBe('prompt\noutput')
+    expect(cursor?.parentElement?.textContent).toBe('output')
+    expect(cursor?.previousSibling?.textContent).toBe('ou')
+    expect(cursor?.nextSibling?.textContent).toBe('tput')
   })
 
   test('disposes the parser engine once through terminal disposal', () => {

@@ -44,6 +44,23 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readVisibleText()).toBe('snapshot two')
   })
 
+  test('applies replace display delta cursor offsets', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.applyDelta({
+      operations: [
+        {
+          type: 'replace',
+          text: 'prompt\noutput',
+          cursorOffset: 'prompt\nou'.length,
+        },
+      ],
+    })
+
+    expect(buffer.readVisibleText()).toBe('prompt\noutput')
+    expect(buffer.readCursorOffset()).toBe('prompt\nou'.length)
+  })
+
   test('applies empty replace display deltas as a clear operation', () => {
     const buffer = new TerminalDisplayBuffer()
 
