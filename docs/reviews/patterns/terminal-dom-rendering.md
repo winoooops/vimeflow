@@ -2,7 +2,7 @@
 id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 ref_count: 0
 ---
 
@@ -30,4 +30,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L479
 - **Finding:** `measureCharacterWidth` appended a probe span, forced `getBoundingClientRect()`, and removed the span on every `fit()` call. During continuous pane/window resize this repeated a synchronous layout read for a font metric that is stable for the surface lifetime.
 - **Fix:** Added a nullable `cachedCharacterWidth` instance field. `measureCharacterWidth` returns the cached value after the first successful measurement; the cache is not invalidated because `TERMINAL_FONT_FAMILY` and `TERMINAL_FONT_SIZE` are constants for the surface.
+- **Commit:** same commit as this entry
+
+### 3. Translate snapshot columns to text offsets
+
+- **Source:** github-codex-connector | PR #553 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L35
+- **Finding:** When a VT snapshot row contains wide or combining characters before the cursor, the snapshot helper treated the parser's terminal-cell column as a raw UTF-16 string offset by clamping against `row.length` and returning that value directly, which placed the cursor inside wide characters or between combining marks.
+- **Fix:** Reused `TerminalDisplayBuffer`'s cell-width mapping by exporting `findTextOffsetForCellColumn` and consuming it in `readSnapshotCursorOffset`; the helper advances through zero-width combining marks so the cursor offset lands after the complete grapheme cluster. Added unit tests for wide characters and combining marks.
 - **Commit:** same commit as this entry

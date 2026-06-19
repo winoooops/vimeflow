@@ -463,6 +463,26 @@ const findOffsetForCellColumn = (
   return lineEnd
 }
 
+export const findTextOffsetForCellColumn = (
+  text: string,
+  targetColumn: number
+): number => {
+  const offset = findOffsetForCellColumn(text, 0, text.length, targetColumn)
+  let cursor = offset
+
+  while (cursor < text.length) {
+    const codePoint = text.codePointAt(cursor) ?? 0
+
+    if (!isCombiningCodePoint(codePoint)) {
+      break
+    }
+
+    cursor += codePoint > 0xffff ? 2 : 1
+  }
+
+  return cursor
+}
+
 const findOffsetForChaColumn = (
   text: string,
   lineStart: number,

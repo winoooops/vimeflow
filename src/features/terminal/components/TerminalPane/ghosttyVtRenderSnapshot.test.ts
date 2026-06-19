@@ -69,4 +69,40 @@ describe('ghosttyVtRenderSnapshot', () => {
       cursorOffset: 'prompt'.length,
     })
   })
+
+  test('maps wide characters to a single terminal cell without splitting', () => {
+    const row = 'a漢'
+
+    expect(
+      createGhosttyVtRenderSnapshotOutput({
+        rows: [row],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 2,
+        },
+      }).displayDelta?.operations[0]
+    ).toEqual({
+      type: 'replace',
+      text: row,
+      cursorOffset: 1,
+    })
+  })
+
+  test('advances through combining marks at the cell boundary', () => {
+    const row = 'e\u0301' // e + combining acute
+
+    expect(
+      createGhosttyVtRenderSnapshotOutput({
+        rows: [row],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 1,
+        },
+      }).displayDelta?.operations[0]
+    ).toEqual({
+      type: 'replace',
+      text: row,
+      cursorOffset: row.length,
+    })
+  })
 })

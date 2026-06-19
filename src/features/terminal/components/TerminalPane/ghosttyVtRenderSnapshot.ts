@@ -1,4 +1,5 @@
 // cspell:ignore ghostty
+import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
 export interface GhosttyVtRenderSnapshotCursor {
@@ -28,18 +29,14 @@ const readSnapshotCursorOffset = (
   }
 
   const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
-
-  const columnOffset = clamp(
-    cursor.columnOffset,
-    0,
-    snapshot.rows[rowIndex]?.length ?? 0
-  )
+  const row = snapshot.rows[rowIndex] ?? ''
+  const rowTextOffset = findTextOffsetForCellColumn(row, cursor.columnOffset)
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)
     .reduce((length, row) => length + row.length + 1, 0)
 
-  return precedingRowsLength + columnOffset
+  return precedingRowsLength + rowTextOffset
 }
 
 export const createGhosttyVtRenderSnapshotOutput = (
