@@ -125,6 +125,14 @@ export const createGhosttyTerminal = (
   options: GhosttyTerminalOptions = {}
 ): TerminalInstance => new GhosttyTerminalModel(options).createInstance()
 
+export const createGhosttyTerminalRenderer = (
+  options: GhosttyTerminalOptions = {}
+): TerminalRendererAdapter => ({
+  id: GHOSTTY_TERMINAL_RENDERER_ID,
+  capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
+  createInstance: (): TerminalInstance => createGhosttyTerminal(options),
+})
+
 export const ghosttyTerminalRenderer: TerminalRendererAdapter = {
   id: GHOSTTY_TERMINAL_RENDERER_ID,
   capabilities: GHOSTTY_TERMINAL_CAPABILITIES,
