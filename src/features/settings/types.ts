@@ -69,13 +69,6 @@ export interface SettingsSidebarProps {
   onQuery: (query: string) => void
 }
 
-export type SettingsScope = 'User' | 'vimeflow'
-
-export interface SettingsHeaderProps {
-  scope: SettingsScope
-  onScope: (scope: SettingsScope) => void
-}
-
 export interface IconProps {
   name: string
   size?: number

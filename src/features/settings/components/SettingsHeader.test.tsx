@@ -4,48 +4,18 @@ import userEvent from '@testing-library/user-event'
 import { SettingsHeader } from './SettingsHeader'
 
 describe('SettingsHeader', () => {
-  const baseProps = {
-    scope: 'User' as const,
-    onScope: vi.fn(),
-  }
+  test('renders a single Settings title without scope radios', () => {
+    render(<SettingsHeader />)
 
-  test('renders User and vimeflow scope radios', () => {
-    render(<SettingsHeader {...baseProps} />)
-
-    expect(screen.getByRole('radio', { name: 'User' })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'vimeflow' })).toBeInTheDocument()
-  })
-
-  test('active scope has aria-checked and accent underline styling', () => {
-    render(<SettingsHeader {...baseProps} scope="vimeflow" />)
-
-    expect(screen.getByRole('radio', { name: 'vimeflow' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    )
-
-    expect(screen.getByRole('radio', { name: 'User' })).toHaveAttribute(
-      'aria-checked',
-      'false'
-    )
-
-    expect(screen.getByRole('radio', { name: 'vimeflow' })).toHaveClass(
-      'border-primary-container'
-    )
-  })
-
-  test('calls onScope when a tab is clicked', async () => {
-    const user = userEvent.setup()
-    const onScope = vi.fn()
-    render(<SettingsHeader {...baseProps} onScope={onScope} />)
-
-    await user.click(screen.getByRole('radio', { name: 'vimeflow' }))
-
-    expect(onScope).toHaveBeenCalledWith('vimeflow')
+    expect(
+      screen.getByRole('heading', { name: 'Settings' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'User' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'vimeflow' })).toBeNull()
   })
 
   test('renders the Edit in settings.json ghost button', () => {
-    render(<SettingsHeader {...baseProps} />)
+    render(<SettingsHeader />)
 
     expect(
       screen.getByRole('button', { name: 'Edit in settings.json' })
@@ -64,7 +34,7 @@ describe('SettingsHeader', () => {
       },
     } as unknown as Window['vimeflow']
 
-    render(<SettingsHeader {...baseProps} />)
+    render(<SettingsHeader />)
 
     await user.click(
       screen.getByRole('button', { name: 'Edit in settings.json' })
@@ -85,7 +55,7 @@ describe('SettingsHeader', () => {
       },
     } as unknown as Window['vimeflow']
 
-    render(<SettingsHeader {...baseProps} />)
+    render(<SettingsHeader />)
 
     await user.click(
       screen.getByRole('button', { name: 'Edit in settings.json' })

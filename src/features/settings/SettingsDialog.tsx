@@ -77,7 +77,6 @@ export const SettingsDialog = ({
   onClose,
 }: SettingsDialogProps): ReactElement | null => {
   const [section, setSection] = useState<SettingsSectionId>('appearance')
-  const [scope, setScope] = useState<'User' | 'vimeflow'>('User')
   const [query, setQuery] = useState('')
 
   const [activeTargetId, setActiveTargetId] = useState<SettingsTargetId | null>(
@@ -388,7 +387,7 @@ export const SettingsDialog = ({
               />
 
               <div className="flex min-w-0 flex-1 flex-col">
-                <SettingsHeader scope={scope} onScope={setScope} />
+                <SettingsHeader />
 
                 <div
                   ref={contentRef}
@@ -415,11 +414,6 @@ export const SettingsDialog = ({
 
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">
-              <Kbd>⌘</Kbd>
-              <Kbd>⇧</Kbd>
-              <Kbd>E</Kbd>
-              <span className="text-primary-container">Focus</span>
-              <span>Navbar</span>
               <span className="min-w-0 flex-1" />
               <Kbd>esc</Kbd>
               <span>close</span>
