@@ -20,7 +20,63 @@ pub const CURRENT_WORKSPACE_LAYOUT_VERSION: u32 = 1;
 #[cfg_attr(test, ts(export))]
 pub struct WorkspaceLayoutStore {
     pub version: u32,
+    #[serde(default, rename = "customPaneLayouts")]
+    pub custom_pane_layouts: Vec<PaneLayoutDefinition>,
     pub sessions: Vec<WorkspaceSession>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, ts(export))]
+pub struct PaneLayoutDefinition {
+    pub schema_version: u32,
+    pub id: String,
+    pub title: String,
+    pub source: String,
+    pub tracks: PaneLayoutTracks,
+    pub slots: Vec<PaneLayoutSlot>,
+    pub add_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct PaneLayoutTracks {
+    pub columns: Vec<PaneLayoutTrack>,
+    pub rows: Vec<PaneLayoutTrack>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, ts(export))]
+pub struct PaneLayoutTrack {
+    pub id: String,
+    pub units: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_px: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct PaneLayoutSlot {
+    pub id: String,
+    pub rect: PaneLayoutSlotRect,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, ts(export))]
+pub struct PaneLayoutSlotRect {
+    pub col: u32,
+    pub row: u32,
+    pub col_span: u32,
+    pub row_span: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -95,14 +151,20 @@ const DEFAULT_BROWSER_URL: &str = "https://www.google.com/";
 // Mirrors the spawn-path session cap (`commands.rs` try_insert(..., 64)) so a
 // valid full workspace is never treated as malformed and partly dropped.
 const MAX_SESSIONS: usize = 64;
-const MAX_PANES: usize = 6; // grid3x2 capacity
+const MAX_BUILTIN_PANES: usize = 6; // grid3x2 capacity
+const MAX_CUSTOM_PANE_LAYOUTS: usize = 32;
+const MIN_LAYOUT_TRACKS: usize = 1;
+const MAX_LAYOUT_TRACKS: usize = 4;
+const MIN_LAYOUT_SLOTS: usize = 1;
+const MAX_LAYOUT_SLOTS: usize = 16;
 const MAX_TABS: usize = 50;
 const MAX_HISTORY: usize = 100;
 const MAX_URL_LEN: usize = 4096;
 const MAX_TITLE_LEN: usize = 1024;
 const KNOWN_AGENTS: [&str; 5] = ["claude-code", "codex", "kimi", "aider", "generic"];
+const PANE_KINDS: [&str; 2] = ["shell", "browser"];
 
-fn layout_capacity(layout: &str) -> Option<usize> {
+fn builtin_layout_capacity(layout: &str) -> Option<usize> {
     match layout {
         "single" => Some(1),
         "vsplit" | "hsplit" => Some(2),
@@ -111,6 +173,20 @@ fn layout_capacity(layout: &str) -> Option<usize> {
         "grid3x2" => Some(6),
         _ => None,
     }
+}
+
+fn custom_layout_capacity(
+    custom_pane_layouts: &[PaneLayoutDefinition],
+    layout: &str,
+) -> Option<usize> {
+    custom_pane_layouts
+        .iter()
+        .find(|definition| definition.id == layout)
+        .map(|definition| definition.slots.len())
+}
+
+fn layout_capacity(layout: &str, custom_pane_layouts: &[PaneLayoutDefinition]) -> Option<usize> {
+    builtin_layout_capacity(layout).or_else(|| custom_layout_capacity(custom_pane_layouts, layout))
 }
 
 fn layout_for_count(n: usize) -> &'static str {
@@ -157,6 +233,128 @@ fn bool_field(v: &serde_json::Value, k: &str) -> Option<bool> {
     v.get(k).and_then(|x| x.as_bool())
 }
 
+fn repair_custom_pane_layouts(raw_layouts: &[serde_json::Value]) -> Vec<PaneLayoutDefinition> {
+    let mut layouts = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for raw in raw_layouts.iter() {
+        if layouts.len() >= MAX_CUSTOM_PANE_LAYOUTS {
+            break;
+        }
+
+        let Ok(definition) = serde_json::from_value::<PaneLayoutDefinition>(raw.clone()) else {
+            continue;
+        };
+
+        if !is_valid_custom_pane_layout(&definition) || seen_ids.contains(&definition.id) {
+            continue;
+        }
+
+        seen_ids.insert(definition.id.clone());
+        layouts.push(definition);
+    }
+
+    layouts
+}
+
+fn valid_layout_tracks(tracks: &[PaneLayoutTrack]) -> bool {
+    if !(MIN_LAYOUT_TRACKS..=MAX_LAYOUT_TRACKS).contains(&tracks.len()) {
+        return false;
+    }
+
+    let mut ids = std::collections::HashSet::new();
+    tracks.iter().all(|track| {
+        !track.id.is_empty()
+            && ids.insert(track.id.as_str())
+            && track.units.is_finite()
+            && track.units > 0.0
+            && track
+                .min_px
+                .is_none_or(|min_px| min_px.is_finite() && min_px >= 0.0)
+    })
+}
+
+fn is_valid_custom_pane_layout(definition: &PaneLayoutDefinition) -> bool {
+    if definition.schema_version != CURRENT_WORKSPACE_LAYOUT_VERSION {
+        return false;
+    }
+    if definition.source != "workspace"
+        || !definition.id.starts_with("custom:")
+        || definition.id.len() <= "custom:".len()
+        || definition.title.trim().is_empty()
+    {
+        return false;
+    }
+    if !valid_layout_tracks(&definition.tracks.columns)
+        || !valid_layout_tracks(&definition.tracks.rows)
+    {
+        return false;
+    }
+    if !(MIN_LAYOUT_SLOTS..=MAX_LAYOUT_SLOTS).contains(&definition.slots.len()) {
+        return false;
+    }
+
+    let cols = definition.tracks.columns.len();
+    let rows = definition.tracks.rows.len();
+    let mut seen_slots = std::collections::HashSet::new();
+    let mut coverage = vec![vec![false; cols]; rows];
+
+    for slot in &definition.slots {
+        if !slot.id.starts_with("slot:")
+            || slot.id.len() <= "slot:".len()
+            || !seen_slots.insert(slot.id.as_str())
+            || !slot
+                .accepts
+                .iter()
+                .all(|kind| PANE_KINDS.contains(&kind.as_str()))
+        {
+            return false;
+        }
+
+        let Some(col_end) = slot.rect.col.checked_add(slot.rect.col_span) else {
+            return false;
+        };
+        let Some(row_end) = slot.rect.row.checked_add(slot.rect.row_span) else {
+            return false;
+        };
+        if slot.rect.col_span == 0
+            || slot.rect.row_span == 0
+            || col_end as usize > cols
+            || row_end as usize > rows
+        {
+            return false;
+        }
+
+        for row in slot.rect.row..row_end {
+            for col in slot.rect.col..col_end {
+                let covered = &mut coverage[row as usize][col as usize];
+                if *covered {
+                    return false;
+                }
+                *covered = true;
+            }
+        }
+    }
+
+    if coverage
+        .iter()
+        .any(|row| row.iter().any(|covered| !covered))
+    {
+        return false;
+    }
+
+    let slot_ids: std::collections::HashSet<&str> = definition
+        .slots
+        .iter()
+        .map(|slot| slot.id.as_str())
+        .collect();
+    let mut seen_add_order = std::collections::HashSet::new();
+    definition.add_order.len() == definition.slots.len()
+        && definition.add_order.iter().all(|slot_id| {
+            slot_ids.contains(slot_id.as_str()) && seen_add_order.insert(slot_id.as_str())
+        })
+}
+
 fn truncate_chars(s: String, max: usize) -> String {
     if s.chars().count() <= max {
         s
@@ -196,6 +394,7 @@ pub fn repair_workspace_layout(
 ) -> WorkspaceLayoutStore {
     let empty = WorkspaceLayoutStore {
         version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+        custom_pane_layouts: Vec::new(),
         sessions: Vec::new(),
     };
     // Version gate: only the current version is decodable; anything else → fresh.
@@ -209,6 +408,12 @@ pub fn repair_workspace_layout(
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
+    let raw_custom_pane_layouts = raw
+        .get("customPaneLayouts")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let custom_pane_layouts = repair_custom_pane_layouts(&raw_custom_pane_layouts);
 
     let mut seen_session_ids = std::collections::HashSet::new();
     // ptyId must be unique across the WHOLE store (restore overlays live PTYs
@@ -234,6 +439,13 @@ pub fn repair_workspace_layout(
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| active_project_id.to_string());
 
+        let raw_layout = str_field(rs, "layout");
+        let pane_limit = raw_layout
+            .as_deref()
+            .and_then(|layout| custom_layout_capacity(&custom_pane_layouts, layout))
+            .unwrap_or(MAX_BUILTIN_PANES)
+            .min(MAX_LAYOUT_SLOTS);
+
         let raw_panes = rs
             .get("panes")
             .and_then(|v| v.as_array())
@@ -244,16 +456,19 @@ pub fn repair_workspace_layout(
             &working_directory,
             active_cwd,
             &mut seen_pty_ids,
+            pane_limit,
         );
         if panes.is_empty() {
             continue; // session emptied by repair → drop (floor: ≥1 pane)
         }
 
-        // Layout: unknown → smallest fitting; widen to fit the pane count, cap grid3x2.
-        let mut layout = str_field(rs, "layout")
-            .filter(|l| layout_capacity(l).is_some())
+        // Layout: unknown → smallest fitting; widen built-ins to fit the pane count.
+        // Valid custom layouts are preserved when their definition covers the
+        // repaired pane count, allowing future layouts beyond grid3x2.
+        let mut layout = raw_layout
+            .filter(|l| layout_capacity(l, &custom_pane_layouts).is_some())
             .unwrap_or_else(|| layout_for_count(panes.len()).to_string());
-        if layout_capacity(&layout).unwrap_or(1) < panes.len() {
+        if layout_capacity(&layout, &custom_pane_layouts).unwrap_or(1) < panes.len() {
             layout = layout_for_count(panes.len()).to_string();
         }
 
@@ -292,6 +507,7 @@ pub fn repair_workspace_layout(
 
     WorkspaceLayoutStore {
         version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+        custom_pane_layouts,
         sessions,
     }
 }
@@ -301,6 +517,7 @@ fn repair_panes(
     session_cwd: &str,
     active_cwd: &str,
     seen_pty_ids: &mut std::collections::HashSet<String>,
+    max_panes: usize,
 ) -> Vec<WorkspacePane> {
     let mut seen_pane_ids = std::collections::HashSet::new();
     // (sort_key, original_index, pane); sort_key = paneIndex, missing → last.
@@ -375,15 +592,15 @@ fn repair_panes(
 
     built.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     // Truncate to capacity BEFORE active-normalization, so an active pane beyond
-    // quad cannot be dropped after being chosen (which would leave none active).
+    // the layout limit cannot be dropped after being chosen (which would leave none active).
     // Un-reserve the ptyIds of capped panes so a later valid pane can reuse them.
-    if built.len() > MAX_PANES {
-        for (_, _, pane) in &built[MAX_PANES..] {
+    if built.len() > max_panes {
+        for (_, _, pane) in &built[max_panes..] {
             if let WorkspacePane::Shell(s) = pane {
                 seen_pty_ids.remove(&s.pty_id);
             }
         }
-        built.truncate(MAX_PANES);
+        built.truncate(max_panes);
     }
 
     let any_active = built.iter().any(|(_, _, p)| pane_active(p));
@@ -598,6 +815,7 @@ mod tests {
     fn round_trips_shell_and_browser_panes() {
         let store = WorkspaceLayoutStore {
             version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            custom_pane_layouts: Vec::new(),
             sessions: vec![WorkspaceSession {
                 id: "s1".into(),
                 project_id: "p".into(),
@@ -645,6 +863,56 @@ mod tests {
 
     use serde_json::json;
 
+    fn custom_grid_layout_json(id: &str, columns: u32, rows: u32) -> serde_json::Value {
+        let column_tracks: Vec<_> = (0..columns)
+            .map(|col| json!({ "id": format!("c{col}"), "units": 1 }))
+            .collect();
+        let row_tracks: Vec<_> = (0..rows)
+            .map(|row| json!({ "id": format!("r{row}"), "units": 1 }))
+            .collect();
+        let slots: Vec<_> = (0..rows)
+            .flat_map(|row| {
+                (0..columns).map(move |col| {
+                    let index = row * columns + col;
+                    json!({
+                        "id": format!("slot:p{index}"),
+                        "rect": { "col": col, "row": row, "colSpan": 1, "rowSpan": 1 }
+                    })
+                })
+            })
+            .collect();
+        let add_order: Vec<_> = (0..(columns * rows))
+            .map(|index| format!("slot:p{index}"))
+            .collect();
+
+        json!({
+            "schemaVersion": 1,
+            "id": id,
+            "title": "Custom grid",
+            "source": "workspace",
+            "tracks": {
+                "columns": column_tracks,
+                "rows": row_tracks
+            },
+            "slots": slots,
+            "addOrder": add_order
+        })
+    }
+
+    fn browser_panes_json(count: u32) -> Vec<serde_json::Value> {
+        (0..count)
+            .map(|index| {
+                json!({
+                    "kind": "browser",
+                    "paneId": format!("p{index}"),
+                    "paneIndex": index,
+                    "active": index == 0,
+                    "tabs": []
+                })
+            })
+            .collect()
+    }
+
     fn browser_tab(b: &WorkspacePane) -> &BrowserPane {
         match b {
             WorkspacePane::Browser(x) => x,
@@ -666,20 +934,133 @@ mod tests {
     }
 
     #[test]
-    fn preserves_many_open_sessions_but_normalizes_one_active() {
+    fn repairs_custom_pane_layout_definitions_without_blocking_sessions() {
+        let valid_layout = json!({
+            "schemaVersion": 1,
+            "id": "custom:main-side",
+            "title": "Main + side",
+            "source": "workspace",
+            "tracks": {
+                "columns": [{ "id": "main", "units": 16 }, { "id": "side", "units": 8 }],
+                "rows": [{ "id": "only", "units": 24 }]
+            },
+            "slots": [
+                { "id": "slot:main", "rect": { "col": 0, "row": 0, "colSpan": 1, "rowSpan": 1 }},
+                { "id": "slot:side", "rect": { "col": 1, "row": 0, "colSpan": 1, "rowSpan": 1 }}
+            ],
+            "addOrder": ["slot:main", "slot:side"]
+        });
+
+        let store = repair_workspace_layout(
+            json!({
+            "version": 1,
+            "customPaneLayouts": [
+              valid_layout,
+              { "schemaVersion": 1, "id": "single", "title": "Bad", "source": "workspace" },
+              { "schemaVersion": 1, "id": "custom:main-side", "title": "Duplicate", "source": "workspace" }
+            ],
+            "sessions": [
+              { "id": "s", "projectId": "p", "layout": "single",
+                "workingDirectory": "/", "active": true, "open": true,
+                "panes": [ { "kind": "browser", "paneId": "b1",
+                  "paneIndex": 0, "active": true } ] }
+            ]}),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.custom_pane_layouts.len(), 1);
+        assert_eq!(store.custom_pane_layouts[0].id, "custom:main-side");
+        assert_eq!(store.sessions.len(), 1);
+    }
+
+    #[test]
+    fn preserves_custom_session_layout_when_definition_exists() {
         let store = repair_workspace_layout(
             json!({
               "version": 1,
-              "sessions": [
-                { "id": "s1", "projectId": "p", "layout": "single",
-                  "workingDirectory": "/", "active": true, "open": true,
-                  "panes": [ { "kind": "browser", "paneId": "b1",
-                    "paneIndex": 0, "active": true } ] },
-                { "id": "s2", "projectId": "p", "layout": "single",
-                  "workingDirectory": "/", "active": true, "open": true,
-                  "panes": [ { "kind": "browser", "paneId": "b2",
-                    "paneIndex": 0, "active": true } ] }
-              ]}),
+              "customPaneLayouts": [custom_grid_layout_json("custom:grid2x2", 2, 2)],
+              "sessions": [{
+                "id": "s",
+                "projectId": "p",
+                "layout": "custom:grid2x2",
+                "workingDirectory": "/",
+                "active": true,
+                "open": true,
+                "panes": browser_panes_json(4)
+              }]
+            }),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.sessions[0].layout, "custom:grid2x2");
+        assert_eq!(store.sessions[0].panes.len(), 4);
+    }
+
+    #[test]
+    fn unknown_custom_session_layout_falls_back_to_builtin_capacity() {
+        let store = repair_workspace_layout(
+            json!({
+              "version": 1,
+              "customPaneLayouts": [],
+              "sessions": [{
+                "id": "s",
+                "projectId": "p",
+                "layout": "custom:missing",
+                "workingDirectory": "/",
+                "active": true,
+                "open": true,
+                "panes": browser_panes_json(4)
+              }]
+            }),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.sessions[0].layout, "quad");
+        assert_eq!(store.sessions[0].panes.len(), 4);
+    }
+
+    #[test]
+    fn custom_session_layout_can_preserve_more_than_grid3x2_panes() {
+        let store = repair_workspace_layout(
+            json!({
+              "version": 1,
+              "customPaneLayouts": [custom_grid_layout_json("custom:grid4x2", 4, 2)],
+              "sessions": [{
+                "id": "s",
+                "projectId": "p",
+                "layout": "custom:grid4x2",
+                "workingDirectory": "/",
+                "active": true,
+                "open": true,
+                "panes": browser_panes_json(8)
+              }]
+            }),
+            "proj",
+            "/",
+        );
+
+        assert_eq!(store.sessions[0].layout, "custom:grid4x2");
+        assert_eq!(store.sessions[0].panes.len(), 8);
+    }
+
+    #[test]
+    fn preserves_many_open_sessions_but_normalizes_one_active() {
+        let store = repair_workspace_layout(
+            json!({
+            "version": 1,
+            "sessions": [
+              { "id": "s1", "projectId": "p", "layout": "single",
+                "workingDirectory": "/", "active": true, "open": true,
+                "panes": [ { "kind": "browser", "paneId": "b1",
+                  "paneIndex": 0, "active": true } ] },
+              { "id": "s2", "projectId": "p", "layout": "single",
+                "workingDirectory": "/", "active": true, "open": true,
+                "panes": [ { "kind": "browser", "paneId": "b2",
+                  "paneIndex": 0, "active": true } ] }
+            ]}),
             "proj",
             "/",
         );
@@ -867,6 +1248,7 @@ mod tests {
 
         let store = WorkspaceLayoutStore {
             version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            custom_pane_layouts: Vec::new(),
             sessions: vec![WorkspaceSession {
                 id: "s".into(),
                 project_id: "proj".into(),
@@ -903,6 +1285,7 @@ mod tests {
         cache
             .save(&WorkspaceLayoutStore {
                 version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+                custom_pane_layouts: Vec::new(),
                 sessions: vec![WorkspaceSession {
                     id: "s".into(),
                     project_id: "proj".into(),
@@ -930,6 +1313,7 @@ mod tests {
         // A skewed-version save fails closed, leaving the good file intact.
         let bad = WorkspaceLayoutStore {
             version: 999,
+            custom_pane_layouts: Vec::new(),
             sessions: Vec::new(),
         };
         assert!(cache.save(&bad).is_err());
@@ -945,6 +1329,7 @@ mod tests {
 
         let store = WorkspaceLayoutStore {
             version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            custom_pane_layouts: Vec::new(),
             sessions: vec![WorkspaceSession {
                 id: "s".into(),
                 project_id: "proj".into(),
@@ -1001,6 +1386,7 @@ mod tests {
         let wc = WorkspaceLayoutCache::new(layouts_path.clone());
         wc.save(&WorkspaceLayoutStore {
             version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            custom_pane_layouts: Vec::new(),
             sessions: vec![WorkspaceSession {
                 id: "s".into(),
                 project_id: "proj".into(),

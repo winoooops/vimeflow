@@ -66,6 +66,7 @@ const paneToShape = (
 const storeToShape = (
   store: PersistedWorkspaceLayoutStore
 ): PersistedWorkspaceShape => ({
+  customPaneLayouts: store.customPaneLayouts,
   sessions: store.sessions.map((session) => ({
     id: session.id,
     projectId: session.projectId,
@@ -77,7 +78,10 @@ const storeToShape = (
   })),
 })
 
-const emptyWorkspaceShape = (): PersistedWorkspaceShape => ({ sessions: [] })
+const emptyWorkspaceShape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [],
+  sessions: [],
+})
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -147,8 +151,18 @@ const isPersistedWorkspaceShape = (
   dto: unknown
 ): dto is PersistedWorkspaceShape =>
   isRecord(dto) &&
+  (dto.customPaneLayouts === undefined ||
+    (Array.isArray(dto.customPaneLayouts) &&
+      dto.customPaneLayouts.every(isRecord))) &&
   Array.isArray(dto.sessions) &&
   dto.sessions.every(isPersistedWorkspaceSessionShape)
+
+const normalizeWorkspaceShape = (
+  dto: PersistedWorkspaceShape
+): PersistedWorkspaceShape => ({
+  customPaneLayouts: dto.customPaneLayouts ?? [],
+  sessions: dto.sessions,
+})
 
 const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
   tabs.map((tab) => ({
@@ -188,9 +202,11 @@ export class WorkspaceLayoutController {
   }
 
   pushShape(dto: PersistedWorkspaceShape): void {
-    this.shape = dto
-    this.writer.onShapePushed(dto)
-    this.resolveFinalShape(dto)
+    const normalized = normalizeWorkspaceShape(dto)
+
+    this.shape = normalized
+    this.writer.onShapePushed(normalized)
+    this.resolveFinalShape(normalized)
   }
 
   async loadForRestore(

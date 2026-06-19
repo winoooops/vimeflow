@@ -9,6 +9,7 @@ import type {
 } from './workspace-layout-types'
 
 const shape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
@@ -74,6 +75,7 @@ describe('WorkspaceLayoutWriter', () => {
 
     expect(writer.assemble()).toEqual({
       version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      customPaneLayouts: [],
       sessions: [
         {
           id: 's1',

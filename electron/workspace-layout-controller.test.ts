@@ -32,6 +32,7 @@ const makeSidecar = (
 })
 
 const sampleShape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
@@ -59,6 +60,7 @@ const sampleShape = (): PersistedWorkspaceShape => ({
 
 const sampleStore = (): PersistedWorkspaceLayoutStore => ({
   version: 1,
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
@@ -430,11 +432,18 @@ describe('WorkspaceLayoutController', () => {
         handlers.get(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE)?.({}, payload)
       )
 
-    await expect(loadForRestore(null)).resolves.toEqual({ sessions: [] })
+    await expect(loadForRestore(null)).resolves.toEqual({
+      customPaneLayouts: [],
+      sessions: [],
+    })
 
-    await expect(loadForRestore({})).resolves.toEqual({ sessions: [] })
+    await expect(loadForRestore({})).resolves.toEqual({
+      customPaneLayouts: [],
+      sessions: [],
+    })
 
     await expect(loadForRestore({ projectId: 'proj-1' })).resolves.toEqual({
+      customPaneLayouts: [],
       sessions: [],
     })
 

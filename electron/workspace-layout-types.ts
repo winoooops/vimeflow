@@ -43,6 +43,8 @@ export interface PersistedBrowserPane {
 
 export type PersistedWorkspacePane = PersistedShellPane | PersistedBrowserPane
 
+export type PersistedPaneLayoutDefinition = Record<string, unknown>
+
 export interface PersistedWorkspaceSession {
   id: string
   projectId: string
@@ -55,6 +57,7 @@ export interface PersistedWorkspaceSession {
 
 export interface PersistedWorkspaceLayoutStore {
   version: number
+  customPaneLayouts: PersistedPaneLayoutDefinition[]
   sessions: PersistedWorkspaceSession[]
 }
 
@@ -93,6 +96,7 @@ export interface PersistedWorkspaceSessionShape {
 }
 
 export interface PersistedWorkspaceShape {
+  customPaneLayouts?: PersistedPaneLayoutDefinition[]
   sessions: PersistedWorkspaceSessionShape[]
 }
 

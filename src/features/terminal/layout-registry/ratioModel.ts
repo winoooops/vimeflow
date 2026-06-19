@@ -9,6 +9,9 @@ export interface LayoutRatios {
   readonly rows: readonly number[]
 }
 
+/** Width of the divider track that replaces the inter-pane gap (px). */
+export const SPLIT_DIVIDER_PX = 8
+
 export const DEFAULT_RATIOS: Record<LayoutId, LayoutRatios> = {
   single: { cols: [1], rows: [1] },
   vsplit: { cols: [1, 1], rows: [1] },

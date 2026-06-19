@@ -240,7 +240,7 @@ describe('SplitView - multi-pane layouts', () => {
     ])
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv p1"',
+      gridTemplateAreas: '"p0 vdiv-c0 p1"',
     })
   })
 
@@ -254,7 +254,7 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0" "hdiv" "p1"',
+      gridTemplateAreas: '"p0" "hdiv-r0" "p1"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
@@ -269,7 +269,8 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv p1" "p0 vdiv hdiv" "p0 vdiv p2"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0 p1" "p0 vdiv-c0 hdiv-r0-c1" "p0 vdiv-c0 p2"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(3)
   })
@@ -284,7 +285,8 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0-r0 p1" "hdiv-r0 hdiv-r0 hdiv-r0" "p2 vdiv-c0-r1 p3"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(4)
   })
@@ -300,7 +302,7 @@ describe('SplitView - multi-pane layouts', () => {
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
       gridTemplateAreas:
-        '"p0 vdiv0a p1 vdiv1a p2" "hdiv hdiv hdiv hdiv hdiv" "p3 vdiv0b p4 vdiv1b p5"',
+        '"p0 vdiv-c0-r0 p1 vdiv-c1-r0 p2" "hdiv-r0 hdiv-r0 hdiv-r0 hdiv-r0 hdiv-r0" "p3 vdiv-c0-r1 p4 vdiv-c1-r1 p5"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(6)
     expect(screen.getAllByTestId('split-resize-handle')).toHaveLength(5)
@@ -534,7 +536,8 @@ describe('SplitView - under-capacity', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0-r0 p1" "hdiv-r0 hdiv-r0 hdiv-r0" "p2 vdiv-c0-r1 p3"',
     })
   })
 

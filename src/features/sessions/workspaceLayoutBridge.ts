@@ -5,6 +5,8 @@
 // The shape-only DTO defined here is the renderer<->main contract: it carries
 // pane existence + shell fields, never browser tab/history (main owns those).
 
+import type { PaneLayoutDefinition } from '../terminal/layout-registry'
+
 export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
@@ -38,6 +40,7 @@ export interface PersistedWorkspaceSessionShape {
 }
 
 export interface PersistedWorkspaceShape {
+  customPaneLayouts?: readonly PaneLayoutDefinition[]
   sessions: PersistedWorkspaceSessionShape[]
 }
 

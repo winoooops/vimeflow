@@ -7,6 +7,7 @@ import {
 } from './usePushWorkspaceGrouping'
 import { emptyActivity } from '../constants'
 import type { Pane, Session } from '../types'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 
 const workspaceLayoutMock = vi.hoisted(() => {
   const finalShapeCallbacks: (() => void)[] = []
@@ -77,9 +78,28 @@ const makeSession = (over: Partial<Session> = {}): Session => ({
   ...over,
 })
 
+const customLayout: PaneLayoutDefinition = {
+  schemaVersion: 1,
+  id: 'custom:test',
+  title: 'Custom test',
+  source: 'workspace',
+  tracks: {
+    columns: [{ id: 'main', units: 24 }],
+    rows: [{ id: 'main', units: 24 }],
+  },
+  slots: [
+    {
+      id: 'slot:main',
+      rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+    },
+  ],
+  addOrder: ['slot:main'],
+}
+
 describe('buildWorkspaceShape', () => {
   test('maps the session tree to a kind-tagged shape DTO (no browser tabs)', () => {
     expect(buildWorkspaceShape([makeSession()], 's1')).toEqual({
+      customPaneLayouts: [],
       sessions: [
         {
           id: 's1',
@@ -110,6 +130,13 @@ describe('buildWorkspaceShape', () => {
     expect(
       buildWorkspaceShape([makeSession()], 'other').sessions[0].active
     ).toBe(false)
+  })
+
+  test('carries custom pane layout definitions in the same snapshot', () => {
+    expect(
+      buildWorkspaceShape([makeSession()], 's1', [customLayout])
+        .customPaneLayouts
+    ).toEqual([customLayout])
   })
 })
 
@@ -143,7 +170,11 @@ describe('usePushWorkspaceGrouping', () => {
         loading: false,
       })
     )
-    expect(pushWorkspaceShape).toHaveBeenCalledWith({ sessions: [] })
+
+    expect(pushWorkspaceShape).toHaveBeenCalledWith({
+      customPaneLayouts: [],
+      sessions: [],
+    })
   })
 
   test('does not push an empty shape when empty writes are disallowed', () => {
@@ -341,7 +372,11 @@ describe('usePushWorkspaceGrouping', () => {
       activeSessionId: null,
       loading: false,
     })
-    expect(pushWorkspaceShape).toHaveBeenCalledWith({ sessions: [] })
+
+    expect(pushWorkspaceShape).toHaveBeenCalledWith({
+      customPaneLayouts: [],
+      sessions: [],
+    })
 
     vi.advanceTimersByTime(500)
     expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)

@@ -29,6 +29,7 @@ import { resolveGrid } from './resolveGrid'
 import {
   DEFAULT_RATIOS,
   equalTrackRatios,
+  gridAreaNameForSlotId,
   type LayoutRatios,
   type RatioAxis,
 } from '../../layout-registry'
@@ -239,6 +240,14 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       .map((row) => `"${row.join(' ')}"`)
       .join(' ')
 
+    const gridAreaForSlotIndex = (slotIndex: number): string => {
+      if (slotIndex < 0 || slotIndex >= layout.definition.slots.length) {
+        return `p${slotIndex}`
+      }
+
+      return gridAreaNameForSlotId(layout.definition.slots[slotIndex].id)
+    }
+
     return (
       <div
         data-testid="split-view-canvas"
@@ -293,7 +302,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   data-mode={mode}
                   data-cwd={pane.cwd}
                   className="relative min-h-0 min-w-0"
-                  style={{ gridArea: `p${i}` }}
+                  style={{ gridArea: gridAreaForSlotIndex(i) }}
                 >
                   {/* Inner Tooltip wrapper. The motion.div above carries
                   the click handler + grid placement; this inner Tooltip
@@ -375,7 +384,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                     data-testid="split-view-empty-slot"
                     data-slot-index={slotIndex}
                     className="relative min-h-0 min-w-0"
-                    style={{ gridArea: `p${slotIndex}` }}
+                    style={{ gridArea: gridAreaForSlotIndex(slotIndex) }}
                   >
                     <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
                   </motion.div>

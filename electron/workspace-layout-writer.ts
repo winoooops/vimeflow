@@ -174,6 +174,7 @@ export class WorkspaceLayoutWriter
 
     return {
       version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      customPaneLayouts: this.shape.customPaneLayouts ?? [],
       sessions,
     }
   }

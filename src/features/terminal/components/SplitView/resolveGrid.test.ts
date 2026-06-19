@@ -16,7 +16,7 @@ describe('resolveGrid', () => {
       `var(--split-cols-0, 1fr) ${SPLIT_DIVIDER_PX}px var(--split-cols-1, 1fr)`
     )
     expect(g.rows).toBe('minmax(0,1fr)')
-    expect(g.areas).toEqual([['p0', 'vdiv', 'p1']])
+    expect(g.areas).toEqual([['p0', 'vdiv-c0', 'p1']])
   })
 
   test('hsplit emits two row fr vars summing to 1', () => {
@@ -24,33 +24,33 @@ describe('resolveGrid', () => {
     expect(g.rows).toBe(
       `var(--split-rows-0, 0.4fr) ${SPLIT_DIVIDER_PX}px var(--split-rows-1, 0.6fr)`
     )
-    expect(g.areas).toEqual([['p0'], ['hdiv'], ['p1']])
+    expect(g.areas).toEqual([['p0'], ['hdiv-r0'], ['p1']])
   })
 
   test('threeRight spans p0 + vdiv across all rows; hdiv only in right column', () => {
     const g = resolveGrid('threeRight', { cols: [1.4, 1], rows: [1, 1] })
     expect(g.areas).toEqual([
-      ['p0', 'vdiv', 'p1'],
-      ['p0', 'vdiv', 'hdiv'],
-      ['p0', 'vdiv', 'p2'],
+      ['p0', 'vdiv-c0', 'p1'],
+      ['p0', 'vdiv-c0', 'hdiv-r0-c1'],
+      ['p0', 'vdiv-c0', 'p2'],
     ])
   })
 
   test('quad segments the column bar around the full-width row bar', () => {
     const g = resolveGrid('quad', { cols: [1, 1], rows: [1, 1] })
     expect(g.areas).toEqual([
-      ['p0', 'vdiv0', 'p1'],
-      ['hdiv', 'hdiv', 'hdiv'],
-      ['p2', 'vdiv1', 'p3'],
+      ['p0', 'vdiv-c0-r0', 'p1'],
+      ['hdiv-r0', 'hdiv-r0', 'hdiv-r0'],
+      ['p2', 'vdiv-c0-r1', 'p3'],
     ])
   })
 
   test('grid3x2 segments both column bars around the full-width row bar', () => {
     const g = resolveGrid('grid3x2', { cols: [1, 1, 1], rows: [1, 1] })
     expect(g.areas).toEqual([
-      ['p0', 'vdiv0a', 'p1', 'vdiv1a', 'p2'],
-      ['hdiv', 'hdiv', 'hdiv', 'hdiv', 'hdiv'],
-      ['p3', 'vdiv0b', 'p4', 'vdiv1b', 'p5'],
+      ['p0', 'vdiv-c0-r0', 'p1', 'vdiv-c1-r0', 'p2'],
+      ['hdiv-r0', 'hdiv-r0', 'hdiv-r0', 'hdiv-r0', 'hdiv-r0'],
+      ['p3', 'vdiv-c0-r1', 'p4', 'vdiv-c1-r1', 'p5'],
     ])
   })
 
