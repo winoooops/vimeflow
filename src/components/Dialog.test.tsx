@@ -132,6 +132,83 @@ describe('Dialog', () => {
     expect(onOpenChange).not.toHaveBeenCalled()
   })
 
+  test('closes only the topmost dialog when multiple dialogs are open', async () => {
+    const user = userEvent.setup()
+    const onCloseBottom = vi.fn()
+    const onCloseTop = vi.fn()
+
+    render(
+      <>
+        <Dialog open onOpenChange={onCloseBottom} aria-label="Bottom">
+          <button type="button">Bottom</button>
+        </Dialog>
+        <Dialog open onOpenChange={onCloseTop} aria-label="Top">
+          <button type="button">Top</button>
+        </Dialog>
+      </>
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseTop).toHaveBeenCalledWith(false)
+    expect(onCloseBottom).not.toHaveBeenCalled()
+  })
+
+  test('does not propagate Escape to a lower dialog when topmost is dismiss-disabled', async () => {
+    const user = userEvent.setup()
+    const onCloseBottom = vi.fn()
+    const onCloseTop = vi.fn()
+
+    render(
+      <>
+        <Dialog open onOpenChange={onCloseBottom} aria-label="Bottom">
+          <button type="button">Bottom</button>
+        </Dialog>
+        <Dialog
+          open
+          dismissDisabled
+          onOpenChange={onCloseTop}
+          aria-label="Top"
+        >
+          <button type="button">Top</button>
+        </Dialog>
+      </>
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseTop).not.toHaveBeenCalled()
+    expect(onCloseBottom).not.toHaveBeenCalled()
+  })
+
+  test('does not propagate Escape to a lower dialog when topmost has closeOnEscape disabled', async () => {
+    const user = userEvent.setup()
+    const onCloseBottom = vi.fn()
+    const onCloseTop = vi.fn()
+
+    render(
+      <>
+        <Dialog open onOpenChange={onCloseBottom} aria-label="Bottom">
+          <button type="button">Bottom</button>
+        </Dialog>
+        <Dialog
+          open
+          // eslint-disable-next-line react/jsx-boolean-value -- closeOnEscape defaults to true; explicit false is required for this regression test
+          closeOnEscape={false}
+          onOpenChange={onCloseTop}
+          aria-label="Top"
+        >
+          <button type="button">Top</button>
+        </Dialog>
+      </>
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(onCloseTop).not.toHaveBeenCalled()
+    expect(onCloseBottom).not.toHaveBeenCalled()
+  })
+
   test('moves focus to initialFocusRef on open', async () => {
     const initialFocusRef = createRef<HTMLButtonElement>()
 

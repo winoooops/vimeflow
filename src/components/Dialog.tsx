@@ -78,6 +78,52 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
           element.getAttribute('contenteditable') !== 'false'))
   )
 
+interface DialogLayer {
+  close: () => void
+  container: HTMLDivElement
+}
+
+const dialogStack: DialogLayer[] = []
+
+const handleDocumentKeyDown = (event: KeyboardEvent): void => {
+  if (dialogStack.length === 0) {
+    return
+  }
+
+  const topLayer = dialogStack[dialogStack.length - 1]
+
+  if (event.key === 'Escape') {
+    topLayer.close()
+    event.stopImmediatePropagation()
+
+    return
+  }
+
+  if (event.key === 'Tab') {
+    focusRelativeElement(topLayer.container, event)
+  }
+}
+
+const registerDialogLayer = (layer: DialogLayer): void => {
+  if (dialogStack.length === 0) {
+    document.addEventListener('keydown', handleDocumentKeyDown)
+  }
+
+  dialogStack.push(layer)
+}
+
+const unregisterDialogLayer = (layer: DialogLayer): void => {
+  const index = dialogStack.indexOf(layer)
+
+  if (index !== -1) {
+    dialogStack.splice(index, 1)
+  }
+
+  if (dialogStack.length === 0) {
+    document.removeEventListener('keydown', handleDocumentKeyDown)
+  }
+}
+
 const focusInitialElement = (
   container: HTMLElement,
   initialFocusRef: RefObject<HTMLElement | null> | undefined
@@ -222,30 +268,25 @@ const DialogRoot = ({
       return undefined
     }
 
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+    const dialog = dialogRef.current
+
+    if (dialog === null) {
+      return undefined
+    }
+
+    const layer: DialogLayer = {
+      close: (): void => {
         if (closeOnEscape) {
           requestClose()
         }
-
-        return
-      }
-
-      if (event.key !== 'Tab') {
-        return
-      }
-
-      const dialog = dialogRef.current
-
-      if (dialog !== null) {
-        focusRelativeElement(dialog, event)
-      }
+      },
+      container: dialog,
     }
 
-    document.addEventListener('keydown', handleKeyDown)
+    registerDialogLayer(layer)
 
     return (): void => {
-      document.removeEventListener('keydown', handleKeyDown)
+      unregisterDialogLayer(layer)
     }
   }, [closeOnEscape, open, requestClose])
 

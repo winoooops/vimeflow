@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-19
-ref_count: 23
+ref_count: 24
 ---
 
 # React Lifecycle
@@ -506,4 +506,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/components/Dialog.tsx` L183-204
 - **Finding:** Focus restoration only ran when the controlled `open` prop transitioned from `true` to `false`. If a parent conditionally rendered `<Dialog open>` and removed the component while it was open, no cleanup restored the previously focused element, leaving keyboard focus on `document.body`.
 - **Fix:** Added a dedicated `useEffect` with an empty dependency array whose cleanup restores `previousFocusRef.current` when `wasOpenRef.current` is true and `restoreFocus` is enabled. Captured `restoreFocus` in a ref so the cleanup closure sees the latest value. Added a co-located test that unmounts an open Dialog and asserts focus returns to the prior element.
+- **Commit:** same commit as this entry
+
+### 53. Per-instance document keydown listeners allow stacked dialogs to all process Escape
+
+- **Source:** github-codex-connector | PR #548 round 2 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L220-250
+- **Finding:** Each open `Dialog` registered its own `document.addEventListener('keydown', ...)` listener. When two or more dialogs were open, every instance processed the same `Escape` press, so pressing Escape could close the wrong layer or multiple layers at once. The same per-instance listener pattern also meant Tab focus-trapping ran in every open dialog, not just the topmost.
+- **Fix:** Introduced a module-level LIFO `dialogStack` of open dialog layers. A single document listener reads the top layer on each `keydown`; Escape calls only the top layer's close handler and `stopImmediatePropagation()`, and Tab only traps focus inside the top layer's container. Each Dialog pushes its layer on open and removes it on close/unmount. Added regression tests covering (a) Escape closes only the topmost dialog, (b) Escape does not propagate to a lower dialog when the topmost is `dismissDisabled`, and (c) Escape does not propagate when the topmost has `closeOnEscape={false}`.
 - **Commit:** same commit as this entry
