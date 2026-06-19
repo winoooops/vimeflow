@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type {
   SettingsDialogProps,
+  SettingsSearchNavigationDirection,
+  SettingsSection,
   SettingsSectionId,
   SettingsTarget,
   SettingsTargetId,
@@ -29,6 +31,20 @@ const matchesQuery = (
   value: string | undefined,
   normalizedQuery: string
 ): boolean => value?.toLowerCase().includes(normalizedQuery) ?? false
+
+type SettingsSearchResult =
+  | {
+      key: string
+      kind: 'section'
+      section: SettingsSection
+    }
+  | {
+      key: string
+      kind: 'target'
+      target: SettingsTarget
+    }
+
+type TargetFocusMode = 'focus-target' | 'preserve-search-focus'
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -74,7 +90,15 @@ export const SettingsDialog = ({
   const [activeTargetId, setActiveTargetId] = useState<SettingsTargetId | null>(
     null
   )
+
+  const [selectedSearchResultKey, setSelectedSearchResultKey] = useState<
+    string | null
+  >(null)
+
   const [targetNavigationKey, setTargetNavigationKey] = useState(0)
+
+  const [targetFocusMode, setTargetFocusMode] =
+    useState<TargetFocusMode>('focus-target')
 
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -104,17 +128,131 @@ export const SettingsDialog = ({
     ? SETTINGS_SECTIONS.filter((s) => filteredSectionIds.has(s.id))
     : SETTINGS_SECTIONS
 
+  const sectionMatchIds = new Set<SettingsSectionId>(
+    sectionMatches.map((s) => s.id)
+  )
+
+  const searchResults = filtered.flatMap((s): SettingsSearchResult[] => {
+    const results: SettingsSearchResult[] = []
+
+    if (!normalizedQuery || sectionMatchIds.has(s.id)) {
+      results.push({
+        key: `section:${s.id}`,
+        kind: 'section',
+        section: s,
+      })
+    }
+
+    targetMatches
+      .filter((target) => target.section === s.id)
+      .forEach((target) => {
+        results.push({
+          key: `target:${target.id}`,
+          kind: 'target',
+          target,
+        })
+      })
+
+    return results
+  })
+
+  const activeSearchResultKey =
+    selectedSearchResultKey !== null &&
+    searchResults.some((result) => result.key === selectedSearchResultKey)
+      ? selectedSearchResultKey
+      : null
+
   const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
 
   const handlePickSection = (id: SettingsSectionId): void => {
     setSection(id)
     setActiveTargetId(null)
+    setSelectedSearchResultKey(`section:${id}`)
   }
 
-  const handlePickTarget = (target: SettingsTarget): void => {
+  const handleQuery = (nextQuery: string): void => {
+    setQuery(nextQuery)
+    setActiveTargetId(null)
+    setSelectedSearchResultKey(null)
+  }
+
+  const handleClearQuery = (): void => {
+    setQuery('')
+    setActiveTargetId(null)
+    setSelectedSearchResultKey(null)
+    setTargetFocusMode('focus-target')
+  }
+
+  const applySearchResult = (
+    result: SettingsSearchResult,
+    focusMode: TargetFocusMode
+  ): void => {
+    setTargetFocusMode(focusMode)
+    setSelectedSearchResultKey(result.key)
+
+    if (result.kind === 'section') {
+      handlePickSection(result.section.id)
+
+      return
+    }
+
+    const { target } = result
     setSection(target.section)
     setActiveTargetId(target.id)
     setTargetNavigationKey((key) => key + 1)
+  }
+
+  const handlePickTarget = (target: SettingsTarget): void => {
+    applySearchResult(
+      {
+        key: `target:${target.id}`,
+        kind: 'target',
+        target,
+      },
+      'focus-target'
+    )
+  }
+
+  const handleNavigateSearchResult = (
+    direction: SettingsSearchNavigationDirection
+  ): void => {
+    if (searchResults.length === 0) {
+      return
+    }
+
+    const currentIndex =
+      activeSearchResultKey === null
+        ? -1
+        : searchResults.findIndex(
+            (result) => result.key === activeSearchResultKey
+          )
+    const delta = direction === 'next' ? 1 : -1
+    let nextIndex: number
+    if (currentIndex === -1) {
+      nextIndex = direction === 'next' ? 0 : searchResults.length - 1
+    } else {
+      nextIndex =
+        (currentIndex + delta + searchResults.length) % searchResults.length
+    }
+
+    const nextResult = searchResults[nextIndex]
+
+    applySearchResult(nextResult, 'preserve-search-focus')
+  }
+
+  const handleConfirmSearchResult = (): void => {
+    if (searchResults.length === 0) {
+      return
+    }
+
+    const currentResult =
+      activeSearchResultKey === null
+        ? undefined
+        : searchResults.find((result) => result.key === activeSearchResultKey)
+
+    const resultToConfirm = currentResult ?? searchResults[0]
+
+    applySearchResult(resultToConfirm, 'focus-target')
   }
 
   useEffect(() => {
@@ -180,6 +318,7 @@ export const SettingsDialog = ({
     if (!open) {
       setQuery('')
       setActiveTargetId(null)
+      setSelectedSearchResultKey(null)
     }
   }, [open])
 
@@ -197,8 +336,10 @@ export const SettingsDialog = ({
     }
 
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    target.focus({ preventScroll: true })
-  }, [activeTargetId, open, section, targetNavigationKey])
+    if (targetFocusMode === 'focus-target') {
+      target.focus({ preventScroll: true })
+    }
+  }, [activeTargetId, open, section, targetFocusMode, targetNavigationKey])
 
   return (
     <AnimatePresence>
@@ -255,8 +396,11 @@ export const SettingsDialog = ({
                 activeTargetId={activeTargetId}
                 onPick={handlePickSection}
                 onPickTarget={handlePickTarget}
+                onClearQuery={handleClearQuery}
+                onNavigateSearchResult={handleNavigateSearchResult}
+                onConfirmSearchResult={handleConfirmSearchResult}
                 query={query}
-                onQuery={setQuery}
+                onQuery={handleQuery}
               />
 
               <div className="flex min-w-0 flex-1 flex-col">

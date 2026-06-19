@@ -115,6 +115,26 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
   })
 
+  test('clears search from the search field button', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const input = screen.getByPlaceholderText('Search settings...')
+
+    await user.type(input, 'term')
+
+    expect(input).toHaveValue('term')
+    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clear settings search' })
+    )
+
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'General' })).toBeInTheDocument()
+  })
+
   test('navigates search result clicks to the matching settings row', async () => {
     const user = userEvent.setup()
 
@@ -143,6 +163,51 @@ describe('SettingsDialog', () => {
     expect(scrollIntoView).toHaveBeenCalled()
 
     scrollIntoView.mockRestore()
+  })
+
+  test('navigates search results with arrow keys without leaving the search field', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const input = screen.getByPlaceholderText('Search settings...')
+
+    await user.type(input, 'redact')
+    await user.keyboard('{ArrowDown}')
+
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+    )
+
+    await waitFor(() => {
+      expect(target).toHaveAttribute('data-settings-target-active', 'true')
+    })
+
+    expect(input).toHaveFocus()
+    expect(
+      screen.getByRole('button', { name: 'General', current: 'page' })
+    ).toBeInTheDocument()
+    expect(scrollIntoView).toHaveBeenCalled()
+
+    scrollIntoView.mockRestore()
+  })
+
+  test('starts default arrow navigation at the first visible search result', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const input = screen.getByPlaceholderText('Search settings...')
+
+    await user.click(input)
+    await user.keyboard('{ArrowDown}')
+
+    expect(input).toHaveFocus()
+    expect(
+      screen.getByRole('button', { name: 'General', current: 'page' })
+    ).toBeInTheDocument()
   })
 
   test('keeps command palette and leader keymap targets independently navigable', async () => {

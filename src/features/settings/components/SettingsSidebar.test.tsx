@@ -63,6 +63,53 @@ describe('SettingsSidebar', () => {
     )
   })
 
+  test('renders a clear search button when the query has text', async () => {
+    const user = userEvent.setup()
+    const onClearQuery = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="term"
+        onClearQuery={onClearQuery}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clear settings search' })
+    )
+
+    expect(onClearQuery).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not render the clear search button when the query is empty', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(
+      screen.queryByRole('button', { name: 'Clear settings search' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('forwards search result keyboard navigation', async () => {
+    const user = userEvent.setup()
+    const onNavigateSearchResult = vi.fn()
+    const onConfirmSearchResult = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="redact"
+        onNavigateSearchResult={onNavigateSearchResult}
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    await user.click(screen.getByRole('textbox', { name: 'Search settings' }))
+    await user.keyboard('{ArrowDown}{ArrowUp}{Enter}')
+
+    expect(onNavigateSearchResult).toHaveBeenNthCalledWith(1, 'next')
+    expect(onNavigateSearchResult).toHaveBeenNthCalledWith(2, 'previous')
+    expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
+  })
+
   test('calls onPick with the section id when a button is clicked', async () => {
     const user = userEvent.setup()
     const onPick = vi.fn()
