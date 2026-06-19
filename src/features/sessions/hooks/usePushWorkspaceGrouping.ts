@@ -24,11 +24,14 @@ import {
   type PersistedWorkspaceShape,
   type PersistedWorkspacePaneShape,
 } from '../workspaceLayoutBridge'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 import { isShellPane } from '../utils/paneKind'
 import { isOpenSession } from '../utils/sessionStatus'
 import type { Session } from '../types'
 
 const log = createLogger('grouping')
+
+const EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []
 
 const DRIFT_DEBOUNCE_MS = 500
 
@@ -50,8 +53,10 @@ const pushShapeWithLog = async (
  */
 export const buildWorkspaceShape = (
   sessions: readonly Session[],
-  activeSessionId: string | null
+  activeSessionId: string | null,
+  customPaneLayouts: readonly PaneLayoutDefinition[] = []
 ): PersistedWorkspaceShape => ({
+  customPaneLayouts,
   sessions: sessions.map((session) => ({
     id: session.id,
     projectId: session.projectId,
@@ -85,8 +90,9 @@ export const buildWorkspaceShape = (
 // Signature of the structural half (everything except cwd/agentType drift), so
 // a `cd` or agent-detection update debounces instead of pushing eagerly.
 const structuralSignature = (shape: PersistedWorkspaceShape): string =>
-  JSON.stringify(
-    shape.sessions.map((session) => ({
+  JSON.stringify({
+    customPaneLayouts: shape.customPaneLayouts ?? [],
+    sessions: shape.sessions.map((session) => ({
       id: session.id,
       projectId: session.projectId,
       layout: session.layout,
@@ -100,11 +106,12 @@ const structuralSignature = (shape: PersistedWorkspaceShape): string =>
         active: pane.active,
         ptyId: pane.kind === 'shell' ? pane.ptyId : null,
       })),
-    }))
-  )
+    })),
+  })
 
 export interface UsePushWorkspaceGroupingOptions {
   sessions: readonly Session[]
+  customPaneLayouts?: readonly PaneLayoutDefinition[]
   /** The active workspace session id, so the DTO marks which session restore
    *  should reselect. */
   activeSessionId: string | null
@@ -118,13 +125,14 @@ export interface UsePushWorkspaceGroupingOptions {
 
 export const usePushWorkspaceGrouping = ({
   sessions,
+  customPaneLayouts = EMPTY_CUSTOM_PANE_LAYOUTS,
   activeSessionId,
   loading,
   canPushEmptyShape = true,
 }: UsePushWorkspaceGroupingOptions): void => {
   const shape = useMemo(
-    () => buildWorkspaceShape(sessions, activeSessionId),
-    [sessions, activeSessionId]
+    () => buildWorkspaceShape(sessions, activeSessionId, customPaneLayouts),
+    [sessions, activeSessionId, customPaneLayouts]
   )
 
   // Last full + structural shape JSON, to skip no-op rerenders and to tell a

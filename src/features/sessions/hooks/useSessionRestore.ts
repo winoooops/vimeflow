@@ -82,6 +82,7 @@ const shapeWithRestartedShell = (
   selection: StoreShellSelection,
   liveSession: SessionInfo
 ): PersistedWorkspaceShape => ({
+  customPaneLayouts: storeShape.customPaneLayouts,
   sessions: storeShape.sessions.map((session) =>
     session.id !== selection.sessionId
       ? session

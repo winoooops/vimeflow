@@ -1,0 +1,1383 @@
+<!doctype html>
+<!-- cspell:words autoshrink hdiv lede vdiv -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vimeflow 技术说明：Workspace Pane Layout 自定义模型</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d12;
+        --panel: rgba(20, 23, 33, 0.9);
+        --panel-2: rgba(30, 34, 48, 0.9);
+        --panel-3: rgba(12, 15, 23, 0.9);
+        --text: #eef2ff;
+        --muted: #aeb8d6;
+        --faint: #7782a3;
+        --accent: #a6e3a1;
+        --accent-2: #89dceb;
+        --warn: #f9e2af;
+        --danger: #f38ba8;
+        --line: rgba(238, 242, 255, 0.11);
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+        --sans:
+          'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'PingFang SC',
+          'Noto Serif SC', serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background:
+          radial-gradient(
+            circle at 10% 0%,
+            rgba(166, 227, 161, 0.13),
+            transparent 32%
+          ),
+          radial-gradient(
+            circle at 92% 12%,
+            rgba(137, 220, 235, 0.14),
+            transparent 30%
+          ),
+          linear-gradient(180deg, #07090f 0%, var(--bg) 100%);
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 40px 0 72px;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        padding: 36px;
+        background:
+          linear-gradient(135deg, rgba(166, 227, 161, 0.1), transparent 55%),
+          linear-gradient(
+            180deg,
+            rgba(20, 23, 33, 0.96),
+            rgba(10, 12, 19, 0.97)
+          );
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 30px;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(166, 227, 161, 0.13);
+        color: var(--accent);
+        font: 700 12px/1.1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.12;
+      }
+
+      h1 {
+        max-width: 960px;
+        font-size: clamp(34px, 5vw, 56px);
+        letter-spacing: -0.03em;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 28px;
+      }
+
+      h3 {
+        margin-bottom: 10px;
+        font-size: 20px;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        font-size: 16px;
+        line-height: 1.78;
+      }
+
+      p,
+      li,
+      td {
+        color: var(--muted);
+      }
+
+      .lede {
+        max-width: 940px;
+        margin: 18px 0 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+
+      .grid-3,
+      .grid-2,
+      .two-up {
+        display: grid;
+        gap: 18px;
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 24px;
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-up {
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+        align-items: start;
+      }
+
+      .card,
+      .stat,
+      .note,
+      .code,
+      .diagram {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-2);
+      }
+
+      .card,
+      .stat,
+      .diagram {
+        padding: 18px 20px;
+      }
+
+      .stat .label,
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-2);
+        font: 700 12px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--text);
+        font-size: 22px;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .chip {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.035);
+        color: var(--text);
+        font: 600 12px/1.2 var(--mono);
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid var(--warn);
+      }
+
+      .note strong {
+        color: var(--text);
+      }
+
+      .code {
+        margin-top: 14px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        background: rgba(7, 9, 15, 0.94);
+        color: #f6f8ff;
+      }
+
+      pre {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.62;
+      }
+
+      ul {
+        margin: 12px 0 0 18px;
+        padding: 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font: 700 12px/1.3 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      .good {
+        color: var(--accent);
+      }
+
+      .muted {
+        color: var(--faint);
+      }
+
+      .layout-demo {
+        display: grid;
+        gap: 8px;
+        min-height: 210px;
+        padding: 10px;
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+          rgba(5, 7, 12, 0.58);
+      }
+
+      .slot {
+        display: grid;
+        place-items: center;
+        min-height: 46px;
+        border-radius: 14px;
+        border: 1px solid rgba(238, 242, 255, 0.15);
+        background:
+          linear-gradient(
+            135deg,
+            rgba(166, 227, 161, 0.12),
+            rgba(137, 220, 235, 0.07)
+          ),
+          rgba(255, 255, 255, 0.035);
+        color: var(--text);
+        font: 700 12px/1 var(--mono);
+        letter-spacing: 0.06em;
+      }
+
+      .demo-3x2 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+      }
+
+      .demo-4x4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(4, minmax(0, 1fr));
+      }
+
+      .demo-stack {
+        grid-template-columns: minmax(0, 16fr) minmax(0, 8fr);
+        grid-template-rows: repeat(3, minmax(0, 1fr));
+      }
+
+      .demo-stack .main {
+        grid-row: 1 / span 3;
+      }
+
+      .demo-bottom {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: minmax(0, 18fr) minmax(0, 6fr);
+      }
+
+      .demo-bottom .main-bottom {
+        grid-column: 1 / span 3;
+      }
+
+      .footer {
+        margin-top: 20px;
+        color: var(--faint);
+        font-size: 14px;
+      }
+
+      @media (max-width: 980px) {
+        .grid-3,
+        .grid-2,
+        .two-up {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">Technical Note</span>
+        <h1>Workspace Pane Layout 自定义：先定唯一数据结构，再画配置面板</h1>
+        <p class="lede">
+          目标不是再加几个预设按钮，而是让用户能创建终端形状、调整布局，并决定
+          workspace 使用什么布局。关键决策是：runtime、restore、divider、
+          ratio、icon、customization plane 都必须从同一个
+          <span class="mono">PaneLayoutDefinition</span>
+          派生，不能让配置页成为另一套事实来源。
+        </p>
+        <div class="chip-row">
+          <span class="chip">SSoT：Track + Slot Rect</span>
+          <span class="chip">支持：2x3 / 3x2 / 3x3 / 4x4</span>
+          <span class="chip">支持：Main + N Stack</span>
+          <span class="chip">Custom UI 只编辑 Draft</span>
+        </div>
+        <div class="grid-3">
+          <div class="stat">
+            <span class="label">核心原则</span>
+            <strong>一个 layout 定义</strong>
+            <span>所有渲染、校验、持久化都从它推导</span>
+          </div>
+          <div class="stat">
+            <span class="label">不做什么</span>
+            <strong>不存 CSS 字符串</strong>
+            <span>CSS grid、divider、glyph 都是派生产物</span>
+          </div>
+          <div class="stat">
+            <span class="label">第一版边界</span>
+            <strong>Rectilinear grid</strong>
+            <span>矩形 slot、无重叠、默认无洞</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>结论：合法 pane layout 的唯一数据结构</h2>
+        <div class="two-up">
+          <div>
+            <p>
+              推荐把 layout 表达为“行列轨道 + slot 矩形”。这比
+              <code>grid-template-areas</code> 更适合作为 domain
+              model，因为它能直接表达 resize ratio、slot 边界、capacity、pane
+              placement，也能稳定序列化。
+            </p>
+            <div class="code">
+              <pre>
+type PaneLayoutId = BuiltinLayoutId | `custom:${string}`
+type LayoutSlotId = `slot:${string}`
+
+interface PaneLayoutDefinition {
+  schemaVersion: 1
+  id: PaneLayoutId
+  title: string
+  source: 'builtin' | 'workspace'
+  tracks: {
+    columns: readonly TrackSpec[]
+    rows: readonly TrackSpec[]
+  }
+  slots: readonly PaneSlotSpec[]
+  addOrder: readonly LayoutSlotId[]
+}
+
+interface TrackSpec {
+  id: string
+  units: number
+  minPx?: number
+}
+
+interface PaneSlotSpec {
+  id: LayoutSlotId
+  rect: {
+    col: number
+    row: number
+    colSpan: number
+    rowSpan: number
+  }
+  accepts?: readonly PaneKind[]
+}</pre
+              >
+            </div>
+            <p>
+              <code>units</code> 是给用户和配置面板看的规格单位。runtime
+              可以直接把它当 <code>fr</code> 权重使用，也可以 normalize 成
+              ratio；关键是 UI 不再暴露 难以一眼理解的小数比例。
+            </p>
+          </div>
+          <aside class="diagram">
+            <span class="label">可以表达的布局</span>
+            <div class="layout-demo demo-stack">
+              <div class="slot main">p0</div>
+              <div class="slot">p1</div>
+              <div class="slot">p2</div>
+              <div class="slot">p3</div>
+            </div>
+            <p>
+              这个 “Main + 3 stack” 不是特殊 case。它只是
+              <code>p0</code> 的 <code>rowSpan = 3</code>，右侧三个 slot
+              各占一行。
+            </p>
+          </aside>
+        </div>
+        <div class="note">
+          <p>
+            <strong>重点：</strong>customization plane 应该编辑
+            <code>DraftPaneLayoutDefinition</code>，点击 Apply 时通过 validator
+            生成 <code>PaneLayoutDefinition</code>。只有 validated definition
+            能进入 session 和持久化层。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>用 Main + 3 sub panes 拆开看</h2>
+        <p>
+          “行列轨道 + slot 矩形” 可以先按字面理解：我们不是先画 CSS，
+          而是先描述一张逻辑网格。网格有几列、几行，每一块 pane 占从哪里开始、
+          横跨几列、竖跨几行。CSS、divider、icon、capacity
+          都是后面自动算出来的。
+        </p>
+        <div class="two-up">
+          <div>
+            <div class="code">
+              <pre>
+Main + 3 sub panes 的逻辑网格：
+
+columns: [main, side]
+rows:    [top, middle, bottom]
+
+视觉结果：
+
++----------------------+-------------+
+|                      | sub pane 1  |
+|                      +-------------+
+|      main pane       | sub pane 2  |
+|                      +-------------+
+|                      | sub pane 3  |
++----------------------+-------------+</pre
+              >
+            </div>
+            <p>
+              这里的 layout 本体不是上面这张 ASCII 图。真正的本体是：
+              <code>2</code> 列、<code>3</code> 行、<code>4</code> 个 slot。
+              main slot 从第 0 列第 0 行开始，占 1 列、3 行；右边三个 sub slot
+              各占第 1 列的一行。
+            </p>
+          </div>
+          <aside class="diagram">
+            <span class="label">同一个定义渲染出的结果</span>
+            <div class="layout-demo demo-stack">
+              <div class="slot main">main</div>
+              <div class="slot">sub 1</div>
+              <div class="slot">sub 2</div>
+              <div class="slot">sub 3</div>
+            </div>
+            <p>
+              这不是“threeRight 的另一个 hardcode case”。它只是普通矩形 slot
+              的组合。
+            </p>
+          </aside>
+        </div>
+
+        <div class="grid-2" style="margin-top: 18px">
+          <article class="card">
+            <span class="label">Step 1</span>
+            <h3>先定义 tracks：有几列、几行、比例是多少</h3>
+            <p>
+              tracks 是 resize ratio 的来源。不要用小数 ratio 当心智模型；
+              更推荐像 Tailwind / Bootstrap grid 一样， 把总宽度或总高度拆成
+              <code>24</code> 份。比如左侧 main 占 <code>16/24</code>，右侧
+              stack 占 <code>8/24</code>； 三行默认一样高，就各占
+              <code>8/24</code>。
+            </p>
+            <div class="code">
+              <pre>
+tracks: {
+  columns: [
+    { id: 'main', units: 16 },
+    { id: 'side', units: 8 },
+  ],
+  rows: [
+    { id: 'top', units: 8 },
+    { id: 'middle', units: 8 },
+    { id: 'bottom', units: 8 },
+  ],
+}</pre
+              >
+            </div>
+          </article>
+
+          <article class="card">
+            <span class="label">Step 2</span>
+            <h3>再定义 slots：每个 pane 形状占哪里</h3>
+            <p>
+              slot rect 是 layout 的核心。它不关心当前里面有没有
+              terminal，也不关心 terminal 的 PTY id。它只描述“这个位置可以放一个
+              pane”。
+            </p>
+            <div class="code">
+              <pre>
+slots: [
+  {
+    id: 'slot:main',
+    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 3 },
+  },
+  {
+    id: 'slot:side-top',
+    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+  },
+  {
+    id: 'slot:side-middle',
+    rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+  },
+  {
+    id: 'slot:side-bottom',
+    rect: { col: 1, row: 2, colSpan: 1, rowSpan: 1 },
+  },
+]</pre
+              >
+            </div>
+          </article>
+        </div>
+
+        <table style="margin-top: 18px">
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>在这个例子里的值</th>
+              <th>它回答的问题</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tracks.columns</code></td>
+              <td><code>[main, side]</code></td>
+              <td>横向有几块？每块宽度比例是多少？</td>
+            </tr>
+            <tr>
+              <td><code>tracks.rows</code></td>
+              <td><code>[top, middle, bottom]</code></td>
+              <td>纵向有几块？每块高度比例是多少？</td>
+            </tr>
+            <tr>
+              <td><code>slot:main.rect</code></td>
+              <td><code>{ col: 0, row: 0, colSpan: 1, rowSpan: 3 }</code></td>
+              <td>main pane 从左上开始，占整条左列</td>
+            </tr>
+            <tr>
+              <td><code>slot:side-middle.rect</code></td>
+              <td><code>{ col: 1, row: 1, colSpan: 1, rowSpan: 1 }</code></td>
+              <td>第二个 sub pane 在右列中间</td>
+            </tr>
+            <tr>
+              <td><code>addOrder</code></td>
+              <td>
+                <code
+                  >['slot:main', 'slot:side-top', 'slot:side-middle',
+                  'slot:side-bottom']</code
+                >
+              </td>
+              <td>用户点 Add Pane 时，新的 pane 按什么顺序填空位</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid-2" style="margin-top: 18px">
+          <article class="card">
+            <span class="label">Step 3</span>
+            <h3>runtime 再从它派生 CSS grid</h3>
+            <p>
+              注意这里是“派生”。我们不把这段 CSS 当成 source of truth，
+              因为它只是浏览器需要的输出格式。
+            </p>
+            <div class="code">
+              <pre>
+grid-template-columns:
+  minmax(0, 16fr) 8px minmax(0, 8fr)
+
+grid-template-rows:
+  minmax(0, 8fr) 8px minmax(0, 8fr) 8px minmax(0, 8fr)
+
+grid-template-areas:
+  "slot-main vdiv slot-side-top"
+  "slot-main vdiv hdiv-side-0"
+  "slot-main vdiv slot-side-middle"
+  "slot-main vdiv hdiv-side-1"
+  "slot-main vdiv slot-side-bottom"</pre
+              >
+            </div>
+          </article>
+
+          <article class="card">
+            <span class="label">Step 4</span>
+            <h3>divider 也从 slot 边界派生</h3>
+            <p>
+              左右之间有一条完整竖向边界，所以生成一个 vertical
+              divider。右侧三个 sub pane 之间有两条水平边界，所以生成两个
+              horizontal divider。
+            </p>
+            <div class="code">
+              <pre>
+derived dividers:
+[
+  { axis: 'columns', trackIndex: 0 },
+  { axis: 'rows', trackIndex: 0, segment: 'right-column' },
+  { axis: 'rows', trackIndex: 1, segment: 'right-column' },
+]</pre
+              >
+            </div>
+            <p>
+              这就是为什么 divider 不应该手写在每个 layout case 里。只要 slot
+              rect 合法，divider 可以被统一算法算出来。
+            </p>
+          </article>
+        </div>
+
+        <div class="section" style="margin-top: 18px; box-shadow: none">
+          <h3>同一个模型的另一个形状：Main + bottom 3 panes</h3>
+          <p>
+            如果用户想要“上面一个大 main workspace，底部三个 workspace
+            横向排列”， 数据结构不用换，只是 tracks 和 slot rect
+            换一组。这里变成
+            <code>3</code> 列、<code>2</code> 行：main slot 横跨上方三列，
+            底部三个 sub slot 各占一列。
+          </p>
+          <div class="two-up">
+            <div>
+              <div class="code">
+                <pre>
+Main + bottom 3 panes 的逻辑网格：
+
+columns: [left, center, right]
+rows:    [main, bottom]
+
+视觉结果：
+
++-------------+-------------+-------------+
+|                                       |
+|              main pane                |
+|                                       |
++-------------+-------------+-------------+
+| sub pane 1  | sub pane 2  | sub pane 3  |
++-------------+-------------+-------------+</pre
+                >
+              </div>
+              <p>
+                这个例子说明：<code>rowSpan</code> 和 <code>colSpan</code>
+                是同一种能力的两个方向。右侧 stack 例子是 main 纵向跨 3 行；
+                底部横排例子是 main 横向跨 3 列。
+              </p>
+            </div>
+            <aside class="diagram">
+              <span class="label">横向底栏变体</span>
+              <div class="layout-demo demo-bottom">
+                <div class="slot main-bottom">main</div>
+                <div class="slot">sub 1</div>
+                <div class="slot">sub 2</div>
+                <div class="slot">sub 3</div>
+              </div>
+              <p>
+                同样是 4 个 slot、同样可以 resize、同样可 restore；只是 slot
+                rect 的占位方式不同。
+              </p>
+            </aside>
+          </div>
+
+          <div class="grid-2" style="margin-top: 18px">
+            <article class="card">
+              <span class="label">Tracks</span>
+              <h3>三列两行</h3>
+              <p>
+                columns 是三个底部 pane 的横向宽度来源；rows 是 main
+                区域和底部区域的高度比例。 这里同样按
+                <code>24</code> 份理解：底部三列各 <code>8/24</code>， 上方 main
+                高度 <code>18/24</code>，底部区域高度 <code>6/24</code>。
+              </p>
+              <div class="code">
+                <pre>
+tracks: {
+  columns: [
+    { id: 'left', units: 8 },
+    { id: 'center', units: 8 },
+    { id: 'right', units: 8 },
+  ],
+  rows: [
+    { id: 'main', units: 18 },
+    { id: 'bottom', units: 6 },
+  ],
+}</pre
+                >
+              </div>
+            </article>
+
+            <article class="card">
+              <span class="label">Slots</span>
+              <h3>main 横跨三列</h3>
+              <p>
+                main slot 从第 0 列第 0 行开始，横跨 3 列、只占 1 行。底部三个
+                slot 在第 1 行分别占第 0、1、2 列。
+              </p>
+              <div class="code">
+                <pre>
+slots: [
+  {
+    id: 'slot:main',
+    rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 },
+  },
+  {
+    id: 'slot:bottom-left',
+    rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 },
+  },
+  {
+    id: 'slot:bottom-center',
+    rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+  },
+  {
+    id: 'slot:bottom-right',
+    rect: { col: 2, row: 1, colSpan: 1, rowSpan: 1 },
+  },
+]</pre
+                >
+              </div>
+            </article>
+          </div>
+
+          <div class="note">
+            <p>
+              <strong>对比：</strong>右侧 stack 和底部横排都不是新 layout 类型。
+              它们都是同一个 <code>PaneLayoutDefinition</code> schema
+              的不同数据。 这就是为什么我们要把 SSoT 定成 rect，而不是枚举一堆
+              <code>mainRight3</code>、<code>mainBottom3</code> 特殊 case。
+            </p>
+          </div>
+        </div>
+
+        <div class="note">
+          <p>
+            <strong>一句话理解：</strong>layout definition 描述的是“地图”；
+            session placement 描述的是“哪个 pane 住在哪个房间”；CSS grid 和
+            divider 是把这张地图画到屏幕上的方式，不是地图本身。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>为什么不用其他东西当 SSoT</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>候选</th>
+              <th>问题</th>
+              <th>结论</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>CSS grid-template-areas</code></td>
+              <td>
+                它适合渲染，但不适合作为 domain model。解析困难、slot
+                身份弱、ratio 和 divider 需要反推。
+              </td>
+              <td>只作为派生产物</td>
+            </tr>
+            <tr>
+              <td>divider specs</td>
+              <td>
+                divider 是 slot 边界的结果，不是 layout 本体。把它当事实来源会让
+                icon、capacity、restore 都缺数据。
+              </td>
+              <td>从 slot rect 自动生成</td>
+            </tr>
+            <tr>
+              <td>customization page 的 canvas state</td>
+              <td>
+                UI 需要 hover、drag、selection、preview、invalid intermediate
+                states； 这些状态不能直接进入 runtime。
+              </td>
+              <td>只能是 draft</td>
+            </tr>
+            <tr>
+              <td>pane 数组顺序</td>
+              <td>
+                pane 顺序只能说明添加顺序，不能说明 pane 应该放在哪个 slot。
+                一旦支持拖拽重排就会断。
+              </td>
+              <td>session 需要显式 placement</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Workspace / Session 应该存什么</h2>
+        <p>
+          这里要拆清楚两种 layout 来源：app 自带一组 prebuilt
+          layouts；用户可以在当前 workspace/session 里创建自己的 customized
+          layouts。运行时的 layout list
+          不是只看代码里的预设，也不是只看用户数据，而是把两者合并：
+          <code>[...prebuilt, ...customized]</code>。
+        </p>
+        <div class="code">
+          <pre>
+const availableLayouts = [
+  ...PREBUILT_PANE_LAYOUTS,
+  ...workspace.customPaneLayouts,
+]
+
+interface WorkspaceLayoutState {
+  customPaneLayouts: readonly PaneLayoutDefinition[]
+  sessions: readonly Session[]
+}
+
+interface SessionLayoutState {
+  layoutId: PaneLayoutId
+  placements: readonly PanePlacement[]
+}
+
+interface PanePlacement {
+  paneId: string
+  slotId: LayoutSlotId
+}
+
+interface Session {
+  // existing fields...
+  layout: SessionLayoutState
+  panes: Pane[]
+}</pre
+          >
+        </div>
+        <p>
+          也就是说，用户自定义 layout definition 要跟 workspace/session snapshot
+          一起持久化；session 自己选择某个 <code>layoutId</code>，并记录 pane 到
+          slot 的 placement。这样 restore 时可以先把 prebuilt 和 customized 合成
+          registry， 再恢复每个 session 的当前 layout。
+        </p>
+        <div class="note">
+          <p>
+            <strong>命名空间规则：</strong>prebuilt layout 使用固定 id，例如
+            <code>single</code>、<code>grid3x2</code>；用户自定义 layout 使用
+            <code>custom:&lt;uuid&gt;</code>。合并时不允许 custom 覆盖
+            prebuilt， 这样升级 app 时内置布局语义不会被用户数据 shadow 掉。
+          </p>
+        </div>
+        <div class="note">
+          <p>
+            <strong>迁移策略：</strong>第一步可以继续让旧的
+            <code>Session.layout: LayoutId</code> 存在，并用 pane index
+            隐式映射到 <code>addOrder</code>。但目标模型必须把 pane identity 和
+            slot placement 拆开。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Registry / Management 层职责</h2>
+        <p>
+          VIM-151 已经把一部分 layout 规则从 UI 组件里抽到了
+          <code>src/features/terminal/layout-registry</code
+          >。所以这里不是从零开始重构； 下一步是在现有 registry
+          基础上，把它从“prebuilt layout registry” 推进到“prebuilt + user
+          customized layout management”。
+        </p>
+        <table style="margin-bottom: 18px">
+          <thead>
+            <tr>
+              <th>职责</th>
+              <th>VIM-151 状态</th>
+              <th>剩余工作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>layout id / 文案 / pill 顺序</td>
+              <td class="good">
+                已完成：<code>LAYOUT_IDS</code>、<code>LAYOUTS</code>、
+                <code>LAYOUT_CYCLE</code> 已集中到 layout registry。
+              </td>
+              <td>
+                需要让 registry 接受 runtime catalog：
+                <code
+                  >[...PREBUILT_PANE_LAYOUTS,
+                  ...workspace.customPaneLayouts]</code
+                >。
+              </td>
+            </tr>
+            <tr>
+              <td>prebuilt layout specs</td>
+              <td class="good">
+                已完成：single / vsplit / hsplit / threeRight / quad / grid3x2
+                已作为 prebuilt specs 管理。
+              </td>
+              <td>
+                需要把 specs 升级成通用 <code>PaneLayoutDefinition</code>， 用
+                tracks + slot rect 表达，而不是只服务固定 enum。
+              </td>
+            </tr>
+            <tr>
+              <td>ratio model</td>
+              <td class="good">
+                已完成：ratio 已从单个 row/col 值扩成
+                <code>{ cols: number[], rows: number[] }</code>，能支撑多
+                track。
+              </td>
+              <td>
+                需要把用户可理解的 <code>units</code> 模型接入 runtime， 例如
+                24-unit 转成 ratio/fr。
+              </td>
+            </tr>
+            <tr>
+              <td>displayed layout menu</td>
+              <td class="good">
+                已完成：top chrome 里已有 displayed-layout floating menu，
+                可以控制哪些 prebuilt layout pill 显示。
+              </td>
+              <td>
+                需要扩展为 layout management 入口：显示 prebuilt + customized，
+                并提供创建、编辑、删除 custom layout 的 plane。
+              </td>
+            </tr>
+            <tr>
+              <td>autoshrink</td>
+              <td class="good">
+                已完成：当前 pane removal 的 shrink 规则已集中到
+                <code>autoShrinkLayoutFor</code>。
+              </td>
+              <td>
+                需要区分 prebuilt policy 和 custom policy。custom layout 里
+                empty slot 应该是合法状态，不能一关 pane 就强制坍缩 layout。
+              </td>
+            </tr>
+            <tr>
+              <td>divider / grid resolving</td>
+              <td>
+                部分完成：VIM-151 支撑了更宽的 ratio array 和 grid3x2 divider
+                ergonomics。
+              </td>
+              <td>
+                仍需从 slot rect 自动派生 grid areas、divider handles、divider
+                groups。
+                <code>SplitView</code> 不应该继续按 layout id switch。
+              </td>
+            </tr>
+            <tr>
+              <td>restore / persisted shape</td>
+              <td>
+                部分完成：restore 已能识别当前 prebuilt layout id，并恢复
+                grid3x2。
+              </td>
+              <td>
+                需要持久化 <code>customPaneLayouts</code> 和
+                <code>layoutId + placements</code>，否则 custom layout reload
+                后无法解析。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="grid-2">
+          <article class="card">
+            <span class="label">Canonical API</span>
+            <h3><code>PaneLayoutRegistry</code></h3>
+            <p>
+              它可以是 class，也可以是纯函数模块。关键是调用方只能问 registry：
+              “这个 layout 是什么、是否有效、应该怎么渲染、pane 能不能加、关
+              pane 后怎么处理”。
+            </p>
+            <div class="code">
+              <pre>
+interface PaneLayoutRegistry {
+  getDefinition(id: PaneLayoutId): PaneLayoutDefinition | null
+  validateDraft(draft: DraftPaneLayoutDefinition): ValidationResult
+  resolveGrid(def: PaneLayoutDefinition): ResolvedGrid
+  resolveDividers(def: PaneLayoutDefinition): readonly DividerSpec[]
+  resolveRatios(def: PaneLayoutDefinition): LayoutRatios
+  resolveIcon(def: PaneLayoutDefinition): LayoutIconModel
+  chooseLayoutAfterPaneRemoval(
+    state: SessionLayoutState,
+    nextPaneCount: number
+  ): SessionLayoutState
+}</pre
+              >
+            </div>
+          </article>
+          <article class="card">
+            <span class="label">Registry owns policy</span>
+            <h3>不要再散落 switch</h3>
+            <ul>
+              <li>layout id 合法性判断</li>
+              <li>builtin 与 workspace custom 的合并顺序</li>
+              <li>displayed layout menu 可见项</li>
+              <li>layout icon / glyph 生成</li>
+              <li>autoshrink 或 empty-slot 策略</li>
+              <li>divider 边界和 ratio arrays</li>
+              <li>restore fallback 到 single 的规则</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Validator：什么是有效 layout</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>规则</th>
+              <th>建议 v1 行为</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>行列数量</td>
+              <td><code>1..4</code> tracks，最多 <code>16</code> slots</td>
+              <td>覆盖 2x3、3x2、3x3、4x4，同时避免 first PR 复杂度失控</td>
+            </tr>
+            <tr>
+              <td>track units</td>
+              <td>必须是有限正数</td>
+              <td>
+                ratio 和 CSS fr 不能接受 0、负数、NaN；UI 用 24 份单位表达比例
+              </td>
+            </tr>
+            <tr>
+              <td>slot rect</td>
+              <td>整数、在 bounds 内、span 大于 0</td>
+              <td>保证可稳定映射到 grid area</td>
+            </tr>
+            <tr>
+              <td>重叠</td>
+              <td>禁止重叠</td>
+              <td>否则 pane focus、divider hit-test、placement 都不确定</td>
+            </tr>
+            <tr>
+              <td>洞</td>
+              <td>v1 禁止洞，要求完整覆盖网格</td>
+              <td>
+                后续可以明确设计 spacer slot；现在不要让 empty area 语义混乱
+              </td>
+            </tr>
+            <tr>
+              <td><code>addOrder</code></td>
+              <td>必须包含每个 slot 一次且只一次</td>
+              <td>新 pane 添加位置必须可预测</td>
+            </tr>
+            <tr>
+              <td>slot id</td>
+              <td>全局唯一且 stable</td>
+              <td>
+                pane placement 需要在 rename / resize / restart 后保持稳定
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>从 SSoT 派生的 runtime 数据</h2>
+        <div class="grid-2">
+          <article class="card">
+            <span class="label">Derived rendering</span>
+            <h3>SplitView 不应该知道 layout 名字</h3>
+            <p>
+              <code>SplitView</code> 应该拿到 resolved model，而不是对
+              <code>grid3x2</code>、<code>quad</code>、<code>threeRight</code>
+              做 switch。
+            </p>
+            <ul>
+              <li><code>gridTemplateColumns</code></li>
+              <li><code>gridTemplateRows</code></li>
+              <li><code>gridTemplateAreas</code></li>
+              <li><code>slotId -&gt; gridArea</code></li>
+              <li><code>divider handles</code></li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="label">Derived interaction</span>
+            <h3>ratio 和 divider 都从边界来</h3>
+            <p>
+              column boundary 生成垂直 divider，row boundary 生成水平 divider。
+              span slot 会让某些 divider segment 被合并或跳过。
+            </p>
+            <ul>
+              <li>
+                <code>LayoutRatios.columns = tracks.columns.units[]</code>
+              </li>
+              <li><code>LayoutRatios.rows = tracks.rows.units[]</code></li>
+              <li>同一个边界上的多个 visual segment 共用一个 controller</li>
+              <li>resize 后只更新当前 session 的 in-memory ratio override</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>示例：同一个模型覆盖这些 layout</h2>
+        <div class="grid-3">
+          <article class="diagram">
+            <span class="label">3x2 / 2x3 grid</span>
+            <div class="layout-demo demo-3x2">
+              <div class="slot">p0</div>
+              <div class="slot">p1</div>
+              <div class="slot">p2</div>
+              <div class="slot">p3</div>
+              <div class="slot">p4</div>
+              <div class="slot">p5</div>
+            </div>
+            <p>
+              每个 slot 都是 <code>1x1</code> rect；改 columns/rows 就能得到
+              <code>2x3</code> 或 <code>3x2</code>。
+            </p>
+          </article>
+          <article class="diagram">
+            <span class="label">4x4 grid</span>
+            <div class="layout-demo demo-4x4">
+              <div class="slot">p0</div>
+              <div class="slot">p1</div>
+              <div class="slot">p2</div>
+              <div class="slot">p3</div>
+              <div class="slot">p4</div>
+              <div class="slot">p5</div>
+              <div class="slot">p6</div>
+              <div class="slot">p7</div>
+              <div class="slot">p8</div>
+              <div class="slot">p9</div>
+              <div class="slot">p10</div>
+              <div class="slot">p11</div>
+              <div class="slot">p12</div>
+              <div class="slot">p13</div>
+              <div class="slot">p14</div>
+              <div class="slot">p15</div>
+            </div>
+            <p>
+              这是上限示例。第一版如果担心 terminal
+              太小，可以先允许定义但提示低可用性。
+            </p>
+          </article>
+          <article class="diagram">
+            <span class="label">Main + 3 stack</span>
+            <div class="layout-demo demo-stack">
+              <div class="slot main">p0</div>
+              <div class="slot">p1</div>
+              <div class="slot">p2</div>
+              <div class="slot">p3</div>
+            </div>
+            <p>
+              左侧主 pane 是一个跨 3 行的矩形 slot。divider
+              仍然能从边界自动生成。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Customization Plane 应该怎么接入</h2>
+        <div class="grid-2">
+          <article class="card">
+            <span class="label">UI state</span>
+            <h3>只维护 draft</h3>
+            <p>
+              配置面板可以有 selection、hover、drag ghost、invalid preview、undo
+              stack。 这些都属于
+              <code>DraftPaneLayoutDefinition</code>，不应该直接写进 session。
+            </p>
+            <div class="code">
+              <pre>
+interface DraftPaneLayoutDefinition {
+  base?: PaneLayoutId
+  title: string
+  columns: DraftTrack[]
+  rows: DraftTrack[]
+  slots: DraftSlot[]
+  selectedSlotId?: LayoutSlotId
+}</pre
+              >
+            </div>
+          </article>
+          <article class="card">
+            <span class="label">Commit path</span>
+            <h3>Apply 时才进入 registry</h3>
+            <ul>
+              <li>用户在 plane 里编辑 draft</li>
+              <li>validator 给出 inline errors 和 preview warnings</li>
+              <li>Apply 后生成 canonical definition</li>
+              <li>
+                写入当前 workspace/session snapshot 的
+                <code>customPaneLayouts</code>
+              </li>
+              <li>
+                运行时用 <code>[...prebuilt, ...customized]</code> 重新组装
+                layout list
+              </li>
+              <li>
+                当前 session 切换到新的 <code>layoutId</code> 并写入 placement
+              </li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>持久化建议</h2>
+        <p>
+          prebuilt layout 定义继续在代码里；用户自定义 layout 定义随
+          workspace/session snapshot 一起持久化。restore 时先组装
+          <code>[...PREBUILT_PANE_LAYOUTS, ...persisted.customPaneLayouts]</code
+          >， 再用每个 session 的 <code>layoutId</code> 和
+          <code>placements</code>
+          恢复 pane 布局。
+        </p>
+        <div class="code">
+          <pre>
+interface PersistedWorkspaceLayoutSnapshot {
+  schemaVersion: 1
+  customPaneLayouts: readonly PaneLayoutDefinition[]
+  sessions: readonly PersistedWorkspaceSessionShape[]
+}
+
+interface PersistedWorkspaceSessionShape {
+  id: string
+  projectId: string
+  layoutId: PaneLayoutId
+  placements: readonly PanePlacement[]
+  workingDirectory: string
+  active: boolean
+  panes: PersistedWorkspacePaneShape[]
+}</pre
+          >
+        </div>
+        <div class="note">
+          <p>
+            <strong>fallback：</strong>restore 时如果 layoutId
+            找不到、definition 无效、 或 placements 指向不存在的 slot，则降级到
+            <code>single</code> 或最近的 builtin grid，并记录 warning。不要让坏
+            layout 阻塞 session restore。
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>实现顺序</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>阶段</th>
+              <th>目标</th>
+              <th>为什么先做</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>PR 1</td>
+              <td>
+                引入 <code>PaneLayoutDefinition</code>、validator、derived
+                grid/divider helpers
+              </td>
+              <td>先把 runtime SSoT 定住，避免 UI 设计绑死错误结构</td>
+            </tr>
+            <tr>
+              <td>PR 2</td>
+              <td>把现有 builtin layouts 迁移到 definition model</td>
+              <td>证明新模型能无回归表达 single/vsplit/hsplit/quad/grid3x2</td>
+            </tr>
+            <tr>
+              <td>PR 3</td>
+              <td>
+                workspace/session snapshot 增加
+                <code>customPaneLayouts</code> 与 placement restore 兼容层
+              </td>
+              <td>自定义布局必须能 reload，不然只是临时 UI</td>
+            </tr>
+            <tr>
+              <td>PR 4</td>
+              <td>增加 Workspace Customization Plane</td>
+              <td>此时 UI 只是在编辑 draft，不需要发明自己的 runtime model</td>
+            </tr>
+            <tr>
+              <td>PR 5</td>
+              <td>增加 templates：2x3、3x3、4x4、Main + 3 stack</td>
+              <td>模板只是 definition factory，不再污染 SplitView</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>需要特别防范的耦合</h2>
+        <div class="grid-2">
+          <article class="card">
+            <span class="label danger">风险</span>
+            <h3>pane count 驱动 layout</h3>
+            <p>
+              旧 autoshrink 是按 pane 数决定 layout。自定义布局里 empty slot
+              是合法状态， 所以不能一关 pane 就自动坍缩 layout。autoshrink
+              应该变成 registry policy， 并且默认只作用于 builtin presets。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label danger">风险</span>
+            <h3>layout id 到处 switch</h3>
+            <p>
+              新 layout 不应该要求修改
+              <code>SplitView</code>、<code>SplitDividers</code>、
+              <code>LayoutGlyph</code>、restore、shortcut
+              多个模块。调用方应只消费 registry 的 resolved model。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label danger">风险</span>
+            <h3>customization draft 泄漏到 runtime</h3>
+            <p>
+              draft 可以暂时 invalid；runtime 不行。Apply 之前必须经过
+              validator， 且生成 canonical definition。
+            </p>
+          </article>
+          <article class="card">
+            <span class="label danger">风险</span>
+            <h3>只持久化 layoutId</h3>
+            <p>
+              对 custom layout 来说，只有 id 不够。必须把
+              <code>customPaneLayouts</code> 跟 workspace/session snapshot
+              一起持久化， 否则 reload 后 id 没有 definition 可解析。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <p class="footer">
+        建议结论：先做 SSoT 数据结构和 validator，再做 customization plane。UI
+        可以大胆， 但 runtime 必须保守：只有合法、可派生、可恢复的 layout
+        definition 能进入 session。
+      </p>
+    </main>
+  </body>
+</html>

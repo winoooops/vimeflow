@@ -2,7 +2,7 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 ref_count: 3
 ---
 
@@ -77,4 +77,13 @@ expands.
 - **File:** `electron/workspace-layout-types.ts`
 - **Finding:** The shape-only DTO browser pane was named `PersistedBrowserPane`, identical to the full persisted-store pane type that includes `tabs: PersistedTab[]`. TypeScript declaration merging meant `PersistedWorkspacePaneShape` required `tabs` even though shape DTOs intentionally strip browser tab/history, breaking `paneToShape` and round-trip test fixtures that construct browser shapes without tabs.
 - **Fix:** Same rename as finding 5: the renderer bridge's browser shape type is now `PersistedBrowserPaneShape`, so the shape-only DTO and the full persisted-store type are distinct identifiers and no longer merge.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. `PersistedPaneLayoutDefinition` uses `Record<string, unknown>`
+
+- **Source:** github-human | PR #542 round 2 | 2026-06-19
+- **Severity:** HUMAN
+- **File:** `electron/workspace-layout-types.ts` L46
+- **Finding:** `PersistedPaneLayoutDefinition` was declared as `Record<string, unknown>`, which erased the concrete shape of persisted custom pane layouts. The loose type made it easy to pass malformed data across the Electron persistence boundary without compile-time feedback.
+- **Fix:** Replaced the `Record<string, unknown>` alias with a concrete `PersistedPaneLayoutDefinition` interface and supporting `PersistedTrackSpec`, `PersistedPaneSlotRect`, and `PersistedPaneSlotSpec` types that mirror the renderer-side `PaneLayoutDefinition` shape using plain strings for the persisted boundary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

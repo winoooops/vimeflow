@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-13
+last_updated: 2026-06-19
 ref_count: 8
 ---
 
@@ -140,3 +140,21 @@ base data is technically "correct."
 - **Finding:** The crumb timestamp was set on every transition from dirty to clean, including undoing all edits back to the original content. No disk write occurred, yet the UI rendered `SAVED · just now`.
 - **Fix:** Replaced the heuristic with an explicit `savedAt` timestamp that `WorkspaceView` sets only after `editorBuffer.saveFile()` resolves successfully.
 - **Commit:** see current commit
+
+### 11. SplitView mapped pane index to `slots[N]` instead of persisted `addOrder[N]`
+
+- **Source:** github-codex-connector | PR #542 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `gridAreaForSlotIndex` resolved the slot id from `definition.slots[slotIndex].id`. For custom layouts whose `addOrder` intentionally differs from the `slots` declaration order, pane index N would be placed in the wrong grid region even though the persisted definition specified a different insertion order.
+- **Fix:** Changed the helper to resolve the slot id from `definition.addOrder[slotIndex]` before converting it to a grid area, so restored and added panes follow the persisted insertion order.
+- **Commit:** same commit as this entry
+
+### 12. Prebuilt layout track units diverge numerically from `DEFAULT_RATIOS`
+
+- **Source:** github-claude | PR #542 round 2 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/layout-registry/layoutDefinition.ts` L136-141 and `src/features/terminal/layout-registry/prebuiltLayouts.ts`
+- **Finding:** `getPaneLayoutRatios(definition)` returned raw prebuilt track units such as `[14, 10]` for `threeRight`, while `DEFAULT_RATIOS.threeRight.cols` used `[1.4, 1]`. The proportions were identical for CSS grid rendering, but the numeric scales differed, so an equality check like `equalTrackRatios(currentRatios, getPaneLayoutRatios(layout.definition))` would report a mismatch even when the layout was at its default state.
+- **Fix:** Normalized all prebuilt track units to the same scale as `DEFAULT_RATIOS` (e.g., `columns(1.4, 1)` for `threeRight`) and added a JSDoc note to `getPaneLayoutRatios` clarifying that it returns raw definition units and that callers needing canonical defaults should read `layout.defaultRatios`.
+- **Commit:** same commit as this entry

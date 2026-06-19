@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 21
+last_updated: 2026-06-19
+ref_count: 22
 ---
 
 # React Lifecycle
@@ -489,3 +489,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `LayoutDisplayMenu` is rendered only when `activeSession` exists. If the active session closes while the menu is open, the menu unmounts without `MenuRoot` calling `onOpenChange(false)`, leaving `isLayoutDisplayMenuOpen` stuck `true`. On macOS this permanently removes `vf-app-drag-region` from the top chrome, making the title bar undraggable until the menu is mounted and closed again.
 - **Fix:** Added a `useEffect` in `WorkspaceView` that resets `isLayoutDisplayMenuOpen` to `false` whenever `activeSession` becomes `undefined`, restoring the drag region when the menu unmounts. Added a regression test that removes the active session while the menu is open and asserts the drag region returns.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Unstable `customPaneLayouts` default invalidates `useMemo` on every render
+
+- **Source:** github-claude | PR #542 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts` L124-134
+- **Finding:** The destructuring default `customPaneLayouts = []` created a new array every time callers omitted the option. Because `customPaneLayouts` was listed in the `useMemo` dependency array, the workspace shape and its structural JSON signature were recomputed on every render even when the semantic input had not changed.
+- **Fix:** Introduced a module-scope `EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []` constant and used it as the destructuring default. The array reference is now stable across renders, so omitted layouts no longer trigger `buildWorkspaceShape` and `structuralSignature` recomputation.
+- **Commit:** same commit as this entry

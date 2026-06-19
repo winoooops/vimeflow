@@ -3,7 +3,7 @@ id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-06-17
-ref_count: 3
+ref_count: 4
 ---
 
 # React Prop Contracts

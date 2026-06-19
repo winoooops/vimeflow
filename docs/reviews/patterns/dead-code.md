@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-15
+last_updated: 2026-06-19
 ref_count: 1
 ---
 
@@ -43,3 +43,12 @@ code and should be removed.
 - **Finding:** The header root carried `px-2 pr-2 pl-3.5`. `px-2` set both sides to `0.5rem`, `pr-2` repeated the right value, and `pl-3.5` overrode the left value. The shorthand was a dead no-op that made the cascade harder to reason about.
 - **Fix:** Removed `px-2`; kept only `pr-2 pl-3.5`.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 4. `gridAreaForSlotIndex` fallback returns a legacy area name that cannot exist
+
+- **Source:** github-claude | PR #542 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The helper returned `p${slotIndex}` when the index was outside `definition.slots.length`, but every caller is already bounded by `layout.capacity`, which equals `definition.slots.length`. The fallback was unreachable and, once custom non-`p{N}` slot ids are wired, would silently place a pane outside the generated CSS grid.
+- **Fix:** Replaced the silent fallback with an explicit out-of-bounds error so any future capacity/slot bookkeeping divergence fails loudly instead of dropping a pane.
+- **Commit:** same commit as this entry
