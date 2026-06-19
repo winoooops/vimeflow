@@ -32,6 +32,8 @@ export interface SettingsTarget {
   hint?: string
 }
 
+export type SettingsSearchNavigationDirection = 'next' | 'previous'
+
 export interface SettingsDialogProps {
   open: boolean
   onClose: () => void
@@ -44,6 +46,11 @@ export interface SettingsSidebarProps {
   activeTargetId?: SettingsTargetId | null
   onPick: (id: SettingsSectionId) => void
   onPickTarget?: (target: SettingsTarget) => void
+  onClearQuery?: () => void
+  onNavigateSearchResult?: (
+    direction: SettingsSearchNavigationDirection
+  ) => void
+  onConfirmSearchResult?: () => void
   query: string
   onQuery: (query: string) => void
 }

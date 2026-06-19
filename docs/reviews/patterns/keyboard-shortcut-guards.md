@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-17
+last_updated: 2026-06-19
 ref_count: 11
 ---
 
@@ -451,4 +451,13 @@ against three classes of false-fire:
 - **File:** `src/features/settings/hooks/useSettingsDialog.ts`
 - **Finding:** The settings shortcut matcher ignored modifier state beyond `metaKey`/`ctrlKey`. A user could record `Ctrl+Alt+Comma` (Linux/Windows) or `Cmd+Shift+Comma` (macOS) for a rebindable command, and the settings toggle would still fire because it did not reject `altKey` or `shiftKey`.
 - **Fix:** Added `!event.altKey && !event.shiftKey` to the platform-super matcher so only the bare `Cmd/Ctrl+Comma` chord toggles Settings. Added tests for `Ctrl+Alt+Comma` and `Cmd+Shift+Comma` to confirm they pass through.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Bypass search shortcuts during IME composition
+
+- **Source:** github-codex-connector | PR #540 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L43-43
+- **Finding:** The search input's ArrowDown/ArrowUp/Enter handlers always called `preventDefault()` and repurposed those keys for settings navigation. When a user types with a CJK/IME input method active, those same keys are used to choose or commit composition candidates, so the custom handlers interrupted composing text.
+- **Fix:** Added an early return in `handleSearchKeyDown` when `event.nativeEvent.isComposing` is true, before the Arrow/Enter branches. Added a co-located test firing composing keydown events to confirm navigation/confirmation callbacks are not invoked during composition.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

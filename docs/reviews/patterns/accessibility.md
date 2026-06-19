@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 25
+last_updated: 2026-06-19
+ref_count: 27
 ---
 
 # Accessibility
@@ -656,4 +656,31 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/SettingsDialog.tsx` L174
 - **Finding:** When a keyboard user activated an option search result, the target row (marked `tabIndex={-1}`) received focus, but the dialog focus trap only indexed `[tabindex]:not([tabindex="-1"])`. The next Tab saw `currentIndex === -1` and jumped to the close button, so keyboard users could not continue from the search result they just opened.
 - **Fix:** Added `orderedFocusable(dialog)` to include the currently focused programmatic target row in the trap's ordering (sorted by DOM position), so Tab from a focused target moves to the next focusable control naturally. Added a co-located test asserting Tab from a focused search result lands on the setting control.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 72. Settings search arrow navigation lacks combobox active-descendant semantics
+
+- **Source:** github-claude | PR #540 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L65-74
+- **Finding:** The PR added ArrowUp/ArrowDown handling that changes the selected sidebar result while keyboard focus remains on the search input, but the input stayed a plain textbox. Screen-reader users had no reliable announcement of the active sidebar option when navigating results, so the new keyboard workflow was effectively invisible to assistive technology.
+- **Fix:** Promoted the search input to `role="combobox"` with `aria-expanded`, `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant` pointing at the active result. Gave every section and target result button a stable id so the active-descendant reference is valid. Added co-located tests asserting the combobox attributes and active-descendant targets.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 73. Combobox popup has role=navigation, not a valid ARIA popup role
+
+- **Source:** github-claude | PR #540 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L115-117
+- **Finding:** The search input was promoted to `role="combobox"` with `aria-controls="settings-search-results"`, but the referenced element was a `<nav>` whose implicit ARIA role is `navigation`. ARIA 1.2 requires a combobox's controlled popup to have role `listbox`, `tree`, `grid`, or `dialog`; with `navigation` as the popup role, screen readers that validate the popup role may ignore `aria-activedescendant` updates and leave the keyboard navigation workflow invisible to assistive technology.
+- **Fix:** Added `role="listbox"` to the search results `<nav>` and `role="option"` with `aria-selected` to each navigable section and target `<button>`. Updated co-located tests to query the listbox and option roles and assert `aria-selected` state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 74. Enter on empty settings search confirms the first result instead of doing nothing
+
+- **Source:** github-codex-connector | PR #540 round 2 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsDialog.tsx` L243-256
+- **Finding:** In `handleConfirmSearchResult`, when `activeSearchResultKey` is null the code always falls back to `searchResults[0]`. With an empty query, `searchResults` contains all settings sections, so pressing Enter while the empty search field is focused switches the user to General even when they were on another section. This is unexpected for keyboard users who merely press Enter in the empty search box.
+- **Fix:** Guarded the fallback so it only applies when `normalizedQuery` is non-empty; when the query is empty and no active search result exists, Enter is now a no-op. Added a co-located test asserting that pressing Enter in an empty search field preserves the current pane and focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
