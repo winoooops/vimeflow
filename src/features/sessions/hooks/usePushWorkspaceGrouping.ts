@@ -31,6 +31,8 @@ import type { Session } from '../types'
 
 const log = createLogger('grouping')
 
+const EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []
+
 const DRIFT_DEBOUNCE_MS = 500
 
 const pushShapeWithLog = async (
@@ -123,7 +125,7 @@ export interface UsePushWorkspaceGroupingOptions {
 
 export const usePushWorkspaceGrouping = ({
   sessions,
-  customPaneLayouts = [],
+  customPaneLayouts = EMPTY_CUSTOM_PANE_LAYOUTS,
   activeSessionId,
   loading,
   canPushEmptyShape = true,

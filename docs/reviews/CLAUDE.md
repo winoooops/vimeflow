@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 24       | 6    | 2026-06-17   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 50       | 21   | 2026-06-18   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 51       | 22   | 2026-06-19   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -97,9 +97,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 6        | 3    | 2026-06-18   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 3        | 2    | 2026-06-15   |
-| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 5        | 3    | 2026-06-17   |
+| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 5        | 4    | 2026-06-17   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 0    | 2026-06-15   |
-| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 0    | 2026-06-15   |
+| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 1    | 2026-06-15   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 3        | 0    | 2026-06-17   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 1    | 2026-06-18   |
