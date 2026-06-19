@@ -34,7 +34,7 @@ const readSnapshotCursorOffset = (
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)
-    .reduce((length, row) => length + row.length + 1, 0)
+    .reduce((length, previousRow) => length + previousRow.length + 1, 0)
 
   return precedingRowsLength + rowTextOffset
 }
