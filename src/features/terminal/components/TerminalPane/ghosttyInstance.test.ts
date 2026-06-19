@@ -135,7 +135,40 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('parsed:from-engine')
   })
 
-  test('disposes the parser engine once through the renderer handle', () => {
+  test('disposes the parser engine once through terminal disposal', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const dispose = vi.fn()
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (chunk): TerminalParserEngineOutput => ({
+        visibleText: chunk.text,
+      }),
+      dispose,
+    }
+
+    const created = createGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    created.terminal.dispose()
+    created.terminal.dispose()
+
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  test('does not dispose the parser engine when the renderer handle is disposed', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
@@ -165,9 +198,8 @@ describe('ghosttyInstance', () => {
     const rendererHandle = created.attachRenderer()
 
     rendererHandle.dispose()
-    rendererHandle.dispose()
 
-    expect(dispose).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
   })
 
   test('routes direct terminal writes through the Ghostty parser', () => {

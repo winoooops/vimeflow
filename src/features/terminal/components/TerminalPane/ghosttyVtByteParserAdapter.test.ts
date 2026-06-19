@@ -115,4 +115,21 @@ describe('ghosttyVtByteParserAdapter', () => {
     expect(reset).toHaveBeenCalledOnce()
     expect(dispose).toHaveBeenCalledOnce()
   })
+
+  test('ignores reset after disposal', () => {
+    const reset = vi.fn()
+    const dispose = vi.fn()
+
+    const adapter = createGhosttyVtByteParserAdapter(() => ({
+      writeBytes: (): TerminalParserEngineOutput => ({ visibleText: '' }),
+      reset,
+      dispose,
+    }))
+
+    adapter.dispose?.()
+    adapter.reset?.()
+
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(reset).not.toHaveBeenCalled()
+  })
 })

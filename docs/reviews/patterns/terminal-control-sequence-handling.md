@@ -2,7 +2,7 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 ref_count: 7
 ---
 
@@ -208,3 +208,22 @@ all required state through pure display-state helpers.
 - **Finding:** `readCursorRow` counted newlines from offset 0 to the cursor and was invoked for every cursor-horizontal-absolute sentinel and every cursor-down-at-EOF event in `applyDisplayData`. With large scrollback and frequent CHA repaint sequences, a single output batch could perform millions of redundant character comparisons.
 - **Fix:** Added `cursorRow` to `DisplayState` and threaded it through `applyDisplayData`. `moveCursorToPosition` and `moveCursorToHorizontalAbsoluteColumn` return the resolved row; cursor-left/backspace report a row delta when crossing a soft-wrap newline; other row-changing paths update or recompute `cursorRow` so CHA and cursor-down can read the current row in O(1).
 - **Commit:** same commit as this entry
+
+### 22. GhosttyVtByteParserAdapter.reset() has no isDisposed guard
+
+- **Source:** github-claude | PR #547 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtByteParserAdapter.ts` L51-53
+- **Finding:** `dispose()` set `isDisposed` and called `driver.dispose()`, but `reset()` delegated to `driver.reset()` without checking the disposed flag. After renderer-handle disposal tore down the driver, later text-mode `parseInput` paths could call `reset()` on the already-torn-down driver.
+- **Fix:** Added an `if (this.isDisposed) return` guard at the top of `reset()` and added a regression test that verifies `reset()` is a no-op after `dispose()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log`)
+
+### 23. Keep parser disposal tied to terminal lifetime
+
+- **Source:** github-codex-connector | PR #547 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.ts` L75
+- **Finding:** `rendererHandle.dispose()` disposed the parser engine, but the Ghostty terminal can still receive `output.writeOutput()` after the renderer handle is detached (and terminal-only disposal paths never hit the renderer handle). Tearing down the driver early left later writes calling into a disposed driver.
+- **Fix:** Moved `parserEngine.dispose()` into a wrapper around `terminal.dispose()` and added an idempotent `isDisposed` guard so the engine is disposed exactly once when the terminal surface is disposed. `rendererHandle.dispose()` now only tracks renderer-addon detachment.
+- **Commit:** same commit as this entry (see `git blame` / `git log`)
+

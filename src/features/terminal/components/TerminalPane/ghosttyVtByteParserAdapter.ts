@@ -49,6 +49,10 @@ export class GhosttyVtByteParserAdapter implements GhosttyByteParserAdapter {
   }
 
   reset(): void {
+    if (this.isDisposed) {
+      return
+    }
+
     this.driver.reset?.()
   }
 
