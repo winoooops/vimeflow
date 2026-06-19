@@ -140,6 +140,7 @@ const getVisiblePtyId = (): string | null => {
   const focusedWrapper = pane.querySelector<HTMLElement>(
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )
+
   const focusedSlot = focusedWrapper?.closest<HTMLElement>(
     '[data-testid="split-view-slot"][data-pty-id]'
   )

@@ -19,6 +19,54 @@ interface E2eAgentBridgeInfo {
   agentType: E2eAgentType | null
 }
 
+interface AgentStatusPayload {
+  sessionId: string
+  agentSessionId: string
+  modelId: string
+  modelDisplayName: string
+  version: string
+  contextWindow: {
+    usedPercentage: number
+    remainingPercentage: number
+    contextWindowSize: number
+    totalInputTokens: number
+    totalOutputTokens: number
+    currentUsage: {
+      inputTokens: number
+      outputTokens: number
+      cacheCreationInputTokens: number
+      cacheReadInputTokens: number
+    }
+  }
+  cost: {
+    totalCostUsd: number
+    totalDurationMs: number
+    totalApiDurationMs: number
+    totalLinesAdded: number
+    totalLinesRemoved: number
+  }
+  rateLimits: {
+    fiveHour: {
+      usedPercentage: number
+      resetsAt: number
+    }
+    sevenDay: {
+      usedPercentage: number
+      resetsAt: number
+    }
+  }
+  usageFetched: boolean
+}
+
+interface AgentStatusScenario {
+  agentType: E2eAgentType
+  modelDisplayName: string
+  modelId: string
+  panelLabel: string
+  turns: number
+  usageFetched?: boolean
+}
+
 const waitForE2eBridge = async (): Promise<void> => {
   await browser
     .waitUntil(
@@ -71,11 +119,18 @@ const invokeBackend = async <T>(
     args
   )
 
-const seedClaudeAgent = async (ptyId: string): Promise<void> => {
+const seedAgent = async (
+  ptyId: string,
+  agentType: E2eAgentType
+): Promise<void> => {
   await invokeBackend<null>('e2e_seed_live_agent', {
     sessionId: ptyId,
-    agentType: 'claudeCode',
+    agentType,
   })
+}
+
+const seedClaudeAgent = async (ptyId: string): Promise<void> => {
+  await seedAgent(ptyId, 'claudeCode')
 }
 
 const createClaudeStatusline = (): string => {
@@ -119,6 +174,69 @@ const createClaudeStatusline = (): string => {
       },
     },
   })
+}
+
+const createAgentStatusPayload = (
+  sessionId: string,
+  scenario: AgentStatusScenario
+): AgentStatusPayload => {
+  const reset = Math.floor(Date.now() / 1000) + 3600
+
+  return {
+    sessionId,
+    agentSessionId: `e2e-${scenario.agentType}-session`,
+    modelId: scenario.modelId,
+    modelDisplayName: scenario.modelDisplayName,
+    version: 'e2e',
+    contextWindow: {
+      usedPercentage: 31,
+      remainingPercentage: 69,
+      contextWindowSize: 200_000,
+      totalInputTokens: 62_000,
+      totalOutputTokens: 5_000,
+      currentUsage: {
+        inputTokens: 1100,
+        outputTokens: 250,
+        cacheCreationInputTokens: 150,
+        cacheReadInputTokens: 650,
+      },
+    },
+    cost: {
+      totalCostUsd: 0.91,
+      totalDurationMs: 95_000,
+      totalApiDurationMs: 70_000,
+      totalLinesAdded: 8,
+      totalLinesRemoved: 2,
+    },
+    rateLimits: {
+      fiveHour: {
+        usedPercentage: 19,
+        resetsAt: reset,
+      },
+      sevenDay: {
+        usedPercentage: 27,
+        resetsAt: reset + 86_400,
+      },
+    },
+    usageFetched: scenario.usageFetched ?? false,
+  }
+}
+
+const emitAgentStatus = async (
+  payload: AgentStatusPayload,
+  turns: number
+): Promise<void> => {
+  await browser.execute(
+    (statusPayload: AgentStatusPayload, numTurns: number) => {
+      window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-status', statusPayload)
+      window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-turn', {
+        sessionId: statusPayload.sessionId,
+        numTurns,
+      })
+    },
+    payload,
+    turns
+  )
 }
 
 const emitAgentTurn = async (
@@ -315,58 +433,113 @@ describe('Agent runtime regressions', () => {
     assert.equal(cardText.includes('No active agent'), false)
   })
 
-  it('renames the active agent terminal and writes /rename into the PTY', async () => {
+  it('renders seeded Codex and Kimi statuses in the sidebar card and status panel', async () => {
     const ptyId = await waitForVisiblePtyId()
-    const title = `e2e-renamed-${Date.now()}`
-    await seedClaudeAgent(ptyId)
-
-    await invokeBackend<null>('rename_agent_session', { ptyId, title })
-
-    await browser.waitUntil(
-      async () => {
-        const buffer = await browser.execute(
-          (sessionId: string) =>
-            window.__VIMEFLOW_E2E__?.getTerminalBufferForSession(sessionId) ??
-            '',
-          ptyId
-        )
-
-        return buffer.includes(`/rename ${title}`)
+    const scenarios: AgentStatusScenario[] = [
+      {
+        agentType: 'codex',
+        modelDisplayName: 'GPT-5 Codex',
+        modelId: 'gpt-5-codex',
+        panelLabel: 'CODEX',
+        turns: 2,
       },
       {
-        timeout: 10_000,
-        interval: 250,
-        timeoutMsg: 'backend rename did not write /rename into the PTY',
-      }
-    )
-
-    await browser.execute(
-      (sessionId: string, renamedTitle: string) => {
-        window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-session-title', {
-          sessionId,
-          agentSessionId: 'e2e-agent-session',
-          title: renamedTitle,
-          source: 'user-renamed',
-        })
+        agentType: 'kimi',
+        modelDisplayName: 'Kimi K2.7',
+        modelId: 'kimi-code/k2.7',
+        panelLabel: 'KIMI',
+        turns: 3,
+        usageFetched: true,
       },
-      ptyId,
-      title
-    )
+    ]
+    const cardSelector = '[data-testid="sidebar-agent-status-card"]'
+    const panelSelector = '[data-testid="agent-status-panel"]'
 
-    await browser.waitUntil(
-      async () => {
-        const headerText = await textForSelector(
-          '[data-testid="terminal-pane-header"]'
-        )
+    for (const scenario of scenarios) {
+      await seedAgent(ptyId, scenario.agentType)
+      await emitAgentStatus(
+        createAgentStatusPayload(ptyId, scenario),
+        scenario.turns
+      )
 
-        return headerText.includes(title)
-      },
-      {
-        timeout: 10_000,
-        interval: 250,
-        timeoutMsg: 'terminal header did not show renamed agent title',
-      }
-    )
+      await browser.waitUntil(
+        async () => {
+          const cardText = await textForSelector(cardSelector)
+          const panelText = await textForSelector(panelSelector)
+
+          return (
+            cardText.includes(scenario.modelDisplayName) &&
+            cardText.includes(`${scenario.turns} turns`) &&
+            !cardText.includes('No active agent') &&
+            panelText.includes(scenario.panelLabel)
+          )
+        },
+        {
+          timeout: 15_000,
+          interval: 500,
+          timeoutMsg: `${scenario.agentType} status did not render in sidebar and panel`,
+        }
+      )
+    }
+  })
+
+  it('renames Claude and Codex agent terminals and writes /rename into the PTY', async () => {
+    const ptyId = await waitForVisiblePtyId()
+    const agents: E2eAgentType[] = ['claudeCode', 'codex']
+
+    for (const agentType of agents) {
+      const title = `e2e-${agentType}-renamed-${Date.now()}`
+      await seedAgent(ptyId, agentType)
+
+      await invokeBackend<null>('rename_agent_session', { ptyId, title })
+
+      await browser.waitUntil(
+        async () => {
+          const buffer = await browser.execute(
+            (sessionId: string) =>
+              window.__VIMEFLOW_E2E__?.getTerminalBufferForSession(
+                sessionId
+              ) ?? '',
+            ptyId
+          )
+
+          return buffer.includes(`/rename ${title}`)
+        },
+        {
+          timeout: 10_000,
+          interval: 250,
+          timeoutMsg: `${agentType} rename did not write /rename into the PTY`,
+        }
+      )
+
+      await browser.execute(
+        (sessionId: string, renamedTitle: string) => {
+          window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-session-title', {
+            sessionId,
+            agentSessionId: 'e2e-agent-session',
+            title: renamedTitle,
+            source: 'user-renamed',
+          })
+        },
+        ptyId,
+        title
+      )
+
+      await browser.waitUntil(
+        async () => {
+          const headerText = await textForSelector(
+            '[data-testid="terminal-pane-header"]'
+          )
+
+          return headerText.includes(title)
+        },
+        {
+          timeout: 10_000,
+          interval: 250,
+          timeoutMsg: `terminal header did not show ${agentType} renamed title`,
+        }
+      )
+    }
   })
 
   it('restores the previous terminal session after renderer reload', async () => {
