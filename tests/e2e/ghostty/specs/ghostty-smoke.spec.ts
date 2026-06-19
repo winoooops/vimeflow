@@ -36,6 +36,37 @@ const writeOutputToVisibleTerminal = async (data: string): Promise<void> => {
 const readTerminalBuffer = async (): Promise<string> =>
   browser.execute(() => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? '')
 
+const writeInputToVisibleTerminal = async (data: string): Promise<void> => {
+  const didWrite = await browser.execute(
+    (payload: string) =>
+      window.__VIMEFLOW_E2E__?.writeInputToVisibleTerminal(payload) ?? false,
+    data
+  )
+
+  if (!didWrite) {
+    throw new Error('visible terminal PTY was unavailable for e2e input')
+  }
+}
+
+const startRecordingPtyDataEvents = async (): Promise<void> => {
+  await browser.execute(
+    async () => await window.__VIMEFLOW_E2E__?.startRecordingPtyDataEvents()
+  )
+}
+
+const clearRecordedPtyDataEvents = async (): Promise<void> => {
+  await browser.execute(() =>
+    window.__VIMEFLOW_E2E__?.clearRecordedPtyDataEvents()
+  )
+}
+
+const readRecordedPtyDataEvents = async (): Promise<
+  readonly VimeflowE2ePtyDataEvent[]
+> =>
+  browser.execute(
+    () => window.__VIMEFLOW_E2E__?.getRecordedPtyDataEvents() ?? []
+  )
+
 const readTerminalSize = async (): Promise<{
   readonly cols: number
   readonly rows: number
@@ -142,6 +173,18 @@ const readGhosttyStyleRuns = async (): Promise<readonly GhosttyStyleRun[]> =>
       text: element.textContent ?? '',
     }))
   )
+
+const eventContainsInvalidBytePair = (
+  event: VimeflowE2ePtyDataEvent
+): boolean => {
+  if (event.bytesBase64 === undefined) {
+    return false
+  }
+
+  const bytes = Buffer.from(event.bytesBase64, 'base64')
+
+  return bytes.some((byte, index) => byte === 0xff && bytes[index + 1] === 0xfe)
+}
 
 describe('Ghostty renderer smoke', () => {
   before(async () => {
@@ -259,5 +302,31 @@ describe('Ghostty renderer smoke', () => {
     } finally {
       await setTerminalContentWidth(null)
     }
+  })
+
+  it('receives byte-preserving PTY events when Ghostty is selected', async () => {
+    await waitForGhosttyRenderer()
+    await waitForGhosttyPrompt()
+    await startRecordingPtyDataEvents()
+    await clearRecordedPtyDataEvents()
+
+    await writeInputToVisibleTerminal("printf '\\377\\376'\n")
+
+    await browser.waitUntil(
+      async () =>
+        (await readRecordedPtyDataEvents()).some(eventContainsInvalidBytePair),
+      {
+        timeout: ESCAPE_SEQUENCE_TIMEOUT_MS,
+        timeoutMsg:
+          'Ghostty PTY data never included bytesBase64 for raw 0xff 0xfe output',
+      }
+    )
+
+    const events = await readRecordedPtyDataEvents()
+    const byteEvent = events.find(eventContainsInvalidBytePair)
+
+    expect(byteEvent?.bytesBase64).toEqual(expect.any(String))
+    expect(byteEvent?.byteLen).toBeGreaterThanOrEqual(2)
+    expect(byteEvent?.data).toContain('�')
   })
 })

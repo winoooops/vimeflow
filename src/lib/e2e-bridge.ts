@@ -1,9 +1,35 @@
-import { invoke } from './backend'
+import { invoke, listen, type UnlistenFn } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/terminalRegistry'
+import type { PtyDataEvent } from '../bindings'
 
 const LEGACY_XTERM_ROWS_SELECTOR = '.xterm-rows'
 let e2eOutputOffset = 0
+let ptyDataRecorderUnlisten: UnlistenFn | null = null
+let recordedPtyDataEvents: RecordedPtyDataEvent[] = []
+
+export interface RecordedPtyDataEvent {
+  readonly sessionId: string
+  readonly data: string
+  readonly bytesBase64?: string
+  readonly offsetStart: number
+  readonly byteLen: number
+}
+
+const coerceEventOffset = (value: number | bigint): number =>
+  typeof value === 'bigint' ? Number(value) : value
+
+const recordPtyDataEvent = (event: PtyDataEvent): void => {
+  recordedPtyDataEvents.push({
+    sessionId: event.sessionId,
+    data: event.data,
+    ...(event.bytesBase64 === undefined
+      ? {}
+      : { bytesBase64: event.bytesBase64 }),
+    offsetStart: coerceEventOffset(event.offsetStart),
+    byteLen: coerceEventOffset(event.byteLen),
+  })
+}
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
@@ -191,8 +217,56 @@ export const writeOutputToVisibleTerminal = (data: string): boolean => {
   return true
 }
 
+export const writeInputToVisibleTerminal = async (
+  data: string
+): Promise<boolean> => {
+  const pane = findActivePane()
+  if (!pane) {
+    return false
+  }
+
+  const sessionId = resolveCacheKey(pane)
+  if (!sessionId) {
+    return false
+  }
+
+  await invoke<null>('write_pty', {
+    request: {
+      sessionId,
+      data,
+    },
+  })
+
+  return true
+}
+
+export const startRecordingPtyDataEvents = async (): Promise<void> => {
+  if (ptyDataRecorderUnlisten !== null) {
+    return
+  }
+
+  ptyDataRecorderUnlisten = await listen<PtyDataEvent>(
+    'pty-data',
+    recordPtyDataEvent
+  )
+}
+
+export const stopRecordingPtyDataEvents = (): void => {
+  ptyDataRecorderUnlisten?.()
+  ptyDataRecorderUnlisten = null
+}
+
+export const clearRecordedPtyDataEvents = (): void => {
+  recordedPtyDataEvents = []
+}
+
+export const getRecordedPtyDataEvents = (): readonly RecordedPtyDataEvent[] =>
+  recordedPtyDataEvents
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
+    clearRecordedPtyDataEvents,
+    getRecordedPtyDataEvents,
     getTerminalBuffer: readVisibleTerminalBuffer,
     getTerminalBufferForSession: readTerminalBufferForSession,
     getVisibleTerminalSize,
@@ -200,6 +274,8 @@ if (import.meta.env.VITE_E2E) {
     getActiveSessionIds: getAllPtySessionIds,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    startRecordingPtyDataEvents,
+    writeInputToVisibleTerminal,
     writeOutputToVisibleTerminal,
   }
 }

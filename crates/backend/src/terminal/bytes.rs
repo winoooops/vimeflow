@@ -1,5 +1,7 @@
 const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const PTY_BYTES_BASE64_ENV: &str = "VIMEFLOW_EXPERIMENTAL_PTY_BYTES_BASE64";
+const TERMINAL_RENDERER_ENV: &str = "VITE_TERMINAL_RENDERER";
+const GHOSTTY_RENDERER_ID: &str = "ghostty";
 
 fn is_truthy_flag(value: &str) -> bool {
     matches!(
@@ -9,9 +11,22 @@ fn is_truthy_flag(value: &str) -> bool {
 }
 
 pub(crate) fn should_emit_bytes_base64() -> bool {
-    std::env::var(PTY_BYTES_BASE64_ENV)
-        .map(|value| is_truthy_flag(&value))
-        .unwrap_or(false)
+    should_emit_bytes_base64_for_env(
+        std::env::var(PTY_BYTES_BASE64_ENV).ok().as_deref(),
+        std::env::var(TERMINAL_RENDERER_ENV).ok().as_deref(),
+    )
+}
+
+fn is_ghostty_renderer(value: &str) -> bool {
+    value.trim() == GHOSTTY_RENDERER_ID
+}
+
+fn should_emit_bytes_base64_for_env(
+    explicit_flag: Option<&str>,
+    terminal_renderer: Option<&str>,
+) -> bool {
+    explicit_flag.map(is_truthy_flag).unwrap_or(false)
+        || terminal_renderer.map(is_ghostty_renderer).unwrap_or(false)
 }
 
 pub(crate) fn encode_base64(bytes: &[u8]) -> String {
@@ -43,7 +58,7 @@ pub(crate) fn encode_base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::encode_base64;
+    use super::{encode_base64, should_emit_bytes_base64_for_env};
 
     #[test]
     fn encodes_empty_input() {
@@ -81,5 +96,32 @@ mod tests {
         assert!(!super::is_truthy_flag("0"));
         assert!(!super::is_truthy_flag("false"));
         assert!(!super::is_truthy_flag("disabled"));
+    }
+
+    #[test]
+    fn enables_byte_payloads_when_explicit_flag_is_truthy() {
+        assert!(should_emit_bytes_base64_for_env(Some("1"), None));
+        assert!(should_emit_bytes_base64_for_env(
+            Some("true"),
+            Some("xterm")
+        ));
+    }
+
+    #[test]
+    fn enables_byte_payloads_for_ghostty_renderer_selection() {
+        assert!(should_emit_bytes_base64_for_env(None, Some("ghostty")));
+        assert!(should_emit_bytes_base64_for_env(Some("0"), Some("ghostty")));
+        assert!(should_emit_bytes_base64_for_env(None, Some(" ghostty ")));
+    }
+
+    #[test]
+    fn keeps_byte_payloads_disabled_for_default_text_renderers() {
+        assert!(!should_emit_bytes_base64_for_env(None, None));
+        assert!(!should_emit_bytes_base64_for_env(Some("0"), None));
+        assert!(!should_emit_bytes_base64_for_env(None, Some("xterm")));
+        assert!(!should_emit_bytes_base64_for_env(
+            Some("false"),
+            Some("plain-text")
+        ));
     }
 }
