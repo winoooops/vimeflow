@@ -58,7 +58,11 @@ export interface SplitViewProps {
     browserUrl: string
   ) => void
   onRequestFocus?: () => void
-  onAddPane?: (sessionId: string, kind?: Pane['kind'], slotId?: LayoutSlotId) => void
+  onAddPane?: (
+    sessionId: string,
+    kind?: Pane['kind'],
+    slotId?: LayoutSlotId
+  ) => void
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void

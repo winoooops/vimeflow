@@ -256,13 +256,7 @@ describe('applyAddPane', () => {
   })
 
   test('records a placement for the requested slot when slotId is provided', () => {
-    const result = applyAddPane(
-      [mockSession()],
-      's0',
-      newPane,
-      2,
-      'slot:right'
-    )
+    const result = applyAddPane([mockSession()], 's0', newPane, 2, 'slot:right')
 
     expect(result.appended).toBe(true)
     expect(result.sessions[0].placements).toContainEqual({

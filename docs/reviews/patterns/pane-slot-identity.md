@@ -26,11 +26,11 @@ pass the `slotId` through every layer that needs to act on a specific cell.
 - **Severity:** LOW
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx` L291-340
 - **Finding:** The `visiblePaneAssignments.map(({ pane, slotId }, i)` callback used
-the array index `i` for the focus tooltip (`Focus pane ${i + 1}`) and the shortcut
-hint (`Mod+${i + 1}`). With explicit placements, `panes[0]` can occupy a later
-visual slot, so the label/hint no longer matched the pane's grid position.
+  the array index `i` for the focus tooltip (`Focus pane ${i + 1}`) and the shortcut
+  hint (`Mod+${i + 1}`). With explicit placements, `panes[0]` can occupy a later
+  visual slot, so the label/hint no longer matched the pane's grid position.
 - **Fix:** Replaced both `i + 1` uses with `slotIndex + 1`, where
-`slotIndex = layout.definition.addOrder.indexOf(slotId)`.
+  `slotIndex = layout.definition.addOrder.indexOf(slotId)`.
 - **Commit:** same commit as this entry
 
 ### 2. Pass the clicked empty slot into pane creation
@@ -39,11 +39,11 @@ visual slot, so the label/hint no longer matched the pane's grid position.
 - **Severity:** P2 / MEDIUM
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx` L403-403
 - **Finding:** Each rendered empty slot knew its `slotId`, but `EmptySlot` was not
-passed the value and `onAddPane` had no slot parameter. `applyAddPane` then let
-`normalizePanePlacements` assign the new pane to the first empty slot in
-`addOrder`, so clicking a later empty hole could create the pane elsewhere.
+  passed the value and `onAddPane` had no slot parameter. `applyAddPane` then let
+  `normalizePanePlacements` assign the new pane to the first empty slot in
+  `addOrder`, so clicking a later empty hole could create the pane elsewhere.
 - **Fix:** Added `slotId` to `EmptySlotProps`, passed it from `SplitView` to
-`EmptySlot`, threaded it through `onAddPane` / `useSessionManager.addPane`, and
-updated `applyAddPane` to record a `{paneId, slotId}` placement when a slot id is
-provided.
+  `EmptySlot`, threaded it through `onAddPane` / `useSessionManager.addPane`, and
+  updated `applyAddPane` to record a `{paneId, slotId}` placement when a slot id is
+  provided.
 - **Commit:** same commit as this entry
