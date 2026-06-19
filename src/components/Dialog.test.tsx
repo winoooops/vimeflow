@@ -231,9 +231,7 @@ describe('Dialog', () => {
       ).toHaveFocus()
 
       await user.tab()
-      expect(
-        within(dialog).getByRole('button', { name: 'Last' })
-      ).toHaveFocus()
+      expect(within(dialog).getByRole('button', { name: 'Last' })).toHaveFocus()
 
       await user.tab()
       expect(
