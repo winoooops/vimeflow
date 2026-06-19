@@ -1,12 +1,23 @@
 // cspell:ignore ghostty
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
+import type { GhosttyVtRenderStateDriverFactory } from './ghosttyVtRenderStateDriver'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
 import { xtermTerminalRenderer } from './xtermInstance'
+
+export interface GhosttyRenderStateDriverProvider {
+  readonly id: string
+  readonly createVtRenderStateDriver: GhosttyVtRenderStateDriverFactory
+}
 
 const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
   [xtermTerminalRenderer.id, xtermTerminalRenderer],
 ])
+
+const ghosttyRenderStateDriverProviders = new Map<
+  string,
+  GhosttyRenderStateDriverProvider
+>()
 
 let activeTerminalRendererId = xtermTerminalRenderer.id
 let hasConfiguredTerminalRendererFromEnvironment = false
@@ -35,6 +46,18 @@ const readEnvironmentRendererId = (): string | null => {
   return normalizedRendererId.length > 0 ? normalizedRendererId : null
 }
 
+const readGhosttyRenderStateDriverProviderId = (): string | null => {
+  const providerId = import.meta.env.VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER
+
+  if (typeof providerId !== 'string') {
+    return null
+  }
+
+  const normalizedProviderId = providerId.trim()
+
+  return normalizedProviderId.length > 0 ? normalizedProviderId : null
+}
+
 export const registerTerminalRendererAdapter = (
   adapter: TerminalRendererAdapter
 ): void => {
@@ -49,6 +72,46 @@ export const registerTerminalRendererAdapter = (
     id: rendererId,
   })
 }
+
+export const registerGhosttyRenderStateDriverProvider = (
+  provider: GhosttyRenderStateDriverProvider
+): void => {
+  const providerId = provider.id.trim()
+
+  if (providerId.length === 0) {
+    throw new Error('Ghostty render-state driver provider id is required')
+  }
+
+  ghosttyRenderStateDriverProviders.set(providerId, {
+    ...provider,
+    id: providerId,
+  })
+}
+
+const loadBundledGhosttyRenderer =
+  async (): Promise<TerminalRendererAdapter> => {
+    const providerId = readGhosttyRenderStateDriverProviderId()
+
+    if (!providerId) {
+      const { ghosttyTerminalRenderer } = await import('./ghosttyInstance')
+
+      return ghosttyTerminalRenderer
+    }
+
+    const provider = ghosttyRenderStateDriverProviders.get(providerId)
+
+    if (!provider) {
+      throw new Error(
+        `Unavailable Ghostty render-state driver provider: ${providerId}`
+      )
+    }
+
+    const { createGhosttyTerminalRenderer } = await import('./ghosttyInstance')
+
+    return createGhosttyTerminalRenderer({
+      createVtRenderStateDriver: provider.createVtRenderStateDriver,
+    })
+  }
 
 const registerBundledEnvironmentRenderer = async (): Promise<void> => {
   if (
@@ -65,7 +128,7 @@ const registerBundledEnvironmentRenderer = async (): Promise<void> => {
     shouldRegisterBundledGhosttyRenderer &&
     !terminalRendererAdapters.has(GHOSTTY_TERMINAL_RENDERER_ID)
   ) {
-    const { ghosttyTerminalRenderer } = await import('./ghosttyInstance')
+    const ghosttyTerminalRenderer = await loadBundledGhosttyRenderer()
 
     bundledGhosttyRenderer = ghosttyTerminalRenderer
     registerTerminalRendererAdapter(ghosttyTerminalRenderer)
@@ -136,6 +199,7 @@ export const createConfiguredTerminalInstance =
 
 export const _resetTerminalRendererRegistryForTest = (): void => {
   terminalRendererAdapters.clear()
+  ghosttyRenderStateDriverProviders.clear()
   terminalRendererAdapters.set(xtermTerminalRenderer.id, xtermTerminalRenderer)
 
   if (bundledPlainTextRenderer) {

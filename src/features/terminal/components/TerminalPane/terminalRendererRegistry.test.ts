@@ -5,6 +5,7 @@ import type {
   TerminalRendererAdapter,
   TerminalRendererCapabilities,
 } from '../../types'
+import type { GhosttyVtRenderStateDriver } from './ghosttyVtRenderStateDriver'
 
 type TerminalRendererRegistryModule =
   typeof import('./terminalRendererRegistry')
@@ -20,6 +21,7 @@ const plainTextRendererMocks = vi.hoisted(() => ({
 
 const ghosttyRendererMocks = vi.hoisted(() => ({
   createInstance: vi.fn(),
+  createTerminalRenderer: vi.fn(),
   moduleLoaded: vi.fn(),
 }))
 
@@ -54,12 +56,19 @@ vi.mock('./plainTextInstance', () => {
 vi.mock('./ghosttyInstance', () => {
   ghosttyRendererMocks.moduleLoaded()
 
+  const ghosttyTerminalRenderer: TerminalRendererAdapter = {
+    id: 'ghostty',
+    capabilities: rendererCapabilities.bytes,
+    createInstance: ghosttyRendererMocks.createInstance,
+  }
+
+  ghosttyRendererMocks.createTerminalRenderer.mockImplementation(
+    (): TerminalRendererAdapter => ghosttyTerminalRenderer
+  )
+
   return {
-    ghosttyTerminalRenderer: {
-      id: 'ghostty',
-      capabilities: rendererCapabilities.bytes,
-      createInstance: ghosttyRendererMocks.createInstance,
-    },
+    ghosttyTerminalRenderer,
+    createGhosttyTerminalRenderer: ghosttyRendererMocks.createTerminalRenderer,
   }
 })
 
@@ -213,9 +222,99 @@ describe('terminalRendererRegistry', () => {
     )
     expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
     expect(ghosttyRendererMocks.moduleLoaded).toHaveBeenCalledOnce()
+    expect(ghosttyRendererMocks.createTerminalRenderer).not.toHaveBeenCalled()
     expect(ghosttyRendererMocks.createInstance).toHaveBeenCalledOnce()
     expect(plainTextRendererMocks.moduleLoaded).not.toHaveBeenCalled()
     expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
+  test('keeps the Ghostty render-state provider gate off by default', async () => {
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'native-test')
+
+    const registry = await importTerminalRendererRegistry()
+    const instance = createTerminalInstance()
+
+    const createVtRenderStateDriver = vi.fn(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: [] }),
+      })
+    )
+
+    xtermRendererMocks.createInstance.mockReturnValue(instance)
+    registry.registerGhosttyRenderStateDriverProvider({
+      id: 'native-test',
+      createVtRenderStateDriver,
+    })
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({ id: 'xterm' })
+    )
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
+    expect(ghosttyRendererMocks.moduleLoaded).not.toHaveBeenCalled()
+    expect(ghosttyRendererMocks.createTerminalRenderer).not.toHaveBeenCalled()
+    expect(createVtRenderStateDriver).not.toHaveBeenCalled()
+  })
+
+  test('creates the bundled ghostty renderer with a selected render-state provider', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'native-test')
+
+    const registry = await importTerminalRendererRegistry()
+    const instance = createTerminalInstance()
+
+    const createVtRenderStateDriver = vi.fn(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: [] }),
+      })
+    )
+
+    ghosttyRendererMocks.createInstance.mockReturnValue(instance)
+    registry.registerGhosttyRenderStateDriverProvider({
+      id: ' native-test ',
+      createVtRenderStateDriver,
+    })
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({
+        id: 'ghostty',
+        capabilities: rendererCapabilities.bytes,
+      })
+    )
+    expect(await registry.createConfiguredTerminalInstance()).toBe(instance)
+    expect(ghosttyRendererMocks.createTerminalRenderer).toHaveBeenCalledWith({
+      createVtRenderStateDriver,
+    })
+    expect(ghosttyRendererMocks.createInstance).toHaveBeenCalledOnce()
+    expect(xtermRendererMocks.createInstance).not.toHaveBeenCalled()
+  })
+
+  test('fails closed when a selected Ghostty render-state provider is unavailable', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'missing-native')
+
+    const registry = await importTerminalRendererRegistry()
+
+    await expect(registry.getTerminalRendererAdapter()).rejects.toThrow(
+      'Unavailable Ghostty render-state driver provider: missing-native'
+    )
+    expect(ghosttyRendererMocks.moduleLoaded).not.toHaveBeenCalled()
+    expect(ghosttyRendererMocks.createTerminalRenderer).not.toHaveBeenCalled()
+  })
+
+  test('rejects empty Ghostty render-state provider ids', async () => {
+    const registry = await importTerminalRendererRegistry()
+
+    expect(() =>
+      registry.registerGhosttyRenderStateDriverProvider({
+        id: ' ',
+        createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+          writeBytes: vi.fn(),
+          readSnapshot: () => ({ rows: [] }),
+        }),
+      })
+    ).toThrow('Ghostty render-state driver provider id is required')
   })
 
   test('keeps xterm as the default when environment selection is blank', async () => {
@@ -310,6 +409,26 @@ describe('terminalRendererRegistry', () => {
 
     expect(() => registry.setTerminalRendererAdapter('custom')).toThrow(
       'Unknown terminal renderer adapter: custom'
+    )
+  })
+
+  test('resets registered Ghostty render-state driver providers', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'native-test')
+
+    const registry = await importTerminalRendererRegistry()
+
+    registry.registerGhosttyRenderStateDriverProvider({
+      id: 'native-test',
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({ rows: [] }),
+      }),
+    })
+    registry._resetTerminalRendererRegistryForTest()
+
+    await expect(registry.getTerminalRendererAdapter()).rejects.toThrow(
+      'Unavailable Ghostty render-state driver provider: native-test'
     )
   })
 
