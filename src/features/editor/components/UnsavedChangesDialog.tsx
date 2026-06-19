@@ -1,6 +1,7 @@
-import { AnimatePresence, motion } from 'framer-motion'
 import type { ReactElement } from 'react'
-import { useEffect, useId, useRef } from 'react'
+import { useId, useRef } from 'react'
+import { Button } from '@/components/Button'
+import { Dialog } from '@/components/Dialog'
 
 export interface UnsavedChangesDialogProps {
   isOpen: boolean
@@ -27,15 +28,6 @@ export const UnsavedChangesDialog = ({
   const labelId = useId()
   const descriptionId = useId()
   const saveButtonRef = useRef<HTMLButtonElement | null>(null)
-  const discardButtonRef = useRef<HTMLButtonElement | null>(null)
-  const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
-
-  // Capture whichever element held focus before the dialog opened so
-  // we can restore it on close. Without this, dismissing the dialog
-  // (especially Cancel, where the user intends to keep editing) leaves
-  // focus on document.body — vim shortcuts then silently no-op until
-  // the user clicks back into the editor, which looks like a freeze.
-  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   const handleCancelRequest = (): void => {
     if (isSaving) {
@@ -45,186 +37,63 @@ export const UnsavedChangesDialog = ({
     onCancel()
   }
 
-  useEffect(() => {
-    if (isOpen) {
-      previousFocusRef.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
-      saveButtonRef.current?.focus()
-    } else if (previousFocusRef.current) {
-      previousFocusRef.current.focus()
-      previousFocusRef.current = null
-    }
-  }, [isOpen])
-
-  // Handle Escape key + focus trap. `aria-modal` is a hint to assistive
-  // tech, not a browser-enforced constraint — without a JS trap, Tab
-  // would cycle into the background workspace (terminal, sidebar,
-  // editor), letting a keyboard user trigger a conflicting file switch
-  // while the dialog is still open and holding `pendingFilePath`.
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        if (isSaving) {
-          return
-        }
-
-        onCancel()
-
-        return
-      }
-
-      if (event.key !== 'Tab') {
-        return
-      }
-
-      const buttons = [
-        saveButtonRef.current,
-        discardButtonRef.current,
-        cancelButtonRef.current,
-      ].filter((b): b is HTMLButtonElement => b !== null && !b.disabled)
-
-      if (buttons.length === 0) {
-        if (isSaving) {
-          event.preventDefault()
-        }
-
-        return
-      }
-
-      const currentIndex = buttons.indexOf(
-        document.activeElement as HTMLButtonElement
-      )
-      const delta = event.shiftKey ? -1 : 1
-
-      // If focus is not currently on a dialog button (e.g. the user
-      // Tabbed from the backdrop or from outside), place focus on the
-      // LAST button for Shift+Tab and the FIRST button for plain Tab —
-      // matching the standard ARIA modal navigation convention.
-      let nextIndex: number
-      if (currentIndex === -1) {
-        nextIndex = event.shiftKey ? buttons.length - 1 : 0
-      } else {
-        nextIndex = (currentIndex + delta + buttons.length) % buttons.length
-      }
-
-      event.preventDefault()
-      buttons[nextIndex]?.focus()
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-
-    return (): void => {
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isOpen, isSaving, onCancel])
-
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={labelId}
-          aria-describedby={descriptionId}
-          className="fixed inset-0 z-[100] flex items-center justify-center"
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open): void => {
+        if (!open) {
+          onCancel()
+        }
+      }}
+      initialFocusRef={saveButtonRef}
+      dismissDisabled={isSaving}
+      aria-labelledby={labelId}
+      aria-describedby={descriptionId}
+    >
+      <Dialog.Header>
+        <h2
+          id={labelId}
+          className="text-lg font-manrope font-semibold text-on-surface"
         >
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="absolute inset-0 backdrop-blur-sm bg-surface-container-lowest/40"
-            onClick={handleCancelRequest}
-          />
+          Unsaved Changes
+        </h2>
+      </Dialog.Header>
 
-          {/* Panel */}
-          <motion.div
-            initial={{ scale: 0.96, opacity: 0, y: -8 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0, y: -8 }}
-            transition={{
-              type: 'spring',
-              stiffness: 400,
-              damping: 30,
-            }}
-            className="relative w-full max-w-md mx-4 bg-surface-container/90 glass-panel rounded-2xl border border-outline-variant/30 shadow-2xl overflow-hidden"
+      <Dialog.Body>
+        <p
+          id={descriptionId}
+          className="text-sm text-on-surface/80 font-inter leading-relaxed"
+        >
+          <span className="font-medium text-on-surface">{fileName}</span> has
+          unsaved changes. Do you want to save them before {actionDescription}?
+        </p>
+        {errorMessage && (
+          <div
+            role="alert"
+            className="mt-4 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error font-inter"
           >
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-surface-container-low/30">
-              <h2
-                id={labelId}
-                className="text-lg font-manrope font-semibold text-on-surface"
-              >
-                Unsaved Changes
-              </h2>
-            </div>
+            {errorMessage}
+          </div>
+        )}
+      </Dialog.Body>
 
-            {/* Content */}
-            <div className="px-6 py-5">
-              <p
-                id={descriptionId}
-                className="text-sm text-on-surface/80 font-inter leading-relaxed"
-              >
-                <span className="font-medium text-on-surface">{fileName}</span>{' '}
-                has unsaved changes. Do you want to save them before{' '}
-                {actionDescription}?
-              </p>
-              {errorMessage && (
-                <div
-                  role="alert"
-                  className="mt-4 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error font-inter"
-                >
-                  {errorMessage}
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div className="px-6 py-4 border-t border-surface-container-low/30 flex gap-3 justify-end">
-              {/* Save button (primary) */}
-              <button
-                ref={saveButtonRef}
-                type="button"
-                onClick={onSave}
-                disabled={isSaving}
-                aria-busy={isSaving}
-                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-
-              {/* Discard button (error) */}
-              <button
-                ref={discardButtonRef}
-                type="button"
-                onClick={onDiscard}
-                disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Discard
-              </button>
-
-              {/* Cancel button (neutral) */}
-              <button
-                ref={cancelButtonRef}
-                type="button"
-                onClick={handleCancelRequest}
-                disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-container disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Cancel
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+      <Dialog.Footer>
+        <Button
+          ref={saveButtonRef}
+          variant="primary"
+          onClick={onSave}
+          disabled={isSaving}
+          aria-busy={isSaving}
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </Button>
+        <Button variant="danger" onClick={onDiscard} disabled={isSaving}>
+          Discard
+        </Button>
+        <Button onClick={handleCancelRequest} disabled={isSaving}>
+          Cancel
+        </Button>
+      </Dialog.Footer>
+    </Dialog>
   )
 }
