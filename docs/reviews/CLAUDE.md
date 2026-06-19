@@ -75,7 +75,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 40       | 12   | 2026-06-13   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 19       | 7    | 2026-06-06   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 20       | 8    | 2026-06-19   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 15       | 3    | 2026-06-12   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |

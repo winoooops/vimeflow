@@ -1,13 +1,27 @@
 // cspell:ignore vsplit
 import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { __resetBackendEventSubscriptions, type BackendApi } from './backend'
 import {
+  clearRecordedPtyDataEvents,
+  getRecordedPtyDataEvents,
   getVisibleTerminalSize,
   readPaneBuffer,
+  startRecordingPtyDataEvents,
+  stopRecordingPtyDataEvents,
+  writeInputToVisibleTerminal,
   writeOutputToVisibleTerminal,
 } from './e2e-bridge'
 import { terminalCache } from '../features/terminal/terminalRegistry'
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
+type BackendEventCallback = (payload: unknown) => void
+type BackendInvokeMock = (
+  method: string,
+  args?: Record<string, unknown>
+) => Promise<unknown>
+
+let backendEventCallbacks = new Map<string, BackendEventCallback>()
+let invokeMock: ReturnType<typeof vi.fn<BackendInvokeMock>>
 
 interface MockViewportReader {
   readVisibleText: () => string
@@ -28,6 +42,50 @@ const makeMockEntry = (rows: readonly string[]): CacheEntry => {
     fitController: { fit: (): void => undefined },
     viewportReader,
   } as unknown as CacheEntry
+}
+
+const visibleDomRect = (): DOMRect =>
+  ({
+    bottom: 24,
+    height: 24,
+    left: 0,
+    right: 80,
+    top: 0,
+    width: 80,
+    x: 0,
+    y: 0,
+    toJSON: (): Record<string, never> => ({}),
+  }) as DOMRect
+
+const emitBackendEvent = (event: string, payload: unknown): void => {
+  backendEventCallbacks.get(event)?.(payload)
+}
+
+const installBackendBridge = (): void => {
+  invokeMock = vi.fn<BackendInvokeMock>().mockResolvedValue(null)
+
+  const invokeBridge: BackendApi['invoke'] = async <T>(
+    method: string,
+    args?: Record<string, unknown>
+  ): Promise<T> => (await invokeMock(method, args)) as T
+
+  const listenBridge: BackendApi['listen'] = <T>(
+    event: string,
+    callback: (payload: T) => void
+  ): Promise<() => void> => {
+    backendEventCallbacks.set(event, (payload: unknown): void => {
+      callback(payload as T)
+    })
+
+    return Promise.resolve((): void => {
+      backendEventCallbacks.delete(event)
+    })
+  }
+
+  window.vimeflow = {
+    invoke: invokeBridge,
+    listen: listenBridge,
+  }
 }
 
 /**
@@ -83,6 +141,11 @@ describe('readPaneBuffer', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     terminalCache.clear()
+    backendEventCallbacks = new Map()
+    stopRecordingPtyDataEvents()
+    clearRecordedPtyDataEvents()
+    __resetBackendEventSubscriptions()
+    installBackendBridge()
   })
 
   test('returns the focused pane legacy DOM fallback in multi-pane DOM', () => {
@@ -197,18 +260,7 @@ describe('readPaneBuffer', () => {
 
   test('writes output chunks to the visible terminal renderer', () => {
     const wrapper = buildSessionWrapper([''], 0)
-    wrapper.getBoundingClientRect = (): DOMRect =>
-      ({
-        bottom: 24,
-        height: 24,
-        left: 0,
-        right: 80,
-        top: 0,
-        width: 80,
-        x: 0,
-        y: 0,
-        toJSON: (): Record<string, never> => ({}),
-      }) as DOMRect
+    wrapper.getBoundingClientRect = visibleDomRect
 
     const entry = makeMockEntry([])
 
@@ -225,20 +277,57 @@ describe('readPaneBuffer', () => {
     })
   })
 
+  test('writes input to the visible pane pty through the backend bridge', async () => {
+    const wrapper = buildSessionWrapper([''], 0)
+    wrapper.getBoundingClientRect = visibleDomRect
+
+    terminalCache.set('pty-0', makeMockEntry([])!)
+    document.body.append(wrapper)
+
+    await expect(writeInputToVisibleTerminal('printf ok\n')).resolves.toBe(true)
+    expect(invokeMock).toHaveBeenCalledWith('write_pty', {
+      request: {
+        sessionId: 'pty-0',
+        data: 'printf ok\n',
+      },
+    })
+  })
+
+  test('does not write input when no visible terminal is mounted', async () => {
+    await expect(writeInputToVisibleTerminal('printf nope\n')).resolves.toBe(
+      false
+    )
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  test('records pty-data events with byte payload metadata', async () => {
+    await startRecordingPtyDataEvents()
+
+    emitBackendEvent('pty-data', {
+      sessionId: 'pty-0',
+      data: '��',
+      bytesBase64: '//4=',
+      offsetStart: BigInt(42),
+      byteLen: BigInt(2),
+    })
+
+    expect(getRecordedPtyDataEvents()).toEqual([
+      {
+        sessionId: 'pty-0',
+        data: '��',
+        bytesBase64: '//4=',
+        offsetStart: 42,
+        byteLen: 2,
+      },
+    ])
+
+    clearRecordedPtyDataEvents()
+    expect(getRecordedPtyDataEvents()).toEqual([])
+  })
+
   test('returns the visible terminal size from the active cached renderer', () => {
     const wrapper = buildSessionWrapper([''], 0)
-    wrapper.getBoundingClientRect = (): DOMRect =>
-      ({
-        bottom: 24,
-        height: 24,
-        left: 0,
-        right: 80,
-        top: 0,
-        width: 80,
-        x: 0,
-        y: 0,
-        toJSON: (): Record<string, never> => ({}),
-      }) as DOMRect
+    wrapper.getBoundingClientRect = visibleDomRect
 
     terminalCache.set('pty-0', makeMockEntry([])!)
     document.body.append(wrapper)
