@@ -2,7 +2,7 @@
 id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-17
+last_updated: 2026-06-19
 ref_count: 4
 ---
 
@@ -57,4 +57,13 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **File:** `src/features/agent-status/components/LiveActionCard.tsx` L95-99
 - **Finding:** `Chip` with `tone="success"` injects `bg-success/[0.12] text-success` from `TONE_CLASS` before the caller-supplied `className`, which ends with `text-success-muted`. Both text-color utilities land on the same element; Tailwind resolves the conflict by compiled CSS source order rather than JSX class order, so the rendered color is non-deterministic from the author's perspective.
 - **Fix:** Changed `tone="success"` to `tone="custom"` so `Chip` does not inject any tone utilities and the caller's explicit `text-success-muted` (plus `bg-success/[0.12]`) remains the sole color source.
+- **Commit:** same commit as this entry
+
+### 6. NewSessionButton uses bg-none to override primary variant gradient
+
+- **Source:** github-claude | PR #557 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/NewSessionButton.tsx` L26
+- **Finding:** The call site passed `bg-primary bg-none` to strip the gradient defined inside the `primary` variant. tailwind-merge currently resolves this as intended, but the intent is invisible at the call site and would silently break if the variant ever expresses the gradient through a non-background-image mechanism.
+- **Fix:** Added a dedicated `flat-primary` variant to `buttonVariants.ts` that uses `bg-primary` without the gradient, switched `NewSessionButton` to `variant="flat-primary"`, and updated the co-located test to drop the now-unnecessary `bg-none` assertion.
 - **Commit:** same commit as this entry

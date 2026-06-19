@@ -18,12 +18,12 @@ export const NewSessionButton = ({
 }: NewSessionButtonProps): ReactElement => (
   <Tooltip content="New session" shortcut={shortcutHint} placement="bottom">
     <Button
-      variant="primary"
+      variant="flat-primary"
       onClick={onClick}
       aria-label="New session"
       aria-keyshortcuts={ariaKeyshortcuts}
       data-testid="sidebar-new-session"
-      className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch h-auto overflow-hidden rounded-[10px] bg-primary bg-none px-0"
+      className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch h-auto overflow-hidden rounded-[10px] px-0"
     >
       <span className="vf-new-session-button-content flex min-w-0 items-center justify-center">
         <span

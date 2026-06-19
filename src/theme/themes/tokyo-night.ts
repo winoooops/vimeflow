@@ -59,7 +59,7 @@ export const tokyoNightTheme: ThemeDefinition = {
     warning: tokyoNight.yellow,
     'on-surface': tokyoNight.fg,
     'on-surface-variant': tokyoNight.fgDim,
-    'on-surface-muted': tokyoNight.comment,
+    'on-surface-muted': '#7f88b3',
     outline: tokyoNight.gutter,
     'outline-variant': tokyoNight.bgHigh,
     'editor-fg': tokyoNight.fg,
