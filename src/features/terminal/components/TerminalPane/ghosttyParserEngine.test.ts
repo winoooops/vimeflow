@@ -4,6 +4,8 @@ import type { TerminalOutputChunk } from '../../types'
 import {
   GHOSTTY_PARSER_ENGINE_ID,
   createGhosttyParserEngine,
+  type GhosttyByteParserAdapter,
+  type GhosttyByteParserAdapterInput,
 } from './ghosttyParserEngine'
 import { getSgrStyleSentinel } from './terminalControlParser'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
@@ -88,6 +90,34 @@ describe('ghosttyParserEngine', () => {
     })
   })
 
+  test('routes byte payloads through the Ghostty byte parser adapter', () => {
+    const parseBytes = vi.fn((input: GhosttyByteParserAdapterInput) => ({
+      visibleText: `${Array.from(input.bytes).join(',')}:${input.decodedText}:${
+        input.output?.offsetStart ?? 'missing'
+      }`,
+    }))
+
+    const reset = vi.fn()
+    const adapter: GhosttyByteParserAdapter = { parseBytes, reset }
+    const engine = createGhosttyParserEngine({ byteParserAdapter: adapter })
+    const bytes = new Uint8Array([0xff, 0xfe])
+
+    expect(engine.parseOutput(createRawByteChunk(bytes, 7, 'live'))).toEqual({
+      visibleText: '255,254:��:7',
+    })
+
+    expect(parseBytes).toHaveBeenCalledWith({
+      bytes,
+      decodedText: '��',
+      output: {
+        offsetStart: 7,
+        byteLen: 2,
+        phase: 'live',
+      },
+    })
+    expect(reset).not.toHaveBeenCalled()
+  })
+
   test('falls back to text when byte payloads are unreadable', () => {
     const engine = createGhosttyParserEngine()
 
@@ -102,6 +132,27 @@ describe('ghosttyParserEngine', () => {
     ).toEqual({
       visibleText: 'text fallback',
     })
+  })
+
+  test('resets the Ghostty byte parser adapter on text fallback', () => {
+    const parseBytes = vi.fn(() => ({ visibleText: 'bytes' }))
+    const reset = vi.fn()
+    const adapter: GhosttyByteParserAdapter = { parseBytes, reset }
+    const engine = createGhosttyParserEngine({ byteParserAdapter: adapter })
+
+    expect(
+      engine.parseOutput({
+        text: 'text fallback',
+        offsetStart: 0,
+        byteLen: 13,
+        phase: 'live',
+      })
+    ).toEqual({
+      visibleText: 'text fallback',
+    })
+
+    expect(parseBytes).not.toHaveBeenCalled()
+    expect(reset).toHaveBeenCalledTimes(1)
   })
 
   test('emits OSC 7 cwd events from byte payloads with output context', () => {
