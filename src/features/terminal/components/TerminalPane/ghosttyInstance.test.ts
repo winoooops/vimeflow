@@ -5,7 +5,10 @@ import type {
   TerminalOutputChunk,
   TerminalParser,
 } from '../../types'
-import type { TerminalParserEngineOutput } from './terminalParserEngine'
+import type {
+  TerminalParserEngineInput,
+  TerminalParserEngineOutput,
+} from './terminalParserEngine'
 import {
   GHOSTTY_TERMINAL_RENDERER_ID,
   createGhosttyTerminal,
@@ -103,6 +106,11 @@ describe('ghosttyInstance', () => {
       parser,
       parseText: (text: string): TerminalParserEngineOutput => ({
         visibleText: `parsed:${text}`,
+      }),
+      parseInput: (
+        input: TerminalParserEngineInput
+      ): TerminalParserEngineOutput => ({
+        visibleText: `parsed:${input.text}`,
       }),
       parseOutput,
     }))

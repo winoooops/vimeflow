@@ -1,6 +1,5 @@
 import type {
   TerminalOutputChunk,
-  TerminalOutputInputMode,
   TerminalRendererCapabilities,
 } from '../../types'
 
@@ -29,7 +28,9 @@ export const readTerminalOutputBytes = (
 class TerminalOutputBytePayloadDecoder {
   private readonly streamingDecoder = new TextDecoder()
 
-  decode(chunk: TerminalOutputChunk): string | null {
+  decode(
+    chunk: TerminalOutputChunk
+  ): { readonly text: string; readonly bytes: Uint8Array } | null {
     const bytes = readTerminalOutputBytes(chunk)
 
     if (!bytes) {
@@ -38,7 +39,10 @@ class TerminalOutputBytePayloadDecoder {
       return null
     }
 
-    return this.streamingDecoder.decode(bytes, { stream: true })
+    return {
+      text: this.streamingDecoder.decode(bytes, { stream: true }),
+      bytes,
+    }
   }
 
   private reset(): void {
@@ -46,10 +50,16 @@ class TerminalOutputBytePayloadDecoder {
   }
 }
 
-export interface TerminalOutputPayloadSelection {
-  readonly inputMode: TerminalOutputInputMode
-  readonly text: string
-}
+export type TerminalOutputPayloadSelection =
+  | {
+      readonly inputMode: 'text'
+      readonly text: string
+    }
+  | {
+      readonly inputMode: 'bytes'
+      readonly text: string
+      readonly bytes: Uint8Array
+    }
 
 export class TerminalOutputPayloadRouter {
   private readonly byteDecoder: TerminalOutputBytePayloadDecoder | null
@@ -74,7 +84,8 @@ export class TerminalOutputPayloadRouter {
     if (decodedBytes !== null) {
       return {
         inputMode: 'bytes',
-        text: decodedBytes,
+        text: decodedBytes.text,
+        bytes: decodedBytes.bytes,
       }
     }
 

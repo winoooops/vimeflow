@@ -48,6 +48,23 @@ const outputChunk = (
   phase: 'live',
 })
 
+const expectBytePayload = (
+  actual: ReturnType<TerminalOutputPayloadRouter['read']>,
+  expected: {
+    readonly text: string
+    readonly bytes: Uint8Array
+  }
+): void => {
+  expect(actual.inputMode).toBe('bytes')
+
+  if (actual.inputMode !== 'bytes') {
+    throw new Error('expected terminal output selection to use byte input')
+  }
+
+  expect(actual.text).toBe(expected.text)
+  expect(Array.from(actual.bytes)).toEqual(Array.from(expected.bytes))
+}
+
 describe('terminalOutputPayload', () => {
   test('decodes base64 payloads to raw bytes', () => {
     expect(decodeBase64ToBytes('//4=')).toEqual(new Uint8Array([255, 254]))
@@ -65,16 +82,22 @@ describe('terminalOutputPayload', () => {
   })
 
   test('prefers streaming byte payloads over fallback text', () => {
+    expect.hasAssertions()
+
     const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
     const character = String.fromCodePoint(0x4f60)
     const bytes = new TextEncoder().encode(character)
     const first = outputChunk('wrong', encodeBase64(bytes.slice(0, 2)))
     const second = outputChunk('wrong', encodeBase64(bytes.slice(2)))
 
-    expect(router.read(first)).toEqual({ inputMode: 'bytes', text: '' })
-    expect(router.read(second)).toEqual({
-      inputMode: 'bytes',
+    expectBytePayload(router.read(first), {
+      text: '',
+      bytes: bytes.slice(0, 2),
+    })
+
+    expectBytePayload(router.read(second), {
       text: character,
+      bytes: bytes.slice(2),
     })
   })
 
@@ -99,15 +122,19 @@ describe('terminalOutputPayload', () => {
     const partial = outputChunk('wrong', encodeBase64(bytes.slice(0, 2)))
     const complete = outputChunk('wrong', encodeBase64(bytes))
 
-    expect(router.read(partial)).toEqual({ inputMode: 'bytes', text: '' })
+    expectBytePayload(router.read(partial), {
+      text: '',
+      bytes: bytes.slice(0, 2),
+    })
+
     expect(router.read(outputChunk('fallback'))).toEqual({
       inputMode: 'text',
       text: 'fallback',
     })
 
-    expect(router.read(complete)).toEqual({
-      inputMode: 'bytes',
+    expectBytePayload(router.read(complete), {
       text: character,
+      bytes,
     })
   })
 
@@ -123,14 +150,17 @@ describe('terminalOutputPayload', () => {
   })
 
   test('routes byte-preferring renderers through byte chunks', () => {
+    expect.hasAssertions()
+
     const router = new TerminalOutputPayloadRouter(bytePreferredCapabilities)
 
-    expect(
-      router.read(outputChunk('text loses', encodeText('bytes win')))
-    ).toEqual({
-      inputMode: 'bytes',
-      text: 'bytes win',
-    })
+    expectBytePayload(
+      router.read(outputChunk('text loses', encodeText('bytes win'))),
+      {
+        text: 'bytes win',
+        bytes: new TextEncoder().encode('bytes win'),
+      }
+    )
   })
 
   test('falls back to text only when byte-preferring renderers accept text', () => {
