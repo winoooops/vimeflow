@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-05-20
-ref_count: 7
+last_updated: 2026-06-19
+ref_count: 8
 ---
 
 # E2E Testing
@@ -217,4 +217,13 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `src/test/e2eInputGuard.test.ts`
 - **Finding:** After computing `filePaths` from `listTypeScriptFiles(E2E_ROOT)`, the test immediately evaluates `expect(findings).toEqual([])`. If `tests/e2e` is empty, or if all e2e files are temporarily moved or renamed (e.g., during a directory restructure), `filePaths` is `[]`, `findings` is `[]`, and the assertion trivially passes — the guard silently grants a clean bill of health without having scanned a single file. The guard's stated purpose (preventing `browser.keys(...)` usage in e2e tests) evaporates silently.
 - **Fix:** Added `expect(filePaths.length).toBeGreaterThan(0)` immediately after computing `filePaths`, requiring the guard to scan at least one e2e TypeScript file before checking findings. This distinguishes "no violations found" from "no files scanned".
+- **Commit:** _(this cycle)_
+
+### 20. Ghostty byte smoke assertion assumes 0xff 0xfe stays inside one PTY data event
+
+- **Source:** github-codex-connector | PR #541 cycle 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/ghostty/specs/ghostty-smoke.spec.ts`
+- **Finding:** The new `eventContainsInvalidBytePair` helper decoded each recorded PTY event independently and only reported the probe bytes found when `0xff` was immediately followed by `0xfe` within a single event. OS PTY reads can split the two-byte probe across adjacent events, so the test could time out even though Ghostty had correctly received and preserved both bytes. The false negative would surface as a flaky CI failure rather than a product bug.
+- **Fix:** Replaced the per-event predicate with `recordedEventsContainInvalidBytePair(events)`, which concatenates decoded `bytesBase64` payloads from every recorded event in order (skipping events without byte metadata) and scans the resulting byte stream for the adjacent `0xff 0xfe` sequence. Post-wait assertions were moved to stream-level checks: at least one event carries `bytesBase64`, the total decoded byte length is at least 2, the stream contains `0xff` followed by `0xfe`, and at least one event's decoded `data` contains the Unicode replacement character.
 - **Commit:** _(this cycle)_

@@ -174,16 +174,18 @@ const readGhosttyStyleRuns = async (): Promise<readonly GhosttyStyleRun[]> =>
     }))
   )
 
-const eventContainsInvalidBytePair = (
-  event: VimeflowE2ePtyDataEvent
+const recordedEventsContainInvalidBytePair = (
+  events: readonly VimeflowE2ePtyDataEvent[]
 ): boolean => {
-  if (event.bytesBase64 === undefined) {
-    return false
-  }
+  const bytes = events
+    .map((event) => event.bytesBase64)
+    .filter((bytesBase64): bytesBase64 is string => bytesBase64 !== undefined)
+    .flatMap((bytesBase64) => Array.from(Buffer.from(bytesBase64, 'base64')))
 
-  const bytes = Buffer.from(event.bytesBase64, 'base64')
-
-  return bytes.some((byte, index) => byte === 0xff && bytes[index + 1] === 0xfe)
+  return bytes.some(
+    (byte, index) =>
+      byte === 0xff && index < bytes.length - 1 && bytes[index + 1] === 0xfe
+  )
 }
 
 describe('Ghostty renderer smoke', () => {
@@ -314,7 +316,7 @@ describe('Ghostty renderer smoke', () => {
 
     await browser.waitUntil(
       async () =>
-        (await readRecordedPtyDataEvents()).some(eventContainsInvalidBytePair),
+        recordedEventsContainInvalidBytePair(await readRecordedPtyDataEvents()),
       {
         timeout: ESCAPE_SEQUENCE_TIMEOUT_MS,
         timeoutMsg:
@@ -323,10 +325,16 @@ describe('Ghostty renderer smoke', () => {
     )
 
     const events = await readRecordedPtyDataEvents()
-    const byteEvent = events.find(eventContainsInvalidBytePair)
+    const byteEvents = events.filter((event) => event.bytesBase64 !== undefined)
+    const allBytes = byteEvents
+      .map((event) => event.bytesBase64)
+      .filter((bytesBase64): bytesBase64 is string => bytesBase64 !== undefined)
+      .flatMap((bytesBase64) => Array.from(Buffer.from(bytesBase64, 'base64')))
 
-    expect(byteEvent?.bytesBase64).toEqual(expect.any(String))
-    expect(byteEvent?.byteLen).toBeGreaterThanOrEqual(2)
-    expect(byteEvent?.data).toContain('�')
+    expect(byteEvents.length).toBeGreaterThanOrEqual(1)
+    expect(allBytes.length).toBeGreaterThanOrEqual(2)
+    expect(allBytes).toContain(0xff)
+    expect(allBytes[allBytes.indexOf(0xff) + 1]).toBe(0xfe)
+    expect(events.some((event) => event.data.includes('�'))).toBe(true)
   })
 })
