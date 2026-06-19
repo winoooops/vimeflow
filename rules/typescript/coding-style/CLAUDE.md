@@ -266,9 +266,10 @@ Cross-feature UI primitives live in `src/components/` and are imported via the `
 - **Dropdowns**: always `Dropdown` from `@/components/Dropdown`. Contract: `docs/design/UNIFIED.md` §5.7.
 - **Menus**: always `Menu` from `@/components/Menu` (click-anchored or cursor-anchored via `Menu.Context`). Contract: `docs/design/UNIFIED.md` §5.8.
 - **Popovers**: always `Popover` from `@/components/Popover` for arbitrary dialog cards. Contract: `docs/design/UNIFIED.md` §5.9.
+- **Dialogs**: always `Dialog` from `@/components/Dialog` for full-screen app modal shells. Anchored or cursor-positioned dialog-like surfaces stay on `Popover` / `Menu` / `Dropdown`. Contract: `docs/design/UNIFIED.md` §5.9.1.
 - **Buttons and grouped controls**: always use `Button` / `IconButton` / `ToolbarButton` / `SegmentedControl` / `Toggle` from `@/components`. A raw icon-only `<button>` wrapping a `material-symbols-outlined` glyph is banned by `vimeflow/no-raw-icon-button` — use `IconButton` (or `ToolbarButton` for icon + label). Do not hand-roll segmented/toggle button loops. Contract: `docs/design/UNIFIED.md` §5.10–5.13.
-- **Floating surfaces**: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` — never hand-roll a floating surface.
-- **`base/` convention**: `src/components/base/**` is internal substrate that wraps a third-party engine (or owns low-level behaviour) and **must not be imported from `src/features/**`** or any other module outside `src/components/`. Everything under `base/`is package-private to`src/components/`. Features compose the public primitives (`Dropdown`, `Menu`, `Popover`) instead. This boundary is enforced by ESLint ring 2 in `eslint.config.js`.
+- **Floating surfaces**: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` — never hand-roll an anchored floating surface.
+- **`base/` convention**: `src/components/base/**` is internal substrate that wraps a third-party engine (or owns low-level behaviour) and **must not be imported from `src/features/**`** or any other module outside `src/components/`. Everything under `base/`is package-private to`src/components/`. Features compose the public primitives (`Dropdown`, `Menu`, `Popover`, `Dialog`) instead. This boundary is enforced by ESLint ring 2 in `eslint.config.js`.
 
 ## Linting
 
