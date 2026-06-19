@@ -309,6 +309,103 @@
         font-size: 0.86rem;
       }
 
+      .architecture-map {
+        align-items: start;
+        display: grid;
+        gap: 18px;
+        grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+        margin-top: 18px;
+      }
+
+      .uml {
+        background: rgba(12, 14, 19, 0.68);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      .uml-row {
+        align-items: stretch;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      }
+
+      .uml-node,
+      .uml-note {
+        background: rgba(35, 40, 52, 0.78);
+        border: 1px solid rgba(216, 222, 233, 0.1);
+        border-radius: 10px;
+        padding: 13px;
+      }
+
+      .uml-node b,
+      .uml-note b {
+        color: var(--text);
+        display: block;
+        font-size: 0.93rem;
+        margin-bottom: 6px;
+      }
+
+      .uml-node span,
+      .uml-note span {
+        color: var(--faint);
+        display: block;
+        font-size: 0.84rem;
+      }
+
+      .uml-node.app {
+        border-color: rgba(145, 215, 227, 0.32);
+      }
+
+      .uml-node.adapter {
+        border-color: rgba(245, 169, 127, 0.34);
+      }
+
+      .uml-node.provider {
+        border-color: rgba(198, 160, 246, 0.34);
+      }
+
+      .uml-node.driver {
+        border-color: rgba(166, 218, 149, 0.34);
+      }
+
+      .uml-arrow {
+        align-self: center;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        justify-self: center;
+        min-width: 46px;
+        text-align: center;
+      }
+
+      .legend {
+        display: grid;
+        gap: 12px;
+      }
+
+      .legend-item {
+        background: rgba(26, 29, 37, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .legend-item strong {
+        color: var(--text);
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .legend-item span {
+        color: var(--muted);
+        display: block;
+        font-size: 0.9rem;
+      }
+
       table {
         border-collapse: collapse;
         margin-top: 16px;
@@ -355,8 +452,14 @@
       @media (max-width: 860px) {
         .hero,
         .grid,
-        .flow {
+        .flow,
+        .architecture-map,
+        .uml-row {
           grid-template-columns: 1fr;
+        }
+
+        .uml-arrow {
+          min-width: 0;
         }
 
         .wrap {
@@ -399,6 +502,7 @@
       <nav class="toc" aria-label="目录">
         <a href="#current">当前链路</a>
         <a href="#decision">决策</a>
+        <a href="#adapter-map">Adapter 关系图</a>
         <a href="#why-bytes">为什么 PTY 字节重要</a>
         <a href="#parser">Parser 责任边界</a>
         <a href="#observability">OSC 7 与 agent observability</a>
@@ -506,6 +610,132 @@ interface TerminalParserAdapter {
               后面。
             </li>
           </ul>
+        </div>
+      </section>
+
+      <section id="adapter-map">
+        <h2><span class="num">02.5</span> Adapter 与 provider 的关系图</h2>
+        <p>
+          这张图把后续 PR 里的名字放回 Option A+ 的架构里。核心点是：
+          <code>provider</code> 不是新的应用层 parser，也不是绕过 renderer
+          adapter 的后门；它只是 Ghostty adapter 内部选择真实 render-state
+          driver 的 feature-flag 入口。
+        </p>
+
+        <div class="architecture-map">
+          <div
+            class="uml"
+            aria-label="Ghostty adapter provider workflow diagram"
+          >
+            <div class="uml-row">
+              <div class="uml-node app">
+                <b>App 层稳定契约</b>
+                <span
+                  ><code>Body</code> / <code>useTerminal</code> 只发送
+                  <code>TerminalOutputChunk</code>，只监听
+                  <code>TerminalParserEvent</code>。</span
+                >
+              </div>
+              <div class="uml-arrow">chunk</div>
+              <div class="uml-node adapter">
+                <b>TerminalRendererAdapter</b>
+                <span
+                  >选择 <code>xterm</code> 或
+                  <code>ghostty</code>，但上层不需要知道 string/bytes
+                  写入细节。</span
+                >
+              </div>
+            </div>
+
+            <div class="uml-row">
+              <div class="uml-note">
+                <b>xterm 默认路径</b>
+                <span
+                  >继续读取 <code>TerminalOutputChunk.text</code>，使用 xterm
+                  自己的 parser 和 surface。默认行为不变。</span
+                >
+              </div>
+              <div class="uml-arrow">or</div>
+              <div class="uml-node adapter">
+                <b>Ghostty renderer factory</b>
+                <span
+                  ><code>createGhosttyTerminalRenderer(options)</code> 创建
+                  Ghostty adapter，并把 parser/driver 选择留在 adapter
+                  内部。</span
+                >
+              </div>
+            </div>
+
+            <div class="uml-row">
+              <div class="uml-node provider">
+                <b>Provider gate</b>
+                <span
+                  ><code>VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER</code> 只在
+                  <code>VITE_TERMINAL_RENDERER=ghostty</code> 时生效。请求了
+                  provider 但未注册时必须 fail closed。</span
+                >
+              </div>
+              <div class="uml-arrow">injects</div>
+              <div class="uml-node adapter">
+                <b>Ghostty parser engine</b>
+                <span
+                  >没有 provider 时走 lightweight control parser；有 provider
+                  时创建 byte-only VT render-state parser engine。</span
+                >
+              </div>
+            </div>
+
+            <div class="uml-row">
+              <div class="uml-node driver">
+                <b>Render-state driver</b>
+                <span
+                  >未来真实 libghostty-vt/native 桥接层。消费 raw
+                  <code>Uint8Array</code>，拥有 rows/cursor/style/OSC
+                  effects。</span
+                >
+              </div>
+              <div class="uml-arrow">returns</div>
+              <div class="uml-node adapter">
+                <b>Display + events</b>
+                <span
+                  >输出 <code>displayDelta.replace</code> 给 surface；OSC 7 仍然
+                  发成 <code>{ type: 'cwd', source: 'osc7' }</code>。</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <aside class="legend" aria-label="Relationship explanation">
+            <div class="legend-item">
+              <strong>1. App contract 不变</strong>
+              <span
+                >未来不应该让 <code>Body</code> 或 session manager 直接知道
+                Ghostty native driver。它们只依赖 chunk/event。</span
+              >
+            </div>
+            <div class="legend-item">
+              <strong>2. Provider 是选择器</strong>
+              <span
+                >Provider 负责把一个 driver factory 交给 Ghostty
+                adapter。它不消费 PTY，也不直接发 cwd 事件。</span
+              >
+            </div>
+            <div class="legend-item">
+              <strong>3. Driver 是状态拥有者</strong>
+              <span
+                >Milestone 2 要接入的真实 driver 应该拥有 terminal
+                state，而不是把 screen/cursor/OSC 逻辑散回应用层。</span
+              >
+            </div>
+            <div class="legend-item">
+              <strong>4. OSC 7 走旧数据路径</strong>
+              <span
+                >Driver 可以发现 cwd，但必须通过 adapter 包装成
+                <code>TerminalParserEvent</code>，继续保护 pane cwd 和 agent
+                observability 的分离。</span
+              >
+            </div>
+          </aside>
         </div>
       </section>
 
