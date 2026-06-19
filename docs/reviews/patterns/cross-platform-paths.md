@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-17
-ref_count: 3
+last_updated: 2026-06-19
+ref_count: 4
 ---
 
 # Cross-Platform Paths
@@ -78,4 +78,13 @@ consider using path libraries for cross-platform code.
 - **File:** `src/features/workspace/utils/editorFileLifecycleStatus.ts` L207-210
 - **Finding:** The guard comparing `filesCwd` to `gitStatusCwd` used raw `!==`, so trailing slashes, tilde expansion, or case-only differences on case-insensitive volumes made equivalent directories look different. The function then returned `null`, silently disabling the `NEW`/`DELETED` lifecycle crumb for the selected editor file even though the file was inside the reported git status directory.
 - **Fix:** Reuse the shared `normalizePathForComparison` helper (which expands `~`, normalizes separators, strips trailing slashes, and lowercases on macOS/Windows) before comparing both cwd values.
+
+### 8. Workspace bucket basename could exceed filesystem component limits
+
+- **Source:** github-codex-connector | PR #563 cycle 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs` L84 (original)
+- **Finding:** `workspace_bridge_bucket` constructed an app-data directory component from the sanitized cwd basename plus a `_<sha256>` suffix. When the project directory name was long but still a valid filename, the combined component exceeded common filesystems' 255-byte component limit, causing `create_dir_all` to fail and leaving the session without a generated bridge.
+- **Fix:** Truncate the sanitized basename to `MAX_BUCKET_BASENAME_BYTES = 242` bytes (leaving room for the underscore, 6-hex hash, and margin) before appending the hash suffix. The resulting component stays well under 255 bytes even on conservative filesystems.
+- **Commit:** same commit as this entry
 - **Commit:** same commit as this entry

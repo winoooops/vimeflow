@@ -226,17 +226,170 @@ const emitAgentStatus = async (
   payload: AgentStatusPayload,
   turns: number
 ): Promise<void> => {
-  await browser.execute(
-    (statusPayload: AgentStatusPayload, numTurns: number) => {
-      window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-status', statusPayload)
-      window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-turn', {
-        sessionId: statusPayload.sessionId,
-        numTurns,
+  await invokeBackend<null>('e2e_emit_agent_status', {
+    sessionId: payload.sessionId,
+    status: payload,
+    numTurns: turns,
+  })
+}
+
+const writeKimiWire = (
+  wirePath: string,
+  scenario: AgentStatusScenario
+): void => {
+  const sessionId = `e2e-${scenario.agentType}-session`
+  const timestamp = Date.now()
+  const reset = Math.floor(Date.now() / 1000) + 3600
+  const lines: string[] = [
+    JSON.stringify({
+      type: 'config.update',
+      time: timestamp,
+      modelAlias: scenario.modelDisplayName,
+    }),
+  ]
+
+  for (let i = 0; i < scenario.turns; i += 1) {
+    lines.push(
+      JSON.stringify({
+        type: 'turn.prompt',
+        time: timestamp + i,
+        origin: { kind: 'user' },
+      }),
+      JSON.stringify({
+        type: 'usage.record',
+        time: timestamp + i + 1,
+        model: scenario.modelDisplayName,
+        usage: {
+          inputOther: 1100,
+          inputCacheRead: 150,
+          inputCacheCreation: 0,
+          output: 250,
+        },
       })
-    },
-    payload,
-    turns
+    )
+  }
+
+  lines.push(
+    JSON.stringify({
+      type: 'usage.record',
+      time: timestamp + scenario.turns + 2,
+      model: scenario.modelDisplayName,
+      rateLimits: {
+        fiveHour: { usedPercent: 19, windowMinutes: 300, resetsAt: reset },
+        sevenDay: {
+          usedPercent: 27,
+          windowMinutes: 10080,
+          resetsAt: reset + 86_400,
+        },
+      },
+      usage: {
+        inputOther: 1100 * scenario.turns,
+        inputCacheRead: 150 * scenario.turns,
+        inputCacheCreation: 0,
+        output: 250 * scenario.turns,
+      },
+    })
   )
+
+  fs.appendFileSync(wirePath, `${lines.join('\n')}\n`, 'utf8')
+}
+
+const writeCodexRollout = (
+  rolloutPath: string,
+  ptyId: string,
+  scenario: AgentStatusScenario
+): void => {
+  const sessionId = `e2e-${scenario.agentType}-session`
+  const timestamp = new Date().toISOString()
+  const reset = Math.floor(Date.now() / 1000) + 3600
+  const lines = [
+    JSON.stringify({
+      timestamp,
+      type: 'session_meta',
+      payload: {
+        id: sessionId,
+        timestamp,
+        cwd: process.cwd(),
+        originator: 'codex_exec',
+        cli_version: 'e2e',
+        source: 'exec',
+        model_provider: 'openai',
+      },
+    }),
+    JSON.stringify({
+      timestamp,
+      type: 'turn_context',
+      payload: {
+        turn_id: `turn-${scenario.agentType}`,
+        cwd: process.cwd(),
+        model: scenario.modelDisplayName,
+        personality: 'pragmatic',
+        effort: 'xhigh',
+      },
+    }),
+    JSON.stringify({
+      timestamp,
+      type: 'event_msg',
+      payload: {
+        type: 'task_started',
+        turn_id: `turn-${scenario.agentType}`,
+        started_at: Math.floor(Date.now() / 1000),
+        model_context_window: 200_000,
+        collaboration_mode_kind: 'default',
+      },
+    }),
+    JSON.stringify({
+      timestamp,
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 1100,
+            cached_input_tokens: 150,
+            output_tokens: 250,
+            reasoning_output_tokens: 0,
+            total_tokens: 1350,
+          },
+          last_token_usage: {
+            input_tokens: 1100,
+            cached_input_tokens: 150,
+            output_tokens: 250,
+            reasoning_output_tokens: 0,
+            total_tokens: 1350,
+          },
+          model_context_window: 200_000,
+        },
+        rate_limits: {
+          limit_id: 'codex',
+          primary: {
+            used_percent: 19,
+            window_minutes: 300,
+            resets_at: reset,
+          },
+          secondary: {
+            used_percent: 27,
+            window_minutes: 10080,
+            resets_at: reset + 86_400,
+          },
+          plan_type: 'prolite',
+        },
+      },
+    }),
+    JSON.stringify({
+      timestamp,
+      type: 'event_msg',
+      payload: {
+        type: 'task_complete',
+        turn_id: `turn-${scenario.agentType}`,
+        completed_at: Math.floor(Date.now() / 1000),
+        duration_ms: 95_000,
+        last_agent_message: 'done',
+      },
+    }),
+  ]
+
+  fs.writeFileSync(rolloutPath, `${lines.join('\n')}\n`, 'utf8')
 }
 
 const emitAgentTurn = async (
@@ -435,6 +588,13 @@ describe('Agent runtime regressions', () => {
 
   it('renders seeded Codex and Kimi statuses in the sidebar card and status panel', async () => {
     const ptyId = await waitForVisiblePtyId()
+    const codexHome = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'vimeflow-codex-e2e-')
+    )
+    const kimiHome = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'vimeflow-kimi-e2e-')
+    )
+
     const scenarios: AgentStatusScenario[] = [
       {
         agentType: 'codex',
@@ -455,31 +615,48 @@ describe('Agent runtime regressions', () => {
     const cardSelector = '[data-testid="sidebar-agent-status-card"]'
     const panelSelector = '[data-testid="agent-status-panel"]'
 
-    for (const scenario of scenarios) {
-      await seedAgent(ptyId, scenario.agentType)
-      await emitAgentStatus(
-        createAgentStatusPayload(ptyId, scenario),
-        scenario.turns
-      )
+    try {
+      for (const scenario of scenarios) {
+        await seedAgent(ptyId, scenario.agentType)
 
-      await browser.waitUntil(
-        async () => {
-          const cardText = await textForSelector(cardSelector)
-          const panelText = await textForSelector(panelSelector)
-
-          return (
-            cardText.includes(scenario.modelDisplayName) &&
-            cardText.includes(`${scenario.turns} turns`) &&
-            !cardText.includes('No active agent') &&
-            panelText.includes(scenario.panelLabel)
+        if (scenario.agentType === 'codex') {
+          const rolloutPath = await invokeBackend<string>(
+            'e2e_start_codex_watcher',
+            { sessionId: ptyId, homeDir: codexHome }
           )
-        },
-        {
-          timeout: 15_000,
-          interval: 500,
-          timeoutMsg: `${scenario.agentType} status did not render in sidebar and panel`,
+          writeCodexRollout(rolloutPath, ptyId, scenario)
+          await emitAgentTurn(ptyId, scenario.turns)
+        } else {
+          const wirePath = await invokeBackend<string>(
+            'e2e_start_kimi_watcher',
+            { sessionId: ptyId, homeDir: kimiHome }
+          )
+          writeKimiWire(wirePath, scenario)
+          await emitAgentTurn(ptyId, scenario.turns)
         }
-      )
+
+        await browser.waitUntil(
+          async () => {
+            const cardText = await textForSelector(cardSelector)
+            const panelText = await textForSelector(panelSelector)
+
+            return (
+              cardText.includes(scenario.modelDisplayName) &&
+              cardText.includes(`${scenario.turns} turns`) &&
+              !cardText.includes('No active agent') &&
+              panelText.includes(scenario.panelLabel)
+            )
+          },
+          {
+            timeout: 15_000,
+            interval: 500,
+            timeoutMsg: `${scenario.agentType} status did not render in sidebar and panel`,
+          }
+        )
+      }
+    } finally {
+      fs.rmSync(codexHome, { recursive: true, force: true })
+      fs.rmSync(kimiHome, { recursive: true, force: true })
     }
   })
 

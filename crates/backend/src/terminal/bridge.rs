@@ -71,6 +71,54 @@ fn sanitized_component(raw: &str) -> String {
     }
 }
 
+/// Quote a path so it survives being passed to `statusLine.command` and run
+/// through a POSIX shell. Wraps the value in single quotes; any embedded
+/// single quote is escaped by exiting the quoted string, emitting an escaped
+/// quote, and re-entering.
+fn shell_quote_path(path: &str) -> String {
+    if path.is_empty() {
+        return "''".to_string();
+    }
+    // A conservative whitelist: if the path contains no shell metacharacters,
+    // leave it unquoted. Otherwise wrap the whole thing in single quotes.
+    let needs_quote = path.bytes().any(|b| {
+        b.is_ascii_whitespace()
+            || b == b'\''
+            || b == b'"'
+            || b == b'`'
+            || b == b'$'
+            || b == b'\\'
+            || b == b'|'
+            || b == b'&'
+            || b == b';'
+            || b == b'<'
+            || b == b'>'
+            || b == b'('
+            || b == b')'
+            || b == b'#'
+            || b == b'*'
+            || b == b'?'
+            || b == b'['
+            || b == b']'
+            || b == b'!'
+            || b == b'~'
+    });
+    if !needs_quote {
+        return path.to_string();
+    }
+    let mut quoted = String::with_capacity(path.len() + 2);
+    quoted.push('\'');
+    for ch in path.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
 fn cwd_basename(cwd: &Path) -> String {
     cwd.file_name()
         .and_then(OsStr::to_str)
@@ -78,10 +126,26 @@ fn cwd_basename(cwd: &Path) -> String {
         .unwrap_or_else(|| "workspace".to_string())
 }
 
+/// Maximum bytes for the sanitized basename portion of a workspace bridge
+/// bucket, leaving room for the hyphen separator and the 12-character hex
+/// hash (6 bytes × 2 hex digits) on filesystems with a 255-byte filename
+/// limit.
+const MAX_BUCKET_BASENAME_BYTES: usize = 242;
+
 fn workspace_bridge_bucket(cwd: &Path) -> String {
     let digest = Sha256::digest(cwd.to_string_lossy().as_bytes());
     let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
-    format!("{}-{}", cwd_basename(cwd), hex)
+    let basename = cwd_basename(cwd);
+    let truncated = if basename.len() > MAX_BUCKET_BASENAME_BYTES {
+        basename
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_BUCKET_BASENAME_BYTES)
+            .map(|(_, ch)| ch)
+            .collect()
+    } else {
+        basename
+    };
+    format!("{}-{}", truncated, hex)
 }
 
 pub(crate) fn workspace_bridge_root(app_data_dir: &Path, cwd: &Path) -> PathBuf {
@@ -231,7 +295,7 @@ pub fn generate_bridge_files(
     let settings = serde_json::json!({
         "statusLine": {
             "type": "command",
-            "command": script_path.to_string_lossy(),
+            "command": shell_quote_path(&script_path.to_string_lossy()),
             "refreshInterval": 5
         }
     });
@@ -376,6 +440,43 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.starts_with(&app_data));
         assert!(second.starts_with(&app_data));
+    }
+
+    #[test]
+    fn workspace_bridge_bucket_truncates_long_basenames() {
+        let app_data = PathBuf::from("/tmp/vimeflow-data");
+        let long_name = "a".repeat(300);
+        let cwd = PathBuf::from(format!("/tmp/{long_name}"));
+
+        let bucket = workspace_bridge_bucket(&cwd);
+        let bucket_bytes = bucket.as_bytes();
+        assert!(
+            bucket_bytes.len() <= 255,
+            "bucket component must fit in a 255-byte filesystem filename: {bucket}"
+        );
+        // Truncated basename + hyphen + 6-char hash.
+        assert_eq!(
+            bucket.matches('-').count(),
+            1,
+            "bucket should contain exactly one separator: {bucket}"
+        );
+        let (basename, hash) = bucket.rsplit_once('-').unwrap();
+        assert_eq!(hash.len(), 12, "hash suffix should be 12 hex chars");
+        assert_eq!(basename.len(), MAX_BUCKET_BASENAME_BYTES);
+    }
+
+    #[test]
+    fn shell_quote_path_quotes_metacharacters() {
+        assert_eq!(shell_quote_path("/safe/path"), "/safe/path");
+        assert_eq!(
+            shell_quote_path("/Users/foo/Application Support/vimeflow/statusline.sh"),
+            "'/Users/foo/Application Support/vimeflow/statusline.sh'"
+        );
+        assert_eq!(
+            shell_quote_path("/path/with'quote/statusline.sh"),
+            "'/path/with'\\''quote/statusline.sh'"
+        );
+        assert_eq!(shell_quote_path(""), "''");
     }
 
     #[test]

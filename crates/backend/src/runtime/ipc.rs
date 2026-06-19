@@ -774,6 +774,48 @@ mod router {
                 state.e2e_seed_live_agent(p.session_id, p.agent_type)?;
                 Ok(Value::Null)
             }
+            #[cfg(feature = "e2e-test")]
+            "e2e_emit_agent_status" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                    status: crate::agent::types::AgentStatusEvent,
+                    num_turns: u32,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.e2e_emit_agent_status(p.session_id, p.status, p.num_turns)?;
+                Ok(Value::Null)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_start_codex_watcher" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                    home_dir: std::path::PathBuf,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let rollout_path = state.e2e_start_codex_watcher(p.session_id, p.home_dir).await?;
+                Ok(serde_json::to_value(rollout_path.to_string_lossy().to_string())
+                    .map_err(|e| format!("serialize rollout path: {e}"))?)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_start_kimi_watcher" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                    home_dir: std::path::PathBuf,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let wire_path = state.e2e_start_kimi_watcher(p.session_id, p.home_dir).await?;
+                Ok(serde_json::to_value(wire_path.to_string_lossy().to_string())
+                    .map_err(|e| format!("serialize wire path: {e}"))?)
+            }
             #[cfg(test)]
             "__test_sleep_then_null" => {
                 #[derive(Deserialize)]

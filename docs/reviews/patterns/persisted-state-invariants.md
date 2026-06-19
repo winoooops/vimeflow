@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-19
-ref_count: 4
+ref_count: 5
 ---
 
 # Persisted State Invariants
@@ -102,4 +102,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `src/features/terminal/layout-registry/layoutDefinition.ts`
 - **Finding:** `gridAreaNameForSlotId` replaces non-alphanumeric characters with `-`, so distinct ids such as `slot:a b` and `slot:a-b` map to the same CSS grid-area name. A persisted custom layout passing validation could therefore place multiple panes in one grid area, causing overlap or an invalid grid template at runtime.
 - **Fix:** Added `duplicate-grid-area` validation in `validateSlots` that rejects layouts whose sanitized slot ids produce colliding grid-area names.
+- **Commit:** same commit as this entry
+
+### 11. `SessionCache` derived `app_data_dir` implicitly from its cache-file parent
+
+- **Source:** github-claude | PR #563 cycle 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/cache.rs` L87-89 (original)
+- **Finding:** `SessionCache::app_data_dir()` derived the Vimeflow data root by calling `.parent()` on `self.path` (`sessions.json`). The invariant that the cache file is always a direct child of `app_data_dir` was established by convention in `BackendState::new` and not enforced by the type system. Moving the cache path (e.g., `db/sessions.json`) would silently write bridge/status files under the wrong parent with no compile-time or runtime warning.
+- **Fix:** Stored `app_data_dir: PathBuf` explicitly in `SessionCache`, initialized it in `SessionCache::new`/`with_path`, and added `BackendState::with_app_data_dir` so the root is pinned once at construction rather than inferred from the cache path. `spawn_pty_inner` now uses the explicit field instead of `cache.app_data_dir()`.
 - **Commit:** same commit as this entry

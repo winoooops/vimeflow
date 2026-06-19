@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-06-15
-ref_count: 8
+last_updated: 2026-06-19
+ref_count: 9
 ---
 
 # E2E Testing
@@ -227,3 +227,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** The core WDIO config keeps Mocha's per-test timeout at 30s, but the browser overlay spec can legitimately spend more than that across sequential helper waits: 20s for the terminal, 10s for the split slot, 15s for the browser pane, 15s for CDP registration, plus the command-palette and bounds-capture waits. On a cold CI run Mocha aborted the test with a generic timeout even though the helper-specific budgets were still in progress, hiding the real bottleneck.
 - **Fix:** Chained `.timeout(60_000)` on the `it(…)` call — the Mocha `Runnable.prototype.timeout()` API — in the browser overlay spec, giving the sequential waits enough headroom while leaving the project-wide 30s default in place for faster specs. This keeps the timeout local to the one spec that needs it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Codex/Kimi E2E status tests bypassed the real watcher pipeline
+
+- **Source:** github-claude + local-codex verify | PR #563 cycle 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts` L225-240 (original), plus new backend E2E helpers
+- **Finding:** The Claude status test wrote a real `status.json`, started the real file watcher, and waited for the sidebar to update. The Codex/Kimi equivalent injected `agent-status`/`agent-turn` events directly through the renderer E2E bridge, testing React rendering but not the Rust-to-frontend event pipeline or the agent-specific filesystem/watcher paths.
+- **Fix:** Added backend E2E helpers `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` that seed a hermetic agent home (`~/.codex` or `KIMI_CODE_HOME`), create the locator-recognizable session directories and metadata, start the real agent watcher, restore the original env, and return the fixture path for the test to write. The spec now exercises real watcher ingestion for both Codex and Kimi before emitting agent-turn events.
+- **Commit:** same commit as this entry

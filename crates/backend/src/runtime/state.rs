@@ -1,8 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
+
+#[cfg(feature = "e2e-test")]
+use rusqlite::{params, Connection};
 
 use crate::agent::types::{
-    AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
+    AgentStatusEvent, AgentTurnEvent, AgentType, RenameAgentSessionError,
+    RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
@@ -64,9 +69,11 @@ impl BackendState {
         let layouts_path = app_data_dir.join("workspace-layouts.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
-            app_data_dir,
+            app_data_dir: app_data_dir.clone(),
             pty: PtyState::new(),
-            sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
+            sessions: Arc::new(
+                SessionCache::load_or_recover(cache_path).with_app_data_dir(app_data_dir),
+            ),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
@@ -472,6 +479,216 @@ impl BackendState {
             .insert_agent_type_for_test(self.transcripts.clone(), session_id, agent_type);
 
         Ok(())
+    }
+
+    /// Emit `agent-status` and `agent-turn` events through the backend's
+    /// EventSink. Used by E2E tests to exercise the backend serialization
+    /// and IPC path for Codex/Kimi without requiring a live agent process or
+    /// transcript fixtures. The file-watcher path remains tested separately
+    /// for Claude; this helper narrows the gap for agents whose watcher
+    /// fixtures are not yet hermetic in CI.
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_emit_agent_status(
+        &self,
+        session_id: String,
+        status: AgentStatusEvent,
+        num_turns: u32,
+    ) -> Result<(), String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let turn = AgentTurnEvent {
+            session_id: session_id.clone(),
+            num_turns,
+        };
+
+        let status_payload =
+            crate::runtime::event_sink::serialize_event(&status).map_err(|e| format!("{e}"))?;
+        let turn_payload =
+            crate::runtime::event_sink::serialize_event(&turn).map_err(|e| format!("{e}"))?;
+
+        self.events.emit_json("agent-status", status_payload)?;
+        self.events.emit_json("agent-turn", turn_payload)?;
+        Ok(())
+    }
+
+    /// Set up a hermetic Codex home under `home_dir`, seed the locator
+    /// SQLite databases so the Codex watcher can resolve a rollout file for
+    /// `session_id`, start the watcher, then restore the original `HOME`.
+    /// Returns the absolute path to the empty rollout file the test should
+    /// write to.
+    #[cfg(feature = "e2e-test")]
+    pub async fn e2e_start_codex_watcher(
+        &self,
+        session_id: String,
+        home_dir: PathBuf,
+    ) -> Result<PathBuf, String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let cwd = self
+            .pty
+            .get_cwd(&session_id)
+            .ok_or_else(|| format!("cwd not found for session {session_id}"))?;
+        let pty_start = self
+            .pty
+            .get_started_at(&session_id)
+            .ok_or_else(|| format!("start time not found for session {session_id}"))?;
+
+        let codex_home = home_dir.join(".codex");
+        let sessions_dir = codex_home
+            .join("sessions")
+            .join("2026")
+            .join("06")
+            .join("19");
+        let rollout_path = sessions_dir.join(format!("rollout-{session_id}.jsonl"));
+
+        std::fs::create_dir_all(&sessions_dir)
+            .map_err(|e| format!("create codex sessions dir: {e}"))?;
+        std::fs::write(&rollout_path, b"")
+            .map_err(|e| format!("create empty rollout: {e}"))?;
+
+        let since_epoch = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("pty_start before epoch: {e}"))?;
+        let secs = since_epoch.as_secs() as i64;
+        let nanos = since_epoch.subsec_nanos() as i64;
+        let updated_at_ms = secs * 1000 + nanos / 1_000_000;
+
+        let state_db = codex_home.join("state.sqlite");
+        let state = Connection::open(&state_db).map_err(|e| format!("open state db: {e}"))?;
+        state
+            .execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT PRIMARY KEY,
+                    rollout_path TEXT NOT NULL,
+                    cwd TEXT,
+                    updated_at_ms INTEGER NOT NULL
+                );",
+            )
+            .map_err(|e| format!("create threads table: {e}"))?;
+        state
+            .execute(
+                "INSERT INTO threads (id, rollout_path, cwd, updated_at_ms)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    format!("tid-e2e-{session_id}"),
+                    rollout_path.to_str().ok_or("rollout path is not utf-8")?,
+                    cwd,
+                    updated_at_ms,
+                ],
+            )
+            .map_err(|e| format!("insert thread row: {e}"))?;
+
+        let logs_db = codex_home.join("logs.sqlite");
+        let logs = Connection::open(&logs_db).map_err(|e| format!("open logs db: {e}"))?;
+        logs.execute_batch(
+            "CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                ts_nanos INTEGER NOT NULL,
+                level TEXT,
+                target TEXT,
+                process_uuid TEXT NOT NULL,
+                thread_id TEXT
+            );
+            CREATE INDEX idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
+        )
+        .map_err(|e| format!("create logs table: {e}"))?;
+
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &home_dir);
+        let result = self.start_agent_watcher(session_id.clone()).await;
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        result?;
+
+        Ok(rollout_path)
+    }
+
+    /// Set up a hermetic Kimi home under `home_dir`, seed the locator
+    /// filesystem layout so the Kimi watcher can resolve a wire file for
+    /// `session_id`, start the watcher, then restore the original
+    /// `KIMI_CODE_HOME`. Returns the absolute path to the wire file the test
+    /// should write to.
+    #[cfg(feature = "e2e-test")]
+    pub async fn e2e_start_kimi_watcher(
+        &self,
+        session_id: String,
+        home_dir: PathBuf,
+    ) -> Result<PathBuf, String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let cwd = self
+            .pty
+            .get_cwd(&session_id)
+            .ok_or_else(|| format!("cwd not found for session {session_id}"))?;
+        let pty_start = self
+            .pty
+            .get_started_at(&session_id)
+            .ok_or_else(|| format!("start time not found for session {session_id}"))?;
+
+        let since_epoch = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("pty_start before epoch: {e}"))?;
+        let created_at_ms = since_epoch.as_millis() as u64 + 1000;
+
+        let cwd_path = PathBuf::from(&cwd);
+        let basename = cwd_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        let bucket = {
+            use sha2::{Digest, Sha256};
+            let digest = Sha256::digest(cwd.as_bytes());
+            let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+            format!("wd_{basename}_{hex}")
+        };
+        let session_dir_name = format!("session_e2e_{session_id}");
+        let session_dir = home_dir
+            .join("sessions")
+            .join(&bucket)
+            .join(&session_dir_name);
+        let wire_path = session_dir.join("agents").join("main").join("wire.jsonl");
+
+        std::fs::create_dir_all(wire_path.parent().expect("wire parent"))
+            .map_err(|e| format!("create kimi wire dirs: {e}"))?;
+        std::fs::write(
+            &wire_path,
+            format!(
+                "{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"
+            ),
+        )
+        .map_err(|e| format!("create kimi wire: {e}"))?;
+
+        let index_path = home_dir.join("session_index.jsonl");
+        std::fs::write(
+            &index_path,
+            format!(
+                "{{\"sessionId\":\"{}\",\"sessionDir\":\"{}\",\"workDir\":\"{}\"}}\n",
+                session_dir_name,
+                session_dir.to_str().ok_or("session dir is not utf-8")?,
+                cwd,
+            ),
+        )
+        .map_err(|e| format!("create kimi index: {e}"))?;
+
+        let prev_kimi_home = std::env::var_os("KIMI_CODE_HOME");
+        std::env::set_var("KIMI_CODE_HOME", &home_dir);
+        let result = self.start_agent_watcher(session_id).await;
+        match prev_kimi_home {
+            Some(v) => std::env::set_var("KIMI_CODE_HOME", v),
+            None => std::env::remove_var("KIMI_CODE_HOME"),
+        }
+        result?;
+
+        Ok(wire_path)
     }
 }
 
