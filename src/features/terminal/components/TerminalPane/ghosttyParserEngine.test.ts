@@ -36,6 +36,18 @@ const createByteChunk = (
   phase,
 })
 
+const createRawByteChunk = (
+  bytes: Uint8Array,
+  offsetStart: number,
+  phase: TerminalOutputChunk['phase']
+): TerminalOutputChunk => ({
+  text: 'lossy fallback',
+  bytesBase64: encodeBase64(bytes),
+  offsetStart,
+  byteLen: bytes.length,
+  phase,
+})
+
 describe('ghosttyParserEngine', () => {
   test('exposes the Ghostty spike identity and byte-preferring capabilities', () => {
     const engine = createGhosttyParserEngine()
@@ -53,6 +65,27 @@ describe('ghosttyParserEngine', () => {
         visibleText: 'bytes win',
       }
     )
+  })
+
+  test('receives raw byte payloads at the Ghostty parser boundary', () => {
+    const engine = createGhosttyParserEngine()
+    const parseInput = vi.spyOn(engine, 'parseInput')
+    const bytes = new Uint8Array([0xff, 0xfe])
+
+    expect(engine.parseOutput(createRawByteChunk(bytes, 2, 'live'))).toEqual({
+      visibleText: '��',
+    })
+
+    expect(parseInput).toHaveBeenCalledWith({
+      inputMode: 'bytes',
+      text: '��',
+      bytes,
+      output: {
+        offsetStart: 2,
+        byteLen: 2,
+        phase: 'live',
+      },
+    })
   })
 
   test('falls back to text when byte payloads are unreadable', () => {

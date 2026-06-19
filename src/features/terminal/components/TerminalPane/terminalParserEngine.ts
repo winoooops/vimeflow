@@ -6,7 +6,10 @@ import type {
   TerminalRendererCapabilities,
 } from '../../types'
 import { TerminalControlSequenceParser } from './terminalControlParser'
-import { TerminalOutputPayloadRouter } from './terminalOutputPayload'
+import {
+  TerminalOutputPayloadRouter,
+  type TerminalOutputPayloadSelection,
+} from './terminalOutputPayload'
 
 export interface TerminalParserEngineOutput {
   readonly visibleText: string
@@ -14,6 +17,10 @@ export interface TerminalParserEngineOutput {
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode
+
+export type TerminalParserEngineInput = TerminalOutputPayloadSelection & {
+  readonly output: TerminalParserOutputContext | null
+}
 
 export interface TerminalParserEngineOptions {
   readonly capabilities: TerminalRendererCapabilities
@@ -29,6 +36,7 @@ export interface TerminalParserEngine {
     text: string,
     output: TerminalParserOutputContext | null
   ) => TerminalParserEngineOutput
+  parseInput: (input: TerminalParserEngineInput) => TerminalParserEngineOutput
   parseOutput: (chunk: TerminalOutputChunk) => TerminalParserEngineOutput
 }
 
@@ -66,10 +74,17 @@ export class TerminalControlSequenceParserEngine implements TerminalParserEngine
     return this.parser.transformDisplayOutput(text, output)
   }
 
+  parseInput(input: TerminalParserEngineInput): TerminalParserEngineOutput {
+    return this.parseText(input.text, input.output)
+  }
+
   parseOutput(chunk: TerminalOutputChunk): TerminalParserEngineOutput {
     const selection = this.outputRouter.read(chunk)
 
-    return this.parseText(selection.text, outputContextFromChunk(chunk))
+    return this.parseInput({
+      ...selection,
+      output: outputContextFromChunk(chunk),
+    })
   }
 }
 

@@ -8,6 +8,8 @@ import type {
 import {
   TerminalControlSequenceParserEngine,
   createControlSequenceTerminalParserEngine,
+  type TerminalParserEngineInput,
+  type TerminalParserEngineOutput,
 } from './terminalParserEngine'
 
 const textOnlyCapabilities: TerminalRendererCapabilities = {
@@ -75,6 +77,16 @@ const createByteEngine = (): TerminalControlSequenceParserEngine =>
     capabilities: bytePreferredCapabilities,
   })
 
+class RecordingParserEngine extends TerminalControlSequenceParserEngine {
+  readonly inputs: TerminalParserEngineInput[] = []
+
+  parseInput(input: TerminalParserEngineInput): TerminalParserEngineOutput {
+    this.inputs.push(input)
+
+    return super.parseInput(input)
+  }
+}
+
 describe('terminal parser engine input modes', () => {
   test('text mode records its input mode and ignores byte payloads', () => {
     const engine = createTextEngine()
@@ -95,6 +107,37 @@ describe('terminal parser engine input modes', () => {
         visibleText: 'bytes win',
       }
     )
+  })
+
+  test('byte mode passes raw bytes to parser input before decoding fallback text', () => {
+    const engine = new RecordingParserEngine({
+      capabilities: bytePreferredCapabilities,
+    })
+
+    const bytes = new Uint8Array([0xff, 0xfe])
+
+    expect(
+      engine.parseOutput({
+        text: 'fallback',
+        bytesBase64: encodeBase64(bytes),
+        offsetStart: 10,
+        byteLen: bytes.length,
+        phase: 'live',
+      })
+    ).toEqual({ visibleText: '��' })
+
+    expect(engine.inputs).toEqual([
+      {
+        inputMode: 'bytes',
+        text: '��',
+        bytes,
+        output: {
+          offsetStart: 10,
+          byteLen: 2,
+          phase: 'live',
+        },
+      },
+    ])
   })
 
   test('control parser class exposes the configured capabilities', () => {
