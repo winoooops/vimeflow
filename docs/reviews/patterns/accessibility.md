@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 25
+last_updated: 2026-06-19
+ref_count: 26
 ---
 
 # Accessibility
@@ -656,4 +656,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/SettingsDialog.tsx` L174
 - **Finding:** When a keyboard user activated an option search result, the target row (marked `tabIndex={-1}`) received focus, but the dialog focus trap only indexed `[tabindex]:not([tabindex="-1"])`. The next Tab saw `currentIndex === -1` and jumped to the close button, so keyboard users could not continue from the search result they just opened.
 - **Fix:** Added `orderedFocusable(dialog)` to include the currently focused programmatic target row in the trap's ordering (sorted by DOM position), so Tab from a focused target moves to the next focusable control naturally. Added a co-located test asserting Tab from a focused search result lands on the setting control.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 72. Settings search arrow navigation lacks combobox active-descendant semantics
+
+- **Source:** github-claude | PR #540 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx` L65-74
+- **Finding:** The PR added ArrowUp/ArrowDown handling that changes the selected sidebar result while keyboard focus remains on the search input, but the input stayed a plain textbox. Screen-reader users had no reliable announcement of the active sidebar option when navigating results, so the new keyboard workflow was effectively invisible to assistive technology.
+- **Fix:** Promoted the search input to `role="combobox"` with `aria-expanded`, `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant` pointing at the active result. Gave every section and target result button a stable id so the active-descendant reference is valid. Added co-located tests asserting the combobox attributes and active-descendant targets.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -36,12 +36,51 @@ describe('SettingsSidebar', () => {
     onQuery: vi.fn(),
   }
 
-  test('renders the search input with accessible name', () => {
+  test('renders the search input as a combobox with accessible name', () => {
     render(<SettingsSidebar {...baseProps} />)
 
     expect(
-      screen.getByRole('textbox', { name: 'Search settings' })
+      screen.getByRole('combobox', { name: 'Search settings' })
     ).toBeInTheDocument()
+  })
+
+  test('exposes combobox list semantics on the search input', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    expect(input).toHaveAttribute('aria-autocomplete', 'list')
+    expect(input).toHaveAttribute('aria-controls', 'settings-search-results')
+    expect(input).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test('points aria-activedescendant at the active section result', () => {
+    render(<SettingsSidebar {...baseProps} active="keymap" />)
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute('aria-activedescendant', 'settings-search-result-section-keymap')
+  })
+
+  test('points aria-activedescendant at the active target result', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        active="general"
+        activeTargetId={redactTarget.id}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      `settings-search-result-target-${redactTarget.id}`
+    )
   })
 
   test('renders all section buttons', () => {
@@ -102,7 +141,7 @@ describe('SettingsSidebar', () => {
       />
     )
 
-    await user.click(screen.getByRole('textbox', { name: 'Search settings' }))
+    await user.click(screen.getByRole('combobox', { name: 'Search settings' }))
     await user.keyboard('{ArrowDown}{ArrowUp}{Enter}')
 
     expect(onNavigateSearchResult).toHaveBeenNthCalledWith(1, 'next')

@@ -2,9 +2,19 @@ import { useRef, type KeyboardEvent, type ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import type {
   SettingsSearchNavigationDirection,
+  SettingsSectionId,
   SettingsSidebarProps,
+  SettingsTargetId,
 } from '../types'
 import { Icon } from './Icon'
+
+const SEARCH_RESULTS_ID = 'settings-search-results'
+
+const sectionResultId = (id: SettingsSectionId): string =>
+  `settings-search-result-section-${id}`
+
+const targetResultId = (id: SettingsTargetId): string =>
+  `settings-search-result-target-${id}`
 
 export const SettingsSidebar = ({
   sections,
@@ -20,6 +30,16 @@ export const SettingsSidebar = ({
   onQuery,
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const activeResultId =
+    activeTargetId !== null &&
+    targets.some((target) => target.id === activeTargetId)
+      ? targetResultId(activeTargetId)
+      : sections.some((section) => section.id === active)
+        ? sectionResultId(active)
+        : undefined
+
+  const hasResults = sections.length > 0 || targets.length > 0
 
   const handleClearQuery = (): void => {
     onClearQuery()
@@ -70,6 +90,11 @@ export const SettingsSidebar = ({
             onKeyDown={handleSearchKeyDown}
             placeholder="Search settings..."
             aria-label="Search settings"
+            role="combobox"
+            aria-expanded={hasResults}
+            aria-autocomplete="list"
+            aria-controls={SEARCH_RESULTS_ID}
+            aria-activedescendant={activeResultId}
             className="min-w-0 flex-1 border-none bg-transparent font-body text-xs text-on-surface outline-none placeholder:text-on-surface-muted"
           />
           {query.trim() !== '' && (
@@ -87,7 +112,10 @@ export const SettingsSidebar = ({
         </div>
       </div>
 
-      <nav className="thin-scrollbar flex-1 overflow-auto px-2 pb-3.5">
+      <nav
+        id={SEARCH_RESULTS_ID}
+        className="thin-scrollbar flex-1 overflow-auto px-2 pb-3.5"
+      >
         {sections.map((s) => {
           const isActive = s.id === active
 
@@ -98,6 +126,7 @@ export const SettingsSidebar = ({
           return (
             <div key={s.id} className="mb-px">
               <button
+                id={sectionResultId(s.id)}
                 type="button"
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => onPick(s.id)}
@@ -129,6 +158,7 @@ export const SettingsSidebar = ({
 
                     return (
                       <button
+                        id={targetResultId(target.id)}
                         key={target.id}
                         type="button"
                         aria-current={isTargetActive ? 'location' : undefined}
