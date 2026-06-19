@@ -273,9 +273,6 @@ describe('SettingsDialog', () => {
   test('navigates search results with arrow keys without leaving the search field', async () => {
     const user = userEvent.setup()
 
-    const scrollIntoView = vi
-      .spyOn(Element.prototype, 'scrollIntoView')
-      .mockImplementation(() => undefined)
     render(<SettingsDialog open onClose={vi.fn()} />)
 
     const input = screen.getByPlaceholderText('Search settings...')
@@ -288,16 +285,20 @@ describe('SettingsDialog', () => {
     )
 
     await waitFor(() => {
-      expect(target).toHaveAttribute('data-settings-target-active', 'true')
+      expect(
+        screen.getByRole('option', {
+          name: 'Redact Private Values',
+          current: 'location',
+        })
+      ).toHaveAttribute('aria-selected', 'true')
     })
 
     expect(input).toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
     expect(
       screen.getByRole('option', { name: 'General', current: 'page' })
     ).toBeInTheDocument()
-    expect(scrollIntoView).toHaveBeenCalled()
-
-    scrollIntoView.mockRestore()
   })
 
   test('starts default arrow navigation at the first visible search result', async () => {
@@ -318,50 +319,44 @@ describe('SettingsDialog', () => {
   test('exits search on Enter and uses slash to resume editing', async () => {
     const user = userEvent.setup()
 
-    const scrollIntoView = vi
-      .spyOn(Element.prototype, 'scrollIntoView')
-      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
 
-    try {
-      render(<SettingsDialog open onClose={vi.fn()} />)
+    const input = screen.getByPlaceholderText('Search settings...')
 
-      const input = screen.getByPlaceholderText('Search settings...')
+    await user.type(input, 'redact')
+    await user.keyboard('{Enter}')
 
-      await user.type(input, 'redact')
-      await user.keyboard('{Enter}')
+    const target = screen.getByTestId(
+      `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+    )
 
-      const target = screen.getByTestId(
-        `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
-      )
-
-      await waitFor(() => {
-        expect(input).not.toHaveFocus()
-      })
-
-      expect(target).not.toHaveFocus()
-      expect(
-        screen.getByTestId('settings-search-resume-hint')
-      ).toBeInTheDocument()
-
-      await user.keyboard('j')
-
-      expect(input).toHaveValue('redact')
+    await waitFor(() => {
       expect(input).not.toHaveFocus()
-      expect(target).not.toHaveFocus()
+    })
 
-      await user.keyboard('/')
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
+    expect(
+      screen.getByTestId('settings-search-resume-hint')
+    ).toBeInTheDocument()
 
-      expect(input).toHaveFocus()
-      expect(
-        screen.queryByTestId('settings-search-resume-hint')
-      ).not.toBeInTheDocument()
+    await user.keyboard('j')
 
-      await user.keyboard('s')
+    expect(input).toHaveValue('redact')
+    expect(input).not.toHaveFocus()
+    expect(target).not.toHaveFocus()
+    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
-      expect(input).toHaveValue('redacts')
-    } finally {
-      scrollIntoView.mockRestore()
-    }
+    await user.keyboard('/')
+
+    expect(input).toHaveFocus()
+    expect(
+      screen.queryByTestId('settings-search-resume-hint')
+    ).not.toBeInTheDocument()
+
+    await user.keyboard('s')
+
+    expect(input).toHaveValue('redacts')
   })
 
   test('scrolls active settings content with d and u', async () => {
@@ -411,132 +406,114 @@ describe('SettingsDialog', () => {
   test('navigates settings sections and subsections with j, k, and arrow keys outside search input', async () => {
     const user = userEvent.setup()
 
-    const scrollIntoView = vi
-      .spyOn(Element.prototype, 'scrollIntoView')
-      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
 
-    try {
-      render(<SettingsDialog open onClose={vi.fn()} />)
+    await user.keyboard('j')
 
-      await user.keyboard('j')
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Theme', current: 'location' })
-        ).toHaveAttribute('aria-selected', 'true')
-      })
-
+    await waitFor(() => {
       expect(
-        screen.getByTestId(
-          `settings-target-${SETTINGS_TARGET_IDS.appearanceColorScheme}`
-        )
-      ).not.toHaveAttribute('data-settings-target-active', 'true')
+        screen.getByRole('option', { name: 'Theme', current: 'location' })
+      ).toHaveAttribute('aria-selected', 'true')
+    })
 
-      await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.appearanceColorScheme}`
+      )
+    ).not.toHaveAttribute('data-settings-target-active', 'true')
 
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Interface', current: 'location' })
-        ).toHaveAttribute('aria-selected', 'true')
-      })
+    await user.keyboard('{ArrowDown}')
 
-      await user.keyboard('j')
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Fonts', current: 'location' })
-        ).toHaveAttribute('aria-selected', 'true')
-      })
-
-      await user.keyboard('{ArrowDown}')
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Keymap', current: 'page' })
-        ).toBeInTheDocument()
-      })
-
-      await user.keyboard('k')
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Fonts', current: 'location' })
-        ).toHaveAttribute('aria-selected', 'true')
-      })
-
+    await waitFor(() => {
       expect(
-        screen.getByTestId(
-          `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
-        )
-      ).not.toHaveAttribute('data-settings-target-active', 'true')
-      expect(scrollIntoView).not.toHaveBeenCalled()
-    } finally {
-      scrollIntoView.mockRestore()
-    }
+        screen.getByRole('option', { name: 'Interface', current: 'location' })
+      ).toHaveAttribute('aria-selected', 'true')
+    })
+
+    await user.keyboard('j')
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('option', { name: 'Fonts', current: 'location' })
+      ).toHaveAttribute('aria-selected', 'true')
+    })
+
+    await user.keyboard('{ArrowDown}')
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('option', { name: 'Keymap', current: 'page' })
+      ).toBeInTheDocument()
+    })
+
+    await user.keyboard('k')
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('option', { name: 'Fonts', current: 'location' })
+      ).toHaveAttribute('aria-selected', 'true')
+    })
+
+    expect(
+      screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+      )
+    ).not.toHaveAttribute('data-settings-target-active', 'true')
   })
 
   test('starts navigation from the scrolled content viewport', async () => {
     const user = userEvent.setup()
 
-    const scrollIntoView = vi
-      .spyOn(Element.prototype, 'scrollIntoView')
-      .mockImplementation(() => undefined)
+    render(<SettingsDialog open onClose={vi.fn()} />)
 
-    try {
-      render(<SettingsDialog open onClose={vi.fn()} />)
+    const content = screen.getByTestId('settings-dialog-content')
+    let scrollTop = 0
 
-      const content = screen.getByTestId('settings-dialog-content')
-      let scrollTop = 0
+    Object.defineProperty(content, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value
+      },
+    })
 
-      Object.defineProperty(content, 'scrollTop', {
-        configurable: true,
-        get: () => scrollTop,
-        set: (value: number) => {
-          scrollTop = value
-        },
-      })
+    const scrollBy = vi.fn((options: ScrollToOptions) => {
+      scrollTop += options.top ?? 0
+    })
 
-      const scrollBy = vi.fn((options: ScrollToOptions) => {
-        scrollTop += options.top ?? 0
-      })
+    Object.defineProperty(content, 'scrollBy', {
+      configurable: true,
+      value: scrollBy,
+    })
 
-      Object.defineProperty(content, 'scrollBy', {
-        configurable: true,
-        value: scrollBy,
-      })
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(
+      makeRect(100, 300)
+    )
 
-      vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(
-        makeRect(100, 300)
-      )
+    vi.spyOn(
+      screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+      ),
+      'getBoundingClientRect'
+    ).mockReturnValue(makeRect(120, 160))
 
-      vi.spyOn(
-        screen.getByTestId(
-          `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
-        ),
-        'getBoundingClientRect'
-      ).mockReturnValue(makeRect(120, 160))
+    vi.spyOn(
+      screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.appearanceMonoFont}`
+      ),
+      'getBoundingClientRect'
+    ).mockReturnValue(makeRect(170, 210))
 
-      vi.spyOn(
-        screen.getByTestId(
-          `settings-target-${SETTINGS_TARGET_IDS.appearanceMonoFont}`
-        ),
-        'getBoundingClientRect'
-      ).mockReturnValue(makeRect(170, 210))
+    await user.keyboard('d')
+    await user.keyboard('j')
 
-      await user.keyboard('d')
-      await user.keyboard('j')
+    await waitFor(() => {
+      expect(
+        screen.getByRole('option', { name: 'Keymap', current: 'page' })
+      ).toBeInTheDocument()
+    })
 
-      await waitFor(() => {
-        expect(
-          screen.getByRole('option', { name: 'Keymap', current: 'page' })
-        ).toBeInTheDocument()
-      })
-
-      expect(scrollBy).toHaveBeenCalledTimes(1)
-      expect(scrollIntoView).not.toHaveBeenCalled()
-    } finally {
-      scrollIntoView.mockRestore()
-    }
+    expect(scrollBy).toHaveBeenCalledTimes(1)
   })
 
   test('does not confirm a search result on Enter with an empty query and no selection', async () => {

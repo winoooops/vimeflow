@@ -15,7 +15,7 @@ import type {
   SettingsSubsectionId,
   SettingsTargetId,
 } from '../types'
-import { resultKeyToAriaId } from '../search'
+import { resultKeyToAriaId, settingsTargetResultKey } from '../search'
 import { Icon } from './Icon'
 
 const SEARCH_RESULTS_ID = 'settings-search-results'
@@ -51,7 +51,9 @@ export const SettingsSidebar = ({
   onQuery,
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const navRef = useRef<HTMLElement>(null)
   const previousActiveRef = useRef<SettingsSectionId | null>(null)
+  const previousActiveResultIdRef = useRef<string | undefined>(undefined)
 
   const [uncontrolledExpandedSectionIds, setUncontrolledExpandedSectionIds] =
     useState<Set<SettingsSectionId>>(() => new Set([active]))
@@ -142,6 +144,33 @@ export const SettingsSidebar = ({
       : resultKeyToAriaId(activeSearchResultKey)
 
   const hasResults = sections.length > 0 || targets.length > 0
+
+  useEffect(() => {
+    const previousActiveResultId = previousActiveResultIdRef.current
+    previousActiveResultIdRef.current = activeResultId
+
+    if (activeResultId === undefined) {
+      return
+    }
+
+    if (
+      previousActiveResultId === undefined ||
+      previousActiveResultId === activeResultId
+    ) {
+      return
+    }
+
+    const activeElement = document.getElementById(activeResultId)
+    if (
+      activeElement === null ||
+      navRef.current?.contains(activeElement) !== true ||
+      typeof activeElement.scrollIntoView !== 'function'
+    ) {
+      return
+    }
+
+    activeElement.scrollIntoView({ block: 'nearest' })
+  }, [activeResultId])
 
   const handleClearQuery = (): void => {
     onClearQuery()
@@ -257,6 +286,7 @@ export const SettingsSidebar = ({
       </div>
 
       <nav
+        ref={navRef}
         id={SEARCH_RESULTS_ID}
         role="listbox"
         className="thin-scrollbar flex-1 overflow-auto px-2 pb-3.5"
@@ -349,7 +379,9 @@ export const SettingsSidebar = ({
               {shouldShowTargets && (
                 <div className="mt-0.5 mb-1 space-y-px pl-5">
                   {sectionTargets.map((target) => {
-                    const isTargetActive = target.id === activeTargetId
+                    const isTargetActive =
+                      target.id === activeTargetId ||
+                      activeSearchResultKey === settingsTargetResultKey(target)
 
                     return (
                       <button

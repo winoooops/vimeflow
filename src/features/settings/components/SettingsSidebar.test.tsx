@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { describe, expect, test, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   SETTINGS_SECTIONS,
@@ -8,6 +8,7 @@ import {
   SETTINGS_TARGET_IDS,
   SETTINGS_TARGETS,
 } from '../sections'
+import type { SettingsSectionId } from '../types'
 import { SettingsSidebar } from './SettingsSidebar'
 
 const redactTarget = SETTINGS_TARGETS.find(
@@ -201,6 +202,46 @@ describe('SettingsSidebar', () => {
     expect(
       screen.getByRole('option', { name: 'Fonts', current: 'location' })
     ).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('scrolls the active navigation option into view after it changes', async () => {
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+
+    try {
+      const expandedSectionIds = new Set<SettingsSectionId>([
+        'appearance',
+        'keymap',
+      ])
+
+      const { rerender } = render(
+        <SettingsSidebar
+          {...baseProps}
+          subsections={SETTINGS_SUBSECTIONS}
+          activeSubsectionId="appearance-theme"
+          expandedSectionIds={expandedSectionIds}
+        />
+      )
+
+      expect(scrollIntoView).not.toHaveBeenCalled()
+
+      rerender(
+        <SettingsSidebar
+          {...baseProps}
+          active="keymap"
+          subsections={SETTINGS_SUBSECTIONS}
+          activeSubsectionId="keymap-browser"
+          expandedSectionIds={expandedSectionIds}
+        />
+      )
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
   })
 
   test('keeps search target rows instead of subsection rows while searching', () => {

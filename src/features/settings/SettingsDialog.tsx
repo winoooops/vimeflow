@@ -250,6 +250,20 @@ export const SettingsDialog = ({
     const { target } = result
     expandSection(target.section)
     setSection(target.section)
+
+    if (activationMode === 'preserve-search-focus') {
+      const subsection = SETTINGS_SUBSECTIONS.find(
+        (candidate) =>
+          candidate.section === target.section &&
+          candidate.targetIds.includes(target.id)
+      )
+
+      setActiveTargetId(null)
+      setActiveSidebarSubsectionId(subsection?.id ?? null)
+
+      return
+    }
+
     setActiveTargetId(target.id)
     setActiveSidebarSubsectionId(null)
     setTargetNavigationKey((key) => key + 1)
