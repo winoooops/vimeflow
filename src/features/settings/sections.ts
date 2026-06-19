@@ -234,72 +234,84 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     section: 'general',
     label: 'When Closing With No Tabs',
     hint: "What to do when using the 'close active item' action with no tabs.",
+    subsection: 'Window lifecycle',
   },
   {
     id: SETTINGS_TARGET_IDS.generalOnLastWindowClosed,
     section: 'general',
     label: 'On Last Window Closed',
     hint: 'What to do when the last window is closed.',
+    subsection: 'Window lifecycle',
   },
   {
     id: SETTINGS_TARGET_IDS.generalUseSystemPathPrompts,
     section: 'general',
     label: 'Use System Path Prompts',
     hint: "Use native OS dialogs for 'Open' and 'Save As'.",
+    subsection: 'Prompts',
   },
   {
     id: SETTINGS_TARGET_IDS.generalUseSystemPrompts,
     section: 'general',
     label: 'Use System Prompts',
     hint: 'Use native OS dialogs for confirmations.',
+    subsection: 'Prompts',
   },
   {
     id: SETTINGS_TARGET_IDS.generalRedactPrivateValues,
     section: 'general',
     label: 'Redact Private Values',
     hint: 'Hide the values of variables in private files.',
+    subsection: 'Privacy',
   },
   {
     id: SETTINGS_TARGET_IDS.generalCliOpenBehavior,
     section: 'general',
     label: 'CLI Default Open Behavior',
     hint: 'How `vf <path>` opens directories when no flag is specified.',
+    subsection: 'CLI',
   },
   {
     id: SETTINGS_TARGET_IDS.appearanceColorScheme,
     section: 'appearance',
     label: 'Color Scheme',
     hint: 'The base palette for all surfaces, text, and accents.',
+    subsection: 'Theme',
   },
   {
     id: SETTINGS_TARGET_IDS.appearanceAccentHue,
     section: 'appearance',
     label: 'Accent Hue',
     hint: 'Shift the primary accent around the wheel.',
+    subsection: 'Theme',
   },
   {
     id: SETTINGS_TARGET_IDS.appearanceDensity,
     section: 'appearance',
     label: 'Density',
     hint: 'Compact for power users; comfortable for readability.',
+    subsection: 'Interface',
   },
   {
     id: SETTINGS_TARGET_IDS.appearanceUiFont,
     section: 'appearance',
     label: 'UI Font',
     hint: 'Sans-serif used for labels, sidebars, headings.',
+    subsection: 'Fonts',
   },
   {
     id: SETTINGS_TARGET_IDS.appearanceMonoFont,
     section: 'appearance',
     label: 'Mono Font',
     hint: 'Used in the terminal, editor, and all code blocks.',
+    subsection: 'Fonts',
   },
   {
     id: SETTINGS_TARGET_IDS.keymapPreset,
     section: 'keymap',
     label: 'Preset',
     hint: 'Switch between the default Vimeflow binding set and Vim-style bindings.',
+    subsection: 'Base Keymap',
   },
   ...CATALOG.filter((cmd) => KEYMAP_TARGET_GROUPS.has(cmd.group)).map(
     (cmd): SettingsTarget => ({
@@ -307,6 +319,7 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
       section: 'keymap',
       label: cmd.label,
       hint: `${cmd.group} shortcut`,
+      subsection: cmd.group,
     })
   ),
   ...KEYMAP_GROUPS.filter(
@@ -318,6 +331,7 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
         section: 'keymap',
         label: binding.label,
         hint: `${group.zone} shortcut`,
+        subsection: group.zone,
       })
     )
   ),
@@ -326,12 +340,14 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     section: 'agents',
     label: 'Manage agent shell aliases',
     hint: "Vimeflow injects these into each pane's PTY environment.",
+    subsection: 'Aliases',
   },
   {
     id: SETTINGS_TARGET_IDS.agentsShellAliases,
     section: 'agents',
     label: 'Shell aliases',
     hint: 'Type the alias in any pane and Vimeflow swaps it for the full agent invocation.',
+    subsection: 'Aliases',
   },
 ]
 

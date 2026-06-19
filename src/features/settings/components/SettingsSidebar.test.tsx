@@ -86,6 +86,27 @@ describe('SettingsSidebar', () => {
     )
   })
 
+  test('uses the selected search result key for aria-activedescendant', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        active="general"
+        activeSearchResultKey={`target:${redactTarget.id}`}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      `settings-search-result-target-${redactTarget.id}`
+    )
+  })
+
   test('renders the result list as a listbox', () => {
     render(<SettingsSidebar {...baseProps} />)
 

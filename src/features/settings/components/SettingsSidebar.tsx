@@ -16,11 +16,24 @@ const sectionResultId = (id: SettingsSectionId): string =>
 const targetResultId = (id: SettingsTargetId): string =>
   `settings-search-result-target-${id}`
 
+const resultIdFromKey = (key: string): string | undefined => {
+  if (key.startsWith('section:')) {
+    return sectionResultId(key.slice('section:'.length) as SettingsSectionId)
+  }
+
+  if (key.startsWith('target:')) {
+    return targetResultId(key.slice('target:'.length))
+  }
+
+  return undefined
+}
+
 export const SettingsSidebar = ({
   sections,
   targets = [],
   active,
   activeTargetId = null,
+  activeSearchResultKey = null,
   onPick,
   onPickTarget = (): void => undefined,
   onClearQuery = (): void => undefined,
@@ -31,13 +44,18 @@ export const SettingsSidebar = ({
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  const activeResultId =
+  const fallbackActiveResultId =
     activeTargetId !== null &&
     targets.some((target) => target.id === activeTargetId)
       ? targetResultId(activeTargetId)
       : sections.some((section) => section.id === active)
         ? sectionResultId(active)
         : undefined
+
+  const activeResultId =
+    activeSearchResultKey === null
+      ? fallbackActiveResultId
+      : resultIdFromKey(activeSearchResultKey)
 
   const hasResults = sections.length > 0 || targets.length > 0
 

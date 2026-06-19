@@ -3,12 +3,17 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type {
   SettingsDialogProps,
   SettingsSearchNavigationDirection,
-  SettingsSection,
   SettingsSectionId,
   SettingsTarget,
   SettingsTargetId,
 } from './types'
 import { SETTINGS_SECTIONS, SETTINGS_TARGETS } from './sections'
+import {
+  searchSettings,
+  settingsSectionResultKey,
+  settingsTargetResultKey,
+  type SettingsSearchResult,
+} from './search'
 import { Icon } from './components/Icon'
 import { Tooltip } from '@/components/Tooltip'
 import { Kbd } from './components/Kbd'
@@ -26,23 +31,6 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'keymap',
   'agents',
 ]
-
-const matchesQuery = (
-  value: string | undefined,
-  normalizedQuery: string
-): boolean => value?.toLowerCase().includes(normalizedQuery) ?? false
-
-type SettingsSearchResult =
-  | {
-      key: string
-      kind: 'section'
-      section: SettingsSection
-    }
-  | {
-      key: string
-      kind: 'target'
-      target: SettingsTarget
-    }
 
 type TargetFocusMode = 'focus-target' | 'preserve-search-focus'
 
@@ -105,56 +93,14 @@ export const SettingsDialog = ({
   const contentRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
-  const normalizedQuery = query.trim().toLowerCase()
-
-  const sectionMatches = normalizedQuery
-    ? SETTINGS_SECTIONS.filter((s) => matchesQuery(s.label, normalizedQuery))
-    : SETTINGS_SECTIONS
-
-  const targetMatches = normalizedQuery
-    ? SETTINGS_TARGETS.filter(
-        (target) =>
-          matchesQuery(target.label, normalizedQuery) ||
-          matchesQuery(target.hint, normalizedQuery)
-      )
-    : []
-
-  const filteredSectionIds = new Set<SettingsSectionId>([
-    ...sectionMatches.map((s) => s.id),
-    ...targetMatches.map((target) => target.section),
-  ])
-
-  const filtered = normalizedQuery
-    ? SETTINGS_SECTIONS.filter((s) => filteredSectionIds.has(s.id))
-    : SETTINGS_SECTIONS
-
-  const sectionMatchIds = new Set<SettingsSectionId>(
-    sectionMatches.map((s) => s.id)
-  )
-
-  const searchResults = filtered.flatMap((s): SettingsSearchResult[] => {
-    const results: SettingsSearchResult[] = []
-
-    if (!normalizedQuery || sectionMatchIds.has(s.id)) {
-      results.push({
-        key: `section:${s.id}`,
-        kind: 'section',
-        section: s,
-      })
-    }
-
-    targetMatches
-      .filter((target) => target.section === s.id)
-      .forEach((target) => {
-        results.push({
-          key: `target:${target.id}`,
-          kind: 'target',
-          target,
-        })
-      })
-
-    return results
+  const searchModel = searchSettings({
+    sections: SETTINGS_SECTIONS,
+    targets: SETTINGS_TARGETS,
+    query,
   })
+  const filtered = searchModel.sections
+  const targetMatches = searchModel.targets
+  const searchResults = searchModel.results
 
   const activeSearchResultKey =
     selectedSearchResultKey !== null &&
@@ -167,7 +113,7 @@ export const SettingsDialog = ({
   const handlePickSection = (id: SettingsSectionId): void => {
     setSection(id)
     setActiveTargetId(null)
-    setSelectedSearchResultKey(`section:${id}`)
+    setSelectedSearchResultKey(settingsSectionResultKey(id))
   }
 
   const handleQuery = (nextQuery: string): void => {
@@ -203,11 +149,18 @@ export const SettingsDialog = ({
   }
 
   const handlePickTarget = (target: SettingsTarget): void => {
+    const owningSection = SETTINGS_SECTIONS.find((s) => s.id === target.section)
+    if (owningSection === undefined) {
+      return
+    }
+
     applySearchResult(
       {
-        key: `target:${target.id}`,
+        key: settingsTargetResultKey(target),
         kind: 'target',
+        section: owningSection,
         target,
+        score: 0,
       },
       'focus-target'
     )
@@ -251,7 +204,7 @@ export const SettingsDialog = ({
         : searchResults.find((result) => result.key === activeSearchResultKey)
 
     const resultToConfirm =
-      currentResult ?? (normalizedQuery ? searchResults[0] : undefined)
+      currentResult ?? (query.trim() ? searchResults[0] : undefined)
 
     if (!resultToConfirm) {
       return
@@ -399,6 +352,7 @@ export const SettingsDialog = ({
                 targets={targetMatches}
                 active={section}
                 activeTargetId={activeTargetId}
+                activeSearchResultKey={activeSearchResultKey}
                 onPick={handlePickSection}
                 onPickTarget={handlePickTarget}
                 onClearQuery={handleClearQuery}
