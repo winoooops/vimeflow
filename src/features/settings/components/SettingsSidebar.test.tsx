@@ -59,7 +59,10 @@ describe('SettingsSidebar', () => {
 
     expect(
       screen.getByRole('combobox', { name: 'Search settings' })
-    ).toHaveAttribute('aria-activedescendant', 'settings-search-result-section-keymap')
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      'settings-search-result-section-keymap'
+    )
   })
 
   test('points aria-activedescendant at the active target result', () => {
