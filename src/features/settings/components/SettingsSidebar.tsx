@@ -212,7 +212,6 @@ export const SettingsSidebar = ({
                 role="option"
                 aria-selected={isActive}
                 aria-current={isActive ? 'page' : undefined}
-                aria-expanded={hasTreeChildren ? isExpanded : undefined}
                 onClick={() => handlePickSection(s.id, sectionSubsections)}
                 className={`relative flex w-full items-center gap-2 rounded-md border-none px-2.5 py-1.5 text-left font-body text-[13px] transition-colors ${
                   isActive
