@@ -1,5 +1,8 @@
 // cspell:ignore ghostty
-import type { TerminalParserOutputContext } from '../../types'
+import type {
+  TerminalParserEvent,
+  TerminalParserOutputContext,
+} from '../../types'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 import {
   TerminalControlSequenceParserEngine,
@@ -14,6 +17,7 @@ export interface GhosttyByteParserAdapterInput {
   readonly bytes: Uint8Array
   readonly decodedText: string
   readonly output: TerminalParserOutputContext | null
+  readonly emitEvent: (event: TerminalParserEvent) => void
 }
 
 export interface GhosttyByteParserAdapter {
@@ -21,6 +25,7 @@ export interface GhosttyByteParserAdapter {
     input: GhosttyByteParserAdapterInput
   ) => TerminalParserEngineOutput
   reset?: () => void
+  dispose?: () => void
 }
 
 export interface GhosttyParserEngineOptions {
@@ -59,6 +64,7 @@ export class GhosttyControlSequenceParserEngine
 {
   readonly id: typeof GHOSTTY_PARSER_ENGINE_ID = GHOSTTY_PARSER_ENGINE_ID
   private readonly byteParserAdapter: GhosttyByteParserAdapter
+  private isDisposed = false
 
   constructor(options: GhosttyParserEngineOptions = {}) {
     super({
@@ -80,12 +86,24 @@ export class GhosttyControlSequenceParserEngine
         bytes: input.bytes,
         decodedText: input.text,
         output: input.output,
+        emitEvent: (event) => {
+          this.parser.emitEvent(event)
+        },
       })
     }
 
     this.byteParserAdapter.reset?.()
 
     return super.parseInput(input)
+  }
+
+  dispose(): void {
+    if (this.isDisposed) {
+      return
+    }
+
+    this.isDisposed = true
+    this.byteParserAdapter.dispose?.()
   }
 }
 

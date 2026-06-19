@@ -25,6 +25,7 @@ export interface GhosttyTerminalOptions {
 
 class GhosttyTerminalModel {
   private readonly parserEngine: TerminalParserEngine
+  private isRendererDisposed = false
   readonly terminal: TerminalTextSurface
   readonly parser: TerminalParser
 
@@ -66,7 +67,12 @@ class GhosttyTerminalModel {
 
   readonly rendererHandle: TerminalRendererHandle = {
     dispose: (): void => {
-      // The current Ghostty spike has no renderer addon lifecycle.
+      if (this.isRendererDisposed) {
+        return
+      }
+
+      this.isRendererDisposed = true
+      this.parserEngine.dispose?.()
     },
   }
 

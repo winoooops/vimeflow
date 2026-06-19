@@ -38,6 +38,7 @@ export interface TerminalParserEngine {
   ) => TerminalParserEngineOutput
   parseInput: (input: TerminalParserEngineInput) => TerminalParserEngineOutput
   parseOutput: (chunk: TerminalOutputChunk) => TerminalParserEngineOutput
+  dispose?: () => void
 }
 
 const outputContextFromChunk = (

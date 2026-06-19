@@ -114,8 +114,62 @@ describe('ghosttyParserEngine', () => {
         byteLen: 2,
         phase: 'live',
       },
+      emitEvent: expect.any(Function),
     })
     expect(reset).not.toHaveBeenCalled()
+  })
+
+  test('routes adapter parser events through the existing parser surface', () => {
+    const parseBytes = vi.fn((input: GhosttyByteParserAdapterInput) => {
+      input.emitEvent({
+        type: 'cwd',
+        source: 'osc7',
+        uri: 'file://localhost/tmp/ghostty-vt',
+        output: input.output,
+      })
+
+      return { visibleText: 'from-adapter' }
+    })
+
+    const engine = createGhosttyParserEngine({
+      byteParserAdapter: { parseBytes },
+    })
+
+    const handler = vi.fn()
+    engine.parser.onEvent(handler)
+
+    expect(
+      engine.parseOutput(createRawByteChunk(new Uint8Array([0x47]), 11, 'live'))
+    ).toEqual({
+      visibleText: 'from-adapter',
+    })
+
+    expect(handler).toHaveBeenCalledWith({
+      type: 'cwd',
+      source: 'osc7',
+      uri: 'file://localhost/tmp/ghostty-vt',
+      output: {
+        offsetStart: 11,
+        byteLen: 1,
+        phase: 'live',
+      },
+    })
+  })
+
+  test('disposes the Ghostty byte parser adapter once', () => {
+    const dispose = vi.fn()
+
+    const engine = createGhosttyParserEngine({
+      byteParserAdapter: {
+        parseBytes: vi.fn(() => ({ visibleText: '' })),
+        dispose,
+      },
+    })
+
+    engine.dispose?.()
+    engine.dispose?.()
+
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   test('falls back to text when byte payloads are unreadable', () => {
