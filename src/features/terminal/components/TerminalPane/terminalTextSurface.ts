@@ -19,6 +19,7 @@ const MIN_COLS = 2
 const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
+const MEASURED_CHAR_SAMPLE_LENGTH = 80
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -82,6 +83,12 @@ const readContainedSelection = (root: HTMLElement): string => {
   return selection.toString()
 }
 
+const parseCssPixels = (value: string): number => {
+  const parsed = Number.parseFloat(value)
+
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 const getKeyboardData = (event: KeyboardEvent): string | null => {
   if (event.metaKey || event.altKey) {
     return null
@@ -123,10 +130,13 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly resizeHandlers = new Set<(size: TerminalSize) => void>()
   private readonly selectionHandlers = new Set<() => void>()
   private readonly keyHandlers = new Set<TerminalKeyEventHandler>()
-  private readonly outputBuffer = new TerminalDisplayBuffer()
+  private readonly outputBuffer = new TerminalDisplayBuffer({
+    columns: DEFAULT_COLS,
+  })
   private container: HTMLElement | null = null
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
+  private cachedCharacterWidth: number | null = null
   private lastSelectionText = ''
   private disposed = false
 
@@ -137,21 +147,28 @@ export class TerminalTextSurface implements TerminalSurface {
 
     Object.assign(this.root.style, {
       height: '100%',
+      maxWidth: '100%',
       minHeight: '0',
-      overflow: 'auto',
+      overflowX: 'hidden',
+      overflowY: 'auto',
       position: 'relative',
+      width: '100%',
     })
 
     Object.assign(this.output.style, {
       boxSizing: 'border-box',
+      display: 'block',
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: `${TERMINAL_FONT_SIZE}px`,
       lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
       margin: '0',
+      maxWidth: '100%',
       minHeight: '100%',
+      overflowX: 'hidden',
       padding: '8px',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
+      whiteSpace: 'normal',
+      width: '100%',
+      wordBreak: 'normal',
     })
 
     Object.assign(this.input.style, {
@@ -374,9 +391,11 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
+    const contentWidth = Math.max(0, width - this.readOutputHorizontalPadding())
+
     const nextCols = Math.max(
       MIN_COLS,
-      Math.floor(width / APPROXIMATE_CHAR_WIDTH)
+      Math.floor(contentWidth / this.measureCharacterWidth())
     )
 
     const nextRows = Math.max(
@@ -390,6 +409,7 @@ export class TerminalTextSurface implements TerminalSurface {
 
     this.colsValue = nextCols
     this.rowsValue = nextRows
+    this.outputBuffer.setColumns(nextCols)
     this.notifyResize()
   }
 
@@ -449,21 +469,78 @@ export class TerminalTextSurface implements TerminalSurface {
     })
   }
 
+  private readOutputHorizontalPadding(): number {
+    const style = window.getComputedStyle(this.output)
+
+    return (
+      parseCssPixels(style.paddingLeft) + parseCssPixels(style.paddingRight)
+    )
+  }
+
+  private measureCharacterWidth(): number {
+    if (this.cachedCharacterWidth !== null) {
+      return this.cachedCharacterWidth
+    }
+
+    const probe = document.createElement('span')
+    probe.textContent = '0'.repeat(MEASURED_CHAR_SAMPLE_LENGTH)
+
+    Object.assign(probe.style, {
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: `${TERMINAL_FONT_SIZE}px`,
+      lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      pointerEvents: 'none',
+      position: 'absolute',
+      visibility: 'hidden',
+      whiteSpace: 'pre',
+    })
+
+    this.root.append(probe)
+    const width = probe.getBoundingClientRect().width
+    probe.remove()
+
+    if (width <= 0) {
+      return APPROXIMATE_CHAR_WIDTH
+    }
+
+    this.cachedCharacterWidth = width / MEASURED_CHAR_SAMPLE_LENGTH
+
+    return this.cachedCharacterWidth
+  }
+
   private createCursorElement(): HTMLElement {
     const cursor = document.createElement('span')
+    const marker = document.createElement('span')
+
     cursor.dataset.terminalCursor = 'true'
     cursor.setAttribute('aria-hidden', 'true')
+    marker.dataset.terminalCursorMarker = 'true'
 
     Object.assign(cursor.style, {
-      borderLeft: '2px solid var(--terminal-cursor-color)',
       display: 'inline-block',
       height: '1em',
-      marginRight: '-2px',
       pointerEvents: 'none',
+      position: 'relative',
       userSelect: 'none',
       verticalAlign: '-0.12em',
       width: '0',
     })
+
+    Object.assign(marker.style, {
+      animationDuration: '1.1s',
+      animationIterationCount: 'infinite',
+      animationName: 'vfTerminalCursorBlink',
+      animationTimingFunction: 'steps(1, end)',
+      backgroundColor: 'var(--terminal-cursor-color)',
+      display: 'block',
+      height: '1em',
+      left: '0',
+      position: 'absolute',
+      top: '0',
+      width: '0.62em',
+    })
+
+    cursor.append(marker)
 
     return cursor
   }
@@ -522,7 +599,7 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private appendRunFragment(
-    fragments: Node[],
+    parent: HTMLElement,
     text: string,
     style: TerminalDisplayStyle
   ): void {
@@ -530,69 +607,118 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    fragments.push(this.createTextNode(text, style))
+    parent.append(this.createTextNode(text, style))
+  }
+
+  private createOutputRow(): HTMLElement {
+    const row = document.createElement('span')
+    row.dataset.terminalRow = 'true'
+
+    Object.assign(row.style, {
+      display: 'block',
+      maxWidth: '100%',
+      minHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      overflowX: 'hidden',
+      whiteSpace: 'pre',
+      width: '100%',
+    })
+
+    return row
   }
 
   private createOutputFragments(
     runs: readonly TerminalDisplayRun[],
     cursorOffset: number
   ): Node[] {
-    const fragments: Node[] = []
+    const rows: HTMLElement[] = [this.createOutputRow()]
     let offset = 0
-    let didRenderCursor = false
+    const cursorState = { didRender: false }
+    let currentRow = rows[0]
 
-    for (const run of runs) {
-      const runStart = offset
-      const runEnd = runStart + run.text.length
+    const appendCursor = (): void => {
+      currentRow.append(this.createCursorElement())
+      cursorState.didRender = true
+    }
+
+    const appendSegment = (text: string, style: TerminalDisplayStyle): void => {
+      if (text.length === 0) {
+        return
+      }
+
+      const segmentStart = offset
+      const segmentEnd = segmentStart + text.length
 
       if (
-        !didRenderCursor &&
-        cursorOffset >= runStart &&
-        cursorOffset <= runEnd
+        !cursorState.didRender &&
+        cursorOffset >= segmentStart &&
+        cursorOffset <= segmentEnd
       ) {
-        const splitOffset = cursorOffset - runStart
+        const splitOffset = cursorOffset - segmentStart
 
         if (
           splitOffset > 0 &&
-          splitOffset < run.text.length &&
-          this.hasStyle(run.style)
+          splitOffset < text.length &&
+          this.hasStyle(style)
         ) {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
-          this.applyStyleToElement(runElement, run.style)
+          this.applyStyleToElement(runElement, style)
           runElement.append(
-            document.createTextNode(run.text.slice(0, splitOffset)),
+            document.createTextNode(text.slice(0, splitOffset)),
             this.createCursorElement(),
-            document.createTextNode(run.text.slice(splitOffset))
+            document.createTextNode(text.slice(splitOffset))
           )
-          fragments.push(runElement)
-          didRenderCursor = true
+          currentRow.append(runElement)
+          cursorState.didRender = true
         } else {
-          this.appendRunFragment(
-            fragments,
-            run.text.slice(0, splitOffset),
-            run.style
-          )
-          fragments.push(this.createCursorElement())
-          didRenderCursor = true
-          this.appendRunFragment(
-            fragments,
-            run.text.slice(splitOffset),
-            run.style
-          )
+          this.appendRunFragment(currentRow, text.slice(0, splitOffset), style)
+          appendCursor()
+          this.appendRunFragment(currentRow, text.slice(splitOffset), style)
         }
       } else {
-        this.appendRunFragment(fragments, run.text, run.style)
+        this.appendRunFragment(currentRow, text, style)
       }
 
-      offset = runEnd
+      offset = segmentEnd
     }
 
-    if (!didRenderCursor) {
-      fragments.push(this.createCursorElement())
+    const appendNewline = (): void => {
+      if (!cursorState.didRender && cursorOffset === offset) {
+        appendCursor()
+      }
+
+      offset += 1
+      const newlineMarker = document.createElement('span')
+      newlineMarker.style.fontSize = '0'
+      newlineMarker.appendChild(document.createTextNode('\n'))
+      currentRow.appendChild(newlineMarker)
+      currentRow = this.createOutputRow()
+      rows.push(currentRow)
     }
 
-    return fragments
+    for (const run of runs) {
+      let segmentStart = 0
+
+      while (segmentStart < run.text.length) {
+        const newlineIndex = run.text.indexOf('\n', segmentStart)
+
+        if (newlineIndex === -1) {
+          appendSegment(run.text.slice(segmentStart), run.style)
+          segmentStart = run.text.length
+          continue
+        }
+
+        appendSegment(run.text.slice(segmentStart, newlineIndex), run.style)
+        appendNewline()
+        segmentStart = newlineIndex + 1
+      }
+    }
+
+    if (!cursorState.didRender) {
+      appendCursor()
+    }
+
+    return rows
   }
 
   private renderOutput(): void {

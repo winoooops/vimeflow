@@ -1,3 +1,4 @@
+// cspell:ignore xhigh
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { themeService } from '../../../../theme'
 import {
@@ -83,16 +84,46 @@ describe('plainTextInstance', () => {
     created.terminal.open(container)
 
     expect(container.firstElementChild).toBe(created.terminal.element)
-    expect(created.terminal.cols).toBe(80)
+    expect(created.terminal.cols).toBe(78)
     expect(created.terminal.rows).toBe(20)
-    expect(resizeHandler).toHaveBeenCalledWith({ cols: 80, rows: 20 })
+    expect(resizeHandler).toHaveBeenCalledWith({ cols: 78, rows: 20 })
 
     setElementSize(container, 400, 180)
     created.fitController.fit()
 
-    expect(created.terminal.cols).toBe(50)
+    expect(created.terminal.cols).toBe(48)
     expect(created.terminal.rows).toBe(10)
-    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 50, rows: 10 })
+    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 48, rows: 10 })
+  })
+
+  test('clamps renderer output to the pane width', () => {
+    const created = createTrackedPlainTextTerminal()
+    const container = document.createElement('div')
+
+    setElementSize(container, 640, 360)
+    created.terminal.open(container)
+
+    const root = created.terminal.element
+    const output = root?.querySelector('pre')
+
+    expect(root?.style.overflowX).toBe('hidden')
+    expect(root?.style.overflowY).toBe('auto')
+    expect(root?.style.maxWidth).toBe('100%')
+    expect(root?.style.width).toBe('100%')
+    expect(output?.style.boxSizing).toBe('border-box')
+    expect(output?.style.maxWidth).toBe('100%')
+    expect(output?.style.overflowX).toBe('hidden')
+    expect(output?.style.whiteSpace).toBe('normal')
+    expect(output?.style.width).toBe('100%')
+    expect(output?.style.wordBreak).toBe('normal')
+
+    const row = output?.querySelector('[data-terminal-row="true"]')
+
+    expect(row).toBeInstanceOf(HTMLElement)
+    expect((row as HTMLElement | null)?.style.maxWidth).toBe('100%')
+    expect((row as HTMLElement | null)?.style.overflowX).toBe('hidden')
+    expect((row as HTMLElement | null)?.style.whiteSpace).toBe('pre')
+    expect((row as HTMLElement | null)?.style.width).toBe('100%')
   })
 
   test('writes output chunks into the viewport reader', () => {
@@ -129,6 +160,32 @@ describe('plainTextInstance', () => {
     expect(cursor).not.toBeNull()
     expect(output?.textContent).toBe('')
     expect(created.viewportReader.readVisibleText()).toBe('')
+  })
+
+  test('renders the visual cursor as a blinking block marker', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write('abc')
+
+    const output = created.terminal.element?.querySelector('pre')
+
+    const cursor = output?.querySelector(
+      '[data-terminal-cursor="true"]'
+    ) as HTMLElement | null
+
+    const marker = cursor?.querySelector(
+      '[data-terminal-cursor-marker="true"]'
+    ) as HTMLElement | null
+
+    expect(output?.textContent).toBe('abc')
+    expect(cursor?.style.position).toBe('relative')
+    expect(cursor?.style.width).toBe('0px')
+    expect(marker?.style.backgroundColor).toBe('var(--terminal-cursor-color)')
+    expect(marker?.style.borderLeft).toBe('')
+    expect(marker?.style.animationName).toBe('vfTerminalCursorBlink')
+    expect(marker?.style.position).toBe('absolute')
+    expect(marker?.style.width).toBe('0.62em')
+    expect(created.viewportReader.readVisibleText()).toBe('abc')
   })
 
   test('places the visual cursor at the renderer buffer offset', () => {
@@ -271,6 +328,97 @@ describe('plainTextInstance', () => {
     created.terminal.write('S\x1b[1DSt\x1b[2DSta\x1b[3DStart')
 
     expect(created.viewportReader.readVisibleText()).toBe('Start')
+  })
+
+  test('keeps previous soft-wrapped input rows when the wrapped tail redraws', () => {
+    const created = createTrackedPlainTextTerminal()
+    const container = document.createElement('div')
+
+    setElementSize(container, 56, 180)
+    created.terminal.open(container)
+    created.terminal.write('abcdef')
+    created.terminal.write('\r\x1b[Kgh')
+
+    expect(created.terminal.cols).toBe(5)
+    expect(created.viewportReader.readVisibleText()).toBe('abcde\ngh')
+
+    const rows = created.terminal.element?.querySelectorAll(
+      '[data-terminal-row="true"]'
+    )
+
+    expect(rows).toHaveLength(2)
+    expect(rows?.[0]?.textContent).toBe('abcde\n')
+    expect(rows?.[1]?.textContent).toBe('gh')
+  })
+
+  test('rewrites Codex MCP progress output that redraws previous rows', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write(
+      'Starting MCP servers (1/3): codex_apps\nlinear pending'
+    )
+
+    // cspell:disable-next-line
+    created.terminal.write(
+      '\x1b[1A\r\x1b[2K' +
+        'Starting MCP servers (2/3): codex_apps, linear\n' +
+        '\x1b[2K' +
+        'linear ready'
+    )
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'Starting MCP servers (2/3): codex_apps, linear\nlinear ready'
+    )
+    expect(created.viewportReader.readVisibleText()).not.toContain('(1/3)')
+    expect(created.viewportReader.readVisibleText()).not.toContain('pending')
+  })
+
+  test('rewrites Codex startup TUI output positioned by absolute cursor controls', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write(
+      '\x1b[2J\x1b[1;1H>_ OpenAI Codex' +
+        '\x1b[1;42H' +
+        'model: loading' +
+        '\x1b[2;1H~/projects/aws' +
+        '\x1b[3;1HStarting MCP servers (1/3): codex_apps'
+    )
+
+    created.terminal.write(
+      '\x1b[1;42H\x1b[K' +
+        'model: gpt-5.5 default' +
+        '\x1b[3;1H\x1b[2KStarting MCP servers (2/3): codex_apps, linear'
+    )
+
+    const visibleText = created.viewportReader.readVisibleText()
+
+    expect(visibleText).toContain('>_ OpenAI Codex')
+    expect(visibleText).toContain('model: gpt-5.5 default')
+    expect(visibleText).toContain(
+      'Starting MCP servers (2/3): codex_apps, linear'
+    )
+    expect(visibleText).not.toContain('loading')
+    expect(visibleText).not.toContain('(1/3)')
+    expect(visibleText.match(/Starting MCP servers/g)).toHaveLength(1)
+  })
+
+  test('erases stale rows below the cursor during TUI redraws', () => {
+    const created = createTrackedPlainTextTerminal()
+
+    created.terminal.write(
+      '› Summarize recent commits\n' +
+        '› gpt-5.5 xhigh · ~/projects/aws\n' +
+        '  gpt-5.5 xhigh · ~/projects/aws'
+    )
+
+    created.terminal.write('\x1b[2;1H\x1b[J› gpt-5.5 xhigh · ~/projects/aws')
+
+    const visibleText = created.viewportReader.readVisibleText()
+
+    expect(visibleText).toBe(
+      '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
+    )
+    expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
   })
 
   test('erases from line start to cursor inclusive in erase-line mode 1', () => {
@@ -551,8 +699,9 @@ describe('plainTextInstance', () => {
     created.terminal.write('inside terminal')
     sibling.textContent = 'outside pane'
 
-    const outputText =
-      created.terminal.element?.querySelector('pre')?.firstChild
+    const outputText = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )?.firstChild
     const siblingText = sibling.firstChild
 
     if (!outputText || !siblingText) {
@@ -582,8 +731,9 @@ describe('plainTextInstance', () => {
     created.terminal.write('inside terminal')
     created.terminal.onSelectionChange(listener)
 
-    const outputText =
-      created.terminal.element?.querySelector('pre')?.firstChild
+    const outputText = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )?.firstChild
 
     if (!outputText) {
       throw new Error('selection test requires terminal text node')

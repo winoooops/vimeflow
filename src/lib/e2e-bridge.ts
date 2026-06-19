@@ -135,6 +135,31 @@ const getVisibleSessionId = (): string | null => {
   return pane?.dataset.sessionId ?? null
 }
 
+export const getVisibleTerminalSize = (): {
+  readonly cols: number
+  readonly rows: number
+} | null => {
+  const pane = findActivePane()
+  if (!pane) {
+    return null
+  }
+
+  const sessionId = resolveCacheKey(pane)
+  if (!sessionId) {
+    return null
+  }
+
+  const entry = terminalCache.get(sessionId)
+  if (!entry) {
+    return null
+  }
+
+  return {
+    cols: entry.terminal.cols,
+    rows: entry.terminal.rows,
+  }
+}
+
 export const writeOutputToVisibleTerminal = (data: string): boolean => {
   const pane = findActivePane()
   if (!pane) {
@@ -170,6 +195,7 @@ if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
     getTerminalBufferForSession: readTerminalBufferForSession,
+    getVisibleTerminalSize,
     getVisibleSessionId,
     getActiveSessionIds: getAllPtySessionIds,
     listActivePtySessions: async (): Promise<string[]> =>

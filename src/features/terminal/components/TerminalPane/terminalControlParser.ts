@@ -20,6 +20,15 @@ const CURSOR_LEFT_SENTINEL = '\u{F0004}'
 const CURSOR_RIGHT_SENTINEL = '\u{F0005}'
 const SGR_STYLE_SENTINEL_START = '\u{F0006}'
 const SGR_STYLE_SENTINEL_END = '\u{F0007}'
+const CURSOR_UP_SENTINEL = '\u{F0008}'
+const CURSOR_DOWN_SENTINEL = '\u{F0009}'
+const CURSOR_POSITION_SENTINEL_START = '\u{F000A}'
+const CURSOR_POSITION_SENTINEL_END = '\u{F000B}'
+const ERASE_DISPLAY_SENTINELS = ['\u{F000C}', '\u{F000D}']
+const SAVE_CURSOR_SENTINEL = '\u{F000E}'
+const RESTORE_CURSOR_SENTINEL = '\u{F000F}'
+const CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START = '\u{F0010}'
+const CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END = '\u{F0011}'
 
 export interface TerminalControlSequenceOutput {
   readonly visibleText: string
@@ -31,14 +40,45 @@ export interface SgrStyleSentinel {
   readonly length: number
 }
 
+export interface CursorPositionSentinel {
+  readonly row: number
+  readonly column: number
+  readonly length: number
+}
+
+export interface CursorHorizontalAbsoluteSentinel {
+  readonly column: number
+  readonly length: number
+}
+
 export const getEraseLineSentinel = (mode: 0 | 1 | 2): string =>
   ERASE_LINE_SENTINELS[mode]
+
+export const getEraseDisplaySentinel = (mode: 0 | 1): string =>
+  ERASE_DISPLAY_SENTINELS[mode]
 
 export const getClearScreenSentinel = (): string => CLEAR_SCREEN_SENTINEL
 
 export const getCursorLeftSentinel = (): string => CURSOR_LEFT_SENTINEL
 
 export const getCursorRightSentinel = (): string => CURSOR_RIGHT_SENTINEL
+
+export const getCursorUpSentinel = (): string => CURSOR_UP_SENTINEL
+
+export const getCursorDownSentinel = (): string => CURSOR_DOWN_SENTINEL
+
+export const getCursorPositionSentinel = (
+  row: number,
+  column: number
+): string =>
+  `${CURSOR_POSITION_SENTINEL_START}${row};${column}${CURSOR_POSITION_SENTINEL_END}`
+
+export const getCursorHorizontalAbsoluteSentinel = (column: number): string =>
+  `${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START}${column}${CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END}`
+
+export const getSaveCursorSentinel = (): string => SAVE_CURSOR_SENTINEL
+
+export const getRestoreCursorSentinel = (): string => RESTORE_CURSOR_SENTINEL
 
 export const getSgrStyleSentinel = (parameters: readonly number[]): string =>
   `${SGR_STYLE_SENTINEL_START}${parameters.join(';')}${SGR_STYLE_SENTINEL_END}`
@@ -55,6 +95,18 @@ export const getEraseLineModeFromSentinel = (
   return index as 0 | 1 | 2
 }
 
+export const getEraseDisplayModeFromSentinel = (
+  character: string
+): 0 | 1 | null => {
+  const index = ERASE_DISPLAY_SENTINELS.indexOf(character)
+
+  if (index === -1) {
+    return null
+  }
+
+  return index as 0 | 1
+}
+
 export const isClearScreenSentinel = (character: string): boolean =>
   character === CLEAR_SCREEN_SENTINEL
 
@@ -63,6 +115,83 @@ export const isCursorLeftSentinel = (character: string): boolean =>
 
 export const isCursorRightSentinel = (character: string): boolean =>
   character === CURSOR_RIGHT_SENTINEL
+
+export const isCursorUpSentinel = (character: string): boolean =>
+  character === CURSOR_UP_SENTINEL
+
+export const isCursorDownSentinel = (character: string): boolean =>
+  character === CURSOR_DOWN_SENTINEL
+
+export const isSaveCursorSentinel = (character: string): boolean =>
+  character === SAVE_CURSOR_SENTINEL
+
+export const isRestoreCursorSentinel = (character: string): boolean =>
+  character === RESTORE_CURSOR_SENTINEL
+
+export const isCursorHorizontalAbsoluteSentinel = (
+  character: string
+): boolean => character === CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START
+
+export const readCursorPositionSentinel = (
+  data: string,
+  startIndex: number
+): CursorPositionSentinel | null => {
+  if (!data.startsWith(CURSOR_POSITION_SENTINEL_START, startIndex)) {
+    return null
+  }
+
+  const contentStart = startIndex + CURSOR_POSITION_SENTINEL_START.length
+  const contentEnd = data.indexOf(CURSOR_POSITION_SENTINEL_END, contentStart)
+
+  if (contentEnd === -1) {
+    return null
+  }
+
+  const [rowText, columnText] = data.slice(contentStart, contentEnd).split(';')
+
+  if (!/^\d+$/.test(rowText) || !/^\d+$/.test(columnText)) {
+    return null
+  }
+
+  return {
+    row: Number(rowText),
+    column: Number(columnText),
+    length: contentEnd + CURSOR_POSITION_SENTINEL_END.length - startIndex,
+  }
+}
+
+export const readCursorHorizontalAbsoluteSentinel = (
+  data: string,
+  startIndex: number
+): CursorHorizontalAbsoluteSentinel | null => {
+  if (!data.startsWith(CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START, startIndex)) {
+    return null
+  }
+
+  const contentStart =
+    startIndex + CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_START.length
+
+  const contentEnd = data.indexOf(
+    CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END,
+    contentStart
+  )
+
+  if (contentEnd === -1) {
+    return null
+  }
+
+  const columnText = data.slice(contentStart, contentEnd)
+
+  if (!/^\d+$/.test(columnText)) {
+    return null
+  }
+
+  return {
+    column: Number(columnText),
+    length:
+      contentEnd + CURSOR_HORIZONTAL_ABSOLUTE_SENTINEL_END.length - startIndex,
+  }
+}
 
 const parseSgrParameters = (content: string): readonly number[] | null => {
   if (content.length === 0) {
@@ -239,10 +368,33 @@ const parseCsiIntegerParameter = (
   return Number(firstParameter)
 }
 
+const parseCsiCursorPosition = (
+  content: string
+): { readonly row: number; readonly column: number } | null => {
+  const parts = content.split(';')
+  const rowText = parts[0] ?? ''
+  const columnText = parts[1] ?? ''
+
+  if (!/^\d*$/.test(rowText) || !/^\d*$/.test(columnText) || parts.length > 2) {
+    return null
+  }
+
+  const row = rowText.length === 0 ? 1 : Number(rowText)
+  const column = columnText.length === 0 ? 1 : Number(columnText)
+
+  return {
+    row: row === 0 ? 1 : row,
+    column: column === 0 ? 1 : column,
+  }
+}
+
 const repeatDisplayControl = (control: string, count: number): string =>
   control.repeat(
     Math.min(Math.max(count, 0), MAX_REPEATED_DISPLAY_CONTROL_COUNT)
   )
+
+const normalizeCursorMovementCount = (count: number): number =>
+  count === 0 ? 1 : count
 
 export class TerminalControlSequenceParser implements TerminalParser {
   private readonly handlers = new Set<TerminalParserEventHandler>()
@@ -359,6 +511,13 @@ export class TerminalControlSequenceParser implements TerminalParser {
           )
           const mode = parseCsiIntegerParameter(content, 0)
 
+          if (mode === 0 || mode === 1) {
+            const sentinel = getEraseDisplaySentinel(mode)
+
+            visible += sentinel
+            display += sentinel
+          }
+
           if (mode === 2) {
             const sentinel = getClearScreenSentinel()
 
@@ -375,7 +534,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const count = parseCsiIntegerParameter(content, 1)
 
           if (count !== null) {
-            const normalizedCount = count === 0 ? 1 : count
+            const normalizedCount = normalizeCursorMovementCount(count)
 
             const control = repeatDisplayControl(
               getCursorLeftSentinel(),
@@ -395,7 +554,7 @@ export class TerminalControlSequenceParser implements TerminalParser {
           const count = parseCsiIntegerParameter(content, 1)
 
           if (count !== null) {
-            const normalizedCount = count === 0 ? 1 : count
+            const normalizedCount = normalizeCursorMovementCount(count)
 
             const control = repeatDisplayControl(
               getCursorRightSentinel(),
@@ -417,10 +576,126 @@ export class TerminalControlSequenceParser implements TerminalParser {
           if (column !== null) {
             const normalizedColumn = column === 0 ? 1 : column
 
-            const control = `\r${repeatDisplayControl(
-              getCursorRightSentinel(),
-              normalizedColumn - 1
-            )}`
+            const control =
+              getCursorHorizontalAbsoluteSentinel(normalizedColumn)
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'A') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const control = repeatDisplayControl(
+              getCursorUpSentinel(),
+              normalizeCursorMovementCount(count)
+            )
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'B') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const control = repeatDisplayControl(
+              getCursorDownSentinel(),
+              normalizeCursorMovementCount(count)
+            )
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'E') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const control = `${repeatDisplayControl(
+              getCursorDownSentinel(),
+              normalizeCursorMovementCount(count)
+            )}\r`
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'F') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const count = parseCsiIntegerParameter(content, 1)
+
+          if (count !== null) {
+            const control = `${repeatDisplayControl(
+              getCursorUpSentinel(),
+              normalizeCursorMovementCount(count)
+            )}\r`
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'H' || finalByte === 'f') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+          const position = parseCsiCursorPosition(content)
+
+          if (position) {
+            const control = getCursorPositionSentinel(
+              position.row,
+              position.column
+            )
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 's') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+
+          if (content.length === 0) {
+            const control = getSaveCursorSentinel()
+
+            visible += control
+            display += control
+          }
+        }
+
+        if (finalByte === 'u') {
+          const content = data.slice(
+            sequenceStart + CSI_PREFIX.length,
+            terminator.index
+          )
+
+          if (content.length === 0) {
+            const control = getRestoreCursorSentinel()
 
             visible += control
             display += control
@@ -458,6 +733,22 @@ export class TerminalControlSequenceParser implements TerminalParser {
       }
 
       cursor = terminator.index + terminator.length
+
+      const escFinalByte = data[terminator.index] ?? ''
+
+      if (escFinalByte === '7') {
+        const control = getSaveCursorSentinel()
+
+        visible += control
+        display += control
+      }
+
+      if (escFinalByte === '8') {
+        const control = getRestoreCursorSentinel()
+
+        visible += control
+        display += control
+      }
     }
 
     if (

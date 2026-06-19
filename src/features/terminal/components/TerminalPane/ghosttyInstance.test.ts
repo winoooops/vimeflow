@@ -1,4 +1,4 @@
-// cspell:ignore ghostty
+// cspell:ignore ghostty xhigh
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type {
   TerminalDisposable,
@@ -13,6 +13,22 @@ import {
   type GhosttyTerminalOptions,
 } from './ghosttyInstance'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
+
+const setElementSize = (
+  element: HTMLElement,
+  width: number,
+  height: number
+): void => {
+  Object.defineProperty(element, 'offsetWidth', {
+    configurable: true,
+    value: width,
+  })
+
+  Object.defineProperty(element, 'offsetHeight', {
+    configurable: true,
+    value: height,
+  })
+}
 
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
@@ -198,6 +214,238 @@ describe('ghosttyInstance', () => {
     })
 
     expect(created.viewportReader.readVisibleText()).toBe('Start')
+  })
+
+  test('rewrites Codex MCP progress output from byte payload row redraws', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      'Starting MCP servers (1/3): codex_apps\nlinear pending' +
+      `${ESC}[1A\r${ESC}[2K` +
+      'Starting MCP servers (2/3): codex_apps, linear\n' +
+      `${ESC}[2K` +
+      'linear ready'
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    expect(created.viewportReader.readVisibleText()).toBe(
+      'Starting MCP servers (2/3): codex_apps, linear\nlinear ready'
+    )
+    expect(created.viewportReader.readVisibleText()).not.toContain('(1/3)')
+    expect(created.viewportReader.readVisibleText()).not.toContain('pending')
+  })
+
+  test('keeps previous soft-wrapped input rows when the wrapped byte tail redraws', () => {
+    const created = createTrackedGhosttyTerminal()
+    const container = document.createElement('div')
+    const output = `abcdef\r${ESC}[Kgh`
+
+    setElementSize(container, 56, 180)
+    created.terminal.open(container)
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    expect(created.terminal.cols).toBe(5)
+    expect(created.viewportReader.readVisibleText()).toBe('abcde\ngh')
+  })
+
+  test('erases stale rows below the cursor during TUI byte redraws', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      '› Summarize recent commits\n' +
+      '› gpt-5.5 xhigh · ~/projects/aws\n' +
+      '  gpt-5.5 xhigh · ~/projects/aws' +
+      `${ESC}[2;1H${ESC}[J› gpt-5.5 xhigh · ~/projects/aws`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const visibleText = created.viewportReader.readVisibleText()
+
+    expect(visibleText).toBe(
+      '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
+    )
+    expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
+  })
+
+  test('rewrites Codex startup TUI byte output positioned by absolute cursor controls', () => {
+    const created = createTrackedGhosttyTerminal()
+
+    const output =
+      `${ESC}[2J${ESC}[1;1H>_ OpenAI Codex` +
+      `${ESC}[1;42H` +
+      'model: loading' +
+      `${ESC}[2;1H~/projects/aws` +
+      `${ESC}[3;1HStarting MCP servers (1/3): codex_apps` +
+      `${ESC}[1;42H${ESC}[K` +
+      'model: gpt-5.5 default' +
+      `${ESC}[3;1H${ESC}[2KStarting MCP servers (2/3): codex_apps, linear`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const visibleText = created.viewportReader.readVisibleText()
+
+    expect(visibleText).toContain('>_ OpenAI Codex')
+    expect(visibleText).toContain('model: gpt-5.5 default')
+    expect(visibleText).toContain(
+      'Starting MCP servers (2/3): codex_apps, linear'
+    )
+    expect(visibleText).not.toContain('loading')
+    expect(visibleText).not.toContain('(1/3)')
+    expect(visibleText.match(/Starting MCP servers/g)).toHaveLength(1)
+  })
+
+  test('restores the editable cursor after byte-path right-prompt controls', () => {
+    const created = createTrackedGhosttyTerminal()
+    const output = `❯ ${ESC}7${ESC}[1;12H03:52${ESC}8a\b \b`
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const row = created.terminal.element?.querySelector(
+      '[data-terminal-row="true"]'
+    )
+    const cursor = row?.querySelector('[data-terminal-cursor="true"]')
+
+    expect(created.viewportReader.readVisibleText()).toContain('03:52')
+    expect(row?.textContent?.startsWith('❯  ')).toBe(true)
+    expect(cursor?.previousSibling?.textContent).toBe('❯ ')
+  })
+
+  test('keeps the prompt cursor stable after narrow wrapped input deletes', () => {
+    const created = createTrackedGhosttyTerminal()
+    const dataHandler = vi.fn()
+    const container = document.createElement('div')
+    const prompt = '04:42 ❯ '
+    const typedText = 'hello world '.repeat(2)
+    const deleteEcho = '\b \b'.repeat(typedText.length)
+    const output = `${prompt}${typedText}${deleteEcho}`
+
+    setElementSize(container, 112, 180)
+    created.terminal.open(container)
+    created.terminal.onData(dataHandler)
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+    const cursorRow = cursor?.parentElement
+
+    const visibleTextBeforeExtraDelete =
+      created.viewportReader.readVisibleText()
+
+    expect(created.terminal.cols).toBe(12)
+    expect(visibleTextBeforeExtraDelete.split('\n')).toHaveLength(3)
+    expect(visibleTextBeforeExtraDelete).not.toContain('hello')
+    expect(visibleTextBeforeExtraDelete).not.toContain('world')
+    expect(cursorRow?.dataset.terminalRow).toBe('true')
+    expect(cursor?.previousSibling?.textContent).toBe(prompt)
+
+    const input = created.terminal.element?.querySelector('textarea')
+
+    input?.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(dataHandler).toHaveBeenCalledWith('\x7f')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      visibleTextBeforeExtraDelete
+    )
+  })
+
+  test('keeps the prompt cursor stable when the prompt also wraps', () => {
+    const created = createTrackedGhosttyTerminal()
+    const dataHandler = vi.fn()
+    const container = document.createElement('div')
+    const prompt = 'prompt row one $ ❯ '
+    const typedText = 'wrapped input '.repeat(2)
+    const deleteEcho = '\b \b'.repeat(typedText.length)
+    const output = `${prompt}${typedText}${deleteEcho}`
+
+    setElementSize(container, 112, 180)
+    created.terminal.open(container)
+    created.terminal.onData(dataHandler)
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText(output),
+      offsetStart: 0,
+      byteLen: new TextEncoder().encode(output).length,
+      phase: 'live',
+    })
+
+    const rows = Array.from(
+      created.terminal.element?.querySelectorAll(
+        '[data-terminal-row="true"]'
+      ) ?? []
+    )
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    const visibleTextBeforeExtraDelete =
+      created.viewportReader.readVisibleText()
+
+    expect(created.terminal.cols).toBe(12)
+    expect(rows[0]?.textContent).toBe(`${prompt.slice(0, 12)}\n`)
+    expect(cursor?.parentElement).toBe(rows[1])
+    expect(cursor?.previousSibling?.textContent).toBe(prompt.slice(12))
+    expect(visibleTextBeforeExtraDelete).not.toContain(typedText)
+
+    const input = created.terminal.element?.querySelector('textarea')
+
+    input?.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(dataHandler).toHaveBeenCalledWith('\x7f')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      visibleTextBeforeExtraDelete
+    )
+    expect(cursor?.parentElement).toBe(rows[1])
+    expect(cursor?.previousSibling?.textContent).toBe(prompt.slice(12))
   })
 
   test('renders a visual cursor from the Ghostty byte parser state', () => {

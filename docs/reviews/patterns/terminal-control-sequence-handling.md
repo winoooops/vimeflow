@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-18
-ref_count: 4
+ref_count: 7
 ---
 
 # Terminal Control Sequence Handling
@@ -117,4 +117,94 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L254-288
 - **Finding:** When a `38;2;R;G;B` true-color sequence has invalid or missing component values, the guard rejected the color but did not advance the parameter index past the sub-parameters. Control fell through to `index += 1`, so the color-mode byte (`2` or `5`) was consumed as a standalone SGR attribute in the next iteration, applying `dim` or corrupting subsequent styles.
 - **Fix:** Restructured the true-color and indexed branches to advance `index` by the full arity (5 for mode 2, 3 for mode 5) unconditionally, applying the style only when the color resolves. Added a regression test for out-of-range RGB and truncated indexed sequences.
+- **Commit:** same commit as this entry
+
+### 12. eraseDisplayInState mode 1 (ESC[1J) has no buffer-level test
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L728-736
+- **Finding:** `eraseDisplayInState` is called for both mode 0 and mode 1, but `terminalDisplayBuffer.test.ts` only exercises mode 0 (`getEraseDisplaySentinel(0)`). The mode 1 branch (lines 728–736) — which removes text from position 0 through the cursor character ...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 13. softWrapAtCursor inserts duplicate newline after erase on wrapped line
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L408-431
+- **Finding:** `eraseLineInState` mode 2 splices `[lineStart, lineEnd)` where `lineEnd` is the index of `\n`, so the soft-wrap `\n` is kept as the first character of remaining text. When new content is then written from `cursor = 0`, `writeDisplayCharacter` inserts...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 14. parseCsiCursorPosition calls content.split(';') twice
+
+- **Source:** github-claude | PR #534 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L312-332
+- **Finding:** `parseCsiCursorPosition` destructures `content.split(';')` into `[rowText, columnText]` and then calls `content.split(';')` again solely to check `.length > 2`. Use `const parts = content.split(';')` once, destructure from `parts`, and compare `parts...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 15. Avoid inserting wrap rows over existing TUI rows
+
+- **Source:** github-codex-connector | PR #534 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-430
+- **Finding:** When repainting an existing screen row that is exactly `columns` wide, the next printable cell should wrap onto the already-existing next row and overwrite there. This branch always inserts a new `\n` at the cursor, so a redraw like an existing `abcd...
+- **Fix:** Addressed in the same commit that appended this entry.
+- **Commit:** same commit as this entry
+
+### 16. ESC[G (cursor horizontal absolute) skips columns inside wide characters
+
+- **Source:** github-claude | PR #534 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalControlParser.ts` L522-540
+- **Finding:** The `ESC[nG` handler translated the sequence to `\r` plus cursor-right sentinels. `moveCursorRight` advances by whole glyphs, so when the target column fell inside a wide character the cursor overshot to the character after it.
+- **Fix:** Added a dedicated `CursorHorizontalAbsoluteSentinel` that carries only the target column. The display buffer resolves it on the current row using a column lookup that lands on the wide-glyph start when the target falls inside the glyph.
+- **Commit:** same commit as this entry
+
+### 17. Create missing rows for cursor-down moves
+
+- **Source:** github-codex-connector | PR #534 round 2 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L466-478
+- **Finding:** `moveCursorDown` returned the end of the last buffered line when asked to move below it. A subsequent `\r` then operated on the original line and overwrote it, so `line1\x1b[Eline2` rendered as `line2` instead of two rows.
+- **Fix:** In `applyDisplayData`, when a cursor-down sentinel is at the last line, route through `moveCursorToPosition(row + 1, current column + 1)` so the new row is materialized and padded to the original horizontal position.
+- **Commit:** same commit as this entry
+
+### 18. Wrap wide glyphs before appending them at the margin
+
+- **Source:** github-codex-connector | PR #534 round 2 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L626-643
+- **Finding:** `softWrapAtCursor` wrapped only when the current line width reached `columns`. A two-cell glyph written at `columns - 1` therefore produced a line wider than the terminal, clipping the glyph and throwing off later cursor math.
+- **Fix:** Pass the incoming character to `softWrapAtCursor` and wrap when `lineCellWidth + readTerminalCellWidth(character, 0) > columns`.
+- **Commit:** same commit as this entry
+
+### 19. CSI H/CSI f absolute cursor snaps past wide glyphs when targeting their second cell
+
+- **Source:** github-claude | PR #534 round 3 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L430-443
+- **Finding:** `findOffsetForCellColumn` returned `cursor + readCodePointLength(...)` for both an exact column match and an overshoot. Overshoot only happens when the target terminal cell falls inside a two-cell glyph (CJK or emoji), so absolute cursor positioning landed after the glyph instead of at its boundary.
+- **Fix:** Changed the `nextColumn > targetColumn` branch to return the current glyph offset (`cursor`), matching the existing CHA-specific helper. Added a regression test that writes `a漢b`, positions the cursor at column 3 (the wide glyph's second cell), and asserts the cursor offset is the start of the wide glyph.
+- **Commit:** same commit as this entry
+
+### 20. ED mode 1 removes a prefix without rebasing savedCursor
+
+- **Source:** github-codex-connector | PR #534 round 4 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L1078-1106
+- **Finding:** `eraseDisplayInState(mode=1)` removes `text.slice(0, endOffset)` and sets `cursor` to 0, but preserves `savedCursor` from the old buffer via `...state`. A later restore can therefore land `endOffset` bytes too far into the remaining text when save/restore is combined with ESC[1J.
+- **Fix:** Rebased `savedCursor` by subtracting `endOffset` and clamping to 0 when the saved position was inside the removed prefix, mirroring the existing scrollback-trim adjustment. Added a regression test that saves the cursor, erases from display start through the current cursor, restores, and asserts subsequent output lands at the correct offset.
+- **Commit:** same commit as this entry
+
+### 21. Track cursor row incrementally for CHA and cursor-down hot paths
+
+- **Source:** github-claude | PR #534 round 5 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L476
+- **Finding:** `readCursorRow` counted newlines from offset 0 to the cursor and was invoked for every cursor-horizontal-absolute sentinel and every cursor-down-at-EOF event in `applyDisplayData`. With large scrollback and frequent CHA repaint sequences, a single output batch could perform millions of redundant character comparisons.
+- **Fix:** Added `cursorRow` to `DisplayState` and threaded it through `applyDisplayData`. `moveCursorToPosition` and `moveCursorToHorizontalAbsoluteColumn` return the resolved row; cursor-left/backspace report a row delta when crossing a soft-wrap newline; other row-changing paths update or recompute `cursorRow` so CHA and cursor-down can read the current row in O(1).
 - **Commit:** same commit as this entry

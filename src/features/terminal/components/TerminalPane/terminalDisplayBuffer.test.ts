@@ -1,9 +1,16 @@
+// cspell:ignore xhigh,ghijkl,ghijk
 import { describe, expect, test } from 'vitest'
 import {
   getClearScreenSentinel,
+  getCursorDownSentinel,
   getCursorLeftSentinel,
+  getCursorPositionSentinel,
   getCursorRightSentinel,
+  getCursorUpSentinel,
+  getEraseDisplaySentinel,
   getEraseLineSentinel,
+  getRestoreCursorSentinel,
+  getSaveCursorSentinel,
   getSgrStyleSentinel,
 } from './terminalControlParser'
 import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
@@ -11,6 +18,7 @@ import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
 const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
 const INDEXED_COLOR_RED = ['rgb', '(255, 0, 0)'].join('')
 const INDEXED_COLOR_GRAY = ['rgb', '(238, 238, 238)'].join('')
+const NERD_FONT_ICON = String.fromCodePoint(0xf0954)
 
 describe('TerminalDisplayBuffer', () => {
   test('appends visible text and trims trailing newlines from viewport reads', () => {
@@ -71,6 +79,238 @@ describe('TerminalDisplayBuffer', () => {
     buffer.write('!')
 
     expect(buffer.readVisibleText()).toBe('Started!')
+  })
+
+  test('soft-wraps printable output at the configured terminal column', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+
+    expect(buffer.readVisibleText()).toBe('abcde\nf')
+  })
+
+  test('counts supplementary private-use glyphs as one terminal column', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 4 })
+
+    buffer.write(`ab${NERD_FONT_ICON}c`)
+
+    expect(buffer.readVisibleText()).toBe(`ab${NERD_FONT_ICON}c`)
+    expect(buffer.readCursorOffset()).toBe(`ab${NERD_FONT_ICON}c`.length)
+
+    buffer.write('d')
+
+    expect(buffer.readVisibleText()).toBe(`ab${NERD_FONT_ICON}c\nd`)
+  })
+
+  test('keeps the previous soft-wrapped row when the wrapped tail redraws', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+    buffer.write(`\r${getEraseLineSentinel(0)}gh`)
+
+    expect(buffer.readVisibleText()).toBe('abcde\ngh')
+  })
+
+  test('does not insert a second soft-wrap newline after a full-line erase', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcdef')
+    buffer.write(getCursorUpSentinel())
+    buffer.write(`\r${getEraseLineSentinel(2)}ghijkl`)
+
+    expect(buffer.readVisibleText()).toBe('ghijk\nl')
+  })
+
+  test('deletes wrapped input back across soft-wrap boundaries', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 12 })
+    const prompt = '04:42 ❯ '
+    const typedText = 'hello world '.repeat(2)
+
+    buffer.write(prompt)
+    buffer.write(typedText)
+
+    expect(buffer.readVisibleText().split('\n')).toHaveLength(3)
+
+    typedText.split('').forEach(() => {
+      buffer.write('\b \b')
+    })
+
+    expect(buffer.readCursorOffset()).toBe(prompt.length)
+    expect(buffer.readVisibleText()).not.toContain('hello')
+    expect(buffer.readVisibleText()).not.toContain('world')
+  })
+
+  test('overwrites the existing next row when redrawing a full-width line', () => {
+    const buffer = new TerminalDisplayBuffer({ columns: 5 })
+
+    buffer.write('abcde\nrow2')
+    buffer.write(getCursorPositionSentinel(1, 1))
+    buffer.write('123456')
+
+    expect(buffer.readVisibleText()).toBe('12345\n6ow2')
+  })
+
+  test('moves the cursor vertically across existing rows', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('top one\nmid two\nend row')
+    buffer.write(getCursorUpSentinel().repeat(2))
+    buffer.write('\r')
+    buffer.write('new one')
+    buffer.write(getCursorDownSentinel())
+    buffer.write('\r')
+    buffer.write('new two')
+
+    expect(buffer.readVisibleText()).toBe('new one\nnew two\nend row')
+  })
+
+  test('moves the cursor to absolute screen positions', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(getCursorPositionSentinel(2, 5))
+    buffer.write('cell')
+    buffer.write(getCursorPositionSentinel(1, 1))
+    buffer.write('top')
+    buffer.write(getCursorPositionSentinel(2, 7))
+    buffer.write('XY')
+
+    expect(buffer.readVisibleText()).toBe('top\n    ceXY')
+  })
+
+  test('moves absolute cursor positions by terminal cells, not utf-16 units', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(`a${NERD_FONT_ICON}c`)
+    buffer.write(getCursorPositionSentinel(1, 4))
+    buffer.write('!')
+
+    expect(buffer.readVisibleText()).toBe(`a${NERD_FONT_ICON}c!`)
+  })
+
+  test('positions absolute cursor at wide glyph boundary when targeting its second cell', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(`a${'漢'}b`)
+    buffer.write(getCursorPositionSentinel(1, 3))
+
+    expect(buffer.readCursorOffset()).toBe(1)
+  })
+
+  test('rewrites Codex MCP progress rows without duplicating stale fragments', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('Starting MCP servers (1/3): codex_apps\nlinear pending')
+    buffer.write(
+      getCursorUpSentinel() +
+        '\r' +
+        getEraseLineSentinel(2) +
+        'Starting MCP servers (2/3): codex_apps, linear\n' +
+        getEraseLineSentinel(2) +
+        'linear ready'
+    )
+
+    expect(buffer.readVisibleText()).toBe(
+      'Starting MCP servers (2/3): codex_apps, linear\nlinear ready'
+    )
+    expect(buffer.readVisibleText()).not.toContain('(1/3)')
+    expect(buffer.readVisibleText()).not.toContain('pending')
+  })
+
+  test('rewrites Codex startup TUI rows positioned by absolute cursor controls', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(
+      getClearScreenSentinel() +
+        getCursorPositionSentinel(1, 1) +
+        '>_ OpenAI Codex' +
+        getCursorPositionSentinel(1, 42) +
+        'model: loading' +
+        getCursorPositionSentinel(2, 1) +
+        '~/projects/aws' +
+        getCursorPositionSentinel(3, 1) +
+        'Starting MCP servers (1/3): codex_apps'
+    )
+
+    buffer.write(
+      getCursorPositionSentinel(1, 42) +
+        getEraseLineSentinel(0) +
+        'model: gpt-5.5 default' +
+        getCursorPositionSentinel(3, 1) +
+        getEraseLineSentinel(2) +
+        'Starting MCP servers (2/3): codex_apps, linear'
+    )
+
+    const visibleText = buffer.readVisibleText()
+
+    expect(visibleText).toContain('>_ OpenAI Codex')
+    expect(visibleText).toContain('model: gpt-5.5 default')
+    expect(visibleText).toContain(
+      'Starting MCP servers (2/3): codex_apps, linear'
+    )
+    expect(visibleText).not.toContain('loading')
+    expect(visibleText).not.toContain('(1/3)')
+    expect(visibleText.match(/Starting MCP servers/g)).toHaveLength(1)
+  })
+
+  test('erases stale TUI rows from cursor to end of display', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('› Summarize recent commits\n')
+    buffer.write('› gpt-5.5 xhigh · ~/projects/aws\n')
+    buffer.write('  gpt-5.5 xhigh · ~/projects/aws')
+    buffer.write(getCursorPositionSentinel(2, 1))
+    buffer.write(getEraseDisplaySentinel(0))
+    buffer.write('› gpt-5.5 xhigh · ~/projects/aws')
+
+    const visibleText = buffer.readVisibleText()
+
+    expect(visibleText).toBe(
+      '› Summarize recent commits\n› gpt-5.5 xhigh · ~/projects/aws'
+    )
+    expect(visibleText.match(/gpt-5.5 xhigh/g)).toHaveLength(1)
+  })
+
+  test('restores the editable prompt cursor before right-prompt text', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('❯ ')
+    buffer.write(getSaveCursorSentinel())
+    buffer.write(getCursorPositionSentinel(1, 12))
+    buffer.write('03:52')
+    buffer.write(getRestoreCursorSentinel())
+
+    expect(buffer.readCursorOffset()).toBe('❯ '.length)
+
+    buffer.write('a')
+    buffer.write('\b \b')
+
+    expect(buffer.readCursorOffset()).toBe('❯ '.length)
+    expect(buffer.readText().startsWith('❯  ')).toBe(true)
+    expect(buffer.readVisibleText()).toContain('03:52')
+  })
+
+  test('erases display content from the start through the cursor', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('hello\nworld')
+    buffer.write(getCursorPositionSentinel(2, 4))
+    buffer.write(getEraseDisplaySentinel(1))
+
+    expect(buffer.readVisibleText()).toBe('d')
+  })
+
+  test('rebase saved cursor when erasing display from start through cursor', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write('hello\nworld')
+    buffer.write(getCursorPositionSentinel(2, 1))
+    buffer.write(getSaveCursorSentinel())
+    buffer.write(getCursorPositionSentinel(2, 4))
+    buffer.write(getEraseDisplaySentinel(1))
+    buffer.write(getRestoreCursorSentinel())
+    buffer.write('X')
+
+    expect(buffer.readVisibleText()).toBe('X')
   })
 
   test('exposes the current cursor offset for renderer caret placement', () => {

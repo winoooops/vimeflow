@@ -2,8 +2,16 @@ import { describe, expect, test, vi } from 'vitest'
 import {
   TerminalControlSequenceParser,
   getClearScreenSentinel,
+  getCursorDownSentinel,
+  getCursorHorizontalAbsoluteSentinel,
   getCursorLeftSentinel,
+  getCursorPositionSentinel,
   getCursorRightSentinel,
+  getCursorUpSentinel,
+  getEraseDisplaySentinel,
+  getEraseLineSentinel,
+  getRestoreCursorSentinel,
+  getSaveCursorSentinel,
   getSgrStyleSentinel,
 } from './terminalControlParser'
 
@@ -169,7 +177,26 @@ describe('TerminalControlSequenceParser', () => {
       `old${getClearScreenSentinel()}abc` +
         `${getCursorLeftSentinel()}${getCursorLeftSentinel()}` +
         `XY${getCursorRightSentinel()}z` +
-        `\r${getCursorRightSentinel()}${getCursorRightSentinel()}!`
+        `${getCursorHorizontalAbsoluteSentinel(3)}!`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves erase-display controls as display sentinels', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const visible = parser.transformOutput(
+      `top${ESC}[J` + `middle${ESC}[1J` + `bottom${ESC}[2J` + 'reset',
+      null
+    )
+
+    expect(visible).toBe(
+      `top${getEraseDisplaySentinel(0)}middle` +
+        `${getEraseDisplaySentinel(1)}bottom` +
+        `${getClearScreenSentinel()}reset`
     )
     expect(handler).not.toHaveBeenCalled()
   })
@@ -186,7 +213,79 @@ describe('TerminalControlSequenceParser', () => {
     )
 
     expect(visible).toBe(
-      `abc${getCursorLeftSentinel()}` + `XY${getCursorRightSentinel()}z` + `\r!`
+      `abc${getCursorLeftSentinel()}` +
+        `XY${getCursorRightSentinel()}z` +
+        `${getCursorHorizontalAbsoluteSentinel(1)}!`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves vertical cursor movement controls as display sentinels', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const visible = parser.transformOutput(
+      `top\nbottom${ESC}[A\r${ESC}[2K` +
+        `updated${ESC}[B` +
+        `tail${ESC}[F` +
+        'reset',
+      null
+    )
+
+    expect(visible).toBe(
+      `top\nbottom${getCursorUpSentinel()}\r` +
+        `${getEraseLineSentinel(2)}updated${getCursorDownSentinel()}tail` +
+        `${getCursorUpSentinel()}\rreset`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves absolute cursor positioning controls as display sentinels', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const visible = parser.transformOutput(
+      `before${ESC}[2;5H` +
+        `cell${ESC}[H` +
+        `home${ESC}[3;4f` +
+        `there${ESC}[0;0H` +
+        'reset',
+      null
+    )
+
+    expect(visible).toBe(
+      `before${getCursorPositionSentinel(2, 5)}cell` +
+        `${getCursorPositionSentinel(1, 1)}home` +
+        `${getCursorPositionSentinel(3, 4)}there` +
+        `${getCursorPositionSentinel(1, 1)}reset`
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  test('preserves cursor save and restore controls as display sentinels', () => {
+    const parser = new TerminalControlSequenceParser()
+    const handler = vi.fn()
+
+    parser.onEvent(handler)
+
+    const csiSave = `${ESC}[s`
+    const csiRestore = `${ESC}[u`
+
+    const visible = parser.transformOutput(
+      `prompt${ESC}7right${ESC}8input` +
+        `alt${csiSave}status${csiRestore}again`,
+      null
+    )
+
+    expect(visible).toBe(
+      `prompt${getSaveCursorSentinel()}right` +
+        `${getRestoreCursorSentinel()}input` +
+        `alt${getSaveCursorSentinel()}status` +
+        `${getRestoreCursorSentinel()}again`
     )
     expect(handler).not.toHaveBeenCalled()
   })
