@@ -50,6 +50,11 @@ type SettingsNavigationEntry =
   | { kind: 'section'; section: SettingsSection }
   | { kind: 'subsection'; subsection: SettingsSubsection }
 
+const settingsNavigationEntryKey = (entry: SettingsNavigationEntry): string =>
+  entry.kind === 'section'
+    ? `section:${entry.section.id}`
+    : `subsection:${entry.subsection.id}`
+
 const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   target instanceof Element &&
   (target.closest(
@@ -389,18 +394,64 @@ export const SettingsDialog = ({
         content.scrollTop += top
       }
 
-      const navigationEntryKey = (entry: SettingsNavigationEntry): string =>
-        entry.kind === 'section'
-          ? `section:${entry.section.id}`
-          : `subsection:${entry.subsection.id}`
+      const viewportNavigationKey = (): string => {
+        if (!content || content.scrollTop <= 0) {
+          return activeNavigationKey
+        }
+
+        const viewport = content.getBoundingClientRect()
+
+        const visibleTarget = Array.from(
+          content.querySelectorAll<HTMLElement>('[data-settings-target]')
+        ).reduce<{ element: HTMLElement; rect: DOMRect } | undefined>(
+          (current, element) => {
+            const rect = element.getBoundingClientRect()
+
+            if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) {
+              return current
+            }
+
+            if (current === undefined || rect.top < current.rect.top) {
+              return { element, rect }
+            }
+
+            return current
+          },
+          undefined
+        )
+
+        const targetId = visibleTarget?.element.dataset.settingsTarget
+        if (targetId === undefined) {
+          return activeNavigationKey
+        }
+
+        const visibleSubsection = SETTINGS_SUBSECTIONS.find(
+          (subsection) =>
+            subsection.section === section &&
+            subsection.targetIds.includes(targetId)
+        )
+
+        const viewportKey =
+          visibleSubsection === undefined
+            ? `section:${section}`
+            : `subsection:${visibleSubsection.id}`
+
+        return sidebarNavigationEntries.some(
+          (entry) => settingsNavigationEntryKey(entry) === viewportKey
+        )
+          ? viewportKey
+          : activeNavigationKey
+      }
 
       const navigateSidebar = (direction: 1 | -1): void => {
         if (sidebarNavigationEntries.length === 0) {
           return
         }
 
+        const navigationKey = viewportNavigationKey()
+
         const currentIndex = sidebarNavigationEntries.findIndex(
-          (entry) => navigationEntryKey(entry) === activeNavigationKey
+          (entry) => settingsNavigationEntryKey(entry) === navigationKey
         )
 
         const baseIndex =
@@ -575,6 +626,7 @@ export const SettingsDialog = ({
 
                 <div
                   ref={contentRef}
+                  data-testid="settings-dialog-content"
                   className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
                 >
                   {section === 'general' && (

@@ -47,6 +47,19 @@ const installScrollByMock = (): {
   }
 }
 
+const makeRect = (top: number, bottom: number): DOMRect =>
+  ({
+    bottom,
+    height: bottom - top,
+    left: 0,
+    right: 100,
+    top,
+    width: 100,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  }) as DOMRect
+
 const DialogWithTrigger = ({
   initialOpen = false,
 }: {
@@ -393,6 +406,65 @@ describe('SettingsDialog', () => {
         expect(
           screen.getByRole('option', { name: 'Fonts', current: 'location' })
         ).toHaveAttribute('aria-selected', 'true')
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
+  })
+
+  test('starts arrow navigation from the scrolled content viewport', async () => {
+    const user = userEvent.setup()
+
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
+
+      const content = screen.getByTestId('settings-dialog-content')
+      let scrollTop = 0
+
+      Object.defineProperty(content, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value
+        },
+      })
+
+      Object.defineProperty(content, 'scrollBy', {
+        configurable: true,
+        value: vi.fn((options: ScrollToOptions) => {
+          scrollTop += options.top ?? 0
+        }),
+      })
+
+      vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(
+        makeRect(100, 300)
+      )
+
+      vi.spyOn(
+        screen.getByTestId(
+          `settings-target-${SETTINGS_TARGET_IDS.appearanceUiFont}`
+        ),
+        'getBoundingClientRect'
+      ).mockReturnValue(makeRect(120, 160))
+
+      vi.spyOn(
+        screen.getByTestId(
+          `settings-target-${SETTINGS_TARGET_IDS.appearanceMonoFont}`
+        ),
+        'getBoundingClientRect'
+      ).mockReturnValue(makeRect(170, 210))
+
+      await user.keyboard('j')
+      await user.keyboard('{ArrowDown}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('option', { name: 'Keymap', current: 'page' })
+        ).toBeInTheDocument()
       })
     } finally {
       scrollIntoView.mockRestore()
