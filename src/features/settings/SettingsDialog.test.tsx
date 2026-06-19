@@ -330,10 +330,15 @@ describe('SettingsDialog', () => {
       await user.type(input, 'redact')
       await user.keyboard('{Enter}')
 
+      const target = screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+      )
+
       await waitFor(() => {
         expect(input).not.toHaveFocus()
       })
 
+      expect(target).not.toHaveFocus()
       expect(
         screen.getByTestId('settings-search-resume-hint')
       ).toBeInTheDocument()
@@ -342,6 +347,7 @@ describe('SettingsDialog', () => {
 
       expect(input).toHaveValue('redact')
       expect(input).not.toHaveFocus()
+      expect(target).not.toHaveFocus()
 
       await user.keyboard('/')
 

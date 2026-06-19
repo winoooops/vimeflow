@@ -329,7 +329,7 @@ export const SettingsDialog = ({
       return
     }
 
-    applySearchResult(resultToConfirm, 'focus-target')
+    applySearchResult(resultToConfirm, 'preserve-search-focus')
   }
 
   useEffect(() => {
