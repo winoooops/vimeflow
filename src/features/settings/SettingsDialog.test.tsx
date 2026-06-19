@@ -210,6 +210,21 @@ describe('SettingsDialog', () => {
     ).toBeInTheDocument()
   })
 
+  test('does not confirm a search result on Enter with an empty query and no selection', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const input = screen.getByPlaceholderText('Search settings...')
+
+    await user.click(input)
+    await user.keyboard('{Enter}')
+
+    expect(input).toHaveFocus()
+    expect(
+      screen.getByRole('option', { name: 'Appearance', current: 'page' })
+    ).toBeInTheDocument()
+  })
+
   test('keeps command palette and leader keymap targets independently navigable', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)

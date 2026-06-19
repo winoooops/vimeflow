@@ -250,7 +250,12 @@ export const SettingsDialog = ({
         ? undefined
         : searchResults.find((result) => result.key === activeSearchResultKey)
 
-    const resultToConfirm = currentResult ?? searchResults[0]
+    const resultToConfirm =
+      currentResult ?? (normalizedQuery ? searchResults[0] : undefined)
+
+    if (!resultToConfirm) {
+      return
+    }
 
     applySearchResult(resultToConfirm, 'focus-target')
   }

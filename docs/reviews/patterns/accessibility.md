@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-19
-ref_count: 26
+ref_count: 27
 ---
 
 # Accessibility
@@ -674,4 +674,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/components/SettingsSidebar.tsx` L115-117
 - **Finding:** The search input was promoted to `role="combobox"` with `aria-controls="settings-search-results"`, but the referenced element was a `<nav>` whose implicit ARIA role is `navigation`. ARIA 1.2 requires a combobox's controlled popup to have role `listbox`, `tree`, `grid`, or `dialog`; with `navigation` as the popup role, screen readers that validate the popup role may ignore `aria-activedescendant` updates and leave the keyboard navigation workflow invisible to assistive technology.
 - **Fix:** Added `role="listbox"` to the search results `<nav>` and `role="option"` with `aria-selected` to each navigable section and target `<button>`. Updated co-located tests to query the listbox and option roles and assert `aria-selected` state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 74. Enter on empty settings search confirms the first result instead of doing nothing
+
+- **Source:** github-codex-connector | PR #540 round 2 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsDialog.tsx` L243-256
+- **Finding:** In `handleConfirmSearchResult`, when `activeSearchResultKey` is null the code always falls back to `searchResults[0]`. With an empty query, `searchResults` contains all settings sections, so pressing Enter while the empty search field is focused switches the user to General even when they were on another section. This is unexpected for keyboard users who merely press Enter in the empty search box.
+- **Fix:** Guarded the fallback so it only applies when `normalizedQuery` is non-empty; when the query is empty and no active search result exists, Enter is now a no-op. Added a co-located test asserting that pressing Enter in an empty search field preserves the current pane and focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
