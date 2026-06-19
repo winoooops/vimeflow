@@ -22,7 +22,6 @@ import {
 import { Icon } from './components/Icon'
 import { Tooltip } from '@/components/Tooltip'
 import { Kbd } from './components/Kbd'
-import { SettingsHeader } from './components/SettingsHeader'
 import { SettingsSidebar } from './components/SettingsSidebar'
 import { AgentsPane } from './components/panes/AgentsPane'
 import { AppearancePane } from './components/panes/AppearancePane'
@@ -387,8 +386,6 @@ export const SettingsDialog = ({
               />
 
               <div className="flex min-w-0 flex-1 flex-col">
-                <SettingsHeader />
-
                 <div
                   ref={contentRef}
                   className="thin-scrollbar flex-1 overflow-auto px-7 py-5"

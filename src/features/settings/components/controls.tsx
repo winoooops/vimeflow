@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import type {
   GhostButtonProps,
   PaneTitleProps,
@@ -51,18 +51,49 @@ export const Row = ({
   )
 }
 
-export const PaneTitle = ({ title, sub }: PaneTitleProps): ReactElement => (
-  <div className="mb-4">
-    <div className="mb-1 font-display text-[22px] font-semibold tracking-tight text-on-surface">
-      {title}
-    </div>
-    {sub && (
-      <div className="font-mono text-[11px] uppercase tracking-widest text-on-surface-muted">
-        {sub}
+export const PaneTitle = ({ title, sub }: PaneTitleProps): ReactElement => {
+  const [openError, setOpenError] = useState<string | null>(null)
+
+  const handleOpenFile = (): void => {
+    setOpenError(null)
+
+    const open = async (): Promise<void> => {
+      try {
+        await window.vimeflow?.settings?.openFile()
+      } catch {
+        setOpenError('Could not open settings.json')
+      }
+    }
+
+    void open()
+  }
+
+  return (
+    <div className="mb-4 flex items-start gap-4">
+      <div className="min-w-0 flex-1">
+        <h2 className="m-0 mb-1 font-display text-[22px] font-semibold tracking-tight text-on-surface">
+          {title}
+        </h2>
+        {sub && (
+          <div className="font-mono text-[11px] uppercase tracking-widest text-on-surface-muted">
+            {sub}
+          </div>
+        )}
       </div>
-    )}
-  </div>
-)
+
+      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+        {openError && (
+          <span role="alert" className="font-body text-xs text-error">
+            {openError}
+          </span>
+        )}
+        <GhostButton onClick={handleOpenFile}>
+          Edit in settings.json
+        </GhostButton>
+      </div>
+    </div>
+  )
+}
 
 export const Toggle = ({
   on = false,
