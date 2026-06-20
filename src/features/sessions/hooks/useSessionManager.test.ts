@@ -5429,6 +5429,38 @@ describe('useSessionManager', () => {
       expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
     })
 
+    test('skipPreservation removes an over-capacity custom layout and migrates the session', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      act(() =>
+        result.current.setCustomPaneLayouts([], { skipPreservation: true })
+      )
+
+      expect(result.current.customPaneLayouts).toEqual([])
+      expect(result.current.sessions[0].layout).toBe('grid3x2')
+    })
+
     test('addPane spawns in the session cwd and appends an active pane', async () => {
       const service = createSequentialSpawnService()
 

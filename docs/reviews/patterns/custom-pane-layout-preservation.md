@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 1
+ref_count: 2
 ---
 
 # Custom Pane Layout Preservation
@@ -48,4 +48,13 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1246-1262
 - **Finding:** `handlePickLayout` only capacity-guarded builtin layouts. The display-menu custom-layout path could apply a custom layout whose capacity was smaller than the active session's pane count, immediately hiding panes without explanation.
 - **Fix:** Removed the builtin-only condition and applied the capacity check to all selected layouts via `layoutRegistry.capacityFor(layoutId)`.
+- **Commit:** same commit as this entry
+
+### 5. Intentional custom layout delete is undone by preservation guard
+
+- **Source:** github-claude | PR #569 round 3 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts` L276-366 and `src/features/workspace/WorkspaceView.tsx` L1294-1314
+- **Finding:** `handleDeleteCustomLayout` called `setSessionLayout(activeSessionId, 'single')` before calling `setCustomPaneLayouts` to remove the layout. The preservation guard inside `setCustomPaneLayouts` read `sessionsRef.current` before the queued session-layout change had committed, so it still saw the deleted custom layout as needed by an over-capacity session and re-merged it, silently undoing the delete.
+- **Fix:** Added a `skipPreservation` option to `setCustomPaneLayouts`. `handleDeleteCustomLayout` passes `{ skipPreservation: true }` so the layout is removed unconditionally; the session migration then moves affected sessions to a fallback layout.
 - **Commit:** same commit as this entry

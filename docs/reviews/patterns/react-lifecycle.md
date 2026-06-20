@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 22
+ref_count: 23
 ---
 
 # React Lifecycle
@@ -515,4 +515,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1265-1295
 - **Finding:** `handleSaveCustomLayout` and `handleDeleteCustomLayout` called `setCustomPaneLayouts([...customPaneLayouts.filter(...), ...])`, reading `customPaneLayouts` from the `useCallback` closure. The deps array recreated the callback when the list changed, but concurrent or batched updates between renders could operate on a stale snapshot and silently drop an interleaved layout change.
 - **Fix:** Switched both callbacks to the functional updater form `setCustomPaneLayouts(previous => ...)`. Also updated `useSessionManager`'s `setCustomPaneLayouts` wrapper to accept functional updaters and evaluate them inside the underlying `setCustomPaneLayoutsState` updater so the latest previous value is always used.
+- **Commit:** same commit as this entry
+
+### 54. `setSessions` called as a side effect inside a state updater
+
+- **Source:** github-claude | PR #569 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts` L276-366
+- **Finding:** `setCustomPaneLayouts` computed the preserved layouts and migrated sessions inside the `setCustomPaneLayoutsState` functional updater, calling `setSessions` from within that updater. React functional updaters must be pure and may be invoked more than once in Strict Mode or replayed under concurrent rendering, which could queue duplicate session transformations.
+- **Fix:** Derived the next custom layout registry at top-level (using a `customPaneLayoutsRef` to read the current registry) and performed `setSessions` as a separate top-level functional update. The layout state still uses a direct `setCustomPaneLayoutsState(nextCustomLayouts)` call because the registry was already derived from the latest previous value.
 - **Commit:** same commit as this entry

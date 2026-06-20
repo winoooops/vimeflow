@@ -87,7 +87,8 @@ export interface SessionManager {
       | readonly PaneLayoutDefinition[]
       | ((
           previous: readonly PaneLayoutDefinition[]
-        ) => readonly PaneLayoutDefinition[])
+        ) => readonly PaneLayoutDefinition[]),
+    setOptions?: { skipPreservation?: boolean }
   ) => void
   setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
@@ -265,6 +266,8 @@ export const useSessionManager = (
   const [customPaneLayouts, setCustomPaneLayoutsState] = useState<
     readonly PaneLayoutDefinition[]
   >([])
+  const customPaneLayoutsRef = useRef(customPaneLayouts)
+  customPaneLayoutsRef.current = customPaneLayouts
 
   const layoutRegistry = useMemo(
     () => new PaneLayoutRegistry(customPaneLayouts),
@@ -279,7 +282,8 @@ export const useSessionManager = (
         | readonly PaneLayoutDefinition[]
         | ((
             previous: readonly PaneLayoutDefinition[]
-          ) => readonly PaneLayoutDefinition[])
+          ) => readonly PaneLayoutDefinition[]),
+      setOptions?: { skipPreservation?: boolean }
     ): void => {
       // Custom layouts that support more panes than any builtin layout must be
       // preserved while sessions still depend on them. Otherwise
@@ -287,14 +291,23 @@ export const useSessionManager = (
       // repair caps non-custom layouts at six panes — silently dropping extra
       // panes on the next save/reload.
       //
-      // Use the functional state updater so callers' functional updates are
-      // evaluated against the latest previous state, not the closure snapshot
-      // from the last render.
-      setCustomPaneLayoutsState((previous) => {
-        const nextCustomPaneLayouts =
-          typeof updater === 'function' ? updater(previous) : updater
-        const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+      // Derive the next registry at top-level (outside the layout-state
+      // updater) so the session migration can be performed as a separate
+      // top-level state update. Keeping setSessions out of the functional
+      // updater avoids impure-updater hazards under Strict Mode / concurrent
+      // rendering.
 
+      const previous = customPaneLayoutsRef.current
+
+      const nextCustomPaneLayouts =
+        typeof updater === 'function' ? updater(previous) : updater
+      const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+
+      let nextRegistry: PaneLayoutRegistry
+
+      if (setOptions?.skipPreservation) {
+        nextRegistry = candidateRegistry
+      } else {
         const neededLayoutIds = new Set(
           sessionsRef.current
             .filter(
@@ -336,31 +349,36 @@ export const useSessionManager = (
           ...preservedLayouts,
         ]
 
-        const nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
+        nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
+      }
 
-        setSessions((prev) =>
-          prev.map((session) => {
-            const currentLayoutStillFits =
-              nextRegistry.hasLayoutId(session.layout) &&
-              session.panes.length <= nextRegistry.capacityFor(session.layout)
+      const nextCustomLayouts = nextRegistry.customLayouts
 
-            if (currentLayoutStillFits) {
-              return session
-            }
+      // Migrate any sessions whose current layout is no longer available or
+      // no longer fits. This runs as a top-level update so it sees the latest
+      // sessions state (e.g. a layout change queued just before this call).
+      setSessions((prev) =>
+        prev.map((session) => {
+          const currentLayoutStillFits =
+            nextRegistry.hasLayoutId(session.layout) &&
+            session.panes.length <= nextRegistry.capacityFor(session.layout)
 
-            const nextLayout = nextRegistry.autoShrinkLayoutFor(
-              session.panes.length,
-              session.layout
-            )
+          if (currentLayoutStillFits) {
+            return session
+          }
 
-            return nextLayout === session.layout
-              ? session
-              : { ...session, layout: nextLayout }
-          })
-        )
+          const nextLayout = nextRegistry.autoShrinkLayoutFor(
+            session.panes.length,
+            session.layout
+          )
 
-        return nextRegistry.customLayouts
-      })
+          return nextLayout === session.layout
+            ? session
+            : { ...session, layout: nextLayout }
+        })
+      )
+
+      setCustomPaneLayoutsState(nextCustomLayouts)
     },
     []
   )

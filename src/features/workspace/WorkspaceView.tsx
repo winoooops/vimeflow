@@ -1296,8 +1296,14 @@ const WorkspaceViewContent = (): ReactElement => {
       if (activeSession?.layout === layoutId && activeSessionId) {
         setSessionLayout(activeSessionId, 'single')
       }
-      setCustomPaneLayouts((previous) =>
-        previous.filter((layout) => layout.id !== layoutId)
+      // Intentional deletes must bypass the preservation guard that
+      // otherwise re-adds custom layouts still referenced by sessions with
+      // more panes than any builtin layout supports. The session migration
+      // queued here (and the explicit setSessionLayout above for the active
+      // session) moves affected sessions to a fallback layout.
+      setCustomPaneLayouts(
+        (previous) => previous.filter((layout) => layout.id !== layoutId),
+        { skipPreservation: true }
       )
 
       setHiddenCustomLayoutIds((previous) =>
