@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-18
+last_updated: 2026-06-20
 ref_count: 6
 ---
 
@@ -130,4 +130,13 @@ base data is technically "correct."
 - **File:** `src/features/terminal/components/TerminalPane/terminalDisplayBuffer.ts` L577-609
 - **Finding:** `renderOutput()` called `readStyledRuns()` on every `writeParsedOutput()`, iterating every character in the display buffer to recompute style-run boundaries. With the default 10_000-line scrollback this produced ~800k style comparisons per write for a full buffer, and high-throughput terminal output could trigger 50-100+ such writes per second.
 - **Fix:** Removed the parallel `styles` array and made `DisplayState` maintain an incremental `runs` list. `applyDisplayData` now pushes, splits, and merges run entries as characters are appended or erased, so `readStyledRuns()` returns the pre-computed list in O(1) instead of rescanning the buffer.
+- **Commit:** same commit as this entry
+
+### 10. Resize cache must update only after native resize succeeds
+
+- **Source:** github-codex-connector | PR #571 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L565
+- **Finding:** `resize()` updated the driver's cached `record.size` before calling the native terminal resize callback. If the native resize threw, a later reset recreated the terminal at the failed requested size rather than the still-active terminal size.
+- **Fix:** Moved the cached size assignment after `record.terminal.resize()` succeeds and added a regression test that verifies reset falls back to the previous dimensions after a resize failure.
 - **Commit:** same commit as this entry

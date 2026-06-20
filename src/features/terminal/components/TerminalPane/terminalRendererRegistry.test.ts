@@ -1,11 +1,18 @@
 // cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type {
+  BackendApi,
+  GhosttyRenderStateBridgeDriver,
+} from '../../../../lib/backend'
+import type {
   TerminalInstance,
   TerminalRendererAdapter,
   TerminalRendererCapabilities,
 } from '../../types'
-import type { GhosttyVtRenderStateDriver } from './ghosttyVtRenderStateDriver'
+import type {
+  GhosttyVtRenderStateDriver,
+  GhosttyVtRenderStateDriverFactory,
+} from './ghosttyVtRenderStateDriver'
 
 type TerminalRendererRegistryModule =
   typeof import('./terminalRendererRegistry')
@@ -129,8 +136,32 @@ const createTerminalRendererAdapter = (
   createInstance: vi.fn((): TerminalInstance => instance),
 })
 
+interface GhosttyTerminalRendererFactoryOptions {
+  readonly createVtRenderStateDriver: GhosttyVtRenderStateDriverFactory
+}
+
+const installVimeflowBridge = (api: BackendApi): void => {
+  Object.defineProperty(window, 'vimeflow', {
+    configurable: true,
+    value: api,
+  })
+}
+
+const readGhosttyRendererFactoryOptions =
+  (): GhosttyTerminalRendererFactoryOptions => {
+    const options = ghosttyRendererMocks.createTerminalRenderer.mock
+      .calls[0]?.[0] as GhosttyTerminalRendererFactoryOptions | undefined
+
+    if (!options) {
+      throw new Error('Expected ghostty renderer factory options')
+    }
+
+    return options
+  }
+
 describe('terminalRendererRegistry', () => {
   afterEach(() => {
+    Reflect.deleteProperty(window, 'vimeflow')
     vi.unstubAllEnvs()
     vi.resetModules()
     vi.clearAllMocks()
@@ -301,6 +332,90 @@ describe('terminalRendererRegistry', () => {
     )
     expect(ghosttyRendererMocks.moduleLoaded).not.toHaveBeenCalled()
     expect(ghosttyRendererMocks.createTerminalRenderer).not.toHaveBeenCalled()
+  })
+
+  test('fails closed when the built-in native Ghostty provider has no preload bridge', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'native')
+
+    const registry = await importTerminalRendererRegistry()
+
+    await expect(registry.getTerminalRendererAdapter()).rejects.toThrow(
+      'Ghostty native render-state bridge is unavailable'
+    )
+    expect(ghosttyRendererMocks.moduleLoaded).not.toHaveBeenCalled()
+    expect(ghosttyRendererMocks.createTerminalRenderer).not.toHaveBeenCalled()
+  })
+
+  test('creates the bundled ghostty renderer with the built-in native bridge provider', async () => {
+    vi.stubEnv('VITE_TERMINAL_RENDERER', 'ghostty')
+    vi.stubEnv('VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER', 'native')
+
+    const nativeWriteBytes = vi.fn()
+    const nativeReset = vi.fn()
+    const nativeResize = vi.fn()
+    const nativeDispose = vi.fn()
+
+    const nativeCreateDriver = vi.fn(
+      (): GhosttyRenderStateBridgeDriver => ({
+        writeBytes: nativeWriteBytes,
+        readSnapshot: (): unknown => ({
+          rows: ['native row'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 6,
+          },
+        }),
+        reset: nativeReset,
+        resize: nativeResize,
+        dispose: nativeDispose,
+      })
+    )
+
+    installVimeflowBridge({
+      invoke: vi.fn(),
+      listen: vi.fn(),
+      ghosttyRenderState: {
+        createDriver: nativeCreateDriver,
+      },
+    })
+
+    const registry = await importTerminalRendererRegistry()
+
+    expect(await registry.getTerminalRendererAdapter()).toEqual(
+      expect.objectContaining({
+        id: 'ghostty',
+        capabilities: rendererCapabilities.bytes,
+      })
+    )
+
+    const { createVtRenderStateDriver } = readGhosttyRendererFactoryOptions()
+    const onCwdChange = vi.fn()
+    const driver = createVtRenderStateDriver({ onCwdChange })
+    const bytes = new Uint8Array([0x67, 0x68])
+
+    driver.writeBytes(bytes)
+    driver.resize?.({ cols: 100, rows: 30 })
+    driver.reset?.()
+    driver.dispose?.()
+
+    expect(nativeCreateDriver).toHaveBeenCalledWith({
+      onCwdChange,
+    })
+    expect(nativeWriteBytes).toHaveBeenCalledWith(bytes)
+    expect(driver.readSnapshot()).toEqual({
+      rows: ['native row'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 6,
+      },
+    })
+    expect(nativeResize).toHaveBeenCalledWith({ cols: 100, rows: 30 })
+    expect(nativeReset).toHaveBeenCalledOnce()
+    expect(nativeDispose).toHaveBeenCalledOnce()
+    expect(ghosttyRendererMocks.createTerminalRenderer).toHaveBeenCalledWith({
+      createVtRenderStateDriver,
+    })
   })
 
   test('rejects empty Ghostty render-state provider ids', async () => {

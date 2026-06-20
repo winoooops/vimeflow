@@ -1,5 +1,10 @@
 // cspell:ignore ghostty
 import type { TerminalInstance, TerminalRendererAdapter } from '../../types'
+import {
+  assertGhosttyNativeRenderStateBridgeAvailable,
+  createGhosttyNativeRenderStateDriver,
+  GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID,
+} from './ghosttyNativeRenderStateBridge'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import type { GhosttyVtRenderStateDriverFactory } from './ghosttyVtRenderStateDriver'
 import { PLAIN_TEXT_TERMINAL_RENDERER_ID } from './plainTextRendererMetadata'
@@ -7,6 +12,7 @@ import { xtermTerminalRenderer } from './xtermInstance'
 
 export interface GhosttyRenderStateDriverProvider {
   readonly id: string
+  readonly assertAvailable?: () => void
   readonly createVtRenderStateDriver: GhosttyVtRenderStateDriverFactory
 }
 
@@ -14,10 +20,23 @@ const terminalRendererAdapters = new Map<string, TerminalRendererAdapter>([
   [xtermTerminalRenderer.id, xtermTerminalRenderer],
 ])
 
-const ghosttyRenderStateDriverProviders = new Map<
+const createBuiltInGhosttyRenderStateDriverProviders = (): Map<
   string,
   GhosttyRenderStateDriverProvider
->()
+> =>
+  new Map([
+    [
+      GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID,
+      {
+        id: GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID,
+        assertAvailable: assertGhosttyNativeRenderStateBridgeAvailable,
+        createVtRenderStateDriver: createGhosttyNativeRenderStateDriver,
+      },
+    ],
+  ])
+
+const ghosttyRenderStateDriverProviders =
+  createBuiltInGhosttyRenderStateDriverProviders()
 
 let activeTerminalRendererId = xtermTerminalRenderer.id
 let hasConfiguredTerminalRendererFromEnvironment = false
@@ -105,6 +124,8 @@ const loadBundledGhosttyRenderer =
         `Unavailable Ghostty render-state driver provider: ${providerId}`
       )
     }
+
+    provider.assertAvailable?.()
 
     const { createGhosttyTerminalRenderer } = await import('./ghosttyInstance')
 
@@ -200,6 +221,9 @@ export const createConfiguredTerminalInstance =
 export const _resetTerminalRendererRegistryForTest = (): void => {
   terminalRendererAdapters.clear()
   ghosttyRenderStateDriverProviders.clear()
+  createBuiltInGhosttyRenderStateDriverProviders().forEach((provider, id) => {
+    ghosttyRenderStateDriverProviders.set(id, provider)
+  })
   terminalRendererAdapters.set(xtermTerminalRenderer.id, xtermTerminalRenderer)
 
   if (bundledPlainTextRenderer) {

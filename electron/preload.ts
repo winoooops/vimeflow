@@ -1,9 +1,11 @@
+// cspell:ignore ghostty
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
 } from './ipc-channels'
+import { loadOptionalGhosttyRenderStateBridge } from './ghostty-render-state-preload'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -97,10 +99,18 @@ const onCommandPaletteToggle = (callback: () => void): (() => void) => {
   }
 }
 
+const ghosttyRenderStateBridgeLoad = loadOptionalGhosttyRenderStateBridge()
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
   onCommandPaletteToggle,
+  ...(ghosttyRenderStateBridgeLoad.bridge === undefined
+    ? {}
+    : { ghosttyRenderState: ghosttyRenderStateBridgeLoad.bridge }),
+  ...(ghosttyRenderStateBridgeLoad.error === undefined
+    ? {}
+    : { ghosttyRenderStateLoadError: ghosttyRenderStateBridgeLoad.error }),
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CREATE, request),

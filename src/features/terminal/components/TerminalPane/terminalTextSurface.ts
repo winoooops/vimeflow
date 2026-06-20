@@ -45,6 +45,8 @@ export interface TerminalTextSurfaceOutput {
   readonly displayDelta?: TerminalDisplayDelta
 }
 
+type RenderScrollMode = 'bottom' | 'cursor' | 'top'
+
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
@@ -89,6 +91,18 @@ const parseCssPixels = (value: string): number => {
   const parsed = Number.parseFloat(value)
 
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+const readCursorRowIndex = (text: string, cursorOffset: number): number => {
+  let rowIndex = 0
+
+  for (let index = 0; index < cursorOffset; index += 1) {
+    if (text[index] === '\n') {
+      rowIndex += 1
+    }
+  }
+
+  return rowIndex
 }
 
 const getKeyboardData = (event: KeyboardEvent): string | null => {
@@ -270,8 +284,14 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     if (output.displayDelta) {
+      const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
+        (operation) => operation.type === 'replace'
+      )
+        ? 'cursor'
+        : 'bottom'
+
       this.outputBuffer.applyDelta(output.displayDelta)
-      this.renderOutput()
+      this.renderOutput({ scrollMode })
       callback?.()
 
       return
@@ -402,6 +422,7 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     const contentWidth = Math.max(0, width - this.readOutputHorizontalPadding())
+    const contentHeight = Math.max(0, height - this.readOutputVerticalPadding())
 
     const nextCols = Math.max(
       MIN_COLS,
@@ -410,7 +431,7 @@ export class TerminalTextSurface implements TerminalSurface {
 
     const nextRows = Math.max(
       MIN_ROWS,
-      Math.floor(height / APPROXIMATE_LINE_HEIGHT)
+      Math.floor(contentHeight / APPROXIMATE_LINE_HEIGHT)
     )
 
     if (nextCols === this.colsValue && nextRows === this.rowsValue) {
@@ -484,6 +505,14 @@ export class TerminalTextSurface implements TerminalSurface {
 
     return (
       parseCssPixels(style.paddingLeft) + parseCssPixels(style.paddingRight)
+    )
+  }
+
+  private readOutputVerticalPadding(): number {
+    const style = window.getComputedStyle(this.output)
+
+    return (
+      parseCssPixels(style.paddingTop) + parseCssPixels(style.paddingBottom)
     )
   }
 
@@ -731,7 +760,7 @@ export class TerminalTextSurface implements TerminalSurface {
     return rows
   }
 
-  private renderOutput(): void {
+  private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
     const text = this.outputBuffer.readText()
     const runs = this.outputBuffer.readStyledRuns()
 
@@ -740,10 +769,54 @@ export class TerminalTextSurface implements TerminalSurface {
       text.length
     )
 
+    const cursorRowIndex = readCursorRowIndex(text, cursorOffset)
     const fragments = this.createOutputFragments(runs, cursorOffset)
 
     this.output.replaceChildren(...fragments)
-    this.root.scrollTop = this.root.scrollHeight
+    this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
+  }
+
+  private applyScrollMode(
+    scrollMode: RenderScrollMode,
+    cursorRowIndex: number
+  ): void {
+    if (scrollMode === 'bottom') {
+      this.root.scrollTop = this.root.scrollHeight
+
+      return
+    }
+
+    this.root.scrollTop = 0
+
+    if (scrollMode === 'cursor') {
+      this.scrollCursorRowIntoView(cursorRowIndex)
+    }
+  }
+
+  private scrollCursorRowIntoView(cursorRowIndex: number): void {
+    const viewportHeight = this.root.clientHeight
+
+    if (viewportHeight <= 0) {
+      return
+    }
+
+    const outputStyle = window.getComputedStyle(this.output)
+    const paddingTop = parseCssPixels(outputStyle.paddingTop)
+    const paddingBottom = parseCssPixels(outputStyle.paddingBottom)
+
+    const cursorTop = paddingTop + cursorRowIndex * APPROXIMATE_LINE_HEIGHT
+
+    const cursorBottom = cursorTop + APPROXIMATE_LINE_HEIGHT
+    const viewportBottom = Math.max(0, viewportHeight - paddingBottom)
+
+    if (cursorBottom <= viewportBottom) {
+      return
+    }
+
+    const maxScrollTop = Math.max(0, this.root.scrollHeight - viewportHeight)
+    const nextScrollTop = cursorBottom - viewportHeight
+
+    this.root.scrollTop = Math.min(Math.max(0, nextScrollTop), maxScrollTop)
   }
 
   private notifyResize(): void {

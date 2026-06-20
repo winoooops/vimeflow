@@ -37,6 +37,22 @@ const setElementSize = (
   })
 }
 
+const setScrollMetrics = (
+  element: HTMLElement,
+  clientHeight: number,
+  scrollHeight: number
+): void => {
+  Object.defineProperty(element, 'clientHeight', {
+    configurable: true,
+    value: clientHeight,
+  })
+
+  Object.defineProperty(element, 'scrollHeight', {
+    configurable: true,
+    value: scrollHeight,
+  })
+}
+
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
 
@@ -240,7 +256,7 @@ describe('ghosttyInstance', () => {
     setElementSize(container, 256, 180)
     created.terminal.open(container)
 
-    expect(resize).toHaveBeenLastCalledWith({ cols: 30, rows: 10 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 30, rows: 9 })
     expect(resize).toHaveBeenCalledTimes(2)
 
     created.fitController.fit()
@@ -250,13 +266,13 @@ describe('ghosttyInstance', () => {
     setElementSize(container, 336, 216)
     created.fitController.fit()
 
-    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 11 })
     expect(resize).toHaveBeenCalledTimes(3)
 
     created.terminal.clear()
 
     expect(reset).toHaveBeenCalledOnce()
-    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 11 })
     expect(resize).toHaveBeenCalledTimes(4)
   })
 
@@ -423,6 +439,103 @@ describe('ghosttyInstance', () => {
     })
 
     expect(created.viewportReader.readVisibleText()).toBe('screen snapshot two')
+  })
+
+  test('keeps parser display replace snapshots pinned to the viewport top', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', 'output', '', '', '', ''],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 6,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    setScrollMetrics(element, 54, 640)
+    element.scrollTop = 128
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    expect(element.scrollTop).toBe(0)
+  })
+
+  test('scrolls parser display replace snapshots to reveal an offscreen cursor row', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', '', '', '', '', '', 'ready'],
+          cursor: {
+            rowIndex: 6,
+            columnOffset: 5,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    setScrollMetrics(element, 54, 640)
+    element.scrollTop = 0
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    expect(element.scrollTop).toBeGreaterThan(0)
+    expect(element.scrollTop).toBeLessThan(640)
   })
 
   test('renders the cursor from parser display snapshot coordinates', () => {

@@ -11,6 +11,8 @@ directories:
 files:
   - dist/**/*
   - dist-electron/**/*
+  - node_modules/@coder/libghostty-vt-node/**/*
+  - node_modules/node-gyp-build/**/*
   - package.json
 
 extraResources:
@@ -20,6 +22,9 @@ extraResources:
     to: licenses/IoskeleyMono-OFL.txt
 
 asar: true
+
+asarUnpack:
+  - node_modules/@coder/libghostty-vt-node/prebuilds/**/*.node
 
 linux:
   target:

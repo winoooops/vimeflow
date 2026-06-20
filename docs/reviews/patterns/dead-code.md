@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-18
+last_updated: 2026-06-20
 ref_count: 1
 ---
 
@@ -33,4 +33,13 @@ code and should be removed.
 - **File:** `tests/e2e/ghostty/wdio.conf.ts` L31-34
 - **Finding:** `process.env.VITE_TERMINAL_RENDERER = 'ghostty'` in the WDIO `onPrepare` hook has no effect on the Electron renderer because `VITE_*` variables are baked into the renderer bundle by Vite at build time. The same variable is already injected by the `test:e2e:ghostty:run` script via `cross-env`, making the assignment doubly redundant.
 - **Fix:** Removed the `VITE_TERMINAL_RENDERER` assignment from `onPrepare`; kept `VIMEFLOW_DISABLE_AGENT_DETECTION`, which is a genuine runtime env var.
+- **Commit:** same commit as this entry
+
+### 3. Cursor scroll helper kept an unreachable scroll-up branch
+
+- **Source:** github-claude | PR #571 round 2 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L810-822
+- **Finding:** `applyScrollMode` reset `root.scrollTop` to `0` before calling `scrollCursorRowIntoView`, so the helper's `cursorTop < viewportTop` branch could never execute. The extra branch suggested a bidirectional scroll contract the only caller did not provide.
+- **Fix:** Simplified the helper to the actual caller contract: return when the cursor already fits in the top viewport, otherwise scroll down to reveal the cursor bottom.
 - **Commit:** same commit as this entry
