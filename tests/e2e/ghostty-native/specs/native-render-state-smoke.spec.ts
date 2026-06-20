@@ -181,6 +181,21 @@ const probeBackendPtyEventBridge =
 const readTerminalBuffer = async (): Promise<string> =>
   browser.execute(() => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? '')
 
+const selectAllVisibleTerminal = async (): Promise<void> => {
+  const didSelect = await browser.execute(
+    () => window.__VIMEFLOW_E2E__?.selectAllVisibleTerminal() ?? false
+  )
+
+  if (!didSelect) {
+    throw new Error('visible terminal selection was unavailable for e2e')
+  }
+}
+
+const readVisibleTerminalSelection = async (): Promise<string> =>
+  browser.execute(
+    () => window.__VIMEFLOW_E2E__?.getVisibleTerminalSelection() ?? ''
+  )
+
 const withoutVisualRowBreaks = (buffer: string): string =>
   buffer.replace(/\n/g, '')
 
@@ -665,6 +680,28 @@ describe('Ghostty native render-state smoke', () => {
     expect(metrics.cursorWidth).toBeGreaterThan(4)
     expect(metrics.cursorHeight).toBeGreaterThan(10)
     expect(metrics.symbolFontReady).toBe(true)
+    expectGhosttyViewportHealthy(metrics)
+  })
+
+  it('copies interpreted native snapshot text without viewport filler rows', async () => {
+    await waitForTerminalBufferToSettle()
+    const prompt = `native-select-${Date.now().toString(36)}$ `
+
+    await writeOutputToVisibleTerminal(`\x1b[2J\x1b[1;1H${prompt}`)
+
+    await waitForTerminalBufferContaining(
+      prompt,
+      'Ghostty native selectable prompt never appeared'
+    )
+    await selectAllVisibleTerminal()
+
+    const buffer = await readTerminalBuffer()
+    const selection = await readVisibleTerminalSelection()
+    const metrics = await readGhosttyViewportMetrics()
+
+    expect(buffer).toBe(prompt)
+    expect(selection).toBe(prompt)
+    expect(selection).not.toContain('\n')
     expectGhosttyViewportHealthy(metrics)
   })
 

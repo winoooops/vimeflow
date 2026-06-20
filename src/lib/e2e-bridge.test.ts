@@ -4,8 +4,10 @@ import { __resetBackendEventSubscriptions, type BackendApi } from './backend'
 import {
   clearRecordedPtyDataEvents,
   getRecordedPtyDataEvents,
+  getVisibleTerminalSelection,
   getVisibleTerminalSize,
   readPaneBuffer,
+  selectAllVisibleTerminal,
   startRecordingPtyDataEvents,
   stopRecordingPtyDataEvents,
   writeInputToVisibleTerminal,
@@ -28,6 +30,8 @@ interface MockViewportReader {
 }
 
 const makeMockEntry = (rows: readonly string[]): CacheEntry => {
+  let selectionText = ''
+
   const viewportReader: MockViewportReader = {
     readVisibleText: (): string => {
       const visibleRows = rows.map((row) => row.replace(/\s+$/, ''))
@@ -37,7 +41,16 @@ const makeMockEntry = (rows: readonly string[]): CacheEntry => {
   }
 
   return {
-    terminal: { cols: 80, dispose: (): void => undefined, rows: 24 },
+    terminal: {
+      cols: 80,
+      dispose: (): void => undefined,
+      getSelection: (): string => selectionText,
+      hasSelection: (): boolean => selectionText.length > 0,
+      rows: 24,
+      selectAll: (): void => {
+        selectionText = viewportReader.readVisibleText()
+      },
+    },
     output: { writeOutput: vi.fn() },
     fitController: { fit: (): void => undefined },
     viewportReader,
@@ -333,6 +346,22 @@ describe('readPaneBuffer', () => {
     document.body.append(wrapper)
 
     expect(getVisibleTerminalSize()).toEqual({ cols: 80, rows: 24 })
+  })
+
+  test('selects all text from the active cached renderer', () => {
+    const wrapper = buildSessionWrapper([''], 0)
+    wrapper.getBoundingClientRect = visibleDomRect
+
+    terminalCache.set('pty-0', makeMockEntry(['visible', '', ''])!)
+    document.body.append(wrapper)
+
+    expect(selectAllVisibleTerminal()).toBe(true)
+    expect(getVisibleTerminalSelection()).toBe('visible')
+  })
+
+  test('does not select terminal text when no visible renderer is mounted', () => {
+    expect(selectAllVisibleTerminal()).toBe(false)
+    expect(getVisibleTerminalSelection()).toBe('')
   })
 
   test('does not write output when no visible terminal is mounted', () => {

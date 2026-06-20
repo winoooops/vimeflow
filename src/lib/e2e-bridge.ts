@@ -134,6 +134,28 @@ const readVisibleTerminalBuffer = (): string => {
   return pane ? readPaneBuffer(pane) : ''
 }
 
+const readVisibleTerminalEntry = (): {
+  readonly sessionId: string
+  readonly entry: NonNullable<ReturnType<typeof terminalCache.get>>
+} | null => {
+  const pane = findActivePane()
+  if (!pane) {
+    return null
+  }
+
+  const sessionId = resolveCacheKey(pane)
+  if (!sessionId) {
+    return null
+  }
+
+  const entry = terminalCache.get(sessionId)
+  if (!entry) {
+    return null
+  }
+
+  return { sessionId, entry }
+}
+
 // Callers may pass either a React `Session.id` (the workspace UUID) or a
 // `pane.ptyId` (the Rust PTY handle). Post-5a these are distinct values;
 // post-5b SplitView refactor (PR #199) the pane-level data-attrs moved
@@ -166,24 +188,14 @@ export const getVisibleTerminalSize = (): {
   readonly cols: number
   readonly rows: number
 } | null => {
-  const pane = findActivePane()
-  if (!pane) {
-    return null
-  }
-
-  const sessionId = resolveCacheKey(pane)
-  if (!sessionId) {
-    return null
-  }
-
-  const entry = terminalCache.get(sessionId)
-  if (!entry) {
+  const active = readVisibleTerminalEntry()
+  if (!active) {
     return null
   }
 
   return {
-    cols: entry.terminal.cols,
-    rows: entry.terminal.rows,
+    cols: active.entry.terminal.cols,
+    rows: active.entry.terminal.rows,
   }
 }
 
@@ -197,18 +209,8 @@ export const getTerminalRendererConfig = (): {
 })
 
 export const writeOutputToVisibleTerminal = (data: string): boolean => {
-  const pane = findActivePane()
-  if (!pane) {
-    return false
-  }
-
-  const sessionId = resolveCacheKey(pane)
-  if (!sessionId) {
-    return false
-  }
-
-  const entry = terminalCache.get(sessionId)
-  if (!entry) {
+  const active = readVisibleTerminalEntry()
+  if (!active) {
     return false
   }
 
@@ -216,7 +218,7 @@ export const writeOutputToVisibleTerminal = (data: string): boolean => {
   const offsetStart = e2eOutputOffset
   e2eOutputOffset += bytes.length
 
-  entry.output.writeOutput({
+  active.entry.output.writeOutput({
     text: data,
     bytesBase64: encodeBase64(bytes),
     offsetStart,
@@ -230,19 +232,14 @@ export const writeOutputToVisibleTerminal = (data: string): boolean => {
 export const writeInputToVisibleTerminal = async (
   data: string
 ): Promise<boolean> => {
-  const pane = findActivePane()
-  if (!pane) {
-    return false
-  }
-
-  const sessionId = resolveCacheKey(pane)
-  if (!sessionId) {
+  const active = readVisibleTerminalEntry()
+  if (!active) {
     return false
   }
 
   await invoke<null>('write_pty', {
     request: {
-      sessionId,
+      sessionId: active.sessionId,
       data,
     },
   })
@@ -273,6 +270,20 @@ export const clearRecordedPtyDataEvents = (): void => {
 export const getRecordedPtyDataEvents = (): readonly RecordedPtyDataEvent[] =>
   recordedPtyDataEvents
 
+export const selectAllVisibleTerminal = (): boolean => {
+  const active = readVisibleTerminalEntry()
+  if (!active) {
+    return false
+  }
+
+  active.entry.terminal.selectAll()
+
+  return active.entry.terminal.hasSelection()
+}
+
+export const getVisibleTerminalSelection = (): string =>
+  readVisibleTerminalEntry()?.entry.terminal.getSelection() ?? ''
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     clearRecordedPtyDataEvents,
@@ -280,11 +291,13 @@ if (import.meta.env.VITE_E2E) {
     getTerminalBuffer: readVisibleTerminalBuffer,
     getTerminalBufferForSession: readTerminalBufferForSession,
     getTerminalRendererConfig,
+    getVisibleTerminalSelection,
     getVisibleTerminalSize,
     getVisibleSessionId,
     getActiveSessionIds: getAllPtySessionIds,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    selectAllVisibleTerminal,
     startRecordingPtyDataEvents,
     writeInputToVisibleTerminal,
     writeOutputToVisibleTerminal,
