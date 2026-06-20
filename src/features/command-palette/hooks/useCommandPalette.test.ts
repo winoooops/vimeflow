@@ -1110,6 +1110,54 @@ describe('useCommandPalette', () => {
 
       expect(result.current.state.selectedIndex).toBe(5)
     })
+
+    test('previews namespace children as the highlight moves', async () => {
+      const previewCatppuccin = vi.fn()
+      const previewDracula = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-catppuccin',
+              label: 'Catppuccin',
+              icon: 'palette',
+              preview: previewCatppuccin,
+              execute: vi.fn(),
+            },
+            {
+              id: 'theme-dracula',
+              label: 'Dracula',
+              icon: 'palette',
+              preview: previewDracula,
+              execute: vi.fn(),
+            },
+          ],
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.executeSelected()
+      })
+
+      await waitFor(() => {
+        expect(previewCatppuccin).toHaveBeenCalled()
+      })
+
+      act(() => {
+        result.current.navigateDown()
+      })
+
+      await waitFor(() => {
+        expect(previewDracula).toHaveBeenCalled()
+      })
+    })
   })
 
   describe('executeSelected', () => {

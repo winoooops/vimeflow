@@ -162,6 +162,17 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
+  const selectedCommand =
+    clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : null
+
+  useEffect(() => {
+    if (!state.isOpen) {
+      return
+    }
+
+    selectedCommand?.preview?.()
+  }, [selectedCommand, state.isOpen])
+
   const openWithQuery = useCallback(
     (query: string): void => {
       if (!isEnabledRef.current) {
@@ -266,7 +277,11 @@ export const useCommandPalette = (
       return
     }
 
-    const selected = filteredResults[clampedSelectedIndex]
+    const selected = selectedCommand
+
+    if (!selected) {
+      return
+    }
 
     // If it's a namespace, drill into it
     if (selected.children && selected.children.length > 0) {
@@ -301,9 +316,9 @@ export const useCommandPalette = (
     }
   }, [
     clampedSelectedIndex,
-    filteredResults,
     parsedQuery.args,
     parsedQuery.commandVerb,
+    selectedCommand,
     state.currentNamespace,
     close,
   ])

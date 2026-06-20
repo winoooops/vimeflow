@@ -23,8 +23,14 @@ test(':set theme lists every registered theme and applies on execute', () => {
   findCommandById(defaultCommands, 'set-theme-gruvbox-light')?.execute?.('')
   expect(themeService.current().id).toBe('gruvbox-light')
 
+  findCommandById(defaultCommands, 'set-theme-tokyo-night')?.preview?.()
+  expect(themeService.current().id).toBe('tokyo-night')
+
   findCommandById(defaultCommands, 'set-theme-tokyo-night')?.execute?.('')
   expect(themeService.current().id).toBe('tokyo-night')
+
+  findCommandById(defaultCommands, 'set-theme-dracula')?.preview?.()
+  expect(themeService.current().id).toBe('dracula')
 
   findCommandById(defaultCommands, 'set-theme-dracula')?.execute?.('')
   expect(themeService.current().id).toBe('dracula')

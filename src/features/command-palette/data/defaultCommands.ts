@@ -50,6 +50,9 @@ export const defaultCommands: Command[] = [
           label: theme.label,
           description: `Switch to ${theme.label}`,
           icon: 'palette',
+          preview: (): void => {
+            themeService.apply(theme.id)
+          },
           execute: (): void => {
             themeService.apply(theme.id)
           },
