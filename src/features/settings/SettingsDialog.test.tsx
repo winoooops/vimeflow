@@ -818,13 +818,14 @@ describe('SettingsDialog', () => {
     await user.keyboard('{ArrowDown}')
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'Coding Agents' })).toHaveFocus()
+      expect(
+        screen.getByRole('option', { name: 'Coding Agents' })
+      ).toHaveFocus()
     })
 
-    expect(screen.getByRole('option', { name: 'Coding Agents' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    expect(
+      screen.getByRole('option', { name: 'Coding Agents' })
+    ).toHaveAttribute('aria-selected', 'true')
 
     expect(screen.getByRole('option', { name: 'Theme' })).toHaveAttribute(
       'aria-selected',
