@@ -6,6 +6,7 @@ import {
   protocol,
   session,
   shell,
+  type WebContents,
 } from 'electron'
 import { readFileSync } from 'node:fs'
 import { access } from 'node:fs/promises'
@@ -275,8 +276,15 @@ const isAppSettings = (value: unknown): value is AppSettings =>
   typeof value.agentShimEnabled === 'boolean' &&
   isStringRecord(value.customKeybindings)
 
-const broadcastSettingsChanged = (settings: AppSettings): void => {
+const broadcastSettingsChanged = (
+  settings: AppSettings,
+  senderWebContents: WebContents
+): void => {
   for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents === senderWebContents) {
+      continue
+    }
+
     win.webContents.send(SETTINGS_CHANGED, settings)
   }
 }
@@ -601,7 +609,7 @@ const setupApp = async (): Promise<void> => {
 
   ipcMain.handle(
     SETTINGS_SYNC_SNAPSHOT,
-    (_ipcEvent, settings: unknown): void => {
+    (ipcEvent, settings: unknown): void => {
       if (
         isRecord(settings) &&
         typeof settings.onLastWindowClosed === 'string'
@@ -610,7 +618,7 @@ const setupApp = async (): Promise<void> => {
       }
 
       if (isAppSettings(settings)) {
-        broadcastSettingsChanged(settings)
+        broadcastSettingsChanged(settings, ipcEvent.sender)
       }
     }
   )

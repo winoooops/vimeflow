@@ -686,3 +686,21 @@ prevent showing previous data.
 - **Finding:** A newly mounted settings renderer loaded settings from disk and immediately synced that hydration snapshot back to the main process. The main process broadcast that snapshot as `settings:changed`, so a stale disk value could overwrite a newer in-memory edit in another renderer while the async save queue was still pending.
 - **Fix:** Stopped syncing load hydration snapshots to the main process. Explicit user updates still sync the in-memory snapshot immediately before the queued save, preserving the last-window-close race guard without treating disk hydration as an authoritative cross-renderer edit.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 69. Settings snapshot echo can overwrite the sender's newer local merge base
+
+- **Source:** github-claude | PR #577 round 2 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `electron/main.ts`
+- **Finding:** The settings sync handler broadcast every valid settings snapshot to all windows, including the renderer that just submitted it. A stale IPC echo could write an older snapshot back into the sender's `settingsRef.current`, making the next rapid settings update merge on the wrong base and drop an intermediate change.
+- **Fix:** Pass the originating `WebContents` from the IPC event into the settings broadcast helper and skip that sender when publishing `settings:changed`. Other windows still receive the live update, but the local renderer keeps its current in-memory edit sequence.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 70. Pre-ready singleton window reopen bypasses hidden-until-ready loading guard
+
+- **Source:** github-claude | PR #577 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/settings-window.ts`
+- **Finding:** The settings window singleton was assigned before `ready-to-show`, but repeated `open()` calls unconditionally called `show()` and `focus()` on the existing window. A rapid second open could therefore reveal the still-loading BrowserWindow despite the initial `show: false` guard.
+- **Fix:** Track whether the singleton has reached `ready-to-show`; repeated opens only restore/show/focus once that flag is true, while the original `ready-to-show` handler remains responsible for the first reveal. Regression coverage now asserts a second pre-ready `open()` does not call `show()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

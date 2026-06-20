@@ -158,13 +158,41 @@ describe('SettingsWindowController', () => {
     })
 
     controller.open()
+    windows[0].emit('ready-to-show')
     windows[0].markMinimized()
     controller.open()
 
     expect(windows).toHaveLength(1)
     expect(windows[0].restore).toHaveBeenCalledTimes(1)
-    expect(windows[0].show).toHaveBeenCalledTimes(1)
+    expect(windows[0].show).toHaveBeenCalledTimes(2)
     expect(windows[0].focus).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not show an existing settings window before it is ready', () => {
+    const windows: FakeSettingsWindow[] = []
+
+    const controller = new SettingsWindowController({
+      createWindow: (options): BrowserWindow => {
+        const win = new FakeSettingsWindow(options)
+        windows.push(win)
+
+        return win as unknown as BrowserWindow
+      },
+      location,
+      preloadPath: '/dist-electron/preload.mjs',
+      openExternalUrl: vi.fn(),
+    })
+
+    controller.open()
+    controller.open()
+
+    expect(windows).toHaveLength(1)
+    expect(windows[0].show).not.toHaveBeenCalled()
+    expect(windows[0].focus).not.toHaveBeenCalled()
+
+    windows[0].emit('ready-to-show')
+
+    expect(windows[0].show).toHaveBeenCalledTimes(1)
   })
 
   test('allows a new settings window after the previous one closes', () => {

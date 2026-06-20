@@ -59,6 +59,7 @@ export const settingsWindowUrl = ({
 
 export class SettingsWindowController {
   private settingsWindow: BrowserWindow | null = null
+  private isReady = false
 
   constructor(private readonly options: SettingsWindowControllerOptions) {}
 
@@ -70,8 +71,10 @@ export class SettingsWindowController {
         existing.restore()
       }
 
-      existing.show()
-      existing.focus()
+      if (this.isReady) {
+        existing.show()
+        existing.focus()
+      }
 
       return
     }
@@ -95,10 +98,13 @@ export class SettingsWindowController {
     })
 
     this.settingsWindow = win
+    this.isReady = false
     this.options.onRendererDiagnostics?.(win)
     installNavigationGuard(win, this.options.openExternalUrl)
 
     win.once('ready-to-show', () => {
+      this.isReady = true
+
       if (!win.isDestroyed()) {
         win.show()
       }
@@ -107,6 +113,7 @@ export class SettingsWindowController {
     win.on('closed', () => {
       if (this.settingsWindow === win) {
         this.settingsWindow = null
+        this.isReady = false
       }
     })
 
