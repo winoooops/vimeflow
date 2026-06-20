@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 34
+ref_count: 35
 ---
 
 # Testing Gaps
@@ -781,3 +781,12 @@ filesystem scope restrictions).
 - **Finding:** The vendored OpenCode bridge was excluded from ESLint with a dedicated `type-check:bridge` script, but that script was not called by the main `type-check` path or the CI type-check step. Future bridge edits could therefore break the standalone TypeScript contract without failing automation.
 - **Fix:** Added `type-check:bridge` behind `type-check:generated`, the script already used by CI's Type check step, so both local and cloud gates verify the excluded bridge asset.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 80. Signed epoch-ms test helper wrapped negative values
+
+- **Source:** github-claude | PR #586 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The `epoch_ms(ms: i64)` test helper converted signed milliseconds with `ms as u64`. A future negative timestamp test would wrap to a huge duration and panic in debug builds instead of producing a useful pre-epoch `SystemTime`.
+- **Fix:** Made the helper sign-aware by subtracting the absolute duration from `UNIX_EPOCH` for negative values and adding it for non-negative values.
+- **Commit:** same commit as this entry

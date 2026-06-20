@@ -5,11 +5,11 @@
 //! bridge dir's `index.jsonl` (each row `{sessionID, pid, directory, slug,
 //! time}`):
 //!
-//! 1. **pid match (primary).** The row whose `pid == agent_pid` — `pid` is the
-//!    opencode process's own `process.pid`, the same value Vimeflow detected as
-//!    `agent_pid`. This is exact process identity and disambiguates two
-//!    opencode sessions sharing one cwd. When several rows share the pid (the
-//!    same process opened multiple sessions) the newest `time` wins.
+//! 1. **pid match (primary).** The fresh row whose `pid == agent_pid` — `pid`
+//!    is the opencode process's own `process.pid`, the same value Vimeflow
+//!    detected as `agent_pid`. This is exact process identity and disambiguates
+//!    two opencode sessions sharing one cwd. When several fresh rows share the
+//!    pid (the same process opened multiple sessions) the newest `time` wins.
 //! 2. **cwd + freshness (fallback).** Among rows whose canonicalized
 //!    `directory == cwd` AND whose `time` (epoch-ms) is `>= pty_start − SLACK`,
 //!    pick the newest `time`. The freshness floor rejects a stale same-cwd row
@@ -131,12 +131,14 @@ impl OpenCodeLocator {
         Ok(rows)
     }
 
-    /// (1) The newest pid-matching row's sessionID, if any. `pid` is the exact
-    /// process identity; among ties the latest `time` wins.
+    /// (1) The newest fresh pid-matching row's sessionID, if any. `pid` is the
+    /// exact process identity; among ties the latest `time` wins.
     fn resolve_by_pid(&self, rows: &[OpencodeIndexRowDto]) -> Option<String> {
+        let floor = self.freshness_floor_ms();
         rows.iter()
             .filter(|row| row.pid == Some(self.agent_pid as u64))
-            .max_by_key(|row| row.time.unwrap_or(i64::MIN))
+            .filter(|row| row.time.is_some_and(|time| time >= floor))
+            .max_by_key(|row| row.time.expect("filtered to Some above"))
             .and_then(|row| row.session_id.clone())
     }
 
@@ -293,7 +295,12 @@ pub(crate) fn validate_transcript_path_with_root(
 /// Convert ms-since-the-Unix-epoch to a `SystemTime` for test construction.
 #[cfg(test)]
 fn epoch_ms(ms: i64) -> SystemTime {
-    UNIX_EPOCH + std::time::Duration::from_millis(ms as u64)
+    let duration = std::time::Duration::from_millis(ms.unsigned_abs());
+    if ms < 0 {
+        UNIX_EPOCH - duration
+    } else {
+        UNIX_EPOCH + duration
+    }
 }
 
 #[cfg(test)]
@@ -391,6 +398,29 @@ mod tests {
         let locator = bridge.locator(agent_pid, epoch_ms(0));
         let located = locator.locate(&cwd, "pty").expect("locate ok");
         assert_eq!(located.agent_session_id.as_deref(), Some("ses_new"));
+    }
+
+    /// A pid row older than `pty_start - SLACK` is rejected so PID reuse cannot
+    /// attach the new opencode process to a previous session's transcript.
+    #[test]
+    fn pid_match_rejects_stale_reused_pid_row() {
+        let bridge = Bridge::new();
+        let cwd = bridge._tmp.path().join("work");
+        std::fs::create_dir_all(&cwd).expect("mkdir cwd");
+        let cwd_str = cwd.to_string_lossy().into_owned();
+
+        let agent_pid = 4242u32;
+        let pty_start = epoch_ms(10_000);
+        bridge.write_index(&[index_row("ses_previous", agent_pid as u64, &cwd_str, 4_000)]);
+
+        let locator = bridge.locator(agent_pid, pty_start);
+        let err = locator
+            .locate(&cwd, "pty")
+            .expect_err("stale reused pid must not bind");
+        assert!(
+            err.contains("not ready"),
+            "stale reused-pid failure is a retry/not-ready signal: {err}"
+        );
     }
 
     /// No pid match ⇒ the newest fresh same-cwd row is chosen.
