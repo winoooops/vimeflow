@@ -17,7 +17,11 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
-import { COMMAND_PALETTE_BINDING, COMMAND_PALETTE_TOGGLE } from './ipc-channels'
+import {
+  COMMAND_PALETTE_BINDING,
+  COMMAND_PALETTE_TOGGLE,
+  SETTINGS_OPEN_WINDOW,
+} from './ipc-channels'
 import './preload'
 
 const electronMock = vi.hoisted(() => {
@@ -117,6 +121,18 @@ describe('preload browserPane wiring', () => {
         palette: 'Mod+KeyP',
         leader: 'Mod+KeyK',
       }
+    )
+  })
+
+  test('settings.openWindow invokes the native settings window channel', async () => {
+    const settings = preloadApi().settings as {
+      openWindow: () => Promise<void>
+    }
+
+    await settings.openWindow()
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+      SETTINGS_OPEN_WINDOW
     )
   })
 

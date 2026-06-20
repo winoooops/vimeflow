@@ -90,6 +90,18 @@ describe('App', () => {
     expect(screen.getByTestId('workspace-view')).toBeInTheDocument()
   })
 
+  test('renders settings content for the native settings window route', () => {
+    window.history.replaceState(null, '', '/?window=settings')
+
+    render(<App />)
+
+    expect(screen.getByRole('main', { name: 'Settings' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Appearance' })
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-view')).not.toBeInTheDocument()
+  })
+
   test('is an arrow-function component', () => {
     expect(typeof App).toBe('function')
     expect(App.prototype).toBeUndefined()

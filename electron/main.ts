@@ -31,10 +31,12 @@ import {
   COMMAND_PALETTE_BINDING,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_OPEN_FILE,
+  SETTINGS_OPEN_WINDOW,
   SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import { SettingsWindowController } from './settings-window'
 import {
   setupWorkspaceLayoutController,
   type WorkspaceLayoutController,
@@ -237,6 +239,8 @@ let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
+let workspaceWindow: BrowserWindow | null = null
+let settingsWindowController: SettingsWindowController | null = null
 let quitting = false
 let lastKnownOnLastWindowClosed: string | undefined
 
@@ -314,7 +318,20 @@ const isBackendInvokePayload = (
   return payload.args === undefined || isRecord(payload.args)
 }
 
-const createWindow = (): void => {
+const openExternalUrl = (url: string): void => {
+  const open = async (): Promise<void> => {
+    try {
+      await shell.openExternal(url)
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to open external URL', url, error)
+    }
+  }
+
+  void open()
+}
+
+const createWindow = (): BrowserWindow => {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -330,6 +347,7 @@ const createWindow = (): void => {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+  workspaceWindow = win
 
   // Re-arm the teardown flush for this window's lifecycle (spec §3.2).
   workspaceTeardown?.reset()
@@ -355,36 +373,33 @@ const createWindow = (): void => {
     })()
   })
 
+  win.on('closed', () => {
+    if (workspaceWindow === win) {
+      workspaceWindow = null
+    }
+  })
+
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
-  installNavigationGuard(win, (url) => {
-    const openExternalUrl = async (): Promise<void> => {
-      try {
-        await shell.openExternal(url)
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.warn('Failed to open external URL', url, error)
-      }
-    }
-
-    void openExternalUrl()
-  })
+  installNavigationGuard(win, openExternalUrl)
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
   if (app.isPackaged) {
     void win.loadURL(`${APP_ORIGIN}/index.html`)
 
-    return
+    return win
   }
 
   if (devUrl !== undefined && devUrl.length > 0) {
     void win.loadURL(devUrl)
 
-    return
+    return win
   }
 
   void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+
+  return win
 }
 
 const setupApp = async (): Promise<void> => {
@@ -430,8 +445,8 @@ const setupApp = async (): Promise<void> => {
 
   workspaceTeardown = new WorkspaceTeardown({
     drainFinalShape: async (): Promise<void> => {
-      const win = BrowserWindow.getAllWindows().at(0)
-      if (win && !win.webContents.isDestroyed()) {
+      const win = workspaceWindow
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
         await workspaceLayoutController?.requestFinalShape(win.webContents)
       }
     },
@@ -537,6 +552,23 @@ const setupApp = async (): Promise<void> => {
     }
   })
 
+  settingsWindowController = new SettingsWindowController({
+    createWindow: (options): BrowserWindow => new BrowserWindow(options),
+    location: {
+      appOrigin: APP_ORIGIN,
+      isPackaged: app.isPackaged,
+      rendererDistDir: path.resolve(__dirname, '..', 'dist'),
+      devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    },
+    preloadPath: path.join(__dirname, 'preload.mjs'),
+    openExternalUrl,
+    onRendererDiagnostics: installRendererDiagnosticLogging,
+  })
+
+  ipcMain.handle(SETTINGS_OPEN_WINDOW, (): void => {
+    settingsWindowController?.open()
+  })
+
   ipcMain.handle(
     SETTINGS_SYNC_SNAPSHOT,
     (_ipcEvent, settings: unknown): void => {
@@ -631,7 +663,12 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (workspaceWindow === null || workspaceWindow.isDestroyed()) {
     createWindow()
+
+    return
   }
+
+  workspaceWindow.show()
+  workspaceWindow.focus()
 })

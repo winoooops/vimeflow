@@ -4,6 +4,7 @@ import { WorkspaceView } from './features/workspace/WorkspaceView'
 import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
 import { ReorderMotionDemo } from './features/sessions/demo/ReorderMotionDemo'
 import { SettingsProvider } from './features/settings/SettingsProvider'
+import { SettingsContent } from './features/settings/SettingsContent'
 
 // Pierre's worker entry is exposed as a dedicated package export so Vite
 // bundles it via `new Worker(url, ...)` with the worker config in
@@ -43,13 +44,32 @@ const renderDemo = (demoName: string | null): ReactElement => {
   return <WorkspaceView />
 }
 
-const App = (): ReactElement => (
-  <WorkerPoolContextProvider
-    poolOptions={poolOptions}
-    highlighterOptions={highlighterOptions}
-  >
-    <SettingsProvider>{renderDemo(devDemoName())}</SettingsProvider>
-  </WorkerPoolContextProvider>
-)
+const isSettingsWindow = (): boolean =>
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('window') === 'settings'
+
+const App = (): ReactElement => {
+  if (isSettingsWindow()) {
+    return (
+      <SettingsProvider>
+        <main
+          aria-label="Settings"
+          className="flex h-screen min-h-0 bg-surface text-on-surface"
+        >
+          <SettingsContent />
+        </main>
+      </SettingsProvider>
+    )
+  }
+
+  return (
+    <WorkerPoolContextProvider
+      poolOptions={poolOptions}
+      highlighterOptions={highlighterOptions}
+    >
+      <SettingsProvider>{renderDemo(devDemoName())}</SettingsProvider>
+    </WorkerPoolContextProvider>
+  )
+}
 
 export default App

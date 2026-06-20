@@ -1,6 +1,7 @@
-import { describe, expect, test, vi } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
+import type { BackendApi } from '../../../lib/backend'
 import { useSettingsDialog } from './useSettingsDialog'
 
 const dispatchFromRecorder = (init: KeyboardEventInit): void => {
@@ -22,6 +23,11 @@ const dispatchFromRecorder = (init: KeyboardEventInit): void => {
 }
 
 describe('useSettingsDialog', () => {
+  afterEach(() => {
+    delete window.vimeflow
+    vi.unstubAllGlobals()
+  })
+
   test('initial state is closed', () => {
     const { result } = renderHook(() => useSettingsDialog())
 
@@ -69,7 +75,6 @@ describe('useSettingsDialog', () => {
     })
 
     expect(result.current.isOpen).toBe(true)
-    vi.unstubAllGlobals()
   })
 
   test('Ctrl+, toggles the dialog open on non-macOS', () => {
@@ -89,7 +94,62 @@ describe('useSettingsDialog', () => {
     })
 
     expect(result.current.isOpen).toBe(true)
-    vi.unstubAllGlobals()
+  })
+
+  test('open requests the native settings window when the bridge is present', () => {
+    const openWindow = vi.fn().mockResolvedValue(undefined)
+    window.vimeflow = {
+      settings: {
+        openWindow,
+      },
+    } as unknown as BackendApi
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open())
+
+    expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(result.current.isOpen).toBe(false)
+  })
+
+  test('shortcut requests the native settings window when the bridge is present', () => {
+    vi.stubGlobal('navigator', {
+      userAgent: 'test-linux',
+      platform: 'Linux x86_64',
+    })
+    const openWindow = vi.fn().mockResolvedValue(undefined)
+    window.vimeflow = {
+      settings: {
+        openWindow,
+      },
+    } as unknown as BackendApi
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        ctrlKey: true,
+        key: ',',
+        bubbles: true,
+      })
+      document.dispatchEvent(event)
+    })
+
+    expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(result.current.isOpen).toBe(false)
+  })
+
+  test('falls back to the dialog if native settings window opening fails', async () => {
+    window.vimeflow = {
+      settings: {
+        openWindow: vi.fn().mockRejectedValue(new Error('failed')),
+      },
+    } as unknown as BackendApi
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open())
+
+    await waitFor(() => {
+      expect(result.current.isOpen).toBe(true)
+    })
   })
 
   test('Escape closes the dialog when open', () => {

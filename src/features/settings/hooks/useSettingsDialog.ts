@@ -6,9 +6,44 @@ import type { UseSettingsDialogReturn } from '../types'
 export const useSettingsDialog = (): UseSettingsDialogReturn => {
   const [isOpen, setIsOpen] = useState(false)
 
-  const open = useCallback(() => setIsOpen(true), [])
+  const openNativeWindow = useCallback((): boolean => {
+    const openWindow =
+      typeof window !== 'undefined'
+        ? window.vimeflow?.settings?.openWindow
+        : undefined
+
+    if (openWindow === undefined) {
+      return false
+    }
+
+    void (async (): Promise<void> => {
+      try {
+        await openWindow()
+      } catch {
+        setIsOpen(true)
+      }
+    })()
+
+    return true
+  }, [])
+
+  const open = useCallback(() => {
+    if (openNativeWindow()) {
+      return
+    }
+
+    setIsOpen(true)
+  }, [openNativeWindow])
+
   const close = useCallback(() => setIsOpen(false), [])
-  const toggle = useCallback(() => setIsOpen((prev) => !prev), [])
+
+  const toggle = useCallback(() => {
+    if (openNativeWindow()) {
+      return
+    }
+
+    setIsOpen((prev) => !prev)
+  }, [openNativeWindow])
 
   const isOpenRef = useRef(isOpen)
   const handlersRef = useRef({ close, toggle })
