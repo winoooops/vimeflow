@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-17
-ref_count: 3
+last_updated: 2026-06-20
+ref_count: 4
 ---
 
 # Cross-Platform Paths
@@ -78,4 +78,13 @@ consider using path libraries for cross-platform code.
 - **File:** `src/features/workspace/utils/editorFileLifecycleStatus.ts` L207-210
 - **Finding:** The guard comparing `filesCwd` to `gitStatusCwd` used raw `!==`, so trailing slashes, tilde expansion, or case-only differences on case-insensitive volumes made equivalent directories look different. The function then returned `null`, silently disabling the `NEW`/`DELETED` lifecycle crumb for the selected editor file even though the file was inside the reported git status directory.
 - **Fix:** Reuse the shared `normalizePathForComparison` helper (which expands `~`, normalizes separators, strips trailing slashes, and lowercases on macOS/Windows) before comparing both cwd values.
+- **Commit:** same commit as this entry
+
+### 8. Path-normalization tests compared case-folded output against raw `$HOME`
+
+- **Source:** github-claude | PR #572 round 2 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/utils/editorFileLifecycleStatus.test.ts`
+- **Finding:** The pre-push Vitest hook failed on macOS because `parentPathForGitStatus('~/repo/src/new.ts')` intentionally lowercases the expanded path on case-insensitive platforms, while the test expected the raw `$HOME` casing (`/Users/...`). The production behavior was correct, but the platform-sensitive expectation made the local gate fail and encouraged a `git push --no-verify` bypass.
+- **Fix:** Keep the direct `expandTildePath` assertion for raw home expansion, but compare the git-status parent path with `normalizePathForComparison(`${home}/repo/src`)` so the expected value follows the same case-folding contract as the API under test.
 - **Commit:** same commit as this entry
