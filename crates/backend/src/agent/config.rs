@@ -75,6 +75,12 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
         home_subdir: Some(".kimi-code"),
     },
     AgentSpec {
+        agent_type: AgentType::Opencode,
+        display_name: "opencode",
+        binary_names: &["opencode"],
+        home_subdir: Some(".local/share/opencode"),
+    },
+    AgentSpec {
         agent_type: AgentType::Aider,
         display_name: "Aider",
         binary_names: &["aider"],
@@ -162,6 +168,7 @@ mod tests {
             AgentType::ClaudeCode
             | AgentType::Codex
             | AgentType::Kimi
+            | AgentType::Opencode
             | AgentType::Aider
             | AgentType::Generic => spec_for(at),
         };
@@ -173,6 +180,7 @@ mod tests {
             AgentType::ClaudeCode,
             AgentType::Codex,
             AgentType::Kimi,
+            AgentType::Opencode,
             AgentType::Aider,
             AgentType::Generic,
         ] {
@@ -197,6 +205,10 @@ mod tests {
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
         assert_eq!(agent_type_for_binary("kimi"), Some(AgentType::Kimi));
         assert_eq!(agent_type_for_binary("kimi-code"), Some(AgentType::Kimi));
+        assert_eq!(
+            agent_type_for_binary("opencode"),
+            Some(AgentType::Opencode)
+        );
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }
 

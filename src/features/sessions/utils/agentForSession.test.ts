@@ -50,6 +50,12 @@ describe('agentForSession', () => {
     )
   })
 
+  test('opencode falls back to AGENTS.shell (M1 temporary)', () => {
+    expect(agentForSession({ ...baseSession, agentType: 'opencode' })).toBe(
+      AGENTS.shell
+    )
+  })
+
   test('aider falls back to AGENTS.shell', () => {
     expect(agentForSession({ ...baseSession, agentType: 'aider' })).toBe(
       AGENTS.shell
@@ -80,6 +86,12 @@ describe('agentForPane', () => {
 
   test('codex maps to AGENTS.codex', () => {
     expect(agentForPane({ ...basePane, agentType: 'codex' })).toBe(AGENTS.codex)
+  })
+
+  test('opencode falls back to AGENTS.shell (M1 temporary)', () => {
+    expect(agentForPane({ ...basePane, agentType: 'opencode' })).toBe(
+      AGENTS.shell
+    )
   })
 
   test('aider falls back to AGENTS.shell', () => {

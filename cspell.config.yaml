@@ -65,6 +65,10 @@ words:
   - kimi
   - Kimi
 
+  # opencode (SST coding agent)
+  - opencode
+  - Opencode
+
   # Design / UI
   - glassmorphism
   - catppuccin
