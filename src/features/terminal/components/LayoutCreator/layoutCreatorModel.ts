@@ -33,6 +33,7 @@ export interface DraftLayoutValidation {
   readonly emptyCells: number
   readonly overlap: boolean
   readonly overCapacity: boolean
+  readonly trackOverCapacity: boolean
   readonly slotCount: number
   readonly maxSlots: number
 }
@@ -243,11 +244,20 @@ export const validateDraftLayout = (
     0
   )
 
+  const trackOverCapacity =
+    draft.cols.length > MAX_LAYOUT_TRACKS ||
+    draft.rows.length > MAX_LAYOUT_TRACKS
+
   return {
-    ok: !overlap && emptyCells === 0 && draft.slots.length <= MAX_LAYOUT_SLOTS,
+    ok:
+      !overlap &&
+      emptyCells === 0 &&
+      draft.slots.length <= MAX_LAYOUT_SLOTS &&
+      !trackOverCapacity,
     emptyCells,
     overlap,
     overCapacity: draft.slots.length > MAX_LAYOUT_SLOTS,
+    trackOverCapacity,
     slotCount: draft.slots.length,
     maxSlots: MAX_LAYOUT_SLOTS,
   }
@@ -573,11 +583,13 @@ const modelToDraft = (value: unknown): DraftPaneLayout => {
   const validation = validateDraftLayout(draft)
   if (!validation.ok) {
     throw new Error(
-      validation.overCapacity
-        ? `Imported layout supports up to ${validation.maxSlots} panes`
-        : validation.overlap
-          ? 'Imported layout has overlapping panes'
-          : 'Imported layout must cover every grid cell'
+      validation.trackOverCapacity
+        ? `Imported layout has too many tracks (max ${MAX_LAYOUT_TRACKS})`
+        : validation.overCapacity
+          ? `Imported layout supports up to ${validation.maxSlots} panes`
+          : validation.overlap
+            ? 'Imported layout has overlapping panes'
+            : 'Imported layout must cover every grid cell'
     )
   }
 

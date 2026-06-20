@@ -876,11 +876,13 @@ export const LayoutCreatorModal = ({
 
   const validationMessage = validation.ok
     ? `Valid · ${validation.slotCount} panes, fully tiled`
-    : validation.overCapacity
-      ? `Too many panes · ${validation.slotCount}/${validation.maxSlots} max`
-      : validation.overlap
-        ? 'Panes overlap'
-        : `${validation.emptyCells} empty cells · fill or remove gaps`
+    : validation.trackOverCapacity
+      ? `Too many tracks · ${draft.cols.length}×${draft.rows.length} exceeds ${MAX_LAYOUT_TRACKS}×${MAX_LAYOUT_TRACKS}`
+      : validation.overCapacity
+        ? `Too many panes · ${validation.slotCount}/${validation.maxSlots} max`
+        : validation.overlap
+          ? 'Panes overlap'
+          : `${validation.emptyCells} empty cells · fill or remove gaps`
 
   return (
     <div

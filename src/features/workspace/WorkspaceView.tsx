@@ -89,10 +89,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
-import {
-  isBuiltinPaneLayoutId,
-  type PaneLayoutDefinition,
-} from '../terminal/layout-registry'
+import type { PaneLayoutDefinition } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -1249,10 +1246,7 @@ const WorkspaceViewContent = (): ReactElement => {
         return
       }
 
-      if (
-        isBuiltinPaneLayoutId(layoutId) &&
-        activeSession.panes.length > layoutRegistry.capacityFor(layoutId)
-      ) {
+      if (activeSession.panes.length > layoutRegistry.capacityFor(layoutId)) {
         return
       }
 

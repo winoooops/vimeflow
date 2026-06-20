@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 0
+ref_count: 1
 ---
 
 # Custom Pane Layout Preservation
@@ -30,4 +30,22 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx` L532-532
 - **Finding:** When a custom layout held 7–16 panes, the top-chrome layout switcher still exposed builtin layouts. Selecting a builtin layout persisted the session under a non-custom layout while retaining more panes than any builtin supports. The backend durable repair caps non-custom layouts at six panes, so extra panes were silently dropped on the next restore.
 - **Fix:** Added a guard in `handlePickLayout` that rejects builtin layout picks whose capacity is below the active session's pane count. The session stays on its valid custom layout until panes are reduced.
+- **Commit:** same commit as this entry
+
+### 3. Imported custom layouts with too many tracks can pass UI validation and throw on Save
+
+- **Source:** github-codex-connector (P1 / HIGH) | PR #569 round 2 | 2026-06-20
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts` L212-254 and `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L716-884
+- **Finding:** `validateDraftLayout` only checked overlap, empty cells, and slot count. A JSON/YAML import with more than `MAX_LAYOUT_TRACKS` columns or rows but 16 or fewer covering slots could produce `validation.ok=true`, enabling Save. `definitionFromDraft` then invoked `validatePaneLayoutDefinition`, which enforced the 24-track cap and threw with no user-facing recovery.
+- **Fix:** Added a `trackOverCapacity` flag to `DraftLayoutValidation` and `validateDraftLayout`; it is included in the `ok` predicate and surfaced as a validation message in `LayoutCreatorModal` so Save remains disabled for over-capacity imports.
+- **Commit:** same commit as this entry
+
+### 4. Custom layout picks can hide active panes without a capacity guard
+
+- **Source:** github-codex-connector (P2 / LOW) | PR #569 round 2 | 2026-06-20
+- **Severity:** P2 / LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1246-1262
+- **Finding:** `handlePickLayout` only capacity-guarded builtin layouts. The display-menu custom-layout path could apply a custom layout whose capacity was smaller than the active session's pane count, immediately hiding panes without explanation.
+- **Fix:** Removed the builtin-only condition and applied the capacity check to all selected layouts via `layoutRegistry.capacityFor(layoutId)`.
 - **Commit:** same commit as this entry

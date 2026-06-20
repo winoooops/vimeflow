@@ -6,7 +6,11 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session, SessionStatus, LayoutId } from '../sessions/types'
-import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../terminal/layout-registry'
 import {
   HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
   SHOWN_LAYOUTS_STORAGE_KEY,
@@ -537,6 +541,63 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.addPane).not.toHaveBeenCalled()
     expect(mockSessionManager.removePane).not.toHaveBeenCalled()
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
+  })
+
+  test('custom layout pick is ignored when the session has more panes than it supports', async () => {
+    const user = userEvent.setup()
+
+    const tinyCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:tiny',
+      title: 'Tiny',
+      source: 'workspace',
+      tracks: {
+        columns: [{ id: 'col-0', units: 24 }],
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        {
+          id: 'slot:p0',
+          rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+        },
+      ],
+      addOrder: ['slot:p0'],
+    }
+
+    const baseSession = createMockSession('session-2', 'feature work', {
+      layout: 'single',
+    })
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          id: 'p1',
+          ptyId: 'pty-session-2-1',
+          cwd: '/home/user',
+          agentType: 'claude-code',
+          status: 'running',
+          active: false,
+        },
+      ],
+    }
+
+    await setupSessionManager([twoPaneSession], 'session-2')
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      tinyCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [tinyCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+    const menu = await screen.findByRole('menu')
+    const tinyLabel = await within(menu).findByText('Tiny')
+    await user.click(tinyLabel)
+
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
   })
 
   test('single layout: same chrome as the splits — config docked in the pillar', () => {

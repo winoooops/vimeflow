@@ -213,4 +213,19 @@ describe('layoutCreatorModel', () => {
 
     expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
   })
+
+  test('rejects drafts whose track count exceeds the layout track cap', () => {
+    const draft = {
+      cols: Array.from({ length: 25 }, () => 1),
+      rows: [24],
+      slots: [{ col: 0, row: 0, colSpan: 1, rowSpan: 1 }],
+    }
+
+    expect(validateDraftLayout(draft)).toMatchObject({
+      ok: false,
+      trackOverCapacity: true,
+      overCapacity: false,
+      overlap: false,
+    })
+  })
 })
