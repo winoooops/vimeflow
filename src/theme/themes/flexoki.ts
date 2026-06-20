@@ -141,5 +141,11 @@ export const flexoki: ThemeDefinition = {
       accentSoft: 'rgb(218 112 44 / 0.28)',
       onAccent: '#fffcf0',
     },
+    opencode: {
+      accent: '#205ea6',
+      accentDim: 'rgb(32 94 166 / 0.14)',
+      accentSoft: 'rgb(32 94 166 / 0.28)',
+      onAccent: '#fffcf0',
+    },
   },
 }

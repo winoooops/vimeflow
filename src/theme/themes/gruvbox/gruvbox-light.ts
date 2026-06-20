@@ -141,5 +141,11 @@ export const gruvboxLight: ThemeDefinition = {
       accentSoft: 'rgb(214 93 14 / 0.28)',
       onAccent: light.fg0,
     },
+    opencode: {
+      accent: faded.blue,
+      accentDim: 'rgb(7 102 120 / 0.14)',
+      accentSoft: 'rgb(7 102 120 / 0.28)',
+      onAccent: light.bg0,
+    },
   },
 }
