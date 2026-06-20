@@ -600,6 +600,47 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
   })
 
+  test('saving an undersized custom layout does not apply it to an over-capacity session', async () => {
+    const user = userEvent.setup()
+    const baseSession = createMockSession('session-2', 'feature work', {
+      layout: 'vsplit',
+    })
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          id: 'p1',
+          ptyId: 'pty-session-2-1',
+          cwd: '/home/user',
+          agentType: 'claude-code',
+          status: 'running',
+          active: false,
+        },
+      ],
+    }
+
+    await setupSessionManager([twoPaneSession], 'session-2')
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create custom layout' })
+    )
+    await user.clear(screen.getByRole('textbox', { name: 'Layout name' }))
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Tiny'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
   test('single layout: same chrome as the splits — config docked in the pillar', () => {
     render(<WorkspaceView />)
 

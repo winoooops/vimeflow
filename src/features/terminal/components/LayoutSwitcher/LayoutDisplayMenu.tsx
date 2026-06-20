@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
 import type { PaneLayoutId } from '../../../sessions/types'
@@ -77,11 +77,12 @@ export const LayoutDisplayMenu = ({
   onDeleteCustomLayout = undefined,
   onOpenChange = undefined,
 }: LayoutDisplayMenuProps): ReactElement => {
-  const [menuVersion, setMenuVersion] = useState(0)
+  const [closeSignal, setCloseSignal] = useState(0)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
 
   const closeMenu = (): void => {
-    setMenuVersion((version) => version + 1)
-    onOpenChange?.(false)
+    triggerRef.current?.focus()
+    setCloseSignal((signal) => signal + 1)
   }
 
   useEffect(() => {
@@ -97,14 +98,15 @@ export const LayoutDisplayMenu = ({
 
   return (
     <Menu
-      key={menuVersion}
       placement="bottom-end"
       aria-label="Displayed layouts"
       onOpenChange={onOpenChange}
       tooltip="Configure displayed layouts"
       tooltipPlacement="bottom"
+      closeSignal={closeSignal}
       trigger={
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Configure displayed layouts"
           className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-primary/[0.08] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -284,7 +286,13 @@ export const LayoutDisplayMenu = ({
       {onCreateCustomLayout !== undefined && (
         <Menu.Section>
           <div className="mx-1 my-1 h-px bg-outline-variant/25" />
-          <Menu.Item icon="dashboard_customize" onSelect={onCreateCustomLayout}>
+          <Menu.Item
+            icon="dashboard_customize"
+            onSelect={(): void => {
+              closeMenu()
+              onCreateCustomLayout()
+            }}
+          >
             Create custom layout
           </Menu.Item>
         </Menu.Section>

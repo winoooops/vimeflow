@@ -58,3 +58,12 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **Finding:** `handleDeleteCustomLayout` called `setSessionLayout(activeSessionId, 'single')` before calling `setCustomPaneLayouts` to remove the layout. The preservation guard inside `setCustomPaneLayouts` read `sessionsRef.current` before the queued session-layout change had committed, so it still saw the deleted custom layout as needed by an over-capacity session and re-merged it, silently undoing the delete.
 - **Fix:** Added a `skipPreservation` option to `setCustomPaneLayouts`. `handleDeleteCustomLayout` passes `{ skipPreservation: true }` so the layout is removed unconditionally; the session migration then moves affected sessions to a fallback layout.
 - **Commit:** same commit as this entry
+
+### 6. Saving an undersized custom layout can reapply it to an over-capacity session
+
+- **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1270-1295
+- **Finding:** `handleSaveCustomLayout` persisted the custom definition and then unconditionally called `setSessionLayout(activeSessionId, definition.id)`. When the active session had more panes than the saved layout supported, that later session-layout update could override the custom-layout preservation/migration guard and leave panes hidden under an undersized layout.
+- **Fix:** Guarded the auto-apply path with `activeSession.panes.length <= getPaneLayoutCapacity(definition)`. The definition is still saved and unhidden, but the active session is only rebound when the saved layout can display every pane.
+- **Commit:** same commit as this entry

@@ -89,7 +89,10 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
-import type { PaneLayoutDefinition } from '../terminal/layout-registry'
+import {
+  getPaneLayoutCapacity,
+  type PaneLayoutDefinition,
+} from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -1277,7 +1280,11 @@ const WorkspaceViewContent = (): ReactElement => {
       setHiddenCustomLayoutIds((previous) =>
         previous.filter((layoutId) => layoutId !== definition.id)
       )
-      if (activeSessionId) {
+      if (
+        activeSessionId &&
+        activeSession &&
+        activeSession.panes.length <= getPaneLayoutCapacity(definition)
+      ) {
         setSessionLayout(activeSessionId, definition.id)
       }
       setLayoutCreatorOpen(false)
@@ -1285,6 +1292,7 @@ const WorkspaceViewContent = (): ReactElement => {
     },
     [
       activeSessionId,
+      activeSession,
       setCustomPaneLayouts,
       setHiddenCustomLayoutIds,
       setSessionLayout,

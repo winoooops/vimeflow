@@ -221,9 +221,14 @@ describe('LayoutDisplayMenu', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Main + bottom' }))
 
     await openMenu()
+    const trigger = screen.getByRole('button', {
+      name: 'Configure displayed layouts',
+    })
     await user.click(
       screen.getByRole('button', { name: 'Delete Main + bottom' })
     )
+
+    expect(trigger).toHaveFocus()
 
     await openMenu()
     await user.click(
@@ -242,5 +247,6 @@ describe('LayoutDisplayMenu', () => {
     )
 
     expect(onCreateCustomLayout).toHaveBeenCalledOnce()
+    expect(trigger).toHaveFocus()
   })
 })

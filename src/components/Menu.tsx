@@ -273,6 +273,7 @@ interface MenuProps {
   // cloned element and composes its own hover/focus handlers with Menu's.
   tooltip?: ReactNode
   tooltipPlacement?: Placement
+  closeSignal?: unknown
 }
 
 // Generic anchored menu: a trigger element opens a portal-rendered, glass
@@ -290,11 +291,13 @@ const MenuRoot = ({
   children,
   tooltip = undefined,
   tooltipPlacement = 'top',
+  closeSignal = undefined,
 }: MenuProps): ReactElement => {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const openSubmenuIdRef = useRef(openSubmenuId)
+  const closeSignalRef = useRef(closeSignal)
   const listRef = useRef<(HTMLElement | null)[]>([])
   const labelsRef = useRef<(string | null)[]>([])
 
@@ -311,6 +314,15 @@ const MenuRoot = ({
     },
     [onOpenChange]
   )
+
+  useEffect(() => {
+    if (closeSignalRef.current === closeSignal) {
+      return
+    }
+
+    closeSignalRef.current = closeSignal
+    handleOpenChange(false)
+  }, [closeSignal, handleOpenChange])
 
   // Keep a live ref so the stable dismissWhen callback can read the currently
   // open submenu id without re-registering the listener each time it changes.

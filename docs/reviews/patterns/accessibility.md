@@ -631,3 +631,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The layout creator dialog declared `aria-modal="true"` but only handled Escape and ⌘Enter. It did not trap Tab focus or restore the previously focused element, so keyboard users could tab into the workspace behind the overlay and trigger unrelated controls while the modal was active.
 - **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
 - **Commit:** same commit as this entry
+
+### 61. Programmatic menu close unmounts the focused row
+
+- **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L79-294
+- **Finding:** `LayoutDisplayMenu` closed custom-layout actions by changing the `Menu` key. The remount destroyed the focused row and trigger, so delete left focus on `document.body`, while create/edit opened the modal after the wrong focus restoration target had been captured.
+- **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
+- **Commit:** same commit as this entry
