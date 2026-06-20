@@ -310,16 +310,24 @@ impl LsofRunner for RealLsofRunner {
 
         let deadline = Instant::now() + self.timeout;
         let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break status;
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = reader.join();
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, "lsof timed out"));
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = reader.join();
+                    return Err(e);
+                }
             }
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = reader.join();
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "lsof timed out"));
-            }
-            std::thread::sleep(Duration::from_millis(20));
         };
 
         let stdout = reader
