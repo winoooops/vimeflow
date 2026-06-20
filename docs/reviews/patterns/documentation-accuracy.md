@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-16
-ref_count: 26
+last_updated: 2026-06-20
+ref_count: 27
 ---
 
 # Documentation Accuracy
@@ -827,4 +827,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.zh-CN.md`
 - **Finding:** The line read `代理可观测性：Claude Code、Codex CLI 和 Kimi Code`; the reviewer requested the term be rendered as `agent可观测性` to keep the English product term consistent with the bilingual docs.
 - **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Opencode icon provenance missing from NOTICE
+
+- **Source:** github-claude | PR #589 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/agents/icons-NOTICE.md`
+- **Finding:** The PR added an Opencode SVG mark while the adjacent file-level comment pointed readers to `icons-NOTICE.md` for Lobe Icons MIT attribution only. Future maintainers could reasonably assume the new mark was covered by the existing vendored-icon notice.
+- **Fix:** Reworded the file-level comment to point to the notice for per-mark provenance and documented the Opencode mark as an original Vimeflow geometric terminal mark outside the Lobe Icons vendored set.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

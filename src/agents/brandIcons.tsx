@@ -1,6 +1,6 @@
 // cspell:ignore lobehub
-// Agent brand marks vendored from @lobehub/icons (MIT) — see ./icons-NOTICE.md.
-// Mono variant renders fill=currentColor so the mark inherits the agent accent.
+// Agent brand mark provenance is documented in ./icons-NOTICE.md.
+// Mono variants render fill=currentColor so marks inherit the agent accent.
 import type { ReactElement, ReactNode, SVGProps } from 'react'
 
 export type AgentIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
