@@ -78,7 +78,11 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
         agent_type: AgentType::Opencode,
         display_name: "opencode",
         binary_names: &["opencode"],
-        home_subdir: Some(".local/share/opencode"),
+        // TODO(M6): opencode uses the platform data directory
+        // (`dirs::data_dir().join("opencode")`), not a home-relative
+        // dotdir. Leave this unresolved until the opencode adapter consumes
+        // provider_home so non-Linux builds do not receive a bad path.
+        home_subdir: None,
     },
     AgentSpec {
         agent_type: AgentType::Aider,
@@ -233,6 +237,9 @@ mod tests {
 
     #[test]
     fn provider_home_is_none_when_subdir_missing() {
+        let opencode = spec_for(AgentType::Opencode);
+        assert_eq!(opencode.provider_home(), None);
+
         let aider = spec_for(AgentType::Aider);
         assert_eq!(aider.provider_home(), None);
 

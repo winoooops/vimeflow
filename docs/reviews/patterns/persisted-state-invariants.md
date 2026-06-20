@@ -2,7 +2,7 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 5
 ---
 
@@ -111,4 +111,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `crates/backend/src/terminal/cache.rs` L87-89 (original)
 - **Finding:** `SessionCache::app_data_dir()` derived the Vimeflow data root by calling `.parent()` on `self.path` (`sessions.json`). The invariant that the cache file is always a direct child of `app_data_dir` was established by convention in `BackendState::new` and not enforced by the type system. Moving the cache path (e.g., `db/sessions.json`) would silently write bridge/status files under the wrong parent with no compile-time or runtime warning.
 - **Fix:** Stored `app_data_dir: PathBuf` explicitly in `SessionCache`, initialized it in `SessionCache::new`/`with_path`, and added `BackendState::with_app_data_dir` so the root is pinned once at construction rather than inferred from the cache path. `spawn_pty_inner` now uses the explicit field instead of `cache.app_data_dir()`.
+- **Commit:** same commit as this entry
+
+### 12. Durable layout repair coerced opencode panes to generic
+
+- **Source:** github-codex-connector | PR #584 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/workspace_layout.rs`
+- **Finding:** The frontend type contract allowed `agentType: "opencode"` and workspace-shape persistence could write that value, but Rust layout repair still treated only the older agent set as known. Restarting from a durable layout would coerce opencode panes to `generic` until detection ran again.
+- **Fix:** Added `opencode` to the repair allowlist and added a regression test proving `repair_workspace_layout` preserves the opencode agent type.
 - **Commit:** same commit as this entry
