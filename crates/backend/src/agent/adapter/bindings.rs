@@ -88,7 +88,7 @@ impl AgentBindings {
                 let adapter: Arc<ClaudeCodeAdapter> = Arc::new(ClaudeCodeAdapter);
                 Ok(Self {
                     agent_type: ctx.agent_type,
-                    locator: Arc::new(ClaudeStatusFileLocator),
+                    locator: Arc::new(ClaudeStatusFileLocator::new(ctx.app_data_dir.clone())),
                     decoder: adapter.clone(),
                     transcript_paths: adapter.clone(),
                     validator: adapter.clone(),
@@ -118,7 +118,11 @@ impl AgentBindings {
                 // structural fix (PR #261 cycle 11 F31) shares one
                 // `CompositeLocator`; B'' (this step) then consumes the
                 // streamer view directly in `start_or_replace`.
-                let codex_home = ctx.provider_home.clone().unwrap_or_else(default_codex_home);
+                let codex_home = ctx
+                    .provider_home_override
+                    .clone()
+                    .or_else(|| ctx.provider_home.clone())
+                    .unwrap_or_else(default_codex_home);
                 // `ctx.proc_root` carries `Some("/proc")` on Linux,
                 // `None` on non-Linux, and `Some(tempdir)` in test
                 // harnesses that inject a fake `/proc`. Pass the
@@ -161,13 +165,21 @@ impl AgentBindings {
             }
             AgentType::Kimi => {
                 // kimi-code's locator reads `<kimi_home>/session_index.jsonl`
-                // to resolve the attach cwd to a `wire.jsonl`. `$KIMI_CODE_HOME`
-                // is authoritative (kimi-code reads it to override its home);
-                // then the typed `provider_home`; then `default_kimi_home`.
-                let kimi_home = std::env::var_os("KIMI_CODE_HOME")
-                    // Ignore an empty `$KIMI_CODE_HOME` so it doesn't root at "" (matches `default_kimi_home`).
-                    .filter(|v| !v.is_empty())
-                    .map(PathBuf::from)
+                // to resolve the attach cwd to a `wire.jsonl`. An explicit
+                // hermetic override (E2E helpers) wins over `$KIMI_CODE_HOME`
+                // and the registry-resolved `provider_home`; otherwise
+                // `$KIMI_CODE_HOME` stays authoritative to match kimi-code's
+                // own home resolution, then `provider_home`, then
+                // `default_kimi_home`.
+                let kimi_home = ctx
+                    .provider_home_override
+                    .clone()
+                    .or_else(|| {
+                        std::env::var_os("KIMI_CODE_HOME")
+                            // Ignore an empty `$KIMI_CODE_HOME` so it doesn't root at "" (matches `default_kimi_home`).
+                            .filter(|v| !v.is_empty())
+                            .map(PathBuf::from)
+                    })
                     .or_else(|| ctx.provider_home.clone())
                     .unwrap_or_else(default_kimi_home);
                 super::kimi::kdbg(&format!(
@@ -210,7 +222,8 @@ impl AgentBindings {
                 // refusal mode; today's behavior matches the
                 // pre-B' `<dyn AgentAdapter>::for_attach` (always
                 // returns Ok with a NoOp wrapper).
-                let adapter: Arc<NoOpAdapter> = Arc::new(NoOpAdapter::new(other));
+                let adapter: Arc<NoOpAdapter> =
+                    Arc::new(NoOpAdapter::new(other, ctx.app_data_dir.clone()));
                 Ok(Self {
                     agent_type: other,
                     locator: adapter.clone(),
@@ -239,7 +252,9 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::ClaudeCode,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
+            provider_home_override: None,
             proc_root: None,
         }
     }
@@ -252,7 +267,9 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Codex,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: home,
+            provider_home_override: None,
             proc_root: None,
         }
     }
@@ -265,7 +282,9 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Kimi,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: home,
+            provider_home_override: None,
             proc_root: None,
         }
     }
@@ -278,7 +297,9 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Aider,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: None,
+            provider_home_override: None,
             proc_root: None,
         }
     }
@@ -368,9 +389,8 @@ mod tests {
     // which asserts `CodexAdapter::with_locator` stores the exact `Arc`
     // it was handed rather than rebuilding one.
 
-    /// Claude's locator is the stateless `ClaudeStatusFileLocator` —
-    /// `locate(cwd, sid)` should return the same path shape the
-    /// pre-B' `ClaudeCodeAdapter::located_status_source` did, with
+    /// Claude's locator writes Vimeflow-owned status bridge files under
+    /// app data rather than the user's project tree, with
     /// `static_transcript_hint == None`.
     #[test]
     fn for_attach_claude_locator_returns_static_path() {
@@ -383,12 +403,9 @@ mod tests {
             .expect("locator infallible for claude");
         assert_eq!(
             located.status_path,
-            cwd.join(".vimeflow")
-                .join("sessions")
-                .join("sess-1")
-                .join("status.json"),
+            crate::terminal::bridge::session_status_file(&ctx.app_data_dir, &cwd, "sess-1"),
         );
-        assert_eq!(located.trust_root, cwd);
+        assert_eq!(located.trust_root, ctx.app_data_dir);
         assert_eq!(located.static_transcript_hint, None);
     }
 
