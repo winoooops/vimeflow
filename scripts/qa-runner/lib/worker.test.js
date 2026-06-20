@@ -647,6 +647,29 @@ describe('workerInfraFailure', () => {
     })
   })
 
+  test('classifies committed-without-push as worker git push infrastructure', () => {
+    expect(
+      workerInfraFailure({
+        exitReason:
+          'FIXER_EXIT #572: codex committed but the push did not land (local 9670428 ≠ origin/codex/claude-code-logo-ratio bbe41f1) (exit 8; log: /repo/scripts/qa-runner/logs/pr-572.log)',
+        logPath: null,
+      })
+    ).toEqual({
+      category: 'worker_git_push_failed',
+      detail: 'worker git push did not land',
+    })
+  })
+
+  test('does not classify incidental quota wording as agent quota exhaustion', () => {
+    expect(
+      workerInfraFailure({
+        exitReason:
+          'FIXER_EXIT #572: codex failed while editing docs that mention quota-upgrade and usage rate limits (exit 8; log: /repo/scripts/qa-runner/logs/pr-572.log)',
+        logPath: null,
+      })
+    ).toBeNull()
+  })
+
   test('classifies blank SSM failures as worker infrastructure failures', () => {
     expect(
       workerInfraFailure({

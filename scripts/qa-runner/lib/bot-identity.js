@@ -10,9 +10,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// Read `<scriptDir>/<file>` and pull the `<prefix>_TOKEN|USER|EMAIL` keys.
-export const loadBot = (scriptDir, file, prefix) => {
-  const f = join(scriptDir, file)
+// Read an env file and pull the `<prefix>_TOKEN|USER|EMAIL` keys.
+export const loadBotFile = (f, prefix) => {
   if (!existsSync(f)) {
     return null
   }
@@ -33,6 +32,10 @@ export const loadBot = (scriptDir, file, prefix) => {
 
   return { token, user, email }
 }
+
+// Read `<scriptDir>/<file>` and pull the `<prefix>_TOKEN|USER|EMAIL` keys.
+export const loadBot = (scriptDir, file, prefix) =>
+  loadBotFile(join(scriptDir, file), prefix)
 
 // Env overlay so a child's gh/git act as the bot (gh honors GH_TOKEN; git honors
 // the author/committer vars). Empty object when no bot ⇒ spread is a no-op.

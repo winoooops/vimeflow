@@ -63,13 +63,27 @@ const tickFailureText = (tickResult) => {
     .join('\n')
 }
 
+const hasAgentQuotaFailure = (text) =>
+  [
+    /provider\.api_error.*(?:403|429).{0,240}(?:usage|rate|quota|quota-upgrade)/is,
+    /\b(?:rate_limit_exceeded|insufficient_quota)\b/i,
+    /\b(?:you(?:'ve| have)? reached|exceeded).{0,160}\b(?:usage|rate) limit\b/is,
+    /\bquota (?:will be )?refreshed\b/i,
+  ].some((pattern) => pattern.test(text))
+
 export const workerInfraFailure = (tickResult) => {
   const text = tickFailureText(tickResult)
   if (
-    /provider\.api_error.*(?:403|429)|(?:usage|rate) limit|quota(?: will be)? refreshed|quota-upgrade/i.test(
+    /committed but the push did not land|failed to push some refs|git-remote-https/i.test(
       text
     )
   ) {
+    return {
+      category: 'worker_git_push_failed',
+      detail: 'worker git push did not land',
+    }
+  }
+  if (hasAgentQuotaFailure(text)) {
     return {
       category: 'worker_agent_quota_exhausted',
       detail: 'worker agent usage quota exhausted',

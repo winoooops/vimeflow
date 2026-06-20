@@ -3,6 +3,7 @@ import {
   codexExecArgs,
   codexInvocation,
   fixerTimeoutMs,
+  gitCredentialHelperCommand,
   kimiInvocation,
   kimiModelArgs,
   normalizeFixerEngine,
@@ -53,6 +54,17 @@ describe('fixer command args', () => {
       'gpt-test',
       '-',
     ])
+  })
+
+  test('builds a file-backed GitHub credential helper command', () => {
+    expect(
+      gitCredentialHelperCommand({
+        helperPath: '/repo/scripts/qa-runner/lib/git-credential-helper.js',
+        botEnvPath: "/repo/scripts/qa-runner/bot's.env",
+      })
+    ).toBe(
+      "!node '/repo/scripts/qa-runner/lib/git-credential-helper.js' '/repo/scripts/qa-runner/bot'\\''s.env' 'GH_BOT'"
+    )
   })
 })
 
