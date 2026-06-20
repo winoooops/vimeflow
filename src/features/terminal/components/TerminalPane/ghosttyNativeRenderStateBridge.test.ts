@@ -203,6 +203,33 @@ describe('ghosttyNativeRenderStateBridge', () => {
     )
   })
 
+  test('pads the cursor row to the native cursor column', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({
+          rows: ['', 'abc'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 10,
+          },
+        }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(driver.readSnapshot()).toEqual({
+      rows: ['          ', 'abc'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 10,
+      },
+    })
+  })
+
   test('rejects malformed native render snapshot cells', () => {
     installBridge({
       createDriver: () => ({

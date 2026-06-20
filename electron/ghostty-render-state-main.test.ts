@@ -112,6 +112,7 @@ const createEvent = (): IpcMainEventLike => ({
   sender: {
     id: 42,
     once: vi.fn(),
+    removeListener: vi.fn(),
   },
 })
 
@@ -256,6 +257,140 @@ describe('ghostty render-state main bridge', () => {
       scrollbackLimit: 10_000,
     })
     expect(terminals).toHaveLength(2)
+  })
+
+  test('keeps the existing terminal when reset recreation fails', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    vi.mocked(bindings.createTerminal).mockImplementationOnce(() => {
+      throw new Error('native allocation failed')
+    })
+
+    expect(bridge.reset({ driverId: createResult.driverId })).toEqual({
+      ok: false,
+      error: 'native allocation failed',
+    })
+    expect(terminals[0]?.dispose).not.toHaveBeenCalled()
+
+    expect(
+      bridge.writeBytes({
+        driverId: createResult.driverId,
+        bytes: new Uint8Array([0x68]),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+    expect(terminals[0]?.feed).toHaveBeenCalledWith(new Uint8Array([0x68]))
+  })
+
+  test('preserves fallback row text around sparse styled cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 9,
+          visibleLines: [{ row: 0, text: 'plain red' }],
+          cells: [
+            {
+              row: 0,
+              col: 6,
+              text: 'red',
+              width: 3,
+              foreground: '#f38ba8',
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+      ok: true,
+      result: {
+        rows: ['plain red'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 9,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 6,
+            text: 'red',
+            width: 3,
+            foreground: '#f38ba8',
+          },
+        ],
+      },
+    })
+  })
+
+  test('rejects oversized native terminal dimensions before resize', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    expect(
+      bridge.resize({
+        driverId: createResult.driverId,
+        size: { cols: 1001, rows: 24 },
+      })
+    ).toEqual({
+      ok: false,
+      error: 'Ghostty native render-state size is invalid',
+    })
+    expect(terminals[0]?.resize).not.toHaveBeenCalled()
+  })
+
+  test('returns ipc failures when cached native callback throws', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<GhosttyNativeBindings['createTerminal']> => {
+        throw new Error('native create failed')
+      },
+    })
+
+    expect(bridge.createDriver(createEvent())).toEqual({
+      ok: false,
+      error: 'native create failed',
+    })
+  })
+
+  test('removes the web contents destroyed listener when disposing a driver', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const once = event.sender.once
+
+    if (!once) {
+      throw new Error('Expected test event to support destroyed listeners')
+    }
+
+    const listener = vi.mocked(once).mock.calls[0]?.[1]
+
+    expect(listener).toBeDefined()
+
+    expect(bridge.dispose({ driverId: createResult.driverId })).toEqual({
+      ok: true,
+      result: null,
+    })
+
+    expect(event.sender.removeListener).toHaveBeenCalledWith(
+      'destroyed',
+      listener
+    )
+    expect(terminals[0]?.dispose).toHaveBeenCalledOnce()
   })
 
   test('rejects invalid native snapshots at the bridge boundary', () => {

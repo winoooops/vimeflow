@@ -147,6 +147,21 @@ const readSnapshotCursor = (
   return { rowIndex, columnOffset }
 }
 
+const padRowsToCursor = (
+  rows: readonly string[],
+  cursor: GhosttyVtRenderSnapshot['cursor']
+): readonly string[] => {
+  if (cursor === undefined) {
+    return rows
+  }
+
+  return rows.map((row, rowIndex) =>
+    rowIndex === cursor.rowIndex && row.length < cursor.columnOffset
+      ? row.padEnd(cursor.columnOffset, ' ')
+      : row
+  )
+}
+
 const normalizeNativeSnapshot = (
   snapshot: unknown
 ): GhosttyVtRenderSnapshot => {
@@ -157,9 +172,10 @@ const normalizeNativeSnapshot = (
   const rows = readSnapshotRows(snapshot)
   const cursor = readSnapshotCursor(snapshot, rows.length)
   const cells = readSnapshotCells(snapshot, rows.length)
+  const paddedRows = padRowsToCursor(rows, cursor)
 
   return {
-    rows,
+    rows: paddedRows,
     ...(cursor === undefined ? {} : { cursor }),
     ...(cells === undefined ? {} : { cells }),
   }

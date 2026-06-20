@@ -15,6 +15,8 @@ import {
 const GHOSTTY_NATIVE_PACKAGE_ID = '@coder/libghostty-vt-node'
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
+const MAX_COLS = 1000
+const MAX_ROWS = 1000
 const DEFAULT_SCROLLBACK_LIMIT = 10_000
 const OSC7_PREFIX = '\u001b]7;'
 const OSC_BEL_TERMINATOR = '\u0007'
@@ -99,6 +101,8 @@ export interface GhosttyNativeBindings {
 interface GhosttyDriverRecord {
   readonly driverId: string
   readonly ownerWebContentsId: number
+  readonly ownerWebContents: IpcMainEventLike['sender']
+  readonly ownerWebContentsDestroyListener: () => void
   readonly osc7Scanner: Osc7Scanner
   terminal: GhosttyNativeTerminal
   size: GhosttyRenderStateBridgeSize
@@ -126,6 +130,7 @@ export interface IpcMainEventLike {
   sender: {
     id: number
     once?: (event: 'destroyed', listener: () => void) => void
+    removeListener?: (event: 'destroyed', listener: () => void) => void
   }
 }
 
@@ -404,7 +409,8 @@ const readRowsWithCells = (
 
     rowCells.forEach((cell) => {
       if (cell.col > currentColumn) {
-        rowText += ' '.repeat(cell.col - currentColumn)
+        const fallbackGap = fallbackRow.slice(currentColumn, cell.col)
+        rowText += fallbackGap.padEnd(cell.col - currentColumn, ' ')
         currentColumn = cell.col
       }
 
@@ -412,9 +418,7 @@ const readRowsWithCells = (
       currentColumn += cell.width
     })
 
-    return fallbackRow.startsWith(rowText)
-      ? `${rowText}${fallbackRow.slice(rowText.length)}`
-      : rowText
+    return `${rowText}${fallbackRow.slice(currentColumn)}`
   })
 }
 
@@ -481,7 +485,12 @@ const readSizePayload = (
   const driverId = readDriverId(payload)
   const { cols, rows } = payload.size
 
-  if (!isPositiveInteger(cols) || !isPositiveInteger(rows)) {
+  if (
+    !isPositiveInteger(cols) ||
+    !isPositiveInteger(rows) ||
+    cols > MAX_COLS ||
+    rows > MAX_ROWS
+  ) {
     throw new Error('Ghostty native render-state size is invalid')
   }
 
@@ -511,17 +520,21 @@ export class GhosttyRenderStateMainBridge {
       const driverId = String(this.nextDriverId)
       this.nextDriverId += 1
 
+      const ownerWebContentsDestroyListener = (): void => {
+        this.disposeDriver(driverId)
+      }
+
       const record: GhosttyDriverRecord = {
         driverId,
         ownerWebContentsId: event.sender.id,
+        ownerWebContents: event.sender,
+        ownerWebContentsDestroyListener,
         osc7Scanner: new Osc7Scanner(),
         terminal: createNativeTerminal(nativeBindings, size),
         size,
       }
       this.drivers.set(driverId, record)
-      event.sender.once?.('destroyed', () => {
-        this.disposeDriver(driverId)
-      })
+      event.sender.once?.('destroyed', ownerWebContentsDestroyListener)
 
       return ok({ driverId })
     })
@@ -562,9 +575,12 @@ export class GhosttyRenderStateMainBridge {
   reset(payload: unknown): EmptyResult {
     return this.withDriver(payload, (record) =>
       this.withNativeBindings((nativeBindings) => {
-        record.terminal.dispose()
+        const terminal = createNativeTerminal(nativeBindings, record.size)
+        const previousTerminal = record.terminal
+
+        previousTerminal.dispose()
         record.osc7Scanner.reset()
-        record.terminal = createNativeTerminal(nativeBindings, record.size)
+        record.terminal = terminal
 
         return ok(null)
       })
@@ -590,22 +606,26 @@ export class GhosttyRenderStateMainBridge {
   private withNativeBindings<T>(
     callback: (nativeBindings: GhosttyNativeBindings) => IpcResult<T>
   ): IpcResult<T> {
-    if (this.nativeBindings) {
-      return callback(this.nativeBindings)
-    }
-
-    if (this.loadError) {
-      return fail(this.loadError)
-    }
-
     try {
+      if (this.nativeBindings) {
+        return callback(this.nativeBindings)
+      }
+
+      if (this.loadError) {
+        return fail(this.loadError)
+      }
+
       this.nativeBindings = loadGhosttyNativeBindings(this.appRoot)
 
       return callback(this.nativeBindings)
     } catch (error) {
-      this.loadError = stringifyError(error)
+      const message = stringifyError(error)
 
-      return fail(this.loadError)
+      if (!this.nativeBindings) {
+        this.loadError = message
+      }
+
+      return fail(message)
     }
   }
 
@@ -640,9 +660,13 @@ export class GhosttyRenderStateMainBridge {
       return
     }
 
+    this.drivers.delete(driverId)
+    record.ownerWebContents.removeListener?.(
+      'destroyed',
+      record.ownerWebContentsDestroyListener
+    )
     record.terminal.dispose()
     record.osc7Scanner.reset()
-    this.drivers.delete(driverId)
   }
 }
 
