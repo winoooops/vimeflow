@@ -183,6 +183,32 @@ describe('LayoutCreatorModal', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('successful code apply clears a stale save error', async () => {
+    const user = userEvent.setup()
+
+    const onSave = vi.fn<SaveSpy>(() => {
+      throw new Error('Layout schema drifted')
+    })
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.type(screen.getByRole('textbox', { name: 'Layout name' }), 'Bad')
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+    expect(screen.getByText('Layout schema drifted')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Code · JSON/YAML' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(screen.queryByText('Layout schema drifted')).not.toBeInTheDocument()
+  })
+
   test('disables paint cells when pane count is already at the limit', async () => {
     const user = userEvent.setup()
 

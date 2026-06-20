@@ -667,3 +667,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `Menu.Row` allowed ArrowUp/ArrowDown keydown events from focused descendant buttons to bubble into the menu's roving-focus handler, moving focus away from the nested action before the user completed that interaction.
 - **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
 - **Commit:** same commit as this entry
+
+### 65. Menu.Row intercepted nested button activation keys
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx` L502-518
+- **Finding:** `Menu.Row` handled Enter/Space on bubbled keydown events from descendant buttons, preventing native button activation and firing the row's layout-pick action instead. Keyboard users could not activate nested edit/delete/toggle controls without triggering the wrong menu action.
+- **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
+- **Commit:** same commit as this entry

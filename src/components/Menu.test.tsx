@@ -610,6 +610,34 @@ describe('Menu.Row', () => {
       screen.getByRole('menuitem', { name: 'Layout Beta' })
     ).not.toHaveFocus()
   })
+
+  test('nested button Enter activates the button instead of the menu row', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onEdit = vi.fn()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha" onSelect={onSelect}>
+          <span>Layout Alpha</span>
+          <button type="button" onClick={onEdit}>
+            Edit Alpha
+          </button>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onEdit).toHaveBeenCalledOnce()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
 })
 
 describe('Menu.Context', () => {

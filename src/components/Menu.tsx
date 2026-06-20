@@ -500,12 +500,7 @@ const MenuRow = ({
   }
 
   const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
-    if (
-      event.currentTarget !== event.target &&
-      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
-    ) {
-      event.stopPropagation()
-
+    if (event.currentTarget !== event.target) {
       return
     }
 
@@ -517,6 +512,31 @@ const MenuRow = ({
     select()
   }
 
+  const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (
+      event.currentTarget === event.target ||
+      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
+    ) {
+      return
+    }
+
+    event.stopPropagation()
+  }
+
+  const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
+    const target = event.target instanceof Element ? event.target : null
+
+    const nestedControl = target?.closest(
+      'button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"])'
+    )
+
+    if (nestedControl !== null && nestedControl !== event.currentTarget) {
+      return
+    }
+
+    select()
+  }
+
   return (
     <div
       role="menuitem"
@@ -525,8 +545,9 @@ const MenuRow = ({
       aria-disabled={disabled ? true : undefined}
       aria-label={label}
       className={className}
+      onKeyDownCapture={handleKeyDownCapture}
       {...menu.getItemProps({
-        onClick: select,
+        onClick: handleClick,
         onKeyDown: handleKeyDown,
       })}
     >

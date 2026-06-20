@@ -893,6 +893,7 @@ export const LayoutCreatorModal = ({
       setDraft(parsedDraft)
       setCodeDirty(false)
       setCodeError(null)
+      setSaveError(null)
     } catch (error) {
       setCodeError(error instanceof Error ? error.message : 'Invalid layout')
     }
