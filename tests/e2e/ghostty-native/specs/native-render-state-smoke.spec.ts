@@ -244,7 +244,7 @@ const readGhosttyViewportMetrics = async (): Promise<GhosttyViewportMetrics> =>
       lineHeight > 0 &&
       ptyViewportHeight > 0 &&
       root.clientHeight + overflowTolerance >= ptyViewportHeight &&
-      root.clientHeight < ptyViewportHeight + lineHeight - overflowTolerance
+      root.clientHeight < ptyViewportHeight + lineHeight
 
     return {
       cursorVisible:

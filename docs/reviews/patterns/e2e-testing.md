@@ -236,3 +236,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** The native Ghostty smoke suite's `before()` hook chained several `waitUntil` helpers whose cumulative maximum wait could exceed the 60-second Mocha timeout. On a cold CI runner, Mocha could kill the hook before the helper-specific diagnostics surfaced.
 - **Fix:** Raised the native Ghostty WDIO Mocha timeout to 120 seconds so the bounded setup helpers can reach their own failure messages under slow CI conditions.
 - **Commit:** same commit as this entry
+
+### 22. Fitted viewport row assertions must accept the max valid row gap
+
+- **Source:** github-claude | PR #578 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/ghostty-native/specs/native-render-state-smoke.spec.ts`
+- **Finding:** The native Ghostty smoke suite compared `root.clientHeight` against `ptyViewportHeight + lineHeight - overflowTolerance`. With an 18 px line height and 1 px tolerance, that excluded the valid case where the visible pane has exactly 17 px of extra height after the fitted PTY rows.
+- **Fix:** Kept the lower tolerance for minor rounding below the PTY viewport height, but changed the upper exclusive bound to `ptyViewportHeight + lineHeight` so every fitted-row remainder below one full line is accepted.
+- **Commit:** same commit as this entry
