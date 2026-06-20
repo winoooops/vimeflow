@@ -186,16 +186,23 @@ const hasPackageManifest = (packageRoot: string): boolean =>
 
 const hasNativeBuildFile = (dirPath: string): boolean => {
   try {
-    return fs
-      .readdirSync(dirPath, { withFileTypes: true })
-      .some((entry) => entry.isFile() && entry.name.endsWith('.node'))
+    return fs.readdirSync(dirPath, { withFileTypes: true }).some((entry) => {
+      if (entry.isFile()) {
+        return entry.name.endsWith('.node')
+      }
+
+      return (
+        entry.isDirectory() &&
+        hasNativeBuildFile(path.join(dirPath, entry.name))
+      )
+    })
   } catch {
     return false
   }
 }
 
 const hasNativeBuildCandidate = (packageRoot: string): boolean =>
-  fs.existsSync(path.join(packageRoot, 'prebuilds')) ||
+  hasNativeBuildFile(path.join(packageRoot, 'prebuilds')) ||
   hasNativeBuildFile(path.join(packageRoot, 'build', 'Release')) ||
   hasNativeBuildFile(path.join(packageRoot, 'build', 'Debug'))
 

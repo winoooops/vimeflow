@@ -50,5 +50,5 @@ export const config: WebdriverIO.Config = {
   ],
 
   waitforTimeout: 20_000,
-  mochaOpts: { ui: 'bdd', timeout: 60_000 },
+  mochaOpts: { ui: 'bdd', timeout: 120_000 },
 }

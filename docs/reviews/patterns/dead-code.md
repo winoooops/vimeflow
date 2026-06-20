@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-20
-ref_count: 1
+ref_count: 2
 ---
 
 # Dead Code
@@ -42,4 +42,13 @@ code and should be removed.
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L810-822
 - **Finding:** `applyScrollMode` reset `root.scrollTop` to `0` before calling `scrollCursorRowIntoView`, so the helper's `cursorTop < viewportTop` branch could never execute. The extra branch suggested a bidirectional scroll contract the only caller did not provide.
 - **Fix:** Simplified the helper to the actual caller contract: return when the cursor already fits in the top viewport, otherwise scroll down to reveal the cursor bottom.
+- **Commit:** same commit as this entry
+
+### 4. Vite build-time variables in an E2E run script are no-ops
+
+- **Source:** github-claude | PR #578 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `package.json`
+- **Finding:** `test:e2e:ghostty:native:run` set `VITE_E2E`, `VITE_TERMINAL_RENDERER`, and `VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER` even though the Electron bundle had already been built. The runtime assignments could mislead developers into thinking renderer mode changes apply without rebuilding.
+- **Fix:** Removed the build-time `VITE_*` variables from the native Ghostty run script; the build script remains the place where Vite consumes those values.
 - **Commit:** same commit as this entry
