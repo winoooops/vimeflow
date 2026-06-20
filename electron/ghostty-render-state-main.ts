@@ -713,7 +713,12 @@ export class GhosttyRenderStateMainBridge {
 
         record.terminal = terminal
         record.osc7Scanner.reset()
-        previousTerminal.dispose()
+
+        try {
+          previousTerminal.dispose()
+        } catch (error) {
+          return fail(stringifyError(error))
+        }
 
         return ok(null)
       })
@@ -725,7 +730,7 @@ export class GhosttyRenderStateMainBridge {
       const driverId = readDriverId(payload)
       const record = this.drivers.get(driverId)
 
-      if (!record || record.ownerWebContentsId !== ownerWebContentsId) {
+      if (record?.ownerWebContentsId !== ownerWebContentsId) {
         return fail('Ghostty native render-state driver is unknown')
       }
 
@@ -792,7 +797,7 @@ export class GhosttyRenderStateMainBridge {
   ): IpcResult<T> {
     const record = this.drivers.get(driverId)
 
-    if (!record || record.ownerWebContentsId !== ownerWebContentsId) {
+    if (record?.ownerWebContentsId !== ownerWebContentsId) {
       return fail('Ghostty native render-state driver is unknown')
     }
 

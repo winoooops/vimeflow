@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 2
+ref_count: 3
 ---
 
 # Terminal Render-State Driver Contract
@@ -181,4 +181,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts` L697-831
 - **Finding:** Driver records stored the creating `WebContents` id, but write/read/reset/resize/dispose IPC handlers ignored the caller and allowed any renderer with a guessed driver id to operate on another window's native driver.
 - **Fix:** Thread `event.sender.id` through every driver operation and reject ids whose stored owner does not match the caller. Regression coverage exercises all operation handlers from a different `WebContents`.
+- **Commit:** same commit as this entry
+
+### 19. Reset disposal failures must have an explicit terminal ownership outcome
+
+- **Source:** github-claude | PR #571 round 4 | 2026-06-20
+- **Severity:** LOW
+- **File:** `electron/ghostty-render-state-main.ts` L708-721
+- **Finding:** After reset was changed to allocate a replacement before disposing the old terminal, a failed old-terminal `dispose()` path was easy to misread as leaking the new terminal because the failure was caught only by the outer native-binding wrapper.
+- **Fix:** Catch old-terminal disposal failures inside `reset()` and return the IPC failure directly after the replacement has been published. Regression coverage now asserts the replacement remains active and is not disposed on that path.
 - **Commit:** same commit as this entry

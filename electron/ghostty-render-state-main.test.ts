@@ -384,6 +384,7 @@ describe('ghostty render-state main bridge', () => {
       },
     })
     expect(terminals[1]?.feed).toHaveBeenCalledWith(new Uint8Array([0x68]))
+    expect(terminals[1]?.dispose).not.toHaveBeenCalled()
   })
 
   test('preserves fallback row text around sparse styled cells by cell columns', () => {
@@ -721,6 +722,7 @@ describe('ghostty render-state main bridge', () => {
       result: { driverId: string }
     }
     const payload = { driverId: createResult.result.driverId }
+
     const unknownDriver = {
       ok: false,
       error: 'Ghostty native render-state driver is unknown',
@@ -730,6 +732,7 @@ describe('ghostty render-state main bridge', () => {
       ...payload,
       bytes: new Uint8Array([0x68]),
     })
+
     expect(otherEvent.returnValue).toEqual(unknownDriver)
     expect(terminals[0]?.feed).not.toHaveBeenCalled()
 
