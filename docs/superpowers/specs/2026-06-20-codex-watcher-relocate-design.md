@@ -73,25 +73,32 @@ Open-FD discovery is currently **Linux-`/proc`-only and disabled on macOS**
 `resume`, so on macOS the fix is inert without it.
 
 - Introduce an **`OpenRolloutFds` provider seam** (trait/fn) the locator consults:
-  `fn open_rollout_paths(pid) -> HashSet<PathBuf>`.
+  `fn open_rollout_paths(pid) -> io::Result<HashSet<PathBuf>>` — **`Err` (provider
+  failed: lsof error / timeout / permission denied) is distinct from `Ok(∅)` (provider
+  ran fine, no rollout FD open).** This distinction is load-bearing for D2. Never panic
+  / never block (bounded timeout → `Err`).
 - Implementations: existing `/proc` (Linux); **new `lsof`-based** (macOS/BSD) —
-  `lsof -p <pid> -Fn`, parse `n…rollout-*.jsonl` lines. Bounded timeout; failures
-  return empty (never panic / never block).
+  `lsof -p <pid> -Fn`, parse `n…rollout-*.jsonl` lines.
 - The provider is **injectable** so the integration test can supply a fake set
   (platform-independent tests).
 
 ### D2 · Resolver Option A — open-FD authoritative
 
 In `CompositeLocator::resolve_rollout` (`locator.rs:402`), make the per-PID open-FD the
-**authoritative** signal, with `resume`-argv / sqlite-recency as fallback **only when no
-open FD is observable**:
+**authoritative** signal, with `resume`-argv / sqlite-recency as fallback **only on
+`Ok(∅)`** (provider ran and found no open rollout FD):
 
 - In-session `resume` (same cmdline) → resolved via the open FD.
-- `codex resume <id>` launch (FD not open yet) → still binds via argv fallback.
+- `codex resume <id>` launch (FD not open yet → `Ok(∅)`) → still binds via argv fallback.
 - Ambiguous same-cwd rows → already error safely via `choose_state_candidate`
   (`locator.rs:465`).
+- **Provider `Err` ≠ no FD.** On `Err` (lsof failed / timed out / denied — common on
+  macOS), do **NOT** silently fall back to possibly-stale argv/sqlite and do **NOT**
+  report a successful reattach — surface it as a failed relocation so the UI keeps the
+  red "needs reattach" state. Falling back to stale data here is the exact false-success
+  trap to avoid.
 - **Attach-time behavior must not regress** — open-FD is ground truth for attach too;
-  argv/sqlite remain the early-window fallback.
+  argv/sqlite remain the early-window (`Ok(∅)`) fallback.
 
 ### D3 · Reattach triggers (frontend)
 
@@ -99,8 +106,10 @@ open FD is observable**:
   _undetectable_ in-session `resume`.
 - **`/clear` auto-reattach** — `/clear` is already detected (`WorkspaceView.tsx:557`).
   It fires **before** codex opens the new rollout, so the reattach is **deferred /
-  bounded-retried** (retry the re-invoke a few times over ~1–2s until `locate()`
-  resolves a _different_ rollout, then stop). Bounded, single-session — **not**
+  bounded-retried**: re-invoke a few times over ~1–2s and stop on the **success
+  predicate** (D4 — a fresh `agent-status` with a new `agentSessionId`), **not** on the
+  IPC call returning (which carries no rollout/session identity, so it can't tell a
+  re-grab of the OLD rollout from a real relocate). Bounded, single-session — **not**
   continuous polling.
 - **(Optional) reattach-on-focus** — reuse the existing visible-pane refresh
   (`useAgentStatusHotLoading.ts:45`) to re-invoke for codex panes on focus.
@@ -111,9 +120,16 @@ open FD is observable**:
   `watcherStartedRef` once-only gate, **reuse** the existing single-flight
   (`watcherStartInFlightRef`) + generation (`watcherStartGenerationRef`), and **not**
   stop-then-start (let the backend's atomic replace handle rollback).
+- **Success predicate (NOT the IPC return).** `start_agent_watcher` returns no rollout/
+  session identity, so success is **observed downstream**: a fresh `agent-status` event
+  carrying a **new `agentSessionId`** (or a lower token total — `useAgentStatus.ts:526`).
+  The bounded retry and the "stale → cleared" transition both key on this signal, never
+  on the call resolving. _(Optional follow-up: have the backend return the resolved
+  `{ rolloutPath, agentSessionId }` for a synchronous signal.)_
 - **UI state:** reuse the header's refreshing/loading machinery; add a **red
-  "needs reattach"** state. Set it on `/clear` detection (until the deferred reattach
-  succeeds) so the user gets a clear signal even when auto-reattach is mid-retry.
+  "needs reattach"** state. Set it on `/clear` detection; clear it **only** when the
+  success predicate fires. If the bounded retry exhausts **or** the open-FD provider
+  returns `Err`, **keep** the red state (never report a false recovery).
 
 ### D5 · Frontend latch — unchanged
 
@@ -123,12 +139,17 @@ verify in manual test.
 
 ## Testing
 
-- **RED integration test (backend):** fake codex_home (temp) + rollout A; start the
-  watcher; assert A emits (baseline); switch the injected open-FD source to rollout B +
-  write B; re-invoke `start_agent_watcher`; **assert B's events flow** — fails today
-  (resolver doesn't prioritize the FD), passes after D2.
+- **RED integration test (backend):** fake codex_home (temp) with rollout A **and a
+  stale signal that selects A** (a `resume`-argv and/or sqlite row pointing at A) plus
+  an **injected open-FD provider returning B**; start the watcher; re-invoke
+  `start_agent_watcher`; **assert it relocates to B and B's events flow** — this fails
+  today precisely because the stale argv/sqlite wins over the open FD, and passes after
+  D2 (open-FD authoritative). Also assert the **`Err` ≠ `Ok(∅)`** contract: an injected
+  provider `Err` keeps the old watcher and emits **no** fresh `agent-status` (no false
+  success), whereas `Ok(∅)` falls back to argv/sqlite.
 - **macOS lsof provider:** parse fixture `lsof -Fn` output → expected rollout set;
-  empty/timeout → empty set.
+  clean run with no rollout open → `Ok(∅)`; lsof failure / timeout / non-zero exit →
+  `Err` (distinct from `Ok(∅)`).
 - **Resolver:** open-FD beats stale `resume`-argv; argv fallback when no FD;
   ambiguous same-cwd errors; attach path unchanged.
 - **Frontend:** reattach action re-invokes with single-flight (no double-call) +
