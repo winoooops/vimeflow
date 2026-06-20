@@ -5,6 +5,7 @@ import {
   KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
   SETTINGS_SUBSECTIONS,
+  SettingsContent,
   SettingsDialog,
   VIM_KEYMAP_GROUPS,
   useSettingsDialog,
@@ -13,6 +14,10 @@ import {
 describe('settings feature barrel', () => {
   test('exports the SettingsDialog component', () => {
     expect(SettingsDialog).toBeInstanceOf(Function)
+  })
+
+  test('exports the SettingsContent component', () => {
+    expect(SettingsContent).toBeInstanceOf(Function)
   })
 
   test('exports the useSettingsDialog hook', () => {
