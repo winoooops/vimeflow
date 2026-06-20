@@ -6,6 +6,7 @@ import {
 } from './useCommandPalette'
 import type { Command } from '../registry/types'
 import * as chordRegistry from '../chordRegistry'
+import { themeService } from '../../../theme'
 import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
@@ -73,6 +74,44 @@ describe('useCommandPalette', () => {
       expect(result.current.state.currentNamespace).toBe(null)
       // filteredResults is derived from query ':' so it shows all default commands
       expect(result.current.filteredResults.length).toBeGreaterThan(0)
+    })
+
+    test('close() restores the theme active when the palette opened', () => {
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.executeSelected()
+      })
+
+      act(() => {
+        result.current.close()
+      })
+
+      expect(themeService.current().id).toBe('obsidian-lens')
     })
 
     test('disabled palette rejects opens and closes current state', async () => {

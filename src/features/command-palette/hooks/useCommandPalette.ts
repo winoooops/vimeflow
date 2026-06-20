@@ -18,6 +18,7 @@ import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
 import * as chordRegistry from '../chordRegistry'
 import { listenCommandPaletteToggle } from '../../../lib/backend'
+import { themeService } from '../../../theme'
 import {
   COMMAND_PALETTE_SHORTCUT_KEYS,
   isCommandPaletteToggle,
@@ -66,6 +67,7 @@ export const useCommandPalette = (
   const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaderActiveRef = useRef(false)
   const isEnabledRef = useRef(isEnabled)
+  const originalThemeIdRef = useRef<string | null>(null)
 
   isEnabledRef.current = isEnabled
 
@@ -181,6 +183,8 @@ export const useCommandPalette = (
         return
       }
 
+      originalThemeIdRef.current = themeService.current().id
+
       setState((prev) => ({
         ...prev,
         isOpen: true,
@@ -198,6 +202,12 @@ export const useCommandPalette = (
 
   const close = useCallback((): void => {
     clearLeaderWindow()
+
+    if (originalThemeIdRef.current !== null) {
+      themeService.apply(originalThemeIdRef.current)
+      originalThemeIdRef.current = null
+    }
+
     setState((prev) => ({
       ...prev,
       isOpen: false,
@@ -312,6 +322,7 @@ export const useCommandPalette = (
           : parsedQuery.args
 
       selected.execute(executionArgs)
+      originalThemeIdRef.current = null
       close()
     }
   }, [
