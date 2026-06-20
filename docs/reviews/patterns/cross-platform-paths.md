@@ -97,3 +97,12 @@ consider using path libraries for cross-platform code.
 - **Finding:** The pre-push Vitest hook failed on macOS because `parentPathForGitStatus('~/repo/src/new.ts')` intentionally lowercases the expanded path on case-insensitive platforms, while the test expected the raw `$HOME` casing (`/Users/...`). The production behavior was correct, but the platform-sensitive expectation made the local gate fail and encouraged a `git push --no-verify` bypass.
 - **Fix:** Keep the direct `expandTildePath` assertion for raw home expansion, but compare the git-status parent path with `normalizePathForComparison(`${home}/repo/src`)` so the expected value follows the same case-folding contract as the API under test.
 - **Commit:** same commit as this entry
+
+### 9. opencode provider home used a Linux XDG path as a home-relative subdir
+
+- **Source:** github-claude | PR #584 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/config.rs`
+- **Finding:** The opencode registry entry set `home_subdir` to `.local/share/opencode`, which made `provider_home()` resolve a Linux XDG data path through `dirs::home_dir().join(...)` on every platform. macOS and Windows would receive nonexistent home-relative paths instead of their platform data directories once the opencode adapter starts consuming `provider_home`.
+- **Fix:** Cleared opencode's `home_subdir` for the scaffold milestone and documented the M6 follow-up to resolve it through `dirs::data_dir().join("opencode")` when the adapter needs the value.
+- **Commit:** same commit as this entry

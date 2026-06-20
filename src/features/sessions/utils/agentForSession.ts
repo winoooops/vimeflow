@@ -5,6 +5,8 @@ const AGENT_BY_SESSION_TYPE: Record<Session['agentType'], AgentId> = {
   'claude-code': 'claude',
   codex: 'codex',
   kimi: 'kimi',
+  // TEMPORARY (M1): opencode mapped to 'shell' until M6 adds the registry entry
+  opencode: 'shell',
   aider: 'shell',
   generic: 'shell',
 }
