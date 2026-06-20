@@ -69,6 +69,18 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 
+/// Tool-call metadata that must survive display-state completion. opencode can
+/// deliver `message.part.updated[completed]` before `tool.after`; the latter is
+/// still needed for bash test-run parsing.
+struct ToolCallMetadata {
+    started_at: Instant,
+    started_at_iso: String,
+    tool: String,
+    args: String,
+}
+
+type ToolCallMetadataById = HashMap<String, ToolCallMetadata>;
+
 /// Open the bridge JSONL, build the decoder, and spawn the tail thread.
 ///
 /// Mirrors `codex::transcript::start_tailing` / `kimi::transcript::start_tailing`.
@@ -128,6 +140,7 @@ pub(crate) struct OpencodeTranscriptDecoder {
     /// parser (NOT any per-command workdir). Also the baseline for `last_cwd`.
     cwd: Option<PathBuf>,
     in_flight: InFlightToolCalls,
+    tool_metadata: ToolCallMetadataById,
     /// Dedup set keyed by `(callID, status-discriminant)` so a repeated
     /// running/completed update for the same call does not re-emit. The
     /// discriminant is a `&'static str` ("running"/"done"/"failed") rather than
@@ -159,6 +172,7 @@ impl OpencodeTranscriptDecoder {
             session_id,
             cwd,
             in_flight: HashMap::new(),
+            tool_metadata: HashMap::new(),
             emitted: HashSet::new(),
             seen_turns: HashSet::new(),
             num_turns: 0,
@@ -300,6 +314,7 @@ impl OpencodeTranscriptDecoder {
         }
 
         self.finish_tool_call(call_id, status, timestamp);
+        self.tool_metadata.remove(call_id);
     }
 
     /// Common start path: insert into `in_flight` (idempotent on the call key)
@@ -323,6 +338,7 @@ impl OpencodeTranscriptDecoder {
                 args: args.clone(),
                 is_test_file,
             });
+        self.record_tool_metadata(call_key, &tool, &args, timestamp);
 
         let dedup_key = (call_key.to_string(), status_discriminant(&ToolCallStatus::Running));
         if !self.emitted.insert(dedup_key) {
@@ -378,6 +394,23 @@ impl OpencodeTranscriptDecoder {
         });
     }
 
+    fn record_tool_metadata(&mut self, call_key: &str, tool: &str, args: &str, timestamp: &str) {
+        self.tool_metadata
+            .entry(call_key.to_string())
+            .and_modify(|metadata| {
+                if metadata.args.is_empty() && !args.is_empty() {
+                    metadata.tool = tool.to_string();
+                    metadata.args = args.to_string();
+                }
+            })
+            .or_insert_with(|| ToolCallMetadata {
+                started_at: Instant::now(),
+                started_at_iso: timestamp.to_string(),
+                tool: tool.to_string(),
+                args: args.to_string(),
+            });
+    }
+
     /// Feed a `bash` `tool.after` into the shared `claude_code::test_runners`.
     /// `cwd` is the session cwd (NOT any per-command workdir). Only submits when
     /// the command matches a known runner AND `maybe_build_snapshot` returns
@@ -398,14 +431,10 @@ impl OpencodeTranscriptDecoder {
             return;
         };
 
-        // The command preview lives on the in-flight start's args (the
-        // `tool.before`'s `args.command`); fall back to nothing if the start
-        // wasn't seen. `result.output` carries the captured output.
-        let command = self
-            .in_flight
-            .get(call_id)
-            .map(|c| c.args.clone())
-            .unwrap_or_default();
+        // The command preview lives on the start metadata (the `tool.before`'s
+        // `args.command`). It is cached outside `in_flight` because a terminal
+        // part update can remove display state before `tool.after` arrives.
+        let command = self.tool_command(call_id).unwrap_or_default();
         if command.is_empty() {
             return;
         }
@@ -419,12 +448,12 @@ impl OpencodeTranscriptDecoder {
             .unwrap_or("")
             .to_string();
         let started_at = self
-            .in_flight
+            .tool_metadata
             .get(call_id)
             .map(|c| c.started_at_iso.clone())
             .unwrap_or_else(|| timestamp.to_string());
         let instant_fallback = self
-            .in_flight
+            .tool_metadata
             .get(call_id)
             .map(|c| c.started_at.elapsed())
             .unwrap_or_default();
@@ -444,6 +473,19 @@ impl OpencodeTranscriptDecoder {
         }) {
             self.emitter.submit(snapshot);
         }
+    }
+
+    fn tool_command(&self, call_id: &str) -> Option<String> {
+        self.tool_metadata
+            .get(call_id)
+            .filter(|metadata| metadata.tool == "bash")
+            .map(|metadata| metadata.args.clone())
+            .or_else(|| {
+                self.in_flight
+                    .get(call_id)
+                    .filter(|call| call.tool == "bash")
+                    .map(|call| call.args.clone())
+            })
     }
 
     /// `session.created`/`session.updated`: track the cwd transition off
@@ -813,6 +855,40 @@ mod tests {
             .collect();
         assert_eq!(test_runs[0]["runner"], "cargo");
         assert_eq!(test_runs[0]["summary"]["passed"], 1);
+    }
+
+    /// A completed `message.part.updated` can arrive before `tool.after`.
+    /// Test-run parsing must still see the original bash command even though
+    /// the terminal part update removed the in-flight display record.
+    #[test]
+    fn completed_part_before_tool_after_still_emits_test_run_snapshot() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().to_path_buf();
+        let mut dec = decoder(&sink, Some(workspace));
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_order","args":{"command":"cargo test"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":1500,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_order","tool":"bash","state":{"status":"completed"}}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_order","result":{"output":"running 1 test\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":0}}}"#,
+        );
+
+        assert_eq!(
+            sink.count("test-run"),
+            1,
+            "completed part before tool.after still emits a test-run snapshot",
+        );
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(
+            payloads.iter().filter(|p| p["status"] == "done").count(),
+            1,
+            "terminal status remains deduped",
+        );
     }
 
     /// A non-test `bash` `tool.after` ⇒ no test-run snapshot.
