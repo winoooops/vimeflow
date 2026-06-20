@@ -3,9 +3,9 @@
 ## Context
 
 `VIM-180` moves the Ghostty exploration from contract-only plumbing to the first
-real native render-state provider. The renderer process is sandboxed and cannot
-load arbitrary native modules directly, so `libghostty-vt` loading is owned by
-Electron preload.
+real native render-state provider. The renderer and preload scripts are
+sandboxed and cannot load arbitrary native modules directly, so `libghostty-vt`
+loading is owned by Electron main.
 
 The existing architecture remains Option A+ from
 `2026-06-16-ghostty-pty-parser-boundary.zh.html`: the app talks to a renderer
@@ -16,8 +16,9 @@ OSC 7 return through `TerminalParserEvent`.
 
 1. Load a native module directly from renderer code.
 2. Add a backend command that parses every PTY chunk out-of-process.
-3. Expose a narrow preload-owned bridge consumed by the existing Ghostty
-   render-state provider seam.
+3. Expose a narrow bridge consumed by the existing Ghostty render-state provider
+   seam, with preload as a sandbox-safe proxy and Electron main as the native
+   owner.
 
 ## Decision
 
@@ -42,18 +43,19 @@ interface GhosttyRenderStateBridge {
 }
 ```
 
-Electron preload exposes a repository-owned bridge implemented in
-`electron/ghostty-render-state.ts`. That bridge loads the beta
-`@coder/libghostty-vt-node` package through `node-gyp-build`, maps the native
-snapshot shape into the existing renderer contract, and exposes only the narrow
-`ghosttyRenderState` API above. If the native binding cannot load or returns an
-invalid shape, selecting the `native` provider fails closed before the Ghostty
-renderer is instantiated.
+Electron preload exposes a sandbox-safe repository-owned bridge implemented in
+`electron/ghostty-render-state-preload.ts`. The preload bridge uses synchronous
+IPC to `electron/ghostty-render-state-main.ts`, where Electron main loads the
+beta `@coder/libghostty-vt-node` package through `node-gyp-build`, owns native
+terminal instances, maps native snapshots into the existing renderer contract,
+and returns OSC7 effects to preload before `writeBytes` returns. If the native
+binding cannot load or returns an invalid shape, selecting the `native` provider
+fails closed before the Ghostty renderer is instantiated.
 
 ## Justification
 
-1. Renderer sandboxing stays intact. Native module loading remains outside React
-   renderer code.
+1. Renderer and preload sandboxing stay intact. Native module loading remains in
+   Electron main, outside React renderer code and outside sandboxed preload.
 2. The provider gate now represents a real runtime selection path, not only a
    test hook.
 3. `bytesBase64` still feeds `Uint8Array` into the driver through the existing
@@ -65,7 +67,8 @@ renderer is instantiated.
 ## Packaging Constraints
 
 - `@coder/libghostty-vt-node` is currently a beta dependency. The app owns the
-  preload bridge so the renderer contract is insulated from upstream API churn.
+  Electron main bridge so the renderer contract is insulated from upstream API
+  churn.
 - The native package and `node-gyp-build` must be packaged with Electron.
   `electron-builder.yml` includes both packages and unpacks
   `@coder/libghostty-vt-node/prebuilds/**/*.node` for native loading from ASAR.
@@ -75,8 +78,9 @@ renderer is instantiated.
   The byte adapter clears its active output context immediately after
   `writeBytes` returns.
 - The current Node binding exposes terminal state but does not expose semantic
-  OSC callbacks. The preload bridge therefore runs a small byte-stream OSC 7
-  scanner before feeding bytes into the native terminal state.
+  OSC callbacks. The Electron main bridge therefore runs a small byte-stream
+  OSC 7 scanner before feeding bytes into the native terminal state, then
+  returns cwd events to preload synchronously.
 - `readSnapshot()` returns `unknown` at the bridge boundary. Renderer code
   validates rows and cursor shape before applying the display delta.
 - The bridge is still a feasibility spike until manual smoke testing confirms
@@ -100,5 +104,6 @@ renderer is instantiated.
 
 - `VIM-180` Ghostty M2: first real render-state driver integration
 - `docs/decisions/2026-06-16-ghostty-pty-parser-boundary.zh.html`
-- `electron/ghostty-render-state.ts`
+- `electron/ghostty-render-state-main.ts`
+- `electron/ghostty-render-state-preload.ts`
 - `src/features/terminal/components/TerminalPane/ghosttyNativeRenderStateBridge.ts`

@@ -5,7 +5,7 @@ import {
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
 } from './ipc-channels'
-import { loadOptionalGhosttyRenderStateBridge } from './ghostty-render-state'
+import { loadOptionalGhosttyRenderStateBridge } from './ghostty-render-state-preload'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,

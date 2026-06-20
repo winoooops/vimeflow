@@ -56,7 +56,7 @@ vi.mock('electron', () => ({
   ipcRenderer: electronMock.ipcRenderer,
 }))
 
-vi.mock('./ghostty-render-state', () => ({
+vi.mock('./ghostty-render-state-preload', () => ({
   loadOptionalGhosttyRenderStateBridge:
     ghosttyRenderStateMock.loadOptionalGhosttyRenderStateBridge,
 }))
