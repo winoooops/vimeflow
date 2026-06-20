@@ -74,6 +74,7 @@ import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
@@ -519,6 +520,19 @@ const WorkspaceViewContent = (): ReactElement => {
     activePtyBackedPanePtyId ?? null,
     agentStatusResetGeneration
   )
+
+  // Codex watcher relocation recovery (VIM-188): `/clear` arms the red "needs
+  // reattach" state + a bounded auto-reattach; the manual button covers the
+  // undetectable in-session `resume`.
+  const agentReattach = useAgentReattach({
+    sessionId: activePtyBackedPanePtyId ?? null,
+    agentSessionId: agentStatus.agentSessionId,
+    agentTokenTotal: agentStatus.contextWindow
+      ? agentStatus.contextWindow.totalInputTokens +
+        agentStatus.contextWindow.totalOutputTokens
+      : null,
+    staleGeneration: agentStatusResetGeneration,
+  })
 
   const visibleAgentStatusPtyIds = useMemo(
     () =>
@@ -2507,6 +2521,12 @@ const WorkspaceViewContent = (): ReactElement => {
               cwd={activeCwd}
               gitStatus={gitStatus}
               isRefreshing={isAgentStatusRefreshing}
+              needsReattach={agentReattach.needsReattach}
+              onReattach={
+                agentStatus.agentType === 'codex'
+                  ? agentReattach.reattach
+                  : undefined
+              }
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
