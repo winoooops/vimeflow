@@ -114,6 +114,63 @@ describe('useCommandPalette', () => {
       expect(themeService.current().id).toBe('obsidian-lens')
     })
 
+    test('close() restores the original theme after a non-theme command previews a theme leaf', () => {
+      const nonThemeExecute = vi.fn()
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+        {
+          id: 'noop',
+          label: 'Flexible no-op',
+          icon: 'check',
+          execute: nonThemeExecute,
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':flex')
+      })
+
+      // Fuzzy search surfaces the theme leaf; preview changes the displayed theme.
+      expect(
+        result.current.filteredResults.some((cmd) => cmd.id === 'theme-flexoki')
+      ).toBe(true)
+
+      // Select and execute the non-theme leaf without any preview callback.
+      const noopIndex = result.current.filteredResults.findIndex((cmd) => cmd.id === 'noop')
+
+      expect(noopIndex).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(noopIndex)
+        result.current.executeSelected()
+      })
+
+      expect(nonThemeExecute).toHaveBeenCalled()
+      expect(themeService.current().id).toBe('obsidian-lens')
+    })
+
     test('disabled palette rejects opens and closes current state', async () => {
       const { result, rerender } = renderHook(
         ({ enabled }: { enabled: boolean }) =>

@@ -34,6 +34,22 @@ test('subscribers are notified once per apply with the new theme', () => {
   expect(seen).toHaveBeenCalledTimes(1)
 })
 
+test('preview updates the displayed theme and subscribers without persisting', () => {
+  const seen = vi.fn()
+  const unsubscribe = themeService.subscribe(seen)
+  themeService.apply('obsidian-lens')
+  seen.mockClear()
+
+  themeService.preview('flexoki')
+
+  expect(themeService.current().id).toBe('flexoki')
+  expect(document.documentElement.dataset.theme).toBe('flexoki')
+  expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('obsidian-lens')
+  expect(seen).toHaveBeenCalledTimes(1)
+  expect((seen.mock.calls[0][0] as ThemeDefinition).id).toBe('flexoki')
+  unsubscribe()
+})
+
 test('init falls back to obsidian-lens for unknown stored ids', () => {
   window.localStorage.setItem(THEME_STORAGE_KEY, 'no-such-theme')
   themeService.init()
