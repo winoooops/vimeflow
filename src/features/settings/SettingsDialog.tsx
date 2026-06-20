@@ -164,6 +164,15 @@ export const SettingsDialog = ({
 
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">
+              <Kbd>j</Kbd>
+              <Kbd>k</Kbd>
+              <span>nav</span>
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              <span>nav</span>
+              <Kbd>u</Kbd>
+              <Kbd>d</Kbd>
+              <span>scroll</span>
               <span className="min-w-0 flex-1" />
               <Kbd>esc</Kbd>
               <span>close</span>

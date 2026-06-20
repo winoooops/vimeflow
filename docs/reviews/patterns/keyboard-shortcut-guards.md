@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-19
-ref_count: 11
+last_updated: 2026-06-20
+ref_count: 13
 ---
 
 # Keyboard Shortcut Guards
@@ -58,6 +58,14 @@ against three classes of false-fire:
     location focus, etc.) should be represented as non-rebindable catalog
     entries so the keymap validator rejects attempts to bind them to other
     commands.
+11. **Keep selection and DOM focus synchronized for listbox shortcuts** —
+    shortcut-driven listbox navigation must either let the focused widget own
+    the key or move focus to the newly selected option. Updating selection state
+    while leaving focus on an old option breaks the visible focus indicator.
+12. **Search confirmation must report whether it selected anything** — Enter
+    handlers that both confirm a result and blur the search input need a
+    success signal from the confirmation path. Blurring on query presence alone
+    strands users after no-result searches.
 
 ## Findings
 
@@ -460,4 +468,82 @@ against three classes of false-fire:
 - **File:** `src/features/settings/components/SettingsSidebar.tsx` L43-43
 - **Finding:** The search input's ArrowDown/ArrowUp/Enter handlers always called `preventDefault()` and repurposed those keys for settings navigation. When a user types with a CJK/IME input method active, those same keys are used to choose or commit composition candidates, so the custom handlers interrupted composing text.
 - **Fix:** Added an early return in `handleSearchKeyDown` when `event.nativeEvent.isComposing` is true, before the Arrow/Enter branches. Added a co-located test firing composing keydown events to confirm navigation/confirmation callbacks are not invoked during composition.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Settings sidebar navigation still cycles invisible sections on no-match search
+
+- **Source:** github-claude | PR #556 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx` L155-183
+- **Finding:** `sidebarNavigationEntries` fell back to `SETTINGS_SECTIONS` whenever `filtered.length === 0`, which conflated an empty query with an active query that had no matches. A user could type a no-match search, blur the input, then press `j`/`k` or arrow keys and silently change the active settings section while the sidebar still showed no results.
+- **Fix:** Changed the fallback to use all sections only when `query.trim() === ''`, leaving `sidebarNavigationEntries` empty for active no-match searches. The existing `sidebarNavigationEntries.length === 0` guard in `navigateSidebar` then no-ops as intended. Added a regression test covering the no-match keyboard path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Focused settings sidebar options desynced from arrow navigation
+
+- **Source:** github-claude | PR #556 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** The global settings dialog ArrowDown/ArrowUp handler still fired when
+  DOM focus was on a sidebar `role="option"` button. It changed the active section or
+  subsection while the browser focus ring stayed on the old option.
+- **Fix:** When sidebar navigation starts from inside the sidebar listbox, the dialog
+  now focuses the newly selected option after React applies the state update. This
+  preserves the advertised global navigation keys while keeping selection and focus
+  synchronized. Added a regression test for focused sidebar arrow navigation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Backward settings sidebar navigation wrapped from an absent active entry
+
+- **Source:** github-claude | PR #556 round 2 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** When the current navigation key was absent from the visible sidebar
+  entries, backward navigation used an artificial base index that wrapped to the last
+  entry. Filtered or placeholder states could therefore jump to an unrelated section.
+- **Fix:** `navigateSidebar` now returns early when the current navigation key is not
+  present in `sidebarNavigationEntries`. Added a regression test covering a filtered
+  sidebar where the active section is no longer visible.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. No-result settings search blurred on Enter
+
+- **Source:** github-codex-connector | PR #556 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx`
+- **Finding:** The search input blurred on Enter whenever the query was non-empty,
+  even if the query had no matching result and confirmation selected nothing. That
+  removed focus from the only control the user needed to correct the query.
+- **Fix:** The confirmation callback now returns a boolean success signal, and the
+  sidebar blurs the search input only when a result was actually confirmed. Added
+  component and dialog regression tests for no-result Enter.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. Keyboard search confirmation selected targets without scrolling to them
+
+- **Source:** github-codex-connector | PR #556 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** Pressing Enter on a target search result used the preserve-focus path,
+  clearing `scrollTargetId` before blur. Long panes could update the active sidebar
+  state while leaving the confirmed setting offscreen.
+- **Fix:** Confirmed search results now use the same scroll-target path as clicked
+  results, while unconfirmed no-result searches keep focus in the input. The existing
+  Enter regression test now asserts the confirmed target scrolls into view.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Sidebar arrow navigation ignored the focused option anchor
+
+- **Source:** github-codex-connector | PR #556 round 3 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsContent.tsx`
+- **Finding:** When a keydown started from a focused settings sidebar option,
+  ArrowDown/ArrowUp and `j`/`k` still anchored to the active or viewport-derived
+  navigation key. A user could focus `Keymap` while `Appearance` was active, press
+  ArrowDown, and jump from Appearance's active row instead of the row with DOM focus.
+- **Fix:** Sidebar navigation now resolves the current key from the focused
+  `role="option"` element when focus is inside the sidebar listbox, then falls back
+  to the viewport/active anchor for content-origin shortcuts. Added a regression
+  test that focuses `Keymap` while Appearance is active and confirms ArrowDown
+  selects `Coding Agents`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

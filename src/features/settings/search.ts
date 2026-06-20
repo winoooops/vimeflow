@@ -43,13 +43,22 @@ export const settingsSectionResultKey = (id: SettingsSectionId): string =>
 export const settingsTargetResultKey = (target: SettingsTarget): string =>
   `target:${target.id}`
 
+export const sectionResultId = (id: string): string =>
+  `settings-search-result-section-${id}`
+
+export const targetResultId = (id: string): string =>
+  `settings-search-result-target-${id}`
+
+export const subsectionResultId = (id: string): string =>
+  `settings-search-result-subsection-${id}`
+
 export const resultKeyToAriaId = (key: string): string | undefined => {
   if (key.startsWith('section:')) {
-    return `settings-search-result-section-${key.slice('section:'.length)}`
+    return sectionResultId(key.slice('section:'.length))
   }
 
   if (key.startsWith('target:')) {
-    return `settings-search-result-target-${key.slice('target:'.length)}`
+    return targetResultId(key.slice('target:'.length))
   }
 
   return undefined
