@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 17
 ---
 
@@ -364,4 +364,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/settings/SettingsDialog.tsx` L96-103
 - **Finding:** `SettingsDialog` called `searchSettings({ sections: SETTINGS_SECTIONS, targets: SETTINGS_TARGETS, query })` directly in the render body, so navigation, focus state, and selection updates reran the full scoring, sorting, and map construction even when `query` was unchanged.
 - **Fix:** Wrapped the `searchSettings` call in `useMemo` with `[query]` as its dependency so the search model is only recomputed when the query changes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Settings toggle callback reads a ref declared later in the component body
+
+- **Source:** github-claude | PR #577 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/settings/hooks/useSettingsDialog.ts`
+- **Finding:** The `toggle` callback closed over `isOpenRef` before the `const isOpenRef = useRef(isOpen)` declaration appeared in the component body. Runtime behavior was safe because the callback is not invoked during render, but the forward reference creates a temporal-dead-zone footgun for future synchronous invocation changes.
+- **Fix:** Moved the `isOpenRef` declaration above the callbacks that read it so hook-local refs are declared before dependent closures.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

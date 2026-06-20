@@ -100,7 +100,7 @@ describe('SettingsProvider', () => {
     )
   })
 
-  test('syncs an in-memory snapshot to the main process on load and update', async () => {
+  test('syncs an in-memory snapshot to the main process only on update', async () => {
     const loaded = createLoadedSettings()
     const load = vi.fn().mockResolvedValue(loaded)
     const save = vi.fn().mockResolvedValue(undefined)
@@ -120,7 +120,7 @@ describe('SettingsProvider', () => {
       expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('close')
     })
 
-    expect(syncSnapshot).toHaveBeenCalledWith(loaded)
+    expect(syncSnapshot).not.toHaveBeenCalled()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Update' }))
@@ -130,7 +130,7 @@ describe('SettingsProvider', () => {
     })
 
     await waitFor(() => {
-      expect(syncSnapshot).toHaveBeenLastCalledWith(
+      expect(syncSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({ closeWithNoTabs: 'nothing' })
       )
     })

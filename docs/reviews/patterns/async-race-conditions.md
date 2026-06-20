@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-14
+last_updated: 2026-06-20
 ref_count: 22
 ---
 
@@ -677,3 +677,12 @@ prevent showing previous data.
 - **Finding:** The component initialized `aliases` with `DEFAULT_ALIASES`, but the backend returns `[]` when `aliases.toml` is missing. First-launch users saw defaults briefly before the list collapsed to empty; returning users also saw defaults before their real aliases arrived.
 - **Fix:** Initialize `aliases` to `[]` with an explicit `isInitializing` loading state. Defaults are now used only as an intentional fallback when the aliases bridge is absent or when the backend load fails. Added tests verifying no default flash during a slow load and that controls remain disabled until hydration completes.
 - **Commit:** same commit as this entry
+
+### 67. Hydrated settings snapshot rebroadcasts stale disk state as a renderer edit
+
+- **Source:** github-codex-connector | PR #577 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** A newly mounted settings renderer loaded settings from disk and immediately synced that hydration snapshot back to the main process. The main process broadcast that snapshot as `settings:changed`, so a stale disk value could overwrite a newer in-memory edit in another renderer while the async save queue was still pending.
+- **Fix:** Stopped syncing load hydration snapshots to the main process. Explicit user updates still sync the in-memory snapshot immediately before the queued save, preserving the last-window-close race guard without treating disk hydration as an authoritative cross-renderer edit.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

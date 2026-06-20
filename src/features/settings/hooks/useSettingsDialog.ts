@@ -5,6 +5,7 @@ import type { UseSettingsDialogReturn } from '../types'
 
 export const useSettingsDialog = (): UseSettingsDialogReturn => {
   const [isOpen, setIsOpen] = useState(false)
+  const isOpenRef = useRef(isOpen)
 
   const openNativeWindow = useCallback((): boolean => {
     const openWindow =
@@ -45,7 +46,6 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
     setIsOpen((prev) => !prev)
   }, [openNativeWindow])
 
-  const isOpenRef = useRef(isOpen)
   const handlersRef = useRef({ close, toggle })
 
   isOpenRef.current = isOpen
