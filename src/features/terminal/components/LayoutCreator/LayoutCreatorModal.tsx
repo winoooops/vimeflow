@@ -380,6 +380,20 @@ const GridCanvas = ({
     setPreviewRect({ ...cell, colSpan: 1, rowSpan: 1 })
   }
 
+  const addCell = (cell: GridCell): void => {
+    onDraftChange(addSlotRect(draft, { ...cell, colSpan: 1, rowSpan: 1 }))
+  }
+
+  const handleCellClick =
+    (cell: GridCell) =>
+    (event: ReactMouseEvent<HTMLButtonElement>): void => {
+      if (event.detail !== 0) {
+        return
+      }
+
+      addCell(cell)
+    }
+
   const startMove = (
     event: ReactPointerEvent<HTMLElement>,
     slotIndex: number
@@ -476,6 +490,7 @@ const GridCanvas = ({
                       : 'border border-transparent bg-transparent'
                   }`}
                   onPointerDown={canPaint ? startPaint : undefined}
+                  onClick={canPaint ? handleCellClick({ col, row }) : undefined}
                 >
                   <span
                     className={`pointer-events-none absolute inset-0 items-center justify-center text-primary/80 ${

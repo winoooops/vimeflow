@@ -581,6 +581,37 @@ describe('Menu.Submenu', () => {
   })
 })
 
+describe('Menu.Row', () => {
+  test('nested button arrow keys do not move menu row focus', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha">
+          <span>Layout Alpha</span>
+          <button type="button">Edit Alpha</button>
+        </Menu.Row>
+        <Menu.Row label="Layout Beta">
+          <span>Layout Beta</span>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{ArrowDown}')
+
+    expect(editButton).toHaveFocus()
+    expect(
+      screen.getByRole('menuitem', { name: 'Layout Beta' })
+    ).not.toHaveFocus()
+  })
+})
+
 describe('Menu.Context', () => {
   test('renders nothing when closed', () => {
     const closed = false

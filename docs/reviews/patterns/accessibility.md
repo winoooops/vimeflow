@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 28
+ref_count: 29
 ---
 
 # Accessibility
@@ -648,4 +648,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
 - **Finding:** Custom layout rows were rendered as raw `<div>` and `<button>` elements inside `Menu`, so they never registered with the floating-ui list navigation model. Arrow-key navigation reached only the built-in layout checkboxes and skipped the custom section.
 - **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
+- **Commit:** same commit as this entry
+
+### 63. Layout creator empty grid cells ignored keyboard activation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L466-479
+- **Finding:** Empty layout grid cells rendered as enabled buttons with aria labels and tab stops, but only handled pointerdown. Native keyboard activation dispatches click, so Enter/Space on the focused cell announced an actionable control that did nothing.
+- **Fix:** Added a keyboard/synthetic click path for paintable cells that commits the same 1x1 slot as pointer single-cell painting, while ignoring pointer-generated clicks to avoid double-adds after pointerup. Added regression coverage for Enter on an empty grid cell.
+- **Commit:** same commit as this entry
+
+### 64. Nested action button arrow keys leaked into Menu.Row navigation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx` L499-522
+- **Finding:** `Menu.Row` allowed ArrowUp/ArrowDown keydown events from focused descendant buttons to bubble into the menu's roving-focus handler, moving focus away from the nested action before the user completed that interaction.
+- **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
 - **Commit:** same commit as this entry

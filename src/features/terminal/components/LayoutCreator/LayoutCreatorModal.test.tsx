@@ -206,4 +206,33 @@ describe('LayoutCreatorModal', () => {
       screen.getByRole('button', { name: 'Add pane at column 5, row 1' })
     ).toBeDisabled()
   })
+
+  test('adds an empty grid cell through keyboard activation', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn<SaveSpy>()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Add Cols' }))
+
+    const emptyCell = screen.getByRole('button', {
+      name: 'Add pane at column 2, row 1',
+    })
+    emptyCell.focus()
+    await user.keyboard('{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0].slots).toHaveLength(2)
+    expect(onSave.mock.calls[0][0].slots[1]).toMatchObject({
+      rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+    })
+  })
 })

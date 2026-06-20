@@ -500,6 +500,15 @@ const MenuRow = ({
   }
 
   const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (
+      event.currentTarget !== event.target &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.stopPropagation()
+
+      return
+    }
+
     if (event.key !== 'Enter' && event.key !== ' ') {
       return
     }
