@@ -133,6 +133,138 @@ const previewArgs = (tool: any, args: any): any => {
   return {}
 }
 
+const asObject = (value: any): any =>
+  value != null && typeof value === 'object' ? value : {}
+
+const clampNumber = (value: any): any =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined
+
+const sanitizeModel = (model: any): any => {
+  const record = asObject(model)
+
+  return {
+    providerID: clampString(record.providerID),
+    modelID: clampString(record.modelID),
+  }
+}
+
+const sanitizeTime = (time: any): any => {
+  const record = asObject(time)
+
+  return {
+    created: clampNumber(record.created),
+    completed: clampNumber(record.completed),
+  }
+}
+
+const sanitizeTokens = (tokens: any): any => {
+  const record = asObject(tokens)
+  const cache = asObject(record.cache)
+
+  return {
+    input: clampNumber(record.input),
+    output: clampNumber(record.output),
+    reasoning: clampNumber(record.reasoning),
+    cache: {
+      read: clampNumber(cache.read),
+      write: clampNumber(cache.write),
+    },
+  }
+}
+
+const sanitizeStatus = (status: any): any => {
+  const record = asObject(status)
+
+  return {
+    type: clampString(record.type),
+    message: clampString(record.message),
+    attempt: clampNumber(record.attempt),
+    next: clampNumber(record.next),
+  }
+}
+
+const sanitizeMessageInfo = (info: any): any => {
+  const record = asObject(info)
+
+  return {
+    id: clampString(record.id),
+    sessionID: clampString(record.sessionID),
+    role: clampString(record.role),
+    agent: clampString(record.agent),
+    model: sanitizeModel(record.model),
+    time: sanitizeTime(record.time),
+  }
+}
+
+const sanitizeToolState = (tool: any, state: any): any => {
+  const record = asObject(state)
+  const metadata = asObject(record.metadata)
+
+  return {
+    status: clampString(record.status ?? record.type),
+    title: clampString(record.title),
+    args: previewArgs(tool, record.args ?? record.input),
+    output: excerptOutput(record.output),
+    metadata: {
+      exit: metadata.exit,
+      truncated: metadata.truncated,
+    },
+  }
+}
+
+const sanitizePart = (part: any): any => {
+  const record = asObject(part)
+  const type = record.type
+
+  if (type === 'tool') {
+    const tool = record.tool ?? record.name
+
+    return {
+      type,
+      id: clampString(record.id),
+      sessionID: clampString(record.sessionID),
+      messageID: clampString(record.messageID),
+      callID: clampString(record.callID),
+      tool: clampString(tool),
+      state: sanitizeToolState(tool, record.state ?? record),
+      time: sanitizeTime(record.time),
+    }
+  }
+
+  return {
+    type: clampString(type),
+    id: clampString(record.id),
+    sessionID: clampString(record.sessionID),
+    messageID: clampString(record.messageID),
+    tokens: sanitizeTokens(record.tokens),
+    cost: clampNumber(record.cost),
+    time: sanitizeTime(record.time),
+  }
+}
+
+const sanitizeEventData = (type: string, properties: any): any => {
+  if (type === 'message.updated') {
+    return { info: sanitizeMessageInfo(properties.info) }
+  }
+
+  if (type === 'message.part.updated') {
+    return {
+      sessionID: clampString(properties.sessionID),
+      part: sanitizePart(properties.part),
+    }
+  }
+
+  if (type === 'session.created' || type === 'session.updated') {
+    return { info: sanitizeMessageInfo(properties.info) }
+  }
+
+  return {
+    sessionID: clampString(properties.sessionID),
+    status: sanitizeStatus(properties.status),
+    error: clampString(properties.error),
+  }
+}
+
 // Append one already-serializable record to <bridge>/<file>, 0600, best effort.
 const appendLine = (file: string, record: any): void => {
   if (!ensureDir()) {
@@ -228,7 +360,9 @@ const handleEvent = (event: any): void => {
     typeof properties.sessionID === 'string'
       ? properties.sessionID
       : typeof properties.info === 'object' && properties.info != null
-        ? properties.info.id
+        ? typeof properties.info.sessionID === 'string'
+          ? properties.info.sessionID
+          : properties.info.id
         : undefined
 
   if (typeof sessionID !== 'string') {
@@ -240,7 +374,7 @@ const handleEvent = (event: any): void => {
     ts: now(),
     kind: 'event',
     type,
-    data: properties,
+    data: sanitizeEventData(type, properties),
   })
 }
 

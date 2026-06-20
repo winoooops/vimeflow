@@ -24,7 +24,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "type-check": "npm run generate:bindings && npm run type-check:generated",
-    "type-check:generated": "tsc -b && tsc -p electron/tsconfig.json",
+    "type-check:generated": "tsc -b && tsc -p electron/tsconfig.json && npm run type-check:bridge",
     "type-check:bridge": "tsc -p tsconfig.opencode-bridge.json",
     "test": "npm run generate:bindings:if-missing && cross-env NODE_OPTIONS=--max-old-space-size=8192 vitest --passWithNoTests",
     "test:coverage": "npm run generate:bindings:if-missing && cross-env NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",

@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-18
+last_updated: 2026-06-20
 ref_count: 34
 ---
 
@@ -772,3 +772,12 @@ filesystem scope restrictions).
 - **File:** `src/features/sessions/utils/sessionStatus.test.ts` L90-110
 - **Finding:** The unit tests covered `open: true` (placeholder treated as open) and `open: undefined` (fallback to pane liveness), but not the explicit `open: false` path. Both `open: false, dead panes → false` and `open: false, live panes → true via hasLivePane` were untested, leaving the defensive fallback undocumented.
 - **Fix:** Added two focused tests: one asserting `isOpenSession({ open: false, panes: [completed] }) === false`, and one asserting `isOpenSession({ open: false, panes: [running] }) === true`.
+
+### 79. Standalone bridge type check not wired into CI
+
+- **Source:** github-codex-connector | PR #585 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `eslint.config.js`
+- **Finding:** The vendored OpenCode bridge was excluded from ESLint with a dedicated `type-check:bridge` script, but that script was not called by the main `type-check` path or the CI type-check step. Future bridge edits could therefore break the standalone TypeScript contract without failing automation.
+- **Fix:** Added `type-check:bridge` behind `type-check:generated`, the script already used by CI's Type check step, so both local and cloud gates verify the excluded bridge asset.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
