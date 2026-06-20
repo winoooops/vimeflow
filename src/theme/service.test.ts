@@ -42,7 +42,7 @@ test('preview updates the displayed theme and subscribers without persisting', (
 
   themeService.preview('flexoki')
 
-  expect(themeService.current().id).toBe('flexoki')
+  expect(themeService.current().id).toBe('obsidian-lens')
   expect(document.documentElement.dataset.theme).toBe('flexoki')
   expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('obsidian-lens')
   expect(seen).toHaveBeenCalledTimes(1)

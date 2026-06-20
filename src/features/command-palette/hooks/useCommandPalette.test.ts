@@ -116,6 +116,7 @@ describe('useCommandPalette', () => {
 
     test('close() restores the original theme after a non-theme command previews a theme leaf', () => {
       const nonThemeExecute = vi.fn()
+
       const commands: Command[] = [
         {
           id: 'theme',
@@ -158,7 +159,9 @@ describe('useCommandPalette', () => {
       ).toBe(true)
 
       // Select and execute the non-theme leaf without any preview callback.
-      const noopIndex = result.current.filteredResults.findIndex((cmd) => cmd.id === 'noop')
+      const noopIndex = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'noop'
+      )
 
       expect(noopIndex).not.toBe(-1)
 

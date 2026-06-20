@@ -72,7 +72,6 @@ const apply = (id: ThemeId): void => {
 const preview = (id: ThemeId): void => {
   const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
 
-  active = next
   writeDom(next)
   listeners.forEach((listener) => listener(next))
 }
