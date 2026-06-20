@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 3
+ref_count: 4
 ---
 
 # Custom Pane Layout Preservation
@@ -75,4 +75,13 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1246-1258 and `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
 - **Finding:** The capacity guard correctly rejected layouts whose slot count was below the active session pane count, but the main switcher still displayed those choices and the display menu closed after a rejected custom-layout pick. The click appeared to do nothing and left users without a visible explanation.
 - **Fix:** `handlePickLayout` now returns a success boolean, the top pill switcher receives only layouts that can fit the active session (plus the active layout), and the display menu marks blocked custom layout apply actions disabled so rejected picks stay visible instead of closing silently.
+- **Commit:** same commit as this entry
+
+### 8. Paint drag advertises a valid pane while the layout is already at the pane cap
+
+- **Source:** github-claude | PR #569 round 6 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L285-287
+- **Finding:** `previewValid` checked only spatial freedom, so after reaching `MAX_LAYOUT_SLOTS` a user could start a paint drag over an empty cell, see the valid green preview, release, and have `addSlotRect` refuse the pane with no visible feedback.
+- **Fix:** Included the slot-count cap in preview validity and disabled empty paint cells while the draft already has `MAX_LAYOUT_SLOTS` panes. Added a regression test that imports a 16-pane layout, adds an empty column, and verifies the empty paint cell is disabled.
 - **Commit:** same commit as this entry

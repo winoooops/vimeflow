@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-20
-ref_count: 14
+ref_count: 15
 ---
 
 # Error Surfacing
@@ -413,4 +413,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L767-785
 - **Finding:** `handleSave` relied on draft validation before calling `definitionFromDraft`, but `definitionFromDraft` also runs schema validation and can throw if the validators diverge in a future change. An uncaught throw from the click handler would leave the modal open without user-facing feedback.
 - **Fix:** Wrapped `definitionFromDraft` and `onSave` in the same try/catch shape used by the code-import path and route the caught message to the modal's existing inline `codeError` surface.
+- **Commit:** same commit as this entry
+
+### 43. Layout creator save error routed to a hidden code-panel-only surface
+
+- **Source:** github-claude | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L777-789
+- **Finding:** The round-5 `handleSave` catch surfaced failures through `codeError`, but that message only rendered while the optional code panel was open. With the default closed panel, a save-time validation or `onSave` failure kept the modal open with no visible explanation.
+- **Fix:** Added a separate `saveError` state rendered unconditionally below the modal header, cleared it on successful save and draft/name edits, and covered the closed-code-panel failure path with a regression test.
 - **Commit:** same commit as this entry

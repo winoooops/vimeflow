@@ -270,7 +270,9 @@ describe('LayoutDisplayMenu', () => {
       screen.getByRole('button', { name: 'Configure displayed layouts' })
     )
 
-    await user.click(await screen.findByRole('button', { name: 'Main + bottom' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Main + bottom' })
+    )
 
     expect(onPickLayout).not.toHaveBeenCalled()
     expect(screen.getByRole('menu')).toBeInTheDocument()
@@ -289,6 +291,8 @@ describe('LayoutDisplayMenu', () => {
       '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}'
     )
 
-    expect(screen.getByRole('menuitem', { name: 'Main + bottom' })).toHaveFocus()
+    expect(
+      screen.getByRole('menuitem', { name: 'Main + bottom' })
+    ).toHaveFocus()
   })
 })

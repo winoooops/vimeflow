@@ -16,6 +16,7 @@ import { SegmentedControl } from '@/components/SegmentedControl'
 import type { CustomPaneLayoutId } from '../../../sessions/types'
 import {
   MAX_LAYOUT_TRACKS,
+  MAX_LAYOUT_SLOTS,
   type PaneLayoutDefinition,
 } from '../../layout-registry'
 import {
@@ -284,7 +285,8 @@ const GridCanvas = ({
 
   const previewValid =
     previewRect === null ||
-    rectFree(colCount, rowCount, draft.slots, previewRect, null)
+    (draft.slots.length < MAX_LAYOUT_SLOTS &&
+      rectFree(colCount, rowCount, draft.slots, previewRect, null))
 
   useEffect(() => {
     if (drag === null) {
@@ -458,6 +460,7 @@ const GridCanvas = ({
           {Array.from({ length: rowCount }).flatMap((_, row) =>
             Array.from({ length: colCount }).map((__, col) => {
               const empty = occupied[row]?.[col] === -1
+              const canPaint = empty && draft.slots.length < MAX_LAYOUT_SLOTS
 
               return (
                 <button
@@ -465,17 +468,18 @@ const GridCanvas = ({
                   type="button"
                   aria-label={`Add pane at column ${col + 1}, row ${row + 1}`}
                   data-layout-creator-cell={cellKey({ col, row })}
-                  tabIndex={empty ? 0 : -1}
+                  disabled={!canPaint}
+                  tabIndex={canPaint ? 0 : -1}
                   className={`group relative rounded-lg outline-none transition focus-visible:ring-1 focus-visible:ring-primary/60 ${
-                    empty
+                    canPaint
                       ? 'border border-dashed border-outline-variant/45 bg-surface-container/30 hover:border-primary/45 hover:bg-primary/10'
                       : 'border border-transparent bg-transparent'
                   }`}
-                  onPointerDown={empty ? startPaint : undefined}
+                  onPointerDown={canPaint ? startPaint : undefined}
                 >
                   <span
                     className={`pointer-events-none absolute inset-0 items-center justify-center text-primary/80 ${
-                      empty ? 'hidden group-hover:flex' : 'hidden'
+                      canPaint ? 'hidden group-hover:flex' : 'hidden'
                     }`}
                   >
                     <span
@@ -712,6 +716,7 @@ export const LayoutCreatorModal = ({
   const [codeText, setCodeText] = useState('')
   const [codeDirty, setCodeDirty] = useState(false)
   const [codeError, setCodeError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const validation = useMemo(() => validateDraftLayout(draft), [draft])
   const canSave = validation.ok && name.trim().length > 0
@@ -733,6 +738,7 @@ export const LayoutCreatorModal = ({
     setCodeFormat('json')
     setCodeDirty(false)
     setCodeError(null)
+    setSaveError(null)
   }, [editLayout, isOpen, seedLayout])
 
   useEffect(() => {
@@ -762,6 +768,7 @@ export const LayoutCreatorModal = ({
     setDraft(next)
     setCodeDirty(false)
     setCodeError(null)
+    setSaveError(null)
   }, [])
 
   const handleSave = useCallback((): void => {
@@ -784,8 +791,9 @@ export const LayoutCreatorModal = ({
         })
       )
       setCodeError(null)
+      setSaveError(null)
     } catch (error) {
-      setCodeError(error instanceof Error ? error.message : 'Invalid layout')
+      setSaveError(error instanceof Error ? error.message : 'Invalid layout')
     }
   }, [canSave, draft, editLayout?.id, existingIds, name, onSave])
 
@@ -923,7 +931,10 @@ export const LayoutCreatorModal = ({
             value={name}
             aria-label="Layout name"
             className="min-w-0 flex-1 rounded-lg border border-outline-variant/35 bg-surface-container-lowest/70 px-3 py-2 text-sm text-on-surface outline-none transition focus:border-primary/60"
-            onChange={(event): void => setName(event.target.value)}
+            onChange={(event): void => {
+              setName(event.target.value)
+              setSaveError(null)
+            }}
             onKeyDown={(event): void => {
               if (event.key === 'Enter' && canSave) {
                 handleSave()
@@ -943,6 +954,11 @@ export const LayoutCreatorModal = ({
             {saveLabel}
           </Button>
         </div>
+        {saveError !== null && (
+          <p className="border-b border-outline-variant/20 bg-error/10 px-5 py-2 font-mono text-[11px] text-error">
+            {saveError}
+          </p>
+        )}
 
         <div className="min-h-0 flex-1 overflow-hidden px-3 py-3">
           <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto overflow-x-hidden rounded-xl px-2 py-1 pr-3 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-outline-variant/35 [&::-webkit-scrollbar-thumb]:bg-clip-padding">

@@ -6,6 +6,28 @@ import { LayoutCreatorModal } from './LayoutCreatorModal'
 
 type SaveSpy = (definition: PaneLayoutDefinition) => void
 
+const fullFourByFourLayout = {
+  tracks: {
+    columns: Array.from({ length: 4 }, (_, col) => ({
+      id: `col-${col}`,
+      units: 6,
+    })),
+    rows: Array.from({ length: 4 }, (_, row) => ({
+      id: `row-${row}`,
+      units: 6,
+    })),
+  },
+  slots: Array.from({ length: 16 }, (_, index) => ({
+    id: `slot:p${index}`,
+    rect: {
+      col: index % 4,
+      row: Math.floor(index / 4),
+      colSpan: 1,
+      rowSpan: 1,
+    },
+  })),
+}
+
 describe('LayoutCreatorModal', () => {
   test('saves the current draft as a canonical custom pane layout', async () => {
     const user = userEvent.setup()
@@ -134,5 +156,54 @@ describe('LayoutCreatorModal', () => {
       await screen.findByText('Imported layout supports up to 16 panes')
     ).toBeInTheDocument()
     expect(onSave).not.toHaveBeenCalled()
+  })
+
+  test('surfaces save errors when the code panel is closed', async () => {
+    const user = userEvent.setup()
+
+    const onSave = vi.fn<SaveSpy>(() => {
+      throw new Error('Layout schema drifted')
+    })
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.type(screen.getByRole('textbox', { name: 'Layout name' }), 'Bad')
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(screen.getByText('Layout schema drifted')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Apply' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('disables paint cells when pane count is already at the limit', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Code · JSON/YAML' }))
+    fireEvent.change(screen.getAllByRole('textbox')[1], {
+      target: { value: JSON.stringify(fullFourByFourLayout) },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await user.click(screen.getByRole('button', { name: 'Add Cols' }))
+
+    expect(
+      screen.getByRole('button', { name: 'Add pane at column 5, row 1' })
+    ).toBeDisabled()
   })
 })
