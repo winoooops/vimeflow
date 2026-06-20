@@ -220,6 +220,10 @@ describe('LayoutCreatorModal', () => {
       />
     )
 
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Keyboard layout'
+    )
     await user.click(screen.getByRole('button', { name: 'Add Cols' }))
 
     const emptyCell = screen.getByRole('button', {

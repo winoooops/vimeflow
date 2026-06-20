@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
@@ -394,6 +395,17 @@ const GridCanvas = ({
       addCell(cell)
     }
 
+  const handleCellKeyDown =
+    (cell: GridCell) =>
+    (event: ReactKeyboardEvent<HTMLButtonElement>): void => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      addCell(cell)
+    }
+
   const startMove = (
     event: ReactPointerEvent<HTMLElement>,
     slotIndex: number
@@ -491,6 +503,9 @@ const GridCanvas = ({
                   }`}
                   onPointerDown={canPaint ? startPaint : undefined}
                   onClick={canPaint ? handleCellClick({ col, row }) : undefined}
+                  onKeyDown={
+                    canPaint ? handleCellKeyDown({ col, row }) : undefined
+                  }
                 >
                   <span
                     className={`pointer-events-none absolute inset-0 items-center justify-center text-primary/80 ${
