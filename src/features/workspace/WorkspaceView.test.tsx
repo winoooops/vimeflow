@@ -139,6 +139,13 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean; reattach: () => void } => ({
+    needsReattach: false,
+    reattach: (): void => undefined,
+  }),
+}))
+
 // Mock useEditorBuffer so individual tests can flip isDirty without
 // having to drive the real hook through the editor. The default impl
 // (set in beforeEach below) returns a clean buffer so the bulk of
