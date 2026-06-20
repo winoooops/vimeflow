@@ -11,6 +11,9 @@ import {
   GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID,
 } from './ghosttyNativeRenderStateBridge'
 
+const TRUE_COLOR_PINK_HEX = ['#', 'f38ba8'].join('')
+const TRUE_COLOR_BASE_HEX = ['#', '181825'].join('')
+
 const installBridge = (
   bridge: NonNullable<BackendApi['ghosttyRenderState']>,
   loadError?: string
@@ -89,6 +92,16 @@ describe('ghosttyNativeRenderStateBridge', () => {
               rowIndex: 1,
               columnOffset: 6,
             },
+            cells: [
+              {
+                row: 0,
+                col: 0,
+                text: 'n',
+                width: 1,
+                foreground: TRUE_COLOR_PINK_HEX,
+                background: TRUE_COLOR_BASE_HEX,
+              },
+            ],
           }),
           reset,
           resize,
@@ -125,6 +138,16 @@ describe('ghosttyNativeRenderStateBridge', () => {
         rowIndex: 1,
         columnOffset: 6,
       },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: 'n',
+          width: 1,
+          foreground: TRUE_COLOR_PINK_HEX,
+          background: TRUE_COLOR_BASE_HEX,
+        },
+      ],
     })
     expect(resize).toHaveBeenCalledWith({ cols: 120, rows: 32 })
     expect(reset).toHaveBeenCalledOnce()
@@ -177,6 +200,33 @@ describe('ghosttyNativeRenderStateBridge', () => {
 
     expect(() => driver.readSnapshot()).toThrow(
       'Ghostty native render-state snapshot cursor is invalid'
+    )
+  })
+
+  test('rejects malformed native render snapshot cells', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({
+          rows: ['native prompt'],
+          cells: [
+            {
+              row: 4,
+              col: 0,
+              text: 'x',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(() => driver.readSnapshot()).toThrow(
+      'Ghostty native render-state snapshot cells are invalid'
     )
   })
 })

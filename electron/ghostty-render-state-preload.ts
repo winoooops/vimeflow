@@ -25,6 +25,19 @@ export interface GhosttyRenderStateBridgeSnapshot {
     rowIndex: number
     columnOffset: number
   }
+  cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
+}
+
+export interface GhosttyRenderStateBridgeSnapshotCell {
+  row: number
+  col: number
+  text: string
+  width: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  foreground?: string
+  background?: string
 }
 
 export interface GhosttyRenderStateBridgeDriver {

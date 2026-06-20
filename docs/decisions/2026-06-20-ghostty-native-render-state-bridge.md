@@ -77,12 +77,20 @@ fails closed before the Ghostty renderer is instantiated.
 - Effects such as `onCwdChange` must fire synchronously during `writeBytes`.
   The byte adapter clears its active output context immediately after
   `writeBytes` returns.
-- The current Node binding exposes terminal state but does not expose semantic
-  OSC callbacks. The Electron main bridge therefore runs a small byte-stream
-  OSC 7 scanner before feeding bytes into the native terminal state, then
-  returns cwd events to preload synchronously.
+- The current Node binding exposes terminal state and optional styled cells, but
+  does not expose semantic OSC callbacks. The Electron main bridge therefore
+  runs a small byte-stream OSC 7 scanner before feeding bytes into the native
+  terminal state, asks the native snapshot for `includeCells: true`, and returns
+  cwd events to preload synchronously.
 - `readSnapshot()` returns `unknown` at the bridge boundary. Renderer code
-  validates rows and cursor shape before applying the display delta.
+  validates rows, cursor shape, and optional styled cells before applying the
+  display delta.
+- Styled cells are important for prompt fidelity. A plain `visibleLines` snapshot
+  loses powerline foreground/background segments and may trim trailing prompt
+  cells that cursor placement depends on. The native adapter converts styled
+  cells into the same SGR-style sentinel path used by the existing
+  `TerminalDisplayBuffer`, so prior cell-width fixes for Nerd Font and
+  powerline glyphs stay in the rendering path.
 - The bridge is still a feasibility spike until manual smoke testing confirms
   the native binding behaves correctly inside the packaged Electron runtime.
 

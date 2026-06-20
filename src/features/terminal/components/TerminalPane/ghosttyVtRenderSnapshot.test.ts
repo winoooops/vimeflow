@@ -1,6 +1,12 @@
-// cspell:ignore ghostty
+// cspell:ignore ghostty winoooops
 import { describe, expect, test } from 'vitest'
+import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
 import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
+
+const TRUE_COLOR_PINK_HEX = ['#', 'f38ba8'].join('')
+const TRUE_COLOR_BASE_HEX = ['#', '181825'].join('')
+const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+const TRUE_COLOR_BASE = ['rgb', '(24, 24, 37)'].join('')
 
 describe('ghosttyVtRenderSnapshot', () => {
   test('converts a VT screen snapshot into a replace display delta', () => {
@@ -104,5 +110,72 @@ describe('ghosttyVtRenderSnapshot', () => {
       text: row,
       cursorOffset: row.length,
     })
+  })
+
+  test('emits styled native cells through the display-buffer style pipeline', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: [' winoooops $ '],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 15,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: '',
+          width: 1,
+          foreground: TRUE_COLOR_PINK_HEX,
+          background: TRUE_COLOR_BASE_HEX,
+        },
+        {
+          row: 0,
+          col: 1,
+          text: ' ',
+          width: 1,
+          foreground: TRUE_COLOR_PINK_HEX,
+          background: TRUE_COLOR_BASE_HEX,
+        },
+        {
+          row: 0,
+          col: 2,
+          text: 'winoooops',
+          width: 9,
+          foreground: TRUE_COLOR_PINK_HEX,
+          background: TRUE_COLOR_BASE_HEX,
+        },
+        {
+          row: 0,
+          col: 11,
+          text: '',
+          width: 1,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(output.visibleText).toBe(' winoooops $ ')
+    expect(buffer.readVisibleText()).toBe(' winoooops $ ')
+    expect(buffer.readCursorOffset()).toBe(' winoooops $ '.length)
+    expect(buffer.readStyledRuns()).toEqual([
+      {
+        text: ' winoooops',
+        style: {
+          foreground: TRUE_COLOR_PINK,
+          background: TRUE_COLOR_BASE,
+        },
+      },
+      {
+        text: ' $ ',
+        style: {},
+      },
+    ])
   })
 })

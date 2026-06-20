@@ -34,6 +34,19 @@ export interface GhosttyRenderStateBridgeSnapshot {
     rowIndex: number
     columnOffset: number
   }
+  cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
+}
+
+export interface GhosttyRenderStateBridgeSnapshotCell {
+  row: number
+  col: number
+  text: string
+  width: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  foreground?: string
+  background?: string
 }
 
 interface GhosttyNativeTerminalOptions {
@@ -47,17 +60,32 @@ interface GhosttyNativeTerminalLine {
   text: string
 }
 
+interface GhosttyNativeTerminalSnapshotCell {
+  row: number
+  col: number
+  text: string
+  width: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  foreground?: string
+  background?: string
+}
+
 interface GhosttyNativeTerminalSnapshot {
   rows: number
   cursorRow: number
   cursorCol: number
   visibleLines: readonly GhosttyNativeTerminalLine[]
+  cells?: readonly GhosttyNativeTerminalSnapshotCell[]
 }
 
 interface GhosttyNativeTerminal {
   feed: (bytes: Uint8Array) => void
   resize: (cols: number, rows: number) => void
-  snapshot: () => GhosttyNativeTerminalSnapshot
+  snapshot: (options?: {
+    includeCells?: boolean
+  }) => GhosttyNativeTerminalSnapshot
   dispose: () => void
 }
 
@@ -286,10 +314,116 @@ const readSnapshotRows = (
   return rows
 }
 
+const readSnapshotCells = (
+  snapshot: GhosttyNativeTerminalSnapshot
+): readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined => {
+  if (snapshot.cells === undefined) {
+    return undefined
+  }
+
+  if (!Array.isArray(snapshot.cells)) {
+    throw new Error('Ghostty native render-state snapshot cells are invalid')
+  }
+
+  return snapshot.cells.map((cell) => {
+    if (
+      !isRecord(cell) ||
+      !isNonNegativeInteger(cell.row) ||
+      cell.row >= snapshot.rows ||
+      !isNonNegativeInteger(cell.col) ||
+      typeof cell.text !== 'string' ||
+      !isNonNegativeInteger(cell.width)
+    ) {
+      throw new Error('Ghostty native render-state snapshot cells are invalid')
+    }
+
+    const normalizedCell: GhosttyRenderStateBridgeSnapshotCell = {
+      row: cell.row,
+      col: cell.col,
+      text: cell.text,
+      width: cell.width,
+    }
+
+    if (cell.bold === true) {
+      normalizedCell.bold = true
+    }
+
+    if (cell.italic === true) {
+      normalizedCell.italic = true
+    }
+
+    if (cell.underline === true) {
+      normalizedCell.underline = true
+    }
+
+    if (typeof cell.foreground === 'string') {
+      normalizedCell.foreground = cell.foreground
+    }
+
+    if (typeof cell.background === 'string') {
+      normalizedCell.background = cell.background
+    }
+
+    return normalizedCell
+  })
+}
+
+const sortSnapshotCells = (
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
+): readonly GhosttyRenderStateBridgeSnapshotCell[] =>
+  [...cells].sort((left, right) =>
+    left.row === right.row ? left.col - right.col : left.row - right.row
+  )
+
+const readRowsWithCells = (
+  rows: readonly string[],
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
+): readonly string[] => {
+  if (!cells || cells.length === 0) {
+    return rows
+  }
+
+  const cellsByRow = new Map<number, GhosttyRenderStateBridgeSnapshotCell[]>()
+
+  sortSnapshotCells(cells).forEach((cell) => {
+    const rowCells = cellsByRow.get(cell.row) ?? []
+
+    rowCells.push(cell)
+    cellsByRow.set(cell.row, rowCells)
+  })
+
+  return rows.map((fallbackRow, rowIndex) => {
+    const rowCells = cellsByRow.get(rowIndex)
+
+    if (!rowCells || rowCells.length === 0) {
+      return fallbackRow
+    }
+
+    let currentColumn = 0
+    let rowText = ''
+
+    rowCells.forEach((cell) => {
+      if (cell.col > currentColumn) {
+        rowText += ' '.repeat(cell.col - currentColumn)
+        currentColumn = cell.col
+      }
+
+      rowText += cell.text
+      currentColumn += cell.width
+    })
+
+    return fallbackRow.startsWith(rowText)
+      ? `${rowText}${fallbackRow.slice(rowText.length)}`
+      : rowText
+  })
+}
+
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
+  const cells = readSnapshotCells(snapshot)
+  const normalizedRows = readRowsWithCells(rows, cells)
 
   if (
     !isNonNegativeInteger(snapshot.cursorRow) ||
@@ -299,11 +433,12 @@ const normalizeSnapshot = (
   }
 
   return {
-    rows,
+    rows: normalizedRows,
     cursor: {
       rowIndex: snapshot.cursorRow,
       columnOffset: snapshot.cursorCol,
     },
+    ...(cells === undefined ? {} : { cells }),
   }
 }
 
@@ -405,7 +540,7 @@ export class GhosttyRenderStateMainBridge {
 
   readSnapshot(payload: unknown): SnapshotResult {
     return this.withDriver(payload, (record) =>
-      ok(normalizeSnapshot(record.terminal.snapshot()))
+      ok(normalizeSnapshot(record.terminal.snapshot({ includeCells: true })))
     )
   }
 

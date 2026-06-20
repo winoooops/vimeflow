@@ -26,6 +26,15 @@ interface TestNativeTerminal {
         cursorRow: number
         cursorCol: number
         visibleLines: readonly { row: number; text: string }[]
+        cells?: readonly {
+          row: number
+          col: number
+          text: string
+          width: number
+          foreground?: string
+          background?: string
+          bold?: boolean
+        }[]
       }
     >
   >
@@ -73,6 +82,17 @@ const createNativeBindings = (): {
           visibleLines: [
             { row: 0, text: 'prompt' },
             { row: 1, text: 'output' },
+          ],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'p',
+              width: 1,
+              foreground: '#f38ba8',
+              background: '#181825',
+              bold: true,
+            },
           ],
         })),
         dispose: vi.fn(),
@@ -158,8 +178,20 @@ describe('ghostty render-state main bridge', () => {
           rowIndex: 1,
           columnOffset: 2,
         },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: 'p',
+            width: 1,
+            foreground: '#f38ba8',
+            background: '#181825',
+            bold: true,
+          },
+        ],
       },
     })
+    expect(terminals[0]?.snapshot).toHaveBeenCalledWith({ includeCells: true })
   })
 
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {

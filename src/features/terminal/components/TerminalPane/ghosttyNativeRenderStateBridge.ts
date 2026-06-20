@@ -71,6 +71,55 @@ const readSnapshotRows = (
   })
 }
 
+const readSnapshotCells = (
+  snapshot: Record<string, unknown>,
+  rowCount: number
+): GhosttyVtRenderSnapshot['cells'] => {
+  const cells = snapshot.cells
+
+  if (cells === undefined) {
+    return undefined
+  }
+
+  if (!Array.isArray(cells)) {
+    throw new Error('Ghostty native render-state snapshot cells are invalid')
+  }
+
+  return cells.map((cell) => {
+    if (!isRecord(cell)) {
+      throw new Error('Ghostty native render-state snapshot cells are invalid')
+    }
+
+    const { row, col, text, width } = cell
+
+    if (
+      !isNonNegativeInteger(row) ||
+      row >= rowCount ||
+      !isNonNegativeInteger(col) ||
+      typeof text !== 'string' ||
+      !isNonNegativeInteger(width)
+    ) {
+      throw new Error('Ghostty native render-state snapshot cells are invalid')
+    }
+
+    return {
+      row,
+      col,
+      text,
+      width,
+      ...(cell.bold === true ? { bold: true } : {}),
+      ...(cell.italic === true ? { italic: true } : {}),
+      ...(cell.underline === true ? { underline: true } : {}),
+      ...(typeof cell.foreground === 'string'
+        ? { foreground: cell.foreground }
+        : {}),
+      ...(typeof cell.background === 'string'
+        ? { background: cell.background }
+        : {}),
+    }
+  })
+}
+
 const readSnapshotCursor = (
   snapshot: Record<string, unknown>,
   rowCount: number
@@ -107,8 +156,13 @@ const normalizeNativeSnapshot = (
 
   const rows = readSnapshotRows(snapshot)
   const cursor = readSnapshotCursor(snapshot, rows.length)
+  const cells = readSnapshotCells(snapshot, rows.length)
 
-  return cursor === undefined ? { rows } : { rows, cursor }
+  return {
+    rows,
+    ...(cursor === undefined ? {} : { cursor }),
+    ...(cells === undefined ? {} : { cells }),
+  }
 }
 
 export const createGhosttyNativeRenderStateDriver: GhosttyVtRenderStateDriverFactory =
