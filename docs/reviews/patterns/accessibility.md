@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 30
 ---
 
@@ -657,4 +657,19 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/components/Dialog.tsx` L69-91
 - **Finding:** `isVisibleFocusableElement` walked ancestors and rejected any ancestor with `visibility: hidden`. CSS `visibility` is inherited but can be overridden by a descendant with `visibility: visible`, so an element's own computed visibility is the authoritative check for that property. In that valid CSS layout, a visibly focusable control would be skipped by initial focus and the Tab trap.
 - **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
+- **Commit:** same commit as this entry
+
+### 72. Interactive tooltip trigger rendered as a non-focusable chip
+
+- **Source:** github-codex-connector | PR #575 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** The git-ref copy popover used an interactive Tooltip around a
+  `Chip`, but the shared `Chip` primitive renders a non-focusable span. Hover
+  users could open the copy controls, while keyboard users could not focus the
+  trigger and therefore could not reach the popover buttons.
+- **Fix:** Added a stable accessible label and `tabIndex={0}` to the chip
+  trigger so the existing Tooltip focus interaction opens the dialog for
+  keyboard navigation. Added a regression test that tabs to the chip and
+  observes the copy buttons in the mounted dialog.
 - **Commit:** same commit as this entry
