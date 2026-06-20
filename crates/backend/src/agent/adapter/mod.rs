@@ -11,6 +11,7 @@ pub mod claude_code;
 pub mod codex;
 mod error;
 pub mod kimi;
+pub mod opencode;
 mod serde_helpers;
 mod session_lifecycle;
 mod traits;

@@ -1,0 +1,315 @@
+// vimeflow-bridge-version: 1
+//
+// Vimeflow opencode bridge plugin.
+//
+// Subscribes to opencode's plugin hooks and appends each whitelisted event as
+// one compact JSON line to a per-session JSONL file under a Vimeflow-owned
+// bridge directory. The Vimeflow Rust adapter then tails those files as a
+// pure-filesystem locator + JSONL stream (no opencode DB coupling).
+//
+// This file is a build asset embedded into the Vimeflow backend via
+// `include_str!` and auto-installed into `~/.config/opencode/plugins/`. It is
+// intentionally dependency-free: hook params are typed `any` so it type-checks
+// standalone (see `tsconfig.opencode-bridge.json`) without `@opencode-ai/*`.
+//
+// Data minimization (spec §6): tool args are previewed (never full payloads),
+// tool output is excerpted, every other string is bounded, files are 0600, and
+// no permission/credential/account payloads are emitted. All filesystem I/O is
+// wrapped in try/catch so a write error never throws into the host opencode
+// session.
+
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+const SCHEMA_VERSION = 1
+
+// Max bytes for a tool-output excerpt and max chars for any other string field.
+const MAX_FIELD = 2048
+
+// Whitelisted bus event types. Everything else (esp. high-volume
+// `message.part.delta`, `catalog.updated`, `plugin.added`) is dropped, and
+// permission events are out of scope for v1.
+const EVENT_WHITELIST = new Set([
+  'session.created',
+  'session.updated',
+  'session.idle',
+  'session.status',
+  'session.error',
+  'session.diff',
+  'message.updated',
+  'message.part.updated',
+  'todo.updated',
+])
+
+// For `message.part.updated`, keep only these part types.
+const PART_WHITELIST = new Set(['tool', 'step-finish', 'step-start'])
+
+const bridgeDir = (): string => {
+  const override = process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR
+
+  if (override) {
+    return override
+  }
+
+  // Treat an unset OR empty XDG_DATA_HOME as "use the default" to match the
+  // shell `${XDG_DATA_HOME:-$HOME/.local/share}` and the Rust `non_empty_env`
+  // semantics, so the two sides derive a byte-identical path on every input.
+  const xdg = process.env.XDG_DATA_HOME
+  const dataHome = xdg ? xdg : join(homedir(), '.local', 'share')
+
+  return join(dataHome, 'vimeflow', 'opencode-bridge')
+}
+
+const DIR = bridgeDir()
+
+let dirReady = false
+
+const ensureDir = (): boolean => {
+  if (dirReady) {
+    return true
+  }
+
+  try {
+    mkdirSync(DIR, { recursive: true, mode: 0o700 })
+    dirReady = true
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Bound an arbitrary string to MAX_FIELD chars (used for non-output fields).
+const clampString = (value: any): any => {
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  return value.length > MAX_FIELD ? value.slice(0, MAX_FIELD) : value
+}
+
+// Excerpt a tool output to <= MAX_FIELD bytes as head + tail with an elision
+// marker, so a large test-runner log stays useful but bounded.
+const excerptOutput = (value: any): any => {
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  if (value.length <= MAX_FIELD) {
+    return value
+  }
+
+  const half = Math.floor((MAX_FIELD - 16) / 2)
+  const head = value.slice(0, half)
+  const tail = value.slice(value.length - half)
+
+  return `${head}\n…[elided]…\n${tail}`
+}
+
+// Preview tool args: keep only the single low-risk identifying field per tool;
+// drop everything else (never emit full file contents or arbitrary payloads).
+const previewArgs = (tool: any, args: any): any => {
+  if (args == null || typeof args !== 'object') {
+    return {}
+  }
+
+  const name = typeof tool === 'string' ? tool.toLowerCase() : ''
+
+  if (name === 'bash') {
+    return { command: clampString(args.command) }
+  }
+
+  if (name === 'read' || name === 'edit' || name === 'write') {
+    const filePath = args.filePath ?? args.path
+
+    return { filePath: clampString(filePath) }
+  }
+
+  if (name === 'glob' || name === 'grep') {
+    return { pattern: clampString(args.pattern) }
+  }
+
+  return {}
+}
+
+// Append one already-serializable record to <bridge>/<file>, 0600, best effort.
+const appendLine = (file: string, record: any): void => {
+  if (!ensureDir()) {
+    return
+  }
+
+  try {
+    const line = `${JSON.stringify(record)}\n`
+
+    appendFileSync(join(DIR, file), line, { mode: 0o600 })
+  } catch {
+    // A bridge write must never break the host opencode session.
+  }
+}
+
+const now = (): number => Date.now()
+
+// Last-seen directory per session, so we only append an index row on
+// session.created and on a session.updated where the directory changed.
+const lastDirectory = new Map<string, string>()
+
+const writeIndexRow = (
+  sessionID: any,
+  pid: number,
+  directory: any,
+  slug: any
+): void => {
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  appendLine('index.jsonl', {
+    sessionID,
+    pid,
+    directory: clampString(directory),
+    slug: clampString(slug),
+    time: now(),
+  })
+}
+
+const handleSessionInfo = (type: string, info: any): void => {
+  if (info == null || typeof info !== 'object') {
+    return
+  }
+
+  const sessionID = info.id
+
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  const directory = typeof info.directory === 'string' ? info.directory : ''
+  const previous = lastDirectory.get(sessionID)
+
+  if (type === 'session.created' || previous !== directory) {
+    lastDirectory.set(sessionID, directory)
+    writeIndexRow(sessionID, process.pid, info.directory, info.slug)
+  }
+}
+
+const handleEvent = (event: any): void => {
+  if (event == null || typeof event !== 'object') {
+    return
+  }
+
+  const type = event.type
+
+  if (typeof type !== 'string' || !EVENT_WHITELIST.has(type)) {
+    return
+  }
+
+  const properties =
+    event.properties != null && typeof event.properties === 'object'
+      ? event.properties
+      : {}
+
+  // Drop noisy non-whitelisted message parts before any disk write.
+  if (type === 'message.part.updated') {
+    const part = properties.part
+    const partType =
+      part != null && typeof part === 'object' ? part.type : undefined
+
+    if (typeof partType !== 'string' || !PART_WHITELIST.has(partType)) {
+      return
+    }
+  }
+
+  if (type === 'session.created' || type === 'session.updated') {
+    handleSessionInfo(type, properties.info)
+  }
+
+  const sessionID =
+    typeof properties.sessionID === 'string'
+      ? properties.sessionID
+      : typeof properties.info === 'object' && properties.info != null
+        ? properties.info.id
+        : undefined
+
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  appendLine(`${sessionID}.jsonl`, {
+    v: SCHEMA_VERSION,
+    ts: now(),
+    kind: 'event',
+    type,
+    data: properties,
+  })
+}
+
+export const VimeflowOpencodeBridge = async (input: any) => {
+  void input
+
+  return {
+    event: async (params: any) => {
+      try {
+        handleEvent(params?.event)
+      } catch {
+        // Never throw into the opencode event bus.
+      }
+    },
+
+    'tool.execute.before': async (input: any, output: any) => {
+      try {
+        const sessionID = input?.sessionID
+
+        if (typeof sessionID !== 'string') {
+          return
+        }
+
+        appendLine(`${sessionID}.jsonl`, {
+          v: SCHEMA_VERSION,
+          ts: now(),
+          kind: 'tool.before',
+          tool: input?.tool,
+          sessionID,
+          callID: input?.callID,
+          args: previewArgs(input?.tool, output?.args),
+        })
+      } catch {
+        // Never throw into the host opencode session.
+      }
+    },
+
+    'tool.execute.after': async (input: any, output: any) => {
+      try {
+        const sessionID = input?.sessionID
+
+        if (typeof sessionID !== 'string') {
+          return
+        }
+
+        const metadata =
+          output?.metadata != null && typeof output.metadata === 'object'
+            ? output.metadata
+            : {}
+
+        appendLine(`${sessionID}.jsonl`, {
+          v: SCHEMA_VERSION,
+          ts: now(),
+          kind: 'tool.after',
+          tool: input?.tool,
+          sessionID,
+          callID: input?.callID,
+          result: {
+            title: clampString(output?.title),
+            output: excerptOutput(output?.output),
+            metadata: {
+              exit: metadata.exit,
+              truncated: metadata.truncated,
+            },
+          },
+        })
+      } catch {
+        // Never throw into the host opencode session.
+      }
+    },
+  }
+}
