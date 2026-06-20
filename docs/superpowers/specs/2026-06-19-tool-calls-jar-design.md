@@ -25,7 +25,7 @@ settle the open decisions below.
 | Tile color       | **Theme-adaptive** ramp from `--color-primary*` tokens                                                  | Multi-theme app + `no-hardcoded-colors`; validated across Catppuccin / Flexoki / Tokyo Night / Dracula |
 | Views            | **Both** Packed + Tags, with persisted switcher                                                         | It's the handoff design; keeps the original representation                                             |
 | Equal height     | Both views occupy the **same** body height (vessel height, **180px**)                                   | Toggling must not shift the panel                                                                      |
-| Tags fill        | `align-content: space-between` so rows span the full box                                                | "Always fill the space"; mirrors the jar's edge-to-edge fill                                           |
+| Tags fill        | `align-content: flex-start` — rows pack from the top with a minimal gap                                 | `space-between` stretched the inter-row gaps; content is the max, the gap is the min                   |
 | Tags scrollbar   | `overflow-y:auto` + **scrollbar hidden** (`scrollbar-width:none` / `::-webkit-scrollbar{display:none}`) | Kills the entrance-pop scrollbar flash; no bar ever paints; wheel-scroll still works                   |
 | No top fade      | dropped the scroll mask                                                                                 | The top gradient clipped the first pill row                                                            |
 | Widget feel      | `cursor: default` + `select-none` on the section                                                        | Non-editable status surface — no text I-beam                                                           |
@@ -133,9 +133,9 @@ jitter). Tile radius `min(10, m*0.16)` where `m=min(w,h)`.
   (13px/700, `text-on-surface`) · spacer · `ToolCallsViewSwitch`.
 - Body is a fixed **180px** box in both views.
 - **Packed**: `ToolJarVessel` fills the box.
-- **Tags**: `overflow-y:auto` + `.tj-noscroll` (hidden scrollbar); inner
-  `flex-wrap` with `align-content: space-between; min-height:100%` so rows span
-  top-to-bottom. No fade mask.
+- **Tags**: `overflow-y:auto` + `.tj-no-scroll` (hidden scrollbar); inner
+  `flex-wrap` with `align-content: flex-start; min-height:100%` so rows pack
+  from the top with a minimal gap and scroll only on overflow. No fade mask.
 - View persists to `localStorage['vimeflow:agent-status:toolCallsView']`
   (`'jar' | 'tags'`, default `'jar'`) via a pub/sub store + `useSyncExternalStore`,
   mirroring `sidebarCollapsedStore`.
