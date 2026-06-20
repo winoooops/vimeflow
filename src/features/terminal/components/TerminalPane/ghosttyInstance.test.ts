@@ -256,7 +256,7 @@ describe('ghosttyInstance', () => {
     setElementSize(container, 256, 180)
     created.terminal.open(container)
 
-    expect(resize).toHaveBeenLastCalledWith({ cols: 30, rows: 10 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 30, rows: 9 })
     expect(resize).toHaveBeenCalledTimes(2)
 
     created.fitController.fit()
@@ -266,13 +266,13 @@ describe('ghosttyInstance', () => {
     setElementSize(container, 336, 216)
     created.fitController.fit()
 
-    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 11 })
     expect(resize).toHaveBeenCalledTimes(3)
 
     created.terminal.clear()
 
     expect(reset).toHaveBeenCalledOnce()
-    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 12 })
+    expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 11 })
     expect(resize).toHaveBeenCalledTimes(4)
   })
 

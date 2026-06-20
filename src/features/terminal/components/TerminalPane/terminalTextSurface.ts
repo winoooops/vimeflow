@@ -422,6 +422,7 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     const contentWidth = Math.max(0, width - this.readOutputHorizontalPadding())
+    const contentHeight = Math.max(0, height - this.readOutputVerticalPadding())
 
     const nextCols = Math.max(
       MIN_COLS,
@@ -430,7 +431,7 @@ export class TerminalTextSurface implements TerminalSurface {
 
     const nextRows = Math.max(
       MIN_ROWS,
-      Math.floor(height / APPROXIMATE_LINE_HEIGHT)
+      Math.floor(contentHeight / APPROXIMATE_LINE_HEIGHT)
     )
 
     if (nextCols === this.colsValue && nextRows === this.rowsValue) {
@@ -504,6 +505,14 @@ export class TerminalTextSurface implements TerminalSurface {
 
     return (
       parseCssPixels(style.paddingLeft) + parseCssPixels(style.paddingRight)
+    )
+  }
+
+  private readOutputVerticalPadding(): number {
+    const style = window.getComputedStyle(this.output)
+
+    return (
+      parseCssPixels(style.paddingTop) + parseCssPixels(style.paddingBottom)
     )
   }
 
@@ -791,13 +800,17 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    const cursorTop =
-      parseCssPixels(window.getComputedStyle(this.output).paddingTop) +
-      cursorRowIndex * APPROXIMATE_LINE_HEIGHT
+    const outputStyle = window.getComputedStyle(this.output)
+    const paddingTop = parseCssPixels(outputStyle.paddingTop)
+    const paddingBottom = parseCssPixels(outputStyle.paddingBottom)
+
+    const cursorTop = paddingTop + cursorRowIndex * APPROXIMATE_LINE_HEIGHT
 
     const cursorBottom = cursorTop + APPROXIMATE_LINE_HEIGHT
     const viewportTop = this.root.scrollTop
-    const viewportBottom = viewportTop + viewportHeight
+
+    const viewportBottom =
+      viewportTop + Math.max(0, viewportHeight - paddingBottom)
 
     if (cursorTop >= viewportTop && cursorBottom <= viewportBottom) {
       return

@@ -85,15 +85,15 @@ describe('plainTextInstance', () => {
 
     expect(container.firstElementChild).toBe(created.terminal.element)
     expect(created.terminal.cols).toBe(78)
-    expect(created.terminal.rows).toBe(20)
-    expect(resizeHandler).toHaveBeenCalledWith({ cols: 78, rows: 20 })
+    expect(created.terminal.rows).toBe(19)
+    expect(resizeHandler).toHaveBeenCalledWith({ cols: 78, rows: 19 })
 
     setElementSize(container, 400, 180)
     created.fitController.fit()
 
     expect(created.terminal.cols).toBe(48)
-    expect(created.terminal.rows).toBe(10)
-    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 48, rows: 10 })
+    expect(created.terminal.rows).toBe(9)
+    expect(resizeHandler).toHaveBeenLastCalledWith({ cols: 48, rows: 9 })
   })
 
   test('clamps renderer output to the pane width', () => {
