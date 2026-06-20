@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-13
-ref_count: 12
+last_updated: 2026-06-20
+ref_count: 13
 ---
 
 # Resource Cleanup
@@ -153,4 +153,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `crates/backend/src/agent/adapter/kimi/usage_fetch.rs`
 - **Finding:** version_from_command used child.try_wait().ok()? to poll a spawned kimi binary; an Err from try_wait propagated None out of the loop, dropping the child without kill/wait and leaving a zombie process on Unix.
 - **Fix:** Removed version_from_command and the version_from_kimi_binary fallback entirely so the User-Agent version is resolved from transcript metadata or install/latest JSON only, eliminating the zombie-leak surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Part-update-only opencode tool calls retained metadata forever
+
+- **Source:** github-claude | PR #588 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** `message.part.updated` running events cached tool metadata for every call, but the terminal part-update path only removed `in_flight` state. Calls without a later `tool.after` left one stale metadata entry per completed tool call for the lifetime of the session.
+- **Fix:** Remove the call's metadata immediately after a terminal part update is accepted for calls that do not expect `tool.after`, and add a regression test that asserts pure part-update completion clears the metadata cache.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

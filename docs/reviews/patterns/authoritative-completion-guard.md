@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-06-20
-ref_count: 1
+ref_count: 2
 ---
 
 # Authoritative Completion Guard

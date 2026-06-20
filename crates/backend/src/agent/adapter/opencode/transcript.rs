@@ -396,6 +396,7 @@ impl OpencodeTranscriptDecoder {
             return;
         }
         self.finish_tool_call(call_key, status, timestamp);
+        self.tool_metadata.remove(call_key);
     }
 
     /// Common completion path: remove the in-flight call and emit its terminal
@@ -863,6 +864,32 @@ mod tests {
         assert_eq!(payloads.len(), 2);
         assert_eq!(payloads[1]["status"], "failed");
         assert_eq!(payloads[1]["toolUseId"], "call_e");
+    }
+
+    /// A call that exists only in the part-update stream has no later
+    /// `tool.after` owner, so terminal part updates must clear cached metadata.
+    #[test]
+    fn part_update_only_completion_clears_tool_metadata() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_part_only","tool":"bash","state":{"status":"running","args":{"command":"echo hi"}}}}}"#,
+        );
+        assert!(
+            dec.tool_metadata.contains_key("call_part_only"),
+            "running part update caches metadata for display and command lookup",
+        );
+
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_part_only","tool":"bash","state":{"status":"completed"}}}}"#,
+        );
+
+        assert!(
+            !dec.tool_metadata.contains_key("call_part_only"),
+            "part-update-only completion has no later owner for cached metadata",
+        );
     }
 
     /// A `tool.after` with a non-zero `metadata.exit` ⇒ failed.
