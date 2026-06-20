@@ -425,6 +425,57 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('screen snapshot two')
   })
 
+  test('keeps parser display replace snapshots pinned to the viewport top', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', 'output', '', '', '', ''],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 6,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    Object.defineProperty(element, 'scrollHeight', {
+      configurable: true,
+      value: 640,
+    })
+    element.scrollTop = 128
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    expect(element.scrollTop).toBe(0)
+  })
+
   test('renders the cursor from parser display snapshot coordinates', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),

@@ -91,6 +91,10 @@ fails closed before the Ghostty renderer is instantiated.
   cells into the same SGR-style sentinel path used by the existing
   `TerminalDisplayBuffer`, so prior cell-width fixes for Nerd Font and
   powerline glyphs stay in the rendering path.
+- Native snapshots are full-screen replacements, not append-only transcript
+  chunks. The text surface keeps `displayDelta.replace` renders pinned to the
+  viewport top so empty native viewport rows do not scroll prompt content out of
+  view.
 - The bridge is still a feasibility spike until manual smoke testing confirms
   the native binding behaves correctly inside the packaged Electron runtime.
 

@@ -45,6 +45,8 @@ export interface TerminalTextSurfaceOutput {
   readonly displayDelta?: TerminalDisplayDelta
 }
 
+type RenderScrollMode = 'bottom' | 'top'
+
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
@@ -270,8 +272,14 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     if (output.displayDelta) {
+      const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
+        (operation) => operation.type === 'replace'
+      )
+        ? 'top'
+        : 'bottom'
+
       this.outputBuffer.applyDelta(output.displayDelta)
-      this.renderOutput()
+      this.renderOutput({ scrollMode })
       callback?.()
 
       return
@@ -731,7 +739,7 @@ export class TerminalTextSurface implements TerminalSurface {
     return rows
   }
 
-  private renderOutput(): void {
+  private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
     const text = this.outputBuffer.readText()
     const runs = this.outputBuffer.readStyledRuns()
 
@@ -743,7 +751,8 @@ export class TerminalTextSurface implements TerminalSurface {
     const fragments = this.createOutputFragments(runs, cursorOffset)
 
     this.output.replaceChildren(...fragments)
-    this.root.scrollTop = this.root.scrollHeight
+    this.root.scrollTop =
+      options.scrollMode === 'top' ? 0 : this.root.scrollHeight
   }
 
   private notifyResize(): void {
