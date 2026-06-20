@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 11
 ---
 
@@ -460,4 +460,13 @@ against three classes of false-fire:
 - **File:** `src/features/settings/components/SettingsSidebar.tsx` L43-43
 - **Finding:** The search input's ArrowDown/ArrowUp/Enter handlers always called `preventDefault()` and repurposed those keys for settings navigation. When a user types with a CJK/IME input method active, those same keys are used to choose or commit composition candidates, so the custom handlers interrupted composing text.
 - **Fix:** Added an early return in `handleSearchKeyDown` when `event.nativeEvent.isComposing` is true, before the Arrow/Enter branches. Added a co-located test firing composing keydown events to confirm navigation/confirmation callbacks are not invoked during composition.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Settings toggle shortcut could not close the fallback modal after native IPC failed
+
+- **Source:** github-claude | PR #577 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/hooks/useSettingsDialog.ts`
+- **Finding:** `toggle()` always delegated to `openNativeWindow()` when the Electron bridge existed, even while the fallback modal was already open because a previous native-window open failed. A second Cmd/Ctrl+Comma press retried the failing IPC path and returned early instead of closing the modal.
+- **Fix:** Guarded native-window delegation with `!isOpenRef.current` so the shortcut only opens through Electron when closed, then falls through to the normal state toggle when the fallback modal is open. Added a hook regression test that verifies the second toggle closes the fallback modal without another IPC call.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-15
+last_updated: 2026-06-20
 ref_count: 8
 ---
 
@@ -148,4 +148,13 @@ base data is technically "correct."
 - **File:** `src/features/command-palette/hooks/useVimLeaderChords.ts` L79-93
 - **Finding:** `cycleNextPane` advanced through `session.panes` directly. In an over-capacity layout (e.g. three panes in a two-slot `vsplit`), pressing the leader `w` chord could focus a hidden pane. `selectVisiblePanes` would then rescue that pane into the last visible slot, evicting the pane that was already there and causing a visible layout jump. This also made `w` inconsistent with the directional `h`/`j`/`k`/`l` chords, which already resolved against the visible-slot subset.
 - **Fix:** Derived the current layout shape from `LAYOUTS[session.layout]`, guarded the `undefined` case, computed `visiblePanes = selectVisiblePanes(session.panes, shape.capacity)`, and cycled within the visible array before activating `visiblePanes[next].id`. Added an over-capacity regression test verifying that `w` wraps within the visible subset rather than jumping to a hidden pane.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Native settings window updates did not refresh workspace settings state
+
+- **Source:** github-codex-connector | PR #577 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/App.tsx`
+- **Finding:** The workspace and native settings window each mounted their own `SettingsProvider`. Updates made in the native window saved to disk and changed that renderer's context, but the workspace provider kept its old in-memory settings until reload, leaving live keymap and command-palette behavior stale.
+- **Fix:** Added a `settings:changed` Electron broadcast from the existing settings snapshot sync path, exposed `settings.onDidChange` through preload, and subscribed `SettingsProvider` to apply remote snapshots without re-saving them. Added provider/preload coverage for the cross-renderer update path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

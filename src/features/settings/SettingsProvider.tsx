@@ -76,6 +76,17 @@ export const SettingsProvider = ({
     void load()
   }, [syncSnapshotToMain])
 
+  useEffect(() => {
+    const bridge =
+      typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+
+    return bridge?.onDidChange?.((next) => {
+      settingsRef.current = next
+      setSettings(next)
+      setSaveError(null)
+    })
+  }, [])
+
   const saveNext = useCallback(
     async (previous: Promise<void>, next: AppSettings): Promise<void> => {
       try {

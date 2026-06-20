@@ -152,6 +152,27 @@ describe('useSettingsDialog', () => {
     })
   })
 
+  test('toggle closes the fallback dialog after native window opening fails', async () => {
+    const openWindow = vi.fn().mockRejectedValue(new Error('failed'))
+    window.vimeflow = {
+      settings: {
+        openWindow,
+      },
+    } as unknown as BackendApi
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.toggle())
+
+    await waitFor(() => {
+      expect(result.current.isOpen).toBe(true)
+    })
+
+    act(() => result.current.toggle())
+
+    expect(result.current.isOpen).toBe(false)
+    expect(openWindow).toHaveBeenCalledTimes(1)
+  })
+
   test('Escape closes the dialog when open', () => {
     const { result } = renderHook(() => useSettingsDialog())
 

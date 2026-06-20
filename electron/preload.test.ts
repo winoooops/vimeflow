@@ -20,6 +20,7 @@ import {
 import {
   COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
+  SETTINGS_CHANGED,
   SETTINGS_OPEN_WINDOW,
 } from './ipc-channels'
 import './preload'
@@ -133,6 +134,33 @@ describe('preload browserPane wiring', () => {
 
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
       SETTINGS_OPEN_WINDOW
+    )
+  })
+
+  test('settings.onDidChange forwards settings broadcasts', () => {
+    const settings = preloadApi().settings as {
+      onDidChange: (callback: (settings: unknown) => void) => () => void
+    }
+    const callback = vi.fn()
+
+    const unlisten = settings.onDidChange(callback)
+
+    const handler = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === SETTINGS_CHANGED
+    )?.[1] as ((event: unknown, settings: unknown) => void) | undefined
+
+    if (handler === undefined) {
+      throw new Error('settings listener was not registered')
+    }
+
+    const next = { version: 1, onLastWindowClosed: 'quit' }
+    handler({}, next)
+    unlisten()
+
+    expect(callback).toHaveBeenCalledWith(next)
+    expect(electronMock.ipcRenderer.off).toHaveBeenCalledWith(
+      SETTINGS_CHANGED,
+      handler
     )
   })
 

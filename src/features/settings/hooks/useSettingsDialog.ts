@@ -38,7 +38,7 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
   const close = useCallback(() => setIsOpen(false), [])
 
   const toggle = useCallback(() => {
-    if (openNativeWindow()) {
+    if (!isOpenRef.current && openNativeWindow()) {
       return
     }
 

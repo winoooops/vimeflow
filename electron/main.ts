@@ -30,6 +30,7 @@ import {
   BACKEND_INVOKE,
   COMMAND_PALETTE_BINDING,
   KEYMAP_CAPTURE_ACTIVE,
+  SETTINGS_CHANGED,
   SETTINGS_OPEN_FILE,
   SETTINGS_OPEN_WINDOW,
   SETTINGS_SYNC_SNAPSHOT,
@@ -251,6 +252,34 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isRecord(value) &&
+  Object.values(value).every((entry) => typeof entry === 'string')
+
+const isAppSettings = (value: unknown): value is AppSettings =>
+  isRecord(value) &&
+  typeof value.version === 'number' &&
+  typeof value.closeWithNoTabs === 'string' &&
+  typeof value.onLastWindowClosed === 'string' &&
+  typeof value.useSystemPathPrompts === 'boolean' &&
+  typeof value.useSystemPrompts === 'boolean' &&
+  typeof value.redactPrivateValues === 'boolean' &&
+  typeof value.cliOpenBehavior === 'string' &&
+  typeof value.aesthetic === 'string' &&
+  typeof value.accentHue === 'number' &&
+  typeof value.density === 'string' &&
+  typeof value.uiFont === 'string' &&
+  typeof value.monoFont === 'string' &&
+  typeof value.keymapPreset === 'string' &&
+  typeof value.agentShimEnabled === 'boolean' &&
+  isStringRecord(value.customKeybindings)
+
+const broadcastSettingsChanged = (settings: AppSettings): void => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(SETTINGS_CHANGED, settings)
+  }
+}
 
 // Mirrors isStructuredBackendError in src/lib/backend.ts; keep in sync manually.
 const isStructuredBackendError = (
@@ -578,6 +607,10 @@ const setupApp = async (): Promise<void> => {
         typeof settings.onLastWindowClosed === 'string'
       ) {
         lastKnownOnLastWindowClosed = settings.onLastWindowClosed
+      }
+
+      if (isAppSettings(settings)) {
+        broadcastSettingsChanged(settings)
       }
     }
   )
