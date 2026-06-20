@@ -3,8 +3,8 @@
 VIM-70 owns the production split-plane rollout for the QA runner.
 
 The target shape is one lightweight control host that owns webhooks, queue state,
-Linear comments, and merge decisions, plus a burst worker that runs Kimi, Codex,
-Lifeline, tests, and PR fix pushes only when a PR needs compute. The worker
+Linear comments, and merge decisions, plus a burst worker that runs the fixer
+engine, Lifeline, tests, and PR fix pushes only when a PR needs compute. The worker
 plane can be a small fleet of reusable Spot instances for burst capacity.
 
 ## Planes
@@ -22,7 +22,7 @@ plane can be a small fleet of reusable Spot instances for burst capacity.
   - `/status` protected by `QA_STATUS_TOKEN`.
   - GitHub/Linear orchestrator credentials.
 - Runs only the lightweight Codex review adjudicator on the control plane.
-  Kimi, fixer-side Codex verify, and tests stay on the worker.
+  Fixer-side implementation, Codex verify, and tests stay on the worker.
 
 ### Burst Worker Fleet
 
@@ -33,8 +33,8 @@ plane can be a small fleet of reusable Spot instances for burst capacity.
 - Runs a neutral checkout of the repo.
 - Each PR cycle creates its own `.claude/worktrees/qa-pr-N` worktree.
 - Holds the fixer credentials and tool auth needed by `run.js`.
-- Keeps Kimi Code auth on a persistent encrypted EBS volume or a reusable worker
-  image boundary. Do not copy the local developer auth directory ad hoc.
+- Keeps fixer tool auth on a persistent encrypted EBS volume or a reusable
+  worker image boundary. Do not copy the local developer auth directory ad hoc.
 - May be stopped between runs. Stopped EC2 compute does not bill, but the worker
   EBS volume, snapshots, and any unattached Elastic IP still can.
 
@@ -77,6 +77,13 @@ Worker credentials:
 - `QA_WORKER_CODEX_HOME`, sourced from
   `/vimeflow/qa-runner/prod/worker/QA_WORKER_CODEX_HOME`; for the production EBS
   path this is `/var/lib/vimeflow/codex-auth`
+- optional `QA_FIXER_ENGINE`, sourced from
+  `/vimeflow/qa-runner/prod/worker/QA_FIXER_ENGINE`; default is `kimi`, set to
+  `codex` when Kimi Code quota is exhausted or when testing the Codex-only fixer
+  path
+- optional `QA_CODEX_MODEL`, `QA_CODEX_SANDBOX`, and `QA_FIXER_TIMEOUT_MS`,
+  sourced from matching worker SSM parameter names for Codex fixer model pinning,
+  sandbox selection, and runtime cap overrides
 - optional `CODEX_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/CODEX_API_KEY`, consumed by
   `codex login --with-api-key` only when
@@ -141,6 +148,9 @@ is exposed to the worker process through the official `KIMI_MODEL_NAME` /
 arguments or repo-controlled process environments. Clean burst workers should
 clone `https://github.com/winoooops/lifeline` and set
 `QA_LIFELINE_SKILLS_DIR=/opt/vimeflow/lifeline/skills` during bootstrap.
+Set `QA_FIXER_ENGINE=codex` in the worker SSM parameter or command environment
+to run the full fixer cycle with `codex exec`; Kimi remains installed but is not
+invoked in that mode.
 
 ## Control Daemon Mode
 
@@ -302,12 +312,15 @@ to install; branch smoke tests use the branch under test, and production should
 pin the deployed runner ref rather than relying on a hidden WIP default.
 The script installs Node 22, GitHub CLI, Codex CLI, the official
 `@moonshot-ai/kimi-code` CLI, `libsecret`, the Vimeflow repo, Lifeline skills,
-worker env files from SSM, and project npm dependencies. The fixer invokes Kimi
-Code in non-interactive mode with `kimi --skills-dir <dir> -p <prompt>
---output-format stream-json`. Configured OAuth/model-alias hosts can set
-`KIMI_MODEL` to add `-m <alias>`; clean API-key workers default the model to
-`kimi-for-coding` through `KIMI_MODEL_NAME` and omit `-m` so the official
-`KIMI_MODEL_*` temporary provider path is used.
+worker env files from SSM, and project npm dependencies. By default the fixer
+invokes Kimi Code in non-interactive mode with
+`kimi --skills-dir <dir> -p <prompt> --output-format stream-json`. Configured
+OAuth/model-alias hosts can set `KIMI_MODEL` to add `-m <alias>`; clean API-key
+workers default the model to `kimi-for-coding` through `KIMI_MODEL_NAME` and
+omit `-m` so the official `KIMI_MODEL_*` temporary provider path is used. With
+`QA_FIXER_ENGINE=codex`, the worker instead invokes
+`codex exec --sandbox workspace-write --cd <PR worktree> --add-dir <repo> -`
+and feeds it the same one-cycle upsource-review contract.
 
 ## Worker Cycle Entrypoint
 
@@ -446,7 +459,7 @@ Separate cost note:
 2. Add `auto-review`.
 3. Confirm the control host dispatches through SSM or SSH.
 4. Confirm the worker pushes a fix with the fixer GitHub identity.
-5. Confirm Kimi and orchestrator Linear comments use the expected bot identities.
+5. Confirm fixer and orchestrator Linear comments use the expected bot identities.
 
 ### Approval Path
 

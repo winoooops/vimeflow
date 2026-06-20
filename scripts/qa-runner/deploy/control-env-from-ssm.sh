@@ -42,6 +42,49 @@ if [ -z "$qa_max_parallel" ]; then
   qa_max_parallel="2"
 fi
 
+fixer_engine="${QA_FIXER_ENGINE:-}"
+if [ -z "$fixer_engine" ]; then
+  fixer_engine="$(optional_value QA_FIXER_ENGINE | tr -d '\r\n')" || exit 1
+fi
+if [ -n "$fixer_engine" ]; then
+  fixer_engine="$(printf "%s" "$fixer_engine" | tr "[:upper:]" "[:lower:]")"
+  case "$fixer_engine" in
+    kimi | codex) ;;
+    *)
+      echo "error: unsupported QA_FIXER_ENGINE '$fixer_engine' (expected kimi or codex)" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+codex_model="${QA_CODEX_MODEL:-}"
+if [ -z "$codex_model" ]; then
+  codex_model="$(optional_value QA_CODEX_MODEL | tr -d '\r\n')" || exit 1
+fi
+
+codex_sandbox="${QA_CODEX_SANDBOX:-}"
+if [ -z "$codex_sandbox" ]; then
+  codex_sandbox="$(optional_value QA_CODEX_SANDBOX | tr -d '\r\n')" || exit 1
+fi
+if [ -n "$codex_sandbox" ]; then
+  case "$codex_sandbox" in
+    read-only | workspace-write | danger-full-access) ;;
+    *)
+      echo "error: unsupported QA_CODEX_SANDBOX '$codex_sandbox'" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+fixer_timeout_ms="${QA_FIXER_TIMEOUT_MS:-}"
+if [ -z "$fixer_timeout_ms" ]; then
+  fixer_timeout_ms="$(optional_value QA_FIXER_TIMEOUT_MS | tr -d '\r\n')" || exit 1
+fi
+if [ -n "$fixer_timeout_ms" ] && [[ ! "$fixer_timeout_ms" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: QA_FIXER_TIMEOUT_MS must be a positive integer number of milliseconds" >&2
+  exit 1
+fi
+
 if [ "$worker_mode" = "ssm" ] && [ -z "$worker_instance_ids" ]; then
   worker_instance_ids="$(optional_value QA_WORKER_INSTANCE_IDS)" || exit 1
 fi
@@ -177,6 +220,10 @@ QA_WORKER_MODE=$worker_mode
 QA_WORKER_REGION=$worker_region
 QA_WORKER_REPO=$worker_repo
 EOF
+  write_env_line QA_FIXER_ENGINE "$fixer_engine"
+  write_env_line QA_CODEX_MODEL "$codex_model"
+  write_env_line QA_CODEX_SANDBOX "$codex_sandbox"
+  write_env_line QA_FIXER_TIMEOUT_MS "$fixer_timeout_ms"
   write_env_line GH_TOKEN "$gh_orch_token"
   write_env_line QA_WORKER_INSTANCE_ID "$worker_instance_id"
   write_env_line QA_WORKER_INSTANCE_IDS "$worker_instance_ids"

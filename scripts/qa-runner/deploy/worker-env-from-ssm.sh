@@ -92,6 +92,50 @@ if [ -z "$codex_auth_mode" ]; then
   codex_auth_mode="api-key"
 fi
 
+fixer_engine="${QA_FIXER_ENGINE:-}"
+if [ -z "$fixer_engine" ]; then
+  fixer_engine="$(single_line_optional_value QA_FIXER_ENGINE)" || exit 1
+fi
+if [ -z "$fixer_engine" ]; then
+  fixer_engine="kimi"
+fi
+fixer_engine="$(printf "%s" "$fixer_engine" | tr "[:upper:]" "[:lower:]")"
+case "$fixer_engine" in
+  kimi | codex) ;;
+  *)
+    echo "error: unsupported QA_FIXER_ENGINE '$fixer_engine' (expected kimi or codex)" >&2
+    exit 1
+    ;;
+esac
+
+codex_model="${QA_CODEX_MODEL:-}"
+if [ -z "$codex_model" ]; then
+  codex_model="$(single_line_optional_value QA_CODEX_MODEL)" || exit 1
+fi
+
+codex_sandbox="${QA_CODEX_SANDBOX:-}"
+if [ -z "$codex_sandbox" ]; then
+  codex_sandbox="$(single_line_optional_value QA_CODEX_SANDBOX)" || exit 1
+fi
+if [ -n "$codex_sandbox" ]; then
+  case "$codex_sandbox" in
+    read-only | workspace-write | danger-full-access) ;;
+    *)
+      echo "error: unsupported QA_CODEX_SANDBOX '$codex_sandbox'" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+fixer_timeout_ms="${QA_FIXER_TIMEOUT_MS:-}"
+if [ -z "$fixer_timeout_ms" ]; then
+  fixer_timeout_ms="$(single_line_optional_value QA_FIXER_TIMEOUT_MS)" || exit 1
+fi
+if [ -n "$fixer_timeout_ms" ] && [[ ! "$fixer_timeout_ms" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: QA_FIXER_TIMEOUT_MS must be a positive integer number of milliseconds" >&2
+  exit 1
+fi
+
 install -d -m 0700 "$repo/scripts/qa-runner" "$etc_dir" "$codex_home" "$kimi_code_home"
 
 write_secret_file "$repo/scripts/qa-runner/bot.env" 0600 <<EOF
@@ -163,9 +207,13 @@ AWS_REGION=$region
 AWS_DEFAULT_REGION=$region
 CODEX_HOME=$codex_home
 QA_WORKER_CODEX_AUTH_MODE=$codex_auth_mode
+QA_FIXER_ENGINE=$fixer_engine
 KIMI_CODE_HOME=$kimi_code_home
 KIMI_DISABLE_TELEMETRY=1
 EOF
+  write_env_line QA_CODEX_MODEL "$codex_model"
+  write_env_line QA_CODEX_SANDBOX "$codex_sandbox"
+  write_env_line QA_FIXER_TIMEOUT_MS "$fixer_timeout_ms"
   write_env_line OPENAI_API_KEY "$openai_api_key"
   write_env_line KIMI_MODEL_NAME "$kimi_model_name"
   write_env_line KIMI_MODEL_API_KEY "$kimi_api_key"

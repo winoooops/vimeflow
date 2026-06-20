@@ -168,7 +168,7 @@ const createHarness = () => {
 const runBootstrap = (harness, env = {}) => {
   execFileSync('bash', [SCRIPT], {
     env: {
-      ...process.env,
+      ...cleanProcessEnv(),
       AWS_REGION: 'us-west-1',
       PATH: `${harness.binDir}:${process.env.PATH}`,
       QA_CONTROL_PARAM_PREFIX: '/test/control',
@@ -184,14 +184,35 @@ const runBootstrap = (harness, env = {}) => {
 const readControlEnv = (harness) =>
   readFileSync(join(harness.etcDir, 'control.env'), 'utf8')
 
+const cleanProcessEnv = () => {
+  const env = { ...process.env }
+  delete env.QA_FIXER_ENGINE
+  delete env.QA_CODEX_MODEL
+  delete env.QA_CODEX_SANDBOX
+  delete env.QA_FIXER_TIMEOUT_MS
+
+  return env
+}
+
 describe('control-env-from-ssm.sh', () => {
   test('writes SSM-backed worker fleet capacity knobs', () => {
     const harness = createHarness()
 
     try {
-      runBootstrap(harness)
+      runBootstrap(harness, {
+        QA_FIXER_ENGINE: 'Codex',
+        QA_CODEX_MODEL: 'gpt-test',
+        QA_CODEX_SANDBOX: 'workspace-write',
+        QA_FIXER_TIMEOUT_MS: '5400000',
+      })
 
       expect(readControlEnv(harness)).toContain('QA_MAX_PARALLEL=6\n')
+      expect(readControlEnv(harness)).toContain('QA_FIXER_ENGINE=codex\n')
+      expect(readControlEnv(harness)).toContain('QA_CODEX_MODEL=gpt-test\n')
+      expect(readControlEnv(harness)).toContain(
+        'QA_CODEX_SANDBOX=workspace-write\n'
+      )
+      expect(readControlEnv(harness)).toContain('QA_FIXER_TIMEOUT_MS=5400000\n')
       expect(readControlEnv(harness)).toContain(
         'QA_WORKER_INSTANCE_IDS=i-one,i-two,i-three\n'
       )

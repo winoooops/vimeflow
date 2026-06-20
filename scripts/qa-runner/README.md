@@ -18,8 +18,8 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
        CI_RED     → report only once automatic reruns are exhausted/unavailable
                  │
                  ▼  per NEEDS_FIX PR, concurrently, each in its own worktree:
- ② run.js → kimi -p (as the FIXER bot) · upsource-review skill  — poll → fix →
-    CODEX GATE → commit → push → reply/resolve threads → repeat until clean.
+ ② run.js → fixer engine (as the FIXER bot) · upsource-review skill  — poll →
+    fix → CODEX GATE → commit → push → reply/resolve threads → repeat until clean.
                  │
                  ▼
  ③ Linear  — control plane / observability. Each state transition mirrors to the
@@ -35,8 +35,11 @@ it (author ≠ approver — and it satisfies "require approval from a non-author
 branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges as
 `orchestrator.env`. Either absent ⇒ that action falls back to your own `gh`.
 
-- **codex** is the verify **gate** — kimi writes the fix, codex gates it (the
-  quality backstop). Confirmed callable (`codex exec` + `codex review`).
+- **Fixer engine** defaults to Kimi Code. Set `QA_FIXER_ENGINE=codex` to have
+  the worker run the whole review-fix cycle through `codex exec` instead.
+- **codex** remains the verify **gate** in the lifeline skill; in Codex fixer
+  mode, Codex also drives the implementation pass. Confirmed callable
+  (`codex exec` + `codex review`).
 - **Kimi Code** runs through the official headless CLI path:
   `kimi --skills-dir <dir> -p <prompt> --output-format stream-json`. Configured
   OAuth/model aliases can set `KIMI_MODEL` to add `-m <alias>`; clean API-key
@@ -88,7 +91,7 @@ sentence; blocking directions are passed into `QA_FIX_CONTEXT` so the fixer gets
 the adjudicator's preferred implementation route instead of re-deriving it from
 scratch. When adjudication returns `REVOKE`, the daemon posts the
 structured decision directly to the GitHub PR and to the linked Linear issue, then
-stops; it does not enter the Kimi fixer loop even when `--execute` is armed.
+stops; it does not enter the fixer loop even when `--execute` is armed.
 
 The adjudicator makes a bounded retry before giving up on malformed or missing
 structured output. Each failed attempt writes a JSON artifact under
@@ -99,7 +102,7 @@ tries again on the next poll and webhook/manual work is requeued by daemon
 backoff.
 
 `NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **3**) —
-each kimi runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so
+each fixer runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so
 parallel runs never collide. Output is teed to `logs/pr-N.log` and prefixed `[#N]`
 on the console so you can watch interleaved runs.
 
@@ -116,7 +119,7 @@ authenticated comment author is on the whitelist.
 | Increment | What                                                                                              | State                    |
 | --------- | ------------------------------------------------------------------------------------------------- | ------------------------ |
 | **1**     | `watch.js scan` — read-only: list eligible PRs                                                    | ✅ done                  |
-| **2**     | `run.js` — lock → dispatch kimi (upsource-review skill) → codex gate → push, fixer bot identity   | ✅ done                  |
+| **2**     | `run.js` — lock → dispatch Kimi/Codex fixer → codex gate → push, fixer bot identity               | ✅ done                  |
 | **3**     | `watch.js tick/watch` — outer state machine, `--execute` fixes, `--approve` merges, Linear wiring | ✅ done — proven on #317 |
 | **4**     | two-bot loop (fixer ≠ orchestrator) + parallel fixes (cap `--max`)                                | ✅ done                  |
 | 5         | host: cron / `/loop`, then a self-hosted GitHub Actions runner on `pull_request_review`           | ⬜ next                  |
@@ -154,8 +157,9 @@ default**, `--push` arms the live path, and it adopts the fixer bot identity fro
 `bot.env` if present:
 
 ```bash
-node scripts/qa-runner/run.js 317          # dry-run: kimi fixes + codex gate, nothing pushed
+node scripts/qa-runner/run.js 317          # dry-run: configured fixer + codex gate, nothing pushed
 node scripts/qa-runner/run.js 317 --push   # live: commit/push as the fixer bot, reply/resolve, Linear status
+QA_FIXER_ENGINE=codex node scripts/qa-runner/run.js 317 --push
 ```
 
 ## Host (v1 → v2)
@@ -223,6 +227,10 @@ The command receives the fixer contract through environment variables:
 | `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
+| `QA_FIXER_ENGINE`             | Optional fixer engine override: `kimi` (default) or `codex`         |
+| `QA_CODEX_MODEL`              | Optional Codex model pin for Codex fixer mode                       |
+| `QA_CODEX_SANDBOX`            | Optional Codex sandbox mode, default `workspace-write`              |
+| `QA_FIXER_TIMEOUT_MS`         | Optional fixer timeout in milliseconds, default 45 minutes          |
 | `QA_WORKER_KEEP_ALIVE`        | `1` when the daemon owns burst-worker stop through its idle timer   |
 | `QA_WORKER_MIN_FREE_PERCENT`  | Minimum worker filesystem free percentage after cleanup, default 15 |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
@@ -232,7 +240,7 @@ The dispatcher must block until the burst worker completes that fixer pass and
 then exit with `run.js`'s exit code. The control daemon keeps its existing
 post-cycle behavior: it re-snapshots the PR, records progress or retry state,
 writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
-`t2.micro` from doing expensive Kimi/Codex/test work while preserving one
+`t2.micro` from doing expensive fixer/test work while preserving one
 authoritative queue, one classifier, and one Linear status surface.
 
 ### Codex Auth Split
@@ -323,8 +331,8 @@ one deduped PR comment with the created Linear issue link. Set
 `QA_LINEAR_CREATE_ISSUES=0` to disable creation and GitHub writes.
 
 When the fixer completes a live `/lifeline:upsource-review` cycle, `run.js` posts
-a structured fixer comment with the PR, branch, pushed head, Kimi exit, stop mode,
-and worktree cleanliness.
+a structured fixer comment with the PR, branch, pushed head, fixer engine, fixer
+exit, stop mode, and worktree cleanliness.
 
 ## Identity
 
@@ -337,7 +345,7 @@ from these files.
 
 | File               | Keys        | Role                                      | Used by                  |
 | ------------------ | ----------- | ----------------------------------------- | ------------------------ |
-| `bot.env`          | `GH_BOT_*`  | inner **fixer**                           | `run.js` (kimi)          |
+| `bot.env`          | `GH_BOT_*`  | inner **fixer**                           | `run.js`                 |
 | `orchestrator.env` | `GH_ORCH_*` | outer **orchestrator** (reviews + merges) | `watch.js` (`--approve`) |
 
 Each = a classic PAT (`repo` scope) on a Write-collaborator account; see the
@@ -368,7 +376,7 @@ interactive login.
 - **Opt-in only** (`auto-review` label) — narrow blast radius for the pilot.
 - **Approval is a second label** (`auto-approve`) — it never triggers work by itself.
 - **One run per PR** — lock files under `.locks/` (gitignored); concurrency capped at `--max` (2).
-- kimi works **only on the PR branch in an isolated worktree**; never `main`, never `--force`.
+- The fixer works **only on the PR branch in an isolated worktree**; never `main`, never `--force`.
 - **codex gate + bounded retry** before any commit.
 - **author ≠ approver** — the fixer bot never merges its own work; the orchestrator does.
 - Branch deletion on merge is a **remote API ref-delete**, not `gh --delete-branch`

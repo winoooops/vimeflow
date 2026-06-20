@@ -79,6 +79,38 @@ case "$key" in
       exit 254
     fi
     ;;
+  QA_FIXER_ENGINE)
+    if [ -n "\${FAKE_QA_FIXER_ENGINE:-}" ]; then
+      printf "%s" "$FAKE_QA_FIXER_ENGINE"
+    else
+      echo "ParameterNotFound: $name" >&2
+      exit 254
+    fi
+    ;;
+  QA_CODEX_MODEL)
+    if [ -n "\${FAKE_QA_CODEX_MODEL:-}" ]; then
+      printf "%s" "$FAKE_QA_CODEX_MODEL"
+    else
+      echo "ParameterNotFound: $name" >&2
+      exit 254
+    fi
+    ;;
+  QA_CODEX_SANDBOX)
+    if [ -n "\${FAKE_QA_CODEX_SANDBOX:-}" ]; then
+      printf "%s" "$FAKE_QA_CODEX_SANDBOX"
+    else
+      echo "ParameterNotFound: $name" >&2
+      exit 254
+    fi
+    ;;
+  QA_FIXER_TIMEOUT_MS)
+    if [ -n "\${FAKE_QA_FIXER_TIMEOUT_MS:-}" ]; then
+      printf "%s" "$FAKE_QA_FIXER_TIMEOUT_MS"
+    else
+      echo "ParameterNotFound: $name" >&2
+      exit 254
+    fi
+    ;;
   openai-api-key)
     printf "%s" "fixture-openai-value"
     ;;
@@ -146,6 +178,10 @@ const runBootstrap = (harness, env = {}) => {
   delete baseEnv.CODEX_HOME
   delete baseEnv.QA_WORKER_CODEX_HOME
   delete baseEnv.QA_WORKER_CODEX_AUTH_MODE
+  delete baseEnv.QA_FIXER_ENGINE
+  delete baseEnv.QA_CODEX_MODEL
+  delete baseEnv.QA_CODEX_SANDBOX
+  delete baseEnv.QA_FIXER_TIMEOUT_MS
 
   execFileSync('bash', [SCRIPT], {
     env: {
@@ -183,6 +219,7 @@ describe('worker-env-from-ssm.sh', () => {
       expect(readWorkerEnv(harness)).toContain(
         'QA_WORKER_CODEX_AUTH_MODE=existing\n'
       )
+      expect(readWorkerEnv(harness)).toContain('QA_FIXER_ENGINE=kimi\n')
       expect(existsSync(harness.codexLog)).toBe(false)
     } finally {
       harness.cleanup()
@@ -206,6 +243,7 @@ describe('worker-env-from-ssm.sh', () => {
       expect(readWorkerEnv(harness)).toContain(
         'QA_WORKER_CODEX_AUTH_MODE=existing\n'
       )
+      expect(readWorkerEnv(harness)).toContain('QA_FIXER_ENGINE=kimi\n')
       expect(existsSync(harness.codexLog)).toBe(false)
     } finally {
       harness.cleanup()
@@ -229,10 +267,59 @@ describe('worker-env-from-ssm.sh', () => {
       expect(readWorkerEnv(harness)).toContain(
         'QA_WORKER_CODEX_AUTH_MODE=api-key\n'
       )
+      expect(readWorkerEnv(harness)).toContain('QA_FIXER_ENGINE=kimi\n')
 
       expect(readFileSync(harness.codexLog, 'utf8')).toContain(
         `CODEX_HOME=${expectedCodexHome}\nARGS=login --with-api-key\n`
       )
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  test('writes the Codex fixer engine from worker SSM parameters', () => {
+    const harness = createHarness()
+    const codexHome = join(harness.root, 'codex-auth')
+
+    try {
+      mkdirSync(codexHome)
+      writeFileSync(join(codexHome, 'auth.json'), '{"mode":"browser"}\n')
+
+      runBootstrap(harness, {
+        QA_WORKER_CODEX_AUTH_MODE: 'existing',
+        QA_WORKER_CODEX_HOME: codexHome,
+        FAKE_QA_FIXER_ENGINE: 'Codex',
+        FAKE_QA_CODEX_MODEL: 'gpt-test',
+        FAKE_QA_CODEX_SANDBOX: 'workspace-write',
+        FAKE_QA_FIXER_TIMEOUT_MS: '5400000',
+      })
+
+      expect(readWorkerEnv(harness)).toContain('QA_FIXER_ENGINE=codex\n')
+      expect(readWorkerEnv(harness)).toContain('QA_CODEX_MODEL=gpt-test\n')
+      expect(readWorkerEnv(harness)).toContain(
+        'QA_CODEX_SANDBOX=workspace-write\n'
+      )
+      expect(readWorkerEnv(harness)).toContain('QA_FIXER_TIMEOUT_MS=5400000\n')
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  test('rejects unsupported fixer engines', () => {
+    const harness = createHarness()
+    const codexHome = join(harness.root, 'codex-auth')
+
+    try {
+      mkdirSync(codexHome)
+      writeFileSync(join(codexHome, 'auth.json'), '{"mode":"browser"}\n')
+
+      expect(() =>
+        runBootstrap(harness, {
+          QA_WORKER_CODEX_AUTH_MODE: 'existing',
+          QA_WORKER_CODEX_HOME: codexHome,
+          QA_FIXER_ENGINE: 'not-real',
+        })
+      ).toThrow()
     } finally {
       harness.cleanup()
     }

@@ -299,7 +299,8 @@ describe('formatFixerCycleComment', () => {
       branch: 'feature/vim-18',
       headSha: '1b5cb1a2b3faefb70ff87b19238cc82e58877fb',
       result: 'fix pushed | review pending',
-      kimiExit: 'signal SIGTERM',
+      fixerEngine: 'Codex',
+      fixerExit: 'signal SIGTERM',
       stopMode: 'single-pass stop',
       worktreeClean: true,
     })
@@ -312,7 +313,8 @@ describe('formatFixerCycleComment', () => {
     expect(body).toContain('| Branch | `feature/vim-18` |')
     expect(body).toContain('| Result | fix pushed \\| review pending |')
     expect(body).toContain('| Head | `1b5cb1a` |')
-    expect(body).toContain('| Kimi exit | `signal SIGTERM` |')
+    expect(body).toContain('| Fixer engine | Codex |')
+    expect(body).toContain('| Fixer exit | `signal SIGTERM` |')
     expect(body).toContain('| Stop mode | single-pass stop |')
     expect(body).toContain('| Worktree | clean |')
     expect(body).toContain('re-review is pending')

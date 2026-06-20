@@ -1,5 +1,5 @@
 // Shared bot-identity loader for the QA runner's two roles:
-//   inner / fixer        → bot.env          (GH_BOT_*)   — used by run.js (kimi)
+//   inner / fixer        → bot.env          (GH_BOT_*)   — used by run.js
 //   outer / orchestrator → orchestrator.env  (GH_ORCH_*)  — used by watch.js (merge)
 //
 // Each file holds a separate GitHub account so the bot that WRITES the fix is a

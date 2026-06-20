@@ -53,6 +53,10 @@ describe('cycleEnv', () => {
         QA_WORKER_KEEP_ALIVE: '1',
         QA_WORKER_MIN_FREE_PERCENT: '20',
         QA_RUNNER_REF: 'main',
+        QA_FIXER_ENGINE: 'codex',
+        QA_CODEX_MODEL: 'gpt-test',
+        QA_CODEX_SANDBOX: 'workspace-write',
+        QA_FIXER_TIMEOUT_MS: '5400000',
         QA_APPROVE: '1',
         QA_WORKER_INSTANCE_ID: 'i-123',
         GH_TOKEN: 'secret',
@@ -64,6 +68,10 @@ describe('cycleEnv', () => {
       QA_WORKER_REF: 'main',
       QA_WORKER_MIN_FREE_PERCENT: '20',
       QA_RUNNER_REF: 'main',
+      QA_FIXER_ENGINE: 'codex',
+      QA_CODEX_MODEL: 'gpt-test',
+      QA_CODEX_SANDBOX: 'workspace-write',
+      QA_FIXER_TIMEOUT_MS: '5400000',
     })
   })
 })

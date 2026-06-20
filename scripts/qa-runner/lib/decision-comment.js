@@ -253,10 +253,14 @@ export const formatFixerCycleComment = ({
   branch,
   headSha,
   result = 'fix pushed',
+  fixerEngine = 'Kimi',
+  fixerExit,
   kimiExit,
   stopMode,
   worktreeClean,
 }) => {
+  const exit = fixerExit ?? kimiExit
+
   const lines = [
     '## QA fixer cycle: complete',
     '',
@@ -267,7 +271,8 @@ export const formatFixerCycleComment = ({
     `| Branch | \`${tableValue(branch)}\` |`,
     `| Result | ${tableValue(result)} |`,
     `| Head | ${shortSha(headSha)} |`,
-    `| Kimi exit | \`${tableValue(kimiExit)}\` |`,
+    `| Fixer engine | ${tableValue(fixerEngine)} |`,
+    `| Fixer exit | \`${tableValue(exit)}\` |`,
     `| Stop mode | ${tableValue(stopMode)} |`,
     `| Worktree | ${worktreeClean ? 'clean' : 'dirty after run'} |`,
     '',
@@ -302,7 +307,7 @@ const decisionEntry = (store, pr) => {
 
 // Linear thread policy:
 // - NEEDS_FIX + dispatch fixer opens a fresh fix-cycle thread.
-// - Kimi/progress replies can attach to that root while the fixer runs.
+// - Fixer/progress replies can attach to that root while the fixer runs.
 // - Post-fix decisions only attach after the worker records the pushed head.
 // This keeps a new NEEDS_FIX cycle top-level and prevents stale-thread replies.
 const FIX_CYCLE_CONTINUATION_STATES = new Set([
