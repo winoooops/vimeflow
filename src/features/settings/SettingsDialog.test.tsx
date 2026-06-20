@@ -808,6 +808,30 @@ describe('SettingsDialog', () => {
     )
   })
 
+  test('anchors sidebar arrow navigation to the focused option', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const keymap = screen.getByRole('option', { name: 'Keymap' })
+    keymap.focus()
+
+    await user.keyboard('{ArrowDown}')
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Coding Agents' })).toHaveFocus()
+    })
+
+    expect(screen.getByRole('option', { name: 'Coding Agents' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    expect(screen.getByRole('option', { name: 'Theme' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
+  })
+
   test('does not wrap sidebar navigation when active section is filtered out', async () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)

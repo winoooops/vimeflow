@@ -15,8 +15,10 @@ import {
 } from './sections'
 import {
   searchSettings,
+  sectionResultId,
   settingsSectionResultKey,
   settingsTargetResultKey,
+  subsectionResultId,
   type SettingsSearchResult,
 } from './search'
 import { SettingsSidebar } from './components/SettingsSidebar'
@@ -51,8 +53,8 @@ const settingsNavigationEntryElementId = (
   entry: SettingsNavigationEntry
 ): string =>
   entry.kind === 'section'
-    ? `settings-search-result-section-${entry.section.id}`
-    : `settings-search-result-subsection-${entry.subsection.id}`
+    ? sectionResultId(entry.section.id)
+    : subsectionResultId(entry.subsection.id)
 
 const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   target instanceof Element &&
@@ -399,7 +401,23 @@ export const SettingsContent = (): ReactElement => {
           event.target instanceof Element &&
           event.target.closest('#settings-search-results') !== null
 
-        const navigationKey = viewportNavigationKey()
+        const focusedOption =
+          shouldMoveSidebarFocus && event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>('[role="option"]')
+            : null
+
+        const focusedNavigationKey =
+          focusedOption === null
+            ? undefined
+            : sidebarNavigationEntries.find(
+                (entry) =>
+                  settingsNavigationEntryElementId(entry) === focusedOption.id
+              )
+
+        const navigationKey =
+          focusedNavigationKey === undefined
+            ? viewportNavigationKey()
+            : settingsNavigationEntryKey(focusedNavigationKey)
 
         const currentIndex = sidebarNavigationEntries.findIndex(
           (entry) => settingsNavigationEntryKey(entry) === navigationKey

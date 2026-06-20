@@ -12,22 +12,17 @@ import type {
   SettingsSectionId,
   SettingsSidebarProps,
   SettingsSubsection,
-  SettingsSubsectionId,
-  SettingsTargetId,
 } from '../types'
-import { resultKeyToAriaId, settingsTargetResultKey } from '../search'
+import {
+  resultKeyToAriaId,
+  sectionResultId,
+  settingsTargetResultKey,
+  subsectionResultId,
+  targetResultId,
+} from '../search'
 import { Icon } from './Icon'
 
 const SEARCH_RESULTS_ID = 'settings-search-results'
-
-const sectionResultId = (id: SettingsSectionId): string =>
-  `settings-search-result-section-${id}`
-
-const targetResultId = (id: SettingsTargetId): string =>
-  `settings-search-result-target-${id}`
-
-const subsectionResultId = (id: SettingsSubsectionId): string =>
-  `settings-search-result-subsection-${id}`
 
 const noop = (): void => undefined
 

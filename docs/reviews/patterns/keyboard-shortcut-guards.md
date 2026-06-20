@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-20
-ref_count: 12
+ref_count: 13
 ---
 
 # Keyboard Shortcut Guards
@@ -530,4 +530,20 @@ against three classes of false-fire:
 - **Fix:** Confirmed search results now use the same scroll-target path as clicked
   results, while unconfirmed no-result searches keep focus in the input. The existing
   Enter regression test now asserts the confirmed target scrolls into view.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Sidebar arrow navigation ignored the focused option anchor
+
+- **Source:** github-codex-connector | PR #556 round 3 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsContent.tsx`
+- **Finding:** When a keydown started from a focused settings sidebar option,
+  ArrowDown/ArrowUp and `j`/`k` still anchored to the active or viewport-derived
+  navigation key. A user could focus `Keymap` while `Appearance` was active, press
+  ArrowDown, and jump from Appearance's active row instead of the row with DOM focus.
+- **Fix:** Sidebar navigation now resolves the current key from the focused
+  `role="option"` element when focus is inside the sidebar listbox, then falls back
+  to the viewport/active anchor for content-origin shortcuts. Added a regression
+  test that focuses `Keymap` while Appearance is active and confirms ArrowDown
+  selects `Coding Agents`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
