@@ -72,7 +72,8 @@ const readSnapshotRows = (
 }
 
 const readSnapshotCursor = (
-  snapshot: Record<string, unknown>
+  snapshot: Record<string, unknown>,
+  rowCount: number
 ): GhosttyVtRenderSnapshot['cursor'] => {
   const cursor = snapshot.cursor
 
@@ -86,7 +87,11 @@ const readSnapshotCursor = (
 
   const { rowIndex, columnOffset } = cursor
 
-  if (!isNonNegativeInteger(rowIndex) || !isNonNegativeInteger(columnOffset)) {
+  if (
+    !isNonNegativeInteger(rowIndex) ||
+    rowIndex >= rowCount ||
+    !isNonNegativeInteger(columnOffset)
+  ) {
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
   }
 
@@ -101,7 +106,7 @@ const normalizeNativeSnapshot = (
   }
 
   const rows = readSnapshotRows(snapshot)
-  const cursor = readSnapshotCursor(snapshot)
+  const cursor = readSnapshotCursor(snapshot, rows.length)
 
   return cursor === undefined ? { rows } : { rows, cursor }
 }

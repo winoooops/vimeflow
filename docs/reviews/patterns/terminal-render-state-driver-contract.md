@@ -2,7 +2,7 @@
 id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 1
 ---
 
@@ -46,4 +46,22 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.ts` L58-L62
 - **Finding:** `GhosttyTerminalModel` wired `TerminalTextSurface.transformOutput` to `parserEngine.parseText` for every raw `terminal.write` call. With a VT render-state driver, the parser engine is configured as `byteOnly`, so `parseText` throws on synthetic status strings such as PTY exit/error messages instead of rendering them.
 - **Fix:** Added an `acceptsTextInput` flag to `TerminalParserEngine` and set it to `false` for byte-only Ghostty engines. `GhosttyTerminalModel.transformOutput` now returns plain `{ visibleText: data }` when the engine does not accept text input, bypassing the byte-only parser for direct terminal status writes.
+- **Commit:** same commit as this entry
+
+### 4. reset() can leave the driver live while holding a disposed native terminal
+
+- **Source:** github-claude | PR #571 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state.ts` L307-318
+- **Finding:** `GhosttyRenderStateBridgeDriver.reset()` disposed the current native terminal and reset scanner state before recreating the terminal. If `createTerminal` threw, `disposed` stayed `false` and `terminal` still referenced the disposed native object, so later calls passed `assertActive()` and hit a disposed native handle.
+- **Fix:** Wrapped terminal recreation in a try/catch. On failure, set `disposed = true` before rethrowing so the driver fails closed.
+- **Commit:** same commit as this entry
+
+### 5. Cursor row is not bounded to the snapshot rows
+
+- **Source:** github-claude | PR #571 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state.ts` L263-282, `src/features/terminal/components/TerminalPane/ghosttyNativeRenderStateBridge.ts` L74-98
+- **Finding:** The native bridge validated `visibleLines` row indices against the snapshot row count, but accepted `cursorRow`/`rowIndex` values beyond the available rows. A snapshot produced during resize or malformed native output could reach rendering with an out-of-bounds cursor.
+- **Fix:** Added upper-bound checks: `cursorRow >= snapshot.rows` is rejected in the preload normalizer, and `rowIndex >= rows.length` is rejected in the renderer-side normalizer.
 - **Commit:** same commit as this entry

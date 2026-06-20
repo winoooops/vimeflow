@@ -267,6 +267,7 @@ const normalizeSnapshot = (
 
   if (
     !isNonNegativeInteger(snapshot.cursorRow) ||
+    snapshot.cursorRow >= snapshot.rows ||
     !isNonNegativeInteger(snapshot.cursorCol)
   ) {
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
@@ -308,7 +309,13 @@ export const createGhosttyRenderStateBridge = (
         assertActive(disposed)
         terminal.dispose()
         osc7Scanner.reset()
-        terminal = createNativeTerminal(nativeBindings, size)
+
+        try {
+          terminal = createNativeTerminal(nativeBindings, size)
+        } catch (error) {
+          disposed = true
+          throw error
+        }
       },
       resize: (nextSize): void => {
         assertActive(disposed)

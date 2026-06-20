@@ -132,4 +132,72 @@ describe('ghostty render-state bridge', () => {
       'Ghostty native render-state snapshot rows are invalid'
     )
   })
+
+  test('fails closed when terminal recreation throws during reset', () => {
+    const terminals: TestNativeTerminal[] = []
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: vi.fn(({ rows }) => {
+        if (terminals.length === 1) {
+          throw new Error('native create failed')
+        }
+
+        const terminal: TestNativeTerminal = {
+          feed: vi.fn(),
+          resize: vi.fn(),
+          snapshot: vi.fn(() => ({
+            rows,
+            cursorRow: 1,
+            cursorCol: 2,
+            visibleLines: [
+              { row: 0, text: 'prompt' },
+              { row: 1, text: 'output' },
+            ],
+          })),
+          dispose: vi.fn(),
+        }
+
+        terminals.push(terminal)
+
+        return terminal
+      }),
+    }
+
+    const bridge = createGhosttyRenderStateBridge(bindings)
+    const driver = bridge.createDriver({ onCwdChange: vi.fn() })
+
+    driver.writeBytes(new Uint8Array([0x61]))
+
+    expect(() => driver.reset()).toThrow('native create failed')
+    expect(() => driver.readSnapshot()).toThrow(
+      'Ghostty native render-state driver has been disposed'
+    )
+    expect(terminals[0]?.dispose).toHaveBeenCalledOnce()
+  })
+
+  test('rejects cursor rows outside the snapshot viewport', () => {
+    const bridge = createGhosttyRenderStateBridge({
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: (): {
+          rows: number
+          cursorRow: number
+          cursorCol: number
+          visibleLines: readonly { row: number; text: string }[]
+        } => ({
+          rows: 2,
+          cursorRow: 2,
+          cursorCol: 0,
+          visibleLines: [{ row: 0, text: 'line 0' }],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const driver = bridge.createDriver({ onCwdChange: vi.fn() })
+
+    expect(() => driver.readSnapshot()).toThrow(
+      'Ghostty native render-state snapshot cursor is invalid'
+    )
+  })
 })

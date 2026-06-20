@@ -156,4 +156,27 @@ describe('ghosttyNativeRenderStateBridge', () => {
       'Ghostty native render-state snapshot cursor is invalid'
     )
   })
+
+  test('rejects cursor rows outside the normalized rows', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({
+          rows: ['native prompt'],
+          cursor: {
+            rowIndex: 1,
+            columnOffset: 0,
+          },
+        }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(() => driver.readSnapshot()).toThrow(
+      'Ghostty native render-state snapshot cursor is invalid'
+    )
+  })
 })
