@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-08
+last_updated: 2026-06-20
 ref_count: 23
 ---
 
@@ -650,3 +650,12 @@ prevent showing previous data.
 - **Finding:** `selectedEditorFileExists` was never reset before a new existence check began. Switching from a deleted file to an existing file could make the new file momentarily read-only because `resolveEditorFileLifecycleStatus` saw the stale `false` value before the async check completed.
 - **Fix:** Set `selectedEditorFileExists(null)` synchronously at the start of the check, then update it with the async result.
 - **Commit:** see current commit
+
+### 65. Terminal event updates consumed metadata needed by later authoritative output events
+
+- **Source:** github-codex-connector | PR #588 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode decoder removed an in-flight bash call when a completed `message.part.updated` arrived. If the later `tool.after` event carried the command output, test-run parsing no longer had the original command and silently skipped the snapshot.
+- **Fix:** Added a per-call metadata cache that survives display-state completion until `tool.after` runs, and covered the `tool.before` -> completed part update -> bash `tool.after` ordering with a regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
