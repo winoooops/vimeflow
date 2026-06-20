@@ -1,18 +1,23 @@
 //! opencode adapter (observability v1).
 //!
 //! M2 lands the opencode-side bridge plugin + its auto-installer and the wire
-//! DTOs the later milestones consume. The locator / parser / transcript /
-//! types modules arrive in M3–M5; only these two sub-modules exist today.
+//! DTOs the later milestones consume. M3 adds the filesystem locator + the
+//! per-process types + the transcript-path validator. The parser / transcript
+//! modules arrive in M4–M5.
 
-// M2 defines the install + wire-DTO API surface; its first production callers
-// land in M3 (locator) / M5 (bindings dispatch). Until then the public items
-// here are "dead" by exhaustiveness analysis even though they are exercised by
-// unit tests — mirror the staged-code `#[allow(dead_code)]` precedent used in
-// `adapter/attach.rs` rather than leave warnings.
+// M2 defines the install + wire-DTO API surface; M3 adds the locator + types.
+// Their first production callers land in M5 (bindings dispatch), so the public
+// items here are still "dead" by exhaustiveness analysis even though they are
+// exercised by unit tests — mirror the staged-code `#[allow(dead_code)]`
+// precedent used in `adapter/attach.rs` rather than leave warnings.
 #[allow(dead_code)]
 pub(crate) mod install;
 #[allow(dead_code)]
+pub(crate) mod locator;
+#[allow(dead_code)]
 pub(crate) mod transcript_dto;
+#[allow(dead_code)]
+pub(crate) mod types;
 
 #[cfg(test)]
 use std::ffi::OsString;
@@ -24,8 +29,8 @@ use once_cell::sync::Lazy;
 
 /// Serializes every test that mutates the process-wide opencode env vars
 /// (`VIMEFLOW_OPENCODE_BRIDGE_DIR`, `VIMEFLOW_OPENCODE_PLUGINS_DIR`,
-/// `XDG_DATA_HOME`, `HOME`) so concurrent tests don't observe each other's
-/// mutations.
+/// `XDG_DATA_HOME`, `HOME`, `OPENCODE_HOME`) so concurrent tests don't observe
+/// each other's mutations.
 #[cfg(test)]
 static OPENCODE_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -37,6 +42,7 @@ const GUARDED_ENV_KEYS: &[&str] = &[
     "VIMEFLOW_OPENCODE_PLUGINS_DIR",
     "XDG_DATA_HOME",
     "HOME",
+    "OPENCODE_HOME",
 ];
 
 /// RAII guard: locks [`OPENCODE_ENV_LOCK`] so env-mutating tests serialize,
