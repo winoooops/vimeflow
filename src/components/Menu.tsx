@@ -512,7 +512,9 @@ const MenuRow = ({
     select()
   }
 
-  const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (event) => {
+  const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (
+    event
+  ) => {
     if (
       event.currentTarget === event.target ||
       (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
