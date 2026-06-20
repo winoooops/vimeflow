@@ -56,6 +56,13 @@ const settingsNavigationEntryKey = (entry: SettingsNavigationEntry): string =>
     ? `section:${entry.section.id}`
     : `subsection:${entry.subsection.id}`
 
+const settingsNavigationEntryElementId = (
+  entry: SettingsNavigationEntry
+): string =>
+  entry.kind === 'section'
+    ? `settings-search-result-section-${entry.section.id}`
+    : `settings-search-result-subsection-${entry.subsection.id}`
+
 const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   target instanceof Element &&
   (target.closest(
@@ -309,9 +316,9 @@ export const SettingsDialog = ({
     applySearchResult(nextResult, 'preserve-search-focus')
   }
 
-  const handleConfirmSearchResult = (): void => {
+  const handleConfirmSearchResult = (): boolean => {
     if (searchResults.length === 0) {
-      return
+      return false
     }
 
     const currentResult =
@@ -323,10 +330,12 @@ export const SettingsDialog = ({
       currentResult ?? (query.trim() ? searchResults[0] : undefined)
 
     if (!resultToConfirm) {
-      return
+      return false
     }
 
-    applySearchResult(resultToConfirm, 'preserve-search-focus')
+    applySearchResult(resultToConfirm, 'scroll-target')
+
+    return true
   }
 
   useEffect(() => {
@@ -480,19 +489,32 @@ export const SettingsDialog = ({
           return
         }
 
+        const shouldMoveSidebarFocus =
+          event.target instanceof Element &&
+          event.target.closest('#settings-search-results') !== null
+
         const navigationKey = viewportNavigationKey()
 
         const currentIndex = sidebarNavigationEntries.findIndex(
           (entry) => settingsNavigationEntryKey(entry) === navigationKey
         )
 
-        const baseIndex =
-          currentIndex === -1 ? (direction === 1 ? -1 : 0) : currentIndex
+        if (currentIndex === -1) {
+          return
+        }
 
         const nextIndex =
-          (baseIndex + direction + sidebarNavigationEntries.length) %
+          (currentIndex + direction + sidebarNavigationEntries.length) %
           sidebarNavigationEntries.length
         const next = sidebarNavigationEntries[nextIndex]
+
+        if (shouldMoveSidebarFocus) {
+          window.requestAnimationFrame(() => {
+            document
+              .getElementById(settingsNavigationEntryElementId(next))
+              ?.focus({ preventScroll: true })
+          })
+        }
 
         if (next.kind === 'subsection') {
           const target = SETTINGS_TARGETS.find(

@@ -329,44 +329,56 @@ describe('SettingsDialog', () => {
   test('exits search on Enter and uses slash to resume editing', async () => {
     const user = userEvent.setup()
 
-    render(<SettingsDialog open onClose={vi.fn()} />)
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
 
-    const input = screen.getByPlaceholderText('Search settings...')
+    try {
+      render(<SettingsDialog open onClose={vi.fn()} />)
 
-    await user.type(input, 'redact')
-    await user.keyboard('{Enter}')
+      const input = screen.getByPlaceholderText('Search settings...')
 
-    const target = screen.getByTestId(
-      `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
-    )
+      await user.type(input, 'redact')
+      await user.keyboard('{Enter}')
 
-    await waitFor(() => {
+      const target = screen.getByTestId(
+        `settings-target-${SETTINGS_TARGET_IDS.generalRedactPrivateValues}`
+      )
+
+      await waitFor(() => {
+        expect(input).not.toHaveFocus()
+      })
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalled()
+      })
+
+      expect(target).not.toHaveFocus()
+      expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
+      expect(
+        screen.getByTestId('settings-search-resume-hint')
+      ).toBeInTheDocument()
+
+      await user.keyboard('j')
+
+      expect(input).toHaveValue('redact')
       expect(input).not.toHaveFocus()
-    })
+      expect(target).not.toHaveFocus()
+      expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
 
-    expect(target).not.toHaveFocus()
-    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
-    expect(
-      screen.getByTestId('settings-search-resume-hint')
-    ).toBeInTheDocument()
+      await user.keyboard('/')
 
-    await user.keyboard('j')
+      expect(input).toHaveFocus()
+      expect(
+        screen.queryByTestId('settings-search-resume-hint')
+      ).not.toBeInTheDocument()
 
-    expect(input).toHaveValue('redact')
-    expect(input).not.toHaveFocus()
-    expect(target).not.toHaveFocus()
-    expect(target).not.toHaveAttribute('data-settings-target-active', 'true')
+      await user.keyboard('s')
 
-    await user.keyboard('/')
-
-    expect(input).toHaveFocus()
-    expect(
-      screen.queryByTestId('settings-search-resume-hint')
-    ).not.toBeInTheDocument()
-
-    await user.keyboard('s')
-
-    expect(input).toHaveValue('redacts')
+      expect(input).toHaveValue('redacts')
+    } finally {
+      scrollIntoView.mockRestore()
+    }
   })
 
   test('scrolls active settings content with d and u', async () => {
@@ -539,6 +551,21 @@ describe('SettingsDialog', () => {
     expect(
       screen.getByRole('option', { name: 'Appearance', current: 'page' })
     ).toBeInTheDocument()
+  })
+
+  test('keeps search focused when Enter has no matching result', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const input = screen.getByPlaceholderText('Search settings...')
+
+    await user.type(input, 'zzzznomatch')
+    await user.keyboard('{Enter}')
+
+    expect(input).toHaveFocus()
+    expect(
+      screen.queryByTestId('settings-search-resume-hint')
+    ).not.toBeInTheDocument()
   })
 
   test('keeps command palette and leader keymap targets independently navigable', async () => {
@@ -747,5 +774,48 @@ describe('SettingsDialog', () => {
       )
     ).toBeInTheDocument()
     expect(screen.getByText('Color Scheme')).toBeInTheDocument()
+  })
+
+  test('moves focused sidebar option with arrow navigation', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    const appearance = screen.getByRole('option', { name: 'Appearance' })
+    appearance.focus()
+
+    await user.keyboard('{ArrowDown}')
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Theme' })).toHaveFocus()
+    })
+
+    expect(screen.getByRole('option', { name: 'Theme' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+  })
+
+  test('does not wrap sidebar navigation when active section is filtered out', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.click(screen.getByRole('option', { name: 'Terminal' }))
+    await user.type(
+      screen.getByPlaceholderText('Search settings...'),
+      'general'
+    )
+    await user.tab()
+    await user.keyboard('k')
+
+    expect(
+      within(screen.getByTestId('settings-dialog-content')).getByText(
+        /Terminal settings haven't been wired yet/
+      )
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('option', { name: 'General' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
   })
 })

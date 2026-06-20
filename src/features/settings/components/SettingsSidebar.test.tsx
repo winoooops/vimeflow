@@ -304,7 +304,7 @@ describe('SettingsSidebar', () => {
   test('forwards search result keyboard navigation', async () => {
     const user = userEvent.setup()
     const onNavigateSearchResult = vi.fn()
-    const onConfirmSearchResult = vi.fn()
+    const onConfirmSearchResult = vi.fn(() => true)
     render(
       <SettingsSidebar
         {...baseProps}
@@ -320,6 +320,26 @@ describe('SettingsSidebar', () => {
     expect(onNavigateSearchResult).toHaveBeenNthCalledWith(1, 'next')
     expect(onNavigateSearchResult).toHaveBeenNthCalledWith(2, 'previous')
     expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps search focused when confirmation reports no result', async () => {
+    const user = userEvent.setup()
+    const onConfirmSearchResult = vi.fn(() => false)
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="missing"
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    await user.click(input)
+    await user.keyboard('{Enter}')
+
+    expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
+    expect(input).toHaveFocus()
   })
 
   test('bypasses search shortcuts while IME composition is active', () => {

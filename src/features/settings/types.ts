@@ -69,7 +69,7 @@ export interface SettingsSidebarProps {
   onNavigateSearchResult?: (
     direction: SettingsSearchNavigationDirection
   ) => void
-  onConfirmSearchResult?: () => void
+  onConfirmSearchResult?: () => boolean
   query: string
   onQuery: (query: string) => void
 }

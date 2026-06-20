@@ -46,7 +46,7 @@ export const SettingsSidebar = ({
   onExpandedSectionIdsChange = noop,
   onClearQuery = (): void => undefined,
   onNavigateSearchResult = (): void => undefined,
-  onConfirmSearchResult = (): void => undefined,
+  onConfirmSearchResult = (): boolean => false,
   query,
   onQuery,
 }: SettingsSidebarProps): ReactElement => {
@@ -229,8 +229,8 @@ export const SettingsSidebar = ({
     if (event.key === 'Enter') {
       event.preventDefault()
       event.stopPropagation()
-      onConfirmSearchResult()
-      if (query.trim() !== '') {
+      const confirmed = onConfirmSearchResult()
+      if (confirmed) {
         searchInputRef.current?.blur()
       }
     }
