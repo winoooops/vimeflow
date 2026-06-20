@@ -6,6 +6,7 @@ use chrono::{Datelike, Duration as ChronoDuration, Local};
 use rusqlite::{named_params, Connection, OpenFlags};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -113,18 +114,97 @@ fn extract_numeric_suffix(name: &str) -> u32 {
     suffix.parse::<u32>().unwrap_or(0)
 }
 
+/// Provider of the set of rollout files a process currently holds open.
+///
+/// `Err` (the provider itself failed — `/proc` read error, `lsof` timeout,
+/// permission denied) is **distinct from `Ok(∅)`** (the provider ran fine and
+/// the process has no rollout file open). This distinction is load-bearing for
+/// the resolver: a failed provider must not be silently treated as "no open
+/// rollout" and allowed to fall back to possibly-stale argv/sqlite. VIM-189
+/// introduces the seam behavior-preservingly — `resolve_from_proc_fds` still
+/// treats `Err` as "no FD" for now; VIM-191 makes `Err` authoritative.
+///
+/// Implementations must never panic and never block unboundedly.
+pub(super) trait OpenRolloutFds: Send + Sync {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>>;
+}
+
+/// Linux `/proc/<pid>/fd` open-FD provider: reads the process's fd symlinks and
+/// keeps those pointing at `codex_home/sessions/rollout-*.jsonl`.
+pub(super) struct ProcOpenRolloutFds {
+    proc_root: PathBuf,
+    codex_sessions_root: PathBuf,
+}
+
+impl ProcOpenRolloutFds {
+    pub(super) fn new(proc_root: PathBuf, codex_home: &Path) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            proc_root,
+        }
+    }
+}
+
+impl OpenRolloutFds for ProcOpenRolloutFds {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>> {
+        let fd_dir = self.proc_root.join(pid.to_string()).join("fd");
+        let mut rollout_paths = HashSet::new();
+
+        // A failed directory read is a provider error (`Err`), *not* an empty
+        // result: `/proc/<pid>/fd` is unreadable when the pid is gone or access
+        // is denied, and callers must be able to distinguish that from "the
+        // process has nothing open" (VIM-191). Individual unreadable entries
+        // are skipped, mirroring the previous `entries.flatten()` behavior.
+        for entry in std::fs::read_dir(&fd_dir)? {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let Ok(target) = std::fs::read_link(entry.path()) else {
+                continue;
+            };
+            if !target.starts_with(&self.codex_sessions_root) {
+                continue;
+            }
+            let Some(name) = target.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name.starts_with("rollout-") && name.ends_with(".jsonl") {
+                rollout_paths.insert(target);
+            }
+        }
+
+        Ok(rollout_paths)
+    }
+}
+
+/// No-op provider for platforms without an open-FD source wired up yet
+/// (macOS/Windows before the `lsof` provider in VIM-190). Reports `Ok(∅)` —
+/// "ran fine, found no open rollout" — so the resolver falls through to the
+/// argv/sqlite strategies exactly as it does today when `/proc` is absent.
+pub(super) struct NullOpenRolloutFds;
+
+impl OpenRolloutFds for NullOpenRolloutFds {
+    fn open_rollout_paths(&self, _pid: u32) -> io::Result<HashSet<PathBuf>> {
+        Ok(HashSet::new())
+    }
+}
+
 pub struct SqliteFirstLocator {
     pub codex_home: PathBuf,
     /// `Some(path)` on Linux (and in test harnesses that inject a
     /// tempdir-based fake proc); `None` on macOS/Windows where the
-    /// `/proc` filesystem does not exist. The proc-backed fast-paths
-    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
-    /// SKIP themselves when this is `None` rather than attempting to
-    /// open `/proc/<pid>/cmdline` and silently failing with ENOENT
-    /// (PR #302 Claude review F1 — the previous production fallback
-    /// hardcoded `/proc` even on non-Linux, contradicting the design
-    /// documented on `default_proc_root()` and `CompositeLocator::new`).
+    /// `/proc` filesystem does not exist. Drives the resume-argv fast-path
+    /// (`resume_thread_id_from_proc`, which SKIPs itself when this is `None`
+    /// rather than probing a nonexistent `/proc/<pid>/cmdline`) and selects
+    /// the open-FD provider built in `with_proc_root` — `ProcOpenRolloutFds`
+    /// on Linux, `NullOpenRolloutFds` elsewhere (PR #302 Claude review F1;
+    /// the `OpenRolloutFds` seam, VIM-189).
     proc_root: Option<PathBuf>,
+    /// Open rollout-FD provider consulted by `resolve_from_proc_fds`. Built
+    /// from `proc_root` in `with_proc_root`; the test-only `with_fds`
+    /// constructor injects a fake so the open-FD resolver paths stay
+    /// platform-independent (VIM-189).
+    fds: Box<dyn OpenRolloutFds>,
 }
 
 impl SqliteFirstLocator {
@@ -147,9 +227,30 @@ impl SqliteFirstLocator {
     /// PR #302 Claude review F1 widened it to `Option` so non-Linux
     /// production callers stop probing nonexistent `/proc` paths).
     pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: Option<PathBuf>) -> Self {
+        let fds: Box<dyn OpenRolloutFds> = match &proc_root {
+            Some(root) => Box::new(ProcOpenRolloutFds::new(root.clone(), &codex_home)),
+            None => Box::new(NullOpenRolloutFds),
+        };
         Self {
             codex_home,
             proc_root,
+            fds,
+        }
+    }
+
+    /// Test-only constructor injecting an arbitrary open-FD provider so the
+    /// open-FD resolver paths run without a real `/proc` (VIM-189; consumed by
+    /// the VIM-191 relocation test).
+    #[cfg(test)]
+    pub(super) fn with_fds(
+        codex_home: PathBuf,
+        proc_root: Option<PathBuf>,
+        fds: Box<dyn OpenRolloutFds>,
+    ) -> Self {
+        Self {
+            codex_home,
+            proc_root,
+            fds,
         }
     }
 
@@ -347,27 +448,25 @@ impl SqliteFirstLocator {
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        // Same platform gate as `resolve_from_resume_arg` — opening
-        // `/proc/<pid>/fd/*` only makes sense on Linux (PR #302 Claude
-        // review F1).
-        let Some(proc_root) = self.proc_root.as_deref() else {
-            return Ok(None);
-        };
-        let rollout_paths = open_rollout_paths_from_proc(proc_root, ctx.pid, &self.codex_home);
+        // Open-FD discovery flows through the `OpenRolloutFds` seam (VIM-189).
+        // Behavior-preserving: a provider `Err` is treated as "no open rollout
+        // FD" (fall through) exactly as the previous error-swallowing free
+        // function did. VIM-191 makes `Err` authoritative — a failed provider
+        // becomes a failed relocation, not a silent fallback to stale
+        // argv/sqlite. The provider self-gates per platform (`/proc` on Linux,
+        // `Ok(∅)` elsewhere), so no separate `proc_root` check is needed here.
+        let rollout_paths: HashSet<PathBuf> =
+            self.fds.open_rollout_paths(ctx.pid).unwrap_or_default();
         if rollout_paths.is_empty() {
             return Ok(None);
         }
 
         if rollout_paths.len() == 1 {
-            let rollout_path = rollout_paths
-                .iter()
-                .next()
-                .map(PathBuf::from)
-                .expect("len checked");
+            let rollout_path = rollout_paths.iter().next().cloned().expect("len checked");
             let location = self.query_thread_by_rollout_path(state_path, &rollout_path)?;
             if location.is_some() {
                 log::debug!(
-                    "codex locator: using /proc fd fast-path pid={} rollout={}",
+                    "codex locator: using open-fd fast-path pid={} rollout={}",
                     ctx.pid,
                     rollout_path.display()
                 );
@@ -375,7 +474,12 @@ impl SqliteFirstLocator {
             return Ok(location);
         }
 
-        let candidates = self.query_candidate_rows(state_path, None, Some(&rollout_paths))?;
+        let rollout_path_strings: HashSet<String> = rollout_paths
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        let candidates =
+            self.query_candidate_rows(state_path, None, Some(&rollout_path_strings))?;
         match choose_state_candidate(&candidates, ctx)? {
             Some(candidate) => Ok(Some(candidate.into_rollout_location())),
             None => Ok(None),
@@ -508,33 +612,6 @@ fn read_cmdline_args(proc_root: &Path, pid: u32) -> Option<Vec<String>> {
     } else {
         Some(args)
     }
-}
-
-fn open_rollout_paths_from_proc(proc_root: &Path, pid: u32, codex_home: &Path) -> HashSet<String> {
-    let fd_dir = proc_root.join(pid.to_string()).join("fd");
-    let mut rollout_paths = HashSet::new();
-    let codex_sessions_root = codex_home.join("sessions");
-
-    let Ok(entries) = std::fs::read_dir(fd_dir) else {
-        return rollout_paths;
-    };
-
-    for entry in entries.flatten() {
-        let Ok(target) = std::fs::read_link(entry.path()) else {
-            continue;
-        };
-        if !target.starts_with(&codex_sessions_root) {
-            continue;
-        }
-        let Some(name) = target.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        if name.starts_with("rollout-") && name.ends_with(".jsonl") {
-            rollout_paths.insert(target.to_string_lossy().to_string());
-        }
-    }
-
-    rollout_paths
 }
 
 pub struct FsScanFallback {
@@ -1408,11 +1485,11 @@ mod sqlite_first_tests {
     #[test]
     fn proc_root_none_skips_proc_fast_paths_and_falls_through_to_logs() {
         // PR #302 Claude review F1 — non-Linux platforms (macOS / Windows)
-        // pass `proc_root: None` so the proc-backed fast-paths
-        // (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
-        // skip themselves rather than probing nonexistent `/proc/<pid>/`
-        // paths. Pin the contract: with `None`, the locator still binds
-        // via the logs-table path.
+        // pass `proc_root: None`, so the resume-argv fast-path
+        // (`resume_thread_id_from_proc`) skips itself and the open-FD provider
+        // is `NullOpenRolloutFds` (`Ok(∅)`) rather than probing nonexistent
+        // `/proc/<pid>/` paths. Pin the contract: with `None`, the locator
+        // still binds via the logs-table path.
         let dir = tempfile::tempdir().expect("tempdir");
         let logs = dir.path().join("logs_1.sqlite");
         let state = dir.path().join("state_1.sqlite");
@@ -1475,6 +1552,126 @@ mod sqlite_first_tests {
             result.rollout_path,
             PathBuf::from("/tmp/rollout-recent.jsonl")
         );
+    }
+
+    // --- OpenRolloutFds seam (VIM-189) ---
+
+    /// Fake provider so the open-FD resolver paths can be driven without a real
+    /// `/proc` (and so the VIM-191 relocation test can make the open FD
+    /// disagree with stale argv/sqlite).
+    struct FakeOpenRolloutFds {
+        paths: HashSet<PathBuf>,
+        fail: bool,
+    }
+
+    impl OpenRolloutFds for FakeOpenRolloutFds {
+        fn open_rollout_paths(&self, _pid: u32) -> io::Result<HashSet<PathBuf>> {
+            if self.fail {
+                return Err(io::Error::other("fake provider failure"));
+            }
+            Ok(self.paths.clone())
+        }
+    }
+
+    #[test]
+    fn proc_open_fds_lists_open_rollout_symlinks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout = dir.path().join("sessions").join("rollout-A.jsonl");
+        std::fs::create_dir_all(rollout.parent().expect("parent")).expect("mk sessions dir");
+        std::fs::write(&rollout, b"{}").expect("write rollout");
+
+        let proc_root = fake_proc_root();
+        write_rollout_fd(proc_root.path(), 4242, "7", &rollout);
+        // A non-rollout fd (points outside `sessions/`) must be ignored.
+        write_rollout_fd(proc_root.path(), 4242, "8", dir.path());
+
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let found = provider.open_rollout_paths(4242).expect("provider runs");
+        assert_eq!(found, HashSet::from([rollout]));
+    }
+
+    #[test]
+    fn proc_open_fds_ok_empty_when_no_rollout_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let proc_root = fake_proc_root();
+        // An fd dir exists but holds only a non-rollout symlink.
+        write_rollout_fd(proc_root.path(), 4243, "3", dir.path());
+
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let found = provider.open_rollout_paths(4243).expect("provider runs");
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn proc_open_fds_errs_when_fd_dir_missing() {
+        // The `Err` != `Ok(∅)` contract (VIM-189/191): an unreadable
+        // `/proc/<pid>/fd` (pid gone / denied) is a provider failure, NOT
+        // "the process has no rollout open".
+        let dir = tempfile::tempdir().expect("tempdir");
+        let proc_root = fake_proc_root();
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let result = provider.open_rollout_paths(999_999);
+        assert!(
+            result.is_err(),
+            "missing fd dir must surface as Err, not Ok(empty)"
+        );
+    }
+
+    #[test]
+    fn null_open_fds_returns_ok_empty() {
+        let found = NullOpenRolloutFds
+            .open_rollout_paths(1)
+            .expect("null provider never fails");
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn injected_fds_provider_drives_proc_fd_resolution() {
+        // The seam is wired into resolve: with no proc root (resume-argv path
+        // skipped) an injected provider's open rollout selects the thread.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let rollout = "/sessions/rollout-INJECTED.jsonl";
+        insert_thread(&state, "thread-INJECTED", rollout, 1000);
+
+        let provider = FakeOpenRolloutFds {
+            paths: HashSet::from([PathBuf::from(rollout)]),
+            fail: false,
+        };
+        let locator =
+            SqliteFirstLocator::with_fds(dir.path().to_path_buf(), None, Box::new(provider));
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 4444, SystemTime::now()))
+            .expect("injected open fd should bind");
+        assert_eq!(result.thread_id, "thread-INJECTED");
+        assert_eq!(result.rollout_path, PathBuf::from(rollout));
+    }
+
+    #[test]
+    fn provider_err_falls_through_for_now() {
+        // VIM-189 is behavior-preserving: a provider `Err` currently falls
+        // through (no bind from the FD path) exactly as the old
+        // error-swallowing free fn did. VIM-191 changes this to an
+        // authoritative failed relocation — this test updates there.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        insert_thread(&state, "thread-X", "/sessions/rollout-X.jsonl", 1000);
+
+        let provider = FakeOpenRolloutFds {
+            paths: HashSet::new(),
+            fail: true,
+        };
+        let locator =
+            SqliteFirstLocator::with_fds(dir.path().to_path_buf(), None, Box::new(provider));
+        // Provider `Err` → falls through; with no logs db it does NOT bind via
+        // the FD path and (crucially) does not panic.
+        let result = locator.resolve_rollout(&ctx(dir.path(), 4445, SystemTime::now()));
+        assert!(matches!(
+            result,
+            Err(LocatorError::NotYetReady) | Err(LocatorError::Unresolved(_))
+        ));
     }
 }
 
