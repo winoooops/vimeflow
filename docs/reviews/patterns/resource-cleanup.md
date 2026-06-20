@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-13
-ref_count: 12
+last_updated: 2026-06-20
+ref_count: 13
 ---
 
 # Resource Cleanup
@@ -154,3 +154,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** version_from_command used child.try_wait().ok()? to poll a spawned kimi binary; an Err from try_wait propagated None out of the loop, dropping the child without kill/wait and leaving a zombie process on Unix.
 - **Fix:** Removed version_from_command and the version_from_kimi_binary fallback entirely so the User-Agent version is resolved from transcript metadata or install/latest JSON only, eliminating the zombie-leak surface.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. `try_wait` error path skipped lsof child and stdout-reader cleanup
+
+- **Source:** github-codex-connector | PR #580 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `RealLsofRunner::run` used `child.try_wait()?` inside its polling loop. A rare polling error returned before the timeout branch's cleanup sequence, so the spawned `lsof` child could remain running or unreaped and the stdout reader thread could be left detached in the long-lived sidecar.
+- **Fix:** Replaced the `?` with an explicit `match`. The `Err` arm now mirrors timeout cleanup by killing the child, waiting to reap it, joining the stdout reader, and then returning the original polling error.
+- **Commit:** same commit as this entry

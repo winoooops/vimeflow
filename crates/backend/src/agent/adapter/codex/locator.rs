@@ -9,6 +9,8 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct RolloutLocation {
@@ -177,15 +179,183 @@ impl OpenRolloutFds for ProcOpenRolloutFds {
     }
 }
 
-/// No-op provider for platforms without an open-FD source wired up yet
-/// (macOS/Windows before the `lsof` provider in VIM-190). Reports `Ok(∅)` —
+/// No-op provider for platforms without a usable open-FD source (Windows;
+/// `/proc` is Linux-only and `lsof` covers the other Unixes). Reports `Ok(∅)` —
 /// "ran fine, found no open rollout" — so the resolver falls through to the
-/// argv/sqlite strategies exactly as it does today when `/proc` is absent.
+/// argv/sqlite strategies exactly as it does today when no FD source exists.
+///
+/// Compiled only where it is actually used — non-Unix production
+/// (`default_non_proc_open_fds`) and tests (as an injected null provider) — so
+/// Unix builds, which always have `/proc` or `lsof`, carry no dead code.
+#[cfg(any(test, not(unix)))]
 pub(super) struct NullOpenRolloutFds;
 
+#[cfg(any(test, not(unix)))]
 impl OpenRolloutFds for NullOpenRolloutFds {
     fn open_rollout_paths(&self, _pid: u32) -> io::Result<HashSet<PathBuf>> {
         Ok(HashSet::new())
+    }
+}
+
+/// Runs `lsof -p <pid> -Fn` and returns its stdout, mapping spawn failure,
+/// timeout, and non-zero exit to `Err`. Behind a trait so the parser and the
+/// `Ok(∅)` / `Err` mapping are unit-tested without spawning `lsof` (the real
+/// spawn only runs on Unix in production; VIM-190).
+#[cfg(unix)]
+trait LsofRunner: Send + Sync {
+    fn run(&self, pid: u32) -> io::Result<String>;
+}
+
+/// `lsof`-based open-FD provider for the Unixes where `/proc` is unavailable
+/// (macOS/BSD). The open rollout FD is the only reliable per-PID signal for an
+/// in-session `resume`, so without this the relocation fix is inert on macOS
+/// (VIM-188/VIM-190).
+#[cfg(unix)]
+pub(super) struct LsofOpenRolloutFds {
+    codex_sessions_root: PathBuf,
+    runner: Box<dyn LsofRunner>,
+}
+
+#[cfg(unix)]
+impl LsofOpenRolloutFds {
+    pub(super) fn new(codex_home: &Path) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            runner: Box::new(RealLsofRunner {
+                timeout: Duration::from_secs(2),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_runner(codex_home: &Path, runner: Box<dyn LsofRunner>) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            runner,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl OpenRolloutFds for LsofOpenRolloutFds {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>> {
+        // Runner `Err` (spawn failure / timeout / non-zero exit) propagates as
+        // a provider failure — distinct from `Ok(∅)` (lsof ran, the process
+        // has no rollout file open). VIM-191 makes that distinction
+        // authoritative; here it is established (behavior matches the `/proc`
+        // provider, whose caller still treats `Err` as "no FD").
+        let stdout = self.runner.run(pid)?;
+        Ok(parse_lsof_rollout_names(&stdout, &self.codex_sessions_root))
+    }
+}
+
+/// Parse `lsof -Fn` field output: records are newline-separated fields, where a
+/// line beginning with `n` carries a file name. Keep the names that live under
+/// `codex_home/sessions/` and look like `rollout-*.jsonl`. The prefix match is
+/// lexical — the same shared, documented limitation as the `/proc` provider
+/// (a symlinked `codex_home` could spell the prefix differently).
+#[cfg(unix)]
+fn parse_lsof_rollout_names(stdout: &str, codex_sessions_root: &Path) -> HashSet<PathBuf> {
+    let mut rollout_paths = HashSet::new();
+    for line in stdout.lines() {
+        let Some(name) = line.strip_prefix('n') else {
+            continue;
+        };
+        let path = PathBuf::from(name);
+        if !path.starts_with(codex_sessions_root) {
+            continue;
+        }
+        let Some(file) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if file.starts_with("rollout-") && file.ends_with(".jsonl") {
+            rollout_paths.insert(path);
+        }
+    }
+    rollout_paths
+}
+
+/// Production `LsofRunner`: spawns `lsof` with a bounded wall-clock timeout so a
+/// hung/slow `lsof` can never block watcher startup. stdout is drained on a
+/// helper thread so a full pipe cannot deadlock the wait loop.
+#[cfg(unix)]
+struct RealLsofRunner {
+    timeout: Duration,
+}
+
+#[cfg(unix)]
+impl LsofRunner for RealLsofRunner {
+    fn run(&self, pid: u32) -> io::Result<String> {
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("lsof")
+            .args(["-p", &pid.to_string(), "-Fn"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        // Drain stdout on a thread: lsof output for one pid is small, but a
+        // full pipe would otherwise deadlock the try_wait loop below.
+        let mut child_stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("lsof child stdout was not captured"))?;
+        let reader = std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = String::new();
+            let _ = child_stdout.read_to_string(&mut buf);
+            buf
+        });
+
+        let deadline = Instant::now() + self.timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = reader.join();
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, "lsof timed out"));
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = reader.join();
+                    return Err(e);
+                }
+            }
+        };
+
+        let stdout = reader
+            .join()
+            .map_err(|_| io::Error::other("lsof stdout reader panicked"))?;
+        if !status.success() {
+            return Err(io::Error::other(format!(
+                "lsof exited unsuccessfully: {status}"
+            )));
+        }
+        Ok(stdout)
+    }
+}
+
+/// Open-FD provider selected when `/proc` is unavailable. `lsof` covers the
+/// Unixes (it is the only per-PID open-rollout signal on macOS/BSD; VIM-190);
+/// Windows has no usable source, so it stays null. On Linux this arm is reached
+/// only by tests — production threads a real `/proc` root through
+/// `with_proc_root` and uses `ProcOpenRolloutFds`.
+fn default_non_proc_open_fds(codex_home: &Path) -> Box<dyn OpenRolloutFds> {
+    #[cfg(unix)]
+    {
+        Box::new(LsofOpenRolloutFds::new(codex_home))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = codex_home;
+        Box::new(NullOpenRolloutFds)
     }
 }
 
@@ -197,8 +367,9 @@ pub struct SqliteFirstLocator {
     /// (`resume_thread_id_from_proc`, which SKIPs itself when this is `None`
     /// rather than probing a nonexistent `/proc/<pid>/cmdline`) and selects
     /// the open-FD provider built in `with_proc_root` — `ProcOpenRolloutFds`
-    /// on Linux, `NullOpenRolloutFds` elsewhere (PR #302 Claude review F1;
-    /// the `OpenRolloutFds` seam, VIM-189).
+    /// on Linux, `LsofOpenRolloutFds` on macOS/BSD, `NullOpenRolloutFds` on
+    /// Windows (PR #302 Claude review F1; the `OpenRolloutFds` seam, VIM-189;
+    /// the macOS `lsof` provider, VIM-190).
     proc_root: Option<PathBuf>,
     /// Open rollout-FD provider consulted by `resolve_from_proc_fds`. Built
     /// from `proc_root` in `with_proc_root`; the test-only `with_fds`
@@ -229,7 +400,7 @@ impl SqliteFirstLocator {
     pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: Option<PathBuf>) -> Self {
         let fds: Box<dyn OpenRolloutFds> = match &proc_root {
             Some(root) => Box::new(ProcOpenRolloutFds::new(root.clone(), &codex_home)),
-            None => Box::new(NullOpenRolloutFds),
+            None => default_non_proc_open_fds(&codex_home),
         };
         Self {
             codex_home,
@@ -1505,9 +1676,15 @@ mod sqlite_first_tests {
         insert_log_row(&logs, "pid:7777:abc", Some("thread-NL"), pty_secs + 5, 0);
         insert_thread(&state, "thread-NL", "/tmp/rollout-NL.jsonl", 1000);
 
-        // Crucially: NO proc root. The proc fast-paths must not crash
-        // even though `self.proc_root` is `None`.
-        let locator = SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), None);
+        // Crucially: NO proc root, and inject a null FD provider so the test
+        // stays hermetic — on Unix, `None` proc_root otherwise selects the real
+        // `lsof` provider (VIM-190). The contract under test is the logs
+        // fallback when no open-FD signal is available.
+        let locator = SqliteFirstLocator::with_fds(
+            dir.path().to_path_buf(),
+            None,
+            Box::new(NullOpenRolloutFds),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 7777, pty_start))
             .expect("logs path binds when proc fast-paths are skipped");
@@ -1672,6 +1849,111 @@ mod sqlite_first_tests {
             result,
             Err(LocatorError::NotYetReady) | Err(LocatorError::Unresolved(_))
         ));
+    }
+
+    // --- lsof open-FD provider (VIM-190) ---
+
+    #[cfg(unix)]
+    struct FakeLsofRunner {
+        result: Result<String, io::ErrorKind>,
+    }
+
+    #[cfg(unix)]
+    impl LsofRunner for FakeLsofRunner {
+        fn run(&self, _pid: u32) -> io::Result<String> {
+            self.result
+                .clone()
+                .map_err(|kind| io::Error::new(kind, "fake lsof failure"))
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parse_lsof_keeps_only_session_rollouts() {
+        let sessions = PathBuf::from("/home/u/.codex/sessions");
+        let out = concat!(
+            "p4242\n",
+            "fcwd\n",
+            "n/home/u/project\n",
+            "ftxt\n",
+            "n/usr/lib/dyld\n",
+            "f3\n",
+            "n/home/u/.codex/sessions/2026/06/20/rollout-AAA.jsonl\n",
+            "f4\n",
+            "nTCP 127.0.0.1:5151\n",
+            "f5\n",
+            "n/home/u/.codex/sessions/2026/06/20/rollout-BBB.jsonl\n",
+            "f6\n",
+            "n/home/u/.codex/sessions/notes.txt\n",
+        );
+        let got = parse_lsof_rollout_names(out, &sessions);
+        assert_eq!(
+            got,
+            HashSet::from([
+                PathBuf::from("/home/u/.codex/sessions/2026/06/20/rollout-AAA.jsonl"),
+                PathBuf::from("/home/u/.codex/sessions/2026/06/20/rollout-BBB.jsonl"),
+            ])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_lists_rollouts_via_runner() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout = dir
+            .path()
+            .join("sessions")
+            .join("x")
+            .join("rollout-Z.jsonl");
+        let stdout = format!("p1\nf3\nn{}\n", rollout.display());
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner { result: Ok(stdout) }),
+        );
+        let got = provider.open_rollout_paths(1).expect("provider runs");
+        assert_eq!(got, HashSet::from([rollout]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_ok_empty_when_no_rollout_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Ok("p1\nf3\nn/usr/lib/dyld\n".to_string()),
+            }),
+        );
+        let got = provider.open_rollout_paths(1).expect("provider runs");
+        assert!(got.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_propagates_runner_err() {
+        // The `Err` != `Ok(∅)` contract: a failed lsof (timeout / non-zero exit
+        // / spawn failure) must surface as `Err`, not be conflated with "no FD".
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Err(io::ErrorKind::TimedOut),
+            }),
+        );
+        let result = provider.open_rollout_paths(1);
+        assert!(result.is_err(), "runner Err must propagate as provider Err");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_lsof_runner_runs_bounded_without_panicking() {
+        // Smoke test of the real spawn path (constructs RealLsofRunner): it must
+        // complete within the bounded timeout and never panic. The exact Ok/Err
+        // depends on whether lsof is installed and the pid exists, so only
+        // completion is asserted; the Err mapping is covered above.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::new(dir.path());
+        let _ = provider.open_rollout_paths(u32::MAX);
     }
 }
 
