@@ -711,10 +711,24 @@ export const parseDraftLayoutText = (
   }
 
   if (format === 'yaml') {
+    let yamlError: unknown = null
     try {
       return modelToDraft(parseYamlModel(trimmed))
-    } catch {
+    } catch (error) {
+      yamlError = error
       // JSON is a useful fallback because pasted JSON is common and valid YAML.
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+
+      return modelToDraft(parsed)
+    } catch {
+      if (yamlError instanceof Error) {
+        throw yamlError
+      }
+
+      throw new Error('Invalid YAML')
     }
   }
 

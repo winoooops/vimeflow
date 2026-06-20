@@ -89,7 +89,10 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
-import { type PaneLayoutDefinition } from '../terminal/layout-registry'
+import {
+  isBuiltinPaneLayoutId,
+  type PaneLayoutDefinition,
+} from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
@@ -1242,12 +1245,20 @@ const WorkspaceViewContent = (): ReactElement => {
   // pane add/remove, active-pane, and layout semantics are untouched.
   const handlePickLayout = useCallback(
     (layoutId: PaneLayoutId): void => {
-      if (!activeSessionId) {
+      if (!activeSessionId || !activeSession) {
         return
       }
+
+      if (
+        isBuiltinPaneLayoutId(layoutId) &&
+        activeSession.panes.length > layoutRegistry.capacityFor(layoutId)
+      ) {
+        return
+      }
+
       setSessionLayout(activeSessionId, layoutId)
     },
-    [activeSessionId, setSessionLayout]
+    [activeSession, activeSessionId, layoutRegistry, setSessionLayout]
   )
 
   const handleCreateCustomLayout = useCallback((): void => {
@@ -1264,8 +1275,8 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleSaveCustomLayout = useCallback(
     (definition: PaneLayoutDefinition): void => {
-      setCustomPaneLayouts([
-        ...customPaneLayouts.filter((layout) => layout.id !== definition.id),
+      setCustomPaneLayouts((previous) => [
+        ...previous.filter((layout) => layout.id !== definition.id),
         definition,
       ])
 
@@ -1278,7 +1289,12 @@ const WorkspaceViewContent = (): ReactElement => {
       setLayoutCreatorOpen(false)
       setLayoutCreatorEditId(null)
     },
-    [activeSessionId, customPaneLayouts, setCustomPaneLayouts, setSessionLayout]
+    [
+      activeSessionId,
+      setCustomPaneLayouts,
+      setHiddenCustomLayoutIds,
+      setSessionLayout,
+    ]
   )
 
   const handleDeleteCustomLayout = useCallback(
@@ -1286,8 +1302,8 @@ const WorkspaceViewContent = (): ReactElement => {
       if (activeSession?.layout === layoutId && activeSessionId) {
         setSessionLayout(activeSessionId, 'single')
       }
-      setCustomPaneLayouts(
-        customPaneLayouts.filter((layout) => layout.id !== layoutId)
+      setCustomPaneLayouts((previous) =>
+        previous.filter((layout) => layout.id !== layoutId)
       )
 
       setHiddenCustomLayoutIds((previous) =>
@@ -1297,8 +1313,8 @@ const WorkspaceViewContent = (): ReactElement => {
     [
       activeSession?.layout,
       activeSessionId,
-      customPaneLayouts,
       setCustomPaneLayouts,
+      setHiddenCustomLayoutIds,
       setSessionLayout,
     ]
   )

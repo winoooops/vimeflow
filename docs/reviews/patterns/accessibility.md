@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
+last_updated: 2026-06-20
 ref_count: 27
 ---
 
@@ -621,4 +621,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
 - **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry
+
+### 60. Layout creator modal lacks focus trap and focus restoration
+
+- **Source:** github-codex-connector (P2 / MEDIUM) | PR #569 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L833-833
+- **Finding:** The layout creator dialog declared `aria-modal="true"` but only handled Escape and ⌘Enter. It did not trap Tab focus or restore the previously focused element, so keyboard users could tab into the workspace behind the overlay and trigger unrelated controls while the modal was active.
+- **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
 - **Commit:** same commit as this entry

@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-19
+last_updated: 2026-06-20
 ref_count: 22
 ---
 
@@ -506,4 +506,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx` L33-37
 - **Finding:** `LayoutSwitcher` created `const layoutById = new Map(layouts.map(...))` and `const layoutIds = layouts.map(...)` on every render. Because the component re-renders on every active-session change, fresh Map and array references prevented any downstream `React.memo` or `useMemo` that depended on those identities from firing.
 - **Fix:** Wrapped both `layoutIds` and `layoutById` in `useMemo(() => ..., [layouts])` so the references stay stable across unrelated re-renders.
+- **Commit:** same commit as this entry
+
+### 53. Custom layout save/delete reads stale `customPaneLayouts` closure
+
+- **Source:** github-claude | PR #569 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1265-1295
+- **Finding:** `handleSaveCustomLayout` and `handleDeleteCustomLayout` called `setCustomPaneLayouts([...customPaneLayouts.filter(...), ...])`, reading `customPaneLayouts` from the `useCallback` closure. The deps array recreated the callback when the list changed, but concurrent or batched updates between renders could operate on a stale snapshot and silently drop an interleaved layout change.
+- **Fix:** Switched both callbacks to the functional updater form `setCustomPaneLayouts(previous => ...)`. Also updated `useSessionManager`'s `setCustomPaneLayouts` wrapper to accept functional updaters and evaluate them inside the underlying `setCustomPaneLayoutsState` updater so the latest previous value is always used.
 - **Commit:** same commit as this entry

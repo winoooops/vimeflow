@@ -83,7 +83,11 @@ export interface SessionManager {
   customPaneLayouts: readonly PaneLayoutDefinition[]
   layoutRegistry: PaneLayoutRegistry
   setCustomPaneLayouts: (
-    customPaneLayouts: readonly PaneLayoutDefinition[]
+    updater:
+      | readonly PaneLayoutDefinition[]
+      | ((
+          previous: readonly PaneLayoutDefinition[]
+        ) => readonly PaneLayoutDefinition[])
   ) => void
   setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
@@ -270,76 +274,93 @@ export const useSessionManager = (
   layoutRegistryRef.current = layoutRegistry
 
   const setCustomPaneLayouts = useCallback(
-    (nextCustomPaneLayouts: readonly PaneLayoutDefinition[]): void => {
+    (
+      updater:
+        | readonly PaneLayoutDefinition[]
+        | ((
+            previous: readonly PaneLayoutDefinition[]
+          ) => readonly PaneLayoutDefinition[])
+    ): void => {
       // Custom layouts that support more panes than any builtin layout must be
       // preserved while sessions still depend on them. Otherwise
       // autoShrinkLayoutFor falls back to grid3x2, and the backend durable
       // repair caps non-custom layouts at six panes — silently dropping extra
       // panes on the next save/reload.
-      const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+      //
+      // Use the functional state updater so callers' functional updates are
+      // evaluated against the latest previous state, not the closure snapshot
+      // from the last render.
+      setCustomPaneLayoutsState((previous) => {
+        const nextCustomPaneLayouts =
+          typeof updater === 'function' ? updater(previous) : updater
+        const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
 
-      const neededLayoutIds = new Set(
-        sessionsRef.current
-          .filter(
-            (session) =>
-              isCustomPaneLayoutId(session.layout) &&
-              session.panes.length > MAX_BUILTIN_PANE_COUNT
-          )
-          .map((session) => session.layout)
-      )
+        const neededLayoutIds = new Set(
+          sessionsRef.current
+            .filter(
+              (session) =>
+                isCustomPaneLayoutId(session.layout) &&
+                session.panes.length > MAX_BUILTIN_PANE_COUNT
+            )
+            .map((session) => session.layout)
+        )
 
-      const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
-        (layout) => {
-          if (!neededLayoutIds.has(layout.id)) {
-            return false
+        const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
+          (layout) => {
+            if (!neededLayoutIds.has(layout.id)) {
+              return false
+            }
+
+            const dependentPaneCount = Math.max(
+              ...sessionsRef.current
+                .filter((session) => session.layout === layout.id)
+                .map((session) => session.panes.length)
+            )
+
+            const candidateFits =
+              candidateRegistry.hasLayoutId(layout.id) &&
+              candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+
+            return !candidateFits
           }
+        )
 
-          const dependentPaneCount = Math.max(
-            ...sessionsRef.current
-              .filter((session) => session.layout === layout.id)
-              .map((session) => session.panes.length)
-          )
+        const preservedIds = new Set(
+          preservedLayouts.map((layout) => layout.id)
+        )
 
-          const candidateFits =
-            candidateRegistry.hasLayoutId(layout.id) &&
-            candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+        const mergedCustomPaneLayouts = [
+          ...nextCustomPaneLayouts.filter(
+            (layout) => !preservedIds.has(layout.id)
+          ),
+          ...preservedLayouts,
+        ]
 
-          return !candidateFits
-        }
-      )
+        const nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
 
-      const preservedIds = new Set(preservedLayouts.map((layout) => layout.id))
+        setSessions((prev) =>
+          prev.map((session) => {
+            const currentLayoutStillFits =
+              nextRegistry.hasLayoutId(session.layout) &&
+              session.panes.length <= nextRegistry.capacityFor(session.layout)
 
-      const mergedCustomPaneLayouts = [
-        ...nextCustomPaneLayouts.filter(
-          (layout) => !preservedIds.has(layout.id)
-        ),
-        ...preservedLayouts,
-      ]
+            if (currentLayoutStillFits) {
+              return session
+            }
 
-      const nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
+            const nextLayout = nextRegistry.autoShrinkLayoutFor(
+              session.panes.length,
+              session.layout
+            )
 
-      setCustomPaneLayoutsState(nextRegistry.customLayouts)
-      setSessions((prev) =>
-        prev.map((session) => {
-          const currentLayoutStillFits =
-            nextRegistry.hasLayoutId(session.layout) &&
-            session.panes.length <= nextRegistry.capacityFor(session.layout)
+            return nextLayout === session.layout
+              ? session
+              : { ...session, layout: nextLayout }
+          })
+        )
 
-          if (currentLayoutStillFits) {
-            return session
-          }
-
-          const nextLayout = nextRegistry.autoShrinkLayoutFor(
-            session.panes.length,
-            session.layout
-          )
-
-          return nextLayout === session.layout
-            ? session
-            : { ...session, layout: nextLayout }
-        })
-      )
+        return nextRegistry.customLayouts
+      })
     },
     []
   )

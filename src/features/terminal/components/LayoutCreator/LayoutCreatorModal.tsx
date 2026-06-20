@@ -703,6 +703,8 @@ export const LayoutCreatorModal = ({
   const titleId = useId()
   const descriptionId = useId()
   const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
   const [name, setName] = useState('')
   const [draft, setDraft] = useState<DraftPaneLayout>(createSingleDraftLayout)
   const [codeOpen, setCodeOpen] = useState(false)
@@ -731,8 +733,24 @@ export const LayoutCreatorModal = ({
     setCodeFormat('json')
     setCodeDirty(false)
     setCodeError(null)
-    nameInputRef.current?.focus()
   }, [editLayout, isOpen, seedLayout])
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined
+    }
+
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    nameInputRef.current?.focus()
+
+    return (): void => {
+      previousFocusRef.current?.focus()
+      previousFocusRef.current = null
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (!codeDirty) {
@@ -774,12 +792,49 @@ export const LayoutCreatorModal = ({
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         onCancel()
+
+        return
       }
 
       if (event.key === 'Enter' && event.metaKey && canSave) {
         event.preventDefault()
         handleSave()
+
+        return
       }
+
+      if (event.key !== 'Tab' || !panelRef.current) {
+        return
+      }
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(
+        (element) =>
+          element.offsetParent !== null &&
+          element.getAttribute('aria-hidden') !== 'true'
+      )
+
+      if (focusable.length === 0) {
+        return
+      }
+
+      const currentIndex = focusable.indexOf(
+        document.activeElement as HTMLElement
+      )
+      const delta = event.shiftKey ? -1 : 1
+      let nextIndex: number
+
+      if (currentIndex === -1) {
+        nextIndex = event.shiftKey ? focusable.length - 1 : 0
+      } else {
+        nextIndex = (currentIndex + delta + focusable.length) % focusable.length
+      }
+
+      event.preventDefault()
+      focusable[nextIndex]?.focus()
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -838,6 +893,7 @@ export const LayoutCreatorModal = ({
       onMouseDown={onCancel}
     >
       <div
+        ref={panelRef}
         className="flex max-h-[92vh] w-full max-w-[960px] flex-col overflow-hidden rounded-2xl border border-primary/25 bg-surface-container/95 shadow-[0_30px_80px_color-mix(in_srgb,var(--color-scrim)_60%,transparent)]"
         onMouseDown={stopPropagation}
       >
