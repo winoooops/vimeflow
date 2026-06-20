@@ -1708,6 +1708,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn write_pty_emits_data_events_for_posix_command_output() {
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
+        let events = Arc::new(crate::runtime::FakeEventSink::new());
+        let marker = "vf-posix-pty-event";
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone() as Arc<dyn crate::runtime::EventSink>,
+            SpawnPtyRequest {
+                session_id: "test-posix-output".to_string(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .expect("spawn should succeed");
+
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: "test-posix-output".to_string(),
+                data: format!("printf '{marker}\\n'\n"),
+            },
+        )
+        .expect("write should succeed");
+
+        let saw_marker =
+            events.wait_for_count("pty-data", 1, std::time::Duration::from_secs(5))
+                && events
+                    .recorded()
+                    .iter()
+                    .filter(|(event, _)| event == "pty-data")
+                    .any(|(_, payload)| {
+                        payload["data"]
+                            .as_str()
+                            .is_some_and(|data| data.contains(marker))
+                    });
+
+        assert!(saw_marker, "pty-data should contain the POSIX command output");
+
+        let _ = state.remove(&"test-posix-output".to_string());
+    }
+
+    #[tokio::test]
     async fn session_remains_accessible_during_reader_startup() {
         // This test verifies the fix for the race condition where session was
         // temporarily removed from state during reader cloning, causing concurrent
