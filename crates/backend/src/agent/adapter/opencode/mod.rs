@@ -6,14 +6,17 @@
 //! modules arrive in M4–M5.
 
 // M2 defines the install + wire-DTO API surface; M3 adds the locator + types.
-// Their first production callers land in M5 (bindings dispatch), so the public
-// items here are still "dead" by exhaustiveness analysis even though they are
-// exercised by unit tests — mirror the staged-code `#[allow(dead_code)]`
-// precedent used in `adapter/attach.rs` rather than leave warnings.
+// M4 adds the snapshot decoder (parser). Their first production callers land in
+// M5 (bindings dispatch), so the public items here are still "dead" by
+// exhaustiveness analysis even though they are exercised by unit tests — mirror
+// the staged-code `#[allow(dead_code)]` precedent used in `adapter/attach.rs`
+// rather than leave warnings.
 #[allow(dead_code)]
 pub(crate) mod install;
 #[allow(dead_code)]
 pub(crate) mod locator;
+#[allow(dead_code)]
+pub(crate) mod parser;
 #[allow(dead_code)]
 pub(crate) mod transcript_dto;
 #[allow(dead_code)]
