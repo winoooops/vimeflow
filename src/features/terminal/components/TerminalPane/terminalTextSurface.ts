@@ -45,7 +45,7 @@ export interface TerminalTextSurfaceOutput {
   readonly displayDelta?: TerminalDisplayDelta
 }
 
-type RenderScrollMode = 'bottom' | 'top'
+type RenderScrollMode = 'bottom' | 'cursor' | 'top'
 
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
@@ -91,6 +91,18 @@ const parseCssPixels = (value: string): number => {
   const parsed = Number.parseFloat(value)
 
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+const readCursorRowIndex = (text: string, cursorOffset: number): number => {
+  let rowIndex = 0
+
+  for (let index = 0; index < cursorOffset; index += 1) {
+    if (text[index] === '\n') {
+      rowIndex += 1
+    }
+  }
+
+  return rowIndex
 }
 
 const getKeyboardData = (event: KeyboardEvent): string | null => {
@@ -275,7 +287,7 @@ export class TerminalTextSurface implements TerminalSurface {
       const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
         (operation) => operation.type === 'replace'
       )
-        ? 'top'
+        ? 'cursor'
         : 'bottom'
 
       this.outputBuffer.applyDelta(output.displayDelta)
@@ -748,11 +760,55 @@ export class TerminalTextSurface implements TerminalSurface {
       text.length
     )
 
+    const cursorRowIndex = readCursorRowIndex(text, cursorOffset)
     const fragments = this.createOutputFragments(runs, cursorOffset)
 
     this.output.replaceChildren(...fragments)
-    this.root.scrollTop =
-      options.scrollMode === 'top' ? 0 : this.root.scrollHeight
+    this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
+  }
+
+  private applyScrollMode(
+    scrollMode: RenderScrollMode,
+    cursorRowIndex: number
+  ): void {
+    if (scrollMode === 'bottom') {
+      this.root.scrollTop = this.root.scrollHeight
+
+      return
+    }
+
+    this.root.scrollTop = 0
+
+    if (scrollMode === 'cursor') {
+      this.scrollCursorRowIntoView(cursorRowIndex)
+    }
+  }
+
+  private scrollCursorRowIntoView(cursorRowIndex: number): void {
+    const viewportHeight = this.root.clientHeight
+
+    if (viewportHeight <= 0) {
+      return
+    }
+
+    const cursorTop =
+      parseCssPixels(window.getComputedStyle(this.output).paddingTop) +
+      cursorRowIndex * APPROXIMATE_LINE_HEIGHT
+
+    const cursorBottom = cursorTop + APPROXIMATE_LINE_HEIGHT
+    const viewportTop = this.root.scrollTop
+    const viewportBottom = viewportTop + viewportHeight
+
+    if (cursorTop >= viewportTop && cursorBottom <= viewportBottom) {
+      return
+    }
+
+    const maxScrollTop = Math.max(0, this.root.scrollHeight - viewportHeight)
+
+    const nextScrollTop =
+      cursorTop < viewportTop ? cursorTop : cursorBottom - viewportHeight
+
+    this.root.scrollTop = Math.min(Math.max(0, nextScrollTop), maxScrollTop)
   }
 
   private notifyResize(): void {
