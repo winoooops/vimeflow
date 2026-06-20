@@ -155,3 +155,30 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** The main-process column-to-offset helper returned immediately at exact terminal cell boundaries without advancing over following zero-width marks, and its local width table omitted variation selectors. Sparse-cell fallback reconstruction could split `e\u0301` or `a\ufe0f` away from the base glyph before the styled cell.
 - **Fix:** Matched the renderer helper by treating variation selectors as zero-width and advancing over combining code points at exact boundaries. Added regression tests with a combining mark and a variation selector before sparse styled cells.
 - **Commit:** same commit as this entry
+
+### 16. Reset swaps must publish the replacement before old native cleanup
+
+- **Source:** github-codex-connector | PR #571 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L720
+- **Finding:** Native reset created a replacement terminal but disposed the old terminal before assigning the replacement back to the live driver record. If old native disposal threw, the record stayed pointed at the old handle and leaked the replacement.
+- **Fix:** Assign the replacement terminal and reset scanner state before disposing the old native terminal. A disposal failure now returns an IPC error while later driver operations target the replacement terminal.
+- **Commit:** same commit as this entry
+
+### 17. OSC event payload limits must cover complete sequences
+
+- **Source:** github-codex-connector | PR #571 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L271
+- **Finding:** The OSC7 scanner bounded only retained incomplete buffers. A single complete oversized `OSC 7` sequence could still allocate and synchronously emit an unbounded cwd URI event.
+- **Fix:** Apply the same OSC buffer limit to completed URI payloads before emitting events. Oversized complete OSC7 payloads are dropped while the original bytes still feed native terminal state.
+- **Commit:** same commit as this entry
+
+### 18. Native driver IPC must enforce WebContents ownership
+
+- **Source:** github-codex-connector | PR #571 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L697-831
+- **Finding:** Driver records stored the creating `WebContents` id, but write/read/reset/resize/dispose IPC handlers ignored the caller and allowed any renderer with a guessed driver id to operate on another window's native driver.
+- **Fix:** Thread `event.sender.id` through every driver operation and reject ids whose stored owner does not match the caller. Regression coverage exercises all operation handlers from a different `WebContents`.
+- **Commit:** same commit as this entry

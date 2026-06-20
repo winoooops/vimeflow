@@ -277,7 +277,7 @@ class Osc7Scanner {
 
       const uri = this.buffer.slice(uriStartIndex, terminator.endIndex)
 
-      if (uri.length > 0) {
+      if (uri.length > 0 && uri.length <= OSC_BUFFER_LIMIT) {
         events.push({ type: 'cwd', uri })
       }
 
@@ -673,8 +673,8 @@ export class GhosttyRenderStateMainBridge {
     })
   }
 
-  writeBytes(payload: unknown): WriteBytesResult {
-    return this.withDriver(payload, (record) => {
+  writeBytes(ownerWebContentsId: number, payload: unknown): WriteBytesResult {
+    return this.withDriver(ownerWebContentsId, payload, (record) => {
       const bytes = readBytes(payload)
       const events = record.osc7Scanner.write(bytes)
 
@@ -684,17 +684,17 @@ export class GhosttyRenderStateMainBridge {
     })
   }
 
-  readSnapshot(payload: unknown): SnapshotResult {
-    return this.withDriver(payload, (record) =>
+  readSnapshot(ownerWebContentsId: number, payload: unknown): SnapshotResult {
+    return this.withDriver(ownerWebContentsId, payload, (record) =>
       ok(normalizeSnapshot(record.terminal.snapshot({ includeCells: true })))
     )
   }
 
-  resize(payload: unknown): EmptyResult {
+  resize(ownerWebContentsId: number, payload: unknown): EmptyResult {
     try {
       const { driverId, size } = readSizePayload(payload)
 
-      return this.withDriverId(driverId, (record) => {
+      return this.withDriverId(driverId, ownerWebContentsId, (record) => {
         record.terminal.resize(size.cols, size.rows)
         record.size = size
 
@@ -705,24 +705,31 @@ export class GhosttyRenderStateMainBridge {
     }
   }
 
-  reset(payload: unknown): EmptyResult {
-    return this.withDriver(payload, (record) =>
+  reset(ownerWebContentsId: number, payload: unknown): EmptyResult {
+    return this.withDriver(ownerWebContentsId, payload, (record) =>
       this.withNativeBindings((nativeBindings) => {
         const terminal = createNativeTerminal(nativeBindings, record.size)
         const previousTerminal = record.terminal
 
-        previousTerminal.dispose()
-        record.osc7Scanner.reset()
         record.terminal = terminal
+        record.osc7Scanner.reset()
+        previousTerminal.dispose()
 
         return ok(null)
       })
     )
   }
 
-  dispose(payload: unknown): EmptyResult {
+  dispose(ownerWebContentsId: number, payload: unknown): EmptyResult {
     try {
-      this.disposeDriver(readDriverId(payload))
+      const driverId = readDriverId(payload)
+      const record = this.drivers.get(driverId)
+
+      if (!record || record.ownerWebContentsId !== ownerWebContentsId) {
+        return fail('Ghostty native render-state driver is unknown')
+      }
+
+      this.disposeDriver(driverId)
 
       return ok(null)
     } catch (error) {
@@ -763,11 +770,16 @@ export class GhosttyRenderStateMainBridge {
   }
 
   private withDriver<T>(
+    ownerWebContentsId: number,
     payload: unknown,
     callback: (record: GhosttyDriverRecord) => IpcResult<T>
   ): IpcResult<T> {
     try {
-      return this.withDriverId(readDriverId(payload), callback)
+      return this.withDriverId(
+        readDriverId(payload),
+        ownerWebContentsId,
+        callback
+      )
     } catch (error) {
       return fail(stringifyError(error))
     }
@@ -775,11 +787,12 @@ export class GhosttyRenderStateMainBridge {
 
   private withDriverId<T>(
     driverId: string,
+    ownerWebContentsId: number,
     callback: (record: GhosttyDriverRecord) => IpcResult<T>
   ): IpcResult<T> {
     const record = this.drivers.get(driverId)
 
-    if (!record) {
+    if (!record || record.ownerWebContentsId !== ownerWebContentsId) {
       return fail('Ghostty native render-state driver is unknown')
     }
 
@@ -837,27 +850,27 @@ export const setupGhosttyRenderStateIpc = (
     registerSyncHandler(
       options.ipcMain,
       GHOSTTY_RENDER_STATE_WRITE_BYTES,
-      (_event, payload) => bridge.writeBytes(payload)
+      (event, payload) => bridge.writeBytes(event.sender.id, payload)
     ),
     registerSyncHandler(
       options.ipcMain,
       GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
-      (_event, payload) => bridge.readSnapshot(payload)
+      (event, payload) => bridge.readSnapshot(event.sender.id, payload)
     ),
     registerSyncHandler(
       options.ipcMain,
       GHOSTTY_RENDER_STATE_RESET,
-      (_event, payload) => bridge.reset(payload)
+      (event, payload) => bridge.reset(event.sender.id, payload)
     ),
     registerSyncHandler(
       options.ipcMain,
       GHOSTTY_RENDER_STATE_RESIZE,
-      (_event, payload) => bridge.resize(payload)
+      (event, payload) => bridge.resize(event.sender.id, payload)
     ),
     registerSyncHandler(
       options.ipcMain,
       GHOSTTY_RENDER_STATE_DISPOSE,
-      (_event, payload) => bridge.dispose(payload)
+      (event, payload) => bridge.dispose(event.sender.id, payload)
     ),
   ]
 

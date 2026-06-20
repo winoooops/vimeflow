@@ -107,10 +107,10 @@ const createNativeBindings = (): {
   return { bindings, terminals }
 }
 
-const createEvent = (): IpcMainEventLike => ({
+const createEvent = (id = 42): IpcMainEventLike => ({
   returnValue: undefined,
   sender: {
-    id: 42,
+    id,
     once: vi.fn(),
     removeListener: vi.fn(),
   },
@@ -162,7 +162,10 @@ describe('ghostty render-state main bridge', () => {
     const bytes = new Uint8Array([0x68, 0x69])
 
     expect(
-      bridge.writeBytes({ driverId: createResult.driverId, bytes })
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes,
+      })
     ).toEqual({
       ok: true,
       result: {
@@ -171,7 +174,9 @@ describe('ghostty render-state main bridge', () => {
     })
 
     expect(terminals[0]?.feed).toHaveBeenCalledWith(bytes)
-    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: {
         rows: ['prompt', 'output', ...Array.from({ length: 22 }, () => '')],
@@ -198,11 +203,12 @@ describe('ghostty render-state main bridge', () => {
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
     const encoder = new TextEncoder()
 
     expect(
-      bridge.writeBytes({
+      bridge.writeBytes(event.sender.id, {
         driverId: createResult.driverId,
         bytes: encoder.encode('\u001b]7;file://localhost/Users'),
       })
@@ -214,7 +220,7 @@ describe('ghostty render-state main bridge', () => {
     })
 
     expect(
-      bridge.writeBytes({
+      bridge.writeBytes(event.sender.id, {
         driverId: createResult.driverId,
         bytes: encoder.encode('/user/project\u0007prompt'),
       })
@@ -232,19 +238,43 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals[0]?.feed).toHaveBeenCalledTimes(2)
   })
 
+  test('drops oversized complete OSC7 cwd effects', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const encoder = new TextEncoder()
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode(`\u001b]7;${'x'.repeat(8193)}\u0007prompt`),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+    expect(terminals[0]?.feed).toHaveBeenCalledOnce()
+  })
+
   test('resizes native state and resets by recreating the terminal at the current size', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
     expect(
-      bridge.resize({
+      bridge.resize(event.sender.id, {
         driverId: createResult.driverId,
         size: { cols: 120, rows: 32 },
       })
     ).toEqual({ ok: true, result: null })
 
-    expect(bridge.reset({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.reset(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: null,
     })
@@ -262,14 +292,15 @@ describe('ghostty render-state main bridge', () => {
   test('keeps the cached size unchanged when native resize fails', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
     terminals[0]?.resize.mockImplementationOnce(() => {
       throw new Error('native resize failed')
     })
 
     expect(
-      bridge.resize({
+      bridge.resize(event.sender.id, {
         driverId: createResult.driverId,
         size: { cols: 120, rows: 32 },
       })
@@ -278,7 +309,9 @@ describe('ghostty render-state main bridge', () => {
       error: 'native resize failed',
     })
 
-    expect(bridge.reset({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.reset(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: null,
     })
@@ -293,20 +326,23 @@ describe('ghostty render-state main bridge', () => {
   test('keeps the existing terminal when reset recreation fails', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
     vi.mocked(bindings.createTerminal).mockImplementationOnce(() => {
       throw new Error('native allocation failed')
     })
 
-    expect(bridge.reset({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.reset(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: false,
       error: 'native allocation failed',
     })
     expect(terminals[0]?.dispose).not.toHaveBeenCalled()
 
     expect(
-      bridge.writeBytes({
+      bridge.writeBytes(event.sender.id, {
         driverId: createResult.driverId,
         bytes: new Uint8Array([0x68]),
       })
@@ -317,6 +353,37 @@ describe('ghostty render-state main bridge', () => {
       },
     })
     expect(terminals[0]?.feed).toHaveBeenCalledWith(new Uint8Array([0x68]))
+  })
+
+  test('keeps the replacement terminal active when old reset disposal fails', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    terminals[0]?.dispose.mockImplementationOnce(() => {
+      throw new Error('native dispose failed')
+    })
+
+    expect(
+      bridge.reset(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: false,
+      error: 'native dispose failed',
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: new Uint8Array([0x68]),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+    expect(terminals[1]?.feed).toHaveBeenCalledWith(new Uint8Array([0x68]))
   })
 
   test('preserves fallback row text around sparse styled cells by cell columns', () => {
@@ -350,9 +417,12 @@ describe('ghostty render-state main bridge', () => {
         dispose: vi.fn(),
       }),
     })
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
-    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: {
         rows: ['界red$'],
@@ -404,9 +474,12 @@ describe('ghostty render-state main bridge', () => {
         dispose: vi.fn(),
       }),
     })
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
-    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: {
         rows: ['e\u0301red'],
@@ -452,9 +525,12 @@ describe('ghostty render-state main bridge', () => {
         dispose: vi.fn(),
       }),
     })
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
-    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: {
         rows: ['a\ufe0fred'],
@@ -478,10 +554,11 @@ describe('ghostty render-state main bridge', () => {
   test('rejects oversized native terminal dimensions before resize', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
     expect(
-      bridge.resize({
+      bridge.resize(event.sender.id, {
         driverId: createResult.driverId,
         size: { cols: 1001, rows: 24 },
       })
@@ -522,7 +599,9 @@ describe('ghostty render-state main bridge', () => {
 
     expect(listener).toBeDefined()
 
-    expect(bridge.dispose({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.dispose(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: true,
       result: null,
     })
@@ -555,9 +634,12 @@ describe('ghostty render-state main bridge', () => {
         dispose: vi.fn(),
       }),
     })
-    const createResult = requireResult(bridge.createDriver(createEvent()))
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
 
-    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
       ok: false,
       error: 'Ghostty native render-state snapshot rows are invalid',
     })
@@ -618,5 +700,63 @@ describe('ghostty render-state main bridge', () => {
     dispose()
 
     expect(ipcMain.handlers.size).toBe(0)
+  })
+
+  test('rejects IPC driver operations from another web contents', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const ipcMain = createIpcMain()
+
+    const dispose = setupGhosttyRenderStateIpc({
+      appRoot: '/app',
+      ipcMain,
+      nativeBindings: bindings,
+    })
+    const ownerEvent = createEvent(42)
+    const otherEvent = createEvent(84)
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_CREATE)?.(ownerEvent)
+
+    const createResult = ownerEvent.returnValue as {
+      ok: true
+      result: { driverId: string }
+    }
+    const payload = { driverId: createResult.result.driverId }
+    const unknownDriver = {
+      ok: false,
+      error: 'Ghostty native render-state driver is unknown',
+    }
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_WRITE_BYTES)?.(otherEvent, {
+      ...payload,
+      bytes: new Uint8Array([0x68]),
+    })
+    expect(otherEvent.returnValue).toEqual(unknownDriver)
+    expect(terminals[0]?.feed).not.toHaveBeenCalled()
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_READ_SNAPSHOT)?.(
+      otherEvent,
+      payload
+    )
+    expect(otherEvent.returnValue).toEqual(unknownDriver)
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_RESIZE)?.(otherEvent, {
+      ...payload,
+      size: { cols: 100, rows: 30 },
+    })
+    expect(otherEvent.returnValue).toEqual(unknownDriver)
+    expect(terminals[0]?.resize).not.toHaveBeenCalled()
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_RESET)?.(otherEvent, payload)
+    expect(otherEvent.returnValue).toEqual(unknownDriver)
+    expect(terminals).toHaveLength(1)
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_DISPOSE)?.(otherEvent, payload)
+    expect(otherEvent.returnValue).toEqual(unknownDriver)
+    expect(terminals[0]?.dispose).not.toHaveBeenCalled()
+
+    ipcMain.handlers.get(GHOSTTY_RENDER_STATE_DISPOSE)?.(ownerEvent, payload)
+    expect(ownerEvent.returnValue).toEqual({ ok: true, result: null })
+
+    dispose()
   })
 })
