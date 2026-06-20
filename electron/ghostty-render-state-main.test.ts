@@ -355,7 +355,9 @@ describe('ghostty render-state main bridge', () => {
 
   test('returns ipc failures when cached native callback throws', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
-      createTerminal: (): ReturnType<GhosttyNativeBindings['createTerminal']> => {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => {
         throw new Error('native create failed')
       },
     })
