@@ -11,7 +11,7 @@
 //! | StatusSnapshot field           | Bridge line                                      |
 //! |-------------------------------|--------------------------------------------------|
 //! | `agent_session_id`             | latest `session.created/updated` → `info.id`     |
-//! | `model_id` / `model_display_name` | `info.model.id`                              |
+//! | `model_id` / `model_display_name` | `info.model.id` or `info.model.modelID`      |
 //! | `version`                      | `info.version`                                   |
 //! | `context_window.total_input_tokens`  | `info.tokens.input`                      |
 //! | `context_window.total_output_tokens` | `info.tokens.output`                     |
@@ -23,9 +23,11 @@
 
 use serde_json::Value;
 
-use crate::agent::adapter::types::StatusSnapshot;
-use crate::agent::adapter::opencode::transcript_dto::{OpencodeKind, OpencodeEventType, OpencodeLineDto};
+use crate::agent::adapter::opencode::transcript_dto::{
+    OpencodeEventType, OpencodeKind, OpencodeLineDto,
+};
 use crate::agent::adapter::opencode::types::OPENCODE_CONTEXT_WINDOW_SIZE;
+use crate::agent::adapter::types::StatusSnapshot;
 use crate::agent::types::{
     ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -36,7 +38,7 @@ use crate::agent::types::{
 struct OpencodeFoldState {
     /// Agent's internal session id (from `info.id`).
     agent_session_id: String,
-    /// Model id (from `info.model.id`).
+    /// Model id (from `info.model.id` or `info.model.modelID`).
     model_id: String,
     /// Version string (from `info.version`).
     version: String,
@@ -166,10 +168,10 @@ fn fold_session_info(state: &mut OpencodeFoldState, info: &Value) {
             state.version = ver.to_string();
         }
     }
-    if let Some(model_id) = value_str(info, &["model", "id"]) {
-        if !model_id.is_empty() {
-            state.model_id = model_id.to_string();
-        }
+    let model_id =
+        value_str(info, &["model", "id"]).or_else(|| value_str(info, &["model", "modelID"]));
+    if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
+        state.model_id = model_id.to_string();
     }
     if let Some(input) = value_u64(info, &["tokens", "input"]) {
         state.total_input_tokens = input;
@@ -209,6 +211,11 @@ fn fold_step_finish(state: &mut OpencodeFoldState, part: &Value) {
         cache_read_tokens: cache_read,
         cache_write_tokens: cache_write,
     });
+
+    if state.total_input_tokens == 0 && state.total_output_tokens == 0 {
+        state.total_input_tokens = input;
+        state.total_output_tokens = output;
+    }
 }
 
 fn fold_line(state: &mut OpencodeFoldState, dto: &OpencodeLineDto) {
@@ -247,7 +254,7 @@ fn fold_line(state: &mut OpencodeFoldState, dto: &OpencodeLineDto) {
 /// The first caller in production is M5's `StateDecoder` impl on
 /// `OpenCodeAdapter`.
 #[allow(dead_code)]
-pub(crate) fn parse_bridge_snapshot(raw: &str) -> StatusSnapshot {
+pub(crate) fn parse_bridge_snapshot(session_id: Option<&str>, raw: &str) -> StatusSnapshot {
     let mut state = OpencodeFoldState::default();
 
     let lines: Vec<&str> = raw.split('\n').collect();
@@ -265,7 +272,10 @@ pub(crate) fn parse_bridge_snapshot(raw: &str) -> StatusSnapshot {
 
         match serde_json::from_str::<OpencodeLineDto>(line) {
             Ok(dto) => fold_line(&mut state, &dto),
-            Err(_) => log::warn!("opencode: skipping malformed bridge line"),
+            Err(err) => log::warn!(
+                "opencode: skipping malformed bridge line (sid={}, err={err})",
+                session_id.unwrap_or("?"),
+            ),
         }
     }
 
@@ -289,7 +299,7 @@ mod tests {
 
     #[test]
     fn snapshot_has_correct_model_and_version_from_fixture() {
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         assert_eq!(snap.model_id, "claude-sonnet-4");
         assert_eq!(snap.model_display_name, "claude-sonnet-4");
         assert_eq!(snap.version, "1.17.8");
@@ -297,7 +307,7 @@ mod tests {
 
     #[test]
     fn snapshot_has_correct_agent_session_id_from_fixture() {
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         assert_eq!(snap.agent_session_id, "ses_sample001");
     }
 
@@ -305,7 +315,7 @@ mod tests {
     fn snapshot_has_correct_token_totals_from_session_updated() {
         // The fixture's `session.updated` (the last session event) carries
         // tokens: { input: 1820, output: 260, ... }.
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         assert_eq!(snap.context_window.total_input_tokens, 1820);
         assert_eq!(snap.context_window.total_output_tokens, 260);
     }
@@ -313,16 +323,19 @@ mod tests {
     #[test]
     fn snapshot_has_correct_cost_from_fixture() {
         // `session.updated` carries `cost: 0.012`.
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         let cost = snap.cost.total_cost_usd.expect("cost should be set");
-        assert!((cost - 0.012).abs() < 1e-9, "cost should be 0.012, got {cost}");
+        assert!(
+            (cost - 0.012).abs() < 1e-9,
+            "cost should be 0.012, got {cost}"
+        );
     }
 
     #[test]
     fn snapshot_current_usage_from_step_finish() {
         // The fixture's `step-finish` part carries
         // tokens: { input: 1820, output: 260, cache: { read: 1200, write: 600 } }.
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         let cu = snap
             .context_window
             .current_usage
@@ -335,7 +348,7 @@ mod tests {
 
     #[test]
     fn context_window_size_is_zero_unknown() {
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         assert_eq!(snap.context_window.context_window_size, 0);
         // With size == 0 we cannot compute a percentage.
         assert!(snap.context_window.used_percentage.is_none());
@@ -343,11 +356,47 @@ mod tests {
 
     #[test]
     fn rate_limits_are_safe_default() {
-        let snap = parse_bridge_snapshot(SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         assert!((snap.rate_limits.five_hour.used_percentage - 0.0).abs() < f64::EPSILON);
         assert_eq!(snap.rate_limits.five_hour.resets_at, 0);
         assert!(snap.rate_limits.seven_day.is_none());
         assert!(!snap.usage_fetched);
+    }
+
+    #[test]
+    fn snapshot_reads_model_id_from_bridge_emitted_model_id() {
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_model_id\",\"version\":\"1.2.3\",\"model\":{\"providerID\":\"anthropic\",\"modelID\":\"claude-sonnet-4\"},\"cost\":0.25,\"tokens\":{\"input\":700,\"output\":300,\"cache\":{\"read\":10,\"write\":20}}}}}\n",
+        );
+
+        let snap = parse_bridge_snapshot(Some("pty-1"), raw);
+        assert_eq!(snap.agent_session_id, "ses_model_id");
+        assert_eq!(snap.model_id, "claude-sonnet-4");
+        assert_eq!(snap.model_display_name, "claude-sonnet-4");
+        assert_eq!(snap.version, "1.2.3");
+        assert_eq!(snap.context_window.total_input_tokens, 700);
+        assert_eq!(snap.context_window.total_output_tokens, 300);
+        let cost = snap.cost.total_cost_usd.expect("cost set");
+        assert!((cost - 0.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn step_finish_tokens_populate_totals_when_session_tokens_are_absent() {
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_step_only\",\"model\":{\"modelID\":\"claude-haiku\"}}}}\n",
+            "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":321,\"output\":123,\"cache\":{\"read\":40,\"write\":50}}}}}\n",
+        );
+
+        let snap = parse_bridge_snapshot(None, raw);
+        assert_eq!(snap.model_id, "claude-haiku");
+        assert_eq!(snap.context_window.total_input_tokens, 321);
+        assert_eq!(snap.context_window.total_output_tokens, 123);
+        let cu = snap
+            .context_window
+            .current_usage
+            .expect("current_usage present");
+        assert_eq!(cu.cache_read_input_tokens, 40);
+        assert_eq!(cu.cache_creation_input_tokens, 50);
     }
 
     // ── malformed / edge-case tests ────────────────────────────────────
@@ -362,7 +411,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_tol\",\"version\":\"1.0.0\",\"model\":{\"id\":\"claude-opus\"},\"cost\":0.001,\"tokens\":{\"input\":200,\"output\":80,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(raw);
+        let snap = parse_bridge_snapshot(None, raw);
         assert_eq!(snap.agent_session_id, "ses_tol");
         assert_eq!(snap.model_id, "claude-opus");
         // The second good session.updated (after the garbage line) is applied.
@@ -379,7 +428,7 @@ mod tests {
             "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_nostep\",\"version\":\"1.0.0\",\"model\":{\"id\":\"gpt-4o\"},\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(raw);
+        let snap = parse_bridge_snapshot(None, raw);
         assert_eq!(snap.agent_session_id, "ses_nostep");
         assert!(snap.context_window.current_usage.is_none());
         assert_eq!(snap.context_window.total_input_tokens, 0);
@@ -388,7 +437,7 @@ mod tests {
     /// An entirely empty input produces a default snapshot without panicking.
     #[test]
     fn empty_input_returns_default_snapshot_no_panic() {
-        let snap = parse_bridge_snapshot("");
+        let snap = parse_bridge_snapshot(None, "");
         assert_eq!(snap.agent_session_id, "");
         assert_eq!(snap.model_id, "unknown");
         assert_eq!(snap.model_display_name, "unknown");
@@ -407,7 +456,7 @@ mod tests {
         // The second line has no trailing '\n' — it must be dropped.
         let raw = "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_partial\",\"version\":\"0.9\",\"model\":{\"id\":\"m1\"},\"cost\":0,\"tokens\":{\"input\":10,\"output\":5,\"cache\":{\"read\":0,\"write\":0}}}}}\n{INCOMPLETE";
 
-        let snap = parse_bridge_snapshot(raw);
+        let snap = parse_bridge_snapshot(None, raw);
         assert_eq!(snap.agent_session_id, "ses_partial");
         assert_eq!(snap.model_id, "m1");
     }
@@ -421,7 +470,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_win\",\"version\":\"1.17.8\",\"model\":{\"id\":\"new-model\"},\"cost\":0.5,\"tokens\":{\"input\":500,\"output\":100,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(raw);
+        let snap = parse_bridge_snapshot(None, raw);
         assert_eq!(snap.model_id, "new-model");
         assert_eq!(snap.version, "1.17.8");
         assert_eq!(snap.context_window.total_input_tokens, 500);
@@ -437,7 +486,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":300,\"output\":60,\"cache\":{\"read\":50,\"write\":10}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(raw);
+        let snap = parse_bridge_snapshot(None, raw);
         let cu = snap
             .context_window
             .current_usage
