@@ -107,6 +107,10 @@ describe('SettingsWindowController', () => {
       location,
       preloadPath: '/dist-electron/preload.mjs',
       openExternalUrl: vi.fn(),
+      windowChromeOptions: {
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 16, y: 13 },
+      },
     })
 
     controller.open()
@@ -119,6 +123,8 @@ describe('SettingsWindowController', () => {
       height: 680,
       minWidth: 720,
       minHeight: 520,
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 13 },
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

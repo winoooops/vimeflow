@@ -563,6 +563,7 @@ const setupApp = async (): Promise<void> => {
     preloadPath: path.join(__dirname, 'preload.mjs'),
     openExternalUrl,
     onRendererDiagnostics: installRendererDiagnosticLogging,
+    windowChromeOptions: macosWindowChromeOptions,
   })
 
   ipcMain.handle(SETTINGS_OPEN_WINDOW, (): void => {

@@ -10,6 +10,11 @@ const SETTINGS_WINDOW_MIN_HEIGHT = 520
 const SETTINGS_WINDOW_QUERY_KEY = 'window'
 const SETTINGS_WINDOW_QUERY_VALUE = 'settings'
 
+type SettingsWindowChromeOptions = Pick<
+  BrowserWindowConstructorOptions,
+  'backgroundColor' | 'titleBarStyle' | 'trafficLightPosition'
+>
+
 export interface SettingsWindowLocation {
   appOrigin: string
   isPackaged: boolean
@@ -23,6 +28,7 @@ export interface SettingsWindowControllerOptions {
   preloadPath: string
   openExternalUrl: (url: string) => void
   onRendererDiagnostics?: (win: BrowserWindow) => void
+  windowChromeOptions?: SettingsWindowChromeOptions
 }
 
 export const settingsWindowUrl = ({
@@ -79,6 +85,7 @@ export class SettingsWindowController {
       show: false,
       resizable: true,
       backgroundColor: '#121221',
+      ...this.options.windowChromeOptions,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
