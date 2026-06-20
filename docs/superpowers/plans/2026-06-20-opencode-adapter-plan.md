@@ -10,16 +10,16 @@ Green, repo-wide, before the PR is opened:
 
 - `cargo test --manifest-path crates/backend/Cargo.toml` (backend) — note: re-run `npm run generate:bindings` + prettier afterward; `cargo test` re-emits ts-rs bindings unformatted.
 - `npm run lint` (eslint, repo-wide) · `npm run format:check` (prettier, repo-wide) · `npm run type-check` (tsc) · `npm test` (vitest).
+- The vendored opencode bridge `.ts` (under `crates/`) is **excluded from the frontend eslint flat-config ignores and the `src` tsconfig** (it is a Bun asset, not part of the app) and verified separately by `npm run type-check:bridge` (a dedicated `tsconfig.opencode-bridge.json`, `--noEmit`, `skipLibCheck`, no opencode type deps — the plugin's hook params are `any`); prettier (`format:check`) still covers it, plus a Rust embed-integrity test. Added in M2, part of the DoD from M2 onward.
 - Each PR is self-contained, builds green, and is independently reviewable. Body carries `Part of VIM-<epic>` (not `Closes`) + the milestone's `VIM-<sub>`. Labels: `auto-review`, `auto-approve`.
 
 ## Sequencing
 
 ```
-M1 ─┬─▶ M2 ─┐
-    └─▶ M3 ─┴─▶ M4 ─▶ M5 ─▶ M6
+M1 ─▶ M2 ─▶ M3 ─▶ M4 ─▶ M5 ─▶ M6
 ```
 
-M1 is the foundation (enum + frontend unions compile). M2 (plugin/DTO/fixtures) and M3 (locator) only need M1. M4 (decoder) needs the DTOs (M2) + types (M3). M5 (streamer + wiring) needs M3+M4. M6 (frontend branding) needs M1. Implemented strictly in order M1→M6 for the sequential-PR loop.
+A strict linear chain (one PR at a time into the umbrella branch). M1 is the foundation (enum + frontend unions compile). M2 adds the plugin + `bridge_dir()` + index/line DTOs + fixtures. M3 (locator) consumes M2's `bridge_dir()` and index DTO. M4 (decoder) consumes M2's DTOs + M3's types. M5 (streamer + bindings wiring) consumes M3+M4. M6 (frontend branding) only needs M1 but lands last. Each milestone is implemented and merged before the next begins.
 
 ---
 
@@ -59,14 +59,15 @@ M1 is the foundation (enum + frontend unions compile). M2 (plugin/DTO/fixtures) 
 **Files (new):**
 
 - `crates/backend/src/agent/adapter/opencode/mod.rs` — `pub mod` declarations only (sub-modules added across M2–M5); add `pub mod opencode;` to `adapter/mod.rs`.
-- `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts` — the bridge plugin (spec §4.1): `event` + `tool.execute.*` hooks, whitelist, line schema, per-session + index routing carrying `pid` (`process.pid`), data minimization (arg preview, output excerpt ≤2 KiB, `0600`), try/catch. Header `// vimeflow-bridge-version: 1`.
-- `crates/backend/src/agent/adapter/opencode/install.rs` — `ensure_bridge_installed(plugins_dir: &Path)` (idempotent, version-gated; source via `include_str!`); `bridge_dir()` deriving `$VIMEFLOW_OPENCODE_BRIDGE_DIR ?? ${XDG_DATA_HOME:-~/.local/share}/vimeflow/opencode-bridge`.
+- `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts` — the bridge plugin (spec §4.1): `event` + `tool.execute.*` hooks, whitelist, line schema, per-session + index routing carrying `pid` (`process.pid`), data minimization (arg preview, output excerpt ≤2 KiB, `0600`), try/catch. Header `// vimeflow-bridge-version: 1`. Hook params are typed `any` (no `@opencode-ai/*` dependency) so it type-checks standalone.
+- **Bridge tooling (keeps the every-PR DoD honest):** add the bridge path to the eslint flat-config `ignores`; add `tsconfig.opencode-bridge.json` (`include` that file, `noEmit`, `skipLibCheck`, `types: []`, Bun/Node lib) and a `"type-check:bridge"` npm script (`tsc -p tsconfig.opencode-bridge.json`). The file stays under prettier (`format:check`).
+- `crates/backend/src/agent/adapter/opencode/install.rs` — `ensure_bridge_installed(plugins_dir: &Path) -> io::Result<InstallOutcome>` (idempotent, version-gated; source via `include_str!`; **atomic** = temp file + rename, `0600`). `opencode_plugins_dir()` resolves `$VIMEFLOW_OPENCODE_PLUGINS_DIR ?? ~/.config/opencode/plugins` (the env override is the test seam). `bridge_dir()` deriving `$VIMEFLOW_OPENCODE_BRIDGE_DIR ?? ${XDG_DATA_HOME:-~/.local/share}/vimeflow/opencode-bridge`.
 - `crates/backend/src/agent/adapter/opencode/transcript_dto.rs` — `OpencodeLineDto` (flat, lenient), `OpencodeKind` enum (`event`/`tool.before`/`tool.after`, `#[serde(other)]`), `OpencodeEventType` enum (`#[serde(other)]`), index-row DTO. `serde_helpers::lenient_*` on every scalar.
 - `crates/backend/src/agent/adapter/opencode/fixtures/sample_bridge.jsonl`, `sample_index.jsonl` — authored, sanitized (session.created/updated, message.updated user, step-finish, tool.before/after bash, session.idle).
 
-**Work:** write the plugin (mirror the verified probe shapes); embed + install with a unit test writing into a temp `plugins_dir` and asserting idempotency + version-gating; DTO serde round-trip tests over the fixtures.
+**Work:** write the plugin (mirror the verified probe shapes, `any`-typed params); add the bridge eslint-ignore + `tsconfig.opencode-bridge.json` + `type-check:bridge` script; embed + install with unit tests writing into a temp `plugins_dir` (idempotency, version-gating, atomic-replace of an older version); DTO serde round-trip tests over the fixtures; a Rust embed-integrity test asserting the `include_str!`'d plugin carries the version header, the whitelisted hook/event names, and the same bridge-dir rule literal as Rust.
 
-**Acceptance:** `cargo test` green (install idempotency, DTO round-trip, `bridge_dir()` literal-default test matching the plugin's rule); a `lenient_*` test proves a type-drifted field degrades to `None` not error; an unknown event type does not poison the line.
+**Acceptance:** `cargo test` green (install idempotency/version-gating/atomic-replace, DTO round-trip, embed-integrity, `bridge_dir()` literal-default test matching the plugin's rule); `npm run type-check:bridge` green; `npm run lint`/`format:check`/`type-check`/`test` green (bridge excluded from eslint/`src` tsconfig, still prettier-checked); a `lenient_*` test proves a type-drifted field degrades to `None` not error; an unknown event type does not poison the line.
 
 **Model:** Opus 4.8 (the plugin TS + the install/version semantics are the highest-judgment piece); Sonnet for fixtures.
 
@@ -119,9 +120,9 @@ M1 is the foundation (enum + frontend unions compile). M2 (plugin/DTO/fixtures) 
 
 - `crates/backend/src/agent/adapter/opencode/transcript.rs` — `start_tailing(...)` (mirror `codex/transcript.rs:190`); `OpencodeTranscriptDecoder { events, session_id, cwd, in_flight: by callID, num_turns, last_cwd, emitter: TestRunEmitter, replay_done }` impl `TranscriptDecoder`. Map per spec §4.4: user `message.updated` ⇒ turn; `tool.before`/tool pending|running ⇒ start; `tool.after`/completed ⇒ done; tool error ⇒ failed; bash `tool.after` ⇒ shared `claude_code::test_runners` (`match_command`/`maybe_build_snapshot`/`TestRunEmitter`, cwd = session cwd); `session.idle`/`status`/`step-finish` ⇒ status refresh; cwd change ⇒ `AgentCwdEvent`. `on_caught_up` **idempotent** (gate on `replay_done`).
 - `crates/backend/src/agent/adapter/opencode/mod.rs` — `OpenCodeAdapter { locator: Arc<OpenCodeLocator> }` + `with_locator`; impl `TranscriptPathSource` (`static_hint` from `static_transcript_hint`, `dynamic_hint` None), `StateDecoder` (delegates parser), `TranscriptPathValidator`, `TranscriptStreamer`, and the `AgentAdapter` facade (UFCS delegation).
-- `crates/backend/src/agent/adapter/bindings.rs` — named `AgentType::Opencode` arm: build **one** `Arc<OpenCodeLocator>` (bridge-root via `bridge_dir()`, `agent_pid`, `pty_start`), share into `bindings.locator` + `OpenCodeAdapter::with_locator(locator.clone())`; call `ensure_bridge_installed` for the user's `~/.config/opencode/plugins` at attach; `opencode_ctx` test helper + dispatch tests.
+- `crates/backend/src/agent/adapter/bindings.rs` — named `AgentType::Opencode` arm: build **one** `Arc<OpenCodeLocator>` (bridge-root via `bridge_dir()`, `agent_pid`, `pty_start`), share into `bindings.locator` + `OpenCodeAdapter::with_locator(locator.clone())`; call `ensure_bridge_installed(opencode_plugins_dir())` at attach and **log-and-continue on `Err`** (a failed/forbidden install is non-fatal — the adapter still tails an already-installed bridge; worst case = the documented restart caveat). `opencode_ctx` test helper sets `$VIMEFLOW_OPENCODE_PLUGINS_DIR` to a temp dir so dispatch tests never write to the real user config; dispatch tests assert the shared-Arc invariant.
 
-**Acceptance:** tests — user message ⇒ one turn; tool before/after ⇒ start/done once (deduped by callID); tool error ⇒ failed; bash test command ⇒ test-run snapshot; non-test bash ⇒ no snapshot; `on_caught_up` fired twice ⇒ no duplicate replay flush; `for_attach` dispatches `Opencode` to the real adapter (shared-Arc invariant: one locator instance). End-to-end: feeding `sample_bridge.jsonl` through the tail emits the expected event sequence.
+**Acceptance:** tests — user message ⇒ one turn; tool before/after ⇒ start/done once (deduped by callID); tool error ⇒ failed; bash test command ⇒ test-run snapshot; non-test bash ⇒ no snapshot; `on_caught_up` fired twice ⇒ no duplicate replay flush; `for_attach` dispatches `Opencode` to the real adapter (shared-Arc invariant: one locator instance) and **honors `$VIMEFLOW_OPENCODE_PLUGINS_DIR` (no write to the real `~/.config`)**; a forbidden/read-only plugins dir ⇒ `for_attach` still succeeds (install error is non-fatal). End-to-end: feeding `sample_bridge.jsonl` through the tail emits the expected event sequence.
 
 **Model:** Opus 4.8 (the decoder state machine + the shared-Arc wiring are the trickiest, highest-review-risk code).
 
@@ -150,5 +151,5 @@ M1 is the foundation (enum + frontend unions compile). M2 (plugin/DTO/fixtures) 
 
 - Wire-string verification is an **M1 gate** — do not hardcode frontend literals before confirming ts-rs emits `"opencode"`.
 - The bridge-dir derivation rule must be **byte-identical** in the plugin (TS) and `bridge_dir()` (Rust) — covered by the literal-default tests in M2/M3.
-- `ensure_bridge_installed` writes into the user's real `~/.config/opencode/plugins` only at attach (M5); all unit tests target a temp dir.
+- `ensure_bridge_installed` writes into `opencode_plugins_dir()` = `$VIMEFLOW_OPENCODE_PLUGINS_DIR ?? ~/.config/opencode/plugins` (atomic, `0600`); the env override isolates all tests to a temp dir, and an install failure is non-fatal (logged) so attach never breaks.
 - Restart caveat (no live data until opencode relaunches with the bridge) is documented, not fixed in v1.
