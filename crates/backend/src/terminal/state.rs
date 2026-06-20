@@ -74,6 +74,10 @@ pub struct ManagedSession {
     /// Current working directory
     #[allow(dead_code)]
     pub cwd: String,
+    /// Bridge directory path for this session, used for cleanup.
+    /// Stored at spawn time so cleanup uses the exact app-data path that
+    /// generated the statusline files.
+    pub bridge_dir: Option<String>,
     /// Shim directory path for this session, used for cleanup.
     /// Stored at spawn time so cleanup reads the same path even if
     /// `dirs::cache_dir()` env variables change between spawn and kill.
@@ -640,6 +644,7 @@ mod tests {
             writer,
             child,
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
@@ -713,6 +718,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),

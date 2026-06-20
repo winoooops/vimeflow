@@ -482,8 +482,7 @@ impl AgentWatcherState {
                     // debug-asserts the match so a future
                     // contributor accidentally passing the wrong
                     // session's guard fails fast in debug builds.
-                    removed_transcript =
-                        ts.stop_with_held_gate(&session_id, &_gate_guard);
+                    removed_transcript = ts.stop_with_held_gate(&session_id, &_gate_guard);
                 }
                 // Always clear: either the new handle owns the entry
                 // (claim transferred) or we just tore it down — either
@@ -585,7 +584,7 @@ impl AgentWatcherState {
     /// because both sides come from the same stub state — they match
     /// each other, not the production state. Threading the real
     /// state is the only structural fix.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "e2e-test"))]
     pub(crate) fn insert_agent_type_for_test(
         &self,
         transcript_state: TranscriptState,
@@ -961,11 +960,7 @@ pub(crate) fn start_watching(
                 }
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to parse statusline for session {}: {}",
-                    sid,
-                    e
-                );
+                log::warn!("Failed to parse statusline for session {}: {}", sid, e);
                 (TxOutcome::ParseError, None)
             }
         };
@@ -1326,12 +1321,9 @@ pub(crate) fn start_watching(
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "e2e-test"))]
 impl WatcherHandle {
-    pub(crate) fn new_for_test(
-        transcript_state: TranscriptState,
-        session_id: String,
-    ) -> Self {
+    pub(crate) fn new_for_test(transcript_state: TranscriptState, session_id: String) -> Self {
         // `agent_type` defaults to `ClaudeCode`. Tests that care about
         // the agent type pass the real value through
         // `AgentWatcherState::insert(sid, handle, agent_type)`, which
@@ -1373,6 +1365,7 @@ impl WatcherHandle {
     /// Without this seam, tests can't exercise the ownership-transfer
     /// decision independently of running the full inline-init / notify
     /// code path.
+    #[cfg(test)]
     pub(crate) fn set_claimed_for_test(&mut self, v: bool) {
         self.claimed_transcript
             .store(v, std::sync::atomic::Ordering::Release);
@@ -1654,7 +1647,15 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
 
         let status = transcript_state
-            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None, None, None)
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path,
+                None,
+                None,
+                None,
+            )
             .expect("failed to start transcript watcher");
         assert_eq!(status, TranscriptStartStatus::Started);
 
