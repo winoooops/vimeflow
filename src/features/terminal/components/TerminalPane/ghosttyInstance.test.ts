@@ -686,6 +686,52 @@ describe('ghosttyInstance', () => {
     expect(cursor?.nextSibling?.textContent).toBe('tput')
   })
 
+  test('copies interpreted text for full replace snapshot selections', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', '', ''],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 6,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+    const container = document.createElement('div')
+
+    document.body.append(container)
+    created.terminal.open(container)
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    created.terminal.selectAll()
+
+    expect(created.viewportReader.readVisibleText()).toBe('prompt')
+    expect(created.terminal.hasSelection()).toBe(true)
+    expect(created.terminal.getSelection()).toBe('prompt')
+  })
+
   test('disposes the parser engine once through terminal disposal', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),

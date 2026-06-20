@@ -796,6 +796,7 @@ describe('plainTextInstance', () => {
       ...theme,
       background: theme.brightBlack,
       foreground: theme.brightWhite,
+      selectionForeground: theme.background,
     }
 
     created.terminal.applyTheme(terminalTheme)
@@ -807,5 +808,25 @@ describe('plainTextInstance', () => {
         '--terminal-cursor-color'
       )
     ).toBe(terminalTheme.cursor)
+
+    expect(
+      created.terminal.element?.style.getPropertyValue(
+        '--terminal-selection-background'
+      )
+    ).toBe(terminalTheme.selectionBackground)
+
+    expect(
+      created.terminal.element?.style.getPropertyValue(
+        '--terminal-selection-foreground'
+      )
+    ).toBe(terminalTheme.selectionForeground)
+
+    created.terminal.applyTheme(theme)
+
+    expect(
+      created.terminal.element?.style.getPropertyValue(
+        '--terminal-selection-foreground'
+      )
+    ).toBe('')
   })
 })

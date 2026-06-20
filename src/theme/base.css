@@ -39,6 +39,11 @@
   color: var(--color-on-surface);
 }
 
+[data-terminal-renderer] ::selection {
+  background: var(--terminal-selection-background);
+  color: var(--terminal-selection-foreground, inherit);
+}
+
 @layer base {
   /* Global default: every scroll container — current and future, including
    * xterm's viewport and CodeMirror's scroller — gets the thin themed

@@ -65,7 +65,11 @@ const getControlKeyData = (key: string): string | null => {
   return String.fromCharCode(upperKey.charCodeAt(0) - 64)
 }
 
-const readContainedSelection = (root: HTMLElement): string => {
+const readContainedSelection = (
+  root: HTMLElement,
+  output: HTMLElement,
+  selectAllText: string
+): string => {
   const selection = window.getSelection()
 
   if (!selection || selection.rangeCount === 0) {
@@ -82,6 +86,18 @@ const readContainedSelection = (root: HTMLElement): string => {
     !root.contains(focusNode)
   ) {
     return ''
+  }
+
+  const range = selection.getRangeAt(0)
+  const outputRange = document.createRange()
+  outputRange.selectNodeContents(output)
+
+  const includesAllOutput =
+    range.compareBoundaryPoints(Range.START_TO_START, outputRange) <= 0 &&
+    range.compareBoundaryPoints(Range.END_TO_END, outputRange) >= 0
+
+  if (includesAllOutput) {
+    return selectAllText
   }
 
   return selection.toString()
@@ -154,6 +170,7 @@ export class TerminalTextSurface implements TerminalSurface {
   private rowsValue = DEFAULT_ROWS
   private cachedCharacterWidth: number | null = null
   private lastSelectionText = ''
+  private selectAllSelectionText: string | null = null
   private disposed = false
 
   constructor(private readonly options: TerminalTextSurfaceOptions) {
@@ -332,11 +349,11 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   hasSelection(): boolean {
-    return readContainedSelection(this.root).length > 0
+    return this.readSelectionText().length > 0
   }
 
   getSelection(): string {
-    return readContainedSelection(this.root)
+    return this.readSelectionText()
   }
 
   paste(text: string): void {
@@ -348,13 +365,15 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
+    this.selectAllSelectionText = this.outputBuffer.readVisibleText()
+
     const range = document.createRange()
     range.selectNodeContents(this.output)
 
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
-    this.lastSelectionText = readContainedSelection(this.root)
+    this.lastSelectionText = this.readSelectionText()
     this.notifySelectionChange()
   }
 
@@ -412,6 +431,15 @@ export class TerminalTextSurface implements TerminalSurface {
       '--terminal-selection-background',
       theme.selectionBackground
     )
+
+    if (theme.selectionForeground) {
+      this.root.style.setProperty(
+        '--terminal-selection-foreground',
+        theme.selectionForeground
+      )
+    } else {
+      this.root.style.removeProperty('--terminal-selection-foreground')
+    }
   }
 
   fit(): void {
@@ -451,11 +479,13 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private readonly handlePointerDown = (): void => {
+    this.selectAllSelectionText = null
     this.focus()
   }
 
   private readonly handleSelectionChange = (): void => {
-    const selectionText = readContainedSelection(this.root)
+    this.selectAllSelectionText = null
+    const selectionText = this.readSelectionText()
 
     if (selectionText === this.lastSelectionText) {
       return
@@ -463,6 +493,20 @@ export class TerminalTextSurface implements TerminalSurface {
 
     this.lastSelectionText = selectionText
     this.notifySelectionChange()
+  }
+
+  private readSelectionText(): string {
+    const nativeSelectionText = readContainedSelection(
+      this.root,
+      this.output,
+      this.outputBuffer.readVisibleText()
+    )
+
+    if (nativeSelectionText.length > 0) {
+      return nativeSelectionText
+    }
+
+    return this.selectAllSelectionText ?? ''
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
