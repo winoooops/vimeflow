@@ -1,7 +1,11 @@
-// cspell:ignore ghostty
+// cspell:ignore ghostty libghostty prebuilds
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import {
   GhosttyRenderStateMainBridge,
+  resolveGhosttyNativePackageRoot,
   setupGhosttyRenderStateIpc,
   type GhosttyNativeBindings,
   type IpcMainEventLike,
@@ -134,6 +138,18 @@ const requireResult = <T>(
   return value.result
 }
 
+const withTempDir = (callback: (tempDir: string) => void): void => {
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'vimeflow-ghostty-native-')
+  )
+
+  try {
+    callback(tempDir)
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
 const createIpcMain = (): TestIpcMain => {
   const handlers = new Map<
     string,
@@ -152,6 +168,59 @@ const createIpcMain = (): TestIpcMain => {
     }),
   }
 }
+
+describe('ghostty render-state native package resolver', () => {
+  test('prefers a package copied under the Electron app root', () => {
+    withTempDir((appRoot) => {
+      const packageRoot = path.join(
+        appRoot,
+        'node_modules',
+        '@coder',
+        'libghostty-vt-node'
+      )
+      fs.mkdirSync(packageRoot, { recursive: true })
+      fs.writeFileSync(path.join(packageRoot, 'package.json'), '{}')
+      fs.mkdirSync(path.join(packageRoot, 'prebuilds'), { recursive: true })
+
+      expect(resolveGhosttyNativePackageRoot(appRoot)).toBe(packageRoot)
+    })
+  })
+
+  test('skips a partial app-root package without native payloads', () => {
+    withTempDir((appRoot) => {
+      const packageRoot = path.join(
+        appRoot,
+        'node_modules',
+        '@coder',
+        'libghostty-vt-node'
+      )
+
+      const expectedPackageRoot = path.join(
+        process.cwd(),
+        'node_modules',
+        '@coder',
+        'libghostty-vt-node'
+      )
+      fs.mkdirSync(packageRoot, { recursive: true })
+      fs.writeFileSync(path.join(packageRoot, 'package.json'), '{}')
+
+      expect(resolveGhosttyNativePackageRoot(appRoot)).toBe(expectedPackageRoot)
+    })
+  })
+
+  test('falls back to Node resolution when the app root has no copied package', () => {
+    withTempDir((appRoot) => {
+      const expectedPackageRoot = path.join(
+        process.cwd(),
+        'node_modules',
+        '@coder',
+        'libghostty-vt-node'
+      )
+
+      expect(resolveGhosttyNativePackageRoot(appRoot)).toBe(expectedPackageRoot)
+    })
+  })
+})
 
 describe('ghostty render-state main bridge', () => {
   test('feeds bytes into the native terminal and normalizes snapshots', () => {

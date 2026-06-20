@@ -38,10 +38,14 @@
     "test:e2e:ghostty:build": "npm run generate:bindings && npm run test:e2e:ghostty:build:generated",
     "test:e2e:ghostty:build:generated": "tsc -b && cross-env VITE_E2E=1 VITE_TERMINAL_RENDERER=ghostty vite build --mode electron && cargo build --bin vimeflow-backend --features e2e-test",
     "test:e2e:ghostty:run": "cross-env VITE_E2E=1 VITE_TERMINAL_RENDERER=ghostty wdio tests/e2e/ghostty/wdio.conf.ts",
+    "test:e2e:ghostty:native:build": "npm run generate:bindings && npm run test:e2e:ghostty:native:build:generated",
+    "test:e2e:ghostty:native:build:generated": "tsc -b && cross-env VITE_E2E=1 VITE_TERMINAL_RENDERER=ghostty VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER=native vite build --mode electron && cargo build --bin vimeflow-backend --features e2e-test",
+    "test:e2e:ghostty:native:run": "cross-env VITE_E2E=1 VITE_TERMINAL_RENDERER=ghostty VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER=native wdio tests/e2e/ghostty-native/wdio.conf.ts",
     "test:e2e": "npm run test:e2e:build && npm run test:e2e:core:run",
     "test:e2e:terminal": "npm run test:e2e:build && npm run test:e2e:terminal:run",
     "test:e2e:agent": "npm run test:e2e:build && npm run test:e2e:agent:run",
     "test:e2e:ghostty": "npm run test:e2e:ghostty:build && npm run test:e2e:ghostty:run",
+    "test:e2e:ghostty:native": "npm run test:e2e:ghostty:native:build && npm run test:e2e:ghostty:native:run",
     "test:e2e:all": "npm run test:e2e:build && npm run test:e2e:core:run && npm run test:e2e:terminal:run && npm run test:e2e:agent:run"
   },
   "keywords": [

@@ -1,3 +1,4 @@
+// cspell:ignore ghostty GHOSTTY
 import { invoke, listen, type UnlistenFn } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/terminalRegistry'
@@ -186,6 +187,15 @@ export const getVisibleTerminalSize = (): {
   }
 }
 
+export const getTerminalRendererConfig = (): {
+  readonly terminalRenderer: string | null
+  readonly ghosttyRenderStateDriverProvider: string | null
+} => ({
+  terminalRenderer: import.meta.env.VITE_TERMINAL_RENDERER ?? null,
+  ghosttyRenderStateDriverProvider:
+    import.meta.env.VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER ?? null,
+})
+
 export const writeOutputToVisibleTerminal = (data: string): boolean => {
   const pane = findActivePane()
   if (!pane) {
@@ -269,6 +279,7 @@ if (import.meta.env.VITE_E2E) {
     getRecordedPtyDataEvents,
     getTerminalBuffer: readVisibleTerminalBuffer,
     getTerminalBufferForSession: readTerminalBufferForSession,
+    getTerminalRendererConfig,
     getVisibleTerminalSize,
     getVisibleSessionId,
     getActiveSessionIds: getAllPtySessionIds,

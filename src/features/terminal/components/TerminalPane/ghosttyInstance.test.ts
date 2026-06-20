@@ -53,6 +53,19 @@ const setScrollMetrics = (
   })
 }
 
+const createRect = (top: number, bottom: number): DOMRect =>
+  ({
+    bottom,
+    height: bottom - top,
+    left: 0,
+    right: 0,
+    toJSON: (): Record<string, number> => ({}),
+    top,
+    width: 0,
+    x: 0,
+    y: top,
+  }) as DOMRect
+
 const encodeBase64 = (bytes: Uint8Array): string => {
   let binary = ''
 
@@ -274,6 +287,29 @@ describe('ghosttyInstance', () => {
     expect(reset).toHaveBeenCalledOnce()
     expect(resize).toHaveBeenLastCalledWith({ cols: 40, rows: 11 })
     expect(resize).toHaveBeenCalledTimes(4)
+  })
+
+  test('syncs fitted PTY rows into the rendered viewport geometry', () => {
+    const container = document.createElement('div')
+    const created = createTrackedGhosttyTerminal()
+
+    setElementSize(container, 256, 180)
+    created.terminal.open(container)
+
+    const element = created.terminal.element
+    const output = element?.querySelector<HTMLElement>('pre')
+
+    expect(created.terminal.cols).toBe(30)
+    expect(created.terminal.rows).toBe(9)
+    expect(element?.dataset.terminalCols).toBe('30')
+    expect(element?.dataset.terminalRows).toBe('9')
+    expect(
+      element?.style.getPropertyValue('--terminal-pty-viewport-height')
+    ).toBe('178px')
+
+    expect(output?.style.minHeight).toBe(
+      'max(100%, var(--terminal-pty-viewport-height))'
+    )
   })
 
   test('keeps VT render-state driver cwd effects on the terminal parser event path', () => {
@@ -536,6 +572,72 @@ describe('ghosttyInstance', () => {
 
     expect(element.scrollTop).toBeGreaterThan(0)
     expect(element.scrollTop).toBeLessThan(640)
+  })
+
+  test('scrolls parser display replace snapshots by rendered cursor bounds', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['prompt', '', '', '', 'ready'],
+          cursor: {
+            rowIndex: 4,
+            columnOffset: 5,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    setScrollMetrics(element, 54, 640)
+    element.scrollTop = 0
+
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        if (this.dataset.terminalCursorMarker === 'true') {
+          return createRect(90, 108)
+        }
+
+        if (this.dataset.terminalRenderer === GHOSTTY_TERMINAL_RENDERER_ID) {
+          return createRect(0, 54)
+        }
+
+        return createRect(0, 0)
+      })
+
+    try {
+      created.output.writeOutput({
+        text: 'snapshot',
+        offsetStart: 0,
+        byteLen: 8,
+        phase: 'live',
+      })
+    } finally {
+      getBoundingClientRectSpy.mockRestore()
+    }
+
+    expect(element.scrollTop).toBe(62)
   })
 
   test('renders the cursor from parser display snapshot coordinates', () => {
