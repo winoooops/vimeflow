@@ -1,4 +1,11 @@
-import { render, screen, act, waitFor, within } from '@testing-library/react'
+import {
+  render,
+  screen,
+  act,
+  waitFor,
+  within,
+  fireEvent,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -602,6 +609,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
   test('saving an undersized custom layout does not apply it to an over-capacity session', async () => {
     const user = userEvent.setup()
+
     const baseSession = createMockSession('session-2', 'feature work', {
       layout: 'vsplit',
     })
@@ -627,9 +635,28 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     await user.click(
       screen.getByRole('button', { name: 'Configure displayed layouts' })
     )
+
     await user.click(
       await screen.findByRole('menuitem', { name: 'Create custom layout' })
     )
+    await user.click(screen.getByRole('button', { name: 'Code · JSON/YAML' }))
+    fireEvent.change(screen.getAllByRole('textbox')[1], {
+      target: {
+        value: JSON.stringify({
+          tracks: {
+            columns: [{ id: 'col-0', units: 24 }],
+            rows: [{ id: 'row-0', units: 24 }],
+          },
+          slots: [
+            {
+              id: 'slot:p0',
+              rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+            },
+          ],
+        }),
+      },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     await user.clear(screen.getByRole('textbox', { name: 'Layout name' }))
     await user.type(
       screen.getByRole('textbox', { name: 'Layout name' }),

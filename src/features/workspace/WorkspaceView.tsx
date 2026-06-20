@@ -537,6 +537,32 @@ const WorkspaceViewContent = (): ReactElement => {
       .map((layout) => layout.id)
   }, [hiddenCustomLayoutIds, layoutRegistry.layouts, visibleLayoutIds])
 
+  const blockedLayoutIds = useMemo(
+    () =>
+      activeSession === undefined
+        ? []
+        : layoutRegistry.layouts
+            .filter(
+              (layout) =>
+                layout.id !== activeSession.layout &&
+                activeSession.panes.length > layout.capacity
+            )
+            .map((layout) => layout.id),
+    [activeSession, layoutRegistry.layouts]
+  )
+
+  const layoutSwitcherLayouts = useMemo(
+    () =>
+      activeSession === undefined
+        ? layoutRegistry.layouts
+        : layoutRegistry.layouts.filter(
+            (layout) =>
+              layout.id === activeSession.layout ||
+              activeSession.panes.length <= layout.capacity
+          ),
+    [activeSession, layoutRegistry.layouts]
+  )
+
   const layoutCreatorEditLayout = useMemo(() => {
     if (layoutCreatorEditId === null) {
       return undefined
@@ -1244,16 +1270,18 @@ const WorkspaceViewContent = (): ReactElement => {
   // forward to the same setSessionLayout the TerminalZone toolbar used, so
   // pane add/remove, active-pane, and layout semantics are untouched.
   const handlePickLayout = useCallback(
-    (layoutId: PaneLayoutId): void => {
+    (layoutId: PaneLayoutId): boolean => {
       if (!activeSessionId || !activeSession) {
-        return
+        return false
       }
 
       if (activeSession.panes.length > layoutRegistry.capacityFor(layoutId)) {
-        return
+        return false
       }
 
       setSessionLayout(activeSessionId, layoutId)
+
+      return true
     },
     [activeSession, activeSessionId, layoutRegistry, setSessionLayout]
   )
@@ -2536,12 +2564,13 @@ const WorkspaceViewContent = (): ReactElement => {
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
               visibleLayoutIds={visibleLayoutSwitcherIds}
-              layouts={layoutRegistry.layouts}
+              layouts={layoutSwitcherLayouts}
               onPick={handlePickLayout}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}
                   visibleLayoutIds={visibleLayoutIds}
+                  blockedLayoutIds={blockedLayoutIds}
                   hiddenCustomLayoutIds={hiddenCustomLayoutIds}
                   layouts={layoutRegistry.layouts}
                   onVisibleLayoutIdsChange={setVisibleLayoutIds}

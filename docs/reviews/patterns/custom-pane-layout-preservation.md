@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 2
+ref_count: 3
 ---
 
 # Custom Pane Layout Preservation
@@ -66,4 +66,13 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1270-1295
 - **Finding:** `handleSaveCustomLayout` persisted the custom definition and then unconditionally called `setSessionLayout(activeSessionId, definition.id)`. When the active session had more panes than the saved layout supported, that later session-layout update could override the custom-layout preservation/migration guard and leave panes hidden under an undersized layout.
 - **Fix:** Guarded the auto-apply path with `activeSession.panes.length <= getPaneLayoutCapacity(definition)`. The definition is still saved and unhidden, but the active session is only rebound when the saved layout can display every pane.
+- **Commit:** same commit as this entry
+
+### 7. Capacity guard rejects layout picks without visible feedback
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1246-1258 and `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
+- **Finding:** The capacity guard correctly rejected layouts whose slot count was below the active session pane count, but the main switcher still displayed those choices and the display menu closed after a rejected custom-layout pick. The click appeared to do nothing and left users without a visible explanation.
+- **Fix:** `handlePickLayout` now returns a success boolean, the top pill switcher receives only layouts that can fit the active session (plus the active layout), and the display menu marks blocked custom layout apply actions disabled so rejected picks stay visible instead of closing silently.
 - **Commit:** same commit as this entry

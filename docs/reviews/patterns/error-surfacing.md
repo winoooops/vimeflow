@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-17
-ref_count: 13
+last_updated: 2026-06-20
+ref_count: 14
 ---
 
 # Error Surfacing
@@ -405,3 +405,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** A `fileSystemService.readFile` call was used as an existence probe for the selected editor file. The bare `catch` set `selectedEditorFileExists(false)` for any rejection, so `resolveEditorFileLifecycleStatus` mapped permission errors, IPC failures, disk I/O errors, and remote-mount hiccups to `DELETED`. `DockPanel` makes clean `DELETED` buffers read-only, so a transient non-not-found failure could incorrectly lock editing of an existing file until a later successful check.
 - **Fix:** Added `isNotFoundError` helper that matches explicit not-found signals (`ENOENT`, `No such file or directory`, `os error 2`, Windows file-not-found text) on both string rejections and `Error` objects. The catch block now sets `selectedEditorFileExists(false)` only for not-found errors and preserves `null` (unknown) state for all other failures. Added regression tests for the helper classification and for `WorkspaceView` keeping the lifecycle status null on a permission-denied rejection.
 - **Commit:** see current commit
+
+### 42. Layout creator save path lets schema-validation throws escape
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L767-785
+- **Finding:** `handleSave` relied on draft validation before calling `definitionFromDraft`, but `definitionFromDraft` also runs schema validation and can throw if the validators diverge in a future change. An uncaught throw from the click handler would leave the modal open without user-facing feedback.
+- **Fix:** Wrapped `definitionFromDraft` and `onSave` in the same try/catch shape used by the code-import path and route the caught message to the modal's existing inline `codeError` surface.
+- **Commit:** same commit as this entry

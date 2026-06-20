@@ -37,8 +37,9 @@ const customMainBottomLayout: PaneLayoutDefinition = {
 interface HarnessProps {
   activeLayoutId?: PaneLayoutId
   initialVisibleLayoutIds?: readonly PaneLayoutId[]
+  blockedLayoutIds?: readonly PaneLayoutId[]
   layouts?: readonly PaneLayoutDefinition[]
-  onPickLayout?: (layoutId: PaneLayoutId) => void
+  onPickLayout?: (layoutId: PaneLayoutId) => boolean
   onEditCustomLayout?: (layoutId: PaneLayoutId) => void
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onCreateCustomLayout?: () => void
@@ -54,6 +55,7 @@ const LayoutDisplayMenuHarness = ({
     'quad',
     'grid3x2',
   ],
+  blockedLayoutIds = [],
   layouts = [],
   onPickLayout = undefined,
   onEditCustomLayout = undefined,
@@ -74,6 +76,7 @@ const LayoutDisplayMenuHarness = ({
       <LayoutDisplayMenu
         activeLayoutId={activeLayoutId}
         visibleLayoutIds={visibleLayoutIds}
+        blockedLayoutIds={blockedLayoutIds}
         hiddenCustomLayoutIds={hiddenCustomLayoutIds}
         layouts={registry.layouts}
         onVisibleLayoutIdsChange={setVisibleLayoutIds}
@@ -193,7 +196,7 @@ describe('LayoutDisplayMenu', () => {
 
   test('shows custom layout actions and persists hidden custom ids', async () => {
     const user = userEvent.setup()
-    const onPickLayout = vi.fn()
+    const onPickLayout = vi.fn(() => true)
     const onEditCustomLayout = vi.fn()
     const onDeleteCustomLayout = vi.fn()
     const onCreateCustomLayout = vi.fn()
@@ -221,6 +224,7 @@ describe('LayoutDisplayMenu', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Main + bottom' }))
 
     await openMenu()
+
     const trigger = screen.getByRole('button', {
       name: 'Configure displayed layouts',
     })
@@ -248,5 +252,43 @@ describe('LayoutDisplayMenu', () => {
 
     expect(onCreateCustomLayout).toHaveBeenCalledOnce()
     expect(trigger).toHaveFocus()
+  })
+
+  test('does not close or pick a blocked custom layout row', async () => {
+    const user = userEvent.setup()
+    const onPickLayout = vi.fn(() => true)
+
+    render(
+      <LayoutDisplayMenuHarness
+        blockedLayoutIds={['custom:main-bottom']}
+        layouts={[customMainBottomLayout]}
+        onPickLayout={onPickLayout}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Main + bottom' }))
+
+    expect(onPickLayout).not.toHaveBeenCalled()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
+  test('arrow-key navigation reaches custom layout rows', async () => {
+    const user = userEvent.setup()
+
+    render(<LayoutDisplayMenuHarness layouts={[customMainBottomLayout]} />)
+
+    screen.getByRole('button', { name: 'Configure displayed layouts' }).focus()
+    await user.keyboard('{ArrowDown}')
+    await screen.findByRole('menu')
+
+    await user.keyboard(
+      '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}'
+    )
+
+    expect(screen.getByRole('menuitem', { name: 'Main + bottom' })).toHaveFocus()
   })
 })

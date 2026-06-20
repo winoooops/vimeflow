@@ -774,14 +774,19 @@ export const LayoutCreatorModal = ({
         ? (editLayout.id as CustomPaneLayoutId)
         : undefined
 
-    onSave(
-      definitionFromDraft({
-        title: name,
-        draft,
-        existingIds,
-        existingId,
-      })
-    )
+    try {
+      onSave(
+        definitionFromDraft({
+          title: name,
+          draft,
+          existingIds,
+          existingId,
+        })
+      )
+      setCodeError(null)
+    } catch (error) {
+      setCodeError(error instanceof Error ? error.message : 'Invalid layout')
+    }
   }, [canSave, draft, editLayout?.id, existingIds, name, onSave])
 
   useEffect(() => {

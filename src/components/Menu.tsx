@@ -273,7 +273,7 @@ interface MenuProps {
   // cloned element and composes its own hover/focus handlers with Menu's.
   tooltip?: ReactNode
   tooltipPlacement?: Placement
-  closeSignal?: unknown
+  closeSignal?: number
 }
 
 // Generic anchored menu: a trigger element opens a portal-rendered, glass
@@ -472,6 +472,59 @@ const MenuSection = ({
     {children}
   </div>
 )
+
+interface MenuRowProps {
+  label: string
+  disabled?: boolean
+  onSelect?: () => void
+  className?: string
+  children: ReactNode
+}
+
+const MenuRow = ({
+  label,
+  disabled = false,
+  onSelect = undefined,
+  className = undefined,
+  children,
+}: MenuRowProps): ReactElement => {
+  const menu = useMenuContext()
+  const { index, ref } = useMenuRow(disabled, label)
+
+  const select = (): void => {
+    if (disabled) {
+      return
+    }
+
+    onSelect?.()
+  }
+
+  const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return
+    }
+
+    event.preventDefault()
+    select()
+  }
+
+  return (
+    <div
+      role="menuitem"
+      ref={ref}
+      tabIndex={menu.activeIndex === index ? 0 : -1}
+      aria-disabled={disabled ? true : undefined}
+      aria-label={label}
+      className={className}
+      {...menu.getItemProps({
+        onClick: select,
+        onKeyDown: handleKeyDown,
+      })}
+    >
+      {children}
+    </div>
+  )
+}
 
 interface MenuItemProps {
   icon?: string
@@ -837,6 +890,7 @@ interface MenuComponent {
   (props: MenuProps): ReactElement
   Context: typeof MenuContextMenu
   Section: typeof MenuSection
+  Row: typeof MenuRow
   Item: typeof MenuItem
   Checkbox: typeof MenuCheckbox
   Submenu: typeof MenuSubmenu
@@ -845,6 +899,7 @@ interface MenuComponent {
 export const Menu = MenuRoot as MenuComponent
 Menu.Context = MenuContextMenu
 Menu.Section = MenuSection
+Menu.Row = MenuRow
 Menu.Item = MenuItem
 Menu.Checkbox = MenuCheckbox
 Menu.Submenu = MenuSubmenu

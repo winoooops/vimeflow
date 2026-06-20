@@ -11,11 +11,12 @@ import { LayoutGlyph } from './LayoutGlyph'
 export interface LayoutDisplayMenuProps {
   activeLayoutId: PaneLayoutId
   visibleLayoutIds: readonly PaneLayoutId[]
+  blockedLayoutIds?: readonly PaneLayoutId[]
   hiddenCustomLayoutIds?: readonly PaneLayoutId[]
   layouts?: readonly LayoutShape[]
   onVisibleLayoutIdsChange: (next: readonly PaneLayoutId[]) => void
   onHiddenCustomLayoutIdsChange?: (next: readonly PaneLayoutId[]) => void
-  onPickLayout?: (layoutId: PaneLayoutId) => void
+  onPickLayout?: (layoutId: PaneLayoutId) => boolean
   onCreateCustomLayout?: () => void
   onEditCustomLayout?: (layoutId: PaneLayoutId) => void
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
@@ -67,6 +68,7 @@ const buildNextVisibleLayoutIds = (
 export const LayoutDisplayMenu = ({
   activeLayoutId,
   visibleLayoutIds,
+  blockedLayoutIds = [],
   hiddenCustomLayoutIds = [],
   layouts = BUILTIN_PANE_LAYOUT_REGISTRY.layouts,
   onVisibleLayoutIdsChange,
@@ -199,20 +201,35 @@ export const LayoutDisplayMenu = ({
           {layouts
             .filter((layout) => layout.definition.source === 'workspace')
             .map((layout) => {
+              const blocked = blockedLayoutIds.includes(layout.id)
               const checked = !hiddenCustomLayoutIds.includes(layout.id)
               const isActive = layout.id === activeLayoutId
 
               return (
-                <div
+                <Menu.Row
                   key={layout.id}
-                  className="flex min-h-8 items-center gap-1 rounded px-2 py-1 text-xs text-on-surface transition-colors hover:bg-on-surface/10"
+                  label={layout.name}
+                  disabled={blocked}
+                  className={`flex min-h-8 items-center gap-1 rounded px-2 py-1 text-xs text-on-surface outline-none transition-colors focus-visible:bg-on-surface/10 ${
+                    blocked
+                      ? 'text-on-surface-variant/45'
+                      : 'hover:bg-on-surface/10'
+                  }`}
+                  onSelect={(): void => {
+                    if (onPickLayout?.(layout.id) === true) {
+                      closeMenu()
+                    }
+                  }}
                 >
                   <button
                     type="button"
+                    disabled={blocked}
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                    onClick={(): void => {
-                      onPickLayout?.(layout.id)
-                      closeMenu()
+                    onClick={(event): void => {
+                      event.stopPropagation()
+                      if (onPickLayout?.(layout.id) === true) {
+                        closeMenu()
+                      }
                     }}
                   >
                     <span
@@ -233,7 +250,8 @@ export const LayoutDisplayMenu = ({
                     label={`Edit ${layout.name}`}
                     size="sm"
                     className="h-5 w-5 text-on-surface-muted hover:text-primary"
-                    onClick={(): void => {
+                    onClick={(event): void => {
+                      event.stopPropagation()
                       onEditCustomLayout?.(layout.id)
                       closeMenu()
                     }}
@@ -243,7 +261,8 @@ export const LayoutDisplayMenu = ({
                     label={`Delete ${layout.name}`}
                     size="sm"
                     className="h-5 w-5 text-on-surface-muted hover:text-error"
-                    onClick={(): void => {
+                    onClick={(event): void => {
+                      event.stopPropagation()
                       onDeleteCustomLayout?.(layout.id)
                       closeMenu()
                     }}
@@ -257,7 +276,8 @@ export const LayoutDisplayMenu = ({
                     }
                     aria-pressed={checked}
                     className={customDisplayCheckboxClass(checked)}
-                    onClick={(): void => {
+                    onClick={(event): void => {
+                      event.stopPropagation()
                       if (onHiddenCustomLayoutIdsChange === undefined) {
                         return
                       }
@@ -278,7 +298,7 @@ export const LayoutDisplayMenu = ({
                       />
                     )}
                   </button>
-                </div>
+                </Menu.Row>
               )
             })}
         </Menu.Section>

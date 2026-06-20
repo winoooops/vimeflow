@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 27
+ref_count: 28
 ---
 
 # Accessibility
@@ -639,4 +639,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L79-294
 - **Finding:** `LayoutDisplayMenu` closed custom-layout actions by changing the `Menu` key. The remount destroyed the focused row and trigger, so delete left focus on `document.body`, while create/edit opened the modal after the wrong focus restoration target had been captured.
 - **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
+- **Commit:** same commit as this entry
+
+### 62. Custom multi-action menu rows bypass roving keyboard navigation
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
+- **Finding:** Custom layout rows were rendered as raw `<div>` and `<button>` elements inside `Menu`, so they never registered with the floating-ui list navigation model. Arrow-key navigation reached only the built-in layout checkboxes and skipped the custom section.
+- **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
 - **Commit:** same commit as this entry
