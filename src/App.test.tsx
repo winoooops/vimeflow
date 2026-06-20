@@ -146,6 +146,19 @@ describe('App', () => {
       expect(screen.getByTestId('settings-window-drag-region')).toHaveClass(
         'vf-app-drag-region'
       )
+
+      expect(
+        screen.getByTestId('settings-window-sidebar-drag-region')
+      ).toHaveClass(
+        'w-[220px]',
+        'border-r',
+        'border-outline-variant/25',
+        'bg-surface-container'
+      )
+
+      expect(
+        screen.getByTestId('settings-window-content-drag-region')
+      ).toHaveClass('flex-1', 'bg-surface')
     })
   })
 

@@ -61,9 +61,18 @@ const SettingsWindowShell = (): ReactElement => {
         {reserveWindowControls && (
           <div
             aria-hidden="true"
-            className="vf-app-drag-region h-[44px] shrink-0"
+            className="vf-app-drag-region flex h-[44px] shrink-0"
             data-testid="settings-window-drag-region"
-          />
+          >
+            <div
+              className="w-[220px] shrink-0 border-r border-outline-variant/25 bg-surface-container"
+              data-testid="settings-window-sidebar-drag-region"
+            />
+            <div
+              className="min-w-0 flex-1 bg-surface"
+              data-testid="settings-window-content-drag-region"
+            />
+          </div>
         )}
         <div className="flex min-h-0 flex-1">
           <SettingsContent />
