@@ -191,7 +191,10 @@ const sanitizeMessageInfo = (info: any): any => {
     sessionID: clampString(record.sessionID),
     role: clampString(record.role),
     agent: clampString(record.agent),
+    version: clampString(record.version),
     model: sanitizeModel(record.model),
+    tokens: sanitizeTokens(record.tokens),
+    cost: clampNumber(record.cost),
     time: sanitizeTime(record.time),
   }
 }
