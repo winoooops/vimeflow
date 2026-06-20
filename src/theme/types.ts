@@ -100,6 +100,7 @@ export const AGENT_IDS = [
   'shell',
   'browser',
   'kimi',
+  'opencode',
 ] as const
 
 export const AGENT_ACCENT_FIELDS = [

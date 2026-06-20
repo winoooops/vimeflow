@@ -34,8 +34,15 @@ test('shadow tokens cover the composite shadows', () => {
   ])
 })
 
-test('agents cover the five identities with four fields', () => {
-  expect(AGENT_IDS).toEqual(['claude', 'codex', 'shell', 'browser', 'kimi'])
+test('agents cover the six identities with four fields', () => {
+  expect(AGENT_IDS).toEqual([
+    'claude',
+    'codex',
+    'shell',
+    'browser',
+    'kimi',
+    'opencode',
+  ])
 
   expect(AGENT_ACCENT_FIELDS).toEqual([
     'accent',

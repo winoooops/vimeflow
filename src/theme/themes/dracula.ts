@@ -163,5 +163,11 @@ export const dracula: ThemeDefinition = {
       accentSoft: 'rgb(255 121 198 / 0.32)',
       onAccent: draculaPalette.bgDark,
     },
+    opencode: {
+      accent: '#ffb86c',
+      accentDim: 'rgb(255 184 108 / 0.16)',
+      accentSoft: 'rgb(255 184 108 / 0.32)',
+      onAccent: draculaPalette.bgDark,
+    },
   },
 }

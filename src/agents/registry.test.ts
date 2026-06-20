@@ -7,9 +7,15 @@ import {
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'kimi', 'shell']
+const ALL_AGENTS: readonly AgentId[] = [
+  'claude',
+  'codex',
+  'kimi',
+  'shell',
+  'opencode',
+]
 
-test('AGENTS keys are claude, codex, kimi, shell', () => {
+test('AGENTS keys are claude, codex, kimi, shell, opencode', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
 })
 
@@ -70,6 +76,18 @@ test('agentTypeToRegistryKey maps kimi to kimi', () => {
   expect(agentTypeToRegistryKey('kimi')).toBe('kimi')
 })
 
+test('opencode is sapphire-blue with null model', () => {
+  expect(AGENTS.opencode.accent).toBe('var(--color-agent-opencode-accent)')
+  expect(AGENTS.opencode.short).toBe('OPENCODE')
+  expect(AGENTS.opencode.glyph).toBe('◈')
+  expect(AGENTS.opencode.model).toBeNull()
+  expect(AGENTS.opencode.name).toBe('Opencode')
+})
+
+test('agentTypeToRegistryKey maps opencode to opencode', () => {
+  expect(agentTypeToRegistryKey('opencode')).toBe('opencode')
+})
+
 test.each(['aider', 'generic', null] as const)(
   'agentTypeToRegistryKey maps %s to shell',
   (agentType) => {
@@ -99,5 +117,6 @@ test('supported agents carry a brand Icon; others fall back to their glyph', () 
   expect(AGENTS.claude.Icon).toBeDefined()
   expect(AGENTS.codex.Icon).toBeDefined()
   expect(AGENTS.kimi.Icon).toBeDefined()
+  expect(AGENTS.opencode.Icon).toBeDefined()
   expect(AGENTS.shell.Icon).toBeUndefined()
 })

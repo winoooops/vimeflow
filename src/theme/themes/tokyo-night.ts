@@ -158,5 +158,11 @@ export const tokyoNightTheme: ThemeDefinition = {
       accentSoft: 'rgb(247 118 142 / 0.32)',
       onAccent: tokyoNight.bgDark,
     },
+    opencode: {
+      accent: tokyoNight.blue,
+      accentDim: 'rgb(122 162 247 / 0.16)',
+      accentSoft: 'rgb(122 162 247 / 0.32)',
+      onAccent: tokyoNight.bgDark,
+    },
   },
 }

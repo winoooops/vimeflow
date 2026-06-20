@@ -1,4 +1,4 @@
-import { ClaudeCode, Codex, Kimi, type AgentIcon } from './brandIcons'
+import { ClaudeCode, Codex, Kimi, Opencode, type AgentIcon } from './brandIcons'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
@@ -67,6 +67,18 @@ export const AGENTS = {
     accentSoft: 'var(--color-agent-shell-accent-soft)',
     onAccent: 'var(--color-agent-shell-on-accent)',
   },
+  opencode: {
+    id: 'opencode',
+    name: 'Opencode',
+    short: 'OPENCODE',
+    glyph: '◈',
+    Icon: Opencode,
+    model: null,
+    accent: 'var(--color-agent-opencode-accent)',
+    accentDim: 'var(--color-agent-opencode-accent-dim)',
+    accentSoft: 'var(--color-agent-opencode-accent-soft)',
+    onAccent: 'var(--color-agent-opencode-on-accent)',
+  },
 } as const satisfies Record<string, AgentDef>
 
 export type AgentId = keyof typeof AGENTS
@@ -83,6 +95,8 @@ export const agentTypeToRegistryKey = (
       return 'codex'
     case 'kimi':
       return 'kimi'
+    case 'opencode':
+      return 'opencode'
     default:
       return 'shell'
   }
