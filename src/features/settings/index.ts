@@ -1,5 +1,7 @@
 export { SettingsDialog } from './SettingsDialog'
 
+export { SettingsContent } from './SettingsContent'
+
 export { useSettingsDialog } from './hooks/useSettingsDialog'
 
 export {
