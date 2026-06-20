@@ -557,6 +557,13 @@ pub(crate) fn kill_pty_inner(
     // emitting `pty-data` for a removed session) until eventual EOF.
     state.set_cancelled(&request.session_id);
 
+    // Give the child a bounded window to actually exit after SIGTERM before
+    // we tear down its bridge directory. On slower CI runners the shell can
+    // still be alive when cleanup runs, causing `remove_dir_all` to fail and
+    // leaving the session directory behind. Best-effort: if the child ignores
+    // SIGTERM we still proceed with cleanup so the caller is not blocked.
+    let _ = state.wait_for_exit(&request.session_id, std::time::Duration::from_secs(5));
+
     // Remove from state (no-op if NotPresent, the safe path above).
     let removed = state.remove(&request.session_id);
 

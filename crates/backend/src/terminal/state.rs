@@ -4,7 +4,7 @@ use portable_pty::{Child, MasterPty};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use super::types::SessionId;
 
@@ -361,6 +361,46 @@ impl PtyState {
         // code) must stay non-zero so a failed exit is never read as clean.
         let raw = status.exit_code();
         Some(i32::try_from(raw).unwrap_or(i32::MAX))
+    }
+
+    /// Wait for a session's child process to exit, up to `timeout`.
+    ///
+    /// Returns `Ok(Some(exit_code))` when the child exits within the timeout,
+    /// `Ok(None)` when the session is no longer present (already reaped), and
+    /// `Err` if polling the child fails unexpectedly.
+    pub fn wait_for_exit(
+        &self,
+        session_id: &SessionId,
+        timeout: Duration,
+    ) -> Result<Option<i32>, String> {
+        let start = Instant::now();
+        loop {
+            let mut sessions = self.sessions.lock().expect("failed to lock sessions");
+            let Some(session) = sessions.get_mut(session_id) else {
+                return Ok(None);
+            };
+            match session.child.try_wait() {
+                Ok(Some(status)) => {
+                    let raw = status.exit_code();
+                    return Ok(Some(i32::try_from(raw).unwrap_or(i32::MAX)));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    return Err(format!(
+                        "failed to wait for session {} child: {}",
+                        session_id, e
+                    ));
+                }
+            }
+            drop(sessions);
+            if start.elapsed() >= timeout {
+                return Err(format!(
+                    "timeout waiting for session {} child to exit",
+                    session_id
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Get the resolved CWD for a session

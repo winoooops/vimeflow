@@ -69,7 +69,13 @@ describe('buildWorkspaceCommands - happy paths', () => {
       ?.execute?.('')
     expect(themeService.current().id).toBe('gruvbox-light')
 
+    themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.preview?.()
+    expect(themeService.current().id).toBe('gruvbox-light')
+
     themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.execute?.('')
+    expect(themeService.current().id).toBe('tokyo-night')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.preview?.()
     expect(themeService.current().id).toBe('tokyo-night')
 
     themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.execute?.('')

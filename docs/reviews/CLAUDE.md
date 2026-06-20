@@ -107,4 +107,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
 | [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 1        | 0    | 2026-06-19   |
+| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 4        | 1    | 2026-06-20   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
