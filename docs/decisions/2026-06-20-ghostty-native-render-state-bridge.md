@@ -95,6 +95,10 @@ fails closed before the Ghostty renderer is instantiated.
   chunks. The text surface keeps `displayDelta.replace` renders pinned to the
   viewport top so empty native viewport rows do not scroll prompt content out of
   view.
+- Clear-style redraws can briefly produce a native snapshot with an empty row
+  above the active prompt when the producing app emits a newline after clearing.
+  The snapshot adapter trims only cursor-free leading empty rows so `/clear`
+  starts at the top of the viewport without losing cursor-owned top spacing.
 - The bridge is still a feasibility spike until manual smoke testing confirms
   the native binding behaves correctly inside the packaged Electron runtime.
 

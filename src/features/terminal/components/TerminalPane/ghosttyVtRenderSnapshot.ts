@@ -96,6 +96,63 @@ const sortCells = (
     left.row === right.row ? left.col - right.col : left.row - right.row
   )
 
+const readCellRows = (
+  cells: readonly GhosttyVtRenderSnapshotCell[] | undefined
+): ReadonlySet<number> => new Set((cells ?? []).map((cell) => cell.row))
+
+const readLeadingEmptyRowCount = (
+  snapshot: GhosttyVtRenderSnapshot
+): number => {
+  const cellRows = readCellRows(snapshot.cells)
+
+  const firstContentRow = snapshot.rows.findIndex(
+    (row, rowIndex) => row.length > 0 || cellRows.has(rowIndex)
+  )
+
+  if (firstContentRow <= 0) {
+    return 0
+  }
+
+  const cursor = snapshot.cursor
+
+  return !cursor || cursor.rowIndex >= firstContentRow ? firstContentRow : 0
+}
+
+const trimLeadingEmptyRows = (
+  snapshot: GhosttyVtRenderSnapshot
+): GhosttyVtRenderSnapshot => {
+  const leadingRows = readLeadingEmptyRowCount(snapshot)
+
+  if (leadingRows === 0) {
+    return snapshot
+  }
+
+  return {
+    rows: [
+      ...snapshot.rows.slice(leadingRows),
+      ...Array.from({ length: leadingRows }, () => ''),
+    ],
+    ...(snapshot.cursor
+      ? {
+          cursor: {
+            rowIndex: snapshot.cursor.rowIndex - leadingRows,
+            columnOffset: snapshot.cursor.columnOffset,
+          },
+        }
+      : {}),
+    ...(snapshot.cells
+      ? {
+          cells: snapshot.cells
+            .filter((cell) => cell.row >= leadingRows)
+            .map((cell) => ({
+              ...cell,
+              row: cell.row - leadingRows,
+            })),
+        }
+      : {}),
+  }
+}
+
 const readSnapshotText = (snapshot: GhosttyVtRenderSnapshot): string =>
   snapshot.rows.join('\n')
 
@@ -195,9 +252,10 @@ const readSnapshotCursorOffset = (
 export const createGhosttyVtRenderSnapshotOutput = (
   snapshot: GhosttyVtRenderSnapshot
 ): TerminalParserEngineOutput => {
-  const text = readSnapshotText(snapshot)
-  const displayText = readSnapshotDisplayText(snapshot)
-  const cursorOffset = readSnapshotCursorOffset(snapshot, text)
+  const normalizedSnapshot = trimLeadingEmptyRows(snapshot)
+  const text = readSnapshotText(normalizedSnapshot)
+  const displayText = readSnapshotDisplayText(normalizedSnapshot)
+  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, text)
 
   return {
     visibleText: text,

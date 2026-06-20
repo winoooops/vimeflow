@@ -32,6 +32,52 @@ describe('ghosttyVtRenderSnapshot', () => {
     })
   })
 
+  test('shifts clear-style snapshots with leading empty rows to the viewport top', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['', 'prompt', '', ''],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 6,
+      },
+      cells: [
+        {
+          row: 1,
+          col: 0,
+          text: 'prompt',
+          width: 6,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(operation.text.startsWith('\n')).toBe(false)
+    expect(operation.cursorOffset).toBe('prompt'.length)
+    expect(buffer.readVisibleText()).toBe('prompt')
+  })
+
+  test('preserves an intentional empty top row when the cursor is above content', () => {
+    expect(
+      createGhosttyVtRenderSnapshotOutput({
+        rows: ['', 'menu'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 0,
+        },
+      }).displayDelta?.operations[0]
+    ).toEqual({
+      type: 'replace',
+      text: '\nmenu',
+      cursorOffset: 0,
+    })
+  })
+
   test('converts later-row cursor coordinates into a text offset', () => {
     expect(
       createGhosttyVtRenderSnapshotOutput({
