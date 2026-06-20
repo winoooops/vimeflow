@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-20
-ref_count: 5
+ref_count: 6
 ---
 
 # Persisted State Invariants
@@ -120,4 +120,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `crates/backend/src/terminal/workspace_layout.rs`
 - **Finding:** The frontend type contract allowed `agentType: "opencode"` and workspace-shape persistence could write that value, but Rust layout repair still treated only the older agent set as known. Restarting from a durable layout would coerce opencode panes to `generic` until detection ran again.
 - **Fix:** Added `opencode` to the repair allowlist and added a regression test proving `repair_workspace_layout` preserves the opencode agent type.
+- **Commit:** same commit as this entry
+
+### 13. Opencode pid locator trusted stale append-only index rows
+
+- **Source:** github-codex-connector | PR #586 round 1 | 2026-06-20
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The opencode locator treated any row with `pid == agent_pid` as authoritative before applying the existing freshness gate. Because the bridge index is append-only, OS PID reuse could make an old row for the same pid bind a new opencode process to a previous session's transcript instead of returning the startup-window retry signal.
+- **Fix:** Applied the `pty_start - SLACK` freshness floor to pid matches as well as cwd fallback matches, preserving pid-first disambiguation only for fresh rows. Added a reused-PID regression test proving stale pid rows return the not-ready error.
 - **Commit:** same commit as this entry
