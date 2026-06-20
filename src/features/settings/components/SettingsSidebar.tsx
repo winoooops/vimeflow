@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -11,58 +12,106 @@ import type {
   SettingsSectionId,
   SettingsSidebarProps,
   SettingsSubsection,
-  SettingsSubsectionId,
-  SettingsTargetId,
 } from '../types'
-import { resultKeyToAriaId } from '../search'
+import {
+  resultKeyToAriaId,
+  sectionResultId,
+  settingsTargetResultKey,
+  subsectionResultId,
+  targetResultId,
+} from '../search'
 import { Icon } from './Icon'
 
 const SEARCH_RESULTS_ID = 'settings-search-results'
 
-const sectionResultId = (id: SettingsSectionId): string =>
-  `settings-search-result-section-${id}`
-
-const targetResultId = (id: SettingsTargetId): string =>
-  `settings-search-result-target-${id}`
-
-const subsectionResultId = (id: SettingsSubsectionId): string =>
-  `settings-search-result-subsection-${id}`
+const noop = (): void => undefined
 
 export const SettingsSidebar = ({
   sections,
   targets = [],
   subsections = [],
   active,
+  activeSubsectionId = null,
   activeTargetId = null,
   activeSearchResultKey = null,
+  expandedSectionIds: controlledExpandedSectionIds,
   onPick,
   onPickTarget = (): void => undefined,
   onPickSubsection = (): void => undefined,
+  onExpandedSectionIdsChange = noop,
   onClearQuery = (): void => undefined,
   onNavigateSearchResult = (): void => undefined,
-  onConfirmSearchResult = (): void => undefined,
+  onConfirmSearchResult = (): boolean => false,
   query,
   onQuery,
 }: SettingsSidebarProps): ReactElement => {
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const navRef = useRef<HTMLElement>(null)
+  const previousActiveRef = useRef<SettingsSectionId | null>(null)
+  const previousActiveResultIdRef = useRef<string | undefined>(undefined)
 
-  const [expandedSectionIds, setExpandedSectionIds] = useState<
-    Set<SettingsSectionId>
-  >(() => new Set([active]))
+  const [uncontrolledExpandedSectionIds, setUncontrolledExpandedSectionIds] =
+    useState<Set<SettingsSectionId>>(() => new Set([active]))
+
+  const [searchFocused, setSearchFocused] = useState(false)
+
+  const expandedSectionIds =
+    controlledExpandedSectionIds ?? uncontrolledExpandedSectionIds
   const searchActive = query.trim() !== ''
   const treeActive = subsections.length > 0 && !searchActive
 
+  const updateExpandedSectionIds = useCallback(
+    (
+      updater: (
+        current: ReadonlySet<SettingsSectionId>
+      ) => ReadonlySet<SettingsSectionId>
+    ): void => {
+      const next = updater(expandedSectionIds)
+
+      if (next === expandedSectionIds) {
+        return
+      }
+
+      if (controlledExpandedSectionIds === undefined) {
+        setUncontrolledExpandedSectionIds(new Set(next))
+
+        return
+      }
+
+      onExpandedSectionIdsChange(next)
+    },
+    [
+      controlledExpandedSectionIds,
+      expandedSectionIds,
+      onExpandedSectionIdsChange,
+    ]
+  )
+
   useEffect(() => {
-    setExpandedSectionIds((current) => {
+    if (previousActiveRef.current === active) {
+      return
+    }
+
+    previousActiveRef.current = active
+    updateExpandedSectionIds((current) => {
       if (current.has(active)) {
         return current
       }
 
       return new Set([...current, active])
     })
-  }, [active])
+  }, [active, updateExpandedSectionIds])
 
-  const activeSubsection =
+  const activeSubsectionFromId =
+    activeSubsectionId === null
+      ? undefined
+      : subsections.find(
+          (subsection) =>
+            subsection.id === activeSubsectionId &&
+            subsection.section === active
+        )
+
+  const activeSubsectionFromTarget =
     activeTargetId === null
       ? undefined
       : subsections.find(
@@ -70,6 +119,8 @@ export const SettingsSidebar = ({
             subsection.section === active &&
             subsection.targetIds.includes(activeTargetId)
         )
+
+  const activeSubsection = activeSubsectionFromId ?? activeSubsectionFromTarget
 
   const fallbackActiveResultId =
     activeTargetId !== null &&
@@ -89,6 +140,33 @@ export const SettingsSidebar = ({
 
   const hasResults = sections.length > 0 || targets.length > 0
 
+  useEffect(() => {
+    const previousActiveResultId = previousActiveResultIdRef.current
+    previousActiveResultIdRef.current = activeResultId
+
+    if (activeResultId === undefined) {
+      return
+    }
+
+    if (
+      previousActiveResultId === undefined ||
+      previousActiveResultId === activeResultId
+    ) {
+      return
+    }
+
+    const activeElement = document.getElementById(activeResultId)
+    if (
+      activeElement === null ||
+      navRef.current?.contains(activeElement) !== true ||
+      typeof activeElement.scrollIntoView !== 'function'
+    ) {
+      return
+    }
+
+    activeElement.scrollIntoView({ block: 'nearest' })
+  }, [activeResultId])
+
   const handleClearQuery = (): void => {
     onClearQuery()
     searchInputRef.current?.focus()
@@ -101,7 +179,7 @@ export const SettingsSidebar = ({
     onPick(id)
 
     if (treeActive && sectionSubsections.length > 0) {
-      setExpandedSectionIds((current) => {
+      updateExpandedSectionIds((current) => {
         const next = new Set(current)
 
         if (id === active && next.has(id)) {
@@ -146,7 +224,10 @@ export const SettingsSidebar = ({
     if (event.key === 'Enter') {
       event.preventDefault()
       event.stopPropagation()
-      onConfirmSearchResult()
+      const confirmed = onConfirmSearchResult()
+      if (confirmed) {
+        searchInputRef.current?.blur()
+      }
     }
   }
 
@@ -158,9 +239,12 @@ export const SettingsSidebar = ({
           <input
             ref={searchInputRef}
             type="text"
+            data-settings-search-input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder="Search settings..."
             aria-label="Search settings"
             role="combobox"
@@ -170,6 +254,17 @@ export const SettingsSidebar = ({
             aria-activedescendant={activeResultId}
             className="min-w-0 flex-1 border-none bg-transparent font-body text-xs text-on-surface outline-none placeholder:text-on-surface-muted"
           />
+          {query.trim() !== '' && !searchFocused && (
+            <span
+              data-testid="settings-search-resume-hint"
+              className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-on-surface-muted"
+            >
+              <span className="rounded border border-outline-variant/45 px-1 py-px text-[9px] leading-none text-on-surface-variant">
+                /
+              </span>
+              search
+            </span>
+          )}
           {query.trim() !== '' && (
             <Tooltip content="Clear search">
               <button
@@ -186,6 +281,7 @@ export const SettingsSidebar = ({
       </div>
 
       <nav
+        ref={navRef}
         id={SEARCH_RESULTS_ID}
         role="listbox"
         className="thin-scrollbar flex-1 overflow-auto px-2 pb-3.5"
@@ -278,7 +374,9 @@ export const SettingsSidebar = ({
               {shouldShowTargets && (
                 <div className="mt-0.5 mb-1 space-y-px pl-5">
                   {sectionTargets.map((target) => {
-                    const isTargetActive = target.id === activeTargetId
+                    const isTargetActive =
+                      target.id === activeTargetId ||
+                      activeSearchResultKey === settingsTargetResultKey(target)
 
                     return (
                       <button
