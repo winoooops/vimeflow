@@ -1,15 +1,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
+
+#[cfg(feature = "e2e-test")]
+use rusqlite::{params, Connection};
 
 use crate::agent::types::{
-    AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
+    AgentStatusEvent, AgentTurnEvent, AgentType, RenameAgentSessionError,
+    RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
-use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
+use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 
 use super::event_sink::EventSink;
 
@@ -37,6 +42,7 @@ fn ensure_rename_supported(agent_type: &AgentType) -> Result<(), RenameAgentSess
 
 /// Consolidated runtime-neutral backend state.
 pub struct BackendState {
+    app_data_dir: PathBuf,
     pty: PtyState,
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
@@ -53,12 +59,21 @@ pub struct BackendState {
 
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
+        if let Err(err) = std::fs::create_dir_all(&app_data_dir) {
+            log::warn!(
+                "BackendState::new: failed to create app data dir {}: {err}",
+                app_data_dir.display()
+            );
+        }
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
+            app_data_dir: app_data_dir.clone(),
             pty: PtyState::new(),
-            sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
+            sessions: Arc::new(
+                SessionCache::load_or_recover(cache_path).with_app_data_dir(app_data_dir),
+            ),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
@@ -368,16 +383,37 @@ impl BackendState {
         &self,
         session_id: String,
     ) -> Result<Option<crate::agent::types::AgentDetectedEvent>, String> {
-        crate::agent::commands::detect_agent_in_session_inner(&self.pty, session_id).await
+        let detected =
+            crate::agent::commands::detect_agent_in_session_inner(&self.pty, session_id.clone())
+                .await?;
+
+        #[cfg(feature = "e2e-test")]
+        if detected.is_none() {
+            if let Some(agent_type) = self.agents.agent_type_for_pty(&session_id) {
+                return Ok(Some(crate::agent::types::AgentDetectedEvent {
+                    pid: self.pty.get_pid(&session_id).unwrap_or(0),
+                    session_id,
+                    agent_type,
+                }));
+            }
+        }
+
+        Ok(detected)
     }
 
-    pub async fn start_agent_watcher(&self, session_id: String) -> Result<(), String> {
+    pub async fn start_agent_watcher(
+        &self,
+        session_id: String,
+        provider_home_override: Option<PathBuf>,
+    ) -> Result<(), String> {
         crate::agent::adapter::start_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),
             self.transcripts.clone(),
             self.events.clone(),
+            self.app_data_dir.clone(),
             session_id,
+            provider_home_override,
         )
         .await
     }
@@ -397,6 +433,275 @@ impl BackendState {
     pub fn list_active_pty_sessions(&self) -> Vec<String> {
         self.pty.active_ids()
     }
+
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_agent_bridge_info(&self, session_id: String) -> Result<E2eAgentBridgeInfo, String> {
+        let (cwd, bridge_dir, shim_dir) = {
+            let sessions = self
+                .pty
+                .inner_sessions()
+                .lock()
+                .map_err(|_| "failed to lock sessions".to_string())?;
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| format!("session not found: {session_id}"))?;
+
+            (
+                session.cwd.clone(),
+                session.bridge_dir.clone(),
+                session.shim_dir.clone(),
+            )
+        };
+        let status_file = bridge_dir.as_ref().map(|dir| {
+            PathBuf::from(dir.as_str())
+                .join("status.json")
+                .to_string_lossy()
+                .to_string()
+        });
+
+        Ok(E2eAgentBridgeInfo {
+            session_id: session_id.clone(),
+            cwd,
+            app_data_dir: self.app_data_dir.to_string_lossy().to_string(),
+            bridge_dir,
+            status_file,
+            shim_dir,
+            agent_type: self.agents.agent_type_for_pty(&session_id),
+        })
+    }
+
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_seed_live_agent(
+        &self,
+        session_id: String,
+        agent_type: AgentType,
+    ) -> Result<(), String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        self.agents
+            .insert_agent_type_for_test(self.transcripts.clone(), session_id, agent_type);
+
+        Ok(())
+    }
+
+    /// Emit `agent-status` and `agent-turn` events through the backend's
+    /// EventSink. Used by E2E tests to exercise the backend serialization
+    /// and IPC path for Codex/Kimi without requiring a live agent process or
+    /// transcript fixtures. The file-watcher path remains tested separately
+    /// for Claude; this helper narrows the gap for agents whose watcher
+    /// fixtures are not yet hermetic in CI.
+    #[cfg(feature = "e2e-test")]
+    pub fn e2e_emit_agent_status(
+        &self,
+        session_id: String,
+        status: AgentStatusEvent,
+        num_turns: u32,
+    ) -> Result<(), String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let turn = AgentTurnEvent {
+            session_id: session_id.clone(),
+            num_turns,
+        };
+
+        let status_payload =
+            crate::runtime::event_sink::serialize_event(&status).map_err(|e| format!("{e}"))?;
+        let turn_payload =
+            crate::runtime::event_sink::serialize_event(&turn).map_err(|e| format!("{e}"))?;
+
+        self.events.emit_json("agent-status", status_payload)?;
+        self.events.emit_json("agent-turn", turn_payload)?;
+        Ok(())
+    }
+
+    /// Set up a hermetic Codex home under `home_dir`, seed the locator
+    /// SQLite databases so the Codex watcher can resolve a rollout file for
+    /// `session_id`, and start the watcher with `home_dir/.codex` threaded
+    /// as an explicit provider-home override. Returns the absolute path to
+    /// the empty rollout file the test should write to.
+    #[cfg(feature = "e2e-test")]
+    pub async fn e2e_start_codex_watcher(
+        &self,
+        session_id: String,
+        home_dir: PathBuf,
+    ) -> Result<PathBuf, String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let cwd = self
+            .pty
+            .get_cwd(&session_id)
+            .ok_or_else(|| format!("cwd not found for session {session_id}"))?;
+        let pty_start = self
+            .pty
+            .get_started_at(&session_id)
+            .ok_or_else(|| format!("start time not found for session {session_id}"))?;
+
+        let codex_home = home_dir.join(".codex");
+        let sessions_dir = codex_home
+            .join("sessions")
+            .join("2026")
+            .join("06")
+            .join("19");
+        let rollout_path = sessions_dir.join(format!("rollout-{session_id}.jsonl"));
+
+        std::fs::create_dir_all(&sessions_dir)
+            .map_err(|e| format!("create codex sessions dir: {e}"))?;
+        std::fs::write(&rollout_path, b"")
+            .map_err(|e| format!("create empty rollout: {e}"))?;
+
+        let since_epoch = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("pty_start before epoch: {e}"))?;
+        let secs = since_epoch.as_secs() as i64;
+        let nanos = since_epoch.subsec_nanos() as i64;
+        let updated_at_ms = secs * 1000 + nanos / 1_000_000;
+
+        let state_db = codex_home.join("state.sqlite");
+        let state = Connection::open(&state_db).map_err(|e| format!("open state db: {e}"))?;
+        state
+            .execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT PRIMARY KEY,
+                    rollout_path TEXT NOT NULL,
+                    cwd TEXT,
+                    updated_at_ms INTEGER NOT NULL
+                );",
+            )
+            .map_err(|e| format!("create threads table: {e}"))?;
+        state
+            .execute(
+                "INSERT INTO threads (id, rollout_path, cwd, updated_at_ms)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    format!("tid-e2e-{session_id}"),
+                    rollout_path.to_str().ok_or("rollout path is not utf-8")?,
+                    cwd,
+                    updated_at_ms,
+                ],
+            )
+            .map_err(|e| format!("insert thread row: {e}"))?;
+
+        let logs_db = codex_home.join("logs.sqlite");
+        let logs = Connection::open(&logs_db).map_err(|e| format!("open logs db: {e}"))?;
+        logs.execute_batch(
+            "CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                ts_nanos INTEGER NOT NULL,
+                level TEXT,
+                target TEXT,
+                process_uuid TEXT NOT NULL,
+                thread_id TEXT
+            );
+            CREATE INDEX idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
+        )
+        .map_err(|e| format!("create logs table: {e}"))?;
+
+        let result = self
+            .start_agent_watcher(session_id.clone(), Some(codex_home))
+            .await;
+        result?;
+
+        Ok(rollout_path)
+    }
+
+    /// Set up a hermetic Kimi home under `home_dir`, seed the locator
+    /// filesystem layout so the Kimi watcher can resolve a wire file for
+    /// `session_id`, and start the watcher with `home_dir` threaded as an
+    /// explicit provider-home override. Returns the absolute path to the wire
+    /// file the test should write to.
+    #[cfg(feature = "e2e-test")]
+    pub async fn e2e_start_kimi_watcher(
+        &self,
+        session_id: String,
+        home_dir: PathBuf,
+    ) -> Result<PathBuf, String> {
+        if !self.pty.contains(&session_id) {
+            return Err(format!("session not found: {session_id}"));
+        }
+
+        let cwd = self
+            .pty
+            .get_cwd(&session_id)
+            .ok_or_else(|| format!("cwd not found for session {session_id}"))?;
+        let pty_start = self
+            .pty
+            .get_started_at(&session_id)
+            .ok_or_else(|| format!("start time not found for session {session_id}"))?;
+
+        let since_epoch = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|e| format!("pty_start before epoch: {e}"))?;
+        let created_at_ms = since_epoch.as_millis() as u64 + 1000;
+
+        let cwd_path = PathBuf::from(&cwd);
+        let basename = cwd_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        let bucket = {
+            use sha2::{Digest, Sha256};
+            let digest = Sha256::digest(cwd.as_bytes());
+            let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+            format!("wd_{basename}_{hex}")
+        };
+        let session_dir_name = format!("session_e2e_{session_id}");
+        let session_dir = home_dir
+            .join("sessions")
+            .join(&bucket)
+            .join(&session_dir_name);
+        let wire_path = session_dir.join("agents").join("main").join("wire.jsonl");
+
+        std::fs::create_dir_all(wire_path.parent().expect("wire parent"))
+            .map_err(|e| format!("create kimi wire dirs: {e}"))?;
+        std::fs::write(
+            &wire_path,
+            format!(
+                "{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"
+            ),
+        )
+        .map_err(|e| format!("create kimi wire: {e}"))?;
+
+        let index_path = home_dir.join("session_index.jsonl");
+        std::fs::write(
+            &index_path,
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "sessionId": session_dir_name,
+                    "sessionDir": session_dir.to_str().ok_or("session dir is not utf-8")?,
+                    "workDir": cwd,
+                })
+            ),
+        )
+        .map_err(|e| format!("create kimi index: {e}"))?;
+
+        let result = self
+            .start_agent_watcher(session_id, Some(home_dir))
+            .await;
+        result?;
+
+        Ok(wire_path)
+    }
+}
+
+#[cfg(feature = "e2e-test")]
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eAgentBridgeInfo {
+    pub session_id: String,
+    pub cwd: String,
+    pub app_data_dir: String,
+    pub bridge_dir: Option<String>,
+    pub status_file: Option<String>,
+    pub shim_dir: Option<String>,
+    pub agent_type: Option<AgentType>,
 }
 
 #[cfg(test)]
@@ -509,6 +814,7 @@ mod tests {
             }),
             child: Box::new(NoopChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
@@ -581,7 +887,10 @@ mod tests {
         // Reloading the same app-data dir (e.g. next launch) recovers ON;
         // file-independent recovery is proven in the consent module's tests.
         state.load_kimi_usage_consent();
-        assert!(state.get_kimi_usage_consent(), "reload keeps persisted true");
+        assert!(
+            state.get_kimi_usage_consent(),
+            "reload keeps persisted true"
+        );
 
         state.set_kimi_usage_consent(false).expect("persist off");
         assert!(!state.get_kimi_usage_consent());
@@ -620,10 +929,7 @@ mod tests {
             session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
-        assert!(
-            write.is_err(),
-            "shutdown should have reaped the burner PTY"
-        );
+        assert!(write.is_err(), "shutdown should have reaped the burner PTY");
     }
 
     #[test]

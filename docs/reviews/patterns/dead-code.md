@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-19
-ref_count: 1
+ref_count: 2
 ---
 
 # Dead Code
@@ -51,4 +51,13 @@ code and should be removed.
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
 - **Finding:** The helper returned `p${slotIndex}` when the index was outside `definition.slots.length`, but every caller is already bounded by `layout.capacity`, which equals `definition.slots.length`. The fallback was unreachable and, once custom non-`p{N}` slot ids are wired, would silently place a pane outside the generated CSS grid.
 - **Fix:** Replaced the silent fallback with an explicit out-of-bounds error so any future capacity/slot bookkeeping divergence fails loudly instead of dropping a pane.
+- **Commit:** same commit as this entry
+
+### 5. `emitAgentStatus` helper and payload factory are dead code in E2E spec
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** LOW
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The `emitAgentStatus` function called `invokeBackend('e2e_emit_agent_status', ...)` but had no call sites in the spec. The `AgentStatusPayload` interface and `createAgentStatusPayload` factory existed only to support it. The dead code implied coverage for a direct-emit status scenario that did not exist.
+- **Fix:** Removed the unused `emitAgentStatus` helper, `AgentStatusPayload` interface, and `createAgentStatusPayload` factory from the spec.
 - **Commit:** same commit as this entry

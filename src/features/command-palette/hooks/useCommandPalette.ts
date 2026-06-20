@@ -18,6 +18,7 @@ import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
 import * as chordRegistry from '../chordRegistry'
 import { listenCommandPaletteToggle } from '../../../lib/backend'
+import { themeService, type ThemeId } from '../../../theme'
 import {
   COMMAND_PALETTE_SHORTCUT_KEYS,
   isCommandPaletteToggle,
@@ -66,6 +67,7 @@ export const useCommandPalette = (
   const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaderActiveRef = useRef(false)
   const isEnabledRef = useRef(isEnabled)
+  const originalThemeIdRef = useRef<ThemeId | null>(null)
 
   isEnabledRef.current = isEnabled
 
@@ -162,6 +164,17 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
+  const selectedCommand =
+    clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : null
+
+  useEffect(() => {
+    if (!state.isOpen) {
+      return
+    }
+
+    selectedCommand?.preview?.()
+  }, [selectedCommand, state.isOpen])
+
   const openWithQuery = useCallback(
     (query: string): void => {
       if (!isEnabledRef.current) {
@@ -169,6 +182,8 @@ export const useCommandPalette = (
 
         return
       }
+
+      originalThemeIdRef.current = themeService.current().id
 
       setState((prev) => ({
         ...prev,
@@ -187,6 +202,12 @@ export const useCommandPalette = (
 
   const close = useCallback((): void => {
     clearLeaderWindow()
+
+    if (originalThemeIdRef.current !== null) {
+      themeService.apply(originalThemeIdRef.current)
+      originalThemeIdRef.current = null
+    }
+
     setState((prev) => ({
       ...prev,
       isOpen: false,
@@ -266,7 +287,11 @@ export const useCommandPalette = (
       return
     }
 
-    const selected = filteredResults[clampedSelectedIndex]
+    const selected = selectedCommand
+
+    if (!selected) {
+      return
+    }
 
     // If it's a namespace, drill into it
     if (selected.children && selected.children.length > 0) {
@@ -297,13 +322,16 @@ export const useCommandPalette = (
           : parsedQuery.args
 
       selected.execute(executionArgs)
+      if (selected.preview != null) {
+        originalThemeIdRef.current = null
+      }
       close()
     }
   }, [
     clampedSelectedIndex,
-    filteredResults,
     parsedQuery.args,
     parsedQuery.commandVerb,
+    selectedCommand,
     state.currentNamespace,
     close,
   ])
