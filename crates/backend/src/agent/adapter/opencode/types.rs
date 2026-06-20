@@ -33,6 +33,16 @@ pub(crate) const OPENCODE_CONTEXT_WINDOW_SIZE: u64 = 0;
 /// `.local/share/opencode` when home is unknown (headless / service
 /// sessions). Mirrors `default_kimi_home`'s env → home → relative fallback
 /// shape.
+///
+/// Genuinely test-only in M5: the v1 filesystem locator ignores
+/// `provider_home` entirely (the bridge root is XDG-derived via
+/// `install::bridge_dir`), so the bindings arm never consults this. It exists
+/// for the detector/registry's `provider_home` chain wired in M1's
+/// `config.rs::AGENT_SPECS` (`home_subdir = ".local/share/opencode"`); until
+/// that lands it has no production caller. Keep the narrow allow rather than a
+/// blanket module-level one (per M5: drop the blanket `#[allow(dead_code)]`,
+/// scope it to the genuinely-staged item).
+#[allow(dead_code)]
 pub(crate) fn default_opencode_home() -> PathBuf {
     if let Some(env_home) = std::env::var_os("OPENCODE_HOME") {
         if !env_home.is_empty() {

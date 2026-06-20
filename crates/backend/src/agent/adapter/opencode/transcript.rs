@@ -1,0 +1,1020 @@
+//! Transcript tailer for opencode bridge JSONL files.
+//!
+//! Mirrors `codex/transcript.rs`: [`start_tailing`] opens the
+//! `<sessionID>.jsonl` the vimeflow-opencode-bridge plugin writes, builds an
+//! [`OpencodeTranscriptDecoder`], wraps it in the shared
+//! [`TranscriptTailService`], and spawns the tail thread. The decoder folds
+//! each bridge line into `agent-turn` / `agent-tool-call` / `agent-cwd` /
+//! `test-run` events per spec §4.4.
+//!
+//! Bridge line → event mapping (spec §4.4):
+//!
+//! - `kind=event`, `type=message.updated`, `data.info.role == "user"` ⇒
+//!   [`AgentTurnEvent`] — **once per user message id** (tracked in
+//!   `seen_turns`). `session.created` is intentionally NOT a turn source.
+//! - `kind=tool.before` ⇒ tool-call start (args preview already on the line).
+//!   `kind=event`, `type=message.part.updated`, `data.part.type=="tool"`,
+//!   `state.status` `pending`/`running` ⇒ start/running.
+//! - `kind=tool.after` ⇒ tool-call done (`completed`) / failed (`error`).
+//!   Deduped by `(callID, status)` so repeated running updates don't re-emit.
+//! - `kind=tool.after` where `tool=="bash"` ⇒ feed `args.command` +
+//!   `result.output` + `result.metadata.exit` into the shared
+//!   `claude_code::test_runners` (cwd = the session cwd, NOT a per-command
+//!   workdir). Only submit when `maybe_build_snapshot` returns `Some`.
+//! - `kind=event`, `type=session.idle`/`session.status`/`step-finish` part ⇒
+//!   status/phase refresh (v1 has no lifecycle phase emission for opencode, so
+//!   these are observed but do not emit; reserved for a later milestone).
+//! - assistant `data.info.path.cwd` change ⇒ [`AgentCwdEvent`] when it differs
+//!   from `last_cwd`. (The v1 bridge sanitizer drops `info.path`, so this is a
+//!   defensive read that only fires if a future bridge re-adds the field; the
+//!   authored fixture carries it so the path is exercised.)
+
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::BufReader;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Instant;
+
+use serde_json::Value;
+
+use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
+use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
+use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
+use crate::agent::adapter::claude_code::test_runners::matcher::match_command;
+use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
+use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
+use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
+use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::runtime::EventSink;
+
+use super::locator::OpenCodeLocator;
+use super::transcript_dto::{OpencodeEventType, OpencodeKind, OpencodeLineDto};
+
+/// Cap on the displayed args preview, matching `codex/transcript.rs`'s
+/// `MAX_ARGS_LEN` so the agent-status activity card renders a bounded string.
+const MAX_ARGS_LEN: usize = 1024;
+
+/// An in-flight tool call awaiting its terminal `tool.after` (or a
+/// `message.part.updated` `completed`/`error`). Keyed by `callID` (fallback the
+/// part `id`).
+struct InFlightToolCall {
+    started_at: Instant,
+    started_at_iso: String,
+    tool: String,
+    args: String,
+    is_test_file: bool,
+}
+
+type InFlightToolCalls = HashMap<String, InFlightToolCall>;
+
+/// Open the bridge JSONL, build the decoder, and spawn the tail thread.
+///
+/// Mirrors `codex::transcript::start_tailing` / `kimi::transcript::start_tailing`.
+/// The `locator` is accepted for signature parity with the other providers and
+/// so the streamer can prefer the locator's resolved cwd; the v1 opencode
+/// locator carries no live process cwd beyond what `cwd` already supplies, so
+/// the argument is otherwise unused.
+pub(crate) fn start_tailing(
+    events: Arc<dyn EventSink>,
+    session_id: String,
+    cwd: Option<PathBuf>,
+    transcript_path: PathBuf,
+    _locator: Arc<OpenCodeLocator>,
+) -> Result<TranscriptHandle, String> {
+    let file = File::open(&transcript_path).map_err(|e| {
+        format!(
+            "Failed to open opencode bridge transcript: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+
+    // Surface the resolved workspace cwd once so the pane / file tree / git
+    // follow the opencode project rather than the stale spawn cwd (mirrors
+    // Kimi's `emit_initial_cwd`).
+    if let Some(cwd_str) = cwd.as_deref().and_then(std::path::Path::to_str) {
+        let event = AgentCwdEvent {
+            session_id: session_id.clone(),
+            cwd: cwd_str.to_string(),
+        };
+        if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
+            log::warn!("Failed to emit opencode initial agent-cwd event: {}", e);
+        }
+    }
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_clone = stop_flag.clone();
+
+    let decoder = OpencodeTranscriptDecoder::new(events, session_id, cwd);
+    let service = TranscriptTailService::new(Box::new(decoder), "opencode transcript");
+
+    let join_handle = std::thread::spawn(move || {
+        service.run(BufReader::new(file), stop_clone);
+    });
+
+    Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+/// Per-session opencode decoder: owns the in-flight tool-call map, the
+/// seen-turn message ids, turn count, last-seen cwd, the replay-aware test-run
+/// emitter, and a `replay_done` one-shot guard. Driven by
+/// [`TranscriptTailService`], which owns the read/buffer/poll loop.
+pub(crate) struct OpencodeTranscriptDecoder {
+    events: Arc<dyn EventSink>,
+    session_id: String,
+    /// Session cwd passed into `start_tailing` — the cwd fed to the test-run
+    /// parser (NOT any per-command workdir). Also the baseline for `last_cwd`.
+    cwd: Option<PathBuf>,
+    in_flight: InFlightToolCalls,
+    /// Dedup set keyed by `(callID, status-discriminant)` so a repeated
+    /// running/completed update for the same call does not re-emit. The
+    /// discriminant is a `&'static str` ("running"/"done"/"failed") rather than
+    /// `ToolCallStatus` so we don't have to widen the shared enum's derives
+    /// (it isn't `Hash`/`Eq`).
+    emitted: HashSet<(String, &'static str)>,
+    /// User-message ids already counted as a turn — a re-delivered
+    /// `message.updated` for the same id does not double-count.
+    seen_turns: HashSet<String>,
+    num_turns: u32,
+    /// Last cwd surfaced via `agent-cwd`; transitions only.
+    last_cwd: Option<String>,
+    emitter: TestRunEmitter,
+    /// One-shot guard: false during replay, true after the first on_caught_up.
+    replay_done: bool,
+}
+
+impl OpencodeTranscriptDecoder {
+    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+        let emitter = TestRunEmitter::new(events.clone());
+        // Seed `last_cwd` with the session cwd so we don't re-emit the same
+        // path the initial `emit_agent_cwd` in `start_tailing` already sent.
+        let last_cwd = cwd
+            .as_deref()
+            .and_then(std::path::Path::to_str)
+            .map(str::to_string);
+        Self {
+            events,
+            session_id,
+            cwd,
+            in_flight: HashMap::new(),
+            emitted: HashSet::new(),
+            seen_turns: HashSet::new(),
+            num_turns: 0,
+            last_cwd,
+            emitter,
+            replay_done: false,
+        }
+    }
+
+    fn process_line(&mut self, line: &str) {
+        let dto: OpencodeLineDto = match serde_json::from_str(line) {
+            Ok(dto) => dto,
+            Err(_) => return,
+        };
+        let timestamp = ts_to_iso8601(dto.ts);
+
+        match dto.kind() {
+            OpencodeKind::ToolBefore => self.start_tool_call_from_before(&dto, &timestamp),
+            OpencodeKind::ToolAfter => self.finish_tool_call_from_after(&dto, &timestamp),
+            OpencodeKind::Event => self.process_event(&dto, &timestamp),
+            OpencodeKind::Unknown => {}
+        }
+    }
+
+    fn process_event(&mut self, dto: &OpencodeLineDto, timestamp: &str) {
+        match dto.event_type() {
+            OpencodeEventType::MessageUpdated => self.process_message_updated(dto),
+            OpencodeEventType::MessagePartUpdated => self.process_part_updated(dto, timestamp),
+            OpencodeEventType::SessionCreated | OpencodeEventType::SessionUpdated => {
+                self.process_session_event(dto);
+            }
+            // session.idle / session.status / session.error / session.diff /
+            // todo.updated — observed for status/phase refresh; v1 emits no
+            // lifecycle phase for opencode, so there's nothing to emit here.
+            _ => {}
+        }
+    }
+
+    /// A user `message.updated` is one turn, counted once per `info.id`.
+    fn process_message_updated(&mut self, dto: &OpencodeLineDto) {
+        let info = match dto.data.get("info") {
+            Some(info) => info,
+            None => return,
+        };
+        if info.get("role").and_then(Value::as_str) != Some("user") {
+            return;
+        }
+        let Some(id) = info.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+            return;
+        };
+        // Dedup by user-message id: a re-delivered update must not re-count.
+        if !self.seen_turns.insert(id.to_string()) {
+            return;
+        }
+
+        self.num_turns = self.num_turns.saturating_add(1);
+        let event = AgentTurnEvent {
+            session_id: self.session_id.clone(),
+            num_turns: self.num_turns,
+        };
+        if let Err(e) = emit_agent_turn(self.events.as_ref(), &event) {
+            log::warn!("Failed to emit opencode agent-turn event: {}", e);
+        }
+    }
+
+    /// `message.part.updated` with a `tool` part. `state.status`:
+    /// `pending`/`running` ⇒ start/running; `completed` ⇒ done; `error` ⇒ failed.
+    fn process_part_updated(&mut self, dto: &OpencodeLineDto, timestamp: &str) {
+        let part = match dto.data.get("part") {
+            Some(part) => part,
+            None => return,
+        };
+        if part.get("type").and_then(Value::as_str) != Some("tool") {
+            return;
+        }
+        let call_key = part_call_key(part);
+        let Some(call_key) = call_key else {
+            return;
+        };
+        let tool = part
+            .get("tool")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let state = part.get("state");
+        let status = state
+            .and_then(|s| s.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let args = summarize_state_args(state, &tool);
+
+        match status {
+            "pending" | "running" => {
+                self.start_tool_call(&call_key, tool, args, timestamp, false);
+            }
+            "completed" => {
+                self.finish_tool_call(&call_key, ToolCallStatus::Done, timestamp);
+            }
+            "error" => {
+                self.finish_tool_call(&call_key, ToolCallStatus::Failed, timestamp);
+            }
+            _ => {}
+        }
+    }
+
+    /// `tool.before`: register the in-flight call + emit a running start
+    /// (post-replay). The args preview is already on the line.
+    fn start_tool_call_from_before(&mut self, dto: &OpencodeLineDto, timestamp: &str) {
+        let Some(call_id) = dto.call_id.as_deref().filter(|s| !s.is_empty()) else {
+            return;
+        };
+        let tool = dto.tool.as_deref().unwrap_or("unknown").to_string();
+        let args = summarize_value_args(&dto.args, &tool);
+        self.start_tool_call(call_id, tool, args, timestamp, false);
+    }
+
+    /// `tool.after`: complete the in-flight call (`metadata.exit` decides
+    /// done/failed) and, for `bash`, feed the captured output into the shared
+    /// test-run parser.
+    fn finish_tool_call_from_after(&mut self, dto: &OpencodeLineDto, timestamp: &str) {
+        let Some(call_id) = dto.call_id.as_deref().filter(|s| !s.is_empty()) else {
+            return;
+        };
+        let tool = dto.tool.as_deref().unwrap_or("unknown");
+        let result = &dto.result;
+        let exit = result
+            .get("metadata")
+            .and_then(|m| m.get("exit"))
+            .and_then(Value::as_i64);
+        let status = if exit.is_some_and(|code| code != 0) {
+            ToolCallStatus::Failed
+        } else {
+            ToolCallStatus::Done
+        };
+
+        // bash tool.after → shared test-run parser (cwd = session cwd).
+        if tool == "bash" {
+            self.maybe_submit_test_run(call_id, result, exit, timestamp);
+        }
+
+        self.finish_tool_call(call_id, status, timestamp);
+    }
+
+    /// Common start path: insert into `in_flight` (idempotent on the call key)
+    /// and emit a `running` event once per call, post-replay. The dedup set is
+    /// keyed by `(callID, Running)` so a `tool.before` followed by a `running`
+    /// part update for the same call emits a single start.
+    fn start_tool_call(
+        &mut self,
+        call_key: &str,
+        tool: String,
+        args: String,
+        timestamp: &str,
+        is_test_file: bool,
+    ) {
+        self.in_flight
+            .entry(call_key.to_string())
+            .or_insert_with(|| InFlightToolCall {
+                started_at: Instant::now(),
+                started_at_iso: timestamp.to_string(),
+                tool: tool.clone(),
+                args: args.clone(),
+                is_test_file,
+            });
+
+        let dedup_key = (call_key.to_string(), status_discriminant(&ToolCallStatus::Running));
+        if !self.emitted.insert(dedup_key) {
+            return;
+        }
+
+        if self.replay_done {
+            self.emit_tool_call(AgentToolCallEvent {
+                session_id: self.session_id.clone(),
+                tool_use_id: call_key.to_string(),
+                tool,
+                args,
+                status: ToolCallStatus::Running,
+                timestamp: timestamp.to_string(),
+                duration_ms: 0,
+                is_test_file,
+            });
+        }
+    }
+
+    /// Common completion path: remove the in-flight call and emit its terminal
+    /// status once. Deduped by `(callID, status)` — a `tool.after` plus a
+    /// `completed` part update for the same call emits a single done.
+    fn finish_tool_call(&mut self, call_key: &str, status: ToolCallStatus, timestamp: &str) {
+        let dedup_key = (call_key.to_string(), status_discriminant(&status));
+        if !self.emitted.insert(dedup_key) {
+            // Already emitted this terminal status for this call.
+            self.in_flight.remove(call_key);
+            return;
+        }
+
+        let (tool, args, duration_ms, is_test_file) = match self.in_flight.remove(call_key) {
+            Some(call) => (
+                call.tool,
+                call.args,
+                compute_duration_ms(&call.started_at_iso, timestamp, call.started_at.elapsed()),
+                call.is_test_file,
+            ),
+            // A terminal update with no recorded start (replay began mid-call,
+            // or the start was dropped). Emit with what we know.
+            None => ("unknown".to_string(), String::new(), 0, false),
+        };
+
+        self.emit_tool_call(AgentToolCallEvent {
+            session_id: self.session_id.clone(),
+            tool_use_id: call_key.to_string(),
+            tool,
+            args,
+            status,
+            timestamp: timestamp.to_string(),
+            duration_ms,
+            is_test_file,
+        });
+    }
+
+    /// Feed a `bash` `tool.after` into the shared `claude_code::test_runners`.
+    /// `cwd` is the session cwd (NOT any per-command workdir). Only submits when
+    /// the command matches a known runner AND `maybe_build_snapshot` returns
+    /// `Some`. The `TestRunEmitter` collapses replay-phase snapshots to the
+    /// latest one, flushed at `finish_replay`.
+    fn maybe_submit_test_run(
+        &mut self,
+        call_id: &str,
+        result: &Value,
+        exit: Option<i64>,
+        timestamp: &str,
+    ) {
+        let Some(cwd) = self.cwd.clone() else {
+            log::debug!(
+                "Skipping opencode test-run snapshot for session {}: no workspace cwd resolved",
+                self.session_id
+            );
+            return;
+        };
+
+        // The command preview lives on the in-flight start's args (the
+        // `tool.before`'s `args.command`); fall back to nothing if the start
+        // wasn't seen. `result.output` carries the captured output.
+        let command = self
+            .in_flight
+            .get(call_id)
+            .map(|c| c.args.clone())
+            .unwrap_or_default();
+        if command.is_empty() {
+            return;
+        }
+        let Some(matched) = match_command(&command, Some(cwd.as_path())) else {
+            return;
+        };
+
+        let output = result
+            .get("output")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let started_at = self
+            .in_flight
+            .get(call_id)
+            .map(|c| c.started_at_iso.clone())
+            .unwrap_or_else(|| timestamp.to_string());
+        let instant_fallback = self
+            .in_flight
+            .get(call_id)
+            .map(|c| c.started_at.elapsed())
+            .unwrap_or_default();
+
+        let captured = CapturedOutput {
+            content: output,
+            is_error: exit.is_some_and(|code| code != 0),
+        };
+        if let Some(snapshot) = maybe_build_snapshot(BuildArgs {
+            session_id: &self.session_id,
+            matched: &matched,
+            started_at: &started_at,
+            finished_at: timestamp,
+            instant_fallback,
+            captured,
+            cwd: cwd.as_path(),
+        }) {
+            self.emitter.submit(snapshot);
+        }
+    }
+
+    /// `session.created`/`session.updated`: track the cwd transition off
+    /// `data.info.path.cwd`. Emit `agent-cwd` only when it differs from
+    /// `last_cwd`.
+    fn process_session_event(&mut self, dto: &OpencodeLineDto) {
+        let observed = dto
+            .data
+            .get("info")
+            .and_then(|info| info.get("path"))
+            .and_then(|path| path.get("cwd"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let Some(observed) = observed else {
+            return;
+        };
+        if self
+            .last_cwd
+            .as_deref()
+            .map_or(true, |seen| seen != observed)
+        {
+            let event = AgentCwdEvent {
+                session_id: self.session_id.clone(),
+                cwd: observed.to_string(),
+            };
+            if let Err(e) = emit_agent_cwd(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit opencode agent-cwd event: {}", e);
+            }
+            self.last_cwd = Some(observed.to_string());
+        }
+    }
+
+    fn emit_tool_call(&self, event: AgentToolCallEvent) {
+        if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+            log::warn!("Failed to emit opencode agent-tool-call event: {}", e);
+        }
+    }
+}
+
+impl TranscriptDecoder for OpencodeTranscriptDecoder {
+    fn decode_line(&mut self, line: &str) {
+        self.process_line(line);
+    }
+
+    /// First EOF marks the end of replay; subsequent EOFs are idempotent. The
+    /// replay-flush (and any in-flight reconciliation) is gated behind
+    /// `replay_done`, mirroring `codex/transcript.rs`.
+    fn on_caught_up(&mut self) {
+        if !self.replay_done {
+            self.replay_done = true;
+            // Surface any tool calls still running at the replay→live boundary
+            // so the activity feed shows them as in-progress (mirrors Codex's
+            // `emit_replay_in_flight_tool_calls`). Each is keyed `Running` in
+            // the dedup set already, so a later live terminal update still
+            // emits its done/failed exactly once.
+            for (call_id, call) in &self.in_flight {
+                self.emit_tool_call(AgentToolCallEvent {
+                    session_id: self.session_id.clone(),
+                    tool_use_id: call_id.clone(),
+                    tool: call.tool.clone(),
+                    args: call.args.clone(),
+                    status: ToolCallStatus::Running,
+                    timestamp: call.started_at_iso.clone(),
+                    duration_ms: 0,
+                    is_test_file: call.is_test_file,
+                });
+            }
+        }
+        self.emitter.finish_replay();
+    }
+}
+
+/// Stable `&'static str` discriminant for a [`ToolCallStatus`], used as the
+/// second half of the `(callID, status)` dedup key. Keeping this local avoids
+/// adding `Hash`/`Eq` to the shared `ToolCallStatus` enum.
+fn status_discriminant(status: &ToolCallStatus) -> &'static str {
+    match status {
+        ToolCallStatus::Running => "running",
+        ToolCallStatus::Done => "done",
+        ToolCallStatus::Failed => "failed",
+    }
+}
+
+/// Resolve the in-flight key for a `tool` part: prefer `callID`, fall back to
+/// the part `id`. Empty strings are treated as absent.
+fn part_call_key(part: &Value) -> Option<String> {
+    part.get("callID")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            part.get("id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .map(str::to_string)
+}
+
+/// Summarize a `tool.before` / `tool.after` `args` object into a bounded
+/// preview string. Prefers the per-tool low-risk field the bridge keeps
+/// (`command` for bash, `filePath` for read/edit/write, `pattern` for
+/// glob/grep), else the raw JSON.
+fn summarize_value_args(args: &Value, _tool: &str) -> String {
+    if let Some(command) = args.get("command").and_then(Value::as_str) {
+        return truncate_string(command, MAX_ARGS_LEN);
+    }
+    if let Some(file_path) = args.get("filePath").and_then(Value::as_str) {
+        return truncate_string(file_path, MAX_ARGS_LEN);
+    }
+    if let Some(pattern) = args.get("pattern").and_then(Value::as_str) {
+        return truncate_string(pattern, MAX_ARGS_LEN);
+    }
+    if args.is_null() {
+        return String::new();
+    }
+    truncate_string(&args.to_string(), MAX_ARGS_LEN)
+}
+
+/// Summarize a `message.part.updated` tool part's `state.args` (same shape as
+/// the `tool.*` args). Falls back to the empty string when absent.
+fn summarize_state_args(state: Option<&Value>, tool: &str) -> String {
+    match state.and_then(|s| s.get("args")) {
+        Some(args) => summarize_value_args(args, tool),
+        None => String::new(),
+    }
+}
+
+/// Truncate to `max_len` chars with a `...` suffix, char-boundary safe.
+fn truncate_string(input: &str, max_len: usize) -> String {
+    if input.chars().count() <= max_len {
+        return input.to_string();
+    }
+    let end = input
+        .char_indices()
+        .nth(max_len.saturating_sub(3))
+        .map_or(input.len(), |(idx, _)| idx);
+    format!("{}...", &input[..end])
+}
+
+/// Convert the bridge `ts` (epoch-ms) into an ISO-8601 UTC string for event
+/// payloads. `None` falls back to "now". Mirrors `codex/transcript.rs`'s
+/// `now_iso8601` for the formatting half.
+fn ts_to_iso8601(ts: Option<i64>) -> String {
+    match ts {
+        Some(ms) if ms >= 0 => {
+            let total_secs = (ms / 1000) as u64;
+            iso8601_from_unix_secs(total_secs)
+        }
+        _ => now_iso8601(),
+    }
+}
+
+fn now_iso8601() -> String {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    iso8601_from_unix_secs(since_epoch.as_secs())
+}
+
+fn iso8601_from_unix_secs(total_secs: u64) -> String {
+    let days = total_secs / 86_400;
+    let secs_of_day = total_secs % 86_400;
+    let (year, month, day) = days_to_date(days);
+    let hour = secs_of_day / 3_600;
+    let minute = (secs_of_day % 3_600) / 60;
+    let second = secs_of_day % 60;
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day, hour, minute, second
+    )
+}
+
+fn days_to_date(days_since_epoch: u64) -> (u64, u64, u64) {
+    let z = days_since_epoch as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    (year as u64, m as u64, d as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::FakeEventSink;
+    use std::time::{Duration, SystemTime};
+
+    const SAMPLE_BRIDGE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/agent/adapter/opencode/fixtures/sample_bridge.jsonl"
+    ));
+
+    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
+    fn decoder(sink: &Arc<FakeEventSink>, cwd: Option<PathBuf>) -> OpencodeTranscriptDecoder {
+        OpencodeTranscriptDecoder::new(sink.clone(), "sid".to_string(), cwd)
+    }
+
+    /// A user `message.updated` ⇒ exactly one `agent-turn`; a duplicate user
+    /// message id does NOT double-count.
+    #[test]
+    fn user_message_emits_one_turn_and_dedups_by_id() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        let line = r#"{"v":1,"ts":1,"kind":"event","type":"message.updated","data":{"info":{"id":"msg_u1","role":"user","sessionID":"ses1"}}}"#;
+        dec.decode_line(line);
+        dec.decode_line(line); // duplicate id — must not re-count
+
+        assert_eq!(sink.count("agent-turn"), 1);
+        let turns: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-turn")
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(turns[0]["numTurns"], 1);
+        assert_eq!(turns[0]["sessionId"], "sid");
+    }
+
+    /// An assistant `message.updated` (role != user) is NOT a turn.
+    #[test]
+    fn assistant_message_is_not_a_turn() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"event","type":"message.updated","data":{"info":{"id":"msg_a1","role":"assistant"}}}"#,
+        );
+        assert_eq!(sink.count("agent-turn"), 0);
+    }
+
+    /// `tool.before` then `tool.after` ⇒ one running start + one done, deduped
+    /// by callID. (Live phase — replay already finished.)
+    #[test]
+    fn tool_before_after_emits_start_then_done_once() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"read","sessionID":"ses1","callID":"call_r1","args":{"filePath":"src/lib.rs"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"read","sessionID":"ses1","callID":"call_r1","result":{"output":"contents","metadata":{"exit":0}}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 2, "one running + one done");
+        assert_eq!(payloads[0]["toolUseId"], "call_r1");
+        assert_eq!(payloads[0]["status"], "running");
+        assert_eq!(payloads[0]["tool"], "read");
+        assert_eq!(payloads[0]["args"], "src/lib.rs");
+        assert_eq!(payloads[1]["toolUseId"], "call_r1");
+        assert_eq!(payloads[1]["status"], "done");
+    }
+
+    /// A repeated `running` part update for the same call does NOT re-emit a
+    /// start — deduped by `(callID, Running)`.
+    #[test]
+    fn repeated_running_part_does_not_reemit_start() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        let running = r#"{"v":1,"ts":1,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_p1","tool":"bash","state":{"status":"running","args":{"command":"ls"}}}}}"#;
+        dec.decode_line(running);
+        dec.decode_line(running);
+        dec.decode_line(running);
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1, "only one running start despite 3 updates");
+        assert_eq!(payloads[0]["status"], "running");
+        assert_eq!(payloads[0]["toolUseId"], "call_p1");
+    }
+
+    /// A `tool.before`+`running` part for the SAME callID emit one start total.
+    #[test]
+    fn before_then_running_part_emit_single_start() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_x","args":{"command":"echo hi"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_x","tool":"bash","state":{"status":"running"}}}}"#,
+        );
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["status"], "running");
+    }
+
+    /// A tool part with `state.status == "error"` ⇒ failed.
+    #[test]
+    fn tool_state_error_emits_failed() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_e","args":{"command":"false"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_e","tool":"bash","state":{"status":"error"}}}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[1]["status"], "failed");
+        assert_eq!(payloads[1]["toolUseId"], "call_e");
+    }
+
+    /// A `tool.after` with a non-zero `metadata.exit` ⇒ failed.
+    #[test]
+    fn tool_after_nonzero_exit_emits_failed() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_f","args":{"command":"exit 1"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_f","result":{"output":"boom","metadata":{"exit":2}}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.last().unwrap()["status"], "failed");
+    }
+
+    /// A `bash` `tool.after` running a test command ⇒ a test-run snapshot.
+    #[test]
+    fn bash_test_command_emits_test_run_snapshot() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().to_path_buf();
+        let mut dec = decoder(&sink, Some(workspace));
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_t","args":{"command":"cargo test"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_t","result":{"output":"running 1 test\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":0}}}"#,
+        );
+
+        assert_eq!(sink.count("test-run"), 1, "passing cargo test ⇒ one snapshot");
+        let test_runs: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "test-run")
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(test_runs[0]["runner"], "cargo");
+        assert_eq!(test_runs[0]["summary"]["passed"], 1);
+    }
+
+    /// A non-test `bash` `tool.after` ⇒ no test-run snapshot.
+    #[test]
+    fn non_test_bash_emits_no_test_run() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut dec = decoder(&sink, Some(tmp.path().to_path_buf()));
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_g","args":{"command":"git status"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_g","result":{"output":"clean","metadata":{"exit":0}}}"#,
+        );
+
+        assert_eq!(sink.count("test-run"), 0);
+    }
+
+    /// `on_caught_up` called twice ⇒ no duplicate replay flush (the buffered
+    /// test-run is emitted exactly once).
+    #[test]
+    fn on_caught_up_twice_does_not_duplicate_replay_flush() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut dec = decoder(&sink, Some(tmp.path().to_path_buf()));
+
+        // Replay phase (before any on_caught_up): a test-run is buffered.
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_r","args":{"command":"cargo test"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_r","result":{"output":"test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":0}}}"#,
+        );
+        assert_eq!(sink.count("test-run"), 0, "buffered during replay");
+
+        dec.on_caught_up();
+        dec.on_caught_up();
+        dec.on_caught_up();
+
+        assert_eq!(sink.count("test-run"), 1, "flushed exactly once");
+    }
+
+    /// A tool call still in-flight at the replay boundary surfaces as running
+    /// exactly once when `on_caught_up` fires.
+    #[test]
+    fn in_flight_tool_call_surfaces_running_at_caught_up() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+
+        // Started during replay, never completed.
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_live","args":{"command":"sleep 100"}}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 0, "no emit during replay");
+
+        dec.on_caught_up();
+        dec.on_caught_up(); // idempotent — must not re-emit
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["status"], "running");
+        assert_eq!(payloads[0]["toolUseId"], "call_live");
+    }
+
+    /// `session.updated` with a changed `info.path.cwd` ⇒ one `agent-cwd`;
+    /// the same cwd does not re-emit.
+    #[test]
+    fn session_cwd_change_emits_agent_cwd_on_transition() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.updated","data":{"info":{"id":"ses1","path":{"cwd":"/work/a"}}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.updated","data":{"info":{"id":"ses1","path":{"cwd":"/work/a"}}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.updated","data":{"info":{"id":"ses1","path":{"cwd":"/work/b"}}}}"#,
+        );
+
+        let cwds: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-cwd")
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(cwds.len(), 2, "two distinct cwds; the repeat is suppressed");
+        assert_eq!(cwds[0]["cwd"], "/work/a");
+        assert_eq!(cwds[1]["cwd"], "/work/b");
+    }
+
+    /// End-to-end: feeding the authored `sample_bridge.jsonl` through
+    /// `start_tailing` emits the expected sequence — one `agent-turn` (the user
+    /// `message.updated`) and one settled bash tool-call (`done`). The whole
+    /// fixture is replayed before the first EOF, so the bash call (which both
+    /// starts AND completes during replay) settles to a single `done` event —
+    /// its `running` start is suppressed during replay, mirroring Codex's
+    /// `codex_replay_does_not_emit_running_for_settled_tool_calls`.
+    ///
+    /// No `test-run` is asserted: the fixture's bash `result.output` uses a
+    /// Jest-style summary (`Tests: 12 passed, 12 total`), which the v1 vitest
+    /// parser intentionally does not recognize (its summary line is
+    /// `Tests  12 passed (12)`), so `maybe_build_snapshot` returns `None` and
+    /// nothing is submitted. That is the genuine behavior for this fixture; the
+    /// bash → shared test-run-parser wiring is proven against a real
+    /// cargo-format output in `bash_test_command_emits_test_run_snapshot`. Uses
+    /// the capturing `FakeEventSink` + `wait_for_count` for event-based sync
+    /// (mirrors Codex's transcript tests).
+    #[test]
+    fn start_tailing_replays_sample_bridge_fixture() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().join("sample-project");
+        std::fs::create_dir_all(&workspace).expect("mkdir workspace");
+
+        let bridge_root = tmp.path().to_path_buf();
+        let transcript_path = bridge_root.join("ses_sample001.jsonl");
+        std::fs::write(&transcript_path, SAMPLE_BRIDGE).expect("write fixture transcript");
+
+        let locator = Arc::new(OpenCodeLocator::new(
+            bridge_root,
+            4242,
+            SystemTime::UNIX_EPOCH,
+        ));
+
+        let handle = start_tailing(
+            sink.clone(),
+            "sid-sample".to_string(),
+            Some(workspace.clone()),
+            transcript_path,
+            locator,
+        )
+        .expect("tailing should start");
+
+        assert!(
+            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
+            "expected 1 agent-turn from the user message.updated line",
+        );
+        assert!(
+            sink.wait_for_count("agent-tool-call", 1, Duration::from_secs(5)),
+            "expected the settled bash tool's single done event",
+        );
+        handle.stop();
+
+        let turns: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-turn")
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0]["numTurns"], 1);
+
+        let tool_calls = tool_call_payloads(&sink);
+        // The fixture has exactly one bash tool (call_bash001): tool.before →
+        // tool.after, both during replay ⇒ a single settled `done` (the
+        // `running` start is suppressed during replay).
+        let bash_calls: Vec<&Value> = tool_calls
+            .iter()
+            .filter(|p| p["toolUseId"] == "call_bash001")
+            .collect();
+        assert_eq!(bash_calls.len(), 1, "settled bash tool ⇒ one done");
+        assert_eq!(bash_calls[0]["status"], "done");
+        assert_eq!(bash_calls[0]["tool"], "bash");
+        assert_eq!(bash_calls[0]["args"], "npm test");
+
+        // The Jest-style fixture output is unparseable to the vitest runner, so
+        // no test-run snapshot is produced (see the test docstring).
+        assert_eq!(sink.count("test-run"), 0);
+    }
+
+    #[test]
+    fn ts_to_iso8601_formats_epoch_ms() {
+        // 1781965827596 ms ≈ 2026-06-18 (well-defined UTC date/time).
+        let iso = ts_to_iso8601(Some(1_781_965_827_596));
+        assert!(iso.starts_with("2026-"), "got: {iso}");
+        assert!(iso.ends_with('Z'));
+        // None falls back to a now-stamp, still ISO-shaped.
+        assert!(ts_to_iso8601(None).ends_with('Z'));
+    }
+
+    #[test]
+    fn truncate_string_caps_and_marks() {
+        assert_eq!(truncate_string("short", 1024), "short");
+        let long = "x".repeat(2000);
+        let out = truncate_string(&long, 1024);
+        assert!(out.ends_with("..."));
+        assert_eq!(out.chars().count(), 1024);
+    }
+
+    #[test]
+    fn malformed_line_is_skipped() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+        dec.decode_line("this is not json");
+        dec.decode_line(r#"{"v":1,"kind":"totally.unknown"}"#);
+        assert_eq!(sink.count("agent-turn"), 0);
+        assert_eq!(sink.count("agent-tool-call"), 0);
+    }
+}

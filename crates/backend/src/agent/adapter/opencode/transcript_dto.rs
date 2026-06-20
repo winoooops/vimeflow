@@ -71,6 +71,13 @@ impl OpencodeEventType {
 
 /// One bridge JSONL line, flattened over all three kinds. Every field is
 /// optional/lenient so any line shape deserializes without error.
+///
+/// `#[allow(dead_code)]`: this is a wire-schema mirror — `v` (schema version)
+/// and the line-level `session_id` are parsed + test-asserted to document the
+/// contract, but the v1 decoder routes off `kind`/`event_type`/`data`/`tool`/
+/// `call_id`/`args`/`result` and never reads them. Keeping the fields makes the
+/// DTO a faithful 1:1 of the bridge line.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct OpencodeLineDto {
     /// Schema version (`1`).
@@ -124,6 +131,11 @@ impl OpencodeLineDto {
 }
 
 /// One `index.jsonl` row: identifies a session and its owning opencode process.
+///
+/// `#[allow(dead_code)]`: `slug` (the opencode session display slug) is parsed +
+/// test-asserted to mirror the index schema, but the v1 locator resolves off
+/// `session_id`/`pid`/`directory`/`time` only and never reads it.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct OpencodeIndexRowDto {
     #[serde(rename = "sessionID", default, deserialize_with = "lenient_string")]
