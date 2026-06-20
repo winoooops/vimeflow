@@ -1,5 +1,13 @@
 // cspell:ignore worktree testids worktrees
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { writeClipboardText } from '@/lib/clipboard'
 import { GitRefChip, GitRefCopyRows, composeCopyRows } from './GitRefChip'
@@ -234,6 +242,26 @@ test('icons carry material-symbols-outlined class + aria-hidden', () => {
   expect(brIcon.getAttribute('aria-hidden')).toBe('true')
 })
 
+test('GitRefChip opens the copy popover from keyboard focus', async () => {
+  const user = userEvent.setup()
+  render(
+    <GitRefChip
+      worktreeName="feat-jose"
+      branch="feat/jose-auth"
+      cwd="/Users/will/projects/vimeflow/.claude/worktrees/feat-jose"
+    />
+  )
+
+  await user.tab()
+
+  expect(screen.getByTestId('git-ref-chip')).toHaveFocus()
+  expect(screen.getByTestId('git-ref-chip')).toHaveAttribute('tabindex', '0')
+  expect(
+    screen.getByRole('dialog', { name: 'Git ref details' })
+  ).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Copy path' })).toBeInTheDocument()
+})
+
 test('GitRefCopyRows renders one copy button per row carrying its value', () => {
   render(
     <GitRefCopyRows
@@ -293,7 +321,7 @@ test('GitRefCopyRows labels the branch row "Copy detached head" when detached', 
   ).toHaveTextContent('a7f23c0')
 })
 
-test('clicking a row copies its value and flips that row glyph to a check', () => {
+test('clicking a row copies its value and flips that row glyph to a check', async () => {
   vi.mocked(writeClipboardText).mockClear()
   render(
     <GitRefCopyRows
@@ -307,10 +335,12 @@ test('clicking a row copies its value and flips that row glyph to a check', () =
 
   fireEvent.click(pathButton)
 
-  expect(writeClipboardText).toHaveBeenCalledWith(
-    '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose'
+  await waitFor(() =>
+    expect(writeClipboardText).toHaveBeenCalledWith(
+      '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose'
+    )
   )
-  expect(within(pathButton).getByText('check')).toBeInTheDocument()
+  expect(await within(pathButton).findByText('check')).toBeInTheDocument()
   // Other rows are unaffected — only the clicked row shows the check.
   expect(
     within(screen.getByRole('button', { name: 'Copy branch' })).getByText(
@@ -319,9 +349,22 @@ test('clicking a row copies its value and flips that row glyph to a check', () =
   ).toBeInTheDocument()
 })
 
-test('the copied check reverts to content_copy after the feedback window', () => {
+test('copy failure keeps the row glyph on content_copy', async () => {
+  vi.mocked(writeClipboardText).mockResolvedValueOnce(false)
+  render(<GitRefCopyRows worktreeName={null} branch="main" cwd={null} />)
+  const branchButton = screen.getByRole('button', { name: 'Copy branch' })
+
+  fireEvent.click(branchButton)
+
+  await waitFor(() => expect(writeClipboardText).toHaveBeenCalledWith('main'))
+  expect(within(branchButton).queryByText('check')).toBeNull()
+  expect(within(branchButton).getByText('content_copy')).toBeInTheDocument()
+})
+
+test('the copied check reverts to content_copy after the feedback window', async () => {
   vi.useFakeTimers()
   try {
+    vi.mocked(writeClipboardText).mockClear()
     render(
       <GitRefCopyRows
         worktreeName={null}
@@ -332,6 +375,10 @@ test('the copied check reverts to content_copy after the feedback window', () =>
     const pathButton = screen.getByRole('button', { name: 'Copy path' })
 
     fireEvent.click(pathButton)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(writeClipboardText).toHaveBeenCalled()
     expect(within(pathButton).getByText('check')).toBeInTheDocument()
 
     act(() => {

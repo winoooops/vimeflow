@@ -87,7 +87,7 @@ const COPY_FEEDBACK_MS = 1300
 interface GitRefCopyRowProps {
   row: GitRefCopyRowData
   copied: boolean
-  onCopy: (key: GitRefCopyRowKey, value: string) => void
+  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<void>
 }
 
 // One click-to-copy row: leading icon · stacked micro label + mono value
@@ -105,7 +105,7 @@ const GitRefCopyRow = ({
       // The popover renders in a portal, so React still bubbles this click to
       // the pane's focus handler — stop it so copying never refocuses the pane.
       event.stopPropagation()
-      onCopy(row.key, row.value)
+      void onCopy(row.key, row.value)
     }}
     className="group flex w-full items-center gap-2 rounded-chip px-[7px] py-1.5 text-left hover:bg-primary-container/[0.12]"
   >
@@ -169,10 +169,15 @@ export const GitRefCopyRows = ({
     return clearPending
   }, [])
 
-  const handleCopy = (key: GitRefCopyRowKey, value: string): void => {
-    // Fire-and-forget — writeClipboardText swallows its own failures and falls
-    // back to execCommand, so the check is shown optimistically on click.
-    void writeClipboardText(value)
+  const handleCopy = async (
+    key: GitRefCopyRowKey,
+    value: string
+  ): Promise<void> => {
+    const copied = await writeClipboardText(value)
+    if (!copied) {
+      return
+    }
+
     setCopiedKey(key)
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current)
@@ -261,6 +266,8 @@ export const GitRefChip = ({
     >
       <Chip
         data-testid="git-ref-chip"
+        aria-label="Git ref details"
+        tabIndex={0}
         tone="custom"
         size="custom"
         radius="chip"
