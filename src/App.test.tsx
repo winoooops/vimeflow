@@ -67,6 +67,41 @@ class TestWorker {
   }
 }
 
+const withNavigatorPlatform = (
+  platform: string,
+  callback: () => void
+): void => {
+  const originalNavigator = globalThis.navigator
+
+  const mockedNavigator = Object.create(originalNavigator) as Navigator & {
+    userAgentData?: { platform?: string }
+  }
+
+  Object.defineProperty(mockedNavigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  Object.defineProperty(mockedNavigator, 'userAgentData', {
+    configurable: true,
+    value: { platform },
+  })
+
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: mockedNavigator,
+  })
+
+  try {
+    callback()
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator,
+    })
+  }
+}
+
 describe('App', () => {
   beforeAll(() => {
     vi.stubGlobal('Worker', TestWorker)
@@ -88,6 +123,43 @@ describe('App', () => {
   test('renders WorkspaceView as primary component', () => {
     render(<App />)
     expect(screen.getByTestId('workspace-view')).toBeInTheDocument()
+  })
+
+  test('renders settings content for the native settings window route', () => {
+    window.history.replaceState(null, '', '/?window=settings')
+
+    render(<App />)
+
+    expect(screen.getByRole('main', { name: 'Settings' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Appearance' })
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-view')).not.toBeInTheDocument()
+  })
+
+  test('reserves native macOS traffic light space in the settings window route', () => {
+    withNavigatorPlatform('MacIntel', () => {
+      window.history.replaceState(null, '', '/?window=settings')
+
+      render(<App />)
+
+      expect(screen.getByTestId('settings-window-drag-region')).toHaveClass(
+        'vf-app-drag-region'
+      )
+
+      expect(
+        screen.getByTestId('settings-window-sidebar-drag-region')
+      ).toHaveClass(
+        'w-[220px]',
+        'border-r',
+        'border-outline-variant/25',
+        'bg-surface-container'
+      )
+
+      expect(
+        screen.getByTestId('settings-window-content-drag-region')
+      ).toHaveClass('flex-1', 'bg-surface')
+    })
   })
 
   test('is an arrow-function component', () => {

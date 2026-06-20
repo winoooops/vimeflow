@@ -4,6 +4,8 @@ import { WorkspaceView } from './features/workspace/WorkspaceView'
 import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
 import { ReorderMotionDemo } from './features/sessions/demo/ReorderMotionDemo'
 import { SettingsProvider } from './features/settings/SettingsProvider'
+import { SettingsContent } from './features/settings/SettingsContent'
+import { isMacPlatform } from './lib/formatShortcut'
 
 // Pierre's worker entry is exposed as a dedicated package export so Vite
 // bundles it via `new Worker(url, ...)` with the worker config in
@@ -43,13 +45,56 @@ const renderDemo = (demoName: string | null): ReactElement => {
   return <WorkspaceView />
 }
 
-const App = (): ReactElement => (
-  <WorkerPoolContextProvider
-    poolOptions={poolOptions}
-    highlighterOptions={highlighterOptions}
-  >
-    <SettingsProvider>{renderDemo(devDemoName())}</SettingsProvider>
-  </WorkerPoolContextProvider>
-)
+const isSettingsWindow = (): boolean =>
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('window') === 'settings'
+
+const SettingsWindowShell = (): ReactElement => {
+  const reserveWindowControls = isMacPlatform()
+
+  return (
+    <SettingsProvider>
+      <main
+        aria-label="Settings"
+        className="flex h-screen min-h-0 flex-col bg-surface text-on-surface"
+      >
+        {reserveWindowControls && (
+          <div
+            aria-hidden="true"
+            className="vf-app-drag-region flex h-[44px] shrink-0"
+            data-testid="settings-window-drag-region"
+          >
+            <div
+              className="w-[220px] shrink-0 border-r border-outline-variant/25 bg-surface-container"
+              data-testid="settings-window-sidebar-drag-region"
+            />
+            <div
+              className="min-w-0 flex-1 bg-surface"
+              data-testid="settings-window-content-drag-region"
+            />
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1">
+          <SettingsContent />
+        </div>
+      </main>
+    </SettingsProvider>
+  )
+}
+
+const App = (): ReactElement => {
+  if (isSettingsWindow()) {
+    return <SettingsWindowShell />
+  }
+
+  return (
+    <WorkerPoolContextProvider
+      poolOptions={poolOptions}
+      highlighterOptions={highlighterOptions}
+    >
+      <SettingsProvider>{renderDemo(devDemoName())}</SettingsProvider>
+    </WorkerPoolContextProvider>
+  )
+}
 
 export default App

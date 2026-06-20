@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import type { AppSettings } from '../../bindings/AppSettings'
@@ -100,7 +100,7 @@ describe('SettingsProvider', () => {
     )
   })
 
-  test('syncs an in-memory snapshot to the main process on load and update', async () => {
+  test('syncs an in-memory snapshot to the main process only on update', async () => {
     const loaded = createLoadedSettings()
     const load = vi.fn().mockResolvedValue(loaded)
     const save = vi.fn().mockResolvedValue(undefined)
@@ -120,7 +120,7 @@ describe('SettingsProvider', () => {
       expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('close')
     })
 
-    expect(syncSnapshot).toHaveBeenCalledWith(loaded)
+    expect(syncSnapshot).not.toHaveBeenCalled()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Update' }))
@@ -130,10 +130,57 @@ describe('SettingsProvider', () => {
     })
 
     await waitFor(() => {
-      expect(syncSnapshot).toHaveBeenLastCalledWith(
+      expect(syncSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({ closeWithNoTabs: 'nothing' })
       )
     })
+  })
+
+  test('applies settings broadcasts from another renderer', async () => {
+    const loaded = createLoadedSettings()
+    const next = { ...loaded, keymapPreset: 'vim' as const }
+    const load = vi.fn().mockResolvedValue(loaded)
+    const save = vi.fn().mockResolvedValue(undefined)
+    let changeCallback: ((settings: AppSettings) => void) | undefined
+
+    window.vimeflow = {
+      settings: {
+        load,
+        save,
+        openFile: vi.fn(),
+        onDidChange: vi.fn((callback: (settings: AppSettings) => void) => {
+          changeCallback = callback
+
+          return vi.fn()
+        }),
+      },
+    } as unknown as Window['vimeflow']
+
+    const KeymapConsumer = (): ReactElement => {
+      const { settings } = useSettings()
+
+      return <span data-testid="keymapPreset">{settings.keymapPreset}</span>
+    }
+
+    render(
+      <SettingsProvider>
+        <KeymapConsumer />
+      </SettingsProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('keymapPreset').textContent).toBe('vscode')
+    })
+
+    act(() => {
+      changeCallback?.(next)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('keymapPreset').textContent).toBe('vim')
+    })
+
+    expect(save).not.toHaveBeenCalled()
   })
 
   test('falls back to DEFAULT_SETTINGS when the bridge is absent', () => {

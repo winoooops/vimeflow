@@ -5,7 +5,9 @@ import {
   COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   KEYMAP_CAPTURE_ACTIVE,
+  SETTINGS_CHANGED,
   SETTINGS_OPEN_FILE,
+  SETTINGS_OPEN_WINDOW,
   SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
 import type { AgentAlias } from '../src/bindings/AgentAlias'
@@ -243,8 +245,23 @@ contextBridge.exposeInMainWorld('vimeflow', {
     save: (settings: AppSettings): Promise<void> =>
       invoke('save_app_settings', { settings }),
     openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
+    openWindow: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_WINDOW),
     syncSnapshot: (settings: AppSettings): Promise<void> =>
       ipcRenderer.invoke(SETTINGS_SYNC_SNAPSHOT, settings),
+    onDidChange: (callback: (settings: AppSettings) => void): (() => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        settings: AppSettings
+      ): void => {
+        callback(settings)
+      }
+
+      ipcRenderer.on(SETTINGS_CHANGED, handler)
+
+      return (): void => {
+        ipcRenderer.off(SETTINGS_CHANGED, handler)
+      }
+    },
   },
   aliases: {
     load: (): Promise<AgentAlias[]> => invoke('load_agent_aliases'),

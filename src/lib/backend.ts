@@ -25,7 +25,9 @@ export interface SettingsBridge {
   load: () => Promise<AppSettings>
   save: (settings: AppSettings) => Promise<void>
   openFile: () => Promise<void>
+  openWindow?: () => Promise<void>
   syncSnapshot: (settings: AppSettings) => Promise<void>
+  onDidChange?: (callback: (settings: AppSettings) => void) => UnlistenFn
 }
 
 export interface AliasesBridge {

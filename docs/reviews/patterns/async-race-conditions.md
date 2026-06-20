@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-14
+last_updated: 2026-06-20
 ref_count: 22
 ---
 
@@ -677,3 +677,30 @@ prevent showing previous data.
 - **Finding:** The component initialized `aliases` with `DEFAULT_ALIASES`, but the backend returns `[]` when `aliases.toml` is missing. First-launch users saw defaults briefly before the list collapsed to empty; returning users also saw defaults before their real aliases arrived.
 - **Fix:** Initialize `aliases` to `[]` with an explicit `isInitializing` loading state. Defaults are now used only as an intentional fallback when the aliases bridge is absent or when the backend load fails. Added tests verifying no default flash during a slow load and that controls remain disabled until hydration completes.
 - **Commit:** same commit as this entry
+
+### 67. Hydrated settings snapshot rebroadcasts stale disk state as a renderer edit
+
+- **Source:** github-codex-connector | PR #577 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** A newly mounted settings renderer loaded settings from disk and immediately synced that hydration snapshot back to the main process. The main process broadcast that snapshot as `settings:changed`, so a stale disk value could overwrite a newer in-memory edit in another renderer while the async save queue was still pending.
+- **Fix:** Stopped syncing load hydration snapshots to the main process. Explicit user updates still sync the in-memory snapshot immediately before the queued save, preserving the last-window-close race guard without treating disk hydration as an authoritative cross-renderer edit.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 69. Settings snapshot echo can overwrite the sender's newer local merge base
+
+- **Source:** github-claude | PR #577 round 2 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `electron/main.ts`
+- **Finding:** The settings sync handler broadcast every valid settings snapshot to all windows, including the renderer that just submitted it. A stale IPC echo could write an older snapshot back into the sender's `settingsRef.current`, making the next rapid settings update merge on the wrong base and drop an intermediate change.
+- **Fix:** Pass the originating `WebContents` from the IPC event into the settings broadcast helper and skip that sender when publishing `settings:changed`. Other windows still receive the live update, but the local renderer keeps its current in-memory edit sequence.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 70. Pre-ready singleton window reopen bypasses hidden-until-ready loading guard
+
+- **Source:** github-claude | PR #577 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/settings-window.ts`
+- **Finding:** The settings window singleton was assigned before `ready-to-show`, but repeated `open()` calls unconditionally called `show()` and `focus()` on the existing window. A rapid second open could therefore reveal the still-loading BrowserWindow despite the initial `show: false` guard.
+- **Fix:** Track whether the singleton has reached `ready-to-show`; repeated opens only restore/show/focus once that flag is true, while the original `ready-to-show` handler remains responsible for the first reveal. Regression coverage now asserts a second pre-ready `open()` does not call `show()`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
