@@ -56,17 +56,18 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 74       | 34   | 2026-06-18   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 79       | 34   | 2026-06-20   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 25   | 2026-06-16   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 72       | 30   | 2026-06-20   |
-| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
+| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 2        | 0    | 2026-06-20   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 64       | 23   | 2026-06-17   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 1    | 2026-06-17   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 1        | 0    | 2026-06-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
