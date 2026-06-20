@@ -163,3 +163,5 @@ On opencode attach, the backend idempotently writes the pinned plugin to `~/.con
 - **Bridge dir agreement**: plugin (TS) and locator (Rust) must derive the identical path; the single `$VIMEFLOW_OPENCODE_BRIDGE_DIR ?? ${XDG_DATA_HOME:-~/.local/share}/vimeflow/opencode-bridge` rule is pinned on both sides and covered by a test asserting the literal default.
 - **pid disambiguation residual**: pid reuse across opencode restarts is mitigated because each session's file is keyed by the live `sessionID` and the cwd+time fallback gates on `pty_start`; a stale index row with a reused pid is rejected by the freshness check.
 - **glyph/accent collisions**: pick an opencode glyph + palette distinct from existing agents (theme tests enforce exact `AGENT_IDS`).
+
+<!-- codex-reviewed: 2026-06-20T15:55:36Z -->
