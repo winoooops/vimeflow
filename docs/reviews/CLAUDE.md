@@ -54,11 +54,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 65       | 32   | 2026-06-18   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 33   | 2026-06-20   |
 | [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 24       | 7    | 2026-06-19   |
 | [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 3        | 0    | 2026-06-19   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
-| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 19       | 3    | 2026-06-20   |
+| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 20       | 4    | 2026-06-20   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 24   | 2026-06-18   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
@@ -76,7 +76,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 40       | 13   | 2026-06-13   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 20       | 8    | 2026-06-19   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 22       | 9    | 2026-06-20   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 15       | 3    | 2026-06-12   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
@@ -91,4 +91,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 3        | 1    | 2026-06-20   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 4        | 2    | 2026-06-20   |

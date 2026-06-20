@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 32
+last_updated: 2026-06-20
+ref_count: 33
 ---
 
 # Testing Gaps
@@ -647,4 +647,13 @@ filesystem scope restrictions).
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.test.ts` L171-177
 - **Finding:** The `continues stripping controls after renderer handle disposal` test hardcoded `byteLen: 15` for a payload that encodes to 16 UTF-8 bytes (`before ESC[0mafter`). The test passed only because `byteLen` was treated as opaque metadata, so it would silently assert the wrong length if the router ever validated it.
 - **Fix:** Replaced the hardcoded value with `new TextEncoder().encode(...).length` so the fixture is consistent with the surrounding tests and proof against future payload edits.
+- **Commit:** same commit as this entry
+
+### 65. Resolver fallback tests depended on an optional native dependency
+
+- **Source:** github-claude | PR #578 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.test.ts`
+- **Finding:** Native package resolver tests asserted fallback to `process.cwd()/node_modules/@coder/libghostty-vt-node`, which only works when the optional native package is installed in the checkout. Clean or unsupported-platform installs could fail with a misleading path mismatch.
+- **Fix:** Made the resolver tests create their own temporary valid fallback package, including a manifest and `.node` file under `prebuilds`, so they no longer depend on local optional dependency installation.
 - **Commit:** same commit as this entry

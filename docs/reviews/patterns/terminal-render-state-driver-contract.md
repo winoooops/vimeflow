@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-20
-ref_count: 3
+ref_count: 4
 ---
 
 # Terminal Render-State Driver Contract
@@ -190,4 +190,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts` L708-721
 - **Finding:** After reset was changed to allocate a replacement before disposing the old terminal, a failed old-terminal `dispose()` path was easy to misread as leaking the new terminal because the failure was caught only by the outer native-binding wrapper.
 - **Fix:** Catch old-terminal disposal failures inside `reset()` and return the IPC failure directly after the replacement has been published. Regression coverage now asserts the replacement remains active and is not disposed on that path.
+- **Commit:** same commit as this entry
+
+### 20. Native package resolution must require an actual native payload
+
+- **Source:** github-codex-connector | PR #578 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** `resolveGhosttyNativePackageRoot()` accepted an app-root package when it had `package.json` plus a `prebuilds/` directory, even if that directory contained no loadable `.node` file. A stale copied package could therefore win over a valid fallback install and fail later inside `node-gyp-build`.
+- **Fix:** Changed native package detection to recursively require a `.node` file under `prebuilds` or the build output directories before selecting a package root.
 - **Commit:** same commit as this entry

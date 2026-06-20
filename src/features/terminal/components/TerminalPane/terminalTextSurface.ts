@@ -176,10 +176,10 @@ export class TerminalTextSurface implements TerminalSurface {
       display: 'block',
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: `${TERMINAL_FONT_SIZE}px`,
-      lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      lineHeight: 'var(--terminal-line-height)',
       margin: '0',
       maxWidth: '100%',
-      minHeight: '100%',
+      minHeight: 'max(100%, var(--terminal-pty-viewport-height))',
       overflowX: 'hidden',
       padding: '8px',
       whiteSpace: 'normal',
@@ -198,6 +198,7 @@ export class TerminalTextSurface implements TerminalSurface {
     })
 
     this.input.setAttribute('aria-label', 'Terminal input')
+    this.syncPtyViewportGeometry()
     this.root.addEventListener('mousedown', this.handlePointerDown)
     document.addEventListener('selectionchange', this.handleSelectionChange)
     this.input.addEventListener('keydown', this.handleKeyDown)
@@ -423,24 +424,25 @@ export class TerminalTextSurface implements TerminalSurface {
 
     const contentWidth = Math.max(0, width - this.readOutputHorizontalPadding())
     const contentHeight = Math.max(0, height - this.readOutputVerticalPadding())
+    const lineHeight = this.readLineHeight()
 
     const nextCols = Math.max(
       MIN_COLS,
       Math.floor(contentWidth / this.measureCharacterWidth())
     )
 
-    const nextRows = Math.max(
-      MIN_ROWS,
-      Math.floor(contentHeight / APPROXIMATE_LINE_HEIGHT)
-    )
+    const nextRows = Math.max(MIN_ROWS, Math.floor(contentHeight / lineHeight))
 
     if (nextCols === this.colsValue && nextRows === this.rowsValue) {
+      this.syncPtyViewportGeometry()
+
       return
     }
 
     this.colsValue = nextCols
     this.rowsValue = nextRows
     this.outputBuffer.setColumns(nextCols)
+    this.syncPtyViewportGeometry()
     this.notifyResize()
   }
 
@@ -516,6 +518,31 @@ export class TerminalTextSurface implements TerminalSurface {
     )
   }
 
+  private readLineHeight(): number {
+    const parsed = parseCssPixels(
+      window.getComputedStyle(this.output).lineHeight
+    )
+
+    return parsed > 0 ? parsed : APPROXIMATE_LINE_HEIGHT
+  }
+
+  private syncPtyViewportGeometry(): void {
+    const viewportHeight =
+      this.rowsValue * this.readLineHeight() + this.readOutputVerticalPadding()
+
+    this.root.dataset.terminalCols = String(this.colsValue)
+    this.root.dataset.terminalRows = String(this.rowsValue)
+    this.root.style.setProperty(
+      '--terminal-line-height',
+      `${APPROXIMATE_LINE_HEIGHT}px`
+    )
+
+    this.root.style.setProperty(
+      '--terminal-pty-viewport-height',
+      `${viewportHeight}px`
+    )
+  }
+
   private measureCharacterWidth(): number {
     if (this.cachedCharacterWidth !== null) {
       return this.cachedCharacterWidth
@@ -527,7 +554,7 @@ export class TerminalTextSurface implements TerminalSurface {
     Object.assign(probe.style, {
       fontFamily: TERMINAL_FONT_FAMILY,
       fontSize: `${TERMINAL_FONT_SIZE}px`,
-      lineHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      lineHeight: 'var(--terminal-line-height)',
       pointerEvents: 'none',
       position: 'absolute',
       visibility: 'hidden',
@@ -656,7 +683,7 @@ export class TerminalTextSurface implements TerminalSurface {
     Object.assign(row.style, {
       display: 'block',
       maxWidth: '100%',
-      minHeight: `${APPROXIMATE_LINE_HEIGHT}px`,
+      minHeight: 'var(--terminal-line-height)',
       overflowX: 'hidden',
       whiteSpace: 'pre',
       width: '100%',
@@ -789,7 +816,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.root.scrollTop = 0
 
     if (scrollMode === 'cursor') {
-      this.scrollCursorRowIntoView(cursorRowIndex)
+      this.scrollCursorMarkerIntoView(cursorRowIndex)
     }
   }
 
@@ -804,9 +831,9 @@ export class TerminalTextSurface implements TerminalSurface {
     const paddingTop = parseCssPixels(outputStyle.paddingTop)
     const paddingBottom = parseCssPixels(outputStyle.paddingBottom)
 
-    const cursorTop = paddingTop + cursorRowIndex * APPROXIMATE_LINE_HEIGHT
+    const cursorTop = paddingTop + cursorRowIndex * this.readLineHeight()
 
-    const cursorBottom = cursorTop + APPROXIMATE_LINE_HEIGHT
+    const cursorBottom = cursorTop + this.readLineHeight()
     const viewportBottom = Math.max(0, viewportHeight - paddingBottom)
 
     if (cursorBottom <= viewportBottom) {
@@ -817,6 +844,56 @@ export class TerminalTextSurface implements TerminalSurface {
     const nextScrollTop = cursorBottom - viewportHeight
 
     this.root.scrollTop = Math.min(Math.max(0, nextScrollTop), maxScrollTop)
+  }
+
+  private scrollCursorMarkerIntoView(cursorRowIndex: number): void {
+    const cursorMarker = this.root.querySelector<HTMLElement>(
+      '[data-terminal-cursor-marker="true"]'
+    )
+
+    if (!cursorMarker) {
+      this.scrollCursorRowIntoView(cursorRowIndex)
+
+      return
+    }
+
+    const rootRect = this.root.getBoundingClientRect()
+    const cursorRect = cursorMarker.getBoundingClientRect()
+
+    if (rootRect.height <= 0 || cursorRect.height <= 0) {
+      this.scrollCursorRowIntoView(cursorRowIndex)
+
+      return
+    }
+
+    const outputStyle = window.getComputedStyle(this.output)
+    const paddingTop = parseCssPixels(outputStyle.paddingTop)
+    const paddingBottom = parseCssPixels(outputStyle.paddingBottom)
+    const topOverflow = cursorRect.top - rootRect.top
+    const bottomOverflow = cursorRect.bottom - rootRect.bottom
+
+    if (topOverflow < 0) {
+      this.root.scrollTop = Math.max(
+        0,
+        this.root.scrollTop + Math.floor(topOverflow - paddingTop)
+      )
+
+      return
+    }
+
+    if (bottomOverflow <= 0) {
+      return
+    }
+
+    const maxScrollTop = Math.max(
+      0,
+      this.root.scrollHeight - this.root.clientHeight
+    )
+
+    this.root.scrollTop = Math.min(
+      maxScrollTop,
+      this.root.scrollTop + Math.ceil(bottomOverflow + paddingBottom)
+    )
   }
 
   private notifyResize(): void {

@@ -15,6 +15,10 @@ declare global {
       getRecordedPtyDataEvents(): readonly VimeflowE2ePtyDataEvent[]
       getTerminalBuffer(): string
       getTerminalBufferForSession(sessionId: string): string
+      getTerminalRendererConfig(): {
+        readonly terminalRenderer: string | null
+        readonly ghosttyRenderStateDriverProvider: string | null
+      }
       getVisibleTerminalSize(): { readonly cols: number; readonly rows: number } | null
       getVisibleSessionId(): string | null
       getActiveSessionIds(): string[]

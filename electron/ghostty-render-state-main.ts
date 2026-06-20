@@ -1,7 +1,9 @@
 // cspell:ignore ghostty libghostty prebuilds
+import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { TextDecoder } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
@@ -24,6 +26,7 @@ const OSC_ST_TERMINATOR = '\u001b\\'
 const OSC_BUFFER_LIMIT = 8192
 
 const nodeRequire = createRequire(import.meta.url)
+const electronModuleDir = path.dirname(fileURLToPath(import.meta.url))
 
 export interface GhosttyRenderStateBridgeSize {
   cols: number
@@ -174,12 +177,76 @@ const fail = (error: string): IpcResult<never> => ({ ok: false, error })
 const packageNameToPathSegments = (packageName: string): string[] =>
   packageName.split('/').filter((segment) => segment.length > 0)
 
-export const resolveGhosttyNativePackageRoot = (appRoot: string): string =>
-  path.join(
-    appRoot,
-    'node_modules',
-    ...packageNameToPathSegments(GHOSTTY_NATIVE_PACKAGE_ID)
-  )
+const GHOSTTY_NATIVE_PACKAGE_PATH_SEGMENTS = packageNameToPathSegments(
+  GHOSTTY_NATIVE_PACKAGE_ID
+)
+
+const hasPackageManifest = (packageRoot: string): boolean =>
+  fs.existsSync(path.join(packageRoot, 'package.json'))
+
+const hasNativeBuildFile = (dirPath: string): boolean => {
+  try {
+    return fs.readdirSync(dirPath, { withFileTypes: true }).some((entry) => {
+      if (entry.isFile()) {
+        return entry.name.endsWith('.node')
+      }
+
+      return (
+        entry.isDirectory() &&
+        hasNativeBuildFile(path.join(dirPath, entry.name))
+      )
+    })
+  } catch {
+    return false
+  }
+}
+
+const hasNativeBuildCandidate = (packageRoot: string): boolean =>
+  hasNativeBuildFile(path.join(packageRoot, 'prebuilds')) ||
+  hasNativeBuildFile(path.join(packageRoot, 'build', 'Release')) ||
+  hasNativeBuildFile(path.join(packageRoot, 'build', 'Debug'))
+
+const isLoadablePackageRoot = (packageRoot: string): boolean =>
+  hasPackageManifest(packageRoot) && hasNativeBuildCandidate(packageRoot)
+
+const resolvePackageRootUnder = (basePath: string): string =>
+  path.join(basePath, 'node_modules', ...GHOSTTY_NATIVE_PACKAGE_PATH_SEGMENTS)
+
+const findPackageRootInAncestors = (startPath: string): string | null => {
+  let currentDir = path.resolve(startPath)
+
+  while (currentDir !== path.dirname(currentDir)) {
+    const packageRoot = resolvePackageRootUnder(currentDir)
+
+    if (isLoadablePackageRoot(packageRoot)) {
+      return packageRoot
+    }
+
+    currentDir = path.dirname(currentDir)
+  }
+
+  return null
+}
+
+export const resolveGhosttyNativePackageRoot = (appRoot: string): string => {
+  const appRootPackageRoot = resolvePackageRootUnder(appRoot)
+
+  if (isLoadablePackageRoot(appRootPackageRoot)) {
+    return appRootPackageRoot
+  }
+
+  const searchRoots = new Set([appRoot, electronModuleDir, process.cwd()])
+
+  for (const searchRoot of searchRoots) {
+    const packageRoot = findPackageRootInAncestors(searchRoot)
+
+    if (packageRoot) {
+      return packageRoot
+    }
+  }
+
+  return appRootPackageRoot
+}
 
 const isGhosttyNativeBindings = (
   value: unknown
