@@ -31,6 +31,5 @@ test('ClaudeCode keeps the original mark and adjusts only its rendered ratio', (
   // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying no avatar background is rendered
   expect(container.querySelector('circle')).toBeNull()
   expect(svg?.getAttribute('viewBox')).toBe('0 4 24 17')
-  expect(svg?.getAttribute('preserveAspectRatio')).toBe('none')
   expect(path?.getAttribute('clip-rule')).toBe('evenodd')
 })

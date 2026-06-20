@@ -40,7 +40,6 @@ export const ClaudeCode = ({
   <BrandSvg
     size={size}
     viewBox="0 4 24 17"
-    preserveAspectRatio="none"
     {...props}
   >
     <path

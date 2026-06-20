@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-06-15
-ref_count: 6
+ref_count: 7
 ---
 
 # UI Visual Regression
@@ -134,7 +134,16 @@ test case for the state that triggers the collision.
 - **Fix:** Added `rounded-[10px]` to the `className` override so the sidebar new-session button keeps its previous radius.
 - **Commit:** same commit as this entry
 
-### 12. Toolbar icon inherits `text-[0px]` and renders at 0 px
+### 12. ClaudeCode brand icon distorts with non-uniform scaling after cropping to a non-square viewBox
+
+- **Source:** github-claude | PR #572 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.tsx`, `src/agents/brandIcons.test.tsx`
+- **Finding:** The `ClaudeCode` icon was cropped to `viewBox="0 4 24 17"`, but the shared `BrandSvg` wrapper still renders a square SVG (`width={size}` / `height={size}`). Adding `preserveAspectRatio="none"` forced independent X/Y scaling, so the 24:17 mark stretched vertically inside the square chip and undid the intended ratio correction.
+- **Fix:** Removed `preserveAspectRatio="none"` from the `ClaudeCode` `BrandSvg` call so the cropped mark scales uniformly and is letterboxed inside the square icon. Removed the matching `preserveAspectRatio="none"` assertion from the regression test.
+- **Commit:** same commit as this entry
+
+### 13. Toolbar icon inherits `text-[0px]` and renders at 0 px
 
 - **Source:** github-claude | PR #461 round 1 | 2026-06-15
 - **Severity:** MEDIUM
