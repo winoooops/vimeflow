@@ -119,3 +119,39 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** Driver disposal left each `WebContents.once('destroyed')` listener registered until the window closed, so repeated pane create/dispose cycles accumulated stale destroyed listeners.
 - **Fix:** Driver records now keep the owner sender and destroyed listener; `disposeDriver()` deletes the record and removes that listener before disposing the native terminal.
 - **Commit:** same commit as this entry
+
+### 12. Renderer styled-cell reconstruction must preserve fallback text
+
+- **Source:** github-claude | PR #571 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L186-214
+- **Finding:** `readStyledRowText` filled gaps before sparse styled cells with spaces and let empty-text style-reset cells advance the terminal column without emitting the fallback row character at that column. Native snapshots that carried full `rows` plus sparse styled cells could therefore render missing unstyled prompt characters.
+- **Fix:** Rebuilt gaps and empty-text cell spans from fallback row slices selected by terminal cell columns. Padding is now based on terminal cell width, so wide glyphs are not over-padded.
+- **Commit:** same commit as this entry
+
+### 13. Cursor-row padding must compare terminal cell width
+
+- **Source:** github-codex-connector | PR #571 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyNativeRenderStateBridge.ts` L160
+- **Finding:** Renderer-side native snapshot padding compared `cursor.columnOffset` with `row.length`, a UTF-16 code-unit count. A row containing a wide glyph at the cursor column was padded with an extra space, shifting the rendered snapshot.
+- **Fix:** Exported and reused the terminal display buffer's text cell-width helper before padding cursor rows. Rows are padded only when their terminal display width is short of the native cursor column.
+- **Commit:** same commit as this entry
+
+### 14. Main-process sparse-cell fallback slices must use cell columns
+
+- **Source:** github-codex-connector | PR #571 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L413
+- **Finding:** Main-process sparse-cell normalization treated native `cell.col` and `currentColumn` values as string offsets. When a wide unstyled glyph preceded a styled cell, fallback slicing could duplicate or mangle text before the renderer saw the snapshot.
+- **Fix:** Added main-process terminal column-to-offset helpers and used them for gap, empty-cell, and trailing fallback slices. Regression coverage now includes a CJK prefix and an empty style-reset cell.
+- **Commit:** same commit as this entry
+
+### 15. Cell-boundary offsets must keep zero-width marks with their base glyph
+
+- **Source:** local-codex | PR #571 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L465-466
+- **Finding:** The main-process column-to-offset helper returned immediately at exact terminal cell boundaries without advancing over following zero-width marks, and its local width table omitted variation selectors. Sparse-cell fallback reconstruction could split `e\u0301` or `a\ufe0f` away from the base glyph before the styled cell.
+- **Fix:** Matched the renderer helper by treating variation selectors as zero-width and advancing over combining code points at exact boundaries. Added regression tests with a combining mark and a variation selector before sparse styled cells.
+- **Commit:** same commit as this entry

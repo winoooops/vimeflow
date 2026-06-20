@@ -431,6 +431,9 @@ const readCellWidth = (text: string, start: number, end: number): number => {
   return width
 }
 
+export const readTextCellWidth = (text: string): number =>
+  readCellWidth(text, 0, text.length)
+
 const findOffsetForCellColumn = (
   text: string,
   lineStart: number,

@@ -8,6 +8,7 @@ import type {
   GhosttyVtRenderStateDriverFactory,
 } from './ghosttyVtRenderStateDriver'
 import type { GhosttyVtRenderSnapshot } from './ghosttyVtRenderSnapshot'
+import { readTextCellWidth } from './terminalDisplayBuffer'
 
 export const GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID = 'native'
 
@@ -155,11 +156,13 @@ const padRowsToCursor = (
     return rows
   }
 
-  return rows.map((row, rowIndex) =>
-    rowIndex === cursor.rowIndex && row.length < cursor.columnOffset
-      ? row.padEnd(cursor.columnOffset, ' ')
+  return rows.map((row, rowIndex) => {
+    const cellWidth = readTextCellWidth(row)
+
+    return rowIndex === cursor.rowIndex && cellWidth < cursor.columnOffset
+      ? row.padEnd(row.length + cursor.columnOffset - cellWidth, ' ')
       : row
-  )
+  })
 }
 
 const normalizeNativeSnapshot = (

@@ -193,7 +193,7 @@ describe('ghosttyVtRenderSnapshot', () => {
         {
           row: 0,
           col: 11,
-          text: '',
+          text: '',
           width: 1,
         },
       ],
@@ -221,6 +221,48 @@ describe('ghosttyVtRenderSnapshot', () => {
       {
         text: ' $ ',
         style: {},
+      },
+    ])
+  })
+
+  test('preserves fallback gaps before sparse styled cells', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['plain red'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 9,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 6,
+          text: 'red',
+          width: 3,
+          foreground: TRUE_COLOR_PINK_HEX,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(output.visibleText).toBe('plain red')
+    expect(buffer.readVisibleText()).toBe('plain red')
+    expect(buffer.readStyledRuns()).toEqual([
+      {
+        text: 'plain ',
+        style: {},
+      },
+      {
+        text: 'red',
+        style: {
+          foreground: TRUE_COLOR_PINK,
+        },
       },
     ])
   })

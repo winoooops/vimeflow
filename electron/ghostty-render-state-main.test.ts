@@ -259,6 +259,37 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals).toHaveLength(2)
   })
 
+  test('keeps the cached size unchanged when native resize fails', () => {
+    const { bindings, terminals } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    terminals[0]?.resize.mockImplementationOnce(() => {
+      throw new Error('native resize failed')
+    })
+
+    expect(
+      bridge.resize({
+        driverId: createResult.driverId,
+        size: { cols: 120, rows: 32 },
+      })
+    ).toEqual({
+      ok: false,
+      error: 'native resize failed',
+    })
+
+    expect(bridge.reset({ driverId: createResult.driverId })).toEqual({
+      ok: true,
+      result: null,
+    })
+
+    expect(bindings.createTerminal).toHaveBeenLastCalledWith({
+      cols: 80,
+      rows: 24,
+      scrollbackLimit: 10_000,
+    })
+  })
+
   test('keeps the existing terminal when reset recreation fails', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
@@ -288,7 +319,7 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals[0]?.feed).toHaveBeenCalledWith(new Uint8Array([0x68]))
   })
 
-  test('preserves fallback row text around sparse styled cells', () => {
+  test('preserves fallback row text around sparse styled cells by cell columns', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
         GhosttyNativeBindings['createTerminal']
@@ -298,12 +329,72 @@ describe('ghostty render-state main bridge', () => {
         snapshot: () => ({
           rows: 1,
           cursorRow: 0,
-          cursorCol: 9,
-          visibleLines: [{ row: 0, text: 'plain red' }],
+          cursorCol: 6,
+          visibleLines: [{ row: 0, text: '界red$' }],
           cells: [
             {
               row: 0,
-              col: 6,
+              col: 2,
+              text: 'red',
+              width: 3,
+              foreground: '#f38ba8',
+            },
+            {
+              row: 0,
+              col: 5,
+              text: '',
+              width: 1,
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+      ok: true,
+      result: {
+        rows: ['界red$'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 6,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 2,
+            text: 'red',
+            width: 3,
+            foreground: '#f38ba8',
+          },
+          {
+            row: 0,
+            col: 5,
+            text: '',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('keeps combining marks with fallback text before sparse styled cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 4,
+          visibleLines: [{ row: 0, text: 'e\u0301red' }],
+          cells: [
+            {
+              row: 0,
+              col: 1,
               text: 'red',
               width: 3,
               foreground: '#f38ba8',
@@ -318,15 +409,63 @@ describe('ghostty render-state main bridge', () => {
     expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
       ok: true,
       result: {
-        rows: ['plain red'],
+        rows: ['e\u0301red'],
         cursor: {
           rowIndex: 0,
-          columnOffset: 9,
+          columnOffset: 4,
         },
         cells: [
           {
             row: 0,
-            col: 6,
+            col: 1,
+            text: 'red',
+            width: 3,
+            foreground: '#f38ba8',
+          },
+        ],
+      },
+    })
+  })
+
+  test('keeps variation selectors with fallback text before sparse styled cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 4,
+          visibleLines: [{ row: 0, text: 'a\ufe0fred' }],
+          cells: [
+            {
+              row: 0,
+              col: 1,
+              text: 'red',
+              width: 3,
+              foreground: '#f38ba8',
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const createResult = requireResult(bridge.createDriver(createEvent()))
+
+    expect(bridge.readSnapshot({ driverId: createResult.driverId })).toEqual({
+      ok: true,
+      result: {
+        rows: ['a\ufe0fred'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 4,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 1,
             text: 'red',
             width: 3,
             foreground: '#f38ba8',

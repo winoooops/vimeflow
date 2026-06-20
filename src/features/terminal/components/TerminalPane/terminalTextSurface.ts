@@ -807,19 +807,14 @@ export class TerminalTextSurface implements TerminalSurface {
     const cursorTop = paddingTop + cursorRowIndex * APPROXIMATE_LINE_HEIGHT
 
     const cursorBottom = cursorTop + APPROXIMATE_LINE_HEIGHT
-    const viewportTop = this.root.scrollTop
+    const viewportBottom = Math.max(0, viewportHeight - paddingBottom)
 
-    const viewportBottom =
-      viewportTop + Math.max(0, viewportHeight - paddingBottom)
-
-    if (cursorTop >= viewportTop && cursorBottom <= viewportBottom) {
+    if (cursorBottom <= viewportBottom) {
       return
     }
 
     const maxScrollTop = Math.max(0, this.root.scrollHeight - viewportHeight)
-
-    const nextScrollTop =
-      cursorTop < viewportTop ? cursorTop : cursorBottom - viewportHeight
+    const nextScrollTop = cursorBottom - viewportHeight
 
     this.root.scrollTop = Math.min(Math.max(0, nextScrollTop), maxScrollTop)
   }

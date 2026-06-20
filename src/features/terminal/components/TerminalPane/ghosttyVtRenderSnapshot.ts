@@ -1,5 +1,8 @@
 // cspell:ignore ghostty
-import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
+import {
+  findTextOffsetForCellColumn,
+  readTextCellWidth,
+} from './terminalDisplayBuffer'
 import { getSgrStyleSentinel } from './terminalControlParser'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
@@ -183,6 +186,17 @@ const readStyledRowText = (
   let activeStyleKey = EMPTY_STYLE_KEY
   let currentColumn = 0
 
+  const readRowTextByCellColumns = (start: number, end: number): string => {
+    const startOffset = findTextOffsetForCellColumn(rowText, start)
+    const endOffset = findTextOffsetForCellColumn(rowText, end)
+    const slice = rowText.slice(startOffset, endOffset)
+
+    return slice.padEnd(
+      slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
+      ' '
+    )
+  }
+
   rowCells.forEach((cell) => {
     if (cell.col > currentColumn) {
       if (activeStyleKey !== EMPTY_STYLE_KEY) {
@@ -190,7 +204,7 @@ const readStyledRowText = (
         activeStyleKey = EMPTY_STYLE_KEY
       }
 
-      output += ' '.repeat(cell.col - currentColumn)
+      output += readRowTextByCellColumns(currentColumn, cell.col)
       currentColumn = cell.col
     }
 
@@ -202,7 +216,10 @@ const readStyledRowText = (
       activeStyleKey = styleKey
     }
 
-    output += cell.text
+    output +=
+      cell.text === ''
+        ? readRowTextByCellColumns(cell.col, cell.col + cell.width)
+        : cell.text
     currentColumn += cell.width
   })
 

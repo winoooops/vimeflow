@@ -380,6 +380,124 @@ const sortSnapshotCells = (
     left.row === right.row ? left.col - right.col : left.row - right.row
   )
 
+const isCombiningCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+  (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+  (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+  (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+  (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+  (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+
+const isPrivateUseCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0xe000 && codePoint <= 0xf8ff) ||
+  (codePoint >= 0xf0000 && codePoint <= 0xffffd) ||
+  (codePoint >= 0x100000 && codePoint <= 0x10fffd)
+
+const isWideCodePoint = (codePoint: number): boolean =>
+  (codePoint >= 0x1100 && codePoint <= 0x115f) ||
+  codePoint === 0x2329 ||
+  codePoint === 0x232a ||
+  (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+  (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+  (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+  (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+  (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+  (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+  (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+  (codePoint >= 0x1f300 && codePoint <= 0x1faff)
+
+const readCodePointLength = (text: string, cursor: number): number => {
+  const codePoint = text.codePointAt(cursor)
+
+  return codePoint !== undefined && codePoint > 0xffff ? 2 : 1
+}
+
+const readTerminalCellWidth = (text: string, cursor: number): number => {
+  const codePoint = text.codePointAt(cursor)
+
+  if (codePoint === undefined || codePoint === 0 || codePoint === 0x0a) {
+    return 0
+  }
+
+  if (isCombiningCodePoint(codePoint)) {
+    return 0
+  }
+
+  if (isPrivateUseCodePoint(codePoint)) {
+    return 1
+  }
+
+  return isWideCodePoint(codePoint) ? 2 : 1
+}
+
+const readTextCellWidth = (text: string): number => {
+  let width = 0
+  let cursor = 0
+
+  while (cursor < text.length) {
+    width += readTerminalCellWidth(text, cursor)
+    cursor += readCodePointLength(text, cursor)
+  }
+
+  return width
+}
+
+const findTextOffsetForCellColumn = (
+  text: string,
+  targetColumn: number
+): number => {
+  if (targetColumn <= 0) {
+    return 0
+  }
+
+  let cursor = 0
+  let column = 0
+
+  while (cursor < text.length) {
+    const width = readTerminalCellWidth(text, cursor)
+    const nextColumn = column + width
+
+    if (nextColumn > targetColumn) {
+      return cursor
+    }
+
+    cursor += readCodePointLength(text, cursor)
+
+    if (nextColumn === targetColumn) {
+      while (cursor < text.length) {
+        const codePoint = text.codePointAt(cursor) ?? 0
+
+        if (!isCombiningCodePoint(codePoint)) {
+          break
+        }
+
+        cursor += readCodePointLength(text, cursor)
+      }
+
+      return cursor
+    }
+
+    column = nextColumn
+  }
+
+  return text.length
+}
+
+const readRowTextByCellColumns = (
+  rowText: string,
+  start: number,
+  end: number
+): string => {
+  const startOffset = findTextOffsetForCellColumn(rowText, start)
+  const endOffset = findTextOffsetForCellColumn(rowText, end)
+  const slice = rowText.slice(startOffset, endOffset)
+
+  return slice.padEnd(
+    slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
+    ' '
+  )
+}
+
 const readRowsWithCells = (
   rows: readonly string[],
   cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
@@ -409,16 +527,31 @@ const readRowsWithCells = (
 
     rowCells.forEach((cell) => {
       if (cell.col > currentColumn) {
-        const fallbackGap = fallbackRow.slice(currentColumn, cell.col)
-        rowText += fallbackGap.padEnd(cell.col - currentColumn, ' ')
+        rowText += readRowTextByCellColumns(
+          fallbackRow,
+          currentColumn,
+          cell.col
+        )
         currentColumn = cell.col
       }
 
-      rowText += cell.text
+      rowText +=
+        cell.text === ''
+          ? readRowTextByCellColumns(
+              fallbackRow,
+              cell.col,
+              cell.col + cell.width
+            )
+          : cell.text
       currentColumn += cell.width
     })
 
-    return `${rowText}${fallbackRow.slice(currentColumn)}`
+    const trailingTextOffset = findTextOffsetForCellColumn(
+      fallbackRow,
+      currentColumn
+    )
+
+    return `${rowText}${fallbackRow.slice(trailingTextOffset)}`
   })
 }
 
@@ -562,8 +695,8 @@ export class GhosttyRenderStateMainBridge {
       const { driverId, size } = readSizePayload(payload)
 
       return this.withDriverId(driverId, (record) => {
-        record.size = size
         record.terminal.resize(size.cols, size.rows)
+        record.size = size
 
         return ok(null)
       })

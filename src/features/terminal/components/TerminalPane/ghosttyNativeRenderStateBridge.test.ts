@@ -230,6 +230,33 @@ describe('ghosttyNativeRenderStateBridge', () => {
     })
   })
 
+  test('does not pad a wide-glyph row that already reaches the cursor column', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({
+          rows: ['界'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+        }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(driver.readSnapshot()).toEqual({
+      rows: ['界'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 2,
+      },
+    })
+  })
+
   test('rejects malformed native render snapshot cells', () => {
     installBridge({
       createDriver: () => ({
