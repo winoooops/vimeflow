@@ -153,3 +153,5 @@ A strict linear chain (one PR at a time into the umbrella branch). M1 is the fou
 - The bridge-dir derivation rule must be **byte-identical** in the plugin (TS) and `bridge_dir()` (Rust) — covered by the literal-default tests in M2/M3.
 - `ensure_bridge_installed` writes into `opencode_plugins_dir()` = `$VIMEFLOW_OPENCODE_PLUGINS_DIR ?? ~/.config/opencode/plugins` (atomic, `0600`); the env override isolates all tests to a temp dir, and an install failure is non-fatal (logged) so attach never breaks.
 - Restart caveat (no live data until opencode relaunches with the bridge) is documented, not fixed in v1.
+
+<!-- codex-reviewed: 2026-06-20T16:04:57Z -->
