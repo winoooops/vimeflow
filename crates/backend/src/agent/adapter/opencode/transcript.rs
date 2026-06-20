@@ -15,8 +15,10 @@
 //! - `kind=tool.before` ⇒ tool-call start (args preview already on the line).
 //!   `kind=event`, `type=message.part.updated`, `data.part.type=="tool"`,
 //!   `state.status` `pending`/`running` ⇒ start/running.
-//! - `kind=tool.after` ⇒ tool-call done (`completed`) / failed (`error`).
-//!   Deduped by `(callID, status)` so repeated running updates don't re-emit.
+//! - `kind=tool.after` ⇒ authoritative tool-call done/failed from the process
+//!   exit code when a `tool.before` line established that `tool.after` is
+//!   expected. Terminal `message.part.updated` signals are used for calls that
+//!   appear without a `tool.before`.
 //! - `kind=tool.after` where `tool=="bash"` ⇒ feed `args.command` +
 //!   `result.output` + `result.metadata.exit` into the shared
 //!   `claude_code::test_runners` (cwd = the session cwd, NOT a per-command
@@ -77,6 +79,7 @@ struct ToolCallMetadata {
     started_at_iso: String,
     tool: String,
     args: String,
+    expects_tool_after: bool,
 }
 
 type ToolCallMetadataById = HashMap<String, ToolCallMetadata>;
@@ -142,11 +145,13 @@ pub(crate) struct OpencodeTranscriptDecoder {
     in_flight: InFlightToolCalls,
     tool_metadata: ToolCallMetadataById,
     /// Dedup set keyed by `(callID, status-discriminant)` so a repeated
-    /// running/completed update for the same call does not re-emit. The
-    /// discriminant is a `&'static str` ("running"/"done"/"failed") rather than
-    /// `ToolCallStatus` so we don't have to widen the shared enum's derives
-    /// (it isn't `Hash`/`Eq`).
+    /// running/terminal update for the same call does not re-emit. The
+    /// discriminant is a `&'static str` rather than `ToolCallStatus` so we don't
+    /// have to widen the shared enum's derives (it isn't `Hash`/`Eq`).
     emitted: HashSet<(String, &'static str)>,
+    /// Calls whose terminal status was already resolved by `tool.after`; later
+    /// terminal part updates are non-authoritative for these call ids.
+    resolved_by_tool_after: HashSet<String>,
     /// User-message ids already counted as a turn — a re-delivered
     /// `message.updated` for the same id does not double-count.
     seen_turns: HashSet<String>,
@@ -174,6 +179,7 @@ impl OpencodeTranscriptDecoder {
             in_flight: HashMap::new(),
             tool_metadata: HashMap::new(),
             emitted: HashSet::new(),
+            resolved_by_tool_after: HashSet::new(),
             seen_turns: HashSet::new(),
             num_turns: 0,
             last_cwd,
@@ -220,7 +226,11 @@ impl OpencodeTranscriptDecoder {
         if info.get("role").and_then(Value::as_str) != Some("user") {
             return;
         }
-        let Some(id) = info.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+        let Some(id) = info
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        else {
             return;
         };
         // Dedup by user-message id: a re-delivered update must not re-count.
@@ -266,13 +276,17 @@ impl OpencodeTranscriptDecoder {
 
         match status {
             "pending" | "running" => {
-                self.start_tool_call(&call_key, tool, args, timestamp, false);
+                self.start_tool_call(&call_key, tool, args, timestamp, false, false);
             }
             "completed" => {
-                self.finish_tool_call(&call_key, ToolCallStatus::Done, timestamp);
+                self.finish_tool_call_from_part_update(&call_key, ToolCallStatus::Done, timestamp);
             }
             "error" => {
-                self.finish_tool_call(&call_key, ToolCallStatus::Failed, timestamp);
+                self.finish_tool_call_from_part_update(
+                    &call_key,
+                    ToolCallStatus::Failed,
+                    timestamp,
+                );
             }
             _ => {}
         }
@@ -286,7 +300,7 @@ impl OpencodeTranscriptDecoder {
         };
         let tool = dto.tool.as_deref().unwrap_or("unknown").to_string();
         let args = summarize_value_args(&dto.args, &tool);
-        self.start_tool_call(call_id, tool, args, timestamp, false);
+        self.start_tool_call(call_id, tool, args, timestamp, false, true);
     }
 
     /// `tool.after`: complete the in-flight call (`metadata.exit` decides
@@ -314,6 +328,7 @@ impl OpencodeTranscriptDecoder {
         }
 
         self.finish_tool_call(call_id, status, timestamp);
+        self.resolved_by_tool_after.insert(call_id.to_string());
         self.tool_metadata.remove(call_id);
     }
 
@@ -328,6 +343,7 @@ impl OpencodeTranscriptDecoder {
         args: String,
         timestamp: &str,
         is_test_file: bool,
+        expects_tool_after: bool,
     ) {
         self.in_flight
             .entry(call_key.to_string())
@@ -338,9 +354,12 @@ impl OpencodeTranscriptDecoder {
                 args: args.clone(),
                 is_test_file,
             });
-        self.record_tool_metadata(call_key, &tool, &args, timestamp);
+        self.record_tool_metadata(call_key, &tool, &args, timestamp, expects_tool_after);
 
-        let dedup_key = (call_key.to_string(), status_discriminant(&ToolCallStatus::Running));
+        let dedup_key = (
+            call_key.to_string(),
+            status_discriminant(&ToolCallStatus::Running),
+        );
         if !self.emitted.insert(dedup_key) {
             return;
         }
@@ -359,9 +378,28 @@ impl OpencodeTranscriptDecoder {
         }
     }
 
+    /// Terminal part updates are authoritative only for calls that started from
+    /// the part stream. Calls with `tool.before` metadata are expected to emit a
+    /// later `tool.after`, whose exit code decides the final display status.
+    fn finish_tool_call_from_part_update(
+        &mut self,
+        call_key: &str,
+        status: ToolCallStatus,
+        timestamp: &str,
+    ) {
+        if self
+            .tool_metadata
+            .get(call_key)
+            .is_some_and(|metadata| metadata.expects_tool_after)
+            || self.resolved_by_tool_after.contains(call_key)
+        {
+            return;
+        }
+        self.finish_tool_call(call_key, status, timestamp);
+    }
+
     /// Common completion path: remove the in-flight call and emit its terminal
-    /// status once. Deduped by `(callID, status)` — a `tool.after` plus a
-    /// `completed` part update for the same call emits a single done.
+    /// status once.
     fn finish_tool_call(&mut self, call_key: &str, status: ToolCallStatus, timestamp: &str) {
         let dedup_key = (call_key.to_string(), status_discriminant(&status));
         if !self.emitted.insert(dedup_key) {
@@ -394,7 +432,14 @@ impl OpencodeTranscriptDecoder {
         });
     }
 
-    fn record_tool_metadata(&mut self, call_key: &str, tool: &str, args: &str, timestamp: &str) {
+    fn record_tool_metadata(
+        &mut self,
+        call_key: &str,
+        tool: &str,
+        args: &str,
+        timestamp: &str,
+        expects_tool_after: bool,
+    ) {
         self.tool_metadata
             .entry(call_key.to_string())
             .and_modify(|metadata| {
@@ -402,12 +447,14 @@ impl OpencodeTranscriptDecoder {
                     metadata.tool = tool.to_string();
                     metadata.args = args.to_string();
                 }
+                metadata.expects_tool_after |= expects_tool_after;
             })
             .or_insert_with(|| ToolCallMetadata {
                 started_at: Instant::now(),
                 started_at_iso: timestamp.to_string(),
                 tool: tool.to_string(),
                 args: args.to_string(),
+                expects_tool_after,
             });
     }
 
@@ -769,7 +816,11 @@ mod tests {
         dec.decode_line(running);
 
         let payloads = tool_call_payloads(&sink);
-        assert_eq!(payloads.len(), 1, "only one running start despite 3 updates");
+        assert_eq!(
+            payloads.len(),
+            1,
+            "only one running start despite 3 updates"
+        );
         assert_eq!(payloads[0]["status"], "running");
         assert_eq!(payloads[0]["toolUseId"], "call_p1");
     }
@@ -792,7 +843,9 @@ mod tests {
         assert_eq!(payloads[0]["status"], "running");
     }
 
-    /// A tool part with `state.status == "error"` ⇒ failed.
+    /// A tool part with `state.status == "error"` ⇒ failed when no
+    /// `tool.before` established that `tool.after` is the authoritative
+    /// terminal source.
     #[test]
     fn tool_state_error_emits_failed() {
         let sink = Arc::new(FakeEventSink::new());
@@ -800,7 +853,7 @@ mod tests {
         dec.on_caught_up();
 
         dec.decode_line(
-            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_e","args":{"command":"false"}}"#,
+            r#"{"v":1,"ts":1,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_e","tool":"bash","state":{"status":"running","args":{"command":"false"}}}}}"#,
         );
         dec.decode_line(
             r#"{"v":1,"ts":2,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_e","tool":"bash","state":{"status":"error"}}}}"#,
@@ -846,7 +899,11 @@ mod tests {
             r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_t","result":{"output":"running 1 test\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":0}}}"#,
         );
 
-        assert_eq!(sink.count("test-run"), 1, "passing cargo test ⇒ one snapshot");
+        assert_eq!(
+            sink.count("test-run"),
+            1,
+            "passing cargo test ⇒ one snapshot"
+        );
         let test_runs: Vec<Value> = sink
             .recorded()
             .into_iter()
@@ -858,8 +915,9 @@ mod tests {
     }
 
     /// A completed `message.part.updated` can arrive before `tool.after`.
-    /// Test-run parsing must still see the original bash command even though
-    /// the terminal part update removed the in-flight display record.
+    /// Test-run parsing must still see the original bash command, and the
+    /// authoritative `tool.after` result should provide the display terminal
+    /// status.
     #[test]
     fn completed_part_before_tool_after_still_emits_test_run_snapshot() {
         let sink = Arc::new(FakeEventSink::new());
@@ -889,6 +947,64 @@ mod tests {
             1,
             "terminal status remains deduped",
         );
+    }
+
+    /// A completed part update is only the model-side completion signal; a
+    /// later non-zero `tool.after` exit remains the authoritative display
+    /// status and must not produce a preceding done event.
+    #[test]
+    fn completed_part_before_failing_tool_after_emits_only_failed_terminal_status() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_fail_order","args":{"command":"cargo test"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":1500,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_fail_order","tool":"bash","state":{"status":"completed"}}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_fail_order","result":{"output":"test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":1}}}"#,
+        );
+
+        let terminal_payloads: Vec<Value> = tool_call_payloads(&sink)
+            .into_iter()
+            .filter(|payload| {
+                payload["toolUseId"] == "call_fail_order" && payload["status"] != "running"
+            })
+            .collect();
+        assert_eq!(terminal_payloads.len(), 1);
+        assert_eq!(terminal_payloads[0]["status"], "failed");
+    }
+
+    /// Once `tool.after` provides the authoritative status, delayed terminal
+    /// part updates for the same call must remain suppressed even after the
+    /// metadata cache is cleared.
+    #[test]
+    fn completed_part_after_failing_tool_after_does_not_emit_done() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"tool.before","tool":"bash","sessionID":"ses1","callID":"call_after_first","args":{"command":"cargo test"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":1500,"kind":"tool.after","tool":"bash","sessionID":"ses1","callID":"call_after_first","result":{"output":"test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n","metadata":{"exit":1}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2000,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_after_first","tool":"bash","state":{"status":"completed"}}}}"#,
+        );
+
+        let terminal_payloads: Vec<Value> = tool_call_payloads(&sink)
+            .into_iter()
+            .filter(|payload| {
+                payload["toolUseId"] == "call_after_first" && payload["status"] != "running"
+            })
+            .collect();
+        assert_eq!(terminal_payloads.len(), 1);
+        assert_eq!(terminal_payloads[0]["status"], "failed");
     }
 
     /// A non-test `bash` `tool.after` ⇒ no test-run snapshot.
