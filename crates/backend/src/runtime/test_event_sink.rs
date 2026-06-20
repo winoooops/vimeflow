@@ -62,6 +62,41 @@ impl RecordingEventSink {
             }
         }
     }
+
+    pub fn wait_for_event<F>(&self, event: &str, timeout: Duration, predicate: F) -> bool
+    where
+        F: Fn(&Value) -> bool,
+    {
+        let deadline = Instant::now() + timeout;
+        let mut recorded = self.recorded.lock().expect("RecordingEventSink poisoned");
+
+        loop {
+            if recorded
+                .iter()
+                .any(|(name, payload)| name == event && predicate(payload))
+            {
+                return true;
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+
+            let wait_for = deadline.saturating_duration_since(now);
+            let (next, wait_result) = self
+                .changed
+                .wait_timeout(recorded, wait_for)
+                .expect("RecordingEventSink poisoned");
+            recorded = next;
+
+            if wait_result.timed_out() {
+                return recorded
+                    .iter()
+                    .any(|(name, payload)| name == event && predicate(payload));
+            }
+        }
+    }
 }
 
 impl Default for RecordingEventSink {

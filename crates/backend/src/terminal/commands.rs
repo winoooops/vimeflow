@@ -1742,16 +1742,11 @@ mod tests {
         .expect("write should succeed");
 
         let saw_marker =
-            events.wait_for_count("pty-data", 1, std::time::Duration::from_secs(5))
-                && events
-                    .recorded()
-                    .iter()
-                    .filter(|(event, _)| event == "pty-data")
-                    .any(|(_, payload)| {
-                        payload["data"]
-                            .as_str()
-                            .is_some_and(|data| data.contains(marker))
-                    });
+            events.wait_for_event("pty-data", std::time::Duration::from_secs(5), |payload| {
+                payload["data"]
+                    .as_str()
+                    .is_some_and(|data| data.contains(marker))
+            });
 
         assert!(saw_marker, "pty-data should contain the POSIX command output");
 
