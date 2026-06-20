@@ -1,5 +1,11 @@
+// cspell:ignore zzzznomatch
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
-import { render as rtlRender, screen, waitFor } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
@@ -717,5 +723,29 @@ describe('SettingsDialog', () => {
     expect(
       screen.getByRole('option', { name: 'Appearance' })
     ).toBeInTheDocument()
+  })
+
+  test('does not navigate sections when search has no matches', async () => {
+    const user = userEvent.setup()
+    render(<SettingsDialog open onClose={vi.fn()} />)
+
+    await user.type(
+      screen.getByPlaceholderText('Search settings...'),
+      'zzzznomatch'
+    )
+
+    expect(
+      within(screen.getByRole('listbox')).queryAllByRole('option')
+    ).toEqual([])
+
+    await user.tab()
+    await user.keyboard('j')
+
+    expect(
+      within(screen.getByTestId('settings-dialog-content')).getByText(
+        'Appearance'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByText('Color Scheme')).toBeInTheDocument()
   })
 })

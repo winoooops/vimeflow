@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-19
-ref_count: 11
+ref_count: 12
 ---
 
 # Keyboard Shortcut Guards
@@ -460,4 +460,13 @@ against three classes of false-fire:
 - **File:** `src/features/settings/components/SettingsSidebar.tsx` L43-43
 - **Finding:** The search input's ArrowDown/ArrowUp/Enter handlers always called `preventDefault()` and repurposed those keys for settings navigation. When a user types with a CJK/IME input method active, those same keys are used to choose or commit composition candidates, so the custom handlers interrupted composing text.
 - **Fix:** Added an early return in `handleSearchKeyDown` when `event.nativeEvent.isComposing` is true, before the Arrow/Enter branches. Added a co-located test firing composing keydown events to confirm navigation/confirmation callbacks are not invoked during composition.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Settings sidebar navigation still cycles invisible sections on no-match search
+
+- **Source:** github-claude | PR #556 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx` L155-183
+- **Finding:** `sidebarNavigationEntries` fell back to `SETTINGS_SECTIONS` whenever `filtered.length === 0`, which conflated an empty query with an active query that had no matches. A user could type a no-match search, blur the input, then press `j`/`k` or arrow keys and silently change the active settings section while the sidebar still showed no results.
+- **Fix:** Changed the fallback to use all sections only when `query.trim() === ''`, leaving `sidebarNavigationEntries` empty for active no-match searches. The existing `sidebarNavigationEntries.length === 0` guard in `navigateSidebar` then no-ops as intended. Added a regression test covering the no-match keyboard path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

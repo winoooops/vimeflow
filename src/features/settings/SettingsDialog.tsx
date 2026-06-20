@@ -154,7 +154,7 @@ export const SettingsDialog = ({
 
   const sidebarNavigationEntries = useMemo(() => {
     const navigationSections =
-      filtered.length > 0 ? filtered : SETTINGS_SECTIONS
+      query.trim() === '' ? SETTINGS_SECTIONS : filtered
 
     return navigationSections.flatMap(
       (candidate): SettingsNavigationEntry[] => {
