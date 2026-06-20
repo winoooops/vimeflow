@@ -192,3 +192,5 @@ How `status.toolCalls` / status events are produced upstream; the Tool Calls jar
 Claude parallel exploration + self-verification → codex review round 1 (root cause +
 the rejected polling plan) → redesign to manual reattach (overhead) → codex review
 round 2 (AGREE-WITH-CHANGES; surfaced the macOS open-FD gap). Both rounds unanimous.
+
+<!-- codex-reviewed: 2026-06-20T11:49:24Z -->
