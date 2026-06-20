@@ -25,13 +25,13 @@ to persistent state through a separate, explicit path.
 - **Severity:** HIGH
 - **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
 - **Finding:** `selectedCommand?.preview?.()` was called for every highlighted
-theme entry, but `close()` reset only palette UI state and had no mechanism to
-restore the theme that was active before the preview started. Pressing Escape
-after browsing themes left the app on the last highlighted theme.
+  theme entry, but `close()` reset only palette UI state and had no mechanism to
+  restore the theme that was active before the preview started. Pressing Escape
+  after browsing themes left the app on the last highlighted theme.
 - **Fix:** Captured `themeService.current().id` when the palette opens and
-restored it inside `close()` with `themeService.apply(originalThemeId)` before
-resetting state. The restore ref is cleared on execute so confirmed theme
-selections persist.
+  restored it inside `close()` with `themeService.apply(originalThemeId)` before
+  resetting state. The restore ref is cleared on execute so confirmed theme
+  selections persist.
 - **Commit:** same commit as this entry
 
 ### 2. Avoid persisting theme previews before confirmation
@@ -40,11 +40,11 @@ selections persist.
 - **Severity:** P2 / MEDIUM
 - **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
 - **Finding:** Theme leaf commands used `themeService.apply(theme.id)` in their
-`preview` callback, which wrote both the DOM and `localStorage`. Cancelling the
-palette left the previewed theme persisted.
+  `preview` callback, which wrote both the DOM and `localStorage`. Cancelling the
+  palette left the previewed theme persisted.
 - **Fix:** Added a DOM-only `themeService.preview(id)` method and changed theme
-leaf `preview` callbacks to use it while keeping `execute` as the only path
-that calls `themeService.apply`.
+  leaf `preview` callbacks to use it while keeping `execute` as the only path
+  that calls `themeService.apply`.
 - **Commit:** same commit as this entry
 
 ### 3. Unconditional ref-null clears restore guard for non-theme commands
@@ -53,12 +53,12 @@ that calls `themeService.apply`.
 - **Severity:** HIGH
 - **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
 - **Finding:** `executeSelected` cleared `originalThemeIdRef.current`
-unconditionally after any command ran, so a non-theme command executed after a
-theme preview lost the restore guard and `close()` skipped restoring the
-original theme.
+  unconditionally after any command ran, so a non-theme command executed after a
+  theme preview lost the restore guard and `close()` skipped restoring the
+  original theme.
 - **Fix:** Gated the ref clear on `selected.preview` so only commands that
-produced a visual preview clear the guard; non-theme commands leave the ref
-intact and `close()` restores the original theme.
+  produced a visual preview clear the guard; non-theme commands leave the ref
+  intact and `close()` restores the original theme.
 - **Commit:** same commit as this entry
 
 ### 4. Notify theme subscribers during previews
@@ -67,9 +67,9 @@ intact and `close()` restores the original theme.
 - **Severity:** P2 / MEDIUM
 - **File:** `src/theme/service.ts`
 - **Finding:** `themeService.preview` wrote DOM CSS variables but did not notify
-subscribers, so terminal and editor panes that rely on the subscription path
-stayed on the old colors during theme previews.
+  subscribers, so terminal and editor panes that rely on the subscription path
+  stayed on the old colors during theme previews.
 - **Fix:** Updated `preview` to set the active theme, write the DOM, and notify
-listeners while keeping `localStorage` writes reserved for confirmed `apply`
-calls.
+  listeners while keeping `localStorage` writes reserved for confirmed `apply`
+  calls.
 - **Commit:** same commit as this entry
