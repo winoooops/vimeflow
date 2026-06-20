@@ -1429,7 +1429,7 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active?.toolUseId).toBe('new-running-call')
   })
 
-  test('resetGeneration with null contextWindow suppresses same-run status until new session boundary', async () => {
+  test('resetGeneration with null contextWindow accepts same-run status once tokens are known', async () => {
     const { result, rerender } = renderHook(
       ({ resetGeneration }: { resetGeneration: number }) =>
         useAgentStatus('session-1', resetGeneration),
@@ -1465,9 +1465,8 @@ describe('useAgentStatus', () => {
     expect(result.current.agentSessionId).toBeNull()
     expect(result.current.contextWindow).toBeNull()
 
-    // A stale same-run status event with a non-null contextWindow must not
-    // repopulate the cleared sidebar, because freshness is undecidable when
-    // the pre-reset snapshot lacked a token total.
+    // Once the relocated watcher emits a known token total, the unknown
+    // pre-reset baseline no longer blocks same-id recovery.
     act(() => {
       emit('agent-status', {
         sessionId: 'pty-session-1',
@@ -1488,10 +1487,10 @@ describe('useAgentStatus', () => {
       })
     })
 
-    expect(result.current.agentSessionId).toBeNull()
-    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(80)
 
-    // Run-scoped events must stay suppressed for the same session.
+    // Run-scoped events resume after the same-id status recovery.
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
@@ -1509,9 +1508,11 @@ describe('useAgentStatus', () => {
       })
     })
 
-    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.active?.toolUseId).toBe(
+      'stale-running-call'
+    )
     expect(result.current.toolCalls.total).toBe(0)
-    expect(result.current.numTurns).toBe(0)
+    expect(result.current.numTurns).toBe(9)
 
     // A fresh session boundary clears the suppression latch and allows updates.
     act(() => {

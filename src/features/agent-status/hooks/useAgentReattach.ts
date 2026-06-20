@@ -87,9 +87,8 @@ export const useAgentReattach = ({
   agentSessionIdRef.current = agentSessionId
   const agentTokenTotalRef = useRef(agentTokenTotal)
   agentTokenTotalRef.current = agentTokenTotal
-  const staleKeyRef = useRef(staleKey)
-  staleKeyRef.current = staleKey
-
+  const currentStaleKeyRef = useRef(staleKey)
+  currentStaleKeyRef.current = staleKey
   // Single-flight guard so a manual click and the auto-retry can't issue
   // overlapping `start_agent_watcher` invokes.
   const inFlightRef = useRef(false)
@@ -105,6 +104,10 @@ export const useAgentReattach = ({
   // Stale keys whose relocate has succeeded — re-selecting that pane must not
   // re-arm the red state (codex review VIM-192).
   const resolvedKeysRef = useRef<Set<string>>(new Set())
+  // The stale key armed by the current red-state cycle. Unlike `staleKey`,
+  // this is not a render mirror, so an async success event cannot resolve a
+  // newer `/clear` generation that arrived while the event was in flight.
+  const armedStaleKeyRef = useRef<string | null>(null)
 
   // Returns whether it actually issued an invoke (vs skipped under
   // single-flight) so the auto-retry budget only counts real calls.
@@ -160,19 +163,30 @@ export const useAgentReattach = ({
 
         // Fresh when a relocated run is observed: a DIFFERENT agentSessionId, or
         // the SAME id whose token total reset — either a drop below the captured
-        // total, or an explicit zero (covers a `/clear` whose pre-clear total
-        // was 0, where `< staleTotal` can never hold). Mirrors useAgentStatus's
-        // latch and additionally recognizes the zero reset (codex review
-        // VIM-192).
+        // total, an explicit zero (covers a `/clear` whose pre-clear total was
+        // 0), or any known total when the pre-clear baseline was unknown.
+        // Mirrors useAgentStatus's local reset latch so the red state only
+        // clears when the status panel can accept the same event.
         const tokensReset =
           eventTotal !== null &&
-          (eventTotal === 0 || (staleTotal !== null && eventTotal < staleTotal))
+          (eventTotal === 0 || staleTotal === null || eventTotal < staleTotal)
         const isFresh = id !== null && (id !== staleId || tokensReset)
         if (needsReattachRef.current && isFresh) {
-          const key = staleKeyRef.current
+          const key = armedStaleKeyRef.current
           if (key !== null) {
             resolvedKeysRef.current.add(key)
           }
+          const currentKey = currentStaleKeyRef.current
+          if (
+            currentKey !== null &&
+            currentKey !== key &&
+            !resolvedKeysRef.current.has(currentKey)
+          ) {
+            armedStaleKeyRef.current = currentKey
+
+            return
+          }
+          armedStaleKeyRef.current = null
           setNeedsReattach(false)
         }
       })
@@ -196,9 +210,18 @@ export const useAgentReattach = ({
   // so switching to a non-stale (or already-recovered) pane clears it and a
   // re-selected recovered pane never flashes red again.
   useEffect(() => {
-    if (staleKey === null || resolvedKeysRef.current.has(staleKey)) {
+    if (staleKey === null) {
+      armedStaleKeyRef.current = null
+      setNeedsReattach(false)
+
+      return
+    }
+
+    if (resolvedKeysRef.current.has(staleKey)) {
       staleAgentSessionIdRef.current = null
       staleTokenTotalRef.current = null
+      staleCaptureSessionRef.current = null
+      armedStaleKeyRef.current = null
       setNeedsReattach(false)
 
       return
@@ -213,6 +236,9 @@ export const useAgentReattach = ({
       staleTokenTotalRef.current = agentTokenTotalRef.current
     }
     staleCaptureSessionRef.current = sessionId
+    if (!needsReattachRef.current || armedStaleKeyRef.current === null) {
+      armedStaleKeyRef.current = staleKey
+    }
     setNeedsReattach(true)
   }, [staleKey, sessionId])
 
@@ -240,6 +266,8 @@ export const useAgentReattach = ({
         return
       }
       if (issued) {
+        attempts += 1
+      } else if (!inFlightRef.current) {
         attempts += 1
       }
       timer = setTimeout(() => void run(), REATTACH_AUTO_RETRY_INTERVAL_MS)

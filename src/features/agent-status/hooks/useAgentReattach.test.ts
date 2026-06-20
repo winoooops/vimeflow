@@ -182,6 +182,31 @@ test('stale state triggers a bounded, deferred auto-reattach', async () => {
   expect(invoke).toHaveBeenCalledTimes(5)
 })
 
+test('auto-reattach stops after bounded no-op rounds when pty is absent', async () => {
+  vi.mocked(getPtySessionId).mockReturnValue(undefined)
+
+  const { rerender } = renderHook(
+    ({ gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: null,
+        staleGeneration: gen,
+      }),
+    { initialProps: { gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ gen: 1 })
+  })
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400 + 700 * 6)
+  })
+
+  expect(invoke).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
 test('the stale session id is ignored; a new id clears needsReattach', () => {
   const { result, rerender } = renderHook(
     ({ aid, gen }) =>
@@ -243,9 +268,15 @@ test('repeated /clear preserves the original stale identity', () => {
   })
   expect(result.current.needsReattach).toBe(true)
 
-  // The relocated watcher emits a genuinely new id → resolved.
+  // A late success for the first clear must not resolve the newer generation.
   act(() => {
     emit('agent-status', makeEvent({ agentSessionId: 'codex-new' }))
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  // A subsequent fresh event resolves the still-armed second clear.
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-newer' }))
   })
   expect(result.current.needsReattach).toBe(false)
 })
@@ -281,6 +312,41 @@ test('a same-session /clear from zero tokens clears on the reset event', () => {
       makeEvent({
         agentSessionId: 'codex-1',
         contextWindow: makeContextWindow(0),
+      })
+    )
+  })
+  expect(result.current.needsReattach).toBe(false)
+})
+
+test('a same-session /clear with unknown token baseline clears on known tokens', () => {
+  const { result, rerender } = renderHook(
+    ({ aid, tok, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        agentTokenTotal: tok,
+        staleGeneration: gen,
+      }),
+    {
+      initialProps: {
+        aid: 'codex-1' as string | null,
+        tok: null as number | null,
+        gen: 0,
+      },
+    }
+  )
+
+  act(() => {
+    rerender({ aid: 'codex-1', tok: null, gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit(
+      'agent-status',
+      makeEvent({
+        agentSessionId: 'codex-1',
+        contextWindow: makeContextWindow(100),
       })
     )
   })
@@ -392,6 +458,80 @@ test('switching to a non-stale pane drops carried-over stale state', () => {
   // must not leak onto it.
   act(() => {
     rerender({ sid: 'session-2', gen: 0 })
+  })
+  expect(result.current.needsReattach).toBe(false)
+})
+
+test('switching away from an unresolved stale pane preserves stale identity', () => {
+  const { result, rerender } = renderHook(
+    ({ sid, aid, gen }) =>
+      useAgentReattach({
+        sessionId: sid,
+        agentSessionId: aid,
+        staleGeneration: gen,
+      }),
+    {
+      initialProps: {
+        sid: 'session-1',
+        aid: 'codex-old' as string | null,
+        gen: 0,
+      },
+    }
+  )
+
+  act(() => {
+    rerender({ sid: 'session-1', aid: 'codex-old', gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    rerender({ sid: 'session-2', aid: null, gen: 0 })
+  })
+  expect(result.current.needsReattach).toBe(false)
+
+  act(() => {
+    rerender({ sid: 'session-1', aid: null, gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-old' }))
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-new' }))
+  })
+  expect(result.current.needsReattach).toBe(false)
+})
+
+test('a late success event does not resolve a newer stale generation', () => {
+  const { result, rerender } = renderHook(
+    ({ aid, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        staleGeneration: gen,
+      }),
+    { initialProps: { aid: 'codex-old' as string | null, gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ aid: 'codex-old', gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    rerender({ aid: null, gen: 2 })
+  })
+
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-new' }))
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-newer' }))
   })
   expect(result.current.needsReattach).toBe(false)
 })
