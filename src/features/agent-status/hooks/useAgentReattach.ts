@@ -271,12 +271,14 @@ export const useAgentReattach = ({
         // Fresh when a relocated run is observed: a DIFFERENT agentSessionId, or
         // the SAME id whose token total reset — either a drop below the captured
         // total, an explicit zero (covers a `/clear` whose pre-clear total was
-        // 0), or any known total when the pre-clear baseline was unknown.
+        // 0), or any known total when no stale identity was captured.
         // Mirrors useAgentStatus's local reset latch so the red state only
         // clears when the status panel can accept the same event.
         const tokensReset =
           eventTotal !== null &&
-          (eventTotal === 0 || staleTotal === null || eventTotal < staleTotal)
+          (eventTotal === 0 ||
+            (staleId === null && staleTotal === null) ||
+            (staleTotal !== null && eventTotal < staleTotal))
         const identityChanged = staleId !== null && id !== staleId
         const isFresh = id !== null && (identityChanged || tokensReset)
         if (needsReattachRef.current && isFresh) {

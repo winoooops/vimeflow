@@ -537,7 +537,7 @@ const WorkspaceViewContent = (): ReactElement => {
     // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
     // periodically so the panel follows an in-session `resume` (which is
     // undetectable and never arms the red state).
-    driftEnabled: agentStatus.agentType === 'codex',
+    driftEnabled: agentStatus.agentType === 'codex' && agentStatus.isActive,
   })
 
   const visibleAgentStatusPtyIds = useMemo(

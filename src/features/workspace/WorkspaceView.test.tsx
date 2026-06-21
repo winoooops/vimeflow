@@ -79,6 +79,12 @@ const workspaceTerminalMock = vi.hoisted(() => {
   return { defaultSessionList, service }
 })
 
+const agentReattachMock = vi.hoisted(() => ({
+  useAgentReattach: vi.fn(() => ({
+    needsReattach: false,
+  })),
+}))
+
 const mockMatchMedia = (matches: boolean): (() => void) => {
   const originalMatchMedia = window.matchMedia
 
@@ -140,9 +146,7 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 }))
 
 vi.mock('../agent-status/hooks/useAgentReattach', () => ({
-  useAgentReattach: (): { needsReattach: boolean } => ({
-    needsReattach: false,
-  }),
+  useAgentReattach: agentReattachMock.useAgentReattach,
 }))
 
 // Mock useEditorBuffer so individual tests can flip isDirty without
@@ -2168,6 +2172,28 @@ describe('WorkspaceView', () => {
     expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
       isActive: true,
       agentType: 'claude-code',
+    })
+  })
+
+  test('disables Codex drift relocation after the agent exits', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          isActive: false,
+          agentExited: sessionId !== null,
+          agentType: sessionId === null ? null : 'codex',
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    const calls = agentReattachMock.useAgentReattach.mock.calls
+    const lastArgs = calls[calls.length - 1]?.[0]
+    expect(lastArgs).toMatchObject({
+      sessionId: 'sess-1',
+      driftEnabled: false,
     })
   })
 

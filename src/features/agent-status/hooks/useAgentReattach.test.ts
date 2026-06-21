@@ -219,7 +219,7 @@ test('an unknown stale session id does not clear on a different id alone', () =>
       'agent-status',
       makeEvent({
         agentSessionId: 'codex-after-clear',
-        contextWindow: makeContextWindow(0),
+        contextWindow: makeContextWindow(100),
       })
     )
   })
@@ -305,7 +305,7 @@ test('a same-session /clear from zero tokens clears on the reset event', () => {
   expect(result.current.needsReattach).toBe(false)
 })
 
-test('a same-session /clear with unknown token baseline clears on known tokens', () => {
+test('a same-session /clear with unknown token baseline ignores nonzero stale replay', () => {
   const { result, rerender } = renderHook(
     ({ aid, tok, gen }) =>
       useAgentReattach({
@@ -337,7 +337,7 @@ test('a same-session /clear with unknown token baseline clears on known tokens',
       })
     )
   })
-  expect(result.current.needsReattach).toBe(false)
+  expect(result.current.needsReattach).toBe(true)
 })
 
 test('a same-session /clear (lower token total) clears needsReattach', () => {
