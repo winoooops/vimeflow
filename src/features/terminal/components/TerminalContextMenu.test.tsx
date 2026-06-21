@@ -7,6 +7,7 @@ const baseProps = {
   onClose: vi.fn(),
   onCopy: vi.fn(),
   onPaste: vi.fn(),
+  onSelectAll: vi.fn(),
   canCopy: true,
 }
 
@@ -21,7 +22,7 @@ test('renders null when isOpen is false', () => {
   expect(container).toBeEmptyDOMElement()
 })
 
-test('renders a menu with Copy and Paste items when isOpen and canCopy', () => {
+test('renders a menu with terminal action items when isOpen and canCopy', () => {
   render(
     <TerminalContextMenu {...baseProps} isOpen position={{ x: 50, y: 60 }} />
   )
@@ -29,11 +30,12 @@ test('renders a menu with Copy and Paste items when isOpen and canCopy', () => {
   expect(
     screen.getByRole('menu', { name: 'Terminal actions' })
   ).toBeInTheDocument()
+
+  expect(
+    screen.getByRole('menuitem', { name: 'Select All' })
+  ).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
-  expect(
-    screen.queryByRole('menuitem', { name: 'Select All' })
-  ).not.toBeInTheDocument()
 
   expect(
     screen.queryByRole('menuitem', { name: 'Clear' })
@@ -90,6 +92,33 @@ test('clicking Copy with canCopy=true fires onCopy then onClose', async () => {
   await user.click(screen.getByRole('menuitem', { name: 'Copy' }))
 
   expect(order).toEqual(['copy', 'close'])
+})
+
+test('clicking Select All fires onSelectAll then onClose', async () => {
+  const user = userEvent.setup()
+  const order: string[] = []
+
+  const onSelectAll = vi.fn(() => {
+    order.push('select-all')
+  })
+
+  const onClose = vi.fn(() => {
+    order.push('close')
+  })
+
+  render(
+    <TerminalContextMenu
+      {...baseProps}
+      onClose={onClose}
+      onSelectAll={onSelectAll}
+      isOpen
+      position={{ x: 0, y: 0 }}
+    />
+  )
+
+  await user.click(screen.getByRole('menuitem', { name: 'Select All' }))
+
+  expect(order).toEqual(['select-all', 'close'])
 })
 
 test('clicking Copy when canCopy=false does not fire onCopy or onClose', async () => {
@@ -165,8 +194,11 @@ test('ArrowDown loops on Paste when disabled Copy is skipped', async () => {
     />
   )
 
-  expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
+  expect(screen.getByRole('menuitem', { name: 'Select All' })).toHaveFocus()
 
   await user.keyboard('{ArrowDown}')
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
+
+  await user.keyboard('{ArrowDown}')
+  expect(screen.getByRole('menuitem', { name: 'Select All' })).toHaveFocus()
 })

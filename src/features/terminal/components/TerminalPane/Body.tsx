@@ -979,6 +979,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         isOpen={clipboard.isOpen}
         position={clipboard.openAt}
         onClose={clipboard.close}
+        onSelectAll={clipboard.selectAll}
         onCopy={(): void => {
           void clipboard.copy()
         }}

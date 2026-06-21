@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 33
+ref_count: 34
 ---
 
 # Testing Gaps
@@ -656,4 +656,13 @@ filesystem scope restrictions).
 - **File:** `electron/ghostty-render-state-main.test.ts`
 - **Finding:** Native package resolver tests asserted fallback to `process.cwd()/node_modules/@coder/libghostty-vt-node`, which only works when the optional native package is installed in the checkout. Clean or unsupported-platform installs could fail with a misleading path mismatch.
 - **Fix:** Made the resolver tests create their own temporary valid fallback package, including a manifest and `.node` file under `prebuilds`, so they no longer depend on local optional dependency installation.
+- **Commit:** same commit as this entry
+
+### 66. PTY event test waited for any data instead of the command marker
+
+- **Source:** github-codex-connector | PR #582 round 1 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The new PTY output regression test waited for the first `pty-data` event and then immediately inspected recorded events for the command marker. Shell startup prompts can emit PTY data before the `printf` output arrives, making the test intermittently fail in CI.
+- **Fix:** Added a predicate-based wait helper to the recording event sink and updated the test to wait until a `pty-data` payload contains the marker itself.
 - **Commit:** same commit as this entry

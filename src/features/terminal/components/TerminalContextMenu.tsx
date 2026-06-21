@@ -6,6 +6,7 @@ export interface TerminalContextMenuProps {
   isOpen: boolean
   position: { x: number; y: number } | null
   onClose: () => void
+  onSelectAll: () => void
   onCopy: () => void
   onPaste: () => void
   canCopy: boolean
@@ -29,6 +30,7 @@ export const TerminalContextMenu = ({
   isOpen,
   position,
   onClose,
+  onSelectAll,
   onCopy,
   onPaste,
   canCopy,
@@ -48,6 +50,7 @@ export const TerminalContextMenu = ({
       }}
       aria-label="Terminal actions"
     >
+      <Menu.Item onSelect={onSelectAll}>Select All</Menu.Item>
       <Menu.Item disabled={!canCopy} shortcut={COPY_SHORTCUT} onSelect={onCopy}>
         Copy
       </Menu.Item>
