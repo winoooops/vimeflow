@@ -5,8 +5,6 @@ import { createRequire } from 'node:module'
 import { TextDecoder } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import {
-  readCellsByRow,
-  readCursorOffsetInCellRow,
   readRowTextByCellColumns,
   readTextCellWidth,
   type GhosttyCellTraversalCell,
@@ -31,6 +29,7 @@ const OSC7_PREFIX = '\u001b]7;'
 const OSC_BEL_TERMINATOR = '\u0007'
 const OSC_ST_TERMINATOR = '\u001b\\'
 const OSC_BUFFER_LIMIT = 8192
+const CSI_BUFFER_LIMIT = 8192
 const ESC = '\u001b'
 const CSI = `${ESC}[`
 const CSI_PRIVATE_MODE_PREFIX = `${CSI}?`
@@ -49,7 +48,6 @@ export interface GhosttyRenderStateBridgeSnapshot {
   cursor?: {
     rowIndex: number
     columnOffset: number
-    textOffset?: number
     visible?: boolean
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
@@ -416,6 +414,12 @@ class CursorVisibilityScanner {
       const finalIndex = this.findPrivateModeFinal(finalStart)
 
       if (finalIndex === -1) {
+        if (this.buffer.length - sequenceStart > CSI_BUFFER_LIMIT) {
+          this.buffer = ''
+
+          return
+        }
+
         this.buffer = this.buffer.slice(sequenceStart)
 
         return
@@ -995,8 +999,6 @@ const normalizeSnapshot = (
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
   const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
-  const cellsByRow = readCellsByRow(cells)
-  const cursorRowCells = cellsByRow.get(snapshot.cursorRow)
 
   const snapshotCursorVisible =
     typeof snapshot.cursorVisible === 'boolean'
@@ -1016,15 +1018,6 @@ const normalizeSnapshot = (
       rowIndex: snapshot.cursorRow,
       columnOffset: snapshot.cursorCol,
       ...(snapshotCursorVisible === false ? { visible: false } : {}),
-      ...(cursorRowCells === undefined
-        ? {}
-        : {
-            textOffset: readCursorOffsetInCellRow(
-              rows[snapshot.cursorRow] ?? '',
-              cursorRowCells,
-              snapshot.cursorCol
-            ),
-          }),
     },
     ...(cells === undefined ? {} : { cells }),
   }

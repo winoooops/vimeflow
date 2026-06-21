@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-21
-ref_count: 2
+ref_count: 3
 ---
 
 # Dead Code
@@ -60,4 +60,13 @@ code and should be removed.
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L963-L974
 - **Finding:** `createTextNode` evaluated `BLOCK_ELEMENT_PATTERN.test(text)` twice on the same string. The second call was reachable only after the first had already established that block glyphs exist, making the repeated predicate a dead branch signal for future readers.
 - **Fix:** Hoisted the regex result into `hasBlockGlyphs` and reused it in both branches, keeping the branch contract explicit.
+- **Commit:** same commit as this entry
+
+### 6. Precomputed bridge fields should be deleted when callers reject them
+
+- **Source:** github-claude | PR #591 round 8 | 2026-06-21
+- **Severity:** LOW
+- **File:** `electron/ghostty-render-state-main.ts` L1019-L1026
+- **Finding:** The Electron bridge computed and transmitted `cursor.textOffset`, but the renderer deliberately recomputed cursor offsets from `columnOffset` and the current cell map. The field was dead API surface and could invite future callers to trust a stale main-process offset.
+- **Fix:** Removed `textOffset` from the Electron bridge, preload type, renderer-side native bridge normalizer, and VT snapshot cursor type. Updated tests to assert only the live `rowIndex`, `columnOffset`, and visibility contract.
 - **Commit:** same commit as this entry

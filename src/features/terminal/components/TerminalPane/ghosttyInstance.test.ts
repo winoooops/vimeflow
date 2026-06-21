@@ -577,6 +577,72 @@ describe('ghosttyInstance', () => {
     expect(element.scrollTop).toBe(0)
   })
 
+  test('keeps visible shell snapshot cursors in view', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['line 1', 'line 2', '$ ready', '', '', ''],
+          cursor: {
+            rowIndex: 2,
+            columnOffset: 7,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    setScrollMetrics(element, 54, 640)
+    element.scrollTop = 0
+
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        if (this.dataset.terminalCursorMarker === 'true') {
+          return createRect(90, 108)
+        }
+
+        if (this.dataset.terminalRenderer === GHOSTTY_TERMINAL_RENDERER_ID) {
+          return createRect(0, 54)
+        }
+
+        return createRect(0, 0)
+      })
+
+    try {
+      created.output.writeOutput({
+        text: 'snapshot',
+        offsetStart: 0,
+        byteLen: 8,
+        phase: 'live',
+      })
+    } finally {
+      getBoundingClientRectSpy.mockRestore()
+    }
+
+    expect(element.scrollTop).toBeGreaterThan(0)
+  })
+
   test('does not outer-scroll agent TUI snapshots by rendered cursor bounds', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),

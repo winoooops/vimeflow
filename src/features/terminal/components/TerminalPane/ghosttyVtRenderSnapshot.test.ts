@@ -296,7 +296,6 @@ describe('ghosttyVtRenderSnapshot', () => {
       cursor: {
         rowIndex: 0,
         columnOffset: 2,
-        textOffset: 10,
       },
       cells: [
         {
@@ -487,7 +486,6 @@ describe('ghosttyVtRenderSnapshot', () => {
       cursor: {
         rowIndex: 0,
         columnOffset: 4,
-        textOffset: 1,
       },
       cells: [
         {

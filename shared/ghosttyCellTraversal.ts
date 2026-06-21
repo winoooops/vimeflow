@@ -379,6 +379,6 @@ export const readCursorOffsetInCellRow = (
 
   return (
     textOffset +
-    findTextOffsetForCellColumn(trailingText, columnOffset - currentColumn)
+    findTextOffsetForCellColumn(trailingText, columnOffset - fallbackColumn)
   )
 }

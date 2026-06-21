@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-21
-ref_count: 5
+ref_count: 6
 ---
 
 # Terminal DOM Rendering
@@ -93,4 +93,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L25
 - **Finding:** `BLOCK_ELEMENT_PATTERN` matched shade glyphs U+2591 through U+2593, but `readBlockGlyphPaint` returned `null` for them. That routed shade runs through the block-glyph splitting path without producing custom paint, creating unnecessary per-character work and an expectation mismatch.
 - **Fix:** Narrowed the pattern to the implemented paint ranges, excluding U+2591 through U+2593 so shade glyphs stay on the standard text-rendering path until a real shade paint implementation exists. Added a DOM regression that asserts shade glyphs render with no custom block-glyph spans.
+- **Commit:** same commit as this entry
+
+### 10. Replace snapshots need scroll mode based on visible cursor capacity
+
+- **Source:** github-claude | PR #591 round 8 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L481-L485
+- **Finding:** Pinning every replace-operation delta to `scrollTop = 0` preserved full-screen TUI frames but could hide the active shell cursor when the cursor row still fit within the pane's visible row capacity.
+- **Fix:** Replace snapshots now derive the cursor row from the incoming replace operation and use cursor tracking when that row fits in the visible row capacity; snapshots whose cursor is below the pane remain top-pinned for TUI layouts. Added a Ghostty instance regression that proves a visible shell cursor scrolls into view while the TUI top-pin case stays unchanged.
 - **Commit:** same commit as this entry

@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-21
-ref_count: 8
+ref_count: 9
 ---
 
 # Terminal Render-State Driver Contract
@@ -289,4 +289,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `shared/ghosttyCellTraversal.ts` L172
 - **Finding:** Ghostty can report a nonempty cell whose declared `width` exceeds the terminal width of its text, such as a private-use icon occupying two native cells. Returning only `cell.text` made following cells render one terminal column too far left even though cursor mapping used the native width.
 - **Fix:** Padded nonempty cell display text to the declared native width while keeping fallback-source traversal tied to the text's actual cell width. Shared, Electron bridge, and renderer tests now pin the reserved-column behavior for explicit and sparse wide private-use cells.
+- **Commit:** same commit as this entry
+
+### 30. Cursor offsets must use the same fallback column as visible text
+
+- **Source:** github-claude | PR #591 round 8 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `shared/ghosttyCellTraversal.ts` L194-L383
+- **Finding:** A trailing sparse styled blank can intentionally leave `fallbackColumn` behind `currentColumn` so visible text includes both the styled blank and the following fallback row text. Cursor-offset lookup still measured trailing text from `currentColumn`, placing the cursor before the following fallback character.
+- **Fix:** Changed trailing cursor lookup to measure from `fallbackColumn`, matching the text slice used by visible-row reconstruction. Added a shared regression for `A B` with a styled blank at column 1 and the cursor after that terminal cell.
 - **Commit:** same commit as this entry

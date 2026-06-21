@@ -9,6 +9,7 @@ import type {
 import {
   TerminalDisplayBuffer,
   type TerminalDisplayDelta,
+  type TerminalDisplayDeltaOperation,
   type TerminalDisplayRun,
   type TerminalDisplayStyle,
   readTextCellWidth,
@@ -154,6 +155,36 @@ const readCursorRowIndex = (text: string, cursorOffset: number): number => {
   }
 
   return rowIndex
+}
+
+const readDeltaCursorRowIndex = (
+  delta: TerminalDisplayDelta
+): number | null => {
+  const replaceOperation = [...delta.operations]
+    .reverse()
+    .find(
+      (
+        operation
+      ): operation is Extract<
+        TerminalDisplayDeltaOperation,
+        { readonly type: 'replace' }
+      > => operation.type === 'replace'
+    )
+
+  if (!replaceOperation) {
+    return null
+  }
+
+  return readCursorRowIndex(
+    replaceOperation.text,
+    Math.min(
+      Math.max(
+        replaceOperation.cursorOffset ?? replaceOperation.text.length,
+        0
+      ),
+      replaceOperation.text.length
+    )
+  )
 }
 
 const readBlockGlyphPaint = (character: string): BlockGlyphPaint | null => {
@@ -478,13 +509,17 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     if (output.displayDelta) {
-      const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
+      const hasReplaceOperation = output.displayDelta.operations.some(
         (operation) => operation.type === 'replace'
       )
-        ? 'top'
-        : 'bottom'
+      const replaceCursorRowIndex = readDeltaCursorRowIndex(output.displayDelta)
 
       this.outputBuffer.applyDelta(output.displayDelta)
+
+      const scrollMode: RenderScrollMode = hasReplaceOperation
+        ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
+        : 'bottom'
+
       this.renderOutput({ scrollMode })
       callback?.()
 
@@ -1169,6 +1204,24 @@ export class TerminalTextSurface implements TerminalSurface {
     if (scrollMode === 'cursor') {
       this.scrollCursorMarkerIntoView(cursorRowIndex)
     }
+  }
+
+  private readReplaceSnapshotScrollMode(
+    cursorRowIndex: number | null
+  ): 'cursor' | 'top' {
+    if (cursorRowIndex === null) {
+      return 'top'
+    }
+
+    return cursorRowIndex < this.readVisibleRowCapacity() ? 'cursor' : 'top'
+  }
+
+  private readVisibleRowCapacity(): number {
+    const viewportHeight = this.root.clientHeight
+
+    return viewportHeight <= 0
+      ? 0
+      : Math.max(1, Math.floor(viewportHeight / this.readLineHeight()))
   }
 
   private scrollCursorRowIntoView(cursorRowIndex: number): void {

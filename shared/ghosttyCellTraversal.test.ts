@@ -44,6 +44,24 @@ describe('ghosttyCellTraversal', () => {
     ).toBe('A  B')
   })
 
+  test('maps cursor columns after sparse trailing styled blanks', () => {
+    expect(
+      readCursorOffsetInCellRow(
+        'A B',
+        [
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+            background: BACKGROUND_HEX,
+          },
+        ],
+        2
+      )
+    ).toBe(3)
+  })
+
   test('aligns later explicit cells after styled blanks', () => {
     expect(
       readCellRowVisibleText('A B', [

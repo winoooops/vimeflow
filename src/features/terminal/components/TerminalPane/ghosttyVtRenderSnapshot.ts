@@ -16,7 +16,6 @@ import type { TerminalParserEngineOutput } from './terminalParserEngine'
 export interface GhosttyVtRenderSnapshotCursor {
   readonly rowIndex: number
   readonly columnOffset: number
-  readonly textOffset?: number
   readonly visible?: boolean
 }
 
@@ -147,9 +146,6 @@ const trimLeadingEmptyRows = (
           cursor: {
             rowIndex: snapshot.cursor.rowIndex - leadingRows,
             columnOffset: snapshot.cursor.columnOffset,
-            ...(snapshot.cursor.textOffset === undefined
-              ? {}
-              : { textOffset: snapshot.cursor.textOffset }),
             ...(snapshot.cursor.visible === undefined
               ? {}
               : { visible: snapshot.cursor.visible }),

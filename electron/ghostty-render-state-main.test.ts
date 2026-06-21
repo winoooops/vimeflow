@@ -429,6 +429,46 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals[0]?.feed).toHaveBeenCalledOnce()
   })
 
+  test('drops oversized pending private CSI cursor visibility sequences', () => {
+    const { bindings } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const encoder = new TextEncoder()
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode(`\u001b[?${'1'.repeat(8193)}`),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('25l'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      requireResult(
+        bridge.readSnapshot(event.sender.id, {
+          driverId: createResult.driverId,
+        })
+      ).cursor
+    ).not.toHaveProperty('visible')
+  })
+
   test('resizes native state and resets by recreating the terminal at the current size', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
@@ -600,7 +640,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 6,
-          textOffset: 5,
         },
         cells: [
           {
@@ -670,7 +709,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 3,
         },
         cells: [
           {
@@ -737,7 +775,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 25,
-          textOffset: 25,
         },
         cells: [
           {
@@ -792,7 +829,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 10,
-          textOffset: 5,
         },
         cells: [
           {
@@ -851,7 +887,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 24,
-          textOffset: 24,
         },
         cells: [
           {
@@ -898,7 +933,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 3,
         },
         cells: [
           {
@@ -945,7 +979,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 24,
-          textOffset: 24,
         },
         cells: [
           {
@@ -997,7 +1030,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 3,
         },
         cells: [
           {
@@ -1063,7 +1095,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 2,
         },
         cells: [
           {
@@ -1127,7 +1158,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 4,
-          textOffset: 5,
         },
         cells: [
           {
@@ -1179,7 +1209,6 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 4,
-          textOffset: 5,
         },
         cells: [
           {
