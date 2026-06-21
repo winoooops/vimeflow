@@ -140,9 +140,8 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 }))
 
 vi.mock('../agent-status/hooks/useAgentReattach', () => ({
-  useAgentReattach: (): { needsReattach: boolean; reattach: () => void } => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
     needsReattach: false,
-    reattach: (): void => undefined,
   }),
 }))
 

@@ -521,9 +521,11 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatusResetGeneration
   )
 
-  // Codex watcher relocation recovery (VIM-188): `/clear` arms the red "needs
-  // reattach" state + a bounded auto-reattach; the manual button covers the
-  // undetectable in-session `resume`.
+  // Codex watcher relocation recovery (VIM-188/192): `/clear` arms the red
+  // "needs reattach" indicator + a bounded auto-reattach; the always-on drift
+  // tick relocates the active Codex pane so the panel also follows an
+  // undetectable in-session `resume`. Recovery is automatic once codex writes
+  // the conversation (the user sends a prompt) — there is no manual button.
   const agentReattach = useAgentReattach({
     sessionId: activePtyBackedPanePtyId ?? null,
     agentSessionId: agentStatus.agentSessionId,
@@ -532,6 +534,10 @@ const WorkspaceViewContent = (): ReactElement => {
         agentStatus.contextWindow.totalOutputTokens
       : null,
     staleGeneration: agentStatusResetGeneration,
+    // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
+    // periodically so the panel follows an in-session `resume` (which is
+    // undetectable and never arms the red state).
+    driftEnabled: agentStatus.agentType === 'codex',
   })
 
   const visibleAgentStatusPtyIds = useMemo(
@@ -2522,11 +2528,6 @@ const WorkspaceViewContent = (): ReactElement => {
               gitStatus={gitStatus}
               isRefreshing={isAgentStatusRefreshing}
               needsReattach={agentReattach.needsReattach}
-              onReattach={
-                agentStatus.agentType === 'codex'
-                  ? agentReattach.reattach
-                  : undefined
-              }
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}

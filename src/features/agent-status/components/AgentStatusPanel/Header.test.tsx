@@ -107,7 +107,6 @@ test('shows the red needs-reattach state when stale', () => {
     <AgentStatusPanelHeader
       agent={AGENTS.codex}
       needsReattach
-      onReattach={() => undefined}
       onCollapse={() => undefined}
     />
   )
@@ -116,30 +115,17 @@ test('shows the red needs-reattach state when stale', () => {
     'data-stale',
     'true'
   )
-  expect(screen.getByText('reattach needed')).toBeInTheDocument()
+  // The red state is an instruction (recovery is automatic once the user sends
+  // a prompt), not a clickable action.
+  expect(screen.getByText('send a prompt to reattach')).toBeInTheDocument()
   expect(screen.getByText('link_off')).toBeInTheDocument()
 })
 
-test('renders a Reattach button that fires onReattach', async () => {
-  const onReattach = vi.fn()
+test('never renders a manual reattach button (recovery is automatic)', () => {
   render(
     <AgentStatusPanelHeader
       agent={AGENTS.codex}
-      onReattach={onReattach}
-      onCollapse={() => undefined}
-    />
-  )
-
-  await userEvent.click(
-    screen.getByRole('button', { name: /reattach agent session/i })
-  )
-  expect(onReattach).toHaveBeenCalledTimes(1)
-})
-
-test('omits the Reattach button when no handler is provided', () => {
-  render(
-    <AgentStatusPanelHeader
-      agent={AGENTS.claude}
+      needsReattach
       onCollapse={() => undefined}
     />
   )

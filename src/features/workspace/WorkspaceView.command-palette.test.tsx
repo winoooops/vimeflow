@@ -50,9 +50,8 @@ vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
 
 vi.mock('../agent-status/hooks/useAgentReattach', () => ({
-  useAgentReattach: (): { needsReattach: boolean; reattach: () => void } => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
     needsReattach: false,
-    reattach: (): void => undefined,
   }),
 }))
 
@@ -462,6 +461,38 @@ describe('WorkspaceView - Command Palette Integration', () => {
       'session-1',
       'p0'
     )
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        0
+      )
+    })
+  })
+
+  test('a non-/clear command on a Codex pane does not bump the reset generation', async () => {
+    // An in-session `resume` (and any non-`/clear` input) must NOT arm the
+    // agent-status reset/red state — only `/clear` does. This guards the
+    // confirmed root cause: resume is undetectable, so the panel never goes red
+    // for it; a red panel after a resume is leftover `/clear` recovery, not the
+    // resume (codex review, VIM-192).
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        agentType: 'codex',
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', 'resume')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).not.toHaveBeenCalled()
 
     await waitFor(() => {
       expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(

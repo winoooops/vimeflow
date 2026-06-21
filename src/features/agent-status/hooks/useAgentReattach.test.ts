@@ -77,61 +77,6 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-test('reattach re-invokes start_agent_watcher for the resolved pty', () => {
-  const { result } = renderHook(() =>
-    useAgentReattach({
-      sessionId: 'session-1',
-      agentSessionId: null,
-      staleGeneration: 0,
-    })
-  )
-
-  act(() => {
-    result.current.reattach()
-  })
-
-  expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
-    sessionId: 'pty-session-1',
-  })
-})
-
-test('reattach is a no-op without a session', () => {
-  const { result } = renderHook(() =>
-    useAgentReattach({
-      sessionId: null,
-      agentSessionId: null,
-      staleGeneration: 0,
-    })
-  )
-
-  act(() => {
-    result.current.reattach()
-  })
-
-  expect(invoke).not.toHaveBeenCalled()
-})
-
-test('reattach is single-flight while one is in progress', () => {
-  vi.mocked(invoke).mockImplementation(
-    () => new Promise<never>(() => undefined) // never resolves
-  )
-
-  const { result } = renderHook(() =>
-    useAgentReattach({
-      sessionId: 'session-1',
-      agentSessionId: null,
-      staleGeneration: 0,
-    })
-  )
-
-  act(() => {
-    result.current.reattach()
-    result.current.reattach()
-  })
-
-  expect(invoke).toHaveBeenCalledTimes(1)
-})
-
 test('a stale-generation bump marks needsReattach', () => {
   const { result, rerender } = renderHook(
     ({ gen }) =>
@@ -175,7 +120,8 @@ test('stale state triggers a bounded, deferred auto-reattach', async () => {
   })
   expect(invoke).toHaveBeenCalledTimes(1)
 
-  // Bounded: retries cap out (5 issued calls total) and then stop.
+  // Bounded: retries cap out (5 issued calls total) and then stop. Late
+  // recovery is the drift tick's job, not this red-armed window.
   await act(async () => {
     await vi.advanceTimersByTimeAsync(700 * 6)
   })
@@ -204,6 +150,7 @@ test('auto-reattach stops after bounded no-op rounds when pty is absent', async 
   })
 
   expect(invoke).not.toHaveBeenCalled()
+  // Bounded window only (drift is off — no driftEnabled), so it fully stops.
   expect(vi.getTimerCount()).toBe(0)
 })
 
@@ -558,7 +505,8 @@ test('auto-reattach keeps retrying after an IPC failure', async () => {
   })
   expect(invoke).toHaveBeenCalledTimes(1)
 
-  // A rejecting invoke must not halt the bounded retry loop.
+  // A rejecting invoke must not halt the bounded retry loop (a 'failed' invoke
+  // counts as issued, so the budget is spent the same as a resolving one).
   await act(async () => {
     await vi.advanceTimersByTimeAsync(700 * 6)
   })
@@ -602,4 +550,212 @@ test('a recovered pane does not re-arm when re-selected', () => {
     rerender({ sid: 'session-1', aid: 'codex-new', gen: 1 })
   })
   expect(result.current.needsReattach).toBe(false)
+})
+
+test('the auto-retry never clears red on its own without a fresh event', async () => {
+  const { result, rerender } = renderHook(
+    ({ gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: null,
+        staleGeneration: gen,
+      }),
+    { initialProps: { gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ gen: 1 })
+  })
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400 + 700 * 6)
+  })
+  // The bounded retry fired its budget...
+  expect(invoke).toHaveBeenCalledTimes(5)
+  // ...but never cleared red on its own — clearing is strictly event-gated.
+  expect(result.current.needsReattach).toBe(true)
+})
+
+test('a late different-id event clears red even after the bounded retry has stopped', async () => {
+  const { result, rerender } = renderHook(
+    ({ aid, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        staleGeneration: gen,
+      }),
+    { initialProps: { aid: 'codex-old' as string | null, gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ aid: 'codex-old', gen: 1 })
+  })
+
+  // Let the bounded retry fully exhaust — red is stuck (no fresh event yet).
+  // This is the idle-`resume` / slow recovery timeline: the drift tick (off in
+  // this unit, gated by driftEnabled) is what eventually relocates in the app;
+  // here we assert the event listener still clears whenever that lands.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400 + 700 * 6)
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  // A relocate finally lands on the new rollout (a DIFFERENT agentSessionId) →
+  // the always-live event listener clears red regardless of retry phase.
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-new' }))
+  })
+  expect(result.current.needsReattach).toBe(false)
+})
+
+test('a stale same-id event with no token reset does not clear red', () => {
+  const { result, rerender } = renderHook(
+    ({ aid, total, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        agentTokenTotal: total,
+        staleGeneration: gen,
+      }),
+    {
+      initialProps: {
+        aid: 'codex-1' as string | null,
+        total: 100 as number | null,
+        gen: 0,
+      },
+    }
+  )
+
+  // /clear captures the pre-clear identity: staleId='codex-1', staleTotal=100.
+  act(() => {
+    rerender({ aid: 'codex-1', total: 100, gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  // The OLD watcher keeps emitting the captured id with a GROWING token total
+  // (not a reset). With persistent retry now firing forever, this replay must
+  // still not be mistaken for a relocate — clearing requires a different id or
+  // a genuine token reset (codex review: guard the stale-replay exposure).
+  act(() => {
+    emit(
+      'agent-status',
+      makeEvent({
+        agentSessionId: 'codex-1',
+        contextWindow: makeContextWindow(200),
+      })
+    )
+  })
+  expect(result.current.needsReattach).toBe(true)
+})
+
+// --- always-on drift tick (VIM-192): follow an in-session resume ---
+
+test('the drift tick re-locates a live Codex pane on a cadence', async () => {
+  renderHook(() =>
+    useAgentReattach({
+      sessionId: 'session-1',
+      agentSessionId: 'codex-1',
+      // Not stale (gen 0) → no red, no bounded retry. Only the drift tick runs.
+      staleGeneration: 0,
+      driftEnabled: true,
+    })
+  )
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000)
+  })
+  expect(invoke).toHaveBeenCalledTimes(1)
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000)
+  })
+  expect(invoke).toHaveBeenCalledTimes(2)
+})
+
+test('stops a drift-started watcher when the active pane switches before it resolves', async () => {
+  let resolveStart: (() => void) | undefined
+
+  vi.mocked(invoke).mockImplementation(((cmd: string) => {
+    if (cmd === 'start_agent_watcher') {
+      return new Promise((resolve) => {
+        resolveStart = (): void => {
+          resolve(null)
+        }
+      })
+    }
+
+    return Promise.resolve(null)
+  }) as unknown as typeof invoke)
+
+  const { rerender } = renderHook(
+    ({ sessionId }) =>
+      useAgentReattach({
+        sessionId,
+        agentSessionId: 'codex-1',
+        staleGeneration: 0,
+        driftEnabled: true,
+      }),
+    { initialProps: { sessionId: 'session-1' } }
+  )
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000)
+  })
+  expect(resolveStart).toBeDefined()
+
+  act(() => {
+    rerender({ sessionId: 'session-2' })
+  })
+
+  await act(async () => {
+    resolveStart?.()
+    await Promise.resolve()
+  })
+
+  expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+    sessionId: 'pty-session-1',
+  })
+})
+
+test('no drift tick when driftEnabled is false', async () => {
+  renderHook(() =>
+    useAgentReattach({
+      sessionId: 'session-1',
+      agentSessionId: 'codex-1',
+      staleGeneration: 0,
+      driftEnabled: false,
+    })
+  )
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000 * 3)
+  })
+  // Not Codex / no live agent → no periodic lsof cost.
+  expect(invoke).not.toHaveBeenCalled()
+})
+
+test('the drift tick never clears red on its own (event-gated)', async () => {
+  // Clearing is strictly event-gated: only a fresh `agent-status` event clears
+  // red. The drift tick is fire-and-forget — it re-locates but never resolves.
+  const { result, rerender } = renderHook(
+    ({ aid, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        staleGeneration: gen,
+        driftEnabled: true,
+      }),
+    { initialProps: { aid: 'codex-1' as string | null, gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ aid: 'codex-1', gen: 1 })
+  })
+
+  // Let both the bounded retry and several drift ticks fire.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000 * 3)
+  })
+  // No agent-status event was emitted → red persists despite the relocates.
+  expect(result.current.needsReattach).toBe(true)
 })

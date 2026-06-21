@@ -56,6 +56,12 @@ fn resolve_transcript_path(
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
+    /// The status source (Codex: rollout) path this handle is watching.
+    /// Read via `AgentWatcherState::current_status_path` so the relocate
+    /// sequence can skip a no-op re-spawn when a fresh locate returns the
+    /// same path (the drift tick calls `start_agent_watcher` every few
+    /// seconds; re-tailing a 20-114MB rollout on every tick is wasteful).
+    status_path: PathBuf,
     _watcher: Option<RecommendedWatcher>,
     /// Signals the polling fallback thread to exit
     poll_stop: Arc<(Mutex<bool>, Condvar)>,
@@ -564,6 +570,20 @@ impl AgentWatcherState {
         watchers.get(pty_id).map(|handle| handle.agent_type)
     }
 
+    /// The status source path the live watcher for `session_id` is
+    /// currently tailing, or `None` when no watcher is registered. Reads
+    /// the same `watchers` mutex as `contains` / `agent_type_for_pty`, so
+    /// the relocate sequence sees a consistent (path, presence) pair. Used
+    /// by `run_watch_sequence` to skip a no-op re-spawn when a fresh locate
+    /// resolves the same path the handle already watches (drift-tick churn
+    /// guard, VIM-192).
+    pub(crate) fn current_status_path(&self, session_id: &str) -> Option<PathBuf> {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers
+            .get(session_id)
+            .map(|handle| handle.status_path.clone())
+    }
+
     /// Test-only seam to set a pty's agent type without going through a
     /// real watcher startup. Builds a stub `WatcherHandle::new_for_test`
     /// with a fresh `TranscriptState` (whose `stop` is a no-op for an
@@ -770,6 +790,9 @@ pub(crate) fn start_watching(
 ) -> Result<WatcherHandle, String> {
     let located = located.into_inner();
     let status_file_path = located.status_path.clone();
+    // Retained for the `WatcherHandle` so the relocate sequence can compare a
+    // fresh locate against the path this handle is already watching.
+    let handle_status_path = status_file_path.clone();
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
@@ -1291,6 +1314,7 @@ pub(crate) fn start_watching(
     );
 
     Ok(WatcherHandle {
+        status_path: handle_status_path,
         _watcher: Some(watcher),
         poll_stop,
         join_handle: poll_join_handle,
@@ -1330,6 +1354,7 @@ impl WatcherHandle {
         // overwrites this field — so the default only matters for
         // tests that never call `agent_type_for_pty` on the stub.
         WatcherHandle {
+            status_path: PathBuf::new(),
             _watcher: None,
             poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
             join_handle: None,

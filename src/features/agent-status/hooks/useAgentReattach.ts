@@ -7,18 +7,33 @@ import type { AgentStatusEvent } from '../types'
 // file on the SAME pid, but the backend transcript watcher was pinned to the
 // old rollout at attach time, so the panel silently stops updating (VIM-188).
 // Reattach re-invokes `start_agent_watcher`, whose `run_watch_sequence`
-// re-locates the rollout (now open-FD authoritative, VIM-191) and atomically
-// replaces the watcher — no stop-then-start.
+// re-locates the rollout (open-FD authoritative, VIM-191; idempotent no-op when
+// unchanged, VIM-192) and atomically replaces the watcher — no stop-then-start.
 //
-// `/clear` is detectable but fires BEFORE codex opens the new rollout, so the
-// auto-reattach is deferred and bounded-retried until a fresh `agent-status`
-// with a new `agentSessionId` proves the relocate landed. The in-session
-// `resume` is undetectable, so the manual Reattach button is the universal
-// recovery.
+// Recovery is fully automatic; there is NO manual button (it would mislead,
+// since the relocate can only land once codex WRITES the conversation — i.e.
+// when the user sends a prompt). Two mechanisms drive it:
+//   - `/clear` is detectable, so it arms a red indicator + a bounded fast
+//     auto-reattach to catch the new rollout the moment codex writes it.
+//   - the in-session `resume` is undetectable, so an always-on drift tick
+//     re-locates the active Codex pane on a cadence; once the resumed
+//     conversation is written it becomes the newest rollout and the relocate
+//     lands. Either way a fresh `agent-status` (new `agentSessionId`) confirms
+//     it and clears the red indicator.
 
 const REATTACH_AUTO_INITIAL_DELAY_MS = 400
 const REATTACH_AUTO_RETRY_INTERVAL_MS = 700
 const REATTACH_AUTO_MAX_ATTEMPTS = 5
+// Always-on drift tick (VIM-192): the active Codex pane re-locates on this
+// cadence, regardless of the red state. An in-session `resume` is undetectable
+// (it types no `/clear`, so red is never armed) and codex exposes no active-thread
+// signal, so the ONLY way the panel can follow a resume is to re-locate
+// periodically and relocate once the resumed conversation is written (it then
+// becomes the newest `updated_at`). The backend relocate is idempotent — a
+// same-rollout re-locate is a cheap no-op (`changed=false`, no re-tail) — so this
+// poll costs one per-pid `lsof` + one sqlite query every few seconds for one
+// pane. Clearing stays event-gated; the drift tick never clears red itself.
+const REATTACH_DRIFT_INTERVAL_MS = 4000
 
 const eventTokenTotal = (
   contextWindow: AgentStatusEvent['contextWindow']
@@ -27,6 +42,14 @@ const eventTokenTotal = (
     ? null
     : Number(contextWindow.totalInputTokens) +
       Number(contextWindow.totalOutputTokens)
+
+const stopReattachWatcher = async (ptyId: string): Promise<void> => {
+  try {
+    await invoke('stop_agent_watcher', { sessionId: ptyId })
+  } catch {
+    // Watcher may not be running — ignore.
+  }
+}
 
 interface UseAgentReattachOptions {
   /** Workspace session id of the active pty-backed pane (or `null`). */
@@ -52,13 +75,24 @@ interface UseAgentReattachOptions {
    * flash red again.
    */
   staleGeneration: number
+  /**
+   * Gate for the always-on drift tick: `true` only when the active pty-backed
+   * pane is running a live Codex agent. Drift re-locates this pane every
+   * `REATTACH_DRIFT_INTERVAL_MS` so the panel follows an in-session `resume`
+   * (undetectable, so it never arms red). Off for non-Codex / no live agent so
+   * the periodic `lsof` cost is paid only where a rollout switch can happen.
+   */
+  driftEnabled?: boolean
 }
 
 export interface AgentReattachControls {
-  /** The session is known-stale and the relocate has not yet landed. */
+  /**
+   * The session is known-stale (a codex `/clear`) and the relocate has not yet
+   * landed. Recovery is automatic — the bounded auto-reattach + the always-on
+   * drift tick relocate once codex writes the conversation — so this drives a
+   * red "send a prompt to reattach" indicator, not a manual action.
+   */
   needsReattach: boolean
-  /** Manually re-invoke the watcher relocate (covers the undetectable resume). */
-  reattach: () => void
 }
 
 /**
@@ -70,6 +104,7 @@ export const useAgentReattach = ({
   agentSessionId,
   agentTokenTotal = null,
   staleGeneration,
+  driftEnabled = false,
 }: UseAgentReattachOptions): AgentReattachControls => {
   const [needsReattach, setNeedsReattach] = useState(false)
 
@@ -89,7 +124,14 @@ export const useAgentReattach = ({
   agentTokenTotalRef.current = agentTokenTotal
   const currentStaleKeyRef = useRef(staleKey)
   currentStaleKeyRef.current = staleKey
-  // Single-flight guard so a manual click and the auto-retry can't issue
+  const currentSessionIdRef = useRef(sessionId)
+  const reattachGenerationRef = useRef(0)
+  if (currentSessionIdRef.current !== sessionId) {
+    currentSessionIdRef.current = sessionId
+    reattachGenerationRef.current += 1
+  }
+  const isMountedRef = useRef(true)
+  // Single-flight guard so the drift tick and auto-retry can't issue
   // overlapping `start_agent_watcher` invokes.
   const inFlightRef = useRef(false)
   // The agent session id that was live when the pane went stale. The relocated
@@ -109,35 +151,97 @@ export const useAgentReattach = ({
   // newer `/clear` generation that arrived while the event was in flight.
   const armedStaleKeyRef = useRef<string | null>(null)
 
-  // Returns whether it actually issued an invoke (vs skipped under
-  // single-flight) so the auto-retry budget only counts real calls.
-  const reattachAsync = useCallback(async (): Promise<boolean> => {
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return (): void => {
+      isMountedRef.current = false
+      reattachGenerationRef.current += 1
+    }
+  }, [])
+
+  // Resolve the armed `/clear` cycle: mark its key resolved and drop red. If a
+  // NEWER `/clear` armed after this resolve was decided, re-arm for it instead
+  // of clearing (it still needs its own recovery). No-op when not currently
+  // stale. Called by the success listener.
+  const resolveArmedReattach = useCallback((): void => {
+    if (!needsReattachRef.current) {
+      return
+    }
+    const armed = armedStaleKeyRef.current
+    if (armed !== null) {
+      resolvedKeysRef.current.add(armed)
+    }
+    const currentKey = currentStaleKeyRef.current
+    if (
+      currentKey !== null &&
+      currentKey !== armed &&
+      !resolvedKeysRef.current.has(currentKey)
+    ) {
+      armedStaleKeyRef.current = currentKey
+
+      return
+    }
+    armedStaleKeyRef.current = null
+    setNeedsReattach(false)
+  }, [])
+
+  // Issue `start_agent_watcher` under the single-flight guard. Outcome:
+  //   'ok'      — the IPC resolved (await?-propagated; the resolver fails safe
+  //               with `Err`). The backend relocate is idempotent: a same-rollout
+  //               re-locate is a cheap no-op, so this is safe to call on a tick.
+  //   'failed'  — the IPC threw (transient miss / bridge / rollout not open yet).
+  //   'skipped' — no session/pty, or another invoke is already in flight.
+  // Clearing red is strictly event-gated (there is no optimistic clear / manual
+  // button), so the caller never needs to know whether the relocate switched.
+  const issueReattach = useCallback(async (): Promise<
+    'ok' | 'failed' | 'skipped'
+  > => {
     if (sessionId === null) {
-      return false
+      return 'skipped'
     }
     const ptyId = getPtySessionId(sessionId)
     if (!ptyId || inFlightRef.current) {
-      return false
+      return 'skipped'
     }
+    const startSessionId = sessionId
+    const startGeneration = reattachGenerationRef.current
     inFlightRef.current = true
     // No stop-then-start: the backend re-locates and atomically replaces the
     // watcher; a failed relocate leaves the old watcher intact (rollback-safe).
     try {
       await invoke('start_agent_watcher', { sessionId: ptyId })
+
+      const activeSessionChanged =
+        currentSessionIdRef.current !== startSessionId
+
+      const staleCompletion =
+        !isMountedRef.current ||
+        activeSessionChanged ||
+        reattachGenerationRef.current !== startGeneration
+      if (staleCompletion) {
+        if (activeSessionChanged) {
+          void stopReattachWatcher(ptyId)
+        }
+
+        return 'skipped'
+      }
+
+      return 'ok'
     } catch {
-      // Relocate failed (transient backend miss / bridge unavailable). Swallow
-      // so the bounded auto-retry keeps going and `void reattach()` never leaves
-      // an unhandled rejection; the old watcher stays intact and we try again.
+      return 'failed'
     } finally {
       inFlightRef.current = false
     }
-
-    return true
   }, [sessionId])
 
-  const reattach = useCallback((): void => {
-    void reattachAsync()
-  }, [reattachAsync])
+  // Auto-retry path: "issued" = an invoke was attempted (ok or failed), so the
+  // budget isn't burned by single-flight skips. It NEVER clears red — clearing
+  // is event-gated (the listener), confirming the relocate actually landed.
+  const reattachAsync = useCallback(
+    async (): Promise<boolean> => (await issueReattach()) !== 'skipped',
+    [issueReattach]
+  )
 
   // Success predicate: a fresh `agent-status` carrying an `agentSessionId` that
   // DIFFERS from the one live when we went stale means the relocated watcher is
@@ -172,22 +276,7 @@ export const useAgentReattach = ({
           (eventTotal === 0 || staleTotal === null || eventTotal < staleTotal)
         const isFresh = id !== null && (id !== staleId || tokensReset)
         if (needsReattachRef.current && isFresh) {
-          const key = armedStaleKeyRef.current
-          if (key !== null) {
-            resolvedKeysRef.current.add(key)
-          }
-          const currentKey = currentStaleKeyRef.current
-          if (
-            currentKey !== null &&
-            currentKey !== key &&
-            !resolvedKeysRef.current.has(currentKey)
-          ) {
-            armedStaleKeyRef.current = currentKey
-
-            return
-          }
-          armedStaleKeyRef.current = null
-          setNeedsReattach(false)
+          resolveArmedReattach()
         }
       })
       if (cancelled) {
@@ -203,7 +292,7 @@ export const useAgentReattach = ({
       cancelled = true
       unlisten?.()
     }
-  }, [sessionId])
+  }, [sessionId, resolveArmedReattach])
 
   // Derive the red state from the active pane's stale key: armed when stale and
   // not yet resolved, cleared otherwise. Keyed by `sessionId:staleGeneration`
@@ -242,11 +331,15 @@ export const useAgentReattach = ({
     setNeedsReattach(true)
   }, [staleKey, sessionId])
 
-  // Deferred, bounded auto-reattach: each attempt waits for its IPC to settle
-  // before scheduling the next, and the budget counts only issued calls — so a
-  // slow `start_agent_watcher` can't exhaust the retries with single-flight
-  // no-ops (codex review VIM-192). Stops as soon as the success predicate
-  // clears `needsReattach` (cleanup cancels the pending timer).
+  // Deferred, bounded auto-reattach for each armed `/clear` cycle (keyed by
+  // `staleKey` so a repeated `/clear` restarts the window). Quick speculative
+  // retries catch the common `/clear` relocate the moment codex opens + writes
+  // the new rollout. The budget counts only issued calls — so a slow
+  // `start_agent_watcher` can't exhaust the retries with single-flight no-ops.
+  // It NEVER clears red itself (event-gated). Late recovery (the user interacts
+  // with the new/resumed rollout long after this window) is covered by the
+  // always-on drift tick below, so this stays bounded. Stops as soon as the
+  // success predicate clears `needsReattach` (cleanup cancels the pending timer).
   useEffect(() => {
     if (!needsReattach) {
       return
@@ -265,9 +358,7 @@ export const useAgentReattach = ({
       if (cancelled) {
         return
       }
-      if (issued) {
-        attempts += 1
-      } else if (!inFlightRef.current) {
+      if (issued || !inFlightRef.current) {
         attempts += 1
       }
       timer = setTimeout(() => void run(), REATTACH_AUTO_RETRY_INTERVAL_MS)
@@ -279,7 +370,47 @@ export const useAgentReattach = ({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [needsReattach, reattachAsync])
+  }, [needsReattach, staleKey, reattachAsync])
 
-  return { needsReattach, reattach }
+  // Always-on drift tick: re-locate the active Codex pane on a fixed cadence so
+  // the panel follows an in-session `resume`. Resume is undetectable (no `/clear`
+  // → red is never armed) and codex exposes no active-thread signal, so the only
+  // way to notice the switch is to re-locate periodically: once the resumed
+  // conversation is written it becomes the newest `updated_at`, the backend
+  // relocate reports `changed=true`, and its fresh `agent-status` event updates
+  // the panel (and clears red if a `/clear` cycle happens to be armed). A
+  // same-rollout tick is a cheap backend no-op. Single-flight is shared with the
+  // bounded retry (`inFlightRef`), so the periodic `lsof` can't
+  // stack. Off unless the active pane runs a live Codex agent.
+  useEffect(() => {
+    if (!driftEnabled || sessionId === null) {
+      return
+    }
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+
+    const tick = async (): Promise<void> => {
+      if (cancelled) {
+        return
+      }
+      // Fire and forget: clearing is strictly event-gated, so the drift tick
+      // never resolves red on its own — it only re-invites the resolver.
+      await issueReattach()
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the effect cleanup sets `cancelled` across the await above
+      if (cancelled) {
+        return
+      }
+      timer = setTimeout(() => void tick(), REATTACH_DRIFT_INTERVAL_MS)
+    }
+
+    timer = setTimeout(() => void tick(), REATTACH_DRIFT_INTERVAL_MS)
+
+    return (): void => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [driftEnabled, sessionId, issueReattach])
+
+  return { needsReattach }
 }
