@@ -1300,10 +1300,13 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleSaveCustomLayout = useCallback(
     (definition: PaneLayoutDefinition): void => {
-      setCustomPaneLayouts((previous) => [
-        ...previous.filter((layout) => layout.id !== definition.id),
-        definition,
-      ])
+      setCustomPaneLayouts(
+        (previous) => [
+          ...previous.filter((layout) => layout.id !== definition.id),
+          definition,
+        ],
+        { skipPreservation: true }
+      )
 
       setHiddenCustomLayoutIds((previous) =>
         previous.filter((layoutId) => layoutId !== definition.id)

@@ -106,5 +106,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
-| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 8        | 4    | 2026-06-20   |
+| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 9        | 4    | 2026-06-21   |
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 2        | 0    | 2026-06-19   |

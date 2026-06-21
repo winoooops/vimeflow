@@ -665,6 +665,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     await user.click(screen.getByRole('button', { name: 'Save & apply' }))
 
     expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledWith(
+      expect.any(Function),
+      { skipPreservation: true }
+    )
     expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
   })
 

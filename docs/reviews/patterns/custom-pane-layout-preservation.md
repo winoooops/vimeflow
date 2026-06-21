@@ -2,7 +2,7 @@
 id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
-last_updated: 2026-06-20
+last_updated: 2026-06-21
 ref_count: 4
 ---
 
@@ -84,4 +84,13 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L285-287
 - **Finding:** `previewValid` checked only spatial freedom, so after reaching `MAX_LAYOUT_SLOTS` a user could start a paint drag over an empty cell, see the valid green preview, release, and have `addSlotRect` refuse the pane with no visible feedback.
 - **Fix:** Included the slot-count cap in preview validity and disabled empty paint cells while the draft already has `MAX_LAYOUT_SLOTS` panes. Added a regression test that imports a 16-pane layout, adds an empty column, and verifies the empty paint cell is disabled.
+- **Commit:** same commit as this entry
+
+### 9. Reduced-capacity custom layout edits can be silently discarded
+
+- **Source:** github-codex-connector | PR #569 round 7 | 2026-06-21
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1301-1310
+- **Finding:** `handleSaveCustomLayout` saved edited definitions through `setCustomPaneLayouts` without marking the update as intentional. When an existing custom layout was edited down to fewer slots while an over-capacity session still referenced it, the preservation guard could restore the old definition and make the modal close as though the reduced-capacity edit had saved.
+- **Fix:** Pass `{ skipPreservation: true }` from `handleSaveCustomLayout` so intentional edits bypass the preservation guard, matching the delete path. The existing session migration path handles sessions that no longer fit the edited layout.
 - **Commit:** same commit as this entry
