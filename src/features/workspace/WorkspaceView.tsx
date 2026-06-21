@@ -576,14 +576,24 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleTerminalCommandSubmit = useCallback(
     (ptyId: string, command: string): void => {
-      if (command !== '/clear') {
+      // A codex `/clear` opens a fresh conversation and `/resume` switches to a
+      // different one — both point codex at a NEW rollout, so the live status
+      // is now stale. Treat both as a context switch: reset agent-status and arm
+      // the red "send a prompt to reattach" indicator until the watcher
+      // relocates onto the new conversation (VIM-192). `/resume <id>` is the
+      // arg form.
+      const isCodexContextSwitch =
+        command === '/clear' ||
+        command === '/resume' ||
+        command.startsWith('/resume ')
+      if (!isCodexContextSwitch) {
         return
       }
 
       // Only reset agent-status state when the active pane is actually running
       // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
-      // syntactically identical to a Codex `/clear` command, and a false reset
-      // for a live Codex session would suppress same-run events until the next
+      // syntactically identical to a Codex command, and a false reset for a
+      // live Codex session would suppress same-run events until the next
       // session boundary (Claude Code Review on PR #469).
       if (
         ptyId === activePtyBackedPanePtyId &&

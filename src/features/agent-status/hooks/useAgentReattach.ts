@@ -13,22 +13,24 @@ import type { AgentStatusEvent } from '../types'
 // Recovery is fully automatic; there is NO manual button (it would mislead,
 // since the relocate can only land once codex WRITES the conversation — i.e.
 // when the user sends a prompt). Two mechanisms drive it:
-//   - `/clear` is detectable, so it arms a red indicator + a bounded fast
-//     auto-reattach to catch the new rollout the moment codex writes it.
-//   - the in-session `resume` is undetectable, so an always-on drift tick
-//     re-locates the active Codex pane on a cadence; once the resumed
-//     conversation is written it becomes the newest rollout and the relocate
-//     lands. Either way a fresh `agent-status` (new `agentSessionId`) confirms
-//     it and clears the red indicator.
+//   - A typed `/clear` or `/resume` is detectable (WorkspaceView), so it arms a
+//     red indicator + a bounded fast auto-reattach to catch the new rollout the
+//     moment codex writes it.
+//   - A switch that surfaces no typed command (codex's TUI resume picker, or a
+//     resume that stays idle before the user interacts) is undetectable, so an
+//     always-on drift tick re-locates the active Codex pane on a cadence; once
+//     the new conversation is written it becomes the newest rollout and the
+//     relocate lands. Either way a fresh `agent-status` (new `agentSessionId`)
+//     confirms it and clears the red indicator.
 
 const REATTACH_AUTO_INITIAL_DELAY_MS = 400
 const REATTACH_AUTO_RETRY_INTERVAL_MS = 700
 const REATTACH_AUTO_MAX_ATTEMPTS = 5
 const REATTACH_AUTO_MAX_TIMER_FIRES = REATTACH_AUTO_MAX_ATTEMPTS * 2
 // Always-on drift tick (VIM-192): the active Codex pane re-locates on this
-// cadence, regardless of the red state. An in-session `resume` is undetectable
-// (it types no `/clear`, so red is never armed) and codex exposes no active-thread
-// signal, so the ONLY way the panel can follow a resume is to re-locate
+// cadence, regardless of the red state. A resume that surfaces no typed command
+// (codex's TUI picker) never arms red, and codex exposes no active-thread
+// signal, so the ONLY way the panel can follow such a switch is to re-locate
 // periodically and relocate once the resumed conversation is written (it then
 // becomes the newest `updated_at`). The backend relocate is idempotent — a
 // same-rollout re-locate is a cheap no-op (`changed=false`, no re-tail) — so this
