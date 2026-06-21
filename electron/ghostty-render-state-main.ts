@@ -1,4 +1,4 @@
-// cspell:ignore ghostty libghostty prebuilds powerline
+// cspell:ignore ghostty libghostty prebuilds powerline Kimi
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -466,17 +466,15 @@ interface ReverseVideoRange {
   readonly endColumn: number
 }
 
-interface SnapshotCursorExtent {
-  readonly rowIndex: number
-  readonly columnOffset: number
-}
-
 const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#[xX][0-9a-fA-F]+|#\d+);/g
 const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
 
 const HTML_BACKGROUND_RGB_PATTERN =
   /background-color:\s*rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/i
+
+const HTML_BACKGROUND_PALETTE_PATTERN =
+  /background-color:\s*var\(--vt-palette-(\d{1,3})\)/i
 const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
 
 const HTML_VOID_TAG_PATTERN =
@@ -545,6 +543,71 @@ const toHexColor = (red: number, green: number, blue: number): string =>
     )
     .join('')}`
 
+// Standard xterm 16-color base; indices 0-15 are theme-dependent in a real
+// terminal but agent input boxes use the theme-independent 16-255 range.
+const ANSI_BASE_PALETTE = [
+  '#000000',
+  '#800000',
+  '#008000',
+  '#808000',
+  '#000080',
+  '#800080',
+  '#008080',
+  '#c0c0c0',
+  '#808080',
+  '#ff0000',
+  '#00ff00',
+  '#ffff00',
+  '#0000ff',
+  '#ff00ff',
+  '#00ffff',
+  '#ffffff',
+]
+const ANSI_CUBE_LEVELS = [0, 95, 135, 175, 215, 255]
+
+// Ghostty emits indexed (256-color) backgrounds as `var(--vt-palette-N)` rather
+// than rgb(); resolve N to the same hex the native cells already use so a
+// palette-colored input box (Codex/Kimi) paints instead of being dropped.
+const paletteIndexToHex = (index: number): string | undefined => {
+  if (!Number.isInteger(index) || index < 0 || index > 255) {
+    return undefined
+  }
+
+  if (index < 16) {
+    return ANSI_BASE_PALETTE[index]
+  }
+
+  if (index < 232) {
+    const value = index - 16
+
+    return toHexColor(
+      ANSI_CUBE_LEVELS[Math.floor(value / 36) % 6],
+      ANSI_CUBE_LEVELS[Math.floor(value / 6) % 6],
+      ANSI_CUBE_LEVELS[value % 6]
+    )
+  }
+
+  const gray = 8 + (index - 232) * 10
+
+  return toHexColor(gray, gray, gray)
+}
+
+const readBackgroundColor = (style: string): string | undefined => {
+  const rgb = HTML_BACKGROUND_RGB_PATTERN.exec(style)
+
+  if (rgb) {
+    return toHexColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]))
+  }
+
+  const palette = HTML_BACKGROUND_PALETTE_PATTERN.exec(style)
+
+  if (palette) {
+    return paletteIndexToHex(Number(palette[1]))
+  }
+
+  return undefined
+}
+
 const readTagCellStyle = (
   token: string
 ): Pick<ReverseVideoRange, 'background' | 'reverse'> => {
@@ -555,19 +618,11 @@ const readTagCellStyle = (
   }
 
   const style = match[1]
-  const background = HTML_BACKGROUND_RGB_PATTERN.exec(style)
+  const background = readBackgroundColor(style)
 
   return {
     ...(HTML_REVERSE_FILTER_PATTERN.test(style) ? { reverse: true } : {}),
-    ...(background
-      ? {
-          background: toHexColor(
-            Number(background[1]),
-            Number(background[2]),
-            Number(background[3])
-          ),
-        }
-      : {}),
+    ...(background ? { background } : {}),
   }
 }
 
@@ -863,58 +918,13 @@ const splitSnapshotCellByReverseVideoRanges = (
   })
 }
 
-// Ghostty's formatHtml() paints background runs across the full terminal width
-// (erase-to-EOL prompts render every padded column under `white-space: pre`),
-// but the native snapshot omits those trailing blank columns. Synthesizing a
-// cell for every HTML-covered column would fabricate a full-width colored bar
-// that bleeds over agent TUIs and shifts the cursor's visible position. Clamp
-// fabrication to the row's real content extent — the wider of the native cell
-// span and the visible-line text width — so only columns the snapshot actually
-// reported get a background, never the pre-formatted padding beyond them.
-const readRowContentExtents = (
-  cells: readonly GhosttyRenderStateBridgeSnapshotCell[],
-  rows: readonly string[],
-  cursor: SnapshotCursorExtent
-): ReadonlyMap<number, number> => {
-  const extents = new Map<number, number>()
-
-  cells.forEach((cell) => {
-    extents.set(
-      cell.row,
-      Math.max(extents.get(cell.row) ?? 0, cell.col + cell.width)
-    )
-  })
-
-  rows.forEach((rowText, row) => {
-    extents.set(
-      row,
-      Math.max(extents.get(row) ?? 0, readTextCellWidth(rowText))
-    )
-  })
-
-  extents.set(
-    cursor.rowIndex,
-    Math.max(extents.get(cursor.rowIndex) ?? 0, cursor.columnOffset)
-  )
-
-  return extents
-}
-
 const appendMissingReverseCells = (
   cells: GhosttyRenderStateBridgeSnapshotCell[],
   rows: readonly string[],
-  ranges: readonly ReverseVideoRange[],
-  cursor: SnapshotCursorExtent
+  ranges: readonly ReverseVideoRange[]
 ): void => {
-  const contentExtents = readRowContentExtents(cells, rows, cursor)
-
   ranges.forEach((range) => {
-    const endColumn = Math.min(
-      range.endColumn,
-      contentExtents.get(range.row) ?? 0
-    )
-
-    if (range.row >= rows.length || endColumn <= range.startColumn) {
+    if (range.row >= rows.length || range.endColumn <= range.startColumn) {
       return
     }
 
@@ -924,7 +934,7 @@ const appendMissingReverseCells = (
       .filter(
         (cell) =>
           cell.row === range.row &&
-          cell.col < endColumn &&
+          cell.col < range.endColumn &&
           cell.col + cell.width > range.startColumn
       )
       .sort((left, right) => left.col - right.col)
@@ -937,16 +947,16 @@ const appendMissingReverseCells = (
             text: readRowTextByCellColumns(
               rows[range.row] ?? '',
               startColumn,
-              Math.min(cell.col, endColumn)
+              Math.min(cell.col, range.endColumn)
             ),
-            width: Math.min(cell.col, endColumn) - startColumn,
+            width: Math.min(cell.col, range.endColumn) - startColumn,
           })
         }
 
         startColumn = Math.max(startColumn, cell.col + cell.width)
       })
 
-    if (startColumn < endColumn) {
+    if (startColumn < range.endColumn) {
       cells.push({
         ...readRangeStyle(range),
         row: range.row,
@@ -954,9 +964,9 @@ const appendMissingReverseCells = (
         text: readRowTextByCellColumns(
           rows[range.row] ?? '',
           startColumn,
-          endColumn
+          range.endColumn
         ),
-        width: endColumn - startColumn,
+        width: range.endColumn - startColumn,
       })
     }
   })
@@ -994,8 +1004,7 @@ const readSnapshotRows = (
 const readSnapshotCells = (
   snapshot: GhosttyNativeTerminalSnapshot,
   rows: readonly string[],
-  reverseVideoRanges: readonly ReverseVideoRange[],
-  cursor: SnapshotCursorExtent
+  reverseVideoRanges: readonly ReverseVideoRange[]
 ): readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined => {
   if (snapshot.cells === undefined && reverseVideoRanges.length === 0) {
     return undefined
@@ -1061,7 +1070,7 @@ const readSnapshotCells = (
       )
     )
 
-  appendMissingReverseCells(cells, rows, reverseVideoRanges, cursor)
+  appendMissingReverseCells(cells, rows, reverseVideoRanges)
 
   return cells.sort((left, right) =>
     left.row === right.row ? left.col - right.col : left.row - right.row
@@ -1091,7 +1100,7 @@ const normalizeSnapshot = (
     rowIndex: snapshot.cursorRow,
     columnOffset: snapshot.cursorCol,
   }
-  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges, cursor)
+  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
 
   return {
     rows,

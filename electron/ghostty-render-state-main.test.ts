@@ -993,7 +993,7 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
-  test('clamps full-width background runs to the native content extent', () => {
+  test('renders a palette (var--vt-palette) background box across blank cells the snapshot omits', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
         GhosttyNativeBindings['createTerminal']
@@ -1003,18 +1003,12 @@ describe('ghostty render-state main bridge', () => {
         snapshot: () => ({
           rows: 1,
           cursorRow: 0,
-          cursorCol: 2,
-          visibleLines: [{ row: 0, text: 'AB' }],
-          cells: [
-            { row: 0, col: 0, text: 'A', width: 1 },
-            { row: 0, col: 1, text: 'B', width: 1 },
-          ],
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: ' ab' }],
         }),
         formatHtml: vi.fn(
           () =>
-            `<div style="font-family: monospace; white-space: pre;"><span style="background-color: rgb(64, 64, 72);">AB${' '.repeat(
-              38
-            )}</span></div>`
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;background-color: var(--vt-palette-236);"> ab   </div></div>'
         ),
         dispose: vi.fn(),
       }),
@@ -1027,109 +1021,13 @@ describe('ghostty render-state main bridge', () => {
     ).toEqual({
       ok: true,
       result: {
-        rows: ['AB'],
+        rows: [' ab'],
         cursor: {
           rowIndex: 0,
-          columnOffset: 2,
+          columnOffset: 3,
         },
         cells: [
-          { row: 0, col: 0, text: 'A', width: 1, background: '#404048' },
-          { row: 0, col: 1, text: 'B', width: 1, background: '#404048' },
-        ],
-      },
-    })
-  })
-
-  test('clamps multi-segment background runs without bleeding past content', () => {
-    const bridge = new GhosttyRenderStateMainBridge('/app', {
-      createTerminal: (): ReturnType<
-        GhosttyNativeBindings['createTerminal']
-      > => ({
-        feed: vi.fn(),
-        resize: vi.fn(),
-        snapshot: () => ({
-          rows: 1,
-          cursorRow: 0,
-          cursorCol: 2,
-          visibleLines: [{ row: 0, text: 'ab' }],
-          cells: [
-            { row: 0, col: 0, text: 'a', width: 1 },
-            { row: 0, col: 1, text: 'b', width: 1 },
-          ],
-        }),
-        formatHtml: vi.fn(
-          () =>
-            `<div style="font-family: monospace; white-space: pre;"><span style="background-color: rgb(200, 30, 30);">a</span><span style="background-color: rgb(30, 30, 200);">b${' '.repeat(
-              38
-            )}</span></div>`
-        ),
-        dispose: vi.fn(),
-      }),
-    })
-    const event = createEvent()
-    const createResult = requireResult(bridge.createDriver(event))
-
-    expect(
-      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
-    ).toEqual({
-      ok: true,
-      result: {
-        rows: ['ab'],
-        cursor: {
-          rowIndex: 0,
-          columnOffset: 2,
-        },
-        cells: [
-          { row: 0, col: 0, text: 'a', width: 1, background: '#c81e1e' },
-          { row: 0, col: 1, text: 'b', width: 1, background: '#1e1ec8' },
-        ],
-      },
-    })
-  })
-
-  test('preserves cursor-row background padding up to the cursor', () => {
-    const bridge = new GhosttyRenderStateMainBridge('/app', {
-      createTerminal: (): ReturnType<
-        GhosttyNativeBindings['createTerminal']
-      > => ({
-        feed: vi.fn(),
-        resize: vi.fn(),
-        snapshot: () => ({
-          rows: 1,
-          cursorRow: 0,
-          cursorCol: 4,
-          visibleLines: [{ row: 0, text: 'AB' }],
-          cells: [
-            { row: 0, col: 0, text: 'A', width: 1 },
-            { row: 0, col: 1, text: 'B', width: 1 },
-          ],
-        }),
-        formatHtml: vi.fn(
-          () =>
-            `<div style="font-family: monospace; white-space: pre;"><span style="background-color: rgb(64, 64, 72);">AB${' '.repeat(
-              38
-            )}</span></div>`
-        ),
-        dispose: vi.fn(),
-      }),
-    })
-    const event = createEvent()
-    const createResult = requireResult(bridge.createDriver(event))
-
-    expect(
-      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
-    ).toEqual({
-      ok: true,
-      result: {
-        rows: ['AB'],
-        cursor: {
-          rowIndex: 0,
-          columnOffset: 4,
-        },
-        cells: [
-          { row: 0, col: 0, text: 'A', width: 1, background: '#404048' },
-          { row: 0, col: 1, text: 'B', width: 1, background: '#404048' },
-          { row: 0, col: 2, text: '  ', width: 2, background: '#404048' },
+          { row: 0, col: 0, text: ' ab   ', width: 6, background: '#303030' },
         ],
       },
     })
