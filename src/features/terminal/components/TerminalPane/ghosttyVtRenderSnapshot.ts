@@ -307,9 +307,15 @@ const readSnapshotCursorOffset = (
   return precedingRowsLength + rowTextOffset
 }
 
-const PROMPT_MARKER_PATTERN = /^\s*>/
-
-const shouldHideImplicitPromptCursor = (
+// An implicit cursor (no explicit show/hide flag) parked on a blank row that
+// still has content BELOW it is a stale/dead cursor left behind by a scroll or
+// agent redraw — e.g. a lone block stranded on an empty row above a relaunched
+// agent banner or prompt. Real cursors sit at the end of output with nothing
+// below them, so hide the parked one. A blank row with content only above (the
+// normal "waiting at the bottom" cursor) or a fully blank screen (just after
+// `clear`) keeps its cursor. An explicit cursor.visible flag always wins — this
+// heuristic only runs when it is absent.
+const shouldHideImplicitParkedCursor = (
   snapshot: GhosttyVtRenderSnapshot,
   cellsByRow: CellsByRow
 ): boolean => {
@@ -330,16 +336,15 @@ const shouldHideImplicitPromptCursor = (
     return false
   }
 
-  const nextContentRow = snapshot.rows
+  return snapshot.rows
     .slice(rowIndex + 1)
-    .map((row, offset) =>
-      readCellRowVisibleText(row, cellsByRow.get(rowIndex + offset + 1))
+    .some(
+      (row, offset) =>
+        readCellRowVisibleText(
+          row,
+          cellsByRow.get(rowIndex + offset + 1)
+        ).trim().length > 0
     )
-    .find((row) => row.trim().length > 0)
-
-  return nextContentRow === undefined
-    ? false
-    : PROMPT_MARKER_PATTERN.test(nextContentRow)
 }
 
 export const createGhosttyVtRenderSnapshotOutput = (
@@ -353,7 +358,7 @@ export const createGhosttyVtRenderSnapshotOutput = (
 
   const cursorVisible =
     normalizedSnapshot.cursor?.visible ??
-    (shouldHideImplicitPromptCursor(normalizedSnapshot, cellsByRow)
+    (shouldHideImplicitParkedCursor(normalizedSnapshot, cellsByRow)
       ? false
       : undefined)
 

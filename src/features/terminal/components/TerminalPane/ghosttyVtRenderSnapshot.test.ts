@@ -332,6 +332,47 @@ describe('ghosttyVtRenderSnapshot', () => {
     expect(output.displayDelta?.cursorVisible).toBe(false)
   })
 
+  test('hides an implicit cursor stranded on a blank row above later content', () => {
+    // Agent exit: a lone block parked on a blank row between "Bye!" and the
+    // relaunched banner must not render even though the follower is not a `>`
+    // prompt (it is the agent welcome banner).
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['Bye!', '', 'session ready'],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBe(false)
+  })
+
+  test('keeps an implicit cursor on a trailing blank row with no content below', () => {
+    // The normal "waiting at the bottom" cursor: a blank row whose only content
+    // is above it stays visible.
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['last output', ''],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBeUndefined()
+  })
+
+  test('keeps an implicit cursor on a fully blank screen', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['', '', ''],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBeUndefined()
+  })
+
   test('renders styled empty native cells as occupied blanks', () => {
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: ['A B'],
