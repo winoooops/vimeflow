@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-12
+last_updated: 2026-06-20
 ref_count: 8
 ---
 
@@ -210,4 +210,13 @@ true` and drop the chunk.
 - **File:** `eslint-rules/no-hardcoded-colors.js` L9
 - **Finding:** The new `no-hardcoded-colors` rule matched white/black utilities for `text`, `bg`, `border`, etc., but omitted the Tailwind gradient-stop prefixes `from`, `via`, and `to`. Class strings such as `from-white/5`, `via-black`, and `to-white/20` passed lint even though they are hardcoded colors, weakening the per-commit guard for the runtime theme migration.
 - **Fix:** Extended the white/black utility regex to include `from|via|to` and added invalid `RuleTester` cases for `from-white/5`, `via-black`, and `to-white/20`.
+- **Commit:** same commit as this entry
+
+### 12. YAML mode swallows validation errors, shows JSON SyntaxError instead
+
+- **Source:** github-claude | PR #569 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts` L713-723
+- **Finding:** `parseDraftLayoutText` used a bare `catch {}` around `modelToDraft(parseYamlModel(trimmed))` so it could fall through to a JSON fallback. Valid YAML that produced a semantically invalid model (e.g., missing covered cells, overlapping panes) threw a descriptive validation error, but that error was discarded. The subsequent `JSON.parse(trimmed)` always failed on YAML text, surfacing a cryptic `SyntaxError: Unexpected token '-'` instead of the actionable validation message.
+- **Fix:** Capture the YAML error in a local variable, attempt the JSON fallback, and re-throw the original YAML error if the fallback also fails. This preserves descriptive validation messages for valid YAML with semantic problems while keeping the JSON-pasted-into-YAML-mode convenience path.
 - **Commit:** same commit as this entry

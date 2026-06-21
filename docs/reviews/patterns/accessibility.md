@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-18
-ref_count: 27
+last_updated: 2026-06-20
+ref_count: 29
 ---
 
 # Accessibility
@@ -621,4 +621,58 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
 - **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry
+
+### 60. Layout creator modal lacks focus trap and focus restoration
+
+- **Source:** github-codex-connector (P2 / MEDIUM) | PR #569 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L833-833
+- **Finding:** The layout creator dialog declared `aria-modal="true"` but only handled Escape and ⌘Enter. It did not trap Tab focus or restore the previously focused element, so keyboard users could tab into the workspace behind the overlay and trigger unrelated controls while the modal was active.
+- **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
+- **Commit:** same commit as this entry
+
+### 61. Programmatic menu close unmounts the focused row
+
+- **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L79-294
+- **Finding:** `LayoutDisplayMenu` closed custom-layout actions by changing the `Menu` key. The remount destroyed the focused row and trigger, so delete left focus on `document.body`, while create/edit opened the modal after the wrong focus restoration target had been captured.
+- **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
+- **Commit:** same commit as this entry
+
+### 62. Custom multi-action menu rows bypass roving keyboard navigation
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
+- **Finding:** Custom layout rows were rendered as raw `<div>` and `<button>` elements inside `Menu`, so they never registered with the floating-ui list navigation model. Arrow-key navigation reached only the built-in layout checkboxes and skipped the custom section.
+- **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
+- **Commit:** same commit as this entry
+
+### 63. Layout creator empty grid cells ignored keyboard activation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L466-479
+- **Finding:** Empty layout grid cells rendered as enabled buttons with aria labels and tab stops, but only handled pointerdown. Native keyboard activation dispatches click, so Enter/Space on the focused cell announced an actionable control that did nothing.
+- **Fix:** Added a keyboard/synthetic click path for paintable cells that commits the same 1x1 slot as pointer single-cell painting, while ignoring pointer-generated clicks to avoid double-adds after pointerup. Added regression coverage for Enter on an empty grid cell.
+- **Commit:** same commit as this entry
+
+### 64. Nested action button arrow keys leaked into Menu.Row navigation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx` L499-522
+- **Finding:** `Menu.Row` allowed ArrowUp/ArrowDown keydown events from focused descendant buttons to bubble into the menu's roving-focus handler, moving focus away from the nested action before the user completed that interaction.
+- **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
+- **Commit:** same commit as this entry
+
+### 65. Menu.Row intercepted nested button activation keys
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx` L502-518
+- **Finding:** `Menu.Row` handled Enter/Space on bubbled keydown events from descendant buttons, preventing native button activation and firing the row's layout-pick action instead. Keyboard users could not activate nested edit/delete/toggle controls without triggering the wrong menu action.
+- **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
 - **Commit:** same commit as this entry

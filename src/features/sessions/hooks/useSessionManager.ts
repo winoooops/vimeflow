@@ -83,7 +83,12 @@ export interface SessionManager {
   customPaneLayouts: readonly PaneLayoutDefinition[]
   layoutRegistry: PaneLayoutRegistry
   setCustomPaneLayouts: (
-    customPaneLayouts: readonly PaneLayoutDefinition[]
+    updater:
+      | readonly PaneLayoutDefinition[]
+      | ((
+          previous: readonly PaneLayoutDefinition[]
+        ) => readonly PaneLayoutDefinition[]),
+    setOptions?: { skipPreservation?: boolean }
   ) => void
   setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
@@ -261,6 +266,8 @@ export const useSessionManager = (
   const [customPaneLayouts, setCustomPaneLayoutsState] = useState<
     readonly PaneLayoutDefinition[]
   >([])
+  const customPaneLayoutsRef = useRef(customPaneLayouts)
+  customPaneLayoutsRef.current = customPaneLayouts
 
   const layoutRegistry = useMemo(
     () => new PaneLayoutRegistry(customPaneLayouts),
@@ -270,56 +277,86 @@ export const useSessionManager = (
   layoutRegistryRef.current = layoutRegistry
 
   const setCustomPaneLayouts = useCallback(
-    (nextCustomPaneLayouts: readonly PaneLayoutDefinition[]): void => {
+    (
+      updater:
+        | readonly PaneLayoutDefinition[]
+        | ((
+            previous: readonly PaneLayoutDefinition[]
+          ) => readonly PaneLayoutDefinition[]),
+      setOptions?: { skipPreservation?: boolean }
+    ): void => {
       // Custom layouts that support more panes than any builtin layout must be
       // preserved while sessions still depend on them. Otherwise
       // autoShrinkLayoutFor falls back to grid3x2, and the backend durable
       // repair caps non-custom layouts at six panes — silently dropping extra
       // panes on the next save/reload.
+      //
+      // Derive the next registry at top-level (outside the layout-state
+      // updater) so the session migration can be performed as a separate
+      // top-level state update. Keeping setSessions out of the functional
+      // updater avoids impure-updater hazards under Strict Mode / concurrent
+      // rendering.
+
+      const previous = customPaneLayoutsRef.current
+
+      const nextCustomPaneLayouts =
+        typeof updater === 'function' ? updater(previous) : updater
       const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
 
-      const neededLayoutIds = new Set(
-        sessionsRef.current
-          .filter(
-            (session) =>
-              isCustomPaneLayoutId(session.layout) &&
-              session.panes.length > MAX_BUILTIN_PANE_COUNT
-          )
-          .map((session) => session.layout)
-      )
+      let nextRegistry: PaneLayoutRegistry
 
-      const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
-        (layout) => {
-          if (!neededLayoutIds.has(layout.id)) {
-            return false
+      if (setOptions?.skipPreservation) {
+        nextRegistry = candidateRegistry
+      } else {
+        const neededLayoutIds = new Set(
+          sessionsRef.current
+            .filter(
+              (session) =>
+                isCustomPaneLayoutId(session.layout) &&
+                session.panes.length > MAX_BUILTIN_PANE_COUNT
+            )
+            .map((session) => session.layout)
+        )
+
+        const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
+          (layout) => {
+            if (!neededLayoutIds.has(layout.id)) {
+              return false
+            }
+
+            const dependentPaneCount = Math.max(
+              ...sessionsRef.current
+                .filter((session) => session.layout === layout.id)
+                .map((session) => session.panes.length)
+            )
+
+            const candidateFits =
+              candidateRegistry.hasLayoutId(layout.id) &&
+              candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+
+            return !candidateFits
           }
+        )
 
-          const dependentPaneCount = Math.max(
-            ...sessionsRef.current
-              .filter((session) => session.layout === layout.id)
-              .map((session) => session.panes.length)
-          )
+        const preservedIds = new Set(
+          preservedLayouts.map((layout) => layout.id)
+        )
 
-          const candidateFits =
-            candidateRegistry.hasLayoutId(layout.id) &&
-            candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+        const mergedCustomPaneLayouts = [
+          ...nextCustomPaneLayouts.filter(
+            (layout) => !preservedIds.has(layout.id)
+          ),
+          ...preservedLayouts,
+        ]
 
-          return !candidateFits
-        }
-      )
+        nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
+      }
 
-      const preservedIds = new Set(preservedLayouts.map((layout) => layout.id))
+      const nextCustomLayouts = nextRegistry.customLayouts
 
-      const mergedCustomPaneLayouts = [
-        ...nextCustomPaneLayouts.filter(
-          (layout) => !preservedIds.has(layout.id)
-        ),
-        ...preservedLayouts,
-      ]
-
-      const nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
-
-      setCustomPaneLayoutsState(nextRegistry.customLayouts)
+      // Migrate any sessions whose current layout is no longer available or
+      // no longer fits. This runs as a top-level update so it sees the latest
+      // sessions state (e.g. a layout change queued just before this call).
       setSessions((prev) =>
         prev.map((session) => {
           const currentLayoutStillFits =
@@ -340,6 +377,8 @@ export const useSessionManager = (
             : { ...session, layout: nextLayout }
         })
       )
+
+      setCustomPaneLayoutsState(nextCustomLayouts)
     },
     []
   )

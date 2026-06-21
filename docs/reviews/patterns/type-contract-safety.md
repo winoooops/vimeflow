@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-19
-ref_count: 3
+last_updated: 2026-06-20
+ref_count: 4
 ---
 
 # Type Contract Safety
@@ -87,3 +87,12 @@ expands.
 - **Finding:** `PersistedPaneLayoutDefinition` was declared as `Record<string, unknown>`, which erased the concrete shape of persisted custom pane layouts. The loose type made it easy to pass malformed data across the Electron persistence boundary without compile-time feedback.
 - **Fix:** Replaced the `Record<string, unknown>` alias with a concrete `PersistedPaneLayoutDefinition` interface and supporting `PersistedTrackSpec`, `PersistedPaneSlotRect`, and `PersistedPaneSlotSpec` types that mirror the renderer-side `PaneLayoutDefinition` shape using plain strings for the persisted boundary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. `Menu.closeSignal` accepts reference-unstable sentinels
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/components/Menu.tsx` L276
+- **Finding:** `closeSignal?: unknown` allowed callers to pass object or array values even though the close effect compares the value by strict equality. Reference-unstable values could close the menu on every render or fail to communicate the intended numeric counter semantics.
+- **Fix:** Narrowed the public prop to `number | undefined`, matching the only supported usage pattern: incrementing a primitive counter when a consumer needs to request a close.
+- **Commit:** same commit as this entry

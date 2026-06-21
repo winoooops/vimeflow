@@ -108,4 +108,32 @@ describe('layoutRegistry', () => {
 
     expect(registry.autoShrinkLayoutFor(0, 'custom:grid-2x2')).toBe('single')
   })
+
+  test('accepts custom layouts with up to 24 tracks per axis', () => {
+    const layout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:row-24',
+      title: 'Twenty four columns',
+      source: 'workspace',
+      tracks: {
+        columns: Array.from({ length: 24 }, (_, index) => ({
+          id: `col-${index}`,
+          units: 1,
+        })),
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        {
+          id: 'slot:p0',
+          rect: { col: 0, row: 0, colSpan: 24, rowSpan: 1 },
+        },
+      ],
+      addOrder: ['slot:p0'],
+    }
+
+    const registry = new PaneLayoutRegistry([layout])
+
+    expect(registry.getLayout('custom:row-24')).not.toBeNull()
+    expect(registry.rejected).toEqual([])
+  })
 })
