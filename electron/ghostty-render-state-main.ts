@@ -440,6 +440,15 @@ const readSnapshotCells = (
   })
 }
 
+const hasSnapshotCellStyle = (
+  cell: GhosttyRenderStateBridgeSnapshotCell
+): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  cell.foreground !== undefined ||
+  cell.background !== undefined
+
 const sortSnapshotCells = (
   cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
 ): readonly GhosttyRenderStateBridgeSnapshotCell[] =>
@@ -565,6 +574,46 @@ const readRowTextByCellColumns = (
   )
 }
 
+const readCellDisplayText = (
+  rowText: string,
+  cell: GhosttyRenderStateBridgeSnapshotCell,
+  fallbackColumn: number
+): string => {
+  if (cell.text !== '') {
+    return cell.text
+  }
+
+  return hasSnapshotCellStyle(cell)
+    ? ' '.repeat(cell.width)
+    : readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + cell.width
+      )
+}
+
+const readFallbackColumnDeltaForCell = (
+  rowText: string,
+  cell: GhosttyRenderStateBridgeSnapshotCell,
+  fallbackColumn: number
+): number => {
+  if (cell.text !== '') {
+    return readTextCellWidth(cell.text)
+  }
+
+  if (!hasSnapshotCellStyle(cell)) {
+    return cell.width
+  }
+
+  const fallbackText = readRowTextByCellColumns(
+    rowText,
+    fallbackColumn,
+    fallbackColumn + cell.width
+  )
+
+  return fallbackText.trim() === '' ? cell.width : 0
+}
+
 const readRowsWithCells = (
   rows: readonly string[],
   cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
@@ -590,32 +639,40 @@ const readRowsWithCells = (
     }
 
     let currentColumn = 0
+    let fallbackColumn = 0
     let rowText = ''
 
     rowCells.forEach((cell) => {
-      if (cell.col > currentColumn) {
-        rowText += readRowTextByCellColumns(
-          fallbackRow,
-          currentColumn,
-          cell.col
-        )
-        currentColumn = cell.col
+      if (cell.col < currentColumn) {
+        currentColumn = Math.max(currentColumn, cell.col + cell.width)
+
+        return
       }
 
-      rowText +=
-        cell.text === ''
-          ? readRowTextByCellColumns(
-              fallbackRow,
-              cell.col,
-              cell.col + cell.width
-            )
-          : cell.text
-      currentColumn += cell.width
+      if (cell.col > currentColumn) {
+        const gapWidth = cell.col - currentColumn
+
+        rowText += readRowTextByCellColumns(
+          fallbackRow,
+          fallbackColumn,
+          fallbackColumn + gapWidth
+        )
+        currentColumn = cell.col
+        fallbackColumn += gapWidth
+      }
+
+      rowText += readCellDisplayText(fallbackRow, cell, fallbackColumn)
+      fallbackColumn += readFallbackColumnDeltaForCell(
+        fallbackRow,
+        cell,
+        fallbackColumn
+      )
+      currentColumn = cell.col + cell.width
     })
 
     const trailingTextOffset = findTextOffsetForCellColumn(
       fallbackRow,
-      currentColumn
+      fallbackColumn
     )
 
     return `${rowText}${fallbackRow.slice(trailingTextOffset)}`

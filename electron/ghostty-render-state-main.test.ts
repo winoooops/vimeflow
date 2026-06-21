@@ -517,6 +517,209 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('normalizes styled empty native cells as occupied blanks', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'AB' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'A',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: '#181825',
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'B',
+              width: 1,
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['A B'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: 'A',
+            width: 1,
+          },
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+            background: '#181825',
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'B',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('preserves trailing fallback text after sparse styled empty cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'AB' }],
+          cells: [
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: '#181825',
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['A B'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+            background: '#181825',
+          },
+        ],
+      },
+    })
+  })
+
+  test('skips overlapping empty cells after native wide glyph cells', () => {
+    const icon = '\uf120'
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: `${icon}x` }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: icon,
+              width: 2,
+              foreground: '#f38ba8',
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'x',
+              width: 1,
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [`${icon}x`],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: icon,
+            width: 2,
+            foreground: '#f38ba8',
+          },
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'x',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
   test('keeps combining marks with fallback text before sparse styled cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<

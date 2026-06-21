@@ -72,6 +72,13 @@ const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
   ...(cell.background ? { background: cell.background } : {}),
 })
 
+const hasCellStyle = (cell: GhosttyVtRenderSnapshotCell): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  cell.foreground !== undefined ||
+  cell.background !== undefined
+
 const readStyleKey = (style: SnapshotStyle): string =>
   [
     style.bold === true ? '1' : '',
@@ -174,6 +181,212 @@ const readCellsByRow = (
   return cellsByRow
 }
 
+const readRowTextByCellColumns = (
+  rowText: string,
+  start: number,
+  end: number
+): string => {
+  const startOffset = findTextOffsetForCellColumn(rowText, start)
+  const endOffset = findTextOffsetForCellColumn(rowText, end)
+  const slice = rowText.slice(startOffset, endOffset)
+
+  return slice.padEnd(
+    slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
+    ' '
+  )
+}
+
+const readCellDisplayText = (
+  rowText: string,
+  cell: GhosttyVtRenderSnapshotCell,
+  fallbackColumn: number
+): string => {
+  if (cell.text !== '') {
+    return cell.text
+  }
+
+  return hasCellStyle(cell)
+    ? ' '.repeat(cell.width)
+    : readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + cell.width
+      )
+}
+
+const readFallbackColumnDeltaForCell = (
+  rowText: string,
+  cell: GhosttyVtRenderSnapshotCell,
+  fallbackColumn: number
+): number => {
+  if (cell.text !== '') {
+    return readTextCellWidth(cell.text)
+  }
+
+  if (!hasCellStyle(cell)) {
+    return cell.width
+  }
+
+  const fallbackText = readRowTextByCellColumns(
+    rowText,
+    fallbackColumn,
+    fallbackColumn + cell.width
+  )
+
+  return fallbackText.trim() === '' ? cell.width : 0
+}
+
+const readTextOffsetForNativeCellColumn = (
+  text: string,
+  nativeCellWidth: number,
+  columnOffset: number
+): number => {
+  const clampedColumn = clamp(columnOffset, 0, nativeCellWidth)
+
+  if (clampedColumn === 0) {
+    return 0
+  }
+
+  if (clampedColumn >= nativeCellWidth) {
+    return text.length
+  }
+
+  return readTextCellWidth(text) >= nativeCellWidth
+    ? findTextOffsetForCellColumn(text, clampedColumn)
+    : 0
+}
+
+const readCellRowVisibleText = (
+  rowText: string,
+  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined
+): string => {
+  if (!rowCells || rowCells.length === 0) {
+    return rowText
+  }
+
+  let output = ''
+  let currentColumn = 0
+  let fallbackColumn = 0
+
+  rowCells.forEach((cell) => {
+    if (cell.col < currentColumn) {
+      currentColumn = Math.max(currentColumn, cell.col + cell.width)
+
+      return
+    }
+
+    if (cell.col > currentColumn) {
+      const gapWidth = cell.col - currentColumn
+
+      output += readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      )
+      currentColumn = cell.col
+      fallbackColumn += gapWidth
+    }
+
+    output += readCellDisplayText(rowText, cell, fallbackColumn)
+    fallbackColumn += readFallbackColumnDeltaForCell(
+      rowText,
+      cell,
+      fallbackColumn
+    )
+    currentColumn = cell.col + cell.width
+  })
+
+  const trailingTextOffset = findTextOffsetForCellColumn(
+    rowText,
+    fallbackColumn
+  )
+
+  return `${output}${rowText.slice(trailingTextOffset)}`
+}
+
+const readCursorOffsetInCellRow = (
+  rowText: string,
+  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined,
+  columnOffset: number
+): number => {
+  if (!rowCells || rowCells.length === 0) {
+    return findTextOffsetForCellColumn(rowText, columnOffset)
+  }
+
+  let currentColumn = 0
+  let fallbackColumn = 0
+  let textOffset = 0
+
+  for (const cell of rowCells) {
+    if (cell.col < currentColumn) {
+      if (columnOffset < currentColumn) {
+        return textOffset
+      }
+
+      currentColumn = Math.max(currentColumn, cell.col + cell.width)
+      continue
+    }
+
+    if (columnOffset <= cell.col) {
+      const gapWidth = cell.col - currentColumn
+
+      const gapText = readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      )
+
+      return (
+        textOffset +
+        findTextOffsetForCellColumn(gapText, columnOffset - currentColumn)
+      )
+    }
+
+    if (cell.col > currentColumn) {
+      const gapWidth = cell.col - currentColumn
+
+      textOffset += readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      ).length
+      currentColumn = cell.col
+      fallbackColumn += gapWidth
+    }
+
+    const cellEndColumn = cell.col + cell.width
+    const cellText = readCellDisplayText(rowText, cell, fallbackColumn)
+
+    if (columnOffset < cellEndColumn) {
+      return (
+        textOffset +
+        readTextOffsetForNativeCellColumn(
+          cellText,
+          cell.width,
+          columnOffset - cell.col
+        )
+      )
+    }
+
+    textOffset += cellText.length
+    fallbackColumn += readFallbackColumnDeltaForCell(
+      rowText,
+      cell,
+      fallbackColumn
+    )
+    currentColumn = cellEndColumn
+  }
+
+  const trailingText = rowText.slice(
+    findTextOffsetForCellColumn(rowText, fallbackColumn)
+  )
+
+  return (
+    textOffset +
+    findTextOffsetForCellColumn(trailingText, columnOffset - currentColumn)
+  )
+}
+
 const readStyledRowText = (
   rowText: string,
   rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined
@@ -185,27 +398,30 @@ const readStyledRowText = (
   let output = ''
   let activeStyleKey = EMPTY_STYLE_KEY
   let currentColumn = 0
-
-  const readRowTextByCellColumns = (start: number, end: number): string => {
-    const startOffset = findTextOffsetForCellColumn(rowText, start)
-    const endOffset = findTextOffsetForCellColumn(rowText, end)
-    const slice = rowText.slice(startOffset, endOffset)
-
-    return slice.padEnd(
-      slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
-      ' '
-    )
-  }
+  let fallbackColumn = 0
 
   rowCells.forEach((cell) => {
+    if (cell.col < currentColumn) {
+      currentColumn = Math.max(currentColumn, cell.col + cell.width)
+
+      return
+    }
+
     if (cell.col > currentColumn) {
+      const gapWidth = cell.col - currentColumn
+
       if (activeStyleKey !== EMPTY_STYLE_KEY) {
         output += getSgrStyleSentinel([0])
         activeStyleKey = EMPTY_STYLE_KEY
       }
 
-      output += readRowTextByCellColumns(currentColumn, cell.col)
+      output += readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      )
       currentColumn = cell.col
+      fallbackColumn += gapWidth
     }
 
     const style = readCellStyle(cell)
@@ -216,18 +432,24 @@ const readStyledRowText = (
       activeStyleKey = styleKey
     }
 
-    output +=
-      cell.text === ''
-        ? readRowTextByCellColumns(cell.col, cell.col + cell.width)
-        : cell.text
-    currentColumn += cell.width
+    output += readCellDisplayText(rowText, cell, fallbackColumn)
+    fallbackColumn += readFallbackColumnDeltaForCell(
+      rowText,
+      cell,
+      fallbackColumn
+    )
+
+    currentColumn = cell.col + cell.width
   })
 
   if (activeStyleKey !== EMPTY_STYLE_KEY) {
     output += getSgrStyleSentinel([0])
   }
 
-  const trailingTextOffset = findTextOffsetForCellColumn(rowText, currentColumn)
+  const trailingTextOffset = findTextOffsetForCellColumn(
+    rowText,
+    fallbackColumn
+  )
   output += rowText.slice(trailingTextOffset)
 
   return output
@@ -245,23 +467,51 @@ const readSnapshotDisplayText = (snapshot: GhosttyVtRenderSnapshot): string => {
     .join('\n')
 }
 
+const readSnapshotDisplayVisibleText = (
+  snapshot: GhosttyVtRenderSnapshot
+): string => {
+  if (!snapshot.cells || snapshot.cells.length === 0) {
+    return readSnapshotText(snapshot)
+  }
+
+  const cellsByRow = readCellsByRow(snapshot.cells)
+
+  return snapshot.rows
+    .map((row, rowIndex) =>
+      readCellRowVisibleText(row, cellsByRow.get(rowIndex))
+    )
+    .join('\n')
+}
+
 const readSnapshotCursorOffset = (
-  snapshot: GhosttyVtRenderSnapshot,
-  text: string
+  snapshot: GhosttyVtRenderSnapshot
 ): number => {
   const cursor = snapshot.cursor
 
   if (!cursor || snapshot.rows.length === 0) {
-    return text.length
+    return readSnapshotDisplayVisibleText(snapshot).length
   }
 
   const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
+  const cellsByRow = readCellsByRow(snapshot.cells)
   const row = snapshot.rows[rowIndex] ?? ''
-  const rowTextOffset = findTextOffsetForCellColumn(row, cursor.columnOffset)
+
+  const rowTextOffset = readCursorOffsetInCellRow(
+    row,
+    cellsByRow.get(rowIndex),
+    cursor.columnOffset
+  )
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)
-    .reduce((length, previousRow) => length + previousRow.length + 1, 0)
+    .reduce(
+      (length, previousRow, previousRowIndex) =>
+        length +
+        readCellRowVisibleText(previousRow, cellsByRow.get(previousRowIndex))
+          .length +
+        1,
+      0
+    )
 
   return precedingRowsLength + rowTextOffset
 }
@@ -272,7 +522,7 @@ export const createGhosttyVtRenderSnapshotOutput = (
   const normalizedSnapshot = trimLeadingEmptyRows(snapshot)
   const text = readSnapshotText(normalizedSnapshot)
   const displayText = readSnapshotDisplayText(normalizedSnapshot)
-  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, text)
+  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot)
 
   return {
     visibleText: text,

@@ -81,7 +81,11 @@ const encodeText = (text: string): string =>
 
 const ESC = '\x1b'
 const SGR_FINAL = 'm'
+const TRUE_COLOR_PINK_HEX = ['#', 'f38ba8'].join('')
+const TRUE_COLOR_BASE_HEX = ['#', '181825'].join('')
 const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+const TRUE_COLOR_BASE = ['rgb', '(24, 24, 37)'].join('')
+const NERD_FONT_TERMINAL_ICON = '\uf120'
 
 const createdTerminals = new Set<ReturnType<typeof createGhosttyTerminal>>()
 
@@ -1170,6 +1174,114 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('prompt branch done')
     expect(styleRun?.textContent).toBe('branch')
     expect((styleRun as HTMLElement | null)?.style.color).toBe(TRUE_COLOR_PINK)
+  })
+
+  test('renders native styled empty cells as visible background spans', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['A B'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'A',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: TRUE_COLOR_BASE_HEX,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'B',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const styleRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+    const blankRun = styleRuns.find((run) => run.textContent === ' ')
+
+    expect(terminalOutput?.textContent).toBe('A B')
+    expect(created.viewportReader.readVisibleText()).toBe('A B')
+    expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
+  })
+
+  test('does not render overlapping native wide-glyph continuation cells', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: [`${NERD_FONT_TERMINAL_ICON}x`],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: NERD_FONT_TERMINAL_ICON,
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'x',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    expect(terminalOutput?.textContent).toBe(`${NERD_FONT_TERMINAL_ICON}x`)
+    expect(created.viewportReader.readVisibleText()).toBe(
+      `${NERD_FONT_TERMINAL_ICON}x`
+    )
   })
 
   test('renders invalid byte payloads through the byte path', () => {
