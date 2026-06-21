@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-06-21
-ref_count: 8
+ref_count: 9
 ---
 
 # Parser Resilience
@@ -219,4 +219,13 @@ true` and drop the chunk.
 - **File:** `electron/ghostty-render-state-main.ts` L532-L568
 - **Finding:** The reverse-video HTML scanner handled `<div>` and `</div>` tokens but let every other tag fall through to the text loop. Future Ghostty formatter output containing tags such as `<span>` would count raw markup characters as terminal cells and silently shift later reverse-video ranges.
 - **Fix:** Added an explicit unrecognized-tag guard before text decoding so only actual text contributes to row and column accounting. A formatter regression with a surrounding `<span>` now verifies reverse ranges keep their intended columns.
+- **Commit:** same commit as this entry
+
+### 13. Style-state HTML parsers must track all real element wrappers, not only the tag shape seen today
+
+- **Source:** github-claude | PR #591 round 7 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** The reverse-video formatter parser skipped unknown tags before text accounting, but still pushed/popped reverse state only for `<div>` wrappers. If Ghostty emitted a reverse-video `<span>` or another non-div wrapper, the text was counted in the right columns but the reverse range was silently dropped.
+- **Fix:** Replaced div-specific stack handling with generic opening/closing element handling, while excluding void/self-closing tags from the stack. The existing style predicate remains the guard for whether a wrapper flips reverse state, and a regression now covers a reverse-video `<span>` wrapper.
 - **Commit:** same commit as this entry

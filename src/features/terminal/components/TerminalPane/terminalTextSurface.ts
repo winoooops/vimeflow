@@ -1077,7 +1077,6 @@ export class TerminalTextSurface implements TerminalSurface {
         ) {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
-          this.applyStyleToElement(runElement, style, text)
           this.appendRunFragment(runElement, text.slice(0, splitOffset), style)
           runElement.append(this.createCursorElement())
           this.appendRunFragment(runElement, text.slice(splitOffset), style)

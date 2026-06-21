@@ -258,6 +258,7 @@ describe('plainTextInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('abc')
     expect(styleRuns).toHaveLength(1)
     expect(styleRuns[0]?.contains(cursor ?? null)).toBe(true)
+    expect(styleRuns[0]?.style.minWidth).toBe('')
     expect(cursor?.previousSibling?.textContent).toBe('a')
     expect(cursor?.nextSibling?.textContent).toBe('bc')
   })

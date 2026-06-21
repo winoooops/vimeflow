@@ -171,8 +171,10 @@ export const readCellDisplayText = (
 ): string => {
   if (cell.text !== '') {
     const cellEndColumn = cell.col + cell.width
+
     const hasExplicitContinuation =
       nextCell !== undefined && nextCell.col < cellEndColumn
+
     const missingColumns = hasExplicitContinuation
       ? 0
       : Math.max(0, cell.width - readTextCellWidth(cell.text))
@@ -273,6 +275,7 @@ export const readCellRowVisibleText = (
       fallbackColumn,
       rowCells[index + 1]
     )
+
     fallbackColumn += readFallbackColumnDeltaForCell(
       rowText,
       cell,
@@ -341,6 +344,7 @@ export const readCursorOffsetInCellRow = (
     }
 
     const cellEndColumn = cell.col + cell.width
+
     const cellText = readCellDisplayText(
       rowText,
       cell,

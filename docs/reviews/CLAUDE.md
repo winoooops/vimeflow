@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 34   | 2026-06-20   |
 | [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 24       | 7    | 2026-06-19   |
-| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 7        | 3    | 2026-06-21   |
+| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 8        | 4    | 2026-06-21   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 29       | 8    | 2026-06-21   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
@@ -83,7 +83,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 12       | 8    | 2026-06-21   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 13       | 9    | 2026-06-21   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 8        | 4    | 2026-06-13   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 1        | 0    | 2026-06-11   |

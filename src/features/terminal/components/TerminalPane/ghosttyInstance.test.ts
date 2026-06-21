@@ -1322,18 +1322,25 @@ describe('ghosttyInstance', () => {
 
     const terminalOutput = created.terminal.element?.querySelector('pre')
 
-    const inputRun = terminalOutput?.querySelector<HTMLElement>(
-      '[data-terminal-style-run="true"]'
+    const inputRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+
+    const backgroundRuns = inputRuns.filter(
+      (run) => run.style.backgroundColor === TRUE_COLOR_BASE
     )
 
     expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
     expect(created.viewportReader.readVisibleText()).toBe(
       '> Explain this codebase   '
     )
-    expect(inputRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
-    expect(inputRun?.style.minWidth).toBe(
-      'calc(var(--terminal-cell-width) * 25)'
-    )
+
+    expect(backgroundRuns.map((run) => run.style.minWidth)).toEqual([
+      'calc(var(--terminal-cell-width) * 1)',
+      'calc(var(--terminal-cell-width) * 24)',
+    ])
   })
 
   test('paints reverse-video agent input boxes by terminal cell width', () => {
@@ -1375,19 +1382,27 @@ describe('ghosttyInstance', () => {
 
     const terminalOutput = created.terminal.element?.querySelector('pre')
 
-    const inputRun = terminalOutput?.querySelector<HTMLElement>(
-      '[data-terminal-style-run="true"]'
+    const inputRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+
+    const reverseRuns = inputRuns.filter(
+      (run) =>
+        run.style.backgroundColor === 'var(--terminal-foreground)' &&
+        run.style.color === 'var(--terminal-background)'
     )
 
     expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
     expect(created.viewportReader.readVisibleText()).toBe(
       '> Explain this codebase   '
     )
-    expect(inputRun?.style.backgroundColor).toBe('var(--terminal-foreground)')
-    expect(inputRun?.style.color).toBe('var(--terminal-background)')
-    expect(inputRun?.style.minWidth).toBe(
-      'calc(var(--terminal-cell-width) * 25)'
-    )
+
+    expect(reverseRuns.map((run) => run.style.minWidth)).toEqual([
+      'calc(var(--terminal-cell-width) * 1)',
+      'calc(var(--terminal-cell-width) * 24)',
+    ])
   })
 
   test('paints block glyphs as terminal-cell rectangles', () => {

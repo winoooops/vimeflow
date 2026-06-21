@@ -225,6 +225,7 @@ const readStyledRowText = (
       fallbackColumn,
       rowCells[index + 1]
     )
+
     fallbackColumn += readFallbackColumnDeltaForCell(
       rowText,
       cell,

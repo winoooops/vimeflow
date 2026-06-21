@@ -465,6 +465,9 @@ const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
 const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
 
+const HTML_VOID_TAG_PATTERN =
+  /^<(?:area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)\b/i
+
 const decodeHtmlText = (text: string): string =>
   text.replace(HTML_ENTITY_PATTERN, (entity) => {
     if (entity === '&amp;') {
@@ -486,9 +489,13 @@ const decodeHtmlText = (text: string): string =>
     return "'"
   })
 
-const isOpeningDivTag = (token: string): boolean => /^<div\b/i.test(token)
+const isOpeningHtmlTag = (token: string): boolean =>
+  /^<[a-z][^>]*>$/i.test(token) &&
+  !/\/\s*>$/.test(token) &&
+  !HTML_VOID_TAG_PATTERN.test(token)
 
-const isClosingDivTag = (token: string): boolean => /^<\/div\s*>$/i.test(token)
+const isClosingHtmlTag = (token: string): boolean =>
+  /^<\/[a-z][^>]*>$/i.test(token)
 
 const isHtmlTag = (token: string): boolean => /^<[^>]*>$/.test(token)
 
@@ -534,14 +541,14 @@ const readReverseVideoRangesFromHtml = (
   Array.from(html.matchAll(HTML_TOKEN_PATTERN)).forEach((match) => {
     const token = match[0]
 
-    if (isOpeningDivTag(token)) {
+    if (isOpeningHtmlTag(token)) {
       const parentReverse = reverseStack[reverseStack.length - 1] ?? false
       reverseStack.push(parentReverse || hasReverseVideoStyle(token))
 
       return
     }
 
-    if (isClosingDivTag(token)) {
+    if (isClosingHtmlTag(token)) {
       reverseStack.pop()
 
       return

@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-21
-ref_count: 3
+ref_count: 4
 ---
 
 # Terminal DOM Rendering
@@ -75,4 +75,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L856-L889
 - **Finding:** `applyStyleToElement` wrote a background color in the shared background/reverse layout branch and immediately overwrote it in the reverse-video branch. The final DOM style was correct, but the intermediate write used the wrong reverse fallback and obscured which branch owned reverse colors.
 - **Fix:** Limited the shared branch to non-reverse background assignment plus inline-block layout. The reverse branch remains the single owner of reverse foreground/background swapping.
+- **Commit:** same commit as this entry
+
+### 8. Cursor-split styled runs should not duplicate layout ownership
+
+- **Source:** github-claude | PR #591 round 7 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** The cursor-split path wrapped styled fragments in an outer style-run span and applied full cell-width layout to that outer wrapper. The inner fragments also received their own styled spans, so the zero-width cursor marker sat inside a container whose min-width duplicated the inner cell widths and could make highlighted backgrounds extend past the intended terminal columns.
+- **Fix:** Removed full style application from the outer cursor wrapper. Inner fragments now own background/reverse color and cell-width layout on each side of the cursor; focused regressions assert the split fragments' widths add up to the original run width.
 - **Commit:** same commit as this entry

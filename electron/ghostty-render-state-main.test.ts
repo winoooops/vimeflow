@@ -776,7 +776,7 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
-  test('ignores non-div formatter tags while reading reverse-video columns', () => {
+  test('tracks non-div formatter tags while reading reverse-video columns', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
         GhosttyNativeBindings['createTerminal']
@@ -791,7 +791,7 @@ describe('ghostty render-state main bridge', () => {
         }),
         formatHtml: vi.fn(
           () =>
-            '<div style="font-family: monospace; white-space: pre;"><span>a</span><div style="display: inline;filter: invert(100%);">bc</div></div>'
+            '<div style="font-family: monospace; white-space: pre;">a<span style="display: inline;filter: invert(100%);">bc</span></div>'
         ),
         dispose: vi.fn(),
       }),
