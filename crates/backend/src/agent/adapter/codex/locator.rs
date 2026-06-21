@@ -677,7 +677,7 @@ impl SqliteFirstLocator {
                 // argv/sqlite; surface as not-yet-ready so the bind retries and
                 // ultimately fails safe rather than reporting a false relocation.
                 log::debug!(
-                    "codex locator: open-fd provider failed pid={} err={}",
+                    "codex locator resolve: decision=provider-err pid={} err={} -> NotYetReady",
                     ctx.pid,
                     err
                 );
@@ -688,6 +688,10 @@ impl SqliteFirstLocator {
         if rollout_paths.is_empty() {
             // `Ok(∅)`: no open rollout FD — fall back to the early-window
             // strategies (resume-argv / logs / recency).
+            log::debug!(
+                "codex locator resolve: decision=empty-fallback pid={} (no open rollout FD)",
+                ctx.pid
+            );
             return Ok(None);
         }
 
@@ -696,28 +700,78 @@ impl SqliteFirstLocator {
             match self.query_thread_by_rollout_path(state_path, &rollout_path)? {
                 Some(location) => {
                     log::debug!(
-                        "codex locator: using open-fd fast-path pid={} rollout={}",
+                        "codex locator resolve: decision=single-fd pid={} picked_rollout={} picked_thread={} picked_updated_at_ms={}",
                         ctx.pid,
-                        rollout_path.display()
+                        location.rollout_path.display(),
+                        location.thread_id,
+                        location.state_updated_at_ms
                     );
                     Ok(Some(location))
                 }
                 // FD open but the thread row is not written yet — wait for it
                 // rather than falling back to a possibly-stale candidate.
-                None => Err(LocatorError::NotYetReady),
+                None => {
+                    log::debug!(
+                        "codex locator resolve: decision=single-fd-no-row pid={} open_fd={} -> NotYetReady",
+                        ctx.pid,
+                        rollout_path.display()
+                    );
+                    Err(LocatorError::NotYetReady)
+                }
             }
         } else {
+            // codex keeps OLD rollout FDs open after `/clear` and in-session
+            // `resume` (it does not close them), so a single pid can have
+            // several rollouts open at once. They share the same cwd, so cwd
+            // disambiguation cannot pick the active one — choose the MOST
+            // RECENTLY UPDATED open rollout (the live conversation is the one
+            // being written). Erroring on same-cwd ambiguity here (as
+            // `choose_state_candidate` does) strands the panel after every
+            // `/clear`/`resume` — the actual VIM-188 freeze, confirmed by `lsof`
+            // showing one codex pid holding 3 rollout files open.
             let rollout_path_strings: HashSet<String> = rollout_paths
                 .iter()
                 .map(|path| path.to_string_lossy().to_string())
                 .collect();
             let candidates =
                 self.query_candidate_rows(state_path, None, Some(&rollout_path_strings))?;
-            match choose_state_candidate(&candidates, ctx)? {
-                Some(candidate) => Ok(Some(candidate.into_rollout_location())),
-                // Open FDs present but none has a thread row yet — same as above.
-                None => Err(LocatorError::NotYetReady),
+
+            // One decision line per multi-FD resolve (debug, off by default) so
+            // `RUST_LOG=vimeflow_lib=debug` reveals which rollout was bound.
+            let Some(max_updated_at_ms) = candidates.iter().map(|c| c.updated_at_ms).max() else {
+                // Open FDs present but none has a thread row yet — wait for it.
+                log::debug!(
+                    "codex locator resolve: decision=no-rows pid={} open_fds={} -> NotYetReady",
+                    ctx.pid,
+                    rollout_paths.len()
+                );
+                return Err(LocatorError::NotYetReady);
+            };
+            let mut newest = candidates
+                .into_iter()
+                .filter(|c| c.updated_at_ms == max_updated_at_ms);
+            let candidate = newest.next().expect("a max implies at least one row");
+            if newest.next().is_some() {
+                // Two open rollouts share the newest `updated_at_ms` — we can't
+                // tell which is active (input order is non-deterministic), so
+                // fail safe rather than bind arbitrarily. The live rollout
+                // advances its row and breaks the tie on the next retry.
+                log::debug!(
+                    "codex locator resolve: decision=tie-not-yet-ready pid={} max_updated_at_ms={} -> NotYetReady",
+                    ctx.pid,
+                    max_updated_at_ms
+                );
+                return Err(LocatorError::NotYetReady);
             }
+            log::debug!(
+                "codex locator resolve: decision=unique-newest pid={} picked_thread={} picked_rollout={} picked_updated_at_ms={} open_fds={}",
+                ctx.pid,
+                candidate.thread_id,
+                candidate.rollout_path.display(),
+                max_updated_at_ms,
+                rollout_paths.len()
+            );
+            Ok(Some(candidate.into_rollout_location()))
         }
     }
 }
@@ -1543,6 +1597,15 @@ mod sqlite_first_tests {
         .expect("insert thread row");
     }
 
+    fn touch_thread(path: &Path, id: &str, updated_at_ms: i64) {
+        let conn = Connection::open(path).expect("open state db");
+        conn.execute(
+            "UPDATE threads SET updated_at_ms = ? WHERE id = ?",
+            rusqlite::params![updated_at_ms, id],
+        )
+        .expect("update thread row");
+    }
+
     fn ctx<'a>(cwd: &'a Path, pid: u32, pty_start: SystemTime) -> BindContext<'a> {
         BindContext {
             cwd,
@@ -2201,6 +2264,161 @@ mod sqlite_first_tests {
             .expect("multi-fd resolver must find the open rollout beyond the recency limit");
         assert_eq!(result.thread_id, "thread-OPEN");
         assert_eq!(result.rollout_path, rollout_open);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_picks_newest_when_codex_leaks_old_rollout_fds() {
+        // codex keeps OLD rollout FDs open across `/clear` and in-session
+        // `resume`, so a single pid holds several same-cwd rollouts open at once
+        // (confirmed by `lsof`). The resolver must pick the most recently updated
+        // (the active conversation) instead of erroring on same-cwd ambiguity —
+        // the latter strands the panel after every `/clear`/`resume` (VIM-188).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_old = sessions.join("rollout-OLD.jsonl");
+        let rollout_new = sessions.join("rollout-NEW.jsonl");
+        // Same cwd ('/tmp', from insert_thread) — only updated_at_ms differs.
+        insert_thread(
+            &state,
+            "thread-OLD",
+            rollout_old.to_str().expect("utf8"),
+            1000,
+        );
+        insert_thread(
+            &state,
+            "thread-NEW",
+            rollout_new.to_str().expect("utf8"),
+            5000,
+        );
+
+        let proc_root = fake_proc_root();
+        // Stale resume-argv points at the OLD thread — the authoritative open-FD
+        // (newest) must still win, since open-FD is consulted before argv.
+        write_cmdline(proc_root.path(), 8001, &["codex", "resume", "thread-OLD"]);
+        // The pid leaks BOTH rollouts open (the bug).
+        write_rollout_fd(proc_root.path(), 8001, "10", &rollout_old);
+        write_rollout_fd(proc_root.path(), 8001, "11", &rollout_new);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        // ctx cwd matches the threads' cwd → the old resolver would error on
+        // same-cwd ambiguity; the recency pick must still bind the newest.
+        let result = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8001, SystemTime::now()))
+            .expect("same-cwd multi-fd must bind the newest open rollout, not error");
+        assert_eq!(result.thread_id, "thread-NEW");
+        assert_eq!(result.rollout_path, rollout_new);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_tied_updated_at_is_not_yet_ready() {
+        // Two open rollouts sharing the newest updated_at_ms are genuinely
+        // ambiguous (input order is non-deterministic) → fail safe with
+        // NotYetReady rather than bind one arbitrarily.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_a = sessions.join("rollout-A.jsonl");
+        let rollout_b = sessions.join("rollout-B.jsonl");
+        insert_thread(&state, "thread-A", rollout_a.to_str().expect("utf8"), 3000);
+        insert_thread(&state, "thread-B", rollout_b.to_str().expect("utf8"), 3000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 8002, &["codex"]);
+        write_rollout_fd(proc_root.path(), 8002, "10", &rollout_a);
+        write_rollout_fd(proc_root.path(), 8002, "11", &rollout_b);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        let result = locator.resolve_rollout(&ctx(Path::new("/tmp"), 8002, SystemTime::now()));
+        assert!(
+            matches!(result, Err(LocatorError::NotYetReady)),
+            "a tie on the newest updated_at_ms must be NotYetReady, not an arbitrary bind"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_self_heals_when_resumed_idle_rollout_is_written() {
+        // The idle-resume signal gap: resuming an OLD conversation does not
+        // advance its `updated_at_ms` until the user interacts, so among leaked
+        // FDs the resolver structurally binds the previously-active (newest)
+        // rollout. There is NO resolver-side signal that can pick the resumed
+        // idle rollout earlier (confirmed: sqlite `updated_at` == file mtime,
+        // no active-thread column, `session_index.jsonl` is a stale title
+        // cache). Recovery is therefore "self-heal on first interaction": once
+        // the resumed rollout is written it becomes newest and the resolver
+        // binds it. This guards the backend half of that contract; the frontend
+        // persistent retry is what re-invokes the resolver until this flips.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_active = sessions.join("rollout-ACTIVE.jsonl");
+        let rollout_resumed = sessions.join("rollout-RESUMED.jsonl");
+        // ACTIVE was the previously-live conversation (newest); RESUMED is the
+        // older conversation the user just resumed to but has not yet typed in.
+        insert_thread(
+            &state,
+            "thread-ACTIVE",
+            rollout_active.to_str().expect("utf8"),
+            5000,
+        );
+        insert_thread(
+            &state,
+            "thread-RESUMED",
+            rollout_resumed.to_str().expect("utf8"),
+            1000,
+        );
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 8003, &["codex"]);
+        // The pid leaks BOTH rollouts open.
+        write_rollout_fd(proc_root.path(), 8003, "10", &rollout_active);
+        write_rollout_fd(proc_root.path(), 8003, "11", &rollout_resumed);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+
+        // Phase 1 — RESUMED is still idle (older): the resolver binds ACTIVE.
+        // This is the unavoidable signal-gap miss, not a bug.
+        let before = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8003, SystemTime::now()))
+            .expect("multi-fd binds the newest open rollout");
+        assert_eq!(
+            before.thread_id, "thread-ACTIVE",
+            "before interaction, the idle resumed rollout cannot be distinguished from the active one"
+        );
+
+        // Phase 2 — the user interacts with RESUMED, advancing its row past
+        // ACTIVE. A re-invoked resolve (what the persistent retry does) now
+        // binds RESUMED, so the panel recovers without a manual click.
+        touch_thread(&state, "thread-RESUMED", 9000);
+        let after = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8003, SystemTime::now()))
+            .expect("multi-fd re-resolve after the resumed rollout is written");
+        assert_eq!(
+            after.thread_id, "thread-RESUMED",
+            "once the resumed rollout is the newest, the resolver self-heals onto it"
+        );
+        assert_eq!(after.rollout_path, rollout_resumed);
     }
 }
 

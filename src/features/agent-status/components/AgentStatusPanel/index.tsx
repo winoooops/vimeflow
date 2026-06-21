@@ -38,7 +38,6 @@ interface AgentStatusPanelProps {
   gitStatus?: UseGitStatusReturn
   isRefreshing?: boolean
   needsReattach?: boolean
-  onReattach?: () => void
   agent: Agent
   onCollapse: () => void
   cacheHistory: number[]
@@ -305,7 +304,6 @@ export const AgentStatusPanel = ({
   gitStatus = undefined,
   isRefreshing = false,
   needsReattach = false,
-  onReattach = undefined,
   agent,
   onCollapse,
   cacheHistory,
@@ -542,7 +540,6 @@ export const AgentStatusPanel = ({
         agent={agent}
         isRefreshing={showsRefreshing}
         needsReattach={needsReattach}
-        onReattach={onReattach}
         onCollapse={onCollapse}
         reserveWindowControls={reserveWindowControls}
       />

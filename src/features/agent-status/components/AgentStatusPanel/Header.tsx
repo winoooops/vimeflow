@@ -6,10 +6,12 @@ import type { Agent } from '../../../../agents/registry'
 export interface AgentStatusPanelHeaderProps {
   agent: Agent
   isRefreshing?: boolean
-  /** Session is known-stale (codex `/clear`/`resume`): show the red state. */
+  /**
+   * Session is known-stale after a codex `/clear`: show the red state. Recovery
+   * is automatic — the watcher relocates once codex writes the conversation
+   * (i.e. when the user sends a prompt), so this is an instruction, not a button.
+   */
   needsReattach?: boolean
-  /** When provided, render the Reattach button (the universal recovery). */
-  onReattach?: () => void
   onCollapse: () => void
   reserveWindowControls?: boolean
 }
@@ -18,7 +20,6 @@ export const AgentStatusPanelHeader = ({
   agent,
   isRefreshing = false,
   needsReattach = false,
-  onReattach = undefined,
   onCollapse,
   reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
@@ -71,20 +72,12 @@ export const AgentStatusPanelHeader = ({
         }`}
       >
         {needsReattach
-          ? 'reattach needed'
+          ? 'send a prompt to reattach'
           : isRefreshing
             ? 'fetching latest'
             : 'updated now'}
       </span>
     </div>
-    {onReattach !== undefined && (
-      <IconButton
-        icon="refresh"
-        label="Reattach agent session"
-        onClick={onReattach}
-        className={`vf-app-no-drag shrink-0 ${needsReattach ? 'text-error' : ''}`}
-      />
-    )}
     <IconButton
       icon="chevron_right"
       label="Collapse activity panel"
