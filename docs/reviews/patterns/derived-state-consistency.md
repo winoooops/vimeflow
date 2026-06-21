@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-21
-ref_count: 9
+ref_count: 10
 ---
 
 # Derived State Consistency
@@ -166,4 +166,13 @@ base data is technically "correct."
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** The agent-status hook normalized `contextWindow.usedPercentage: null` to `0`, so opencode sessions with known input tokens but unknown context-window size reached the UI as a known 0%-used state. The existing `ContextReservoirCard` unknown-window token display never activated.
 - **Fix:** Changed `ContextWindowState.usedPercentage` to `number | null`, preserved null during hook normalization, and added a regression test for an unknown-window opencode payload with input tokens.
+- **Commit:** same commit as this entry
+
+### 14. Tool args upgrade left test-file classification stale
+
+- **Source:** github-codex-connector | PR #590 round 2 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode live path refreshed an in-flight tool record when `tool.before` supplied authoritative args after an empty pending part, but only patched `tool` and `args`. The derived `is_test_file` flag stayed at the pending placeholder value, so the terminal `tool.after` event could report a test-file tool call as non-test-file.
+- **Fix:** Derive test-file status from authoritative `filePath` args and patch `entry.is_test_file` alongside the upgraded tool and args. Added a pending-empty -> `tool.before` test-file -> `tool.after` regression test that asserts the terminal event keeps `isTestFile: true`.
 - **Commit:** same commit as this entry

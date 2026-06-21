@@ -45,6 +45,7 @@ use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, Transcrip
 use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
 use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
 use crate::agent::adapter::claude_code::test_runners::matcher::match_command;
+use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_test_file;
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
@@ -273,10 +274,11 @@ impl OpencodeTranscriptDecoder {
             .and_then(Value::as_str)
             .unwrap_or("");
         let args = summarize_state_args(state, &tool);
+        let is_test_file = state_args_are_test_file(state);
 
         match status {
             "pending" | "running" => {
-                self.start_tool_call(&call_key, tool, args, timestamp, false, false);
+                self.start_tool_call(&call_key, tool, args, timestamp, is_test_file, false);
             }
             "completed" => {
                 self.finish_tool_call_from_part_update(&call_key, ToolCallStatus::Done, timestamp);
@@ -300,7 +302,8 @@ impl OpencodeTranscriptDecoder {
         };
         let tool = dto.tool.as_deref().unwrap_or("unknown").to_string();
         let args = summarize_value_args(&dto.args, &tool);
-        self.start_tool_call(call_id, tool, args, timestamp, false, true);
+        let is_test_file = value_args_are_test_file(&dto.args);
+        self.start_tool_call(call_id, tool, args, timestamp, is_test_file, true);
     }
 
     /// `tool.after`: complete the in-flight call (`metadata.exit` decides
@@ -376,6 +379,7 @@ impl OpencodeTranscriptDecoder {
             // pending part may have left as a placeholder) onto the live record.
             entry.tool = tool.clone();
             entry.args = args.clone();
+            entry.is_test_file = is_test_file;
         }
         self.record_tool_metadata(call_key, &tool, &args, timestamp, expects_tool_after);
 
@@ -694,6 +698,18 @@ fn summarize_state_args(state: Option<&Value>, tool: &str) -> String {
     }
 }
 
+fn value_args_are_test_file(args: &Value) -> bool {
+    args.get("filePath")
+        .and_then(Value::as_str)
+        .is_some_and(is_test_file)
+}
+
+fn state_args_are_test_file(state: Option<&Value>) -> bool {
+    state
+        .and_then(|s| s.get("args"))
+        .is_some_and(value_args_are_test_file)
+}
+
 /// Truncate to `max_len` chars with a `...` suffix, char-boundary safe.
 fn truncate_string(input: &str, max_len: usize) -> String {
     if input.chars().count() <= max_len {
@@ -896,6 +912,34 @@ mod tests {
             dec.in_flight.get("call_read1").map(|c| c.args.as_str()),
             Some("/tmp/x/util.ts"),
         );
+    }
+
+    /// The empty-args pending start must refresh derived metadata too. A later
+    /// `tool.before` can reveal that the file path is a test file, and the
+    /// terminal `tool.after` event should keep that classification.
+    #[test]
+    fn pending_part_then_tool_before_refreshes_test_file_classification() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_test","tool":"read","state":{"status":"pending","args":{}}}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":1100,"kind":"tool.before","tool":"read","sessionID":"ses1","callID":"call_test","args":{"filePath":"src/util.test.ts"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":1200,"kind":"tool.after","tool":"read","sessionID":"ses1","callID":"call_test","result":{"output":"contents","metadata":{"exit":0}}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 3, "pending start + refresh + terminal");
+        assert_eq!(payloads[1]["status"], "running");
+        assert_eq!(payloads[1]["isTestFile"], true);
+        assert_eq!(payloads[2]["status"], "done");
+        assert_eq!(payloads[2]["args"], "src/util.test.ts");
+        assert_eq!(payloads[2]["isTestFile"], true);
     }
 
     /// A second authoritative `tool.before` (or running part) carrying the SAME
