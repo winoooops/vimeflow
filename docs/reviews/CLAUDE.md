@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 16       | 13   | 2026-06-20   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 10       | 4    | 2026-06-20   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 12       | 9    | 2026-06-19   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 13       | 9    | 2026-06-21   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
@@ -67,7 +67,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 1    | 2026-06-17   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 1        | 0    | 2026-06-20   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 2        | 1    | 2026-06-21   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |

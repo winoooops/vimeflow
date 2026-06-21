@@ -353,4 +353,16 @@ mod tests {
         assert!(src.contains("'opencode-bridge'"));
         assert!(src.contains("'.local'") && src.contains("'share'"));
     }
+
+    #[test]
+    fn embedded_plugin_redacts_sensitive_tool_arg_fields() {
+        let src = BRIDGE_PLUGIN_SOURCE;
+
+        assert!(src.contains("SENSITIVE_ARG_FIELDS"));
+        assert!(src.contains("isSensitiveArgField(key)"));
+        assert!(src.contains("preview[key] = '[redacted]'"));
+        assert!(src.contains("'authorization'"));
+        assert!(src.contains("'password'"));
+        assert!(src.contains("'token'"));
+    }
 }

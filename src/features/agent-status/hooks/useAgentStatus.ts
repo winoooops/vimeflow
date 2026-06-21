@@ -568,7 +568,11 @@ export const useAgentStatus = (
               // guard every access to avoid silent TypeError crashes.
               contextWindow: p.contextWindow
                 ? {
-                    usedPercentage: p.contextWindow.usedPercentage ?? 0,
+                    usedPercentage:
+                      p.contextWindow.usedPercentage === null ||
+                      p.contextWindow.usedPercentage === undefined
+                        ? null
+                        : Number(p.contextWindow.usedPercentage),
                     contextWindowSize: Number(
                       p.contextWindow.contextWindowSize
                     ),

@@ -145,7 +145,7 @@ export interface CurrentUsageState {
 }
 
 export interface ContextWindowState {
-  usedPercentage: number
+  usedPercentage: number | null
   contextWindowSize: number
   totalInputTokens: number
   totalOutputTokens: number

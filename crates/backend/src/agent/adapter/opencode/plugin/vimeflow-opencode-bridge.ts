@@ -109,9 +109,7 @@ const excerptOutput = (value: any): any => {
 
 // Content-bearing arg fields to drop: these carry full file contents or large
 // payloads (an `edit`'s before/after text, a `write`'s body, a `task` prompt
-// body), which the data-minimization rule keeps out of the bridge. Everything
-// else on the args object — paths, patterns, commands, descriptions, flags — is
-// a safe-to-preview INPUT and is kept (string fields clamped to the cap).
+// body), which the data-minimization rule keeps out of the bridge.
 const CONTENT_ARG_FIELDS = new Set([
   'content',
   'newString',
@@ -124,12 +122,39 @@ const CONTENT_ARG_FIELDS = new Set([
   'prompt',
 ])
 
+const SENSITIVE_ARG_FIELDS = new Set([
+  'apikey',
+  'authorization',
+  'authtoken',
+  'bearertoken',
+  'clientsecret',
+  'credential',
+  'credentials',
+  'password',
+  'passwd',
+  'privatekey',
+  'refreshtoken',
+  'secret',
+  'token',
+])
+
+const isSensitiveArgField = (key: string): boolean => {
+  const normalized = key.replace(/[-_\s]/g, '').toLowerCase()
+
+  return (
+    SENSITIVE_ARG_FIELDS.has(normalized) ||
+    normalized.endsWith('apikey') ||
+    normalized.endsWith('authorization') ||
+    normalized.endsWith('authtoken') ||
+    normalized.endsWith('password') ||
+    normalized.endsWith('secret') ||
+    normalized.endsWith('token')
+  )
+}
+
 // Preview tool args: return a shallow copy of `args` with every string field
-// clamped to the cap, dropping only the obviously large content fields above.
-// Tool ARGS are inputs (paths, patterns, commands, descriptions) and are safe
-// to preview — the minimization rule is about tool OUTPUT / file contents, not
-// args. Previously this whitelisted only bash/read/edit/write/glob/grep, so
-// every other tool (`task`, `todowrite`, `webfetch`, `list`, …) lost its args.
+// clamped to the cap, dropping content fields and redacting credential-shaped
+// field names before anything is written to the bridge JSONL.
 const previewArgs = (tool: any, args: any): any => {
   void tool
 
@@ -145,6 +170,11 @@ const previewArgs = (tool: any, args: any): any => {
     }
 
     const value = args[key]
+
+    if (isSensitiveArgField(key)) {
+      preview[key] = '[redacted]'
+      continue
+    }
 
     if (typeof value === 'string') {
       preview[key] = clampString(value)
