@@ -1333,11 +1333,87 @@ describe('ghosttyInstance', () => {
     expect(terminalOutput?.textContent).toBe('██')
     expect(created.viewportReader.readVisibleText()).toBe('██')
     expect(glyphs).toHaveLength(2)
-    expect(glyphs[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(glyphs[0]?.style.backgroundColor).toBe('transparent')
     expect(glyphs[0]?.style.color).toBe('transparent')
     expect(glyphs[0]?.style.fontSize).toBe('0px')
     expect(glyphs[0]?.style.width).toBe('var(--terminal-cell-width)')
     expect(glyphs[0]?.style.minWidth).toBe('var(--terminal-cell-width)')
+
+    const firstRect = glyphs[0]?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(firstRect?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(firstRect?.style.height).toBe('100%')
+    expect(firstRect?.style.left).toBe('0%')
+    expect(firstRect?.style.top).toBe('0%')
+    expect(firstRect?.style.width).toBe('100%')
+  })
+
+  test('paints partial and quadrant block glyphs by exact cell rectangles', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['▉▐▖▝'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 4,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '▉▐▖▝',
+              width: 4,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
+    )
+
+    expect(terminalOutput?.textContent).toBe('▉▐▖▝')
+    expect(created.viewportReader.readVisibleText()).toBe('▉▐▖▝')
+    expect(glyphs).toHaveLength(4)
+    expect(rects[0]?.style.width).toBe('87.5%')
+    expect(rects[0]?.style.left).toBe('0%')
+    expect(rects[0]?.style.top).toBe('0%')
+    expect(rects[0]?.style.height).toBe('100%')
+    expect(rects[1]?.style.width).toBe('50%')
+    expect(rects[1]?.style.left).toBe('50%')
+    expect(rects[1]?.style.top).toBe('0%')
+    expect(rects[1]?.style.height).toBe('100%')
+    expect(rects[2]?.style.width).toBe('50%')
+    expect(rects[2]?.style.left).toBe('0%')
+    expect(rects[2]?.style.top).toBe('50%')
+    expect(rects[2]?.style.height).toBe('50%')
+    expect(rects[3]?.style.width).toBe('50%')
+    expect(rects[3]?.style.left).toBe('50%')
+    expect(rects[3]?.style.top).toBe('0%')
+    expect(rects[3]?.style.height).toBe('50%')
   })
 
   test('paints left partial block glyph widths without overfilling', () => {
@@ -1383,13 +1459,18 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('▉▏')
     expect(glyphs).toHaveLength(2)
 
-    expect(glyphs[0]?.style.backgroundImage).toContain(
-      `${TRUE_COLOR_PINK} 87.5%`
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
     )
 
-    expect(glyphs[1]?.style.backgroundImage).toContain(
-      `${TRUE_COLOR_PINK} 12.5%`
-    )
+    expect(rects[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[0]?.style.width).toBe('87.5%')
+    expect(rects[0]?.style.left).toBe('0%')
+    expect(rects[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[1]?.style.width).toBe('12.5%')
+    expect(rects[1]?.style.left).toBe('0%')
   })
 
   test('paints styled block glyphs when the cursor splits the run', () => {
@@ -1440,8 +1521,17 @@ describe('ghosttyInstance', () => {
     expect(glyphs).toHaveLength(2)
     expect(cursor?.previousSibling).toBe(glyphs[0])
     expect(cursor?.nextSibling).toBe(glyphs[1])
-    expect(glyphs[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
-    expect(glyphs[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
+    )
+
+    expect(rects[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[0]?.style.width).toBe('100%')
+    expect(rects[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[1]?.style.width).toBe('100%')
   })
 
   test('does not render overlapping native wide-glyph continuation cells', () => {

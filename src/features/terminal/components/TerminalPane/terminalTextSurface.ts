@@ -25,20 +25,16 @@ const MEASURED_CHAR_SAMPLE_LENGTH = 80
 const BLOCK_ELEMENT_PATTERN = /[\u2580-\u259f]/
 const BLOCK_ONE_EIGHTH = 12.5
 
-type BlockGlyphPaint =
-  | {
-      readonly kind: 'solid'
-    }
-  | {
-      readonly kind: 'vertical'
-      readonly startPercent: number
-      readonly endPercent: number
-    }
-  | {
-      readonly kind: 'horizontal'
-      readonly startPercent: number
-      readonly endPercent: number
-    }
+interface BlockGlyphRect {
+  readonly heightPercent: number
+  readonly leftPercent: number
+  readonly topPercent: number
+  readonly widthPercent: number
+}
+
+interface BlockGlyphPaint {
+  readonly rects: readonly BlockGlyphRect[]
+}
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -149,43 +145,132 @@ const readBlockGlyphPaint = (character: string): BlockGlyphPaint | null => {
   if (codePoint >= 0x2581 && codePoint <= 0x2588) {
     const eighths = codePoint - 0x2580
 
-    return eighths === 8
-      ? { kind: 'solid' }
-      : {
-          kind: 'vertical',
-          startPercent: 100 - eighths * BLOCK_ONE_EIGHTH,
-          endPercent: 100,
-        }
+    return {
+      rects: [
+        {
+          heightPercent: eighths * BLOCK_ONE_EIGHTH,
+          leftPercent: 0,
+          topPercent: 100 - eighths * BLOCK_ONE_EIGHTH,
+          widthPercent: 100,
+        },
+      ],
+    }
   }
 
   if (codePoint >= 0x2589 && codePoint <= 0x258f) {
     const eighths = 0x2590 - codePoint
 
     return {
-      kind: 'horizontal',
-      startPercent: 0,
-      endPercent: eighths * BLOCK_ONE_EIGHTH,
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: eighths * BLOCK_ONE_EIGHTH,
+        },
+      ],
     }
   }
 
   if (character === '\u2580') {
-    return { kind: 'vertical', startPercent: 0, endPercent: 50 }
+    return {
+      rects: [
+        {
+          heightPercent: 50,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: 100,
+        },
+      ],
+    }
   }
 
   if (character === '\u2590') {
-    return { kind: 'horizontal', startPercent: 50, endPercent: 100 }
+    return {
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 50,
+          topPercent: 0,
+          widthPercent: 50,
+        },
+      ],
+    }
   }
 
   if (character === '\u2594') {
-    return { kind: 'vertical', startPercent: 0, endPercent: BLOCK_ONE_EIGHTH }
+    return {
+      rects: [
+        {
+          heightPercent: BLOCK_ONE_EIGHTH,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: 100,
+        },
+      ],
+    }
   }
 
   if (character === '\u2595') {
     return {
-      kind: 'horizontal',
-      startPercent: 100 - BLOCK_ONE_EIGHTH,
-      endPercent: 100,
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 100 - BLOCK_ONE_EIGHTH,
+          topPercent: 0,
+          widthPercent: BLOCK_ONE_EIGHTH,
+        },
+      ],
     }
+  }
+
+  const quadrantRects: Partial<Record<number, readonly BlockGlyphRect[]>> = {
+    0x2596: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x2597: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x2598: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+    ],
+    0x2599: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259a: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259b: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259c: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259d: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+    ],
+    0x259e: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259f: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+  }
+
+  const rects = quadrantRects[codePoint]
+
+  if (rects) {
+    return { rects }
   }
 
   return null
@@ -792,6 +877,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.applyStyleToElement(glyph, style, character)
 
     Object.assign(glyph.style, {
+      backgroundColor: background,
       color: 'transparent',
       display: 'inline-block',
       fontSize: '0',
@@ -799,20 +885,30 @@ export class TerminalTextSurface implements TerminalSurface {
       lineHeight: 'var(--terminal-line-height)',
       minWidth: 'var(--terminal-cell-width)',
       overflow: 'hidden',
+      position: 'relative',
       verticalAlign: 'top',
       width: 'var(--terminal-cell-width)',
     })
 
-    if (paint.kind === 'solid') {
-      glyph.style.backgroundColor = foreground
+    paint.rects.forEach((rect) => {
+      const fill = document.createElement('span')
 
-      return glyph
-    }
+      fill.dataset.terminalCustomGlyphRect = 'true'
+      fill.setAttribute('aria-hidden', 'true')
 
-    const direction = paint.kind === 'vertical' ? 'to bottom' : 'to right'
+      Object.assign(fill.style, {
+        backgroundColor: foreground,
+        display: 'block',
+        height: `${rect.heightPercent}%`,
+        left: `${rect.leftPercent}%`,
+        pointerEvents: 'none',
+        position: 'absolute',
+        top: `${rect.topPercent}%`,
+        width: `${rect.widthPercent}%`,
+      })
 
-    glyph.style.backgroundColor = background
-    glyph.style.backgroundImage = `linear-gradient(${direction}, ${background} 0%, ${background} ${paint.startPercent}%, ${foreground} ${paint.startPercent}%, ${foreground} ${paint.endPercent}%, ${background} ${paint.endPercent}%, ${background} 100%)`
+      glyph.append(fill)
+    })
 
     return glyph
   }
