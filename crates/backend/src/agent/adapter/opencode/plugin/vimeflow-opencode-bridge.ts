@@ -144,17 +144,28 @@ const SENSITIVE_ARG_FIELDS = new Set([
   'token',
 ])
 
+const SENSITIVE_ARG_FIELD_SUFFIXES = [
+  'accesskey',
+  'apikey',
+  'authorization',
+  'authtoken',
+  'encryptionkey',
+  'password',
+  'secret',
+  'secretaccesskey',
+  'secretkey',
+  'signingkey',
+  'token',
+]
+
 const isSensitiveArgField = (key: string): boolean => {
   const normalized = key.replace(/[-_\s]/g, '').toLowerCase()
 
   return (
     SENSITIVE_ARG_FIELDS.has(normalized) ||
-    normalized.endsWith('apikey') ||
-    normalized.endsWith('authorization') ||
-    normalized.endsWith('authtoken') ||
-    normalized.endsWith('password') ||
-    normalized.endsWith('secret') ||
-    normalized.endsWith('token')
+    SENSITIVE_ARG_FIELD_SUFFIXES.some((suffix) =>
+      normalized.endsWith(suffix)
+    )
   )
 }
 

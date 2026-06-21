@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-06-21
-ref_count: 1
+ref_count: 2
 ---
 
 # Bridge Payload Minimization
@@ -39,4 +39,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
 - **Finding:** The opencode bridge normalized arg names before checking the sensitive-field denylist, but it only matched token, secret, password, and similar suffixes. Credential key fields such as `secretAccessKey`, `accessKey`, `secretKey`, `signingKey`, and `encryptionKey` could therefore still be written to durable bridge JSONL.
 - **Fix:** Added targeted normalized key compounds to the sensitive-field set and covered them with a bridge JSONL regression test that preserves a benign key label while redacting credential key values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. OpenCode prefixed credential-key args escaped redaction
+
+- **Source:** github-claude | PR #590 round 3 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The opencode bridge redacted exact normalized credential-key names but did not match namespaced custom-tool args such as `apiSecretKey`, `myAccessKey`, or `awsSecretAccessKey`. Those scalar credential values could still be persisted in local bridge JSONL.
+- **Fix:** Added targeted compound suffix matching for access, secret, signing, and encryption key field names, and extended the bridge JSONL regression test with prefixed variants while preserving a benign key label.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
