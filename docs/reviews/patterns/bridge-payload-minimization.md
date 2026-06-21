@@ -31,3 +31,12 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **Finding:** The widened opencode `previewArgs` path kept every scalar arg except a small content-field denylist. Custom tools with fields such as `token`, `password`, `apiKey`, or `authorization` could therefore persist credential values into the durable bridge JSONL.
 - **Fix:** Added credential-shaped arg-name detection and redacted matching fields before serializing previews, while still preserving bounded non-sensitive scalar args.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. OpenCode credential-key arg fields escaped redaction
+
+- **Source:** github-codex-connector | PR #590 round 2 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The opencode bridge normalized arg names before checking the sensitive-field denylist, but it only matched token, secret, password, and similar suffixes. Credential key fields such as `secretAccessKey`, `accessKey`, `secretKey`, `signingKey`, and `encryptionKey` could therefore still be written to durable bridge JSONL.
+- **Fix:** Added targeted normalized key compounds to the sensitive-field set and covered them with a bridge JSONL regression test that preserves a benign key label while redacting credential key values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

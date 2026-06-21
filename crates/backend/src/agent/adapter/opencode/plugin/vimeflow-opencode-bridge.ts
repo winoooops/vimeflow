@@ -123,18 +123,24 @@ const CONTENT_ARG_FIELDS = new Set([
 ])
 
 const SENSITIVE_ARG_FIELDS = new Set([
+  'accesskey',
   'apikey',
   'authorization',
+  'authkey',
   'authtoken',
   'bearertoken',
   'clientsecret',
   'credential',
   'credentials',
+  'encryptionkey',
   'password',
   'passwd',
   'privatekey',
   'refreshtoken',
   'secret',
+  'secretaccesskey',
+  'secretkey',
+  'signingkey',
   'token',
 ])
 
