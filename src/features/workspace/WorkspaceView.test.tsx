@@ -25,6 +25,9 @@ import {
   installMockResizeObserver,
 } from '../../test/mockResizeObserver'
 
+type UseAgentReattach =
+  typeof import('../agent-status/hooks/useAgentReattach').useAgentReattach
+
 const workspaceTerminalMock = vi.hoisted(() => {
   const defaultSessionList = (): SessionList => ({
     activeSessionId: 'sess-1',
@@ -80,9 +83,13 @@ const workspaceTerminalMock = vi.hoisted(() => {
 })
 
 const agentReattachMock = vi.hoisted(() => ({
-  useAgentReattach: vi.fn(() => ({
-    needsReattach: false,
-  })),
+  useAgentReattach: vi.fn(
+    (
+      _options: Parameters<UseAgentReattach>[0]
+    ): ReturnType<UseAgentReattach> => ({
+      needsReattach: false,
+    })
+  ),
 }))
 
 const mockMatchMedia = (matches: boolean): (() => void) => {
