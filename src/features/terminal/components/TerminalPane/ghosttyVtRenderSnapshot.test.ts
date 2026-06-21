@@ -372,6 +372,36 @@ describe('ghosttyVtRenderSnapshot', () => {
     ])
   })
 
+  test('recomputes native cursor offsets after renderer row padding', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['A   '],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 4,
+        textOffset: 1,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: 'A',
+          width: 1,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(buffer.readVisibleText()).toBe('A   ')
+    expect(buffer.readCursorOffset()).toBe('A   '.length)
+  })
+
   test('skips overlapping empty native cells after a declared wide glyph', () => {
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: [`${NERD_FONT_TERMINAL_ICON}x`],

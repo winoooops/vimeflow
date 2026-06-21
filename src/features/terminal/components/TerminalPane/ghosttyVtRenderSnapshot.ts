@@ -274,14 +274,18 @@ const readSnapshotCursorOffset = (
 
   const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
   const row = snapshot.rows[rowIndex] ?? ''
+  const rowCells = cellsByRow.get(rowIndex)
+  const renderedRow = readCellRowVisibleText(row, rowCells)
+
+  const precomputedTextOffset =
+    cursor.textOffset !== undefined &&
+    renderedRow.slice(cursor.textOffset).trimEnd().length > 0
+      ? cursor.textOffset
+      : undefined
 
   const rowTextOffset =
-    cursor.textOffset ??
-    readCursorOffsetInCellRow(
-      row,
-      cellsByRow.get(rowIndex),
-      cursor.columnOffset
-    )
+    precomputedTextOffset ??
+    readCursorOffsetInCellRow(row, rowCells, cursor.columnOffset)
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)

@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-21
-ref_count: 6
+ref_count: 7
 ---
 
 # Terminal Render-State Driver Contract
@@ -253,4 +253,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts` L631
 - **Finding:** The styled-empty-cell fallback delta used `trim()` to decide whether to advance through fallback text. A real fallback whitespace character after a sparse styled blank was therefore consumed as though it were the omitted styled blank, collapsing `A  B` to `A B`.
 - **Fix:** Removed the `trim()` heuristic from the shared traversal helper. Styled blank fallback consumption is now adjacent-cell aware: sparse styled blanks leave trailing fallback text and non-adjacent gaps intact, while adjacent explicit native cells can still align against compact fallback rows. Added shared regression coverage for all three cases.
+- **Commit:** same commit as this entry
+
+### 27. Precomputed cursor offsets must match renderer padding
+
+- **Source:** github-codex-connector | PR #591 round 3 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts`
+- **Finding:** The Electron bridge precomputed `cursor.textOffset` before renderer-side native snapshot normalization padded a short cursor row out to `cursor.columnOffset`. The VT renderer then trusted the stale offset, placing cursors at the unpadded row end when native snapshots had cells on the cursor row and the cursor sat in trailing blank columns.
+- **Fix:** The VT renderer now treats a precomputed offset as stale when the current rendered row contains only trailing blanks after it, and falls back to `readCursorOffsetInCellRow()` against the padded row and cell map. Added regression coverage for a native cell row padded to a blank cursor column.
 - **Commit:** same commit as this entry
