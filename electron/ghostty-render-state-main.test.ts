@@ -729,6 +729,73 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('splits native cells at partial reverse-video formatter ranges', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 10,
+          visibleLines: [{ row: 0, text: 'abcde' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'abcde',
+              width: 5,
+            },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;">ab<span style="display: inline;filter: invert(100%);">cd</span>e</div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['abcde'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 10,
+          textOffset: 5,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: 'ab',
+            width: 2,
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'cd',
+            width: 2,
+            reverse: true,
+          },
+          {
+            row: 0,
+            col: 4,
+            text: 'e',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
   test('creates reverse-video cells when formatter ranges have no native cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<

@@ -598,16 +598,142 @@ const readTerminalReverseVideoRanges = (
   }
 }
 
-const isCellReverseVideo = (
+const hasSnapshotCellStyle = (
+  cell: GhosttyRenderStateBridgeSnapshotCell
+): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  cell.foreground !== undefined ||
+  cell.background !== undefined ||
+  cell.reverse === true
+
+const copySnapshotCellStyle = (
+  source: GhosttyRenderStateBridgeSnapshotCell,
+  target: GhosttyRenderStateBridgeSnapshotCell
+): void => {
+  if (source.bold === true) {
+    target.bold = true
+  }
+
+  if (source.italic === true) {
+    target.italic = true
+  }
+
+  if (source.underline === true) {
+    target.underline = true
+  }
+
+  if (source.foreground !== undefined) {
+    target.foreground = source.foreground
+  }
+
+  if (source.background !== undefined) {
+    target.background = source.background
+  }
+}
+
+const readSnapshotCellSegmentText = (
+  rowText: string,
   cell: GhosttyRenderStateBridgeSnapshotCell,
+  startColumn: number,
+  endColumn: number
+): string => {
+  if (cell.text !== '') {
+    return readRowTextByCellColumns(
+      cell.text,
+      startColumn - cell.col,
+      endColumn - cell.col
+    )
+  }
+
+  if (hasSnapshotCellStyle(cell)) {
+    return ' '.repeat(endColumn - startColumn)
+  }
+
+  return readRowTextByCellColumns(rowText, startColumn, endColumn)
+}
+
+const readReverseBoundariesForCell = (
+  cell: GhosttyRenderStateBridgeSnapshotCell,
+  ranges: readonly ReverseVideoRange[]
+): readonly number[] => {
+  const cellEndColumn = cell.col + cell.width
+  const boundaries = new Set([cell.col, cellEndColumn])
+
+  ranges.forEach((range) => {
+    if (
+      range.row !== cell.row ||
+      cell.col >= range.endColumn ||
+      cellEndColumn <= range.startColumn
+    ) {
+      return
+    }
+
+    boundaries.add(Math.max(cell.col, range.startColumn))
+    boundaries.add(Math.min(cellEndColumn, range.endColumn))
+  })
+
+  return [...boundaries].sort((left, right) => left - right)
+}
+
+const isColumnSpanReverseVideo = (
+  row: number,
+  startColumn: number,
+  endColumn: number,
   ranges: readonly ReverseVideoRange[]
 ): boolean =>
   ranges.some(
     (range) =>
-      range.row === cell.row &&
-      cell.col < range.endColumn &&
-      cell.col + cell.width > range.startColumn
+      range.row === row &&
+      startColumn >= range.startColumn &&
+      endColumn <= range.endColumn
   )
+
+const splitSnapshotCellByReverseVideoRanges = (
+  rowText: string,
+  cell: GhosttyRenderStateBridgeSnapshotCell,
+  ranges: readonly ReverseVideoRange[]
+): readonly GhosttyRenderStateBridgeSnapshotCell[] => {
+  if (cell.reverse === true || ranges.length === 0) {
+    return [cell]
+  }
+
+  const boundaries = readReverseBoundariesForCell(cell, ranges)
+
+  if (boundaries.length <= 2) {
+    if (
+      isColumnSpanReverseVideo(
+        cell.row,
+        cell.col,
+        cell.col + cell.width,
+        ranges
+      )
+    ) {
+      return [{ ...cell, reverse: true }]
+    }
+
+    return [cell]
+  }
+
+  return boundaries.slice(0, -1).map((startColumn, index) => {
+    const endColumn = boundaries[index + 1]
+    const segment: GhosttyRenderStateBridgeSnapshotCell = {
+      row: cell.row,
+      col: startColumn,
+      text: readSnapshotCellSegmentText(rowText, cell, startColumn, endColumn),
+      width: endColumn - startColumn,
+    }
+
+    copySnapshotCellStyle(cell, segment)
+
+    if (isColumnSpanReverseVideo(cell.row, startColumn, endColumn, ranges)) {
+      segment.reverse = true
+    }
+
+    return segment
+  })
+}
 
 const appendMissingReverseCells = (
   cells: GhosttyRenderStateBridgeSnapshotCell[],
@@ -705,54 +831,61 @@ const readSnapshotCells = (
     throw new Error('Ghostty native render-state snapshot cells are invalid')
   }
 
-  const cells = (snapshot.cells ?? []).map((cell) => {
-    if (
-      !isRecord(cell) ||
-      !isNonNegativeInteger(cell.row) ||
-      cell.row >= snapshot.rows ||
-      !isNonNegativeInteger(cell.col) ||
-      typeof cell.text !== 'string' ||
-      !isNonNegativeInteger(cell.width)
-    ) {
-      throw new Error('Ghostty native render-state snapshot cells are invalid')
-    }
+  const cells = (snapshot.cells ?? [])
+    .map((cell) => {
+      if (
+        !isRecord(cell) ||
+        !isNonNegativeInteger(cell.row) ||
+        cell.row >= snapshot.rows ||
+        !isNonNegativeInteger(cell.col) ||
+        typeof cell.text !== 'string' ||
+        !isNonNegativeInteger(cell.width)
+      ) {
+        throw new Error(
+          'Ghostty native render-state snapshot cells are invalid'
+        )
+      }
 
-    const normalizedCell: GhosttyRenderStateBridgeSnapshotCell = {
-      row: cell.row,
-      col: cell.col,
-      text: cell.text,
-      width: cell.width,
-    }
+      const normalizedCell: GhosttyRenderStateBridgeSnapshotCell = {
+        row: cell.row,
+        col: cell.col,
+        text: cell.text,
+        width: cell.width,
+      }
 
-    if (cell.bold === true) {
-      normalizedCell.bold = true
-    }
+      if (cell.bold === true) {
+        normalizedCell.bold = true
+      }
 
-    if (cell.italic === true) {
-      normalizedCell.italic = true
-    }
+      if (cell.italic === true) {
+        normalizedCell.italic = true
+      }
 
-    if (cell.underline === true) {
-      normalizedCell.underline = true
-    }
+      if (cell.underline === true) {
+        normalizedCell.underline = true
+      }
 
-    if (typeof cell.foreground === 'string') {
-      normalizedCell.foreground = cell.foreground
-    }
+      if (typeof cell.foreground === 'string') {
+        normalizedCell.foreground = cell.foreground
+      }
 
-    if (typeof cell.background === 'string') {
-      normalizedCell.background = cell.background
-    }
+      if (typeof cell.background === 'string') {
+        normalizedCell.background = cell.background
+      }
 
-    if (
-      cell.reverse === true ||
-      isCellReverseVideo(normalizedCell, reverseVideoRanges)
-    ) {
-      normalizedCell.reverse = true
-    }
+      if (cell.reverse === true) {
+        normalizedCell.reverse = true
+      }
 
-    return normalizedCell
-  })
+      return normalizedCell
+    })
+    .flatMap((cell) =>
+      splitSnapshotCellByReverseVideoRanges(
+        rows[cell.row] ?? '',
+        cell,
+        reverseVideoRanges
+      )
+    )
 
   appendMissingReverseCells(cells, rows, reverseVideoRanges)
 

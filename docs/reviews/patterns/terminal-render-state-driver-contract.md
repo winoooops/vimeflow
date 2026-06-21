@@ -219,6 +219,15 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Fix:** Kept fallback-text consumption distinct from visual cell advancement and preserved the sparse styled-blank regression coverage. The helper now also documents that Ghostty `visibleLines` omits styled-blank columns, so non-blank fallback at that position belongs to a later column.
 - **Commit:** same commit as this entry
 
+### 23. Reverse-video ranges must split native text cells at formatter boundaries
+
+- **Source:** local-codex | PR #591 round 1 | 2026-06-21
+- **Severity:** HIGH
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** Native Ghostty snapshot cells can contain multi-column text runs, while formatter HTML reverse-video ranges may cover only a substring of that run. Marking the whole native cell as reverse on any overlap inverted columns outside the actual formatter span.
+- **Fix:** Split bridge snapshot cells at reverse-video range boundaries before returning them to the renderer. Only segments fully covered by a formatter reverse range receive `reverse: true`, and the regression test covers a single native `abcde` cell with only `cd` inverted.
+- **Commit:** same commit as this entry
+
 ### 23. Snapshot render helpers should share per-row cell maps
 
 - **Source:** github-claude | PR #591 round 1 | 2026-06-21
