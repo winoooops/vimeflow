@@ -305,7 +305,7 @@ export class TerminalTextSurface implements TerminalSurface {
       const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
         (operation) => operation.type === 'replace'
       )
-        ? 'cursor'
+        ? 'top'
         : 'bottom'
 
       this.outputBuffer.applyDelta(output.displayDelta)
@@ -672,6 +672,10 @@ export class TerminalTextSurface implements TerminalSurface {
   ): void {
     if (style.background) {
       element.style.backgroundColor = style.background
+      element.style.display = 'inline-block'
+      element.style.height = 'var(--terminal-line-height)'
+      element.style.lineHeight = 'var(--terminal-line-height)'
+      element.style.verticalAlign = 'top'
     }
 
     if (style.bold) {
@@ -726,9 +730,11 @@ export class TerminalTextSurface implements TerminalSurface {
 
     Object.assign(row.style, {
       display: 'block',
+      height: 'var(--terminal-line-height)',
+      lineHeight: 'var(--terminal-line-height)',
       maxWidth: '100%',
       minHeight: 'var(--terminal-line-height)',
-      overflowX: 'hidden',
+      overflow: 'visible',
       whiteSpace: 'pre',
       width: '100%',
     })

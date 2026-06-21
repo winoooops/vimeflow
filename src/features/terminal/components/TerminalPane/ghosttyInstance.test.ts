@@ -529,7 +529,7 @@ describe('ghosttyInstance', () => {
     expect(element.scrollTop).toBe(0)
   })
 
-  test('scrolls parser display replace snapshots to reveal an offscreen cursor row', () => {
+  test('keeps parser display replace snapshots pinned when the cursor is below the pane', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
@@ -574,11 +574,10 @@ describe('ghosttyInstance', () => {
       phase: 'live',
     })
 
-    expect(element.scrollTop).toBeGreaterThan(0)
-    expect(element.scrollTop).toBeLessThan(640)
+    expect(element.scrollTop).toBe(0)
   })
 
-  test('scrolls parser display replace snapshots by rendered cursor bounds', () => {
+  test('does not outer-scroll agent TUI snapshots by rendered cursor bounds', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
@@ -641,7 +640,7 @@ describe('ghosttyInstance', () => {
       getBoundingClientRectSpy.mockRestore()
     }
 
-    expect(element.scrollTop).toBe(62)
+    expect(element.scrollTop).toBe(0)
   })
 
   test('renders the cursor from parser display snapshot coordinates', () => {
@@ -1231,6 +1230,8 @@ describe('ghosttyInstance', () => {
     expect(terminalOutput?.textContent).toBe('A B')
     expect(created.viewportReader.readVisibleText()).toBe('A B')
     expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
+    expect(blankRun?.style.display).toBe('inline-block')
+    expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
   })
 
   test('does not render overlapping native wide-glyph continuation cells', () => {
@@ -1278,10 +1279,16 @@ describe('ghosttyInstance', () => {
 
     const terminalOutput = created.terminal.element?.querySelector('pre')
 
+    const row = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-row="true"]'
+    )
+
     expect(terminalOutput?.textContent).toBe(`${NERD_FONT_TERMINAL_ICON}x`)
     expect(created.viewportReader.readVisibleText()).toBe(
       `${NERD_FONT_TERMINAL_ICON}x`
     )
+
+    expect(row?.style.overflow).toBe('visible')
   })
 
   test('renders invalid byte payloads through the byte path', () => {

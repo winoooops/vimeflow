@@ -121,7 +121,7 @@ describe('plainTextInstance', () => {
 
     expect(row).toBeInstanceOf(HTMLElement)
     expect((row as HTMLElement | null)?.style.maxWidth).toBe('100%')
-    expect((row as HTMLElement | null)?.style.overflowX).toBe('hidden')
+    expect((row as HTMLElement | null)?.style.overflow).toBe('visible')
     expect((row as HTMLElement | null)?.style.whiteSpace).toBe('pre')
     expect((row as HTMLElement | null)?.style.width).toBe('100%')
   })
