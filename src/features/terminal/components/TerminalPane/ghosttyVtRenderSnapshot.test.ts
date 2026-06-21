@@ -290,6 +290,37 @@ describe('ghosttyVtRenderSnapshot', () => {
     ])
   })
 
+  test('uses native cursor columns instead of stale text offsets', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['> Explain this codebase'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 2,
+        textOffset: 10,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: '> Explain this codebase',
+          width: 23,
+          reverse: true,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(buffer.readVisibleText()).toBe('> Explain this codebase')
+    expect(buffer.readCursorOffset()).toBe(2)
+  })
+
   test('renders styled empty native cells as occupied blanks', () => {
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: ['A B'],

@@ -729,6 +729,53 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('creates reverse-video cells when formatter ranges have no native cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 24,
+          visibleLines: [{ row: 0, text: '> Explain this codebase ' }],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;filter: invert(100%);">&gt; Explain this codebase </div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['> Explain this codebase '],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 24,
+          textOffset: 24,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: '> Explain this codebase ',
+            width: 24,
+            reverse: true,
+          },
+        ],
+      },
+    })
+  })
+
   test('preserves native fallback text before sparse styled empty cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   readCellsByRow,
   readCursorOffsetInCellRow,
+  readRowTextByCellColumns,
   readTextCellWidth,
   type GhosttyCellTraversalCell,
 } from '../shared/ghosttyCellTraversal'
@@ -595,6 +596,60 @@ const isCellReverseVideo = (
       cell.col + cell.width > range.startColumn
   )
 
+const appendMissingReverseCells = (
+  cells: GhosttyRenderStateBridgeSnapshotCell[],
+  rows: readonly string[],
+  ranges: readonly ReverseVideoRange[]
+): void => {
+  ranges.forEach((range) => {
+    if (range.row >= rows.length || range.endColumn <= range.startColumn) {
+      return
+    }
+
+    let startColumn = range.startColumn
+
+    cells
+      .filter(
+        (cell) =>
+          cell.row === range.row &&
+          cell.col < range.endColumn &&
+          cell.col + cell.width > range.startColumn
+      )
+      .sort((left, right) => left.col - right.col)
+      .forEach((cell) => {
+        if (cell.col > startColumn) {
+          cells.push({
+            row: range.row,
+            col: startColumn,
+            text: readRowTextByCellColumns(
+              rows[range.row] ?? '',
+              startColumn,
+              Math.min(cell.col, range.endColumn)
+            ),
+            width: Math.min(cell.col, range.endColumn) - startColumn,
+            reverse: true,
+          })
+        }
+
+        startColumn = Math.max(startColumn, cell.col + cell.width)
+      })
+
+    if (startColumn < range.endColumn) {
+      cells.push({
+        row: range.row,
+        col: startColumn,
+        text: readRowTextByCellColumns(
+          rows[range.row] ?? '',
+          startColumn,
+          range.endColumn
+        ),
+        width: range.endColumn - startColumn,
+        reverse: true,
+      })
+    }
+  })
+}
+
 const readSnapshotRows = (
   snapshot: GhosttyNativeTerminalSnapshot
 ): readonly string[] => {
@@ -626,17 +681,18 @@ const readSnapshotRows = (
 
 const readSnapshotCells = (
   snapshot: GhosttyNativeTerminalSnapshot,
+  rows: readonly string[],
   reverseVideoRanges: readonly ReverseVideoRange[]
 ): readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined => {
-  if (snapshot.cells === undefined) {
+  if (snapshot.cells === undefined && reverseVideoRanges.length === 0) {
     return undefined
   }
 
-  if (!Array.isArray(snapshot.cells)) {
+  if (snapshot.cells !== undefined && !Array.isArray(snapshot.cells)) {
     throw new Error('Ghostty native render-state snapshot cells are invalid')
   }
 
-  return snapshot.cells.map((cell) => {
+  const cells = (snapshot.cells ?? []).map((cell) => {
     if (
       !isRecord(cell) ||
       !isNonNegativeInteger(cell.row) ||
@@ -684,6 +740,12 @@ const readSnapshotCells = (
 
     return normalizedCell
   })
+
+  appendMissingReverseCells(cells, rows, reverseVideoRanges)
+
+  return cells.sort((left, right) =>
+    left.row === right.row ? left.col - right.col : left.row - right.row
+  )
 }
 
 const normalizeSnapshot = (
@@ -692,7 +754,7 @@ const normalizeSnapshot = (
   reverseVideoRanges: readonly ReverseVideoRange[]
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
-  const cells = readSnapshotCells(snapshot, reverseVideoRanges)
+  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
   const cellsByRow = readCellsByRow(cells)
   const cursorRowCells = cellsByRow.get(snapshot.cursorRow)
 
