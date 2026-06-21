@@ -1,5 +1,6 @@
 // cspell:ignore worktree
-import type { ContextWindowStatus } from '../../../bindings/ContextWindowStatus'
+import type { ContextWindowStatus as GeneratedContextWindowStatus } from '../../../bindings/ContextWindowStatus'
+import type { CurrentUsage } from '../../../bindings/CurrentUsage'
 import type { RateLimits } from '../../../bindings/RateLimits'
 
 // Re-export bindings, but NOT AgentStatusEvent — we override it below
@@ -21,12 +22,22 @@ export interface AgentStatusEvent {
   modelId: string | null
   modelDisplayName: string | null
   version: string | null
-  contextWindow: ContextWindowStatus | null
+  contextWindow: AgentContextWindowStatus | null
   cost: CostMetrics | null
   rateLimits: RateLimits | null
   // True once kimi's network usage fetch has landed; false for claude/codex
   // and a kimi session that hasn't fetched yet.
   usageFetched: boolean
+}
+
+// Runtime-accurate override for ContextWindowStatus. Rust Option<f64>
+// serializes to null, but ts-rs currently marks the field optional.
+export type AgentContextWindowStatus = Omit<
+  GeneratedContextWindowStatus,
+  'currentUsage' | 'usedPercentage'
+> & {
+  currentUsage?: CurrentUsage | null
+  usedPercentage: number | null
 }
 
 // Runtime-accurate override for CostMetrics. Rust Option<f64> serializes to
@@ -145,7 +156,7 @@ export interface CurrentUsageState {
 }
 
 export interface ContextWindowState {
-  usedPercentage: number
+  usedPercentage: number | null
   contextWindowSize: number
   totalInputTokens: number
   totalOutputTokens: number

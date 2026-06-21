@@ -2,10 +2,19 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useTheme } from '@/theme/useTheme'
 import { WaterTank } from './WaterTank'
 import { resolveContextTone, tankChrome } from '../utils/contextTone'
+import { formatTokens } from '../utils/format'
 
 export interface ContextReservoirCardProps {
   usedPercentage: number | null
   contextWindowSize: number
+  /**
+   * Absolute input-token count, used only when `usedPercentage === null` (the
+   * window size is unknown, e.g. opencode does not expose a context window). In
+   * that state the footer shows this count ("11.8k tokens · window unknown")
+   * instead of a dash, so the card is not blank. Ignored when a percentage is
+   * known — the reconstructed `used` figure stays authoritative there.
+   */
+  inputTokens?: number
 }
 
 // Compact token label: `1M` / `562k` / `999`. Distinct from utils/format's
@@ -42,9 +51,16 @@ const DASH = '—'
 export const ContextReservoirCard = ({
   usedPercentage,
   contextWindowSize,
+  inputTokens = undefined,
 }: ContextReservoirCardProps): ReactElement => {
   const pct = usedPercentage
   const mode = useTheme().kind
+
+  // When the window size is unknown (pct === null), we cannot draw a waterline
+  // or headroom, but we can still surface the absolute input-token count so the
+  // card is not blank. Only show it when it is a real, positive number.
+  const hasUnknownWindowTokens =
+    pct === null && typeof inputTokens === 'number' && inputTokens > 0
   const effectivePct = pct ?? 0
   const tone = resolveContextTone(effectivePct, mode)
   const chrome = tankChrome(mode)
@@ -74,7 +90,9 @@ export const ContextReservoirCard = ({
   // within a fixed 0-100 range. The visible tank/number are its presentation.
   const valueText =
     pct === null
-      ? 'Context usage unknown'
+      ? hasUnknownWindowTokens
+        ? `${formatTokenCount(inputTokens)} input tokens · context window size unknown`
+        : 'Context usage unknown'
       : `${Math.round(pct)}% used · ${formatTokenCount(used)} of ${formatTokenCount(contextWindowSize)} tokens · ${compactTokens(headroom)} left`
 
   return (
@@ -159,7 +177,11 @@ export const ContextReservoirCard = ({
         <div className="mt-[11px] flex items-baseline gap-[6px]">
           <span data-testid="token-count-detail" className="font-mono">
             <span className="text-[11px] font-semibold tabular-nums text-on-surface-variant">
-              {pct !== null ? formatTokenCount(used) : DASH}
+              {pct !== null
+                ? formatTokenCount(used)
+                : hasUnknownWindowTokens
+                  ? formatTokens(inputTokens)
+                  : DASH}
             </span>
             <span className="text-[9.5px] text-on-surface-muted"> tokens</span>
           </span>
@@ -169,7 +191,11 @@ export const ContextReservoirCard = ({
             className={`font-mono text-[9.5px] ${pct === null ? 'text-on-surface-muted' : ''}`}
             style={pct !== null ? { color: tone.leftText } : undefined}
           >
-            {pct !== null ? `${compactTokens(headroom)} left` : DASH}
+            {pct !== null
+              ? `${compactTokens(headroom)} left`
+              : hasUnknownWindowTokens
+                ? 'window unknown'
+                : DASH}
           </span>
         </div>
       </div>

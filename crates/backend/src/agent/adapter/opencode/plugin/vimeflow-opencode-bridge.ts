@@ -1,4 +1,4 @@
-// vimeflow-bridge-version: 1
+// vimeflow-bridge-version: 2
 //
 // Vimeflow opencode bridge plugin.
 //
@@ -107,30 +107,105 @@ const excerptOutput = (value: any): any => {
   return `${head}\n…[elided]…\n${tail}`
 }
 
-// Preview tool args: keep only the single low-risk identifying field per tool;
-// drop everything else (never emit full file contents or arbitrary payloads).
+// Content-bearing arg fields to drop: these carry full file contents or large
+// payloads (an `edit`'s before/after text, a `write`'s body, a `task` prompt
+// body), which the data-minimization rule keeps out of the bridge.
+const CONTENT_ARG_FIELDS = new Set([
+  'content',
+  'newString',
+  'oldString',
+  'old_string',
+  'new_string',
+  'body',
+  'contents',
+  'fileContent',
+  'prompt',
+])
+
+const SENSITIVE_ARG_FIELDS = new Set([
+  'accesskey',
+  'apikey',
+  'authorization',
+  'authkey',
+  'authtoken',
+  'bearertoken',
+  'clientsecret',
+  'credential',
+  'credentials',
+  'encryptionkey',
+  'password',
+  'passwd',
+  'privatekey',
+  'refreshtoken',
+  'secret',
+  'secretaccesskey',
+  'secretkey',
+  'signingkey',
+  'token',
+])
+
+const SENSITIVE_ARG_FIELD_SUFFIXES = [
+  'accesskey',
+  'apikey',
+  'authorization',
+  'authtoken',
+  'encryptionkey',
+  'password',
+  'secret',
+  'secretaccesskey',
+  'secretkey',
+  'signingkey',
+  'token',
+]
+
+const isSensitiveArgField = (key: string): boolean => {
+  const normalized = key.replace(/[-_\s]/g, '').toLowerCase()
+
+  return (
+    SENSITIVE_ARG_FIELDS.has(normalized) ||
+    SENSITIVE_ARG_FIELD_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+  )
+}
+
+// Preview tool args: return a shallow copy of `args` with every string field
+// clamped to the cap, dropping content fields and redacting credential-shaped
+// field names before anything is written to the bridge JSONL.
 const previewArgs = (tool: any, args: any): any => {
-  if (args == null || typeof args !== 'object') {
+  void tool
+
+  if (args == null || typeof args !== 'object' || Array.isArray(args)) {
     return {}
   }
 
-  const name = typeof tool === 'string' ? tool.toLowerCase() : ''
+  const preview: any = {}
 
-  if (name === 'bash') {
-    return { command: clampString(args.command) }
+  for (const key of Object.keys(args)) {
+    if (CONTENT_ARG_FIELDS.has(key)) {
+      continue
+    }
+
+    const value = args[key]
+
+    if (isSensitiveArgField(key)) {
+      preview[key] = '[redacted]'
+      continue
+    }
+
+    if (typeof value === 'string') {
+      preview[key] = clampString(value)
+    } else if (
+      value === null ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      // Scalars (line numbers, limits, flags) are safe and small.
+      preview[key] = value
+    }
+    // Nested objects / arrays are dropped: they may carry content payloads and
+    // are not needed for the activity-feed preview.
   }
 
-  if (name === 'read' || name === 'edit' || name === 'write') {
-    const filePath = args.filePath ?? args.path
-
-    return { filePath: clampString(filePath) }
-  }
-
-  if (name === 'glob' || name === 'grep') {
-    return { pattern: clampString(args.pattern) }
-  }
-
-  return {}
+  return preview
 }
 
 const asObject = (value: any): any =>
