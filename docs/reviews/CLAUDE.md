@@ -52,15 +52,15 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 16       | 13   | 2026-06-20   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 10       | 4    | 2026-06-20   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 14       | 10   | 2026-06-21   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 14       | 11   | 2026-06-21   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 3        | 0    | 2026-06-16   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 80       | 35   | 2026-06-20   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 81       | 36   | 2026-06-21   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 89       | 27   | 2026-06-20   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 72       | 30   | 2026-06-20   |
-| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 2        | 0    | 2026-06-20   |
+| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 3        | 1    | 2026-06-21   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 65       | 23   | 2026-06-20   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
