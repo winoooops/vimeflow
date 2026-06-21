@@ -9,6 +9,7 @@ import {
   readTextCellWidth,
   type GhosttyCellTraversalCell,
 } from '../shared/ghosttyCellTraversal'
+import { palette256ToRgb } from '../shared/ansiPalette'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
@@ -543,8 +544,12 @@ const toHexColor = (red: number, green: number, blue: number): string =>
     )
     .join('')}`
 
-// Standard xterm 16-color base; indices 0-15 are theme-dependent in a real
-// terminal but agent input boxes use the theme-independent 16-255 range.
+// xterm 0-15 base. These are theme-dependent in a real terminal, but the main
+// process has no DOM/theme access (the renderer resolves them to
+// `var(--terminal-ansi-*)`). The 16-255 range is theme-independent and shared
+// via palette256ToRgb. ponytail: 0-15 input-box backgrounds are vanishingly
+// rare; a standard-hex fallback beats an unpainted box, upgrade to a
+// theme-resolved value if a real 0-15 box ever shows the wrong shade.
 const ANSI_BASE_PALETTE = [
   '#000000',
   '#800000',
@@ -563,33 +568,22 @@ const ANSI_BASE_PALETTE = [
   '#00ffff',
   '#ffffff',
 ]
-const ANSI_CUBE_LEVELS = [0, 95, 135, 175, 215, 255]
 
 // Ghostty emits indexed (256-color) backgrounds as `var(--vt-palette-N)` rather
 // than rgb(); resolve N to the same hex the native cells already use so a
 // palette-colored input box (Codex/Kimi) paints instead of being dropped.
 const paletteIndexToHex = (index: number): string | undefined => {
-  if (!Number.isInteger(index) || index < 0 || index > 255) {
-    return undefined
+  const rgb = palette256ToRgb(index)
+
+  if (rgb) {
+    return toHexColor(rgb[0], rgb[1], rgb[2])
   }
 
-  if (index < 16) {
+  if (Number.isInteger(index) && index >= 0 && index < 16) {
     return ANSI_BASE_PALETTE[index]
   }
 
-  if (index < 232) {
-    const value = index - 16
-
-    return toHexColor(
-      ANSI_CUBE_LEVELS[Math.floor(value / 36) % 6],
-      ANSI_CUBE_LEVELS[Math.floor(value / 6) % 6],
-      ANSI_CUBE_LEVELS[value % 6]
-    )
-  }
-
-  const gray = 8 + (index - 232) * 10
-
-  return toHexColor(gray, gray, gray)
+  return undefined
 }
 
 const readBackgroundColor = (style: string): string | undefined => {

@@ -12,17 +12,12 @@ import {
   readCursorPositionSentinel,
   readSgrStyleSentinel,
 } from './terminalControlParser'
+import { palette256ToRgb } from '../../../../../shared/ansiPalette'
 
 const DEFAULT_MAX_SCROLLBACK_LINES = 10_000
 const MIN_SOFT_WRAP_COLUMNS = 2
 const MAX_CURSOR_POSITION_VALUE = 4_096
 const CSS_RGB_FUNCTION = 'rgb'
-const XTERM_COLOR_CUBE_FIRST_INDEX = 16
-const XTERM_COLOR_CUBE_LAST_INDEX = 231
-const XTERM_GRAYSCALE_FIRST_INDEX = 232
-const XTERM_GRAYSCALE_LAST_INDEX = 255
-const XTERM_GRAYSCALE_BASE = 8
-const XTERM_GRAYSCALE_STEP = 10
 
 export interface TerminalDisplayStyle {
   readonly background?: string
@@ -169,12 +164,7 @@ const readAnsiBackground = (code: number): string | null => {
 }
 
 const readIndexedAnsiColor = (index: number | undefined): string | null => {
-  if (
-    index === undefined ||
-    !Number.isInteger(index) ||
-    index < 0 ||
-    index > XTERM_GRAYSCALE_LAST_INDEX
-  ) {
+  if (index === undefined || !Number.isInteger(index) || index < 0) {
     return null
   }
 
@@ -186,21 +176,9 @@ const readIndexedAnsiColor = (index: number | undefined): string | null => {
     return `var(--terminal-ansi-${ANSI_BRIGHT_COLOR_NAMES[index - 8]})`
   }
 
-  if (index <= XTERM_COLOR_CUBE_LAST_INDEX) {
-    const colorIndex = index - XTERM_COLOR_CUBE_FIRST_INDEX
-    const colorCubeSteps = [0, 95, 135, 175, 215, 255] as const
-    const red = colorCubeSteps[Math.floor(colorIndex / 36)]
-    const green = colorCubeSteps[Math.floor((colorIndex % 36) / 6)]
-    const blue = colorCubeSteps[colorIndex % 6]
+  const rgb = palette256ToRgb(index)
 
-    return formatRgbColor(red, green, blue)
-  }
-
-  const level =
-    XTERM_GRAYSCALE_BASE +
-    (index - XTERM_GRAYSCALE_FIRST_INDEX) * XTERM_GRAYSCALE_STEP
-
-  return formatRgbColor(level, level, level)
+  return rgb ? formatRgbColor(rgb[0], rgb[1], rgb[2]) : null
 }
 
 const applySgrStyle = (
