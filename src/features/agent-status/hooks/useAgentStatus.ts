@@ -569,8 +569,7 @@ export const useAgentStatus = (
               contextWindow: p.contextWindow
                 ? {
                     usedPercentage:
-                      p.contextWindow.usedPercentage === null ||
-                      p.contextWindow.usedPercentage === undefined
+                      p.contextWindow.usedPercentage === null
                         ? null
                         : Number(p.contextWindow.usedPercentage),
                     contextWindowSize: Number(
