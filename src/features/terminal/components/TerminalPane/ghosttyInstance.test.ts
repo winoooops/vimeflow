@@ -1340,6 +1340,58 @@ describe('ghosttyInstance', () => {
     expect(glyphs[0]?.style.minWidth).toBe('var(--terminal-cell-width)')
   })
 
+  test('paints left partial block glyph widths without overfilling', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['▉▏'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '▉▏',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    expect(terminalOutput?.textContent).toBe('▉▏')
+    expect(created.viewportReader.readVisibleText()).toBe('▉▏')
+    expect(glyphs).toHaveLength(2)
+
+    expect(glyphs[0]?.style.backgroundImage).toContain(
+      `${TRUE_COLOR_PINK} 87.5%`
+    )
+
+    expect(glyphs[1]?.style.backgroundImage).toContain(
+      `${TRUE_COLOR_PINK} 12.5%`
+    )
+  })
+
   test('paints styled block glyphs when the cursor splits the run', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({

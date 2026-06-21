@@ -2,8 +2,8 @@
 id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
-last_updated: 2026-06-19
-ref_count: 1
+last_updated: 2026-06-21
+ref_count: 2
 ---
 
 # Terminal DOM Rendering
@@ -48,4 +48,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L945
 - **Finding:** When the cursor split a styled run containing block glyphs, the before and after slices were appended as raw text nodes inside the styled wrapper. Those slices bypassed the renderer path that replaces block glyphs with fixed-cell custom glyph spans, so split styled block runs fell back to font glyph rendering.
 - **Fix:** Routed both split slices through the same run-fragment helper used by unsplit text, preserving custom block glyph element creation on both sides of the cursor. Added a Ghostty renderer regression for a styled `██` run split by the cursor.
+- **Commit:** same commit as this entry
+
+### 5. Left partial block glyphs must map to their actual fill width
+
+- **Source:** github-claude | PR #591 round 4 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L161
+- **Finding:** `readBlockGlyphPaint` computed left partial block glyph widths with `9 - (codePoint - 0x2588)`, making U+2589 render as a full block and U+258F render as a quarter-width block instead of one eighth.
+- **Fix:** Derived the painted eighth count from `0x2590 - codePoint` so U+2589 maps to seven eighths and U+258F maps to one eighth. Added a DOM regression covering the emitted gradient stops for both edge glyphs.
 - **Commit:** same commit as this entry

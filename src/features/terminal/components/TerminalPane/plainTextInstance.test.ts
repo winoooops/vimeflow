@@ -247,15 +247,17 @@ describe('plainTextInstance', () => {
 
     const output = created.terminal.element?.querySelector('pre')
 
-    const styleRuns = output?.querySelectorAll(
-      '[data-terminal-style-run="true"]'
+    const styleRuns = Array.from(
+      output?.querySelectorAll<HTMLElement>(
+        ':scope > [data-terminal-row="true"] > [data-terminal-style-run="true"]'
+      ) ?? []
     )
     const cursor = output?.querySelector('[data-terminal-cursor="true"]')
 
     expect(output?.textContent).toBe('abc')
     expect(created.viewportReader.readVisibleText()).toBe('abc')
-    expect(styleRuns?.length).toBe(1)
-    expect(styleRuns?.[0]?.contains(cursor ?? null)).toBe(true)
+    expect(styleRuns).toHaveLength(1)
+    expect(styleRuns[0]?.contains(cursor ?? null)).toBe(true)
     expect(cursor?.previousSibling?.textContent).toBe('a')
     expect(cursor?.nextSibling?.textContent).toBe('bc')
   })

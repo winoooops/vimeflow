@@ -159,7 +159,7 @@ const readBlockGlyphPaint = (character: string): BlockGlyphPaint | null => {
   }
 
   if (codePoint >= 0x2589 && codePoint <= 0x258f) {
-    const eighths = 9 - (codePoint - 0x2588)
+    const eighths = 0x2590 - codePoint
 
     return {
       kind: 'horizontal',
