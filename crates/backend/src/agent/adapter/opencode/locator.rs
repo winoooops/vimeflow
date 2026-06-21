@@ -1,21 +1,29 @@
-//! opencode session locator (filesystem, unambiguous fresh-in-cwd).
+//! opencode session locator (filesystem, pid-primary, fresh-in-cwd fallback).
 //!
 //! Resolves a PTY attach to the `<sessionID>.jsonl` the vimeflow bridge plugin
-//! is writing for the opencode session running in `cwd`. Resolution reads the
+//! is writing for the opencode session Vimeflow detected. Resolution reads the
 //! bridge dir's `index.jsonl` (each row `{sessionID, pid, directory, slug,
-//! time}`) on EVERY `locate` call and picks, among rows whose canonicalized
-//! `directory == cwd` AND whose `time` (epoch-ms) is `>= pty_start − SLACK`, the
-//! row when it names exactly one session. That is the bound session.
+//! time}`) on EVERY `locate` call.
 //!
-//! **pid is not the primary key.** Mirroring the codex resolver
-//! (`ORDER BY updated_at_ms DESC` with a freshness floor, not a pid filter),
-//! cwd plus freshness decides the binding only when it names one session — pid
-//! is at most a tiebreaker between rows with identical `time` for that session.
-//! Live data showed pid-first was wrong: opencode's plugin `process.pid` does
-//! not reliably equal Vimeflow's detected `agent_pid` (the same session can
-//! appear under two different pids in `index.jsonl`, and the written pid drifts
-//! across a session's life), so a pid-first match mis-binds. The freshness floor
-//! rejects a stale same-cwd row left by an earlier run.
+//! **pid is the primary key.** The bridge plugin runs inside the opencode
+//! server process and writes `process.pid` on each index row — exactly the pid
+//! Vimeflow's process-tree scan reports as `agent_pid`. So among fresh rows
+//! (`time` epoch-ms `>= pty_start − SLACK`), the one whose `pid == agent_pid`
+//! is THIS attach's session; bind it directly. The equality is verified against
+//! live data (the detected `agent_pid` matched the bridge row's `pid`). pid
+//! also disambiguates two opencode panes that share a project dir, and (via a
+//! fresh locator built by reattach) picks the active session after `/clear` —
+//! the newest pid-matched row.
+//!
+//! **cwd is the fallback, not the key.** Vimeflow's tracked cwd comes from
+//! OSC 7, but opencode's TUI does not emit OSC 7, so the tracked cwd stays
+//! frozen at the pane's spawn dir (e.g. `~`) while opencode actually runs in a
+//! project subdir the bridge records as `directory`. A `directory == cwd` match
+//! therefore silently fails to bind the live session (the bug this resolver was
+//! re-shaped to fix). It is used only when no fresh index row carries the
+//! detected `agent_pid` (pid detection drifted to a wrapper/child); there it
+//! still binds only an unambiguous single fresh same-cwd session. The freshness
+//! floor rejects a stale row left by an earlier run in either path.
 //!
 //! **Re-resolution.** Each `locate` re-reads the index and re-resolves so a
 //! re-invoked `locate` (reattach, Part 2) can notice a current, unambiguous
@@ -50,7 +58,7 @@ use super::transcript_dto::OpencodeIndexRowDto;
 /// append a slightly wider window over the OSC-detected attach.
 const SLACK_MS: i64 = 5_000;
 
-/// Filesystem, unambiguous fresh-in-cwd opencode locator. Holds the last successful
+/// Filesystem pid-primary opencode locator. Holds the last successful
 /// resolve `(sessionID, status_path)` behind an `Arc<Mutex<…>>` (the Kimi
 /// shared-state pattern) as a transient-empty-read FALLBACK — `locate`
 /// re-reads the index and re-resolves on every call. M5's validator delegates
@@ -59,11 +67,11 @@ pub(crate) struct OpenCodeLocator {
     /// The bridge dir (`trust_root`) — `index.jsonl` and every
     /// `<sessionID>.jsonl` live directly under it.
     bridge_root: PathBuf,
-    /// The detected opencode process's pid. NOT the primary key (live data
-    /// showed the plugin's pid drifts / doesn't match reliably); kept only as a
-    /// tiebreaker between same-session rows with identical `time`.
+    /// The detected opencode process's pid — the PRIMARY binding key. The bridge
+    /// plugin writes `process.pid`, which equals this; the fresh index row
+    /// carrying it names this attach's session (see module docs).
     agent_pid: u32,
-    /// PTY start instant; the cwd resolve rejects rows older than
+    /// PTY start instant; both resolve paths reject rows older than
     /// `pty_start − SLACK`.
     pty_start: SystemTime,
     /// `(sessionID, status_path)` of the last successful `locate`. `None` until
@@ -146,6 +154,47 @@ impl OpenCodeLocator {
         Ok(rows)
     }
 
+    /// The fresh sessionID carrying `pid == agent_pid`, if any — the PRIMARY
+    /// resolution path. Among rows fresh by `time >= pty_start − SLACK` whose
+    /// `pid` equals the detected `agent_pid`:
+    ///
+    /// * if this locator already bound one of them, keep it (identity guard —
+    ///   don't jump sessions mid-life; reattach owns rotation);
+    /// * otherwise the newest by `time` is the active session. Distinct sessions
+    ///   under one pid are sequential sessions of the same opencode server (one
+    ///   pane), so newest-wins is the live one, not a cross-pane guess.
+    ///
+    /// `None` when no fresh row carries `agent_pid`, or when a cache exists but
+    /// is no longer pid-matched, so the cwd fallback is tried first;
+    /// `cached_or_err` preserves the binding only if cwd also finds nothing.
+    fn resolve_by_pid(&self, rows: &[OpencodeIndexRowDto]) -> Option<String> {
+        let floor = self.freshness_floor_ms();
+        let candidates: Vec<&OpencodeIndexRowDto> = rows
+            .iter()
+            .filter(|row| row.time.is_some_and(|time| time >= floor))
+            .filter(|row| row.pid == Some(self.agent_pid as u64))
+            .collect();
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        if let Some(cached_session_id) = self.cached_session_id() {
+            if candidates
+                .iter()
+                .any(|row| row.session_id.as_deref() == Some(cached_session_id.as_str()))
+            {
+                return Some(cached_session_id);
+            }
+            return None;
+        }
+
+        candidates
+            .iter()
+            .max_by_key(|row| row.time.expect("filtered to Some above"))
+            .and_then(|row| row.session_id.clone())
+    }
+
     /// The fresh same-cwd sessionID, if unambiguous. A row qualifies when its
     /// canonicalized `directory == cwd` (string-eq fallback if either side fails
     /// to canonicalize) AND its `time >= pty_start − SLACK`.
@@ -225,20 +274,29 @@ impl OpenCodeLocator {
 
 impl StatusSourceLocator for OpenCodeLocator {
     fn locate(&self, cwd: &Path, _session_id: &str) -> Result<LocatedStatusSource, String> {
-        // Re-resolve on every call, but only accept an unambiguous current
-        // session. The index read may transiently yield zero usable rows — fall
-        // back to a prior resolve rather than dropping a live binding.
+        // Re-resolve on every call. The index read may transiently yield zero
+        // usable rows — fall back to a prior resolve rather than dropping a live
+        // binding.
         let rows = match self.read_index_rows() {
             Ok(rows) => rows,
             Err(not_ready) => return self.cached_or_err(not_ready),
         };
 
-        // Fresh same-cwd row only when it is unambiguous; otherwise keep an
-        // existing cached binding or surface a retry/not-ready error.
+        // Primary: the fresh row whose `pid == agent_pid` is THIS attach's
+        // session. Binds correctly even when Vimeflow's OSC7-tracked cwd never
+        // caught up to opencode's real cwd — which `resolve_by_cwd` cannot.
+        if let Some(session_id) = self.resolve_by_pid(&rows) {
+            return Ok(self.locate_session(session_id));
+        }
+
+        // Fallback: an unambiguous fresh same-cwd session, for the rare case
+        // where the detected `agent_pid` carries no index row (pid detection
+        // drifted to a wrapper/child).
         match self.resolve_by_cwd(&rows, cwd) {
             Ok(Some(session_id)) => Ok(self.locate_session(session_id)),
             Ok(None) => self.cached_or_err(format!(
-                "opencode index not ready: no fresh session in cwd={} in {}",
+                "opencode index not ready: no fresh session for pid={} or cwd={} in {}",
+                self.agent_pid,
                 cwd.display(),
                 self.index_path().display(),
             )),
@@ -424,20 +482,23 @@ mod tests {
         })
     }
 
-    /// Multiple fresh same-cwd sessionIDs are ambiguous without a per-attach
-    /// identity marker. The locator must fail closed instead of choosing the
-    /// newest row by recency and potentially tailing another pane's transcript.
+    /// In the cwd FALLBACK path (neither row carries the detected pid), multiple
+    /// fresh same-cwd sessionIDs are ambiguous without a per-attach identity
+    /// marker. The locator must fail closed instead of choosing the newest row
+    /// by recency and potentially tailing another pane's transcript.
     #[test]
-    fn ambiguous_fresh_same_cwd_sessions_without_cache_is_not_ready_err() {
+    fn ambiguous_fresh_same_cwd_sessions_without_pid_or_cache_is_not_ready_err() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().join("proj");
         std::fs::create_dir_all(&cwd).expect("mkdir cwd");
         let cwd_str = cwd.to_string_lossy().into_owned();
 
         let agent_pid = 4242u32;
+        // Neither row's pid matches `agent_pid`, so the pid path yields nothing
+        // and the cwd-ambiguity guard is what must fire.
         bridge.write_index(&[
-            index_row("ses_ours_old", agent_pid as u64, &cwd_str, 1_000),
-            index_row("ses_other_new", 9999, &cwd_str, 5_000),
+            index_row("ses_a", 9998, &cwd_str, 1_000),
+            index_row("ses_b", 9999, &cwd_str, 5_000),
         ]);
 
         let locator = bridge.locator(agent_pid, epoch_ms(0));
@@ -448,6 +509,101 @@ mod tests {
         assert!(
             err.contains("refusing recency-only binding"),
             "ambiguity failure explains fail-closed binding: {err}"
+        );
+    }
+
+    /// The core fix: pid binds THIS attach's session even when Vimeflow's
+    /// OSC7-tracked cwd never caught up to opencode's real cwd. The index row's
+    /// `directory` is a project subdir; `locate` is called with the stale spawn
+    /// cwd (`~`). `directory == cwd` can never match, but `pid == agent_pid`
+    /// does — and that is the session the user is looking at.
+    #[test]
+    fn pid_match_binds_session_despite_cwd_mismatch() {
+        let bridge = Bridge::new();
+        // opencode's real/project dir (what the bridge records as `directory`).
+        let project = bridge._tmp.path().join("projects/rustgo");
+        std::fs::create_dir_all(&project).expect("mkdir project");
+        let project_str = project.to_string_lossy().into_owned();
+        // Vimeflow's stale OSC7 cwd — the pane's spawn dir, NOT the project.
+        let tracked_cwd = bridge._tmp.path().to_path_buf();
+
+        let agent_pid = 89074u32;
+        bridge.write_index(&[index_row("ses_live", agent_pid as u64, &project_str, 5_000)]);
+
+        let locator = bridge.locator(agent_pid, epoch_ms(0));
+        let located = locator
+            .locate(&tracked_cwd, "pty")
+            .expect("pid match binds despite cwd mismatch");
+        assert_eq!(located.agent_session_id.as_deref(), Some("ses_live"));
+    }
+
+    /// Two opencode panes sharing one project dir are NOT ambiguous under
+    /// pid-primary: the row whose pid matches the detected `agent_pid` is the
+    /// one bound, even though both rows share a cwd.
+    #[test]
+    fn pid_match_disambiguates_two_same_cwd_sessions() {
+        let bridge = Bridge::new();
+        let cwd = bridge._tmp.path().join("shared");
+        std::fs::create_dir_all(&cwd).expect("mkdir cwd");
+        let cwd_str = cwd.to_string_lossy().into_owned();
+
+        let agent_pid = 4242u32;
+        bridge.write_index(&[
+            // Another pane's session in the same dir — newer, but not our pid.
+            index_row("ses_other", 9999, &cwd_str, 9_000),
+            // Our session — older row, but its pid matches.
+            index_row("ses_ours", agent_pid as u64, &cwd_str, 1_000),
+        ]);
+
+        let locator = bridge.locator(agent_pid, epoch_ms(0));
+        let located = locator.locate(&cwd, "pty").expect("pid disambiguates");
+        assert_eq!(
+            located.agent_session_id.as_deref(),
+            Some("ses_ours"),
+            "pid match wins over a newer same-cwd row from another pane"
+        );
+    }
+
+    /// One opencode server (one pid) that created several sessions in sequence:
+    /// the newest pid-matched row is the active session.
+    #[test]
+    fn pid_match_picks_newest_across_sequential_sessions_under_one_pid() {
+        let bridge = Bridge::new();
+        let cwd = bridge._tmp.path().to_path_buf();
+        let cwd_str = cwd.to_string_lossy().into_owned();
+
+        let agent_pid = 59730u32;
+        bridge.write_index(&[
+            index_row("ses_first", agent_pid as u64, &cwd_str, 1_000),
+            index_row("ses_second", agent_pid as u64, &cwd_str, 2_000),
+            index_row("ses_third", agent_pid as u64, &cwd_str, 3_000),
+        ]);
+
+        let locator = bridge.locator(agent_pid, epoch_ms(0));
+        let located = locator.locate(&cwd, "pty").expect("locate ok");
+        assert_eq!(located.agent_session_id.as_deref(), Some("ses_third"));
+    }
+
+    /// A pid-matched row older than `pty_start − SLACK` is rejected; with no
+    /// other candidate, locate returns the not-ready/retry signal.
+    #[test]
+    fn freshness_gate_rejects_stale_pid_matched_row() {
+        let bridge = Bridge::new();
+        let cwd = bridge._tmp.path().join("work");
+        std::fs::create_dir_all(&cwd).expect("mkdir cwd");
+        let cwd_str = cwd.to_string_lossy().into_owned();
+
+        // floor = 10_000 − 5_000 = 5_000ms; the only row is at 4_000ms (stale).
+        let agent_pid = 321u32;
+        bridge.write_index(&[index_row("ses_stale", agent_pid as u64, &cwd_str, 4_000)]);
+
+        let locator = bridge.locator(agent_pid, epoch_ms(10_000));
+        let err = locator
+            .locate(&cwd, "pty")
+            .expect_err("stale pid-matched row must not bind");
+        assert!(
+            err.contains("not ready"),
+            "stale pid-matched row is a retry/not-ready signal: {err}"
         );
     }
 
@@ -536,10 +692,11 @@ mod tests {
         assert!(err.contains("not ready"), "missing index is not-ready: {err}");
     }
 
-    /// A present index with no qualifying same-cwd row and no cached resolve ⇒
-    /// Err (not-ready / retry). The only row lives in a DIFFERENT cwd.
+    /// A present index with no pid-matched row, no qualifying same-cwd row, and
+    /// no cached resolve ⇒ Err (not-ready / retry). The only row carries a
+    /// different pid AND lives in a DIFFERENT cwd.
     #[test]
-    fn no_matching_row_and_no_cache_is_not_ready_err() {
+    fn no_pid_match_no_same_cwd_row_and_no_cache_is_not_ready_err() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().join("proj");
         std::fs::create_dir_all(&cwd).expect("mkdir cwd");
@@ -547,12 +704,13 @@ mod tests {
         std::fs::create_dir_all(&other).expect("mkdir other");
         let other_str = other.to_string_lossy().into_owned();
 
-        bridge.write_index(&[index_row("ses_elsewhere", 1, &other_str, 1)]);
+        // pid 999 ≠ agent_pid 1, and the row's dir is not `proj`.
+        bridge.write_index(&[index_row("ses_elsewhere", 999, &other_str, 1)]);
 
         let locator = bridge.locator(1, epoch_ms(0));
         let err = locator
             .locate(&cwd, "pty")
-            .expect_err("no same-cwd row + no cache ⇒ Err");
+            .expect_err("no pid + no same-cwd row + no cache ⇒ Err");
         assert!(err.contains("not ready"), "no-match is not-ready: {err}");
     }
 

@@ -25,7 +25,7 @@
 //! | `context_window.total_output_tokens` | latest `step-finish` → `data.part.tokens.output`; fallback `session.*` `info.tokens.output` |
 //! | `cost.total_cost_usd`          | `info.cost`                                      |
 //! | `context_window.current_usage` | latest `step-finish` → `data.part.tokens`        |
-//! | `context_window_size`          | `OPENCODE_CONTEXT_WINDOW_SIZE` (0 = unknown)     |
+//! | `context_window_size`          | injected resolver `(providerID, modelID) -> tokens` — opencode's models.dev cache (`model_catalog`); `0` = unknown |
 //! | `rate_limits`                  | safe default (`five_hour: 0.0 / 0`)              |
 //! | `usage_fetched`                | always `false`                                   |
 
@@ -34,7 +34,6 @@ use serde_json::Value;
 use crate::agent::adapter::opencode::transcript_dto::{
     OpencodeEventType, OpencodeKind, OpencodeLineDto,
 };
-use crate::agent::adapter::opencode::types::OPENCODE_CONTEXT_WINDOW_SIZE;
 use crate::agent::adapter::types::StatusSnapshot;
 use crate::agent::types::{
     ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
@@ -57,6 +56,14 @@ struct OpencodeFoldState {
     /// events carry no id, so this only fires for older/synthetic transcripts;
     /// it is the lower-priority fallback behind `model_id_from_message`.
     model_id_from_session: String,
+    /// Latest non-empty provider id from a `message.updated`
+    /// (`info.model.providerID`). Pairs with `model_id_from_message` for the
+    /// `(providerID, modelID)` context-window lookup; the model-id priority rule
+    /// applies identically (message wins over session, empty never clobbers).
+    provider_id_from_message: String,
+    /// Lower-priority provider id from a `session.created/updated`
+    /// (`info.model.providerID`).
+    provider_id_from_session: String,
     /// Version string (from `info.version`).
     version: String,
     /// Lifetime total input tokens. Live this is the LATEST `step-finish`
@@ -84,15 +91,61 @@ struct StepUsage {
 }
 
 impl OpencodeFoldState {
-    fn into_snapshot(self) -> StatusSnapshot {
-        let context_window_size = OPENCODE_CONTEXT_WINDOW_SIZE; // 0 = unknown
+    /// `resolve_window(providerID, modelID) -> tokens` (0 = unknown) supplies the
+    /// context-window denominator. Injected so production reads opencode's
+    /// models.dev cache while tests pass a deterministic stub.
+    fn into_snapshot(self, resolve_window: impl Fn(&str, &str) -> u64) -> StatusSnapshot {
+        // Resolve model + provider up front (message wins over session for both —
+        // live opencode only supplies the message form; an empty value never
+        // clobbers a prior non-empty one during the fold).
+        let resolved_model_id = if !self.model_id_from_message.is_empty() {
+            self.model_id_from_message
+        } else {
+            self.model_id_from_session
+        };
+        let resolved_provider_id = if !self.provider_id_from_message.is_empty() {
+            self.provider_id_from_message
+        } else {
+            self.provider_id_from_session
+        };
+
+        // Context-window size comes from opencode's models.dev cache, keyed by
+        // (providerID, modelID). 0 = unknown (no model, cache absent, or model
+        // unlisted) — the frontend then renders the bar without a denominator.
+        let context_window_size = if resolved_model_id.is_empty() {
+            0
+        } else {
+            resolve_window(&resolved_provider_id, &resolved_model_id)
+        };
+
+        // Context occupancy = the FULL prompt sent on the latest step, not just
+        // the fresh delta. opencode (like Anthropic / kimi) reports `input` as
+        // only the uncached tokens once prompt caching engages, parking the bulk
+        // of the conversation in `cache.read`; the running totals therefore read
+        // small (e.g. 152) even when 24k tokens of context are in play. So the
+        // gauge numerator sums fresh input + output + cache-read + cache-write —
+        // mirroring `kimi::parser`'s `used` — and the frontend reconstructs the
+        // token count from this percentage (it deliberately ignores
+        // total_input/output, which exclude cache reads).
+        let (cache_read, cache_write) = self
+            .step_usage
+            .as_ref()
+            .map(|su| (su.cache_read_tokens, su.cache_write_tokens))
+            .unwrap_or((0, 0));
 
         // With context_window_size == 0 we cannot compute a meaningful percentage.
         let used_percentage: Option<f64> = if context_window_size == 0 {
             None
         } else {
-            let total = self.total_input_tokens + self.total_output_tokens;
-            Some((total as f64 / context_window_size as f64 * 100.0).clamp(0.0, 100.0))
+            // Saturating: a malformed / future transcript with huge token counts
+            // must not panic (debug) or wrap (release) — this parser is tolerant
+            // of bad lines, and kimi's numerator saturates for the same reason.
+            let used = self
+                .total_input_tokens
+                .saturating_add(self.total_output_tokens)
+                .saturating_add(cache_read)
+                .saturating_add(cache_write);
+            Some((used as f64 / context_window_size as f64 * 100.0).clamp(0.0, 100.0))
         };
 
         let remaining_percentage = used_percentage
@@ -131,13 +184,7 @@ impl OpencodeFoldState {
             seven_day: None,
         };
 
-        // The `message.updated` id wins over the `session.*` id (live opencode
-        // only ever supplies the former); both fall back to "unknown".
-        let resolved_model_id = if !self.model_id_from_message.is_empty() {
-            self.model_id_from_message
-        } else {
-            self.model_id_from_session
-        };
+        // Fall back to "unknown" when the fold saw no model id.
         let (model_id, model_display_name) = if resolved_model_id.is_empty() {
             ("unknown".to_string(), "unknown".to_string())
         } else {
@@ -206,6 +253,9 @@ fn fold_session_info(state: &mut OpencodeFoldState, info: &Value) {
     if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
         state.model_id_from_session = model_id.to_string();
     }
+    if let Some(provider) = value_str(info, &["model", "providerID"]).filter(|v| !v.is_empty()) {
+        state.provider_id_from_session = provider.to_string();
+    }
     // Session-event token totals are a fallback only: live they are all-zero,
     // and once a `step-finish` has supplied the running totals we must not let a
     // later (zero) session event overwrite them.
@@ -233,6 +283,9 @@ fn fold_message_info(state: &mut OpencodeFoldState, info: &Value) {
         value_str(info, &["model", "modelID"]).or_else(|| value_str(info, &["modelID"]));
     if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
         state.model_id_from_message = model_id.to_string();
+    }
+    if let Some(provider) = value_str(info, &["model", "providerID"]).filter(|v| !v.is_empty()) {
+        state.provider_id_from_message = provider.to_string();
     }
 }
 
@@ -313,8 +366,15 @@ fn fold_line(state: &mut OpencodeFoldState, dto: &OpencodeLineDto) {
 ///
 /// The first caller in production is M5's `StateDecoder` impl on
 /// `OpenCodeAdapter`.
+/// `resolve_window(providerID, modelID) -> tokens` (0 = unknown) is injected so
+/// the production decode path passes `model_catalog::context_window` (which
+/// reads opencode's models.dev cache) while tests pass a deterministic stub.
 #[allow(dead_code)]
-pub(crate) fn parse_bridge_snapshot(session_id: Option<&str>, raw: &str) -> StatusSnapshot {
+pub(crate) fn parse_bridge_snapshot(
+    session_id: Option<&str>,
+    raw: &str,
+    resolve_window: impl Fn(&str, &str) -> u64,
+) -> StatusSnapshot {
     let mut state = OpencodeFoldState::default();
 
     let lines: Vec<&str> = raw.split('\n').collect();
@@ -339,7 +399,7 @@ pub(crate) fn parse_bridge_snapshot(session_id: Option<&str>, raw: &str) -> Stat
         }
     }
 
-    state.into_snapshot()
+    state.into_snapshot(resolve_window)
 }
 
 // ─── tests ─────────────────────────────────────────────────────────────────
@@ -347,6 +407,12 @@ pub(crate) fn parse_bridge_snapshot(session_id: Option<&str>, raw: &str) -> Stat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Window-resolver stub: unit tests never consult the real models.dev cache,
+    /// so the window is "unknown" unless a test injects its own resolver.
+    fn no_window(_provider_id: &str, _model_id: &str) -> u64 {
+        0
+    }
 
     /// Load the authored `sample_bridge.jsonl` fixture (embedded at
     /// compile time so the test works regardless of cwd).
@@ -370,7 +436,7 @@ mod tests {
         // (`glm-4-6-fake`); the session events carry `model:{"providerID":
         // "opencode"}` with no id, and the assistant `message.updated` carries
         // `model:{}` — neither must win or clobber.
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         assert_eq!(snap.model_id, "glm-4-6-fake");
         assert_eq!(snap.model_display_name, "glm-4-6-fake");
         assert_eq!(snap.version, "1.17.8");
@@ -378,7 +444,7 @@ mod tests {
 
     #[test]
     fn snapshot_has_correct_agent_session_id_from_fixture() {
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         assert_eq!(snap.agent_session_id, "ses_sample001");
     }
 
@@ -387,7 +453,7 @@ mod tests {
         // Bug C: live `session.*` `info.tokens` are all-zero. The running
         // context-window usage is the LATEST `step-finish` `input`
         // (9000 then 12345 ⇒ 12345), not the first and not a sum.
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         assert_eq!(snap.context_window.total_input_tokens, 12345);
         assert_eq!(snap.context_window.total_output_tokens, 222);
     }
@@ -395,7 +461,7 @@ mod tests {
     #[test]
     fn snapshot_has_correct_cost_from_fixture() {
         // The final `session.updated` carries `cost: 0.0042`.
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         let cost = snap.cost.total_cost_usd.expect("cost should be set");
         assert!(
             (cost - 0.0042).abs() < 1e-9,
@@ -407,7 +473,7 @@ mod tests {
     fn snapshot_current_usage_from_latest_step_finish() {
         // The fixture's LATEST `step-finish` part carries
         // tokens: { input: 12345, output: 222, cache: { read: 1200, write: 600 } }.
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         let cu = snap
             .context_window
             .current_usage
@@ -426,7 +492,7 @@ mod tests {
             "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"id\":\"msg_u\",\"role\":\"user\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"deepseek-v4-flash-free\"}}}}\n",
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"id\":\"msg_a\",\"role\":\"assistant\",\"model\":{}}}}\n",
         );
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.model_id, "deepseek-v4-flash-free");
     }
 
@@ -440,7 +506,7 @@ mod tests {
             "{\"v\":1,\"ts\":3,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":11781,\"output\":98,\"reasoning\":19,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
             "{\"v\":1,\"ts\":4,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_live\",\"model\":{\"providerID\":\"opencode\"},\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.model_id, "deepseek-v4-flash-free");
         // The trailing zero session.updated must NOT overwrite the step total.
         assert_eq!(snap.context_window.total_input_tokens, 11781);
@@ -448,16 +514,111 @@ mod tests {
     }
 
     #[test]
-    fn context_window_size_is_zero_unknown() {
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+    fn context_window_size_is_zero_unknown_when_resolver_returns_zero() {
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         assert_eq!(snap.context_window.context_window_size, 0);
         // With size == 0 we cannot compute a percentage.
         assert!(snap.context_window.used_percentage.is_none());
     }
 
     #[test]
+    fn context_window_size_and_percentage_come_from_injected_resolver() {
+        // user `message.updated` supplies {providerID, modelID}; `step-finish`
+        // supplies the running token usage. The resolver maps that model to a
+        // 200k-token window (as opencode's models.dev cache does for
+        // deepseek-v4-flash-free), so the snapshot reports a real percentage.
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"role\":\"user\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"deepseek-v4-flash-free\"}}}}\n",
+            "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":18000,\"output\":2000,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
+        );
+
+        let resolve = |provider: &str, model: &str| -> u64 {
+            if (provider, model) == ("opencode", "deepseek-v4-flash-free") {
+                200_000
+            } else {
+                0
+            }
+        };
+
+        let snap = parse_bridge_snapshot(None, raw, resolve);
+        assert_eq!(snap.context_window.context_window_size, 200_000);
+        // total = 18000 + 2000 = 20000; 20000 / 200000 = 10%.
+        let used = snap
+            .context_window
+            .used_percentage
+            .expect("percentage set when window known");
+        assert!((used - 10.0).abs() < 1e-9, "used% = {used}");
+        assert!(
+            (snap.context_window.remaining_percentage - 90.0).abs() < 1e-9,
+            "remaining% = {}",
+            snap.context_window.remaining_percentage
+        );
+    }
+
+    #[test]
+    fn context_percentage_includes_cache_read_not_just_fresh_input() {
+        // Regression for the "context not incrementing" bug: once prompt caching
+        // engages, opencode reports `input` as only the fresh delta (152) and
+        // parks the conversation in `cache.read` (24064). The gauge must reflect
+        // the FULL context (152 + 44 + 24064), not collapse to the fresh delta.
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"role\":\"user\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"deepseek-v4-flash-free\"}}}}\n",
+            "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":152,\"output\":44,\"reasoning\":20,\"cache\":{\"read\":24064,\"write\":0}}}}}\n",
+        );
+        let snap = parse_bridge_snapshot(None, raw, |_, _| 200_000);
+
+        // used = 152 + 44 + 24064 = 24260; 24260 / 200000 = 12.13%.
+        let used = snap
+            .context_window
+            .used_percentage
+            .expect("percentage set when window known");
+        assert!((used - 12.13).abs() < 0.01, "used% = {used}");
+        // The fresh-input total stays the per-step delta (matches kimi); the
+        // cache breakdown is surfaced via current_usage.
+        assert_eq!(snap.context_window.total_input_tokens, 152);
+        let cu = snap.context_window.current_usage.expect("usage present");
+        assert_eq!(cu.cache_read_input_tokens, 24064);
+    }
+
+    #[test]
+    fn resolver_receives_the_message_provider_and_model_ids() {
+        // The resolver must be called with the (providerID, modelID) the bridge
+        // emitted on the user `message.updated`.
+        use std::cell::RefCell;
+        let raw =
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"role\":\"user\",\"model\":{\"providerID\":\"anthropic\",\"modelID\":\"claude-sonnet-4\"}}}}\n";
+
+        let seen = RefCell::new(None);
+        let resolve = |provider: &str, model: &str| -> u64 {
+            *seen.borrow_mut() = Some((provider.to_string(), model.to_string()));
+            1_000_000
+        };
+
+        let snap = parse_bridge_snapshot(None, raw, resolve);
+        assert_eq!(snap.context_window.context_window_size, 1_000_000);
+        assert_eq!(
+            seen.into_inner(),
+            Some(("anthropic".to_string(), "claude-sonnet-4".to_string()))
+        );
+    }
+
+    #[test]
+    fn resolver_is_not_consulted_when_the_model_is_unknown() {
+        // No model id in the stream ⇒ the resolver must not be called and the
+        // window stays unknown (0).
+        let raw = "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_x\"}}}\n";
+        let resolve = |_provider: &str, _model: &str| -> u64 {
+            panic!("resolver must not run when the model is unknown");
+        };
+
+        let snap = parse_bridge_snapshot(None, raw, resolve);
+        assert_eq!(snap.context_window.context_window_size, 0);
+        assert!(snap.context_window.used_percentage.is_none());
+    }
+
+    #[test]
     fn rate_limits_are_safe_default() {
-        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
+        let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE, no_window);
         assert!((snap.rate_limits.five_hour.used_percentage - 0.0).abs() < f64::EPSILON);
         assert_eq!(snap.rate_limits.five_hour.resets_at, 0);
         assert!(snap.rate_limits.seven_day.is_none());
@@ -470,7 +631,7 @@ mod tests {
             "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_model_id\",\"version\":\"1.2.3\",\"model\":{\"providerID\":\"anthropic\",\"modelID\":\"claude-sonnet-4\"},\"cost\":0.25,\"tokens\":{\"input\":700,\"output\":300,\"cache\":{\"read\":10,\"write\":20}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(Some("pty-1"), raw);
+        let snap = parse_bridge_snapshot(Some("pty-1"), raw, no_window);
         assert_eq!(snap.agent_session_id, "ses_model_id");
         assert_eq!(snap.model_id, "claude-sonnet-4");
         assert_eq!(snap.model_display_name, "claude-sonnet-4");
@@ -488,7 +649,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":321,\"output\":123,\"cache\":{\"read\":40,\"write\":50}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.model_id, "claude-haiku");
         assert_eq!(snap.context_window.total_input_tokens, 321);
         assert_eq!(snap.context_window.total_output_tokens, 123);
@@ -512,7 +673,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_tol\",\"version\":\"1.0.0\",\"model\":{\"id\":\"claude-opus\"},\"cost\":0.001,\"tokens\":{\"input\":200,\"output\":80,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.agent_session_id, "ses_tol");
         assert_eq!(snap.model_id, "claude-opus");
         // The second good session.updated (after the garbage line) is applied.
@@ -529,7 +690,7 @@ mod tests {
             "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_nostep\",\"version\":\"1.0.0\",\"model\":{\"id\":\"gpt-4o\"},\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.agent_session_id, "ses_nostep");
         assert!(snap.context_window.current_usage.is_none());
         assert_eq!(snap.context_window.total_input_tokens, 0);
@@ -538,7 +699,7 @@ mod tests {
     /// An entirely empty input produces a default snapshot without panicking.
     #[test]
     fn empty_input_returns_default_snapshot_no_panic() {
-        let snap = parse_bridge_snapshot(None, "");
+        let snap = parse_bridge_snapshot(None, "", no_window);
         assert_eq!(snap.agent_session_id, "");
         assert_eq!(snap.model_id, "unknown");
         assert_eq!(snap.model_display_name, "unknown");
@@ -557,7 +718,7 @@ mod tests {
         // The second line has no trailing '\n' — it must be dropped.
         let raw = "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_partial\",\"version\":\"0.9\",\"model\":{\"id\":\"m1\"},\"cost\":0,\"tokens\":{\"input\":10,\"output\":5,\"cache\":{\"read\":0,\"write\":0}}}}}\n{INCOMPLETE";
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.agent_session_id, "ses_partial");
         assert_eq!(snap.model_id, "m1");
     }
@@ -571,7 +732,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_win\",\"version\":\"1.17.8\",\"model\":{\"id\":\"new-model\"},\"cost\":0.5,\"tokens\":{\"input\":500,\"output\":100,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         assert_eq!(snap.model_id, "new-model");
         assert_eq!(snap.version, "1.17.8");
         assert_eq!(snap.context_window.total_input_tokens, 500);
@@ -587,7 +748,7 @@ mod tests {
             "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":300,\"output\":60,\"cache\":{\"read\":50,\"write\":10}}}}}\n",
         );
 
-        let snap = parse_bridge_snapshot(None, raw);
+        let snap = parse_bridge_snapshot(None, raw, no_window);
         let cu = snap
             .context_window
             .current_usage

@@ -846,3 +846,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** The PR added an Opencode SVG mark while the adjacent file-level comment pointed readers to `icons-NOTICE.md` for Lobe Icons MIT attribution only. Future maintainers could reasonably assume the new mark was covered by the existing vendored-icon notice.
 - **Fix:** Reworded the file-level comment to point to the notice for per-mark provenance and documented the Opencode mark as an original Vimeflow geometric terminal mark outside the Lobe Icons vendored set.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 91. `resolve_by_pid` comment overstated cached fallback guarantee
+
+- **Source:** github-claude | PR #599 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The comment said a pid miss with a prior cache returns `None` so `cached_or_err` keeps the live binding. In reality `locate` tries the cwd fallback first, and only preserves the cached binding when cwd also finds nothing.
+- **Fix:** Reworded the comment to document the actual fallback order: pid miss triggers cwd resolution first, and `cached_or_err` preserves the binding only after cwd also misses.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

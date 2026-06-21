@@ -2,7 +2,7 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-06-16
+last_updated: 2026-06-21
 ref_count: 0
 ---
 
@@ -48,4 +48,13 @@ feature.
 - **File:** `src/features/agent-status/utils/statusRefreshCoordinator.ts`
 - **Finding:** When `detect_agent_in_session` returned `null` for a pane with a cached active snapshot, the coordinator returned the stale snapshot unchanged. Switching back to that pane restored `isActive: true` until the primary polling hook caught up.
 - **Fix:** Changed the null-detection branch to write a default inactive snapshot instead of returning the previous one, so hot-loaded panes never display a dead agent as active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Opencode models cache cached an empty first read forever
+
+- **Source:** github-codex-connector | PR #599 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/model_catalog.rs`
+- **Finding:** `catalog` used `OnceLock::get_or_init` with `Catalog::new()` on missing, unreadable, malformed, or empty `models.json`. If Vimeflow decoded opencode before opencode finished refreshing the cache, every later `context_window` lookup returned the unknown sentinel until restart.
+- **Fix:** Split disk loading from cache initialization and populate the `OnceLock` only after a non-empty successful parse. Added regression tests proving missing, empty, and malformed first reads remain retryable and a later valid cache is used.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

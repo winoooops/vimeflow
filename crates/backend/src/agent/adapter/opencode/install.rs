@@ -154,13 +154,15 @@ fn atomic_write(dir: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// `$HOME` (or a relative fallback for headless/service sessions where home is
-/// unknown). Mirrors the `dirs::home_dir()` precedence used elsewhere.
-fn home_dir() -> PathBuf {
+/// unknown). Mirrors the `dirs::home_dir()` precedence used elsewhere. Shared
+/// with `model_catalog` for the models.dev cache-home resolution.
+pub(super) fn home_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Read an env var, mapping unset / empty to `None`.
-fn non_empty_env(key: &str) -> Option<std::ffi::OsString> {
+/// Read an env var, mapping unset / empty to `None`. Shared with
+/// `model_catalog` so both sides derive XDG paths with identical semantics.
+pub(super) fn non_empty_env(key: &str) -> Option<std::ffi::OsString> {
     match std::env::var_os(key) {
         Some(value) if !value.is_empty() => Some(value),
         _ => None,
