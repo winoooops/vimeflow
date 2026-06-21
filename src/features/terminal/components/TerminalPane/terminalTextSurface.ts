@@ -36,6 +36,11 @@ interface BlockGlyphPaint {
   readonly rects: readonly BlockGlyphRect[]
 }
 
+interface BlockGlyphColors {
+  readonly background: string
+  readonly foreground: string
+}
+
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
   ['ArrowDown', '\x1b[B'],
@@ -64,6 +69,22 @@ type RenderScrollMode = 'bottom' | 'cursor' | 'top'
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
+
+const readBlockGlyphColors = (
+  style: TerminalDisplayStyle
+): BlockGlyphColors => {
+  if (style.reverse) {
+    return {
+      background: style.foreground ?? 'var(--terminal-foreground)',
+      foreground: style.background ?? 'var(--terminal-background)',
+    }
+  }
+
+  return {
+    background: style.background ?? 'transparent',
+    foreground: style.foreground ?? 'var(--terminal-foreground)',
+  }
+}
 
 const getControlKeyData = (key: string): string | null => {
   if (key.length !== 1) {
@@ -878,8 +899,7 @@ export class TerminalTextSurface implements TerminalSurface {
     paint: BlockGlyphPaint
   ): HTMLElement {
     const glyph = document.createElement('span')
-    const foreground = style.foreground ?? 'currentColor'
-    const background = style.background ?? 'transparent'
+    const { background, foreground } = readBlockGlyphColors(style)
 
     glyph.dataset.terminalStyleRun = 'true'
     glyph.dataset.terminalCustomGlyph = 'block'

@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-21
-ref_count: 7
+ref_count: 8
 ---
 
 # Terminal Render-State Driver Contract
@@ -262,4 +262,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts`
 - **Finding:** The Electron bridge precomputed `cursor.textOffset` before renderer-side native snapshot normalization padded a short cursor row out to `cursor.columnOffset`. The VT renderer then trusted the stale offset, placing cursors at the unpadded row end when native snapshots had cells on the cursor row and the cursor sat in trailing blank columns.
 - **Fix:** The VT renderer now treats a precomputed offset as stale when the current rendered row contains only trailing blanks after it, and falls back to `readCursorOffsetInCellRow()` against the padded row and cell map. Added regression coverage for a native cell row padded to a blank cursor column.
+- **Commit:** same commit as this entry
+
+### 28. Native cells must be applied in exactly one layer
+
+- **Source:** github-codex-connector | PR #591 round 5 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** The Electron bridge expanded native fallback rows with cell traversal and still returned the original cells. The renderer then traversed those same cells again, so a sparse styled blank could be inserted twice and move following text or cursor offsets.
+- **Fix:** Stopped pre-normalizing Electron-side rows when cells are present. The bridge now forwards native `visibleLines` as fallback text, still computes `cursor.textOffset` from the native cells, and leaves visible-text/style reconstruction to the renderer's single cell traversal pass.
 - **Commit:** same commit as this entry

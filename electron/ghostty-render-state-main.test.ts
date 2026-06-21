@@ -598,7 +598,7 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
-  test('normalizes styled empty native cells as occupied blanks', () => {
+  test('leaves native sparse styled cells for renderer-side normalization', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
         GhosttyNativeBindings['createTerminal']
@@ -643,7 +643,7 @@ describe('ghostty render-state main bridge', () => {
     ).toEqual({
       ok: true,
       result: {
-        rows: ['A B'],
+        rows: ['AB'],
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
@@ -710,7 +710,7 @@ describe('ghostty render-state main bridge', () => {
     ).toEqual({
       ok: true,
       result: {
-        rows: [' Explain this codebase   '],
+        rows: [' Explain this codebase'],
         cursor: {
           rowIndex: 0,
           columnOffset: 25,
@@ -729,7 +729,7 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
-  test('preserves trailing fallback text after sparse styled empty cells', () => {
+  test('preserves native fallback text before sparse styled empty cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
         GhosttyNativeBindings['createTerminal']
@@ -762,7 +762,7 @@ describe('ghostty render-state main bridge', () => {
     ).toEqual({
       ok: true,
       result: {
-        rows: ['A B'],
+        rows: ['AB'],
         cursor: {
           rowIndex: 0,
           columnOffset: 3,

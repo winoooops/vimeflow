@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-21
-ref_count: 2
+ref_count: 3
 ---
 
 # Terminal DOM Rendering
@@ -57,4 +57,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L161
 - **Finding:** `readBlockGlyphPaint` computed left partial block glyph widths with `9 - (codePoint - 0x2588)`, making U+2589 render as a full block and U+258F render as a quarter-width block instead of one eighth.
 - **Fix:** Derived the painted eighth count from `0x2590 - codePoint` so U+2589 maps to seven eighths and U+258F maps to one eighth. Added a DOM regression covering the emitted gradient stops for both edge glyphs.
+- **Commit:** same commit as this entry
+
+### 6. Custom block glyph paint must not inherit hidden text color
+
+- **Source:** github-codex-connector | PR #591 round 5 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** Custom block glyphs without an explicit foreground color used `currentColor` for the fill rectangle, then hid the glyph text by setting the wrapper color to `transparent`. The fill inherited transparent currentColor, making default-color and reverse-video block glyphs disappear.
+- **Fix:** Resolved block-glyph foreground/background colors before hiding the wrapper text. Default fills now use `var(--terminal-foreground)`, and reverse-video block fills swap to the effective terminal background while the wrapper background uses the effective foreground.
 - **Commit:** same commit as this entry

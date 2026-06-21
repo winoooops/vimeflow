@@ -1449,6 +1449,99 @@ describe('ghosttyInstance', () => {
     expect(firstRect?.style.width).toBe('100%')
   })
 
+  test('paints unstyled block glyphs with the terminal foreground', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['█'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '█',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyph = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    const rect = glyph?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('█')
+    expect(glyph?.style.backgroundColor).toBe('transparent')
+    expect(glyph?.style.color).toBe('transparent')
+    expect(rect?.style.backgroundColor).toBe('var(--terminal-foreground)')
+  })
+
+  test('paints reverse-video block glyph fills with swapped terminal colors', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['█'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '█',
+              width: 1,
+              reverse: true,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyph = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    const rect = glyph?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('█')
+    expect(glyph?.style.backgroundColor).toBe('var(--terminal-foreground)')
+    expect(glyph?.style.color).toBe('transparent')
+    expect(rect?.style.backgroundColor).toBe('var(--terminal-background)')
+  })
+
   test('paints partial and quadrant block glyphs by exact cell rectangles', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({

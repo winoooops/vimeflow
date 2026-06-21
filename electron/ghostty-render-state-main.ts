@@ -5,12 +5,10 @@ import { createRequire } from 'node:module'
 import { TextDecoder } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import {
-  readCellRowVisibleText,
   readCellsByRow,
   readCursorOffsetInCellRow,
   readTextCellWidth,
   type GhosttyCellTraversalCell,
-  type GhosttyCellsByRow,
 } from '../shared/ghosttyCellTraversal'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
@@ -688,19 +686,6 @@ const readSnapshotCells = (
   })
 }
 
-const readRowsWithCells = (
-  rows: readonly string[],
-  cellsByRow: GhosttyCellsByRow<GhosttyRenderStateBridgeSnapshotCell>
-): readonly string[] => {
-  if (cellsByRow.size === 0) {
-    return rows
-  }
-
-  return rows.map((fallbackRow, rowIndex) =>
-    readCellRowVisibleText(fallbackRow, cellsByRow.get(rowIndex))
-  )
-}
-
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
@@ -709,7 +694,6 @@ const normalizeSnapshot = (
   const rows = readSnapshotRows(snapshot)
   const cells = readSnapshotCells(snapshot, reverseVideoRanges)
   const cellsByRow = readCellsByRow(cells)
-  const normalizedRows = readRowsWithCells(rows, cellsByRow)
   const cursorRowCells = cellsByRow.get(snapshot.cursorRow)
 
   const snapshotCursorVisible =
@@ -725,7 +709,7 @@ const normalizeSnapshot = (
   }
 
   return {
-    rows: normalizedRows,
+    rows,
     cursor: {
       rowIndex: snapshot.cursorRow,
       columnOffset: snapshot.cursorCol,
