@@ -8,6 +8,7 @@ import {
   readCellRowVisibleText,
   readCellsByRow,
   readCursorOffsetInCellRow,
+  readTextCellWidth,
   type GhosttyCellTraversalCell,
   type GhosttyCellsByRow,
 } from '../shared/ghosttyCellTraversal'
@@ -31,6 +32,10 @@ const OSC7_PREFIX = '\u001b]7;'
 const OSC_BEL_TERMINATOR = '\u0007'
 const OSC_ST_TERMINATOR = '\u001b\\'
 const OSC_BUFFER_LIMIT = 8192
+const ESC = '\u001b'
+const CSI = `${ESC}[`
+const CSI_PRIVATE_MODE_PREFIX = `${CSI}?`
+const CURSOR_VISIBILITY_MODE = '25'
 
 const nodeRequire = createRequire(import.meta.url)
 const electronModuleDir = path.dirname(fileURLToPath(import.meta.url))
@@ -46,6 +51,7 @@ export interface GhosttyRenderStateBridgeSnapshot {
     rowIndex: number
     columnOffset: number
     textOffset?: number
+    visible?: boolean
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
@@ -60,6 +66,7 @@ export interface GhosttyRenderStateBridgeSnapshotCell extends GhosttyCellTravers
   underline?: boolean
   foreground?: string
   background?: string
+  reverse?: boolean
 }
 
 interface GhosttyNativeTerminalOptions {
@@ -83,12 +90,14 @@ interface GhosttyNativeTerminalSnapshotCell {
   underline?: boolean
   foreground?: string
   background?: string
+  reverse?: boolean
 }
 
 interface GhosttyNativeTerminalSnapshot {
   rows: number
   cursorRow: number
   cursorCol: number
+  cursorVisible?: boolean
   visibleLines: readonly GhosttyNativeTerminalLine[]
   cells?: readonly GhosttyNativeTerminalSnapshotCell[]
 }
@@ -100,6 +109,7 @@ interface GhosttyNativeTerminal {
     includeCells?: boolean
   }) => GhosttyNativeTerminalSnapshot
   dispose: () => void
+  formatHtml?: () => string
 }
 
 export interface GhosttyNativeBindings {
@@ -115,6 +125,7 @@ interface GhosttyDriverRecord {
   readonly ownerWebContents: IpcMainEventLike['sender']
   readonly ownerWebContentsDestroyListener: () => void
   readonly osc7Scanner: Osc7Scanner
+  readonly cursorVisibilityScanner: CursorVisibilityScanner
   terminal: GhosttyNativeTerminal
   size: GhosttyRenderStateBridgeSize
 }
@@ -365,6 +376,227 @@ class Osc7Scanner {
   }
 }
 
+class CursorVisibilityScanner {
+  private readonly decoder = new TextDecoder()
+  private buffer = ''
+  private visible = true
+
+  write(bytes: Uint8Array): void {
+    this.buffer += this.decoder.decode(bytes, { stream: true })
+    this.drain()
+  }
+
+  reset(): void {
+    this.visible = true
+    this.buffer = ''
+    this.decoder.decode()
+  }
+
+  readVisible(): boolean {
+    return this.visible
+  }
+
+  private drain(): void {
+    let searchIndex = 0
+
+    while (searchIndex < this.buffer.length) {
+      const sequenceStart = this.buffer.indexOf(
+        CSI_PRIVATE_MODE_PREFIX,
+        searchIndex
+      )
+
+      if (sequenceStart === -1) {
+        this.buffer = this.buffer.slice(
+          Math.max(0, this.buffer.length - CSI_PRIVATE_MODE_PREFIX.length + 1)
+        )
+
+        return
+      }
+
+      const finalStart = sequenceStart + CSI_PRIVATE_MODE_PREFIX.length
+      const finalIndex = this.findPrivateModeFinal(finalStart)
+
+      if (finalIndex === -1) {
+        this.buffer = this.buffer.slice(sequenceStart)
+
+        return
+      }
+
+      const final = this.buffer[finalIndex]
+      const parameters = this.buffer.slice(finalStart, finalIndex).split(';')
+
+      if (
+        (final === 'h' || final === 'l') &&
+        parameters.includes(CURSOR_VISIBILITY_MODE)
+      ) {
+        this.visible = final === 'h'
+      }
+
+      searchIndex = finalIndex + 1
+    }
+
+    this.buffer = ''
+  }
+
+  private findPrivateModeFinal(startIndex: number): number {
+    for (let index = startIndex; index < this.buffer.length; index += 1) {
+      const character = this.buffer[index]
+
+      if (character === 'h' || character === 'l') {
+        return index
+      }
+
+      if (character !== ';' && (character < '0' || character > '9')) {
+        return index
+      }
+    }
+
+    return -1
+  }
+}
+
+interface ReverseVideoRange {
+  readonly row: number
+  readonly startColumn: number
+  readonly endColumn: number
+}
+
+const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#39);/g
+const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
+const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
+const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
+
+const decodeHtmlText = (text: string): string =>
+  text.replace(HTML_ENTITY_PATTERN, (entity) => {
+    if (entity === '&amp;') {
+      return '&'
+    }
+
+    if (entity === '&lt;') {
+      return '<'
+    }
+
+    if (entity === '&gt;') {
+      return '>'
+    }
+
+    if (entity === '&quot;') {
+      return '"'
+    }
+
+    return "'"
+  })
+
+const isOpeningDivTag = (token: string): boolean => /^<div\b/i.test(token)
+
+const isClosingDivTag = (token: string): boolean => /^<\/div\s*>$/i.test(token)
+
+const hasReverseVideoStyle = (token: string): boolean => {
+  const match = HTML_STYLE_ATTRIBUTE_PATTERN.exec(token)
+
+  return match ? HTML_REVERSE_FILTER_PATTERN.test(match[1]) : false
+}
+
+const appendReverseVideoRange = (
+  ranges: ReverseVideoRange[],
+  range: ReverseVideoRange
+): void => {
+  if (ranges.length === 0) {
+    ranges.push(range)
+
+    return
+  }
+
+  const previous = ranges[ranges.length - 1]
+
+  if (previous.row === range.row && previous.endColumn === range.startColumn) {
+    ranges[ranges.length - 1] = {
+      row: previous.row,
+      startColumn: previous.startColumn,
+      endColumn: range.endColumn,
+    }
+
+    return
+  }
+
+  ranges.push(range)
+}
+
+const readReverseVideoRangesFromHtml = (
+  html: string
+): readonly ReverseVideoRange[] => {
+  const ranges: ReverseVideoRange[] = []
+  const reverseStack = [false]
+  let row = 0
+  let column = 0
+
+  Array.from(html.matchAll(HTML_TOKEN_PATTERN)).forEach((match) => {
+    const token = match[0]
+
+    if (isOpeningDivTag(token)) {
+      const parentReverse = reverseStack[reverseStack.length - 1] ?? false
+      reverseStack.push(parentReverse || hasReverseVideoStyle(token))
+
+      return
+    }
+
+    if (isClosingDivTag(token)) {
+      reverseStack.pop()
+
+      return
+    }
+
+    const reverse = reverseStack[reverseStack.length - 1] ?? false
+
+    for (const character of decodeHtmlText(token)) {
+      if (character === '\n') {
+        row += 1
+        column = 0
+        continue
+      }
+
+      const width = readTextCellWidth(character)
+
+      if (reverse && width > 0) {
+        appendReverseVideoRange(ranges, {
+          row,
+          startColumn: column,
+          endColumn: column + width,
+        })
+      }
+
+      column += width
+    }
+  })
+
+  return ranges
+}
+
+const readTerminalReverseVideoRanges = (
+  terminal: GhosttyNativeTerminal
+): readonly ReverseVideoRange[] => {
+  if (!terminal.formatHtml) {
+    return []
+  }
+
+  try {
+    return readReverseVideoRangesFromHtml(terminal.formatHtml())
+  } catch {
+    return []
+  }
+}
+
+const isCellReverseVideo = (
+  cell: GhosttyRenderStateBridgeSnapshotCell,
+  ranges: readonly ReverseVideoRange[]
+): boolean =>
+  ranges.some(
+    (range) =>
+      range.row === cell.row &&
+      cell.col < range.endColumn &&
+      cell.col + cell.width > range.startColumn
+  )
+
 const readSnapshotRows = (
   snapshot: GhosttyNativeTerminalSnapshot
 ): readonly string[] => {
@@ -395,7 +627,8 @@ const readSnapshotRows = (
 }
 
 const readSnapshotCells = (
-  snapshot: GhosttyNativeTerminalSnapshot
+  snapshot: GhosttyNativeTerminalSnapshot,
+  reverseVideoRanges: readonly ReverseVideoRange[]
 ): readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined => {
   if (snapshot.cells === undefined) {
     return undefined
@@ -444,6 +677,13 @@ const readSnapshotCells = (
       normalizedCell.background = cell.background
     }
 
+    if (
+      cell.reverse === true ||
+      isCellReverseVideo(normalizedCell, reverseVideoRanges)
+    ) {
+      normalizedCell.reverse = true
+    }
+
     return normalizedCell
   })
 }
@@ -462,13 +702,20 @@ const readRowsWithCells = (
 }
 
 const normalizeSnapshot = (
-  snapshot: GhosttyNativeTerminalSnapshot
+  snapshot: GhosttyNativeTerminalSnapshot,
+  cursorVisible: boolean,
+  reverseVideoRanges: readonly ReverseVideoRange[]
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
-  const cells = readSnapshotCells(snapshot)
+  const cells = readSnapshotCells(snapshot, reverseVideoRanges)
   const cellsByRow = readCellsByRow(cells)
   const normalizedRows = readRowsWithCells(rows, cellsByRow)
   const cursorRowCells = cellsByRow.get(snapshot.cursorRow)
+
+  const snapshotCursorVisible =
+    typeof snapshot.cursorVisible === 'boolean'
+      ? snapshot.cursorVisible
+      : cursorVisible
 
   if (
     !isNonNegativeInteger(snapshot.cursorRow) ||
@@ -482,6 +729,7 @@ const normalizeSnapshot = (
     cursor: {
       rowIndex: snapshot.cursorRow,
       columnOffset: snapshot.cursorCol,
+      ...(snapshotCursorVisible === false ? { visible: false } : {}),
       ...(cursorRowCells === undefined
         ? {}
         : {
@@ -580,6 +828,7 @@ export class GhosttyRenderStateMainBridge {
         ownerWebContents: event.sender,
         ownerWebContentsDestroyListener,
         osc7Scanner: new Osc7Scanner(),
+        cursorVisibilityScanner: new CursorVisibilityScanner(),
         terminal: createNativeTerminal(nativeBindings, size),
         size,
       }
@@ -595,6 +844,7 @@ export class GhosttyRenderStateMainBridge {
       const bytes = readBytes(payload)
       const events = record.osc7Scanner.write(bytes)
 
+      record.cursorVisibilityScanner.write(bytes)
       record.terminal.feed(bytes)
 
       return ok({ events })
@@ -603,7 +853,13 @@ export class GhosttyRenderStateMainBridge {
 
   readSnapshot(ownerWebContentsId: number, payload: unknown): SnapshotResult {
     return this.withDriver(ownerWebContentsId, payload, (record) =>
-      ok(normalizeSnapshot(record.terminal.snapshot({ includeCells: true })))
+      ok(
+        normalizeSnapshot(
+          record.terminal.snapshot({ includeCells: true }),
+          record.cursorVisibilityScanner.readVisible(),
+          readTerminalReverseVideoRanges(record.terminal)
+        )
+      )
     )
   }
 
@@ -630,6 +886,7 @@ export class GhosttyRenderStateMainBridge {
 
         record.terminal = terminal
         record.osc7Scanner.reset()
+        record.cursorVisibilityScanner.reset()
 
         try {
           previousTerminal.dispose()
@@ -735,6 +992,7 @@ export class GhosttyRenderStateMainBridge {
     )
     record.terminal.dispose()
     record.osc7Scanner.reset()
+    record.cursorVisibilityScanner.reset()
   }
 }
 

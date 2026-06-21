@@ -17,6 +17,7 @@ export interface GhosttyVtRenderSnapshotCursor {
   readonly rowIndex: number
   readonly columnOffset: number
   readonly textOffset?: number
+  readonly visible?: boolean
 }
 
 export interface GhosttyVtRenderSnapshotCell extends GhosttyCellTraversalCell {
@@ -29,6 +30,7 @@ export interface GhosttyVtRenderSnapshotCell extends GhosttyCellTraversalCell {
   readonly underline?: boolean
   readonly foreground?: string
   readonly background?: string
+  readonly reverse?: boolean
 }
 
 export interface GhosttyVtRenderSnapshot {
@@ -43,6 +45,7 @@ interface SnapshotStyle {
   readonly underline?: boolean
   readonly foreground?: string
   readonly background?: string
+  readonly reverse?: boolean
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -78,6 +81,7 @@ const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
   ...(cell.underline === true ? { underline: true } : {}),
   ...(cell.foreground ? { foreground: cell.foreground } : {}),
   ...(cell.background ? { background: cell.background } : {}),
+  ...(cell.reverse === true ? { reverse: true } : {}),
 })
 
 const readStyleKey = (style: SnapshotStyle): string =>
@@ -87,6 +91,7 @@ const readStyleKey = (style: SnapshotStyle): string =>
     style.underline === true ? '4' : '',
     style.foreground ?? '',
     style.background ?? '',
+    style.reverse === true ? '7' : '',
   ].join('|')
 
 const EMPTY_STYLE_KEY = readStyleKey({})
@@ -96,6 +101,7 @@ const readStyleParameters = (style: SnapshotStyle): readonly number[] => [
   ...(style.bold === true ? [1] : []),
   ...(style.italic === true ? [3] : []),
   ...(style.underline === true ? [4] : []),
+  ...(style.reverse === true ? [7] : []),
   ...readSgrColorParameters(38, style.foreground),
   ...readSgrColorParameters(48, style.background),
 ]
@@ -144,6 +150,9 @@ const trimLeadingEmptyRows = (
             ...(snapshot.cursor.textOffset === undefined
               ? {}
               : { textOffset: snapshot.cursor.textOffset }),
+            ...(snapshot.cursor.visible === undefined
+              ? {}
+              : { visible: snapshot.cursor.visible }),
           },
         }
       : {}),
@@ -313,6 +322,9 @@ export const createGhosttyVtRenderSnapshotOutput = (
   return {
     visibleText: text,
     displayDelta: {
+      ...(normalizedSnapshot.cursor?.visible === undefined
+        ? {}
+        : { cursorVisible: normalizedSnapshot.cursor.visible }),
       operations: [
         {
           type: 'replace',

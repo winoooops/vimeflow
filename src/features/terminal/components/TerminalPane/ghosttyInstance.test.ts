@@ -689,6 +689,51 @@ describe('ghosttyInstance', () => {
     expect(cursor?.nextSibling?.textContent).toBe('tput')
   })
 
+  test('hides the visual cursor when parser snapshots mark it hidden', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['Manual', '> Auto'],
+          cursor: {
+            rowIndex: 1,
+            columnOffset: 0,
+            visible: false,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(created.viewportReader.readVisibleText()).toBe('Manual\n> Auto')
+    expect(cursor).toBeNull()
+  })
+
   test('copies interpreted text for full replace snapshot selections', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
@@ -1286,6 +1331,60 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
     expect(inputRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
+    expect(inputRun?.style.minWidth).toBe(
+      'calc(var(--terminal-cell-width) * 25)'
+    )
+  })
+
+  test('paints reverse-video agent input boxes by terminal cell width', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['> Explain this codebase   '],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '>',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: ' Explain this codebase   ',
+              width: 25,
+              reverse: true,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const inputRun = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-style-run="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      '> Explain this codebase   '
+    )
+    expect(inputRun?.style.backgroundColor).toBe('var(--terminal-foreground)')
+    expect(inputRun?.style.color).toBe('var(--terminal-background)')
     expect(inputRun?.style.minWidth).toBe(
       'calc(var(--terminal-cell-width) * 25)'
     )

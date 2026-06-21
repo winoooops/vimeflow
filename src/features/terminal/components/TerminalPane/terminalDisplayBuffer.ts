@@ -30,6 +30,7 @@ export interface TerminalDisplayStyle {
   readonly dim?: boolean
   readonly foreground?: string
   readonly italic?: boolean
+  readonly reverse?: boolean
   readonly underline?: boolean
 }
 
@@ -51,6 +52,7 @@ export type TerminalDisplayDeltaOperation =
 
 export interface TerminalDisplayDelta {
   readonly operations: readonly TerminalDisplayDeltaOperation[]
+  readonly cursorVisible?: boolean
 }
 
 interface DisplayState {
@@ -62,6 +64,7 @@ interface DisplayState {
   readonly softWrapOffsets: readonly number[]
   readonly style: TerminalDisplayStyle
   readonly runs: readonly TerminalDisplayRun[]
+  readonly cursorVisible: boolean
 }
 
 interface DisplayCharacterResult {
@@ -89,6 +92,7 @@ const createEmptyState = (): DisplayState => ({
   softWrapOffsets: [],
   style: {},
   runs: [],
+  cursorVisible: true,
 })
 
 const ANSI_COLOR_NAMES = [
@@ -239,6 +243,12 @@ const applySgrStyle = (
       continue
     }
 
+    if (parameter === 7) {
+      next = styleWith(next, { reverse: true })
+      index += 1
+      continue
+    }
+
     if (parameter === 22) {
       next = removeStyleKeys(next, ['bold', 'dim'])
       index += 1
@@ -253,6 +263,12 @@ const applySgrStyle = (
 
     if (parameter === 24) {
       next = removeStyleKeys(next, ['underline'])
+      index += 1
+      continue
+    }
+
+    if (parameter === 27) {
+      next = removeStyleKeys(next, ['reverse'])
       index += 1
       continue
     }
@@ -336,6 +352,7 @@ const areStylesEqual = (
   left.dim === right.dim &&
   left.foreground === right.foreground &&
   left.italic === right.italic &&
+  left.reverse === right.reverse &&
   left.underline === right.underline
 
 const findLineStart = (text: string, cursor: number): number => {
@@ -1185,6 +1202,7 @@ const applyDisplayData = (
   let softWrapOffsets = state.softWrapOffsets
   let style = state.style
   let runs = state.runs
+  const cursorVisible = state.cursorVisible
   let index = 0
 
   while (index < data.length) {
@@ -1259,6 +1277,7 @@ const applyDisplayData = (
           softWrapOffsets,
           style,
           runs,
+          cursorVisible,
         },
         eraseDisplayMode
       )
@@ -1283,6 +1302,7 @@ const applyDisplayData = (
           softWrapOffsets,
           style,
           runs,
+          cursorVisible,
         },
         eraseLineMode
       )
@@ -1453,6 +1473,7 @@ const applyDisplayData = (
     softWrapOffsets,
     style,
     runs,
+    cursorVisible,
   }
 }
 
@@ -1500,6 +1521,7 @@ const trimScrollbackLines = (
     ),
     style: state.style,
     runs: newRuns,
+    cursorVisible: state.cursorVisible,
   }
 }
 
@@ -1546,13 +1568,22 @@ export class TerminalDisplayBuffer {
       return
     }
 
-    this.state = trimScrollbackLines(
+    const nextState = trimScrollbackLines(
       applyDisplayData(this.state, data, this.columns),
       this.maxScrollbackLines
     )
+
+    this.state = {
+      ...nextState,
+      cursorVisible: this.state.cursorVisible,
+    }
   }
 
   applyDelta(delta: TerminalDisplayDelta): void {
+    const hasReplaceOperation = delta.operations.some(
+      (operation) => operation.type === 'replace'
+    )
+
     delta.operations.forEach((operation) => {
       if (operation.type === 'replace') {
         this.replace(operation.text, operation.cursorOffset)
@@ -1562,6 +1593,22 @@ export class TerminalDisplayBuffer {
 
       this.write(operation.text)
     })
+
+    if (delta.cursorVisible !== undefined) {
+      this.state = {
+        ...this.state,
+        cursorVisible: delta.cursorVisible,
+      }
+
+      return
+    }
+
+    if (hasReplaceOperation) {
+      this.state = {
+        ...this.state,
+        cursorVisible: true,
+      }
+    }
   }
 
   readText(): string {
@@ -1570,6 +1617,10 @@ export class TerminalDisplayBuffer {
 
   readCursorOffset(): number {
     return this.state.cursor
+  }
+
+  readCursorVisible(): boolean {
+    return this.state.cursorVisible
   }
 
   readStyledRuns(): readonly TerminalDisplayRun[] {

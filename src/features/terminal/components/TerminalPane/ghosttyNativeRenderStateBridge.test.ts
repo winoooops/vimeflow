@@ -91,6 +91,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
             cursor: {
               rowIndex: 1,
               columnOffset: 6,
+              visible: false,
             },
             cells: [
               {
@@ -100,6 +101,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
                 width: 1,
                 foreground: TRUE_COLOR_PINK_HEX,
                 background: TRUE_COLOR_BASE_HEX,
+                reverse: true,
               },
             ],
           }),
@@ -137,6 +139,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
       cursor: {
         rowIndex: 1,
         columnOffset: 6,
+        visible: false,
       },
       cells: [
         {
@@ -146,6 +149,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
           width: 1,
           foreground: TRUE_COLOR_PINK_HEX,
           background: TRUE_COLOR_BASE_HEX,
+          reverse: true,
         },
       ],
     })

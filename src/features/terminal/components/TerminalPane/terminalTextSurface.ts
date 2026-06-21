@@ -547,6 +547,8 @@ export class TerminalTextSurface implements TerminalSurface {
   applyTheme(theme: TerminalTheme): void {
     this.root.style.background = theme.background
     this.root.style.color = theme.foreground
+    this.root.style.setProperty('--terminal-background', theme.background)
+    this.root.style.setProperty('--terminal-foreground', theme.foreground)
     this.root.style.setProperty('--terminal-ansi-black', theme.black)
     this.root.style.setProperty('--terminal-ansi-red', theme.red)
     this.root.style.setProperty('--terminal-ansi-green', theme.green)
@@ -820,6 +822,7 @@ export class TerminalTextSurface implements TerminalSurface {
       style.dim === true ||
       style.foreground !== undefined ||
       style.italic === true ||
+      style.reverse === true ||
       style.underline === true
     )
   }
@@ -829,10 +832,11 @@ export class TerminalTextSurface implements TerminalSurface {
     style: TerminalDisplayStyle,
     text: string
   ): void {
-    if (style.background) {
+    if (style.background || style.reverse) {
       const cellWidth = Math.max(1, readTextCellWidth(text))
 
-      element.style.backgroundColor = style.background
+      element.style.backgroundColor =
+        style.background ?? 'var(--terminal-foreground)'
       element.style.display = 'inline-block'
       element.style.height = 'var(--terminal-line-height)'
       element.style.lineHeight = 'var(--terminal-line-height)'
@@ -855,6 +859,12 @@ export class TerminalTextSurface implements TerminalSurface {
 
     if (style.italic) {
       element.style.fontStyle = 'italic'
+    }
+
+    if (style.reverse) {
+      element.style.backgroundColor =
+        style.foreground ?? 'var(--terminal-foreground)'
+      element.style.color = style.background ?? 'var(--terminal-background)'
     }
 
     if (style.underline) {
@@ -1004,14 +1014,19 @@ export class TerminalTextSurface implements TerminalSurface {
 
   private createOutputFragments(
     runs: readonly TerminalDisplayRun[],
-    cursorOffset: number
+    cursorOffset: number,
+    cursorVisible: boolean
   ): Node[] {
     const rows: HTMLElement[] = [this.createOutputRow()]
     let offset = 0
-    const cursorState = { didRender: false }
+    const cursorState = { didRender: !cursorVisible }
     let currentRow = rows[0]
 
     const appendCursor = (): void => {
+      if (!cursorVisible) {
+        return
+      }
+
       currentRow.append(this.createCursorElement())
       cursorState.didRender = true
     }
@@ -1105,7 +1120,12 @@ export class TerminalTextSurface implements TerminalSurface {
     )
 
     const cursorRowIndex = readCursorRowIndex(text, cursorOffset)
-    const fragments = this.createOutputFragments(runs, cursorOffset)
+
+    const fragments = this.createOutputFragments(
+      runs,
+      cursorOffset,
+      this.outputBuffer.readCursorVisible()
+    )
 
     this.output.replaceChildren(...fragments)
     this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)

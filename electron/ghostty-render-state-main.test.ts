@@ -29,6 +29,7 @@ interface TestNativeTerminal {
         rows: number
         cursorRow: number
         cursorCol: number
+        cursorVisible?: boolean
         visibleLines: readonly { row: number; text: string }[]
         cells?: readonly {
           row: number
@@ -38,11 +39,13 @@ interface TestNativeTerminal {
           foreground?: string
           background?: string
           bold?: boolean
+          reverse?: boolean
         }[]
       }
     >
   >
   dispose: ReturnType<typeof vi.fn<() => void>>
+  formatHtml?: ReturnType<typeof vi.fn<() => string>>
 }
 
 interface TestIpcMain {
@@ -303,6 +306,83 @@ describe('ghostty render-state main bridge', () => {
       },
     })
     expect(terminals[0]?.feed).toHaveBeenCalledTimes(2)
+  })
+
+  test('tracks hidden cursor mode across byte chunks', () => {
+    const { bindings } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const encoder = new TextEncoder()
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?2'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('5lSelect permission mode'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          rowIndex: 1,
+          columnOffset: 2,
+          visible: false,
+        },
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?25h'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          rowIndex: 1,
+          columnOffset: 2,
+        },
+      },
+    })
+
+    expect(
+      requireResult(
+        bridge.readSnapshot(event.sender.id, {
+          driverId: createResult.driverId,
+        })
+      ).cursor
+    ).not.toHaveProperty('visible')
   })
 
   test('drops oversized complete OSC7 cwd effects', () => {
@@ -588,6 +668,61 @@ describe('ghostty render-state main bridge', () => {
             col: 2,
             text: 'B',
             width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('marks reverse-video formatter ranges on native cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 25,
+          visibleLines: [{ row: 0, text: ' Explain this codebase' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: ' Explain this codebase   ',
+              width: 25,
+            },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;filter: invert(100%);"> Explain this codebase   </div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [' Explain this codebase   '],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 25,
+          textOffset: 25,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: ' Explain this codebase   ',
+            width: 25,
+            reverse: true,
           },
         ],
       },

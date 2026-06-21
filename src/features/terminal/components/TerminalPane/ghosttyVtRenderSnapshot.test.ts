@@ -123,6 +123,28 @@ describe('ghosttyVtRenderSnapshot', () => {
     })
   })
 
+  test('propagates snapshot cursor visibility into the display delta', () => {
+    expect(
+      createGhosttyVtRenderSnapshotOutput({
+        rows: ['Manual', 'Auto'],
+        cursor: {
+          rowIndex: 1,
+          columnOffset: 0,
+          visible: false,
+        },
+      }).displayDelta
+    ).toEqual({
+      cursorVisible: false,
+      operations: [
+        {
+          type: 'replace',
+          text: 'Manual\nAuto',
+          cursorOffset: 'Manual\n'.length,
+        },
+      ],
+    })
+  })
+
   test('maps wide characters to a single terminal cell without splitting', () => {
     const row = 'a漢'
 
@@ -322,6 +344,50 @@ describe('ghosttyVtRenderSnapshot', () => {
       {
         text: 'B',
         style: {},
+      },
+    ])
+  })
+
+  test('renders reverse-video native cells as styled occupied content', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: [' Explain this codebase'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 22,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: ' Explain this codebase',
+          width: 22,
+          reverse: true,
+        },
+        {
+          row: 0,
+          col: 22,
+          text: '',
+          width: 2,
+          reverse: true,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(buffer.readVisibleText()).toBe(' Explain this codebase  ')
+    expect(buffer.readStyledRuns()).toEqual([
+      {
+        text: ' Explain this codebase  ',
+        style: {
+          reverse: true,
+        },
       },
     ])
   })

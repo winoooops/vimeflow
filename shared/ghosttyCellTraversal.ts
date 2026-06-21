@@ -9,6 +9,7 @@ export interface GhosttyCellTraversalCell {
   readonly underline?: boolean
   readonly foreground?: string
   readonly background?: string
+  readonly reverse?: boolean
 }
 
 export type GhosttyCellsByRow<TCell extends GhosttyCellTraversalCell> =
@@ -19,7 +20,8 @@ const hasCellStyle = (cell: GhosttyCellTraversalCell): boolean =>
   cell.italic === true ||
   cell.underline === true ||
   cell.foreground !== undefined ||
-  cell.background !== undefined
+  cell.background !== undefined ||
+  cell.reverse === true
 
 const sortCells = <TCell extends GhosttyCellTraversalCell>(
   cells: readonly TCell[]
@@ -78,7 +80,7 @@ const readTerminalCellWidth = (text: string, cursor: number): number => {
   return isWideCodePoint(codePoint) ? 2 : 1
 }
 
-const readTextCellWidth = (text: string): number => {
+export const readTextCellWidth = (text: string): number => {
   let width = 0
   let cursor = 0
 
