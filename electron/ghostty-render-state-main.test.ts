@@ -497,6 +497,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 6,
+          textOffset: 5,
         },
         cells: [
           {
@@ -566,6 +567,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
+          textOffset: 3,
         },
         cells: [
           {
@@ -629,6 +631,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
+          textOffset: 3,
         },
         cells: [
           {
@@ -694,6 +697,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
+          textOffset: 2,
         },
         cells: [
           {
@@ -757,6 +761,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 4,
+          textOffset: 5,
         },
         cells: [
           {
@@ -808,6 +813,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 4,
+          textOffset: 5,
         },
         cells: [
           {

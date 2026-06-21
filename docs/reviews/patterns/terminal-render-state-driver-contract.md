@@ -2,8 +2,8 @@
 id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
-last_updated: 2026-06-20
-ref_count: 4
+last_updated: 2026-06-21
+ref_count: 5
 ---
 
 # Terminal Render-State Driver Contract
@@ -199,4 +199,40 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts`
 - **Finding:** `resolveGhosttyNativePackageRoot()` accepted an app-root package when it had `package.json` plus a `prebuilds/` directory, even if that directory contained no loadable `.node` file. A stale copied package could therefore win over a valid fallback install and fail later inside `node-gyp-build`.
 - **Fix:** Changed native package detection to recursively require a `.node` file under `prebuilds` or the build output directories before selecting a package root.
+- **Commit:** same commit as this entry
+
+### 21. Skipped wide-cell continuations still need cursor text offsets
+
+- **Source:** github-codex-connector | PR #591 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L649
+- **Finding:** When Ghostty reported a declared-wide glyph plus an empty continuation cell, row reconstruction skipped the continuation in the rendered text. Without a preserved native-cell mapping, later cursor columns could be mapped through the shortened string and land after the wrong glyph.
+- **Fix:** The Electron bridge now computes a row-local `cursor.textOffset` whenever the cursor row has native cell metadata. The preload and renderer-side normalizers preserve that optional offset, and the VT renderer prefers it over remapping the shortened row text.
+- **Commit:** same commit as this entry
+
+### 22. Sparse styled blanks must not consume trailing fallback text
+
+- **Source:** github-codex-connector | PR #591 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** Sparse native cells can include a styled empty cell for a highlighted blank while later unstyled text exists only in `visibleLines`. If the styled blank consumes the fallback text offset, trailing fallback text is dropped from the normalized row.
+- **Fix:** Kept fallback-text consumption distinct from visual cell advancement and preserved the sparse styled-blank regression coverage. The helper now also documents that Ghostty `visibleLines` omits styled-blank columns, so non-blank fallback at that position belongs to a later column.
+- **Commit:** same commit as this entry
+
+### 23. Snapshot render helpers should share per-row cell maps
+
+- **Source:** github-claude | PR #591 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L519-539
+- **Finding:** `createGhosttyVtRenderSnapshotOutput()` built the same sorted `cellsByRow` map separately through display-text and cursor-offset helper calls, adding duplicate O(N log N) work and allocations to each render frame.
+- **Fix:** `createGhosttyVtRenderSnapshotOutput()` computes `cellsByRow` once after trimming the snapshot and threads that map into the display-visible, styled-display, and cursor-offset helpers.
+- **Commit:** same commit as this entry
+
+### 24. Styled-blank fallback invariants must be documented at the branch
+
+- **Source:** github-claude | PR #591 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L217-237
+- **Finding:** Returning `0` fallback-column delta for a styled empty cell over non-blank fallback text relies on Ghostty's compact `visibleLines` encoding, where styled-blank columns are omitted. Without a local comment, the branch looks like it could duplicate or drop text under a different snapshot format.
+- **Fix:** Added the Ghostty `visibleLines` styled-blank invariant comment in both the renderer helper and its Electron bridge counterpart.
 - **Commit:** same commit as this entry

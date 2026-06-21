@@ -38,6 +38,7 @@ export interface GhosttyRenderStateBridgeSnapshot {
   cursor?: {
     rowIndex: number
     columnOffset: number
+    textOffset?: number
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
@@ -456,6 +457,21 @@ const sortSnapshotCells = (
     left.row === right.row ? left.col - right.col : left.row - right.row
   )
 
+const readCellsByRow = (
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
+): ReadonlyMap<number, readonly GhosttyRenderStateBridgeSnapshotCell[]> => {
+  const cellsByRow = new Map<number, GhosttyRenderStateBridgeSnapshotCell[]>()
+
+  sortSnapshotCells(cells ?? []).forEach((cell) => {
+    const rowCells = cellsByRow.get(cell.row) ?? []
+
+    rowCells.push(cell)
+    cellsByRow.set(cell.row, rowCells)
+  })
+
+  return cellsByRow
+}
+
 const isCombiningCodePoint = (codePoint: number): boolean =>
   (codePoint >= 0x0300 && codePoint <= 0x036f) ||
   (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
@@ -611,25 +627,123 @@ const readFallbackColumnDeltaForCell = (
     fallbackColumn + cell.width
   )
 
+  // Ghostty visibleLines omits styled-blank columns; non-blank fallback here belongs to a later column.
   return fallbackText.trim() === '' ? cell.width : 0
+}
+
+const readTextOffsetForNativeCellColumn = (
+  text: string,
+  nativeCellWidth: number,
+  columnOffset: number
+): number => {
+  const clampedColumn = Math.min(Math.max(columnOffset, 0), nativeCellWidth)
+
+  if (clampedColumn === 0) {
+    return 0
+  }
+
+  if (clampedColumn >= nativeCellWidth) {
+    return text.length
+  }
+
+  return readTextCellWidth(text) >= nativeCellWidth
+    ? findTextOffsetForCellColumn(text, clampedColumn)
+    : 0
+}
+
+const readCursorOffsetInCellRow = (
+  rowText: string,
+  rowCells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined,
+  columnOffset: number
+): number => {
+  if (!rowCells || rowCells.length === 0) {
+    return findTextOffsetForCellColumn(rowText, columnOffset)
+  }
+
+  let currentColumn = 0
+  let fallbackColumn = 0
+  let textOffset = 0
+
+  for (const cell of rowCells) {
+    if (cell.col < currentColumn) {
+      if (columnOffset < currentColumn) {
+        return textOffset
+      }
+
+      currentColumn = Math.max(currentColumn, cell.col + cell.width)
+      continue
+    }
+
+    if (columnOffset <= cell.col) {
+      const gapWidth = cell.col - currentColumn
+
+      const gapText = readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      )
+
+      return (
+        textOffset +
+        findTextOffsetForCellColumn(gapText, columnOffset - currentColumn)
+      )
+    }
+
+    if (cell.col > currentColumn) {
+      const gapWidth = cell.col - currentColumn
+
+      textOffset += readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      ).length
+      currentColumn = cell.col
+      fallbackColumn += gapWidth
+    }
+
+    const cellEndColumn = cell.col + cell.width
+    const cellText = readCellDisplayText(rowText, cell, fallbackColumn)
+
+    if (columnOffset < cellEndColumn) {
+      return (
+        textOffset +
+        readTextOffsetForNativeCellColumn(
+          cellText,
+          cell.width,
+          columnOffset - cell.col
+        )
+      )
+    }
+
+    textOffset += cellText.length
+    fallbackColumn += readFallbackColumnDeltaForCell(
+      rowText,
+      cell,
+      fallbackColumn
+    )
+    currentColumn = cellEndColumn
+  }
+
+  const trailingText = rowText.slice(
+    findTextOffsetForCellColumn(rowText, fallbackColumn)
+  )
+
+  return (
+    textOffset +
+    findTextOffsetForCellColumn(trailingText, columnOffset - currentColumn)
+  )
 }
 
 const readRowsWithCells = (
   rows: readonly string[],
-  cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
+  cellsByRow: ReadonlyMap<
+    number,
+    readonly GhosttyRenderStateBridgeSnapshotCell[]
+  >
 ): readonly string[] => {
-  if (!cells || cells.length === 0) {
+  if (cellsByRow.size === 0) {
     return rows
   }
-
-  const cellsByRow = new Map<number, GhosttyRenderStateBridgeSnapshotCell[]>()
-
-  sortSnapshotCells(cells).forEach((cell) => {
-    const rowCells = cellsByRow.get(cell.row) ?? []
-
-    rowCells.push(cell)
-    cellsByRow.set(cell.row, rowCells)
-  })
 
   return rows.map((fallbackRow, rowIndex) => {
     const rowCells = cellsByRow.get(rowIndex)
@@ -684,7 +798,9 @@ const normalizeSnapshot = (
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
   const cells = readSnapshotCells(snapshot)
-  const normalizedRows = readRowsWithCells(rows, cells)
+  const cellsByRow = readCellsByRow(cells)
+  const normalizedRows = readRowsWithCells(rows, cellsByRow)
+  const cursorRowCells = cellsByRow.get(snapshot.cursorRow)
 
   if (
     !isNonNegativeInteger(snapshot.cursorRow) ||
@@ -698,6 +814,15 @@ const normalizeSnapshot = (
     cursor: {
       rowIndex: snapshot.cursorRow,
       columnOffset: snapshot.cursorCol,
+      ...(cursorRowCells === undefined
+        ? {}
+        : {
+            textOffset: readCursorOffsetInCellRow(
+              rows[snapshot.cursorRow] ?? '',
+              cursorRowCells,
+              snapshot.cursorCol
+            ),
+          }),
     },
     ...(cells === undefined ? {} : { cells }),
   }

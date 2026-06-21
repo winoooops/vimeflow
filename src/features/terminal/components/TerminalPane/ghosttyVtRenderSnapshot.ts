@@ -9,6 +9,7 @@ import type { TerminalParserEngineOutput } from './terminalParserEngine'
 export interface GhosttyVtRenderSnapshotCursor {
   readonly rowIndex: number
   readonly columnOffset: number
+  readonly textOffset?: number
 }
 
 export interface GhosttyVtRenderSnapshotCell {
@@ -147,6 +148,9 @@ const trimLeadingEmptyRows = (
           cursor: {
             rowIndex: snapshot.cursor.rowIndex - leadingRows,
             columnOffset: snapshot.cursor.columnOffset,
+            ...(snapshot.cursor.textOffset === undefined
+              ? {}
+              : { textOffset: snapshot.cursor.textOffset }),
           },
         }
       : {}),
@@ -180,6 +184,8 @@ const readCellsByRow = (
 
   return cellsByRow
 }
+
+type CellsByRow = ReadonlyMap<number, readonly GhosttyVtRenderSnapshotCell[]>
 
 const readRowTextByCellColumns = (
   rowText: string,
@@ -233,6 +239,7 @@ const readFallbackColumnDeltaForCell = (
     fallbackColumn + cell.width
   )
 
+  // Ghostty visibleLines omits styled-blank columns; non-blank fallback here belongs to a later column.
   return fallbackText.trim() === '' ? cell.width : 0
 }
 
@@ -455,12 +462,13 @@ const readStyledRowText = (
   return output
 }
 
-const readSnapshotDisplayText = (snapshot: GhosttyVtRenderSnapshot): string => {
+const readSnapshotDisplayText = (
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
+): string => {
   if (!snapshot.cells || snapshot.cells.length === 0) {
     return readSnapshotText(snapshot)
   }
-
-  const cellsByRow = readCellsByRow(snapshot.cells)
 
   return snapshot.rows
     .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
@@ -468,13 +476,12 @@ const readSnapshotDisplayText = (snapshot: GhosttyVtRenderSnapshot): string => {
 }
 
 const readSnapshotDisplayVisibleText = (
-  snapshot: GhosttyVtRenderSnapshot
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
 ): string => {
   if (!snapshot.cells || snapshot.cells.length === 0) {
     return readSnapshotText(snapshot)
   }
-
-  const cellsByRow = readCellsByRow(snapshot.cells)
 
   return snapshot.rows
     .map((row, rowIndex) =>
@@ -484,23 +491,25 @@ const readSnapshotDisplayVisibleText = (
 }
 
 const readSnapshotCursorOffset = (
-  snapshot: GhosttyVtRenderSnapshot
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
 ): number => {
   const cursor = snapshot.cursor
 
   if (!cursor || snapshot.rows.length === 0) {
-    return readSnapshotDisplayVisibleText(snapshot).length
+    return readSnapshotDisplayVisibleText(snapshot, cellsByRow).length
   }
 
   const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
-  const cellsByRow = readCellsByRow(snapshot.cells)
   const row = snapshot.rows[rowIndex] ?? ''
 
-  const rowTextOffset = readCursorOffsetInCellRow(
-    row,
-    cellsByRow.get(rowIndex),
-    cursor.columnOffset
-  )
+  const rowTextOffset =
+    cursor.textOffset ??
+    readCursorOffsetInCellRow(
+      row,
+      cellsByRow.get(rowIndex),
+      cursor.columnOffset
+    )
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)
@@ -520,9 +529,10 @@ export const createGhosttyVtRenderSnapshotOutput = (
   snapshot: GhosttyVtRenderSnapshot
 ): TerminalParserEngineOutput => {
   const normalizedSnapshot = trimLeadingEmptyRows(snapshot)
+  const cellsByRow = readCellsByRow(normalizedSnapshot.cells)
   const text = readSnapshotText(normalizedSnapshot)
-  const displayText = readSnapshotDisplayText(normalizedSnapshot)
-  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot)
+  const displayText = readSnapshotDisplayText(normalizedSnapshot, cellsByRow)
+  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, cellsByRow)
 
   return {
     visibleText: text,

@@ -135,17 +135,22 @@ const readSnapshotCursor = (
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
   }
 
-  const { rowIndex, columnOffset } = cursor
+  const { rowIndex, columnOffset, textOffset } = cursor
 
   if (
     !isNonNegativeInteger(rowIndex) ||
     rowIndex >= rowCount ||
-    !isNonNegativeInteger(columnOffset)
+    !isNonNegativeInteger(columnOffset) ||
+    (textOffset !== undefined && !isNonNegativeInteger(textOffset))
   ) {
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
   }
 
-  return { rowIndex, columnOffset }
+  return {
+    rowIndex,
+    columnOffset,
+    ...(textOffset === undefined ? {} : { textOffset }),
+  }
 }
 
 const padRowsToCursor = (
