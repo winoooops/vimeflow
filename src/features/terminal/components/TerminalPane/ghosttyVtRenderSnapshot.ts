@@ -307,14 +307,32 @@ const readSnapshotCursorOffset = (
   return precedingRowsLength + rowTextOffset
 }
 
-// An implicit cursor (no explicit show/hide flag) parked on a blank row that
-// still has content BELOW it is a stale/dead cursor left behind by a scroll or
-// agent redraw — e.g. a lone block stranded on an empty row above a relaunched
-// agent banner or prompt. Real cursors sit at the end of output with nothing
-// below them, so hide the parked one. A blank row with content only above (the
-// normal "waiting at the bottom" cursor) or a fully blank screen (just after
-// `clear`) keeps its cursor. An explicit cursor.visible flag always wins — this
-// heuristic only runs when it is absent.
+const PROMPT_MARKER_PATTERN = /^\s*>/
+
+const hasCellStyle = (cell: GhosttyVtRenderSnapshotCell): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  cell.foreground !== undefined ||
+  cell.background !== undefined ||
+  cell.reverse === true
+
+const hasStyledBlankCellAtCursor = (
+  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined,
+  columnOffset: number
+): boolean =>
+  rowCells?.some(
+    (cell) =>
+      hasCellStyle(cell) &&
+      cell.text.trim().length === 0 &&
+      cell.col <= columnOffset &&
+      columnOffset < cell.col + cell.width
+  ) ?? false
+
+// A missing cursor.visible flag means "native default visible", not
+// "synthetic cursor". Keep ordinary blank-row cursors visible unless the
+// snapshot matches a known stale parked-cursor shape: an agent prompt follower
+// or a styled blank native cell stranded above later content.
 const shouldHideImplicitParkedCursor = (
   snapshot: GhosttyVtRenderSnapshot,
   cellsByRow: CellsByRow
@@ -336,15 +354,21 @@ const shouldHideImplicitParkedCursor = (
     return false
   }
 
-  return snapshot.rows
+  const nextContentRow = snapshot.rows
     .slice(rowIndex + 1)
-    .some(
-      (row, offset) =>
-        readCellRowVisibleText(
-          row,
-          cellsByRow.get(rowIndex + offset + 1)
-        ).trim().length > 0
+    .map((row, offset) =>
+      readCellRowVisibleText(row, cellsByRow.get(rowIndex + offset + 1))
     )
+    .find((row) => row.trim().length > 0)
+
+  if (nextContentRow === undefined) {
+    return false
+  }
+
+  return (
+    PROMPT_MARKER_PATTERN.test(nextContentRow) ||
+    hasStyledBlankCellAtCursor(cellsByRow.get(rowIndex), cursor.columnOffset)
+  )
 }
 
 export const createGhosttyVtRenderSnapshotOutput = (

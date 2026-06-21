@@ -64,15 +64,16 @@ describe('ghosttyVtRenderSnapshot', () => {
   })
 
   test('preserves an intentional empty top row when the cursor is above content', () => {
-    expect(
-      createGhosttyVtRenderSnapshotOutput({
-        rows: ['', 'menu'],
-        cursor: {
-          rowIndex: 0,
-          columnOffset: 0,
-        },
-      }).displayDelta?.operations[0]
-    ).toEqual({
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['', 'menu'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBeUndefined()
+    expect(output.displayDelta?.operations[0]).toEqual({
       type: 'replace',
       text: '\nmenu',
       cursorOffset: 0,
@@ -335,16 +336,38 @@ describe('ghosttyVtRenderSnapshot', () => {
   test('hides an implicit cursor stranded on a blank row above later content', () => {
     // Agent exit: a lone block parked on a blank row between "Bye!" and the
     // relaunched banner must not render even though the follower is not a `>`
-    // prompt (it is the agent welcome banner).
+    // prompt (it is the agent welcome banner). The styled blank marks this as a
+    // native cursor artifact instead of an ordinary default-visible cursor.
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: ['Bye!', '', 'session ready'],
       cursor: {
         rowIndex: 1,
         columnOffset: 0,
       },
+      cells: [
+        {
+          row: 1,
+          col: 0,
+          text: '',
+          width: 1,
+          reverse: true,
+        },
+      ],
     })
 
     expect(output.displayDelta?.cursorVisible).toBe(false)
+  })
+
+  test('keeps an implicit default-visible cursor on a blank row above later content', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['editor body', '', 'status footer'],
+      cursor: {
+        rowIndex: 1,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBeUndefined()
   })
 
   test('keeps an implicit cursor on a trailing blank row with no content below', () => {
