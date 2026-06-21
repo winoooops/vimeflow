@@ -1,17 +1,25 @@
 // cspell:ignore ghostty
 import {
-  findTextOffsetForCellColumn,
-  readTextCellWidth,
-} from './terminalDisplayBuffer'
+  readCellDisplayText,
+  readCellRowVisibleText,
+  readCellsByRow,
+  readCursorOffsetInCellRow,
+  readFallbackColumnDeltaForCell,
+  readRowTextByCellColumns,
+  type GhosttyCellTraversalCell,
+  type GhosttyCellsByRow,
+} from '../../../../../shared/ghosttyCellTraversal'
+import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
 import { getSgrStyleSentinel } from './terminalControlParser'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
 export interface GhosttyVtRenderSnapshotCursor {
   readonly rowIndex: number
   readonly columnOffset: number
+  readonly visible?: boolean
 }
 
-export interface GhosttyVtRenderSnapshotCell {
+export interface GhosttyVtRenderSnapshotCell extends GhosttyCellTraversalCell {
   readonly row: number
   readonly col: number
   readonly text: string
@@ -21,6 +29,7 @@ export interface GhosttyVtRenderSnapshotCell {
   readonly underline?: boolean
   readonly foreground?: string
   readonly background?: string
+  readonly reverse?: boolean
 }
 
 export interface GhosttyVtRenderSnapshot {
@@ -29,16 +38,17 @@ export interface GhosttyVtRenderSnapshot {
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
 }
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max)
-
 interface SnapshotStyle {
   readonly bold?: boolean
   readonly italic?: boolean
   readonly underline?: boolean
   readonly foreground?: string
   readonly background?: string
+  readonly reverse?: boolean
 }
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max)
 
 const HEX_COLOR_PATTERN = /^#?([0-9a-f]{6})$/i
 
@@ -70,6 +80,7 @@ const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
   ...(cell.underline === true ? { underline: true } : {}),
   ...(cell.foreground ? { foreground: cell.foreground } : {}),
   ...(cell.background ? { background: cell.background } : {}),
+  ...(cell.reverse === true ? { reverse: true } : {}),
 })
 
 const readStyleKey = (style: SnapshotStyle): string =>
@@ -79,6 +90,7 @@ const readStyleKey = (style: SnapshotStyle): string =>
     style.underline === true ? '4' : '',
     style.foreground ?? '',
     style.background ?? '',
+    style.reverse === true ? '7' : '',
   ].join('|')
 
 const EMPTY_STYLE_KEY = readStyleKey({})
@@ -88,16 +100,10 @@ const readStyleParameters = (style: SnapshotStyle): readonly number[] => [
   ...(style.bold === true ? [1] : []),
   ...(style.italic === true ? [3] : []),
   ...(style.underline === true ? [4] : []),
+  ...(style.reverse === true ? [7] : []),
   ...readSgrColorParameters(38, style.foreground),
   ...readSgrColorParameters(48, style.background),
 ]
-
-const sortCells = (
-  cells: readonly GhosttyVtRenderSnapshotCell[]
-): readonly GhosttyVtRenderSnapshotCell[] =>
-  [...cells].sort((left, right) =>
-    left.row === right.row ? left.col - right.col : left.row - right.row
-  )
 
 const readCellRows = (
   cells: readonly GhosttyVtRenderSnapshotCell[] | undefined
@@ -140,6 +146,9 @@ const trimLeadingEmptyRows = (
           cursor: {
             rowIndex: snapshot.cursor.rowIndex - leadingRows,
             columnOffset: snapshot.cursor.columnOffset,
+            ...(snapshot.cursor.visible === undefined
+              ? {}
+              : { visible: snapshot.cursor.visible }),
           },
         }
       : {}),
@@ -159,20 +168,7 @@ const trimLeadingEmptyRows = (
 const readSnapshotText = (snapshot: GhosttyVtRenderSnapshot): string =>
   snapshot.rows.join('\n')
 
-const readCellsByRow = (
-  cells: readonly GhosttyVtRenderSnapshotCell[] | undefined
-): Map<number, readonly GhosttyVtRenderSnapshotCell[]> => {
-  const cellsByRow = new Map<number, GhosttyVtRenderSnapshotCell[]>()
-
-  sortCells(cells ?? []).forEach((cell) => {
-    const rowCells = cellsByRow.get(cell.row) ?? []
-
-    rowCells.push(cell)
-    cellsByRow.set(cell.row, rowCells)
-  })
-
-  return cellsByRow
-}
+type CellsByRow = GhosttyCellsByRow<GhosttyVtRenderSnapshotCell>
 
 const readStyledRowText = (
   rowText: string,
@@ -185,27 +181,30 @@ const readStyledRowText = (
   let output = ''
   let activeStyleKey = EMPTY_STYLE_KEY
   let currentColumn = 0
+  let fallbackColumn = 0
 
-  const readRowTextByCellColumns = (start: number, end: number): string => {
-    const startOffset = findTextOffsetForCellColumn(rowText, start)
-    const endOffset = findTextOffsetForCellColumn(rowText, end)
-    const slice = rowText.slice(startOffset, endOffset)
+  rowCells.forEach((cell, index) => {
+    if (cell.col < currentColumn) {
+      currentColumn = Math.max(currentColumn, cell.col + cell.width)
 
-    return slice.padEnd(
-      slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
-      ' '
-    )
-  }
+      return
+    }
 
-  rowCells.forEach((cell) => {
     if (cell.col > currentColumn) {
+      const gapWidth = cell.col - currentColumn
+
       if (activeStyleKey !== EMPTY_STYLE_KEY) {
         output += getSgrStyleSentinel([0])
         activeStyleKey = EMPTY_STYLE_KEY
       }
 
-      output += readRowTextByCellColumns(currentColumn, cell.col)
+      output += readRowTextByCellColumns(
+        rowText,
+        fallbackColumn,
+        fallbackColumn + gapWidth
+      )
       currentColumn = cell.col
+      fallbackColumn += gapWidth
     }
 
     const style = readCellStyle(cell)
@@ -216,67 +215,152 @@ const readStyledRowText = (
       activeStyleKey = styleKey
     }
 
-    output +=
-      cell.text === ''
-        ? readRowTextByCellColumns(cell.col, cell.col + cell.width)
-        : cell.text
-    currentColumn += cell.width
+    output += readCellDisplayText(
+      rowText,
+      cell,
+      fallbackColumn,
+      rowCells[index + 1]
+    )
+
+    fallbackColumn += readFallbackColumnDeltaForCell(
+      rowText,
+      cell,
+      fallbackColumn,
+      rowCells[index + 1]
+    )
+
+    currentColumn = cell.col + cell.width
   })
 
   if (activeStyleKey !== EMPTY_STYLE_KEY) {
     output += getSgrStyleSentinel([0])
   }
 
-  const trailingTextOffset = findTextOffsetForCellColumn(rowText, currentColumn)
+  const trailingTextOffset = findTextOffsetForCellColumn(
+    rowText,
+    fallbackColumn
+  )
   output += rowText.slice(trailingTextOffset)
 
   return output
 }
 
-const readSnapshotDisplayText = (snapshot: GhosttyVtRenderSnapshot): string => {
+const readSnapshotDisplayText = (
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
+): string => {
   if (!snapshot.cells || snapshot.cells.length === 0) {
     return readSnapshotText(snapshot)
   }
-
-  const cellsByRow = readCellsByRow(snapshot.cells)
 
   return snapshot.rows
     .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
     .join('\n')
 }
 
+const readSnapshotDisplayVisibleText = (
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
+): string => {
+  if (!snapshot.cells || snapshot.cells.length === 0) {
+    return readSnapshotText(snapshot)
+  }
+
+  return snapshot.rows
+    .map((row, rowIndex) =>
+      readCellRowVisibleText(row, cellsByRow.get(rowIndex))
+    )
+    .join('\n')
+}
+
 const readSnapshotCursorOffset = (
   snapshot: GhosttyVtRenderSnapshot,
-  text: string
+  cellsByRow: CellsByRow
 ): number => {
   const cursor = snapshot.cursor
 
   if (!cursor || snapshot.rows.length === 0) {
-    return text.length
+    return readSnapshotDisplayVisibleText(snapshot, cellsByRow).length
   }
 
   const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
   const row = snapshot.rows[rowIndex] ?? ''
-  const rowTextOffset = findTextOffsetForCellColumn(row, cursor.columnOffset)
+  const rowCells = cellsByRow.get(rowIndex)
+
+  const rowTextOffset = readCursorOffsetInCellRow(
+    row,
+    rowCells,
+    cursor.columnOffset
+  )
 
   const precedingRowsLength = snapshot.rows
     .slice(0, rowIndex)
-    .reduce((length, previousRow) => length + previousRow.length + 1, 0)
+    .reduce(
+      (length, previousRow, previousRowIndex) =>
+        length +
+        readCellRowVisibleText(previousRow, cellsByRow.get(previousRowIndex))
+          .length +
+        1,
+      0
+    )
 
   return precedingRowsLength + rowTextOffset
+}
+
+const PROMPT_MARKER_PATTERN = /^\s*>/
+
+const shouldHideImplicitPromptCursor = (
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
+): boolean => {
+  const cursor = snapshot.cursor
+
+  if (!cursor || cursor.visible !== undefined) {
+    return false
+  }
+
+  const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
+
+  const cursorRow = readCellRowVisibleText(
+    snapshot.rows[rowIndex] ?? '',
+    cellsByRow.get(rowIndex)
+  )
+
+  if (cursorRow.trim().length > 0) {
+    return false
+  }
+
+  const nextContentRow = snapshot.rows
+    .slice(rowIndex + 1)
+    .map((row, offset) =>
+      readCellRowVisibleText(row, cellsByRow.get(rowIndex + offset + 1))
+    )
+    .find((row) => row.trim().length > 0)
+
+  return nextContentRow === undefined
+    ? false
+    : PROMPT_MARKER_PATTERN.test(nextContentRow)
 }
 
 export const createGhosttyVtRenderSnapshotOutput = (
   snapshot: GhosttyVtRenderSnapshot
 ): TerminalParserEngineOutput => {
   const normalizedSnapshot = trimLeadingEmptyRows(snapshot)
+  const cellsByRow = readCellsByRow(normalizedSnapshot.cells)
   const text = readSnapshotText(normalizedSnapshot)
-  const displayText = readSnapshotDisplayText(normalizedSnapshot)
-  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, text)
+  const displayText = readSnapshotDisplayText(normalizedSnapshot, cellsByRow)
+  const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, cellsByRow)
+
+  const cursorVisible =
+    normalizedSnapshot.cursor?.visible ??
+    (shouldHideImplicitPromptCursor(normalizedSnapshot, cellsByRow)
+      ? false
+      : undefined)
 
   return {
     visibleText: text,
     displayDelta: {
+      ...(cursorVisible === undefined ? {} : { cursorVisible }),
       operations: [
         {
           type: 'replace',

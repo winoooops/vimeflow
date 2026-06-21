@@ -9,8 +9,10 @@ import type {
 import {
   TerminalDisplayBuffer,
   type TerminalDisplayDelta,
+  type TerminalDisplayDeltaOperation,
   type TerminalDisplayRun,
   type TerminalDisplayStyle,
+  readTextCellWidth,
 } from './terminalDisplayBuffer'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
@@ -21,6 +23,24 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MEASURED_CHAR_SAMPLE_LENGTH = 80
+const BLOCK_ELEMENT_PATTERN = /[\u2580-\u2590\u2594-\u259f]/
+const BLOCK_ONE_EIGHTH = 12.5
+
+interface BlockGlyphRect {
+  readonly heightPercent: number
+  readonly leftPercent: number
+  readonly topPercent: number
+  readonly widthPercent: number
+}
+
+interface BlockGlyphPaint {
+  readonly rects: readonly BlockGlyphRect[]
+}
+
+interface BlockGlyphColors {
+  readonly background: string
+  readonly foreground: string
+}
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -50,6 +70,22 @@ type RenderScrollMode = 'bottom' | 'cursor' | 'top'
 const createDisposable = (dispose: () => void): TerminalDisposable => ({
   dispose,
 })
+
+const readBlockGlyphColors = (
+  style: TerminalDisplayStyle
+): BlockGlyphColors => {
+  if (style.reverse) {
+    return {
+      background: style.foreground ?? 'var(--terminal-foreground)',
+      foreground: style.background ?? 'var(--terminal-background)',
+    }
+  }
+
+  return {
+    background: style.background ?? 'transparent',
+    foreground: style.foreground ?? 'var(--terminal-foreground)',
+  }
+}
 
 const getControlKeyData = (key: string): string | null => {
   if (key.length !== 1) {
@@ -119,6 +155,177 @@ const readCursorRowIndex = (text: string, cursorOffset: number): number => {
   }
 
   return rowIndex
+}
+
+const readDeltaCursorRowIndex = (
+  delta: TerminalDisplayDelta
+): number | null => {
+  const replaceOperation = [...delta.operations]
+    .reverse()
+    .find(
+      (
+        operation
+      ): operation is Extract<
+        TerminalDisplayDeltaOperation,
+        { readonly type: 'replace' }
+      > => operation.type === 'replace'
+    )
+
+  if (!replaceOperation) {
+    return null
+  }
+
+  return readCursorRowIndex(
+    replaceOperation.text,
+    Math.min(
+      Math.max(
+        replaceOperation.cursorOffset ?? replaceOperation.text.length,
+        0
+      ),
+      replaceOperation.text.length
+    )
+  )
+}
+
+const readBlockGlyphPaint = (character: string): BlockGlyphPaint | null => {
+  const codePoint = character.codePointAt(0)
+
+  if (codePoint === undefined) {
+    return null
+  }
+
+  if (codePoint >= 0x2581 && codePoint <= 0x2588) {
+    const eighths = codePoint - 0x2580
+
+    return {
+      rects: [
+        {
+          heightPercent: eighths * BLOCK_ONE_EIGHTH,
+          leftPercent: 0,
+          topPercent: 100 - eighths * BLOCK_ONE_EIGHTH,
+          widthPercent: 100,
+        },
+      ],
+    }
+  }
+
+  if (codePoint >= 0x2589 && codePoint <= 0x258f) {
+    const eighths = 0x2590 - codePoint
+
+    return {
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: eighths * BLOCK_ONE_EIGHTH,
+        },
+      ],
+    }
+  }
+
+  if (character === '\u2580') {
+    return {
+      rects: [
+        {
+          heightPercent: 50,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: 100,
+        },
+      ],
+    }
+  }
+
+  if (character === '\u2590') {
+    return {
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 50,
+          topPercent: 0,
+          widthPercent: 50,
+        },
+      ],
+    }
+  }
+
+  if (character === '\u2594') {
+    return {
+      rects: [
+        {
+          heightPercent: BLOCK_ONE_EIGHTH,
+          leftPercent: 0,
+          topPercent: 0,
+          widthPercent: 100,
+        },
+      ],
+    }
+  }
+
+  if (character === '\u2595') {
+    return {
+      rects: [
+        {
+          heightPercent: 100,
+          leftPercent: 100 - BLOCK_ONE_EIGHTH,
+          topPercent: 0,
+          widthPercent: BLOCK_ONE_EIGHTH,
+        },
+      ],
+    }
+  }
+
+  const quadrantRects: Partial<Record<number, readonly BlockGlyphRect[]>> = {
+    0x2596: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x2597: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x2598: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+    ],
+    0x2599: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259a: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259b: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259c: [
+      { heightPercent: 50, leftPercent: 0, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259d: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+    ],
+    0x259e: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+    ],
+    0x259f: [
+      { heightPercent: 50, leftPercent: 50, topPercent: 0, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 0, topPercent: 50, widthPercent: 50 },
+      { heightPercent: 50, leftPercent: 50, topPercent: 50, widthPercent: 50 },
+    ],
+  }
+
+  const rects = quadrantRects[codePoint]
+
+  if (rects) {
+    return { rects }
+  }
+
+  return null
 }
 
 const getKeyboardData = (event: KeyboardEvent): string | null => {
@@ -302,13 +509,17 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     if (output.displayDelta) {
-      const scrollMode: RenderScrollMode = output.displayDelta.operations.some(
+      const hasReplaceOperation = output.displayDelta.operations.some(
         (operation) => operation.type === 'replace'
       )
-        ? 'cursor'
-        : 'bottom'
+      const replaceCursorRowIndex = readDeltaCursorRowIndex(output.displayDelta)
 
       this.outputBuffer.applyDelta(output.displayDelta)
+
+      const scrollMode: RenderScrollMode = hasReplaceOperation
+        ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
+        : 'bottom'
+
       this.renderOutput({ scrollMode })
       callback?.()
 
@@ -392,6 +603,8 @@ export class TerminalTextSurface implements TerminalSurface {
   applyTheme(theme: TerminalTheme): void {
     this.root.style.background = theme.background
     this.root.style.color = theme.foreground
+    this.root.style.setProperty('--terminal-background', theme.background)
+    this.root.style.setProperty('--terminal-foreground', theme.foreground)
     this.root.style.setProperty('--terminal-ansi-black', theme.black)
     this.root.style.setProperty('--terminal-ansi-red', theme.red)
     this.root.style.setProperty('--terminal-ansi-green', theme.green)
@@ -581,6 +794,9 @@ export class TerminalTextSurface implements TerminalSurface {
       `${APPROXIMATE_LINE_HEIGHT}px`
     )
 
+    const cellWidth = this.measureCharacterWidth()
+
+    this.root.style.setProperty('--terminal-cell-width', `${cellWidth}px`)
     this.root.style.setProperty(
       '--terminal-pty-viewport-height',
       `${viewportHeight}px`
@@ -662,16 +878,29 @@ export class TerminalTextSurface implements TerminalSurface {
       style.dim === true ||
       style.foreground !== undefined ||
       style.italic === true ||
+      style.reverse === true ||
       style.underline === true
     )
   }
 
   private applyStyleToElement(
     element: HTMLElement,
-    style: TerminalDisplayStyle
+    style: TerminalDisplayStyle,
+    text: string
   ): void {
-    if (style.background) {
-      element.style.backgroundColor = style.background
+    if (style.background || style.reverse) {
+      const cellWidth = Math.max(1, readTextCellWidth(text))
+
+      if (style.background && !style.reverse) {
+        element.style.backgroundColor = style.background
+      }
+
+      element.style.display = 'inline-block'
+      element.style.height = 'var(--terminal-line-height)'
+      element.style.lineHeight = 'var(--terminal-line-height)'
+      element.style.minWidth = `calc(var(--terminal-cell-width) * ${cellWidth})`
+      element.style.overflow = 'visible'
+      element.style.verticalAlign = 'top'
     }
 
     if (style.bold) {
@@ -690,22 +919,126 @@ export class TerminalTextSurface implements TerminalSurface {
       element.style.fontStyle = 'italic'
     }
 
+    if (style.reverse) {
+      element.style.backgroundColor =
+        style.foreground ?? 'var(--terminal-foreground)'
+      element.style.color = style.background ?? 'var(--terminal-background)'
+    }
+
     if (style.underline) {
       element.style.textDecoration = 'underline'
     }
   }
 
-  private createTextNode(text: string, style: TerminalDisplayStyle): Node {
-    if (!this.hasStyle(style)) {
-      return document.createTextNode(text)
+  private createBlockGlyphElement(
+    character: string,
+    style: TerminalDisplayStyle,
+    paint: BlockGlyphPaint
+  ): HTMLElement {
+    const glyph = document.createElement('span')
+    const { background, foreground } = readBlockGlyphColors(style)
+
+    glyph.dataset.terminalStyleRun = 'true'
+    glyph.dataset.terminalCustomGlyph = 'block'
+    glyph.textContent = character
+    this.applyStyleToElement(glyph, style, character)
+
+    Object.assign(glyph.style, {
+      backgroundColor: background,
+      color: 'transparent',
+      display: 'inline-block',
+      fontSize: '0',
+      height: 'var(--terminal-line-height)',
+      lineHeight: 'var(--terminal-line-height)',
+      minWidth: 'var(--terminal-cell-width)',
+      overflow: 'hidden',
+      position: 'relative',
+      verticalAlign: 'top',
+      width: 'var(--terminal-cell-width)',
+    })
+
+    paint.rects.forEach((rect) => {
+      const fill = document.createElement('span')
+
+      fill.dataset.terminalCustomGlyphRect = 'true'
+      fill.setAttribute('aria-hidden', 'true')
+
+      Object.assign(fill.style, {
+        backgroundColor: foreground,
+        display: 'block',
+        height: `${rect.heightPercent}%`,
+        left: `${rect.leftPercent}%`,
+        pointerEvents: 'none',
+        position: 'absolute',
+        top: `${rect.topPercent}%`,
+        width: `${rect.widthPercent}%`,
+      })
+
+      glyph.append(fill)
+    })
+
+    return glyph
+  }
+
+  private appendStyledTextFragment(
+    fragment: DocumentFragment,
+    text: string,
+    style: TerminalDisplayStyle
+  ): void {
+    if (text.length === 0) {
+      return
     }
 
     const span = document.createElement('span')
     span.dataset.terminalStyleRun = 'true'
     span.textContent = text
-    this.applyStyleToElement(span, style)
+    this.applyStyleToElement(span, style, text)
+    fragment.append(span)
+  }
 
-    return span
+  private createTextNode(text: string, style: TerminalDisplayStyle): Node {
+    const hasBlockGlyphs = BLOCK_ELEMENT_PATTERN.test(text)
+
+    if (!this.hasStyle(style) && !hasBlockGlyphs) {
+      return document.createTextNode(text)
+    }
+
+    if (!hasBlockGlyphs) {
+      const span = document.createElement('span')
+      span.dataset.terminalStyleRun = 'true'
+      span.textContent = text
+      this.applyStyleToElement(span, style, text)
+
+      return span
+    }
+
+    const fragment = document.createDocumentFragment()
+    let pendingText = ''
+
+    for (const character of text) {
+      const paint = readBlockGlyphPaint(character)
+
+      if (!paint) {
+        pendingText += character
+        continue
+      }
+
+      if (this.hasStyle(style)) {
+        this.appendStyledTextFragment(fragment, pendingText, style)
+      } else if (pendingText.length > 0) {
+        fragment.append(document.createTextNode(pendingText))
+      }
+      pendingText = ''
+      fragment.append(this.createBlockGlyphElement(character, style, paint))
+    }
+
+    if (this.hasStyle(style)) {
+      this.appendStyledTextFragment(fragment, pendingText, style)
+    } else if (pendingText.length > 0) {
+      fragment.append(document.createTextNode(pendingText))
+    }
+
+    return fragment
   }
 
   private appendRunFragment(
@@ -726,9 +1059,11 @@ export class TerminalTextSurface implements TerminalSurface {
 
     Object.assign(row.style, {
       display: 'block',
+      height: 'var(--terminal-line-height)',
+      lineHeight: 'var(--terminal-line-height)',
       maxWidth: '100%',
       minHeight: 'var(--terminal-line-height)',
-      overflowX: 'hidden',
+      overflow: 'visible',
       whiteSpace: 'pre',
       width: '100%',
     })
@@ -738,14 +1073,19 @@ export class TerminalTextSurface implements TerminalSurface {
 
   private createOutputFragments(
     runs: readonly TerminalDisplayRun[],
-    cursorOffset: number
+    cursorOffset: number,
+    cursorVisible: boolean
   ): Node[] {
     const rows: HTMLElement[] = [this.createOutputRow()]
     let offset = 0
-    const cursorState = { didRender: false }
+    const cursorState = { didRender: !cursorVisible }
     let currentRow = rows[0]
 
     const appendCursor = (): void => {
+      if (!cursorVisible) {
+        return
+      }
+
       currentRow.append(this.createCursorElement())
       cursorState.didRender = true
     }
@@ -772,12 +1112,9 @@ export class TerminalTextSurface implements TerminalSurface {
         ) {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
-          this.applyStyleToElement(runElement, style)
-          runElement.append(
-            document.createTextNode(text.slice(0, splitOffset)),
-            this.createCursorElement(),
-            document.createTextNode(text.slice(splitOffset))
-          )
+          this.appendRunFragment(runElement, text.slice(0, splitOffset), style)
+          runElement.append(this.createCursorElement())
+          this.appendRunFragment(runElement, text.slice(splitOffset), style)
           currentRow.append(runElement)
           cursorState.didRender = true
         } else {
@@ -841,7 +1178,12 @@ export class TerminalTextSurface implements TerminalSurface {
     )
 
     const cursorRowIndex = readCursorRowIndex(text, cursorOffset)
-    const fragments = this.createOutputFragments(runs, cursorOffset)
+
+    const fragments = this.createOutputFragments(
+      runs,
+      cursorOffset,
+      this.outputBuffer.readCursorVisible()
+    )
 
     this.output.replaceChildren(...fragments)
     this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
@@ -862,6 +1204,24 @@ export class TerminalTextSurface implements TerminalSurface {
     if (scrollMode === 'cursor') {
       this.scrollCursorMarkerIntoView(cursorRowIndex)
     }
+  }
+
+  private readReplaceSnapshotScrollMode(
+    cursorRowIndex: number | null
+  ): 'cursor' | 'top' {
+    if (cursorRowIndex === null) {
+      return 'top'
+    }
+
+    return cursorRowIndex < this.readVisibleRowCapacity() ? 'cursor' : 'top'
+  }
+
+  private readVisibleRowCapacity(): number {
+    const viewportHeight = this.root.clientHeight
+
+    return viewportHeight <= 0
+      ? 0
+      : Math.max(1, Math.floor(viewportHeight / this.readLineHeight()))
   }
 
   private scrollCursorRowIntoView(cursorRowIndex: number): void {

@@ -61,6 +61,26 @@ describe('TerminalDisplayBuffer', () => {
     expect(buffer.readCursorOffset()).toBe('prompt\nou'.length)
   })
 
+  test('applies display delta cursor visibility', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    expect(buffer.readCursorVisible()).toBe(true)
+
+    buffer.applyDelta({
+      cursorVisible: false,
+      operations: [{ type: 'replace', text: 'menu', cursorOffset: 2 }],
+    })
+
+    expect(buffer.readCursorVisible()).toBe(false)
+
+    buffer.applyDelta({
+      cursorVisible: true,
+      operations: [{ type: 'replace', text: 'prompt', cursorOffset: 6 }],
+    })
+
+    expect(buffer.readCursorVisible()).toBe(true)
+  })
+
   test('applies empty replace display deltas as a clear operation', () => {
     const buffer = new TerminalDisplayBuffer()
 
@@ -389,6 +409,27 @@ describe('TerminalDisplayBuffer', () => {
         },
       },
       { text: ' done', style: {} },
+    ])
+  })
+
+  test('consumes SGR reverse-video controls into style runs', () => {
+    const buffer = new TerminalDisplayBuffer()
+
+    buffer.write(`${getSgrStyleSentinel([7])}selected`)
+    buffer.write(`${getSgrStyleSentinel([27])} plain`)
+
+    expect(buffer.readVisibleText()).toBe('selected plain')
+    expect(buffer.readStyledRuns()).toEqual([
+      {
+        text: 'selected',
+        style: {
+          reverse: true,
+        },
+      },
+      {
+        text: ' plain',
+        style: {},
+      },
     ])
   })
 

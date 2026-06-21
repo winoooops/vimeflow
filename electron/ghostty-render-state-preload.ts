@@ -24,6 +24,7 @@ export interface GhosttyRenderStateBridgeSnapshot {
   cursor?: {
     rowIndex: number
     columnOffset: number
+    visible?: boolean
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
@@ -38,6 +39,7 @@ export interface GhosttyRenderStateBridgeSnapshotCell {
   underline?: boolean
   foreground?: string
   background?: string
+  reverse?: boolean
 }
 
 export interface GhosttyRenderStateBridgeDriver {

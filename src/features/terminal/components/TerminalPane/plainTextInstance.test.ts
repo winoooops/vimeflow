@@ -121,7 +121,7 @@ describe('plainTextInstance', () => {
 
     expect(row).toBeInstanceOf(HTMLElement)
     expect((row as HTMLElement | null)?.style.maxWidth).toBe('100%')
-    expect((row as HTMLElement | null)?.style.overflowX).toBe('hidden')
+    expect((row as HTMLElement | null)?.style.overflow).toBe('visible')
     expect((row as HTMLElement | null)?.style.whiteSpace).toBe('pre')
     expect((row as HTMLElement | null)?.style.width).toBe('100%')
   })
@@ -247,15 +247,18 @@ describe('plainTextInstance', () => {
 
     const output = created.terminal.element?.querySelector('pre')
 
-    const styleRuns = output?.querySelectorAll(
-      '[data-terminal-style-run="true"]'
+    const styleRuns = Array.from(
+      output?.querySelectorAll<HTMLElement>(
+        ':scope > [data-terminal-row="true"] > [data-terminal-style-run="true"]'
+      ) ?? []
     )
     const cursor = output?.querySelector('[data-terminal-cursor="true"]')
 
     expect(output?.textContent).toBe('abc')
     expect(created.viewportReader.readVisibleText()).toBe('abc')
-    expect(styleRuns?.length).toBe(1)
-    expect(styleRuns?.[0]?.contains(cursor ?? null)).toBe(true)
+    expect(styleRuns).toHaveLength(1)
+    expect(styleRuns[0]?.contains(cursor ?? null)).toBe(true)
+    expect(styleRuns[0]?.style.minWidth).toBe('')
     expect(cursor?.previousSibling?.textContent).toBe('a')
     expect(cursor?.nextSibling?.textContent).toBe('bc')
   })

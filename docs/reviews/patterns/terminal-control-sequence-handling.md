@@ -2,8 +2,8 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-19
-ref_count: 7
+last_updated: 2026-06-21
+ref_count: 9
 ---
 
 # Terminal Control Sequence Handling
@@ -235,3 +235,21 @@ all required state through pure display-state helpers.
 - **Finding:** `private emit` was renamed `emitEvent` and widened to public so `GhosttyControlSequenceParserEngine` could forward adapter parser events via `this.parser.emitEvent(event)`. Any holder of a `TerminalControlSequenceParser` reference could then inject synthetic parser events without going through a parse path.
 - **Fix:** Changed `emitEvent` to `protected emit`, introduced a file-local `EngineTerminalControlSequenceParser` subclass exposing a typed `emitParserEvent` method, and routed Ghostty adapter events through the engine's protected `emitParserEvent`.
 - **Commit:** same commit as this entry (see `git blame` / `git log`)
+
+### 25. CSI private-mode scanners must accept the full parameter byte range
+
+- **Source:** github-claude | PR #591 round 8 | 2026-06-21
+- **Severity:** LOW
+- **File:** `electron/ghostty-render-state-main.ts` L440-L454
+- **Finding:** `CursorVisibilityScanner.findPrivateModeFinal` stopped at any byte outside digits and semicolons. Colon-delimited private-mode parameters such as `ESC[?25:1h` therefore stopped at `:`, ignored the later `h`, and dropped the cursor-visibility update.
+- **Fix:** Accepted the full ANSI parameter-byte range `0x30` through `0x3f` while scanning for `h` or `l`, split colon subparameters when detecting mode 25, and added a regression that toggles cursor visibility with colon-delimited mode 25 sequences.
+- **Commit:** same commit as this entry
+
+### 26. Pending CSI buffers need the same caps as OSC buffers
+
+- **Source:** github-codex-connector | PR #591 round 8 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L420
+- **Finding:** `CursorVisibilityScanner` kept an unterminated private CSI sequence from `ESC[?` onward with no size limit. A process could stream arbitrary parameter bytes without a final byte and grow the Electron main-process buffer indefinitely.
+- **Fix:** Added a private-CSI pending-buffer limit matching the OSC limit and discard overlong pending sequences before they can accumulate. Added a regression that writes an over-limit unterminated private CSI sequence, then verifies a later suffix cannot complete it into a cursor visibility toggle.
+- **Commit:** same commit as this entry

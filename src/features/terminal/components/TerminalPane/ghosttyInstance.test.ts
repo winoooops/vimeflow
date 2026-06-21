@@ -81,7 +81,11 @@ const encodeText = (text: string): string =>
 
 const ESC = '\x1b'
 const SGR_FINAL = 'm'
+const TRUE_COLOR_PINK_HEX = ['#', 'f38ba8'].join('')
+const TRUE_COLOR_BASE_HEX = ['#', '181825'].join('')
 const TRUE_COLOR_PINK = ['rgb', '(243, 139, 168)'].join('')
+const TRUE_COLOR_BASE = ['rgb', '(24, 24, 37)'].join('')
+const NERD_FONT_TERMINAL_ICON = '\uf120'
 
 const createdTerminals = new Set<ReturnType<typeof createGhosttyTerminal>>()
 
@@ -525,7 +529,7 @@ describe('ghosttyInstance', () => {
     expect(element.scrollTop).toBe(0)
   })
 
-  test('scrolls parser display replace snapshots to reveal an offscreen cursor row', () => {
+  test('keeps parser display replace snapshots pinned when the cursor is below the pane', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
@@ -570,11 +574,76 @@ describe('ghosttyInstance', () => {
       phase: 'live',
     })
 
-    expect(element.scrollTop).toBeGreaterThan(0)
-    expect(element.scrollTop).toBeLessThan(640)
+    expect(element.scrollTop).toBe(0)
   })
 
-  test('scrolls parser display replace snapshots by rendered cursor bounds', () => {
+  test('keeps visible shell snapshot cursors in view', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['line 1', 'line 2', '$ ready', '', '', ''],
+          cursor: {
+            rowIndex: 2,
+            columnOffset: 7,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    const element = created.terminal.element
+
+    if (!element) {
+      throw new Error('Expected terminal element')
+    }
+
+    setScrollMetrics(element, 54, 640)
+    element.scrollTop = 0
+
+    const getBoundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        if (this.dataset.terminalCursorMarker === 'true') {
+          return createRect(90, 108)
+        }
+
+        if (this.dataset.terminalRenderer === GHOSTTY_TERMINAL_RENDERER_ID) {
+          return createRect(0, 54)
+        }
+
+        return createRect(0, 0)
+      })
+
+    try {
+      created.output.writeOutput({
+        text: 'snapshot',
+        offsetStart: 0,
+        byteLen: 8,
+        phase: 'live',
+      })
+    } finally {
+      getBoundingClientRectSpy.mockRestore()
+    }
+
+    expect(element.scrollTop).toBeGreaterThan(0)
+  })
+
+  test('does not outer-scroll agent TUI snapshots by rendered cursor bounds', () => {
     const parser: TerminalParser = {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
@@ -637,7 +706,7 @@ describe('ghosttyInstance', () => {
       getBoundingClientRectSpy.mockRestore()
     }
 
-    expect(element.scrollTop).toBe(62)
+    expect(element.scrollTop).toBe(0)
   })
 
   test('renders the cursor from parser display snapshot coordinates', () => {
@@ -684,6 +753,51 @@ describe('ghosttyInstance', () => {
     expect(cursor?.parentElement?.textContent).toBe('output')
     expect(cursor?.previousSibling?.textContent).toBe('ou')
     expect(cursor?.nextSibling?.textContent).toBe('tput')
+  })
+
+  test('hides the visual cursor when parser snapshots mark it hidden', () => {
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const parserEngine: TerminalParserEngine = {
+      inputMode: 'bytes',
+      capabilities: ghosttyTerminalRenderer.capabilities,
+      parser,
+      parseText: (text): TerminalParserEngineOutput => ({
+        visibleText: text,
+      }),
+      parseInput: (input): TerminalParserEngineOutput => ({
+        visibleText: input.text,
+      }),
+      parseOutput: (): TerminalParserEngineOutput =>
+        createGhosttyVtRenderSnapshotOutput({
+          rows: ['Manual', '> Auto'],
+          cursor: {
+            rowIndex: 1,
+            columnOffset: 0,
+            visible: false,
+          },
+        }),
+    }
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => parserEngine,
+    })
+
+    created.output.writeOutput({
+      text: 'snapshot',
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const cursor = created.terminal.element?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(created.viewportReader.readVisibleText()).toBe('Manual\n> Auto')
+    expect(cursor).toBeNull()
   })
 
   test('copies interpreted text for full replace snapshot selections', () => {
@@ -1170,6 +1284,659 @@ describe('ghosttyInstance', () => {
     expect(created.viewportReader.readVisibleText()).toBe('prompt branch done')
     expect(styleRun?.textContent).toBe('branch')
     expect((styleRun as HTMLElement | null)?.style.color).toBe(TRUE_COLOR_PINK)
+  })
+
+  test('renders native styled empty cells as visible background spans', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['A B'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'A',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: TRUE_COLOR_BASE_HEX,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'B',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const styleRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+    const blankRun = styleRuns.find((run) => run.textContent === ' ')
+
+    expect(terminalOutput?.textContent).toBe('A B')
+    expect(created.viewportReader.readVisibleText()).toBe('A B')
+    expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
+    expect(blankRun?.style.display).toBe('inline-block')
+    expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
+    expect(blankRun?.style.minWidth).toBe(
+      'calc(var(--terminal-cell-width) * 1)'
+    )
+    expect(blankRun?.style.overflow).toBe('visible')
+  })
+
+  test('paints background-only agent input boxes by terminal cell width', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['> Explain this codebase   '],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '>',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: ' Explain this codebase   ',
+              width: 25,
+              background: TRUE_COLOR_BASE_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const inputRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+
+    const backgroundRuns = inputRuns.filter(
+      (run) => run.style.backgroundColor === TRUE_COLOR_BASE
+    )
+
+    expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      '> Explain this codebase   '
+    )
+
+    expect(backgroundRuns.map((run) => run.style.minWidth)).toEqual([
+      'calc(var(--terminal-cell-width) * 1)',
+      'calc(var(--terminal-cell-width) * 24)',
+    ])
+  })
+
+  test('paints reverse-video agent input boxes by terminal cell width', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['> Explain this codebase   '],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '>',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: ' Explain this codebase   ',
+              width: 25,
+              reverse: true,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const inputRuns = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-style-run="true"]'
+      ) ?? []
+    )
+
+    const reverseRuns = inputRuns.filter(
+      (run) =>
+        run.style.backgroundColor === 'var(--terminal-foreground)' &&
+        run.style.color === 'var(--terminal-background)'
+    )
+
+    expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      '> Explain this codebase   '
+    )
+
+    expect(reverseRuns.map((run) => run.style.minWidth)).toEqual([
+      'calc(var(--terminal-cell-width) * 1)',
+      'calc(var(--terminal-cell-width) * 24)',
+    ])
+  })
+
+  test('hides native dead cursor parked above an agent prompt row', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['', '>'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 0,
+          },
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const cursor = terminalOutput?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('\n>')
+    expect(created.viewportReader.readVisibleText()).toBe('\n>')
+    expect(cursor).toBeNull()
+  })
+
+  test('paints block glyphs as terminal-cell rectangles', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['██'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '██',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    expect(terminalOutput?.textContent).toBe('██')
+    expect(created.viewportReader.readVisibleText()).toBe('██')
+    expect(glyphs).toHaveLength(2)
+    expect(glyphs[0]?.style.backgroundColor).toBe('transparent')
+    expect(glyphs[0]?.style.color).toBe('transparent')
+    expect(glyphs[0]?.style.fontSize).toBe('0px')
+    expect(glyphs[0]?.style.width).toBe('var(--terminal-cell-width)')
+    expect(glyphs[0]?.style.minWidth).toBe('var(--terminal-cell-width)')
+
+    const firstRect = glyphs[0]?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(firstRect?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(firstRect?.style.height).toBe('100%')
+    expect(firstRect?.style.left).toBe('0%')
+    expect(firstRect?.style.top).toBe('0%')
+    expect(firstRect?.style.width).toBe('100%')
+  })
+
+  test('paints unstyled block glyphs with the terminal foreground', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['█'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '█',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyph = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    const rect = glyph?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('█')
+    expect(glyph?.style.backgroundColor).toBe('transparent')
+    expect(glyph?.style.color).toBe('transparent')
+    expect(rect?.style.backgroundColor).toBe('var(--terminal-foreground)')
+  })
+
+  test('paints reverse-video block glyph fills with swapped terminal colors', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['█'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '█',
+              width: 1,
+              reverse: true,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyph = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    const rect = glyph?.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('█')
+    expect(glyph?.style.backgroundColor).toBe('var(--terminal-foreground)')
+    expect(glyph?.style.color).toBe('transparent')
+    expect(rect?.style.backgroundColor).toBe('var(--terminal-background)')
+  })
+
+  test('paints partial and quadrant block glyphs by exact cell rectangles', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['▉▐▖▝'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 4,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '▉▐▖▝',
+              width: 4,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
+    )
+
+    expect(terminalOutput?.textContent).toBe('▉▐▖▝')
+    expect(created.viewportReader.readVisibleText()).toBe('▉▐▖▝')
+    expect(glyphs).toHaveLength(4)
+    expect(rects[0]?.style.width).toBe('87.5%')
+    expect(rects[0]?.style.left).toBe('0%')
+    expect(rects[0]?.style.top).toBe('0%')
+    expect(rects[0]?.style.height).toBe('100%')
+    expect(rects[1]?.style.width).toBe('50%')
+    expect(rects[1]?.style.left).toBe('50%')
+    expect(rects[1]?.style.top).toBe('0%')
+    expect(rects[1]?.style.height).toBe('100%')
+    expect(rects[2]?.style.width).toBe('50%')
+    expect(rects[2]?.style.left).toBe('0%')
+    expect(rects[2]?.style.top).toBe('50%')
+    expect(rects[2]?.style.height).toBe('50%')
+    expect(rects[3]?.style.width).toBe('50%')
+    expect(rects[3]?.style.left).toBe('50%')
+    expect(rects[3]?.style.top).toBe('0%')
+    expect(rects[3]?.style.height).toBe('50%')
+  })
+
+  test('renders shade glyphs through the standard text path', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['░▒▓'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '░▒▓',
+              width: 3,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = terminalOutput?.querySelectorAll(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('░▒▓')
+    expect(created.viewportReader.readVisibleText()).toBe('░▒▓')
+    expect(glyphs).toHaveLength(0)
+  })
+
+  test('paints left partial block glyph widths without overfilling', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['▉▏'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '▉▏',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    expect(terminalOutput?.textContent).toBe('▉▏')
+    expect(created.viewportReader.readVisibleText()).toBe('▉▏')
+    expect(glyphs).toHaveLength(2)
+
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
+    )
+
+    expect(rects[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[0]?.style.width).toBe('87.5%')
+    expect(rects[0]?.style.left).toBe('0%')
+    expect(rects[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[1]?.style.width).toBe('12.5%')
+    expect(rects[1]?.style.left).toBe('0%')
+  })
+
+  test('paints styled block glyphs when the cursor splits the run', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['██'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '██',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    const cursor = terminalOutput?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('██')
+    expect(created.viewportReader.readVisibleText()).toBe('██')
+    expect(glyphs).toHaveLength(2)
+    expect(cursor?.previousSibling).toBe(glyphs[0])
+    expect(cursor?.nextSibling).toBe(glyphs[1])
+
+    const rects = glyphs.map((glyph) =>
+      glyph.querySelector<HTMLElement>(
+        '[data-terminal-custom-glyph-rect="true"]'
+      )
+    )
+
+    expect(rects[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[0]?.style.width).toBe('100%')
+    expect(rects[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(rects[1]?.style.width).toBe('100%')
+  })
+
+  test('does not render overlapping native wide-glyph continuation cells', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: [`${NERD_FONT_TERMINAL_ICON}x`],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: NERD_FONT_TERMINAL_ICON,
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'x',
+              width: 1,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const row = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-row="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe(`${NERD_FONT_TERMINAL_ICON}x`)
+    expect(created.viewportReader.readVisibleText()).toBe(
+      `${NERD_FONT_TERMINAL_ICON}x`
+    )
+
+    expect(row?.style.overflow).toBe('visible')
   })
 
   test('renders invalid byte payloads through the byte path', () => {

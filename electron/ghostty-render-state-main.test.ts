@@ -29,6 +29,7 @@ interface TestNativeTerminal {
         rows: number
         cursorRow: number
         cursorCol: number
+        cursorVisible?: boolean
         visibleLines: readonly { row: number; text: string }[]
         cells?: readonly {
           row: number
@@ -38,11 +39,13 @@ interface TestNativeTerminal {
           foreground?: string
           background?: string
           bold?: boolean
+          reverse?: boolean
         }[]
       }
     >
   >
   dispose: ReturnType<typeof vi.fn<() => void>>
+  formatHtml?: ReturnType<typeof vi.fn<() => string>>
 }
 
 interface TestIpcMain {
@@ -305,6 +308,106 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals[0]?.feed).toHaveBeenCalledTimes(2)
   })
 
+  test('tracks hidden cursor mode across byte chunks', () => {
+    const { bindings } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const encoder = new TextEncoder()
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?2'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('5lSelect permission mode'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          rowIndex: 1,
+          columnOffset: 2,
+          visible: false,
+        },
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?25:1h'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          rowIndex: 1,
+          columnOffset: 2,
+        },
+      },
+    })
+
+    expect(
+      requireResult(
+        bridge.readSnapshot(event.sender.id, {
+          driverId: createResult.driverId,
+        })
+      ).cursor
+    ).not.toHaveProperty('visible')
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?25:1l'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          visible: false,
+        },
+      },
+    })
+  })
+
   test('drops oversized complete OSC7 cwd effects', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
@@ -324,6 +427,46 @@ describe('ghostty render-state main bridge', () => {
       },
     })
     expect(terminals[0]?.feed).toHaveBeenCalledOnce()
+  })
+
+  test('drops oversized pending private CSI cursor visibility sequences', () => {
+    const { bindings } = createNativeBindings()
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+    const encoder = new TextEncoder()
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode(`\u001b[?${'1'.repeat(8193)}`),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('25l'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      requireResult(
+        bridge.readSnapshot(event.sender.id, {
+          driverId: createResult.driverId,
+        })
+      ).cursor
+    ).not.toHaveProperty('visible')
   })
 
   test('resizes native state and resets by recreating the terminal at the current size', () => {
@@ -510,6 +653,467 @@ describe('ghostty render-state main bridge', () => {
             row: 0,
             col: 5,
             text: '',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('leaves native sparse styled cells for renderer-side normalization', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'AB' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'A',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: '#181825',
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'B',
+              width: 1,
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['AB'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: 'A',
+            width: 1,
+          },
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+            background: '#181825',
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'B',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('marks reverse-video formatter ranges on native cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 25,
+          visibleLines: [{ row: 0, text: ' Explain this codebase' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: ' Explain this codebase   ',
+              width: 25,
+            },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;filter: invert(100%);"> Explain this codebase   </div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [' Explain this codebase'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 25,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: ' Explain this codebase   ',
+            width: 25,
+            reverse: true,
+          },
+        ],
+      },
+    })
+  })
+
+  test('splits native cells at partial reverse-video formatter ranges', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 10,
+          visibleLines: [{ row: 0, text: 'abcde' }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'abcde',
+              width: 5,
+            },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;">ab<span style="display: inline;filter: invert(100%);">cd</span>e</div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['abcde'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 10,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: 'ab',
+            width: 2,
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'cd',
+            width: 2,
+            reverse: true,
+          },
+          {
+            row: 0,
+            col: 4,
+            text: 'e',
+            width: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  test('creates reverse-video cells when formatter ranges have no native cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 24,
+          visibleLines: [{ row: 0, text: '> Explain this codebase ' }],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;filter: invert(100%);">&gt; Explain this codebase </div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['> Explain this codebase '],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 24,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: '> Explain this codebase ',
+            width: 24,
+            reverse: true,
+          },
+        ],
+      },
+    })
+  })
+
+  test('tracks non-div formatter tags while reading reverse-video columns', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'abc' }],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;">a<span style="display: inline;filter: invert(100%);">bc</span></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['abc'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 1,
+            text: 'bc',
+            width: 2,
+            reverse: true,
+          },
+        ],
+      },
+    })
+  })
+
+  test('creates background cells when formatter ranges have no native cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 24,
+          visibleLines: [{ row: 0, text: '> Explain this codebase ' }],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><span style="background-color: rgb(64, 64, 72);">&gt; Explain this codebase </span></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['> Explain this codebase '],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 24,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: '> Explain this codebase ',
+            width: 24,
+            background: '#404048',
+          },
+        ],
+      },
+    })
+  })
+
+  test('preserves native fallback text before sparse styled empty cells', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'AB' }],
+          cells: [
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+              background: '#181825',
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['AB'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+            background: '#181825',
+          },
+        ],
+      },
+    })
+  })
+
+  test('skips overlapping empty cells after native wide glyph cells', () => {
+    const icon = '\uf120'
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: `${icon}x` }],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: icon,
+              width: 2,
+              foreground: '#f38ba8',
+            },
+            {
+              row: 0,
+              col: 1,
+              text: '',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 2,
+              text: 'x',
+              width: 1,
+            },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [`${icon}x`],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 0,
+            text: icon,
+            width: 2,
+            foreground: '#f38ba8',
+          },
+          {
+            row: 0,
+            col: 1,
+            text: '',
+            width: 1,
+          },
+          {
+            row: 0,
+            col: 2,
+            text: 'x',
             width: 1,
           },
         ],
