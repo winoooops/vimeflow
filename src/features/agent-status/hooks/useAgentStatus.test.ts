@@ -1466,7 +1466,7 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active?.toolUseId).toBe('new-running-call')
   })
 
-  test('resetGeneration with null contextWindow suppresses same-run status until new session boundary', async () => {
+  test('resetGeneration with null contextWindow suppresses same-run non-zero status', async () => {
     const { result, rerender } = renderHook(
       ({ resetGeneration }: { resetGeneration: number }) =>
         useAgentStatus('session-1', resetGeneration),
@@ -1502,9 +1502,9 @@ describe('useAgentStatus', () => {
     expect(result.current.agentSessionId).toBeNull()
     expect(result.current.contextWindow).toBeNull()
 
-    // A stale same-run status event with a non-null contextWindow must not
-    // repopulate the cleared sidebar, because freshness is undecidable when
-    // the pre-reset snapshot lacked a token total.
+    // A stale old watcher can still emit the same id with non-zero tokens.
+    // With no pre-reset baseline, keep the reset latch armed until a zero-token
+    // reset event or a fresh agentSessionId proves a new boundary.
     act(() => {
       emit('agent-status', {
         sessionId: 'pty-session-1',
@@ -1528,7 +1528,6 @@ describe('useAgentStatus', () => {
     expect(result.current.agentSessionId).toBeNull()
     expect(result.current.contextWindow).toBeNull()
 
-    // Run-scoped events must stay suppressed for the same session.
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
@@ -1549,6 +1548,53 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active).toBeNull()
     expect(result.current.toolCalls.total).toBe(0)
     expect(result.current.numTurns).toBe(0)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 0,
+          remainingPercentage: 100,
+          contextWindowSize: 258000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(0)
+
+    // Run-scoped events resume after the same-id status recovery.
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'same-id-reset-call',
+        tool: 'exec_command',
+        args: 'npm run lint',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 9,
+      })
+    })
+
+    expect(result.current.toolCalls.active?.toolUseId).toBe(
+      'same-id-reset-call'
+    )
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(9)
 
     // A fresh session boundary clears the suppression latch and allows updates.
     act(() => {

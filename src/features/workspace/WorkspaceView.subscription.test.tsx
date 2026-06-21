@@ -175,6 +175,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   ),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../agent-status/hooks/useAgentStatusHotLoading', () => ({
   useAgentStatusHotLoading: vi.fn(() => false),
 }))
@@ -325,6 +331,12 @@ vi.mock('./components/DockPanel', () => ({
   },
 }))
 
+const openDockPanelMock = async (): Promise<HTMLElement> => {
+  fireEvent.click(screen.getByTestId('status-bar-dock-toggle'))
+
+  return screen.findByTestId('dock-panel-mock')
+}
+
 describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
     capturedPanelProps.agentStatus = undefined
@@ -420,7 +432,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     render(<WorkspaceView />)
 
     await screen.findByTestId('agent-status-panel-mock')
-    await screen.findByTestId('dock-panel-mock')
+    await openDockPanelMock()
 
     expect(capturedPanelProps.gitStatus).toBeDefined()
     expect(capturedDockPanelProps.gitStatus).toBeDefined()
@@ -430,7 +442,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
   test('DockPanel receives a workspace feedback batch that clears on cwd change', async () => {
     render(<WorkspaceView />)
 
-    await screen.findByTestId('dock-panel-mock')
+    await openDockPanelMock()
     await screen.findByTestId('terminal-pane-mock')
 
     const feedbackBatch = capturedDockPanelProps.feedbackBatch
@@ -531,7 +543,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
     try {
       render(<WorkspaceView />)
-      await screen.findByTestId('dock-panel-mock')
+      await openDockPanelMock()
 
       // First render: agent idle + tab='diff' (the default) → enabled: true.
       // The agent is idle, so this `true` can only come from the
@@ -594,7 +606,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
     try {
       render(<WorkspaceView />)
-      await screen.findByTestId('dock-panel-mock')
+      await openDockPanelMock()
 
       vi.mocked(useGitStatus).mockClear()
       fireEvent.click(screen.getByTestId('mock-switch-to-editor'))
@@ -639,7 +651,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     })
 
     const view = render(<WorkspaceView />)
-    await screen.findByTestId('dock-panel-mock')
+    await openDockPanelMock()
 
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
@@ -677,7 +689,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     })
 
     const view = render(<WorkspaceView />)
-    await screen.findByTestId('dock-panel-mock')
+    await openDockPanelMock()
 
     expect(capturedDockPanelProps.editorFileLifecycleStatus).toBe('NEW')
 
@@ -721,7 +733,14 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
     try {
       render(<WorkspaceView />)
-      await screen.findByTestId('dock-panel-mock')
+      expect(screen.queryByTestId('dock-panel-mock')).not.toBeInTheDocument()
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: false })
+      )
+
+      vi.mocked(useGitStatus).mockClear()
+      await openDockPanelMock()
 
       fireEvent.click(screen.getByTestId('mock-switch-to-diff'))
       expect(useGitStatus).toHaveBeenCalledWith(

@@ -237,7 +237,7 @@ pub(crate) async fn start_agent_watcher_inner(
     app_data_dir: PathBuf,
     session_id: String,
     provider_home_override: Option<PathBuf>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     // Step F.5: delegate to `SessionLifecycle`. The service owns the
     // attach-resolution, the `AgentBindings::for_attach` +
     // `AttachError` → `String` mapping seam, and the spawn_blocking

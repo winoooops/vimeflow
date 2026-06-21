@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 27
+last_updated: 2026-06-21
+ref_count: 90
 ---
 
 # Documentation Accuracy
@@ -829,7 +829,16 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 89. Opencode icon provenance missing from NOTICE
+### 89. Reattach hook comment still references removed manual button
+
+- **Source:** github-claude | PR #592 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A comment on `resolveArmedReattach` still said the helper was shared by the success listener and the manual button, but this PR removed the manual reattach button.
+- **Fix:** Updated stale comments so they describe the current automatic success-listener and bounded-retry/drift behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Opencode icon provenance missing from NOTICE
 
 - **Source:** github-claude | PR #589 round 1 | 2026-06-20
 - **Severity:** MEDIUM
