@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-20 · **Issue:** [VIM-188](https://linear.app/vimeflow/issue/VIM-188) · **Status:** design
 **Area:** `crates/backend/src/agent/` (Rust) + `src/features/agent-status/` (frontend)
-**Visual explainer (zh):** `docs/decisions/2026-06-20-codex-agent-status-relocate.zh-CN.html`
+**Decision note (zh):** `docs/decisions/2026-06-20-codex-agent-status-relocate.zh-CN.md`
 
 ## Problem
 
