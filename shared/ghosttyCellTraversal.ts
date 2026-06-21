@@ -166,10 +166,16 @@ export const readRowTextByCellColumns = (
 export const readCellDisplayText = (
   rowText: string,
   cell: GhosttyCellTraversalCell,
-  fallbackColumn: number
+  fallbackColumn: number,
+  nextCell?: GhosttyCellTraversalCell
 ): string => {
   if (cell.text !== '') {
-    const missingColumns = Math.max(0, cell.width - readTextCellWidth(cell.text))
+    const cellEndColumn = cell.col + cell.width
+    const hasExplicitContinuation =
+      nextCell !== undefined && nextCell.col < cellEndColumn
+    const missingColumns = hasExplicitContinuation
+      ? 0
+      : Math.max(0, cell.width - readTextCellWidth(cell.text))
 
     return cell.text.padEnd(cell.text.length + missingColumns, ' ')
   }
@@ -261,7 +267,12 @@ export const readCellRowVisibleText = (
       fallbackColumn += gapWidth
     }
 
-    output += readCellDisplayText(rowText, cell, fallbackColumn)
+    output += readCellDisplayText(
+      rowText,
+      cell,
+      fallbackColumn,
+      rowCells[index + 1]
+    )
     fallbackColumn += readFallbackColumnDeltaForCell(
       rowText,
       cell,
@@ -330,7 +341,12 @@ export const readCursorOffsetInCellRow = (
     }
 
     const cellEndColumn = cell.col + cell.width
-    const cellText = readCellDisplayText(rowText, cell, fallbackColumn)
+    const cellText = readCellDisplayText(
+      rowText,
+      cell,
+      fallbackColumn,
+      rowCells[index + 1]
+    )
 
     if (columnOffset < cellEndColumn) {
       return (

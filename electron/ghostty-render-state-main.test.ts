@@ -926,7 +926,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 3,
+          textOffset: 2,
         },
         cells: [
           {

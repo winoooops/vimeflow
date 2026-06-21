@@ -219,7 +219,12 @@ const readStyledRowText = (
       activeStyleKey = styleKey
     }
 
-    output += readCellDisplayText(rowText, cell, fallbackColumn)
+    output += readCellDisplayText(
+      rowText,
+      cell,
+      fallbackColumn,
+      rowCells[index + 1]
+    )
     fallbackColumn += readFallbackColumnDeltaForCell(
       rowText,
       cell,

@@ -122,7 +122,7 @@ describe('ghosttyCellTraversal', () => {
         ],
         3
       )
-    ).toBe('\uf120 x'.length)
+    ).toBe('\uf120x'.length)
   })
 
   test('reserves native width for explicit wide private-use cells', () => {

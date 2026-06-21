@@ -1775,9 +1775,9 @@ describe('ghosttyInstance', () => {
       '[data-terminal-row="true"]'
     )
 
-    expect(terminalOutput?.textContent).toBe(`${NERD_FONT_TERMINAL_ICON} x`)
+    expect(terminalOutput?.textContent).toBe(`${NERD_FONT_TERMINAL_ICON}x`)
     expect(created.viewportReader.readVisibleText()).toBe(
-      `${NERD_FONT_TERMINAL_ICON} x`
+      `${NERD_FONT_TERMINAL_ICON}x`
     )
 
     expect(row?.style.overflow).toBe('visible')
