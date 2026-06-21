@@ -943,11 +943,9 @@ export class TerminalTextSurface implements TerminalSurface {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
           this.applyStyleToElement(runElement, style, text)
-          runElement.append(
-            document.createTextNode(text.slice(0, splitOffset)),
-            this.createCursorElement(),
-            document.createTextNode(text.slice(splitOffset))
-          )
+          this.appendRunFragment(runElement, text.slice(0, splitOffset), style)
+          runElement.append(this.createCursorElement())
+          this.appendRunFragment(runElement, text.slice(splitOffset), style)
           currentRow.append(runElement)
           cursorState.didRender = true
         } else {

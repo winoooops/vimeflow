@@ -1340,6 +1340,58 @@ describe('ghosttyInstance', () => {
     expect(glyphs[0]?.style.minWidth).toBe('var(--terminal-cell-width)')
   })
 
+  test('paints styled block glyphs when the cursor splits the run', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['██'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 1,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '██',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    const cursor = terminalOutput?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('██')
+    expect(created.viewportReader.readVisibleText()).toBe('██')
+    expect(glyphs).toHaveLength(2)
+    expect(cursor?.previousSibling).toBe(glyphs[0])
+    expect(cursor?.nextSibling).toBe(glyphs[1])
+    expect(glyphs[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(glyphs[1]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+  })
+
   test('does not render overlapping native wide-glyph continuation cells', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({

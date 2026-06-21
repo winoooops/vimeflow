@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-19
-ref_count: 0
+ref_count: 1
 ---
 
 # Terminal DOM Rendering
@@ -39,4 +39,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L35
 - **Finding:** When a VT snapshot row contains wide or combining characters before the cursor, the snapshot helper treated the parser's terminal-cell column as a raw UTF-16 string offset by clamping against `row.length` and returning that value directly, which placed the cursor inside wide characters or between combining marks.
 - **Fix:** Reused `TerminalDisplayBuffer`'s cell-width mapping by exporting `findTextOffsetForCellColumn` and consuming it in `readSnapshotCursorOffset`; the helper advances through zero-width combining marks so the cursor offset lands after the complete grapheme cluster. Added unit tests for wide characters and combining marks.
+- **Commit:** same commit as this entry
+
+### 4. Cursor splits must preserve custom terminal glyph fragments
+
+- **Source:** github-codex-connector | PR #591 round 3 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L945
+- **Finding:** When the cursor split a styled run containing block glyphs, the before and after slices were appended as raw text nodes inside the styled wrapper. Those slices bypassed the renderer path that replaces block glyphs with fixed-cell custom glyph spans, so split styled block runs fell back to font glyph rendering.
+- **Fix:** Routed both split slices through the same run-fragment helper used by unsplit text, preserving custom block glyph element creation on both sides of the cursor. Added a Ghostty renderer regression for a styled `██` run split by the cursor.
 - **Commit:** same commit as this entry
