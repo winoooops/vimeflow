@@ -336,6 +336,14 @@ impl OpencodeTranscriptDecoder {
     /// and emit a `running` event once per call, post-replay. The dedup set is
     /// keyed by `(callID, Running)` so a `tool.before` followed by a `running`
     /// part update for the same call emits a single start.
+    ///
+    /// `tool.before` is the authoritative args source. opencode emits the
+    /// `message.part.updated` tool `pending` (with EMPTY `state.args`) BEFORE
+    /// the `tool.before` line that carries the real args. So when a later start
+    /// upgrades a call's args from empty → non-empty, we patch the recorded
+    /// `in_flight` args AND re-emit a refreshed `running` event (bypassing the
+    /// `(callID, Running)` dedup that one time) so the activity feed shows the
+    /// real filePath / command / pattern instead of `{}`.
     fn start_tool_call(
         &mut self,
         call_key: &str,
@@ -345,7 +353,16 @@ impl OpencodeTranscriptDecoder {
         is_test_file: bool,
         expects_tool_after: bool,
     ) {
-        self.in_flight
+        // Did this call already have a recorded start, and is the incoming args
+        // an upgrade over the previously-empty preview? Decide before the
+        // `or_insert_with` so we know whether to patch + re-emit.
+        let args_upgraded = self
+            .in_flight
+            .get(call_key)
+            .is_some_and(|existing| existing.args.is_empty() && !args.is_empty());
+
+        let entry = self
+            .in_flight
             .entry(call_key.to_string())
             .or_insert_with(|| InFlightToolCall {
                 started_at: Instant::now(),
@@ -354,13 +371,23 @@ impl OpencodeTranscriptDecoder {
                 args: args.clone(),
                 is_test_file,
             });
+        if args_upgraded {
+            // Patch the authoritative args (and the tool name, which the empty
+            // pending part may have left as a placeholder) onto the live record.
+            entry.tool = tool.clone();
+            entry.args = args.clone();
+        }
         self.record_tool_metadata(call_key, &tool, &args, timestamp, expects_tool_after);
 
         let dedup_key = (
             call_key.to_string(),
             status_discriminant(&ToolCallStatus::Running),
         );
-        if !self.emitted.insert(dedup_key) {
+        let first_emit = self.emitted.insert(dedup_key);
+        // Emit when this is the first start OR when authoritative args have just
+        // upgraded an already-emitted (empty-args) start — the refresh lets the
+        // UI replace the placeholder `{}` with the real args.
+        if !first_emit && !args_upgraded {
             return;
         }
 
@@ -648,6 +675,13 @@ fn summarize_value_args(args: &Value, _tool: &str) -> String {
     if args.is_null() {
         return String::new();
     }
+    // An empty object (the `pending` tool part's `state.args:{}`) has no preview
+    // — return the empty string so the streamer recognizes it as "no args yet"
+    // and lets a later `tool.before` upgrade it (Bug A). Rendering `{}` here
+    // would both look like junk in the feed AND defeat the empty-args upgrade.
+    if args.as_object().is_some_and(|map| map.is_empty()) {
+        return String::new();
+    }
     truncate_string(&args.to_string(), MAX_ARGS_LEN)
 }
 
@@ -824,6 +858,65 @@ mod tests {
         );
         assert_eq!(payloads[0]["status"], "running");
         assert_eq!(payloads[0]["toolUseId"], "call_p1");
+    }
+
+    /// Bug A — live opencode emits the `message.part.updated` tool `pending`
+    /// (EMPTY `state.args`) BEFORE the `tool.before` line that carries the real
+    /// args. The pending start must be REFRESHED once `tool.before` upgrades the
+    /// args, so the activity feed shows the real filePath / command / pattern
+    /// instead of `{}`. This FAILS on the pre-fix code (the `(callID, Running)`
+    /// dedup dropped the `tool.before` re-emit, leaving the empty-args start).
+    #[test]
+    fn pending_part_then_tool_before_refreshes_args() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        // 1. Pending tool part with EMPTY args (arrives first, earlier ts).
+        dec.decode_line(
+            r#"{"v":1,"ts":1000,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_read1","tool":"read","state":{"status":"pending","args":{}}}}}"#,
+        );
+        // 2. tool.before with the AUTHORITATIVE args (arrives later).
+        dec.decode_line(
+            r#"{"v":1,"ts":1100,"kind":"tool.before","tool":"read","sessionID":"ses1","callID":"call_read1","args":{"filePath":"/tmp/x/util.ts"}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        // One empty-args start, then one refreshed running with the real args.
+        assert_eq!(payloads.len(), 2, "empty pending start + refreshed start");
+        assert_eq!(payloads[0]["status"], "running");
+        assert_eq!(payloads[0]["args"], "");
+        assert_eq!(payloads[1]["status"], "running");
+        assert_eq!(payloads[1]["toolUseId"], "call_read1");
+        assert_eq!(payloads[1]["args"], "/tmp/x/util.ts");
+
+        // And the recorded in-flight args are the authoritative ones, so the
+        // eventual terminal (done/failed) event also carries them.
+        assert_eq!(
+            dec.in_flight.get("call_read1").map(|c| c.args.as_str()),
+            Some("/tmp/x/util.ts"),
+        );
+    }
+
+    /// A second authoritative `tool.before` (or running part) carrying the SAME
+    /// non-empty args must NOT re-emit — the refresh fires only on the
+    /// empty → non-empty upgrade, not on every repeat.
+    #[test]
+    fn non_empty_args_repeat_does_not_refresh() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"tool.before","tool":"read","sessionID":"ses1","callID":"call_z","args":{"filePath":"/tmp/a"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"message.part.updated","data":{"part":{"type":"tool","callID":"call_z","tool":"read","state":{"status":"running","args":{"filePath":"/tmp/a"}}}}}"#,
+        );
+
+        let payloads = tool_call_payloads(&sink);
+        assert_eq!(payloads.len(), 1, "one start; no refresh for a repeat");
+        assert_eq!(payloads[0]["args"], "/tmp/a");
     }
 
     /// A `tool.before`+`running` part for the SAME callID emit one start total.
@@ -1127,13 +1220,14 @@ mod tests {
         assert_eq!(cwds[1]["cwd"], "/work/b");
     }
 
-    /// End-to-end: feeding the authored `sample_bridge.jsonl` through
-    /// `start_tailing` emits the expected sequence — one `agent-turn` (the user
-    /// `message.updated`) and one settled bash tool-call (`done`). The whole
-    /// fixture is replayed before the first EOF, so the bash call (which both
-    /// starts AND completes during replay) settles to a single `done` event —
-    /// its `running` start is suppressed during replay, mirroring Codex's
-    /// `codex_replay_does_not_emit_running_for_settled_tool_calls`.
+    /// End-to-end: feeding the authored `sample_bridge.jsonl` (REAL live shapes)
+    /// through `start_tailing` emits the expected sequence — one `agent-turn`
+    /// (the user `message.updated`; the assistant message is NOT a turn) and two
+    /// settled tool-calls (`done`), one bash + one read. Each tool arrives as a
+    /// `message.part.updated` `pending` (EMPTY args) FOLLOWED by its `tool.before`
+    /// (real args) and `tool.after`, all during replay ⇒ each settles to a
+    /// single `done` event carrying the AUTHORITATIVE `tool.before` args (Bug A:
+    /// the args are NOT the empty `{}` from the pending part).
     ///
     /// No `test-run` is asserted: the fixture's bash `result.output` uses a
     /// Jest-style summary (`Tests: 12 passed, 12 total`), which the v1 vitest
@@ -1175,8 +1269,8 @@ mod tests {
             "expected 1 agent-turn from the user message.updated line",
         );
         assert!(
-            sink.wait_for_count("agent-tool-call", 1, Duration::from_secs(5)),
-            "expected the settled bash tool's single done event",
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "expected the two settled tool calls' done events",
         );
         handle.stop();
 
@@ -1186,13 +1280,13 @@ mod tests {
             .filter(|(n, _)| n == "agent-turn")
             .map(|(_, p)| p)
             .collect();
-        assert_eq!(turns.len(), 1);
+        assert_eq!(turns.len(), 1, "only the user message is a turn");
         assert_eq!(turns[0]["numTurns"], 1);
 
         let tool_calls = tool_call_payloads(&sink);
-        // The fixture has exactly one bash tool (call_bash001): tool.before →
-        // tool.after, both during replay ⇒ a single settled `done` (the
-        // `running` start is suppressed during replay).
+        // The fixture's bash tool (call_bash001): pending(empty) → tool.before →
+        // tool.after, all during replay ⇒ a single settled `done` carrying the
+        // authoritative `tool.before` args (Bug A regression — NOT `{}`).
         let bash_calls: Vec<&Value> = tool_calls
             .iter()
             .filter(|p| p["toolUseId"] == "call_bash001")
@@ -1201,6 +1295,17 @@ mod tests {
         assert_eq!(bash_calls[0]["status"], "done");
         assert_eq!(bash_calls[0]["tool"], "bash");
         assert_eq!(bash_calls[0]["args"], "npm test");
+
+        // The non-bash read tool (call_read001): same ordering, args from
+        // `tool.before` (filePath), proving the fix covers non-bash tools too.
+        let read_calls: Vec<&Value> = tool_calls
+            .iter()
+            .filter(|p| p["toolUseId"] == "call_read001")
+            .collect();
+        assert_eq!(read_calls.len(), 1, "settled read tool ⇒ one done");
+        assert_eq!(read_calls[0]["status"], "done");
+        assert_eq!(read_calls[0]["tool"], "read");
+        assert_eq!(read_calls[0]["args"], "/tmp/sample-project/src/util.ts");
 
         // The Jest-style fixture output is unparseable to the vitest runner, so
         // no test-run snapshot is produced (see the test docstring).

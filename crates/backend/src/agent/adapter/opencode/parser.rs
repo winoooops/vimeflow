@@ -8,13 +8,21 @@
 //!
 //! ## Field sources
 //!
+//! Live opencode does NOT put the model id or real token counts on the
+//! `session.*` events — `session.created/updated` carry `info.model =
+//! {"providerID":"opencode"}` (no id) and `info.tokens` all-zero, even mid-run.
+//! The model id lives on the **user** `message.updated` (`info.model.modelID`)
+//! and the running token usage lives on each `step-finish` part. The fold below
+//! reads those primary sources and keeps the session-event reads as lower-
+//! priority fallbacks for older/synthetic transcripts that do carry them.
+//!
 //! | StatusSnapshot field           | Bridge line                                      |
 //! |-------------------------------|--------------------------------------------------|
 //! | `agent_session_id`             | latest `session.created/updated` → `info.id`     |
-//! | `model_id` / `model_display_name` | `info.model.id` or `info.model.modelID`      |
+//! | `model_id` / `model_display_name` | latest non-empty `message.updated` `info.model.modelID` (fallback `info.modelID`); else `session.*` `info.model.{modelID,id}` |
 //! | `version`                      | `info.version`                                   |
-//! | `context_window.total_input_tokens`  | `info.tokens.input`                      |
-//! | `context_window.total_output_tokens` | `info.tokens.output`                     |
+//! | `context_window.total_input_tokens`  | latest `step-finish` → `data.part.tokens.input` (running context-window usage); fallback `session.*` `info.tokens.input` |
+//! | `context_window.total_output_tokens` | latest `step-finish` → `data.part.tokens.output`; fallback `session.*` `info.tokens.output` |
 //! | `cost.total_cost_usd`          | `info.cost`                                      |
 //! | `context_window.current_usage` | latest `step-finish` → `data.part.tokens`        |
 //! | `context_window_size`          | `OPENCODE_CONTEXT_WINDOW_SIZE` (0 = unknown)     |
@@ -38,14 +46,29 @@ use crate::agent::types::{
 struct OpencodeFoldState {
     /// Agent's internal session id (from `info.id`).
     agent_session_id: String,
-    /// Model id (from `info.model.id` or `info.model.modelID`).
-    model_id: String,
+    /// Latest non-empty model id read from a `message.updated`
+    /// (`info.model.modelID`, fallback `info.modelID`). This is the primary
+    /// source live — the assistant `message.updated` carries `model:{}` and
+    /// must NOT clobber the user message's id, so only non-empty values are
+    /// recorded.
+    model_id_from_message: String,
+    /// Latest non-empty model id read from a `session.created/updated`
+    /// (`info.model.modelID`, fallback `info.model.id`). Live opencode session
+    /// events carry no id, so this only fires for older/synthetic transcripts;
+    /// it is the lower-priority fallback behind `model_id_from_message`.
+    model_id_from_session: String,
     /// Version string (from `info.version`).
     version: String,
-    /// Lifetime total input tokens (from latest `session.created/updated`).
+    /// Lifetime total input tokens. Live this is the LATEST `step-finish`
+    /// `input` (the running context-window usage); the session-event
+    /// `info.tokens.input` is a fallback for transcripts that carry it.
     total_input_tokens: u64,
-    /// Lifetime total output tokens (from latest `session.created/updated`).
+    /// Lifetime total output tokens. Live this is the LATEST `step-finish`
+    /// `output`; session-event `info.tokens.output` is the fallback.
     total_output_tokens: u64,
+    /// True once a `step-finish` has supplied the token totals, so later
+    /// session-event token reads do not overwrite the running step values.
+    totals_from_step_finish: bool,
     /// Total cost USD (from latest `session.created/updated` → `info.cost`).
     cost_usd: Option<f64>,
     /// Current-step usage from the latest `step-finish` part.
@@ -108,10 +131,17 @@ impl OpencodeFoldState {
             seven_day: None,
         };
 
-        let (model_id, model_display_name) = if self.model_id.is_empty() {
+        // The `message.updated` id wins over the `session.*` id (live opencode
+        // only ever supplies the former); both fall back to "unknown".
+        let resolved_model_id = if !self.model_id_from_message.is_empty() {
+            self.model_id_from_message
+        } else {
+            self.model_id_from_session
+        };
+        let (model_id, model_display_name) = if resolved_model_id.is_empty() {
             ("unknown".to_string(), "unknown".to_string())
         } else {
-            (self.model_id.clone(), self.model_id)
+            (resolved_model_id.clone(), resolved_model_id)
         };
 
         StatusSnapshot {
@@ -168,20 +198,41 @@ fn fold_session_info(state: &mut OpencodeFoldState, info: &Value) {
             state.version = ver.to_string();
         }
     }
+    // Lower-priority model source: live opencode session events carry no id
+    // (`model:{"providerID":"opencode"}`), so this only fires for older /
+    // synthetic transcripts. `modelID` first, then the legacy nested `id`.
     let model_id =
-        value_str(info, &["model", "id"]).or_else(|| value_str(info, &["model", "modelID"]));
+        value_str(info, &["model", "modelID"]).or_else(|| value_str(info, &["model", "id"]));
     if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
-        state.model_id = model_id.to_string();
+        state.model_id_from_session = model_id.to_string();
     }
-    if let Some(input) = value_u64(info, &["tokens", "input"]) {
-        state.total_input_tokens = input;
-    }
-    if let Some(output) = value_u64(info, &["tokens", "output"]) {
-        state.total_output_tokens = output;
+    // Session-event token totals are a fallback only: live they are all-zero,
+    // and once a `step-finish` has supplied the running totals we must not let a
+    // later (zero) session event overwrite them.
+    if !state.totals_from_step_finish {
+        if let Some(input) = value_u64(info, &["tokens", "input"]) {
+            state.total_input_tokens = input;
+        }
+        if let Some(output) = value_u64(info, &["tokens", "output"]) {
+            state.total_output_tokens = output;
+        }
     }
     // `cost` in the bridge is a number (USD); `None` means missing field.
     if let Some(cost) = value_f64(info, &["cost"]) {
         state.cost_usd = Some(cost);
+    }
+}
+
+/// A `message.updated` carries the model id live: a **user** message has
+/// `info.model = {"providerID":...,"modelID":...}`, while the assistant message
+/// has `model:{}`. Only a non-empty value is recorded, so the assistant's empty
+/// object never clobbers the user-supplied id. `info.model.modelID` is the
+/// primary path; a flat `info.modelID` is a defensive fallback.
+fn fold_message_info(state: &mut OpencodeFoldState, info: &Value) {
+    let model_id =
+        value_str(info, &["model", "modelID"]).or_else(|| value_str(info, &["modelID"]));
+    if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
+        state.model_id_from_message = model_id.to_string();
     }
 }
 
@@ -212,10 +263,13 @@ fn fold_step_finish(state: &mut OpencodeFoldState, part: &Value) {
         cache_write_tokens: cache_write,
     });
 
-    if state.total_input_tokens == 0 && state.total_output_tokens == 0 {
-        state.total_input_tokens = input;
-        state.total_output_tokens = output;
-    }
+    // The LATEST `step-finish` `input` is opencode's running context-window
+    // usage (it resets per step rather than accumulating, so we track the most
+    // recent value, not a sum). `output` likewise mirrors the latest step. Once
+    // any `step-finish` lands, these win over the (zero) session-event tokens.
+    state.total_input_tokens = input;
+    state.total_output_tokens = output;
+    state.totals_from_step_finish = true;
 }
 
 fn fold_line(state: &mut OpencodeFoldState, dto: &OpencodeLineDto) {
@@ -224,6 +278,12 @@ fn fold_line(state: &mut OpencodeFoldState, dto: &OpencodeLineDto) {
             OpencodeEventType::SessionCreated | OpencodeEventType::SessionUpdated => {
                 if let Some(info) = dto.data.get("info") {
                     fold_session_info(state, info);
+                }
+            }
+            OpencodeEventType::MessageUpdated => {
+                // Primary model-id source (the user message carries modelID).
+                if let Some(info) = dto.data.get("info") {
+                    fold_message_info(state, info);
                 }
             }
             OpencodeEventType::MessagePartUpdated => {
@@ -295,13 +355,24 @@ mod tests {
         "/src/agent/adapter/opencode/fixtures/sample_bridge.jsonl"
     ));
 
-    // ── fixture-based tests ───────────────────────────────────────────
+    // ── fixture-based tests (REAL live shapes) ────────────────────────
+    //
+    // The fixture mirrors live opencode: `session.*` carry `model:
+    // {"providerID":"opencode"}` (NO id) and all-zero `info.tokens`; the model
+    // id lives on the **user** `message.updated` (`info.model.modelID`), and the
+    // running token usage lives on the `step-finish` parts. These tests would
+    // FAIL on the pre-fix parser (which read model + tokens only from
+    // `session.*`).
 
     #[test]
-    fn snapshot_has_correct_model_and_version_from_fixture() {
+    fn snapshot_model_comes_from_message_updated_not_session() {
+        // Bug B: the model id is on the user `message.updated`
+        // (`glm-4-6-fake`); the session events carry `model:{"providerID":
+        // "opencode"}` with no id, and the assistant `message.updated` carries
+        // `model:{}` — neither must win or clobber.
         let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
-        assert_eq!(snap.model_id, "claude-sonnet-4");
-        assert_eq!(snap.model_display_name, "claude-sonnet-4");
+        assert_eq!(snap.model_id, "glm-4-6-fake");
+        assert_eq!(snap.model_display_name, "glm-4-6-fake");
         assert_eq!(snap.version, "1.17.8");
     }
 
@@ -312,38 +383,68 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_has_correct_token_totals_from_session_updated() {
-        // The fixture's `session.updated` (the last session event) carries
-        // tokens: { input: 1820, output: 260, ... }.
+    fn snapshot_token_totals_come_from_latest_step_finish() {
+        // Bug C: live `session.*` `info.tokens` are all-zero. The running
+        // context-window usage is the LATEST `step-finish` `input`
+        // (9000 then 12345 ⇒ 12345), not the first and not a sum.
         let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
-        assert_eq!(snap.context_window.total_input_tokens, 1820);
-        assert_eq!(snap.context_window.total_output_tokens, 260);
+        assert_eq!(snap.context_window.total_input_tokens, 12345);
+        assert_eq!(snap.context_window.total_output_tokens, 222);
     }
 
     #[test]
     fn snapshot_has_correct_cost_from_fixture() {
-        // `session.updated` carries `cost: 0.012`.
+        // The final `session.updated` carries `cost: 0.0042`.
         let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         let cost = snap.cost.total_cost_usd.expect("cost should be set");
         assert!(
-            (cost - 0.012).abs() < 1e-9,
-            "cost should be 0.012, got {cost}"
+            (cost - 0.0042).abs() < 1e-9,
+            "cost should be 0.0042, got {cost}"
         );
     }
 
     #[test]
-    fn snapshot_current_usage_from_step_finish() {
-        // The fixture's `step-finish` part carries
-        // tokens: { input: 1820, output: 260, cache: { read: 1200, write: 600 } }.
+    fn snapshot_current_usage_from_latest_step_finish() {
+        // The fixture's LATEST `step-finish` part carries
+        // tokens: { input: 12345, output: 222, cache: { read: 1200, write: 600 } }.
         let snap = parse_bridge_snapshot(None, SAMPLE_BRIDGE);
         let cu = snap
             .context_window
             .current_usage
             .expect("current_usage should be present from step-finish");
-        assert_eq!(cu.input_tokens, 1820);
-        assert_eq!(cu.output_tokens, 260);
+        assert_eq!(cu.input_tokens, 12345);
+        assert_eq!(cu.output_tokens, 222);
         assert_eq!(cu.cache_read_input_tokens, 1200);
         assert_eq!(cu.cache_creation_input_tokens, 600);
+    }
+
+    #[test]
+    fn assistant_empty_model_does_not_clobber_user_model() {
+        // Order: user message (modelID set) → assistant message (model:{}).
+        // The empty assistant object must NOT wipe the recorded id.
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"id\":\"msg_u\",\"role\":\"user\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"deepseek-v4-flash-free\"}}}}\n",
+            "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"id\":\"msg_a\",\"role\":\"assistant\",\"model\":{}}}}\n",
+        );
+        let snap = parse_bridge_snapshot(None, raw);
+        assert_eq!(snap.model_id, "deepseek-v4-flash-free");
+    }
+
+    #[test]
+    fn live_session_events_with_zero_tokens_yield_step_finish_totals() {
+        // The exact live failure mode: session.* model has no id + zero tokens;
+        // user message supplies the model; step-finish supplies real tokens.
+        let raw = concat!(
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.created\",\"data\":{\"info\":{\"id\":\"ses_live\",\"version\":\"1.17.8\",\"model\":{\"providerID\":\"opencode\"},\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
+            "{\"v\":1,\"ts\":2,\"kind\":\"event\",\"type\":\"message.updated\",\"data\":{\"info\":{\"id\":\"msg_u\",\"role\":\"user\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"deepseek-v4-flash-free\"}}}}\n",
+            "{\"v\":1,\"ts\":3,\"kind\":\"event\",\"type\":\"message.part.updated\",\"data\":{\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":11781,\"output\":98,\"reasoning\":19,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
+            "{\"v\":1,\"ts\":4,\"kind\":\"event\",\"type\":\"session.updated\",\"data\":{\"info\":{\"id\":\"ses_live\",\"model\":{\"providerID\":\"opencode\"},\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}}\n",
+        );
+        let snap = parse_bridge_snapshot(None, raw);
+        assert_eq!(snap.model_id, "deepseek-v4-flash-free");
+        // The trailing zero session.updated must NOT overwrite the step total.
+        assert_eq!(snap.context_window.total_input_tokens, 11781);
+        assert_eq!(snap.context_window.total_output_tokens, 98);
     }
 
     #[test]

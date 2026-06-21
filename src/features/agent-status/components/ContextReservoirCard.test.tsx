@@ -180,3 +180,75 @@ describe('ContextReservoirCard null state', () => {
     expect(screen.queryByTestId('context-pill')).not.toBeInTheDocument()
   })
 })
+
+describe('ContextReservoirCard unknown-window with token count', () => {
+  // opencode does not expose a context-window size, so usedPercentage is null,
+  // but the absolute input-token count is known. The card must still show that
+  // count rather than rendering blank dashes.
+  test('shows the absolute input-token count when the window size is unknown', () => {
+    render(
+      <ContextReservoirCard
+        {...defaultProps}
+        usedPercentage={null}
+        inputTokens={11_781}
+      />
+    )
+
+    expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
+      '11.8k tokens'
+    )
+
+    expect(screen.getByTestId('context-headroom')).toHaveTextContent(
+      'window unknown'
+    )
+  })
+
+  test('announces the token count + unknown window in the accessible meter', () => {
+    render(
+      <ContextReservoirCard
+        {...defaultProps}
+        usedPercentage={null}
+        inputTokens={11_781}
+      />
+    )
+
+    expect(
+      screen.getByRole('meter', { name: /context window usage/i })
+    ).toHaveAttribute(
+      'aria-valuetext',
+      '11,781 input tokens · context window size unknown'
+    )
+  })
+
+  test('still shows dashes when the window is unknown and no tokens are known', () => {
+    render(
+      <ContextReservoirCard
+        {...defaultProps}
+        usedPercentage={null}
+        inputTokens={0}
+      />
+    )
+
+    expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
+      '— tokens'
+    )
+
+    expect(screen.getByTestId('context-headroom')).toHaveTextContent('—')
+  })
+
+  test('ignores inputTokens when a percentage is known', () => {
+    render(
+      <ContextReservoirCard
+        {...defaultProps}
+        usedPercentage={56}
+        inputTokens={999}
+      />
+    )
+
+    // The reconstructed `used` figure (560k) stays authoritative — the raw
+    // inputTokens prop must not leak into the known-window display.
+    expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
+      '560,000 tokens'
+    )
+  })
+})
