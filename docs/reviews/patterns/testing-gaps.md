@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 35
+last_updated: 2026-06-21
+ref_count: 36
 ---
 
 # Testing Gaps
@@ -789,4 +789,13 @@ filesystem scope restrictions).
 - **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
 - **Finding:** The `epoch_ms(ms: i64)` test helper converted signed milliseconds with `ms as u64`. A future negative timestamp test would wrap to a huge duration and panic in debug builds instead of producing a useful pre-epoch `SystemTime`.
 - **Fix:** Made the helper sign-aware by subtracting the absolute duration from `UNIX_EPOCH` for negative values and adding it for non-negative values.
+- **Commit:** same commit as this entry
+
+### 81. Cached fallback branch for present-but-nonmatching index was untested
+
+- **Source:** github-claude | PR #595 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The OpenCode locator had tests for a missing index with a populated cache and for a present nonmatching index with no cache, but not for a present index whose rows no longer matched cwd after a successful resolve. That left the `resolve_by_cwd -> None` cached fallback contract unpinned.
+- **Fix:** Added a regression test that resolves `ses_A`, rewrites the index to contain only another cwd, and asserts the second `locate` returns the cached `ses_A`.
 - **Commit:** same commit as this entry

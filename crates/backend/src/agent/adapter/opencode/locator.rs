@@ -1,34 +1,29 @@
-//! opencode session locator (filesystem, newest-fresh-in-cwd).
+//! opencode session locator (filesystem, unambiguous fresh-in-cwd).
 //!
 //! Resolves a PTY attach to the `<sessionID>.jsonl` the vimeflow bridge plugin
 //! is writing for the opencode session running in `cwd`. Resolution reads the
 //! bridge dir's `index.jsonl` (each row `{sessionID, pid, directory, slug,
 //! time}`) on EVERY `locate` call and picks, among rows whose canonicalized
 //! `directory == cwd` AND whose `time` (epoch-ms) is `>= pty_start − SLACK`, the
-//! row with the **newest `time`**. That is the bound session.
+//! row when it names exactly one session. That is the bound session.
 //!
 //! **pid is not the primary key.** Mirroring the codex resolver
 //! (`ORDER BY updated_at_ms DESC` with a freshness floor, not a pid filter),
-//! recency in the cwd decides the binding — pid is at most a tiebreaker between
-//! rows with identical `time`. Live data showed pid-first was wrong: opencode's
-//! plugin `process.pid` does not reliably equal Vimeflow's detected `agent_pid`
-//! (the same session can appear under two different pids in `index.jsonl`, and
-//! the written pid drifts across a session's life), so a pid-first match
-//! mis-binds. The freshness floor rejects a stale same-cwd row left by an
-//! earlier run.
+//! cwd plus freshness decides the binding only when it names one session — pid
+//! is at most a tiebreaker between rows with identical `time` for that session.
+//! Live data showed pid-first was wrong: opencode's plugin `process.pid` does
+//! not reliably equal Vimeflow's detected `agent_pid` (the same session can
+//! appear under two different pids in `index.jsonl`, and the written pid drifts
+//! across a session's life), so a pid-first match mis-binds. The freshness floor
+//! rejects a stale same-cwd row left by an earlier run.
 //!
 //! **Re-resolution.** Each `locate` re-reads the index and re-resolves so a
-//! re-invoked `locate` (reattach, Part 2) returns the CURRENT newest session,
-//! not the first-ever resolve. `self.resolved` is a fallback only: when the
-//! current read yields no qualifying row but a previous resolve is cached, the
-//! cached value is returned (don't drop a live binding on a transient empty
-//! read); a fresh successful resolve overwrites the cache.
-//!
-//! **Known limitation.** A sub-agent (`task`-tool) session shares the cwd and
-//! carries no `parentID` in the index, so a sub-agent created AFTER attach could
-//! be picked by a re-resolve. This is acceptable for Part 1 — attach happens
-//! before any sub-agent exists, so the first resolve binds the real session;
-//! a Part 2 reattach plus a sub-agent marker in the index is future work.
+//! re-invoked `locate` (reattach, Part 2) can notice a current, unambiguous
+//! session. `self.resolved` is also an identity guard: once a locator has bound
+//! a session, a later same-cwd row for a different session must not make that
+//! watcher jump panes. Ambiguous same-cwd rows therefore return the cached
+//! session if there is one, or `Err` so the runtime retries instead of tailing
+//! the wrong transcript.
 //!
 //! Unlike the Kimi locator there is no `/proc` fast-path: the bridge dir is a
 //! Vimeflow-owned XDG path, so resolution is pure filesystem on every OS. A
@@ -55,7 +50,7 @@ use super::transcript_dto::OpencodeIndexRowDto;
 /// append a slightly wider window over the OSC-detected attach.
 const SLACK_MS: i64 = 5_000;
 
-/// Filesystem, newest-fresh-in-cwd opencode locator. Holds the last successful
+/// Filesystem, unambiguous fresh-in-cwd opencode locator. Holds the last successful
 /// resolve `(sessionID, status_path)` behind an `Arc<Mutex<…>>` (the Kimi
 /// shared-state pattern) as a transient-empty-read FALLBACK — `locate`
 /// re-reads the index and re-resolves on every call. M5's validator delegates
@@ -66,7 +61,7 @@ pub(crate) struct OpenCodeLocator {
     bridge_root: PathBuf,
     /// The detected opencode process's pid. NOT the primary key (live data
     /// showed the plugin's pid drifts / doesn't match reliably); kept only as a
-    /// tiebreaker between same-cwd rows with identical `time`.
+    /// tiebreaker between same-session rows with identical `time`.
     agent_pid: u32,
     /// PTY start instant; the cwd resolve rejects rows older than
     /// `pty_start − SLACK`.
@@ -151,30 +146,68 @@ impl OpenCodeLocator {
         Ok(rows)
     }
 
-    /// The newest fresh same-cwd row's sessionID, if any. A row qualifies when
-    /// its canonicalized `directory == cwd` (string-eq fallback if either side
-    /// fails to canonicalize) AND its `time >= pty_start − SLACK`. Among
-    /// qualifiers the latest `time` wins; pid is a tiebreaker ONLY — between two
-    /// qualifiers with identical `time` the one carrying `agent_pid` wins (and
-    /// a `pid == agent_pid` row always outranks a non-matching one at the same
-    /// `time`, since `Some(true) > Some(false)`).
-    fn resolve_by_cwd(&self, rows: &[OpencodeIndexRowDto], cwd: &Path) -> Option<String> {
+    /// The fresh same-cwd sessionID, if unambiguous. A row qualifies when its
+    /// canonicalized `directory == cwd` (string-eq fallback if either side fails
+    /// to canonicalize) AND its `time >= pty_start − SLACK`.
+    ///
+    /// Multiple distinct sessionIDs in the same cwd are ambiguous: recency alone
+    /// cannot tell two same-project panes apart. If the locator already has a
+    /// cached binding and that session is still present, keep it; otherwise fail
+    /// closed so the runtime retries rather than rebinding to a different pane.
+    fn resolve_by_cwd(
+        &self,
+        rows: &[OpencodeIndexRowDto],
+        cwd: &Path,
+    ) -> Result<Option<String>, String> {
         let floor = self.freshness_floor_ms();
-        rows.iter()
+        let candidates: Vec<&OpencodeIndexRowDto> = rows
+            .iter()
             .filter(|row| row.time.is_some_and(|time| time >= floor))
             .filter(|row| {
                 row.directory
                     .as_deref()
                     .is_some_and(|dir| same_directory(dir, cwd))
             })
-            // Primary key: newest `time`. Tiebreaker: `pid == agent_pid`.
+            .collect();
+
+        if let Some(cached_session_id) = self.cached_session_id() {
+            if candidates
+                .iter()
+                .any(|row| row.session_id.as_deref() == Some(cached_session_id.as_str()))
+            {
+                return Ok(Some(cached_session_id));
+            }
+            return Ok(None);
+        }
+
+        let mut distinct_session_ids: Vec<&str> = Vec::new();
+        for row in &candidates {
+            if let Some(session_id) = row.session_id.as_deref() {
+                if !distinct_session_ids.contains(&session_id) {
+                    distinct_session_ids.push(session_id);
+                }
+            }
+        }
+
+        if distinct_session_ids.len() > 1 {
+            return Err(format!(
+                "opencode index not ready: {} fresh sessions share cwd={} in {}; refusing recency-only binding",
+                distinct_session_ids.len(),
+                cwd.display(),
+                self.index_path().display(),
+            ));
+        }
+
+        Ok(candidates
+            .iter()
+            // Same sessionID only: newest `time`. Tiebreaker: `pid == agent_pid`.
             .max_by_key(|row| {
                 (
                     row.time.expect("filtered to Some above"),
                     row.pid == Some(self.agent_pid as u64),
                 )
             })
-            .and_then(|row| row.session_id.clone())
+            .and_then(|row| row.session_id.clone()))
     }
 
     /// `pty_start − SLACK` as epoch-ms; the cwd-fallback freshness floor.
@@ -192,28 +225,37 @@ impl OpenCodeLocator {
 
 impl StatusSourceLocator for OpenCodeLocator {
     fn locate(&self, cwd: &Path, _session_id: &str) -> Result<LocatedStatusSource, String> {
-        // Re-resolve on every call (no short-circuit cache): a re-invoked
-        // `locate` must pick up the CURRENT newest session, not the first-ever
-        // resolve. The index read may transiently yield zero usable rows — fall
+        // Re-resolve on every call, but only accept an unambiguous current
+        // session. The index read may transiently yield zero usable rows — fall
         // back to a prior resolve rather than dropping a live binding.
         let rows = match self.read_index_rows() {
             Ok(rows) => rows,
             Err(not_ready) => return self.cached_or_err(not_ready),
         };
 
-        // Newest fresh same-cwd row (pid only a same-`time` tiebreaker).
+        // Fresh same-cwd row only when it is unambiguous; otherwise keep an
+        // existing cached binding or surface a retry/not-ready error.
         match self.resolve_by_cwd(&rows, cwd) {
-            Some(session_id) => Ok(self.locate_session(session_id)),
-            None => self.cached_or_err(format!(
+            Ok(Some(session_id)) => Ok(self.locate_session(session_id)),
+            Ok(None) => self.cached_or_err(format!(
                 "opencode index not ready: no fresh session in cwd={} in {}",
                 cwd.display(),
                 self.index_path().display(),
             )),
+            Err(not_ready) => self.cached_or_err(not_ready),
         }
     }
 }
 
 impl OpenCodeLocator {
+    fn cached_session_id(&self) -> Option<String> {
+        self.resolved
+            .lock()
+            .expect("opencode resolved lock")
+            .as_ref()
+            .map(|(session_id, _)| session_id.clone())
+    }
+
     /// Fallback for a `locate` that found no qualifying row: return the last
     /// successful resolve if one is cached, else surface the not-ready error so
     /// the runtime retries. Keeps a live binding alive across a transient empty
@@ -382,79 +424,54 @@ mod tests {
         })
     }
 
-    /// Newest fresh same-cwd row wins regardless of pid: an OLDER row carrying
-    /// `agent_pid` must LOSE to a NEWER same-cwd row owned by another pid. This
-    /// is the inverse of the old pid-first contract — pid no longer gates the
-    /// match (live data showed the plugin's pid drifts / mismatches), recency
-    /// in the cwd decides.
+    /// Multiple fresh same-cwd sessionIDs are ambiguous without a per-attach
+    /// identity marker. The locator must fail closed instead of choosing the
+    /// newest row by recency and potentially tailing another pane's transcript.
     #[test]
-    fn newest_fresh_same_cwd_row_wins_even_when_an_older_row_matches_agent_pid() {
+    fn ambiguous_fresh_same_cwd_sessions_without_cache_is_not_ready_err() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().join("proj");
         std::fs::create_dir_all(&cwd).expect("mkdir cwd");
         let cwd_str = cwd.to_string_lossy().into_owned();
 
         let agent_pid = 4242u32;
-        // Older row owned by THIS process; newer row owned by a DIFFERENT pid.
-        // The newer non-pid-matching row must win.
         bridge.write_index(&[
             index_row("ses_ours_old", agent_pid as u64, &cwd_str, 1_000),
             index_row("ses_other_new", 9999, &cwd_str, 5_000),
         ]);
 
         let locator = bridge.locator(agent_pid, epoch_ms(0));
-        let located = locator.locate(&cwd, "pty-1").expect("locate ok");
+        let err = locator
+            .locate(&cwd, "pty-1")
+            .expect_err("ambiguous same-cwd sessions must not bind");
 
-        assert_eq!(located.agent_session_id.as_deref(), Some("ses_other_new"));
-        assert_eq!(located.status_path, bridge.root.join("ses_other_new.jsonl"));
-        assert_eq!(located.trust_root, bridge.root);
-        assert_eq!(
-            located.static_transcript_hint.as_deref(),
-            located.status_path.to_str()
+        assert!(
+            err.contains("refusing recency-only binding"),
+            "ambiguity failure explains fail-closed binding: {err}"
         );
     }
 
-    /// New-pane binding: two fresh same-cwd sessions with DIFFERENT pids (the
-    /// real bug — opencode writes the same/new session under drifting pids) →
-    /// the newest `time` is chosen, not whichever pid happens to match.
+    /// Repeated rows for the SAME session remain unambiguous even when opencode
+    /// writes drifting pids; the newest row for that session still resolves.
     #[test]
-    fn new_pane_two_fresh_same_cwd_sessions_picks_newest_time() {
+    fn repeated_same_session_rows_resolve_despite_pid_drift() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().to_path_buf();
         let cwd_str = cwd.to_string_lossy().into_owned();
         let agent_pid = 7u32;
-        // Neither row's pid equals agent_pid; recency alone must decide.
         bridge.write_index(&[
-            index_row("ses_old", 111, &cwd_str, 100),
-            index_row("ses_new", 222, &cwd_str, 900),
+            index_row("ses_same", 111, &cwd_str, 100),
+            index_row("ses_same", 222, &cwd_str, 900),
         ]);
 
         let locator = bridge.locator(agent_pid, epoch_ms(0));
         let located = locator.locate(&cwd, "pty").expect("locate ok");
-        assert_eq!(located.agent_session_id.as_deref(), Some("ses_new"));
+        assert_eq!(located.agent_session_id.as_deref(), Some("ses_same"));
     }
 
-    /// pid is a same-`time` tiebreaker only: between two qualifiers with
-    /// identical `time`, the `agent_pid` row wins.
+    /// One fresh same-cwd session is chosen.
     #[test]
-    fn pid_breaks_a_same_time_tie() {
-        let bridge = Bridge::new();
-        let cwd = bridge._tmp.path().to_path_buf();
-        let cwd_str = cwd.to_string_lossy().into_owned();
-        let agent_pid = 4242u32;
-        bridge.write_index(&[
-            index_row("ses_other", 9999, &cwd_str, 5_000),
-            index_row("ses_ours", agent_pid as u64, &cwd_str, 5_000),
-        ]);
-
-        let locator = bridge.locator(agent_pid, epoch_ms(0));
-        let located = locator.locate(&cwd, "pty").expect("locate ok");
-        assert_eq!(located.agent_session_id.as_deref(), Some("ses_ours"));
-    }
-
-    /// The newest fresh same-cwd row is chosen.
-    #[test]
-    fn cwd_freshness_fallback_picks_newest_fresh_same_cwd_row() {
+    fn cwd_freshness_fallback_picks_single_fresh_same_cwd_session() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().join("work");
         std::fs::create_dir_all(&cwd).expect("mkdir cwd");
@@ -462,15 +479,11 @@ mod tests {
 
         // pty_start = 10_000ms; SLACK = 5_000 ⇒ floor = 5_000ms.
         let pty_start = epoch_ms(10_000);
-        // Both rows are fresh; the newest `time` wins (pid is irrelevant here).
-        bridge.write_index(&[
-            index_row("ses_old_fresh", 2, &cwd_str, 6_000),
-            index_row("ses_new_fresh", 3, &cwd_str, 9_000),
-        ]);
+        bridge.write_index(&[index_row("ses_fresh", 2, &cwd_str, 6_000)]);
 
         let locator = bridge.locator(1, pty_start);
         let located = locator.locate(&cwd, "pty").expect("locate ok");
-        assert_eq!(located.agent_session_id.as_deref(), Some("ses_new_fresh"));
+        assert_eq!(located.agent_session_id.as_deref(), Some("ses_fresh"));
     }
 
     /// A same-cwd row older than `pty_start − SLACK` is rejected — when it is
@@ -574,12 +587,12 @@ mod tests {
         assert_eq!(located.agent_session_id.as_deref(), Some("ses_good"));
     }
 
-    /// Re-resolution (Part-2 readiness): `locate` re-reads the index on every
-    /// call, so appending a NEWER same-cwd session between two `locate`s makes
-    /// the second `locate` return the NEW session — proving the cache no longer
-    /// short-circuits re-resolution.
+    /// Re-resolution still re-reads the index, but it must not jump from an
+    /// already-bound session to a different newer same-cwd session. That keeps
+    /// an older pane's watcher attached to its own transcript after a newer pane
+    /// appends to the shared index.
     #[test]
-    fn second_locate_reresolves_to_a_newer_appended_session() {
+    fn second_locate_keeps_cached_binding_when_newer_same_cwd_session_appears() {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().to_path_buf();
         let cwd_str = cwd.to_string_lossy().into_owned();
@@ -591,19 +604,19 @@ mod tests {
         let first = locator.locate(&cwd, "pty").expect("first locate binds A");
         assert_eq!(first.agent_session_id.as_deref(), Some("ses_A"));
 
-        // A newer same-cwd session B is appended (a new pane / reattach target).
+        // A newer same-cwd session B is appended by another pane.
         bridge.write_index(&[
             index_row("ses_A", 111, &cwd_str, 1_000),
             index_row("ses_B", 222, &cwd_str, 2_000),
         ]);
 
-        let second = locator.locate(&cwd, "pty").expect("second locate re-resolves");
+        let second = locator.locate(&cwd, "pty").expect("second locate keeps cache");
         assert_eq!(
             second.agent_session_id.as_deref(),
-            Some("ses_B"),
-            "re-invoked locate must pick the newest current session, not the cached first resolve"
+            Some("ses_A"),
+            "re-invoked locate must not rebind to another same-cwd session by recency alone"
         );
-        assert_eq!(second.status_path, bridge.root.join("ses_B.jsonl"));
+        assert_eq!(second.status_path, bridge.root.join("ses_A.jsonl"));
     }
 
     /// Fallback: after a successful resolve, a later `locate` whose index read
@@ -627,6 +640,34 @@ mod tests {
         assert_eq!(first.agent_session_id, second.agent_session_id);
         assert_eq!(first.status_path, second.status_path);
         assert_eq!(second.agent_session_id.as_deref(), Some("ses_cached"));
+    }
+
+    /// Fallback: after a successful resolve, a later `locate` whose index is
+    /// present but contains no row for the current cwd still returns the cached
+    /// previous resolve. This covers the `resolve_by_cwd -> None` fallback path.
+    #[test]
+    fn locate_falls_back_to_cached_resolve_when_cwd_row_disappears_from_index() {
+        let bridge = Bridge::new();
+        let cwd = bridge._tmp.path().join("proj");
+        std::fs::create_dir_all(&cwd).expect("mkdir cwd");
+        let cwd_str = cwd.to_string_lossy().into_owned();
+        let other = bridge._tmp.path().join("other");
+        std::fs::create_dir_all(&other).expect("mkdir other");
+        let other_str = other.to_string_lossy().into_owned();
+
+        bridge.write_index(&[index_row("ses_A", 1, &cwd_str, 1)]);
+
+        let locator = bridge.locator(1, epoch_ms(0));
+        let first = locator.locate(&cwd, "pty").expect("first locate");
+
+        bridge.write_index(&[index_row("ses_other", 1, &other_str, 2)]);
+
+        let second = locator
+            .locate(&cwd, "pty")
+            .expect("cached fallback locate ok");
+        assert_eq!(first.agent_session_id, second.agent_session_id);
+        assert_eq!(first.status_path, second.status_path);
+        assert_eq!(second.agent_session_id.as_deref(), Some("ses_A"));
     }
 
     #[test]
