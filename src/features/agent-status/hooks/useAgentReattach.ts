@@ -43,6 +43,14 @@ const eventTokenTotal = (
     : Number(contextWindow.totalInputTokens) +
       Number(contextWindow.totalOutputTokens)
 
+const stopReattachWatcher = async (ptyId: string): Promise<void> => {
+  try {
+    await invoke('stop_agent_watcher', { sessionId: ptyId })
+  } catch {
+    // Watcher may not be running — ignore.
+  }
+}
+
 interface UseAgentReattachOptions {
   /** Workspace session id of the active pty-backed pane (or `null`). */
   sessionId: string | null
@@ -116,7 +124,14 @@ export const useAgentReattach = ({
   agentTokenTotalRef.current = agentTokenTotal
   const currentStaleKeyRef = useRef(staleKey)
   currentStaleKeyRef.current = staleKey
-  // Single-flight guard so a manual click and the auto-retry can't issue
+  const currentSessionIdRef = useRef(sessionId)
+  const reattachGenerationRef = useRef(0)
+  if (currentSessionIdRef.current !== sessionId) {
+    currentSessionIdRef.current = sessionId
+    reattachGenerationRef.current += 1
+  }
+  const isMountedRef = useRef(true)
+  // Single-flight guard so the drift tick and auto-retry can't issue
   // overlapping `start_agent_watcher` invokes.
   const inFlightRef = useRef(false)
   // The agent session id that was live when the pane went stale. The relocated
@@ -136,10 +151,19 @@ export const useAgentReattach = ({
   // newer `/clear` generation that arrived while the event was in flight.
   const armedStaleKeyRef = useRef<string | null>(null)
 
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return (): void => {
+      isMountedRef.current = false
+      reattachGenerationRef.current += 1
+    }
+  }, [])
+
   // Resolve the armed `/clear` cycle: mark its key resolved and drop red. If a
   // NEWER `/clear` armed after this resolve was decided, re-arm for it instead
   // of clearing (it still needs its own recovery). No-op when not currently
-  // stale. Shared by the success listener and the manual button.
+  // stale. Called by the success listener.
   const resolveArmedReattach = useCallback((): void => {
     if (!needsReattachRef.current) {
       return
@@ -180,11 +204,28 @@ export const useAgentReattach = ({
     if (!ptyId || inFlightRef.current) {
       return 'skipped'
     }
+    const startSessionId = sessionId
+    const startGeneration = reattachGenerationRef.current
     inFlightRef.current = true
     // No stop-then-start: the backend re-locates and atomically replaces the
     // watcher; a failed relocate leaves the old watcher intact (rollback-safe).
     try {
       await invoke('start_agent_watcher', { sessionId: ptyId })
+
+      const activeSessionChanged =
+        currentSessionIdRef.current !== startSessionId
+
+      const staleCompletion =
+        !isMountedRef.current ||
+        activeSessionChanged ||
+        reattachGenerationRef.current !== startGeneration
+      if (staleCompletion) {
+        if (activeSessionChanged) {
+          void stopReattachWatcher(ptyId)
+        }
+
+        return 'skipped'
+      }
 
       return 'ok'
     } catch {
@@ -339,7 +380,7 @@ export const useAgentReattach = ({
   // relocate reports `changed=true`, and its fresh `agent-status` event updates
   // the panel (and clears red if a `/clear` cycle happens to be armed). A
   // same-rollout tick is a cheap backend no-op. Single-flight is shared with the
-  // bounded retry + manual button (`inFlightRef`), so the periodic `lsof` can't
+  // bounded retry (`inFlightRef`), so the periodic `lsof` can't
   // stack. Off unless the active pane runs a live Codex agent.
   useEffect(() => {
     if (!driftEnabled || sessionId === null) {

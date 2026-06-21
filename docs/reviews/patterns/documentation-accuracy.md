@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-16
-ref_count: 26
+last_updated: 2026-06-21
+ref_count: 27
 ---
 
 # Documentation Accuracy
@@ -827,4 +827,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.zh-CN.md`
 - **Finding:** The line read `代理可观测性：Claude Code、Codex CLI 和 Kimi Code`; the reviewer requested the term be rendered as `agent可观测性` to keep the English product term consistent with the bilingual docs.
 - **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Reattach hook comment still references removed manual button
+
+- **Source:** github-claude | PR #592 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A comment on `resolveArmedReattach` still said the helper was shared by the success listener and the manual button, but this PR removed the manual reattach button.
+- **Fix:** Updated stale comments so they describe the current automatic success-listener and bounded-retry/drift behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

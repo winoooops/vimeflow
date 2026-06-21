@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 13
+ref_count: 14
 ---
 
 # Resource Cleanup
@@ -163,3 +163,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `RealLsofRunner::run` used `child.try_wait()?` inside its polling loop. A rare polling error returned before the timeout branch's cleanup sequence, so the spawned `lsof` child could remain running or unreaped and the stdout reader thread could be left detached in the long-lived sidecar.
 - **Fix:** Replaced the `?` with an explicit `match`. The `Err` arm now mirrors timeout cleanup by killing the child, waiting to reap it, joining the stdout reader, and then returning the original polling error.
 - **Commit:** same commit as this entry
+
+### 17. Drift reattach can leave a watcher running after pane switch
+
+- **Source:** github-codex-connector | PR #592 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A periodic drift `start_agent_watcher` could still resolve after the active Codex pane switched away; cleanup cancelled the next timer but did not stop the backend watcher that the late IPC registered for the inactive PTY.
+- **Fix:** Captured the starting session, PTY id, and reattach generation, then stopped the captured PTY watcher if the start resolved after the hook no longer owned that generation. Added a regression test for switching panes while the drift start is in flight.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -672,6 +672,51 @@ test('the drift tick re-locates a live Codex pane on a cadence', async () => {
   expect(invoke).toHaveBeenCalledTimes(2)
 })
 
+test('stops a drift-started watcher when the active pane switches before it resolves', async () => {
+  let resolveStart: (() => void) | undefined
+
+  vi.mocked(invoke).mockImplementation(((cmd: string) => {
+    if (cmd === 'start_agent_watcher') {
+      return new Promise((resolve) => {
+        resolveStart = (): void => {
+          resolve(null)
+        }
+      })
+    }
+
+    return Promise.resolve(null)
+  }) as unknown as typeof invoke)
+
+  const { rerender } = renderHook(
+    ({ sessionId }) =>
+      useAgentReattach({
+        sessionId,
+        agentSessionId: 'codex-1',
+        staleGeneration: 0,
+        driftEnabled: true,
+      }),
+    { initialProps: { sessionId: 'session-1' } }
+  )
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4000)
+  })
+  expect(resolveStart).toBeDefined()
+
+  act(() => {
+    rerender({ sessionId: 'session-2' })
+  })
+
+  await act(async () => {
+    resolveStart?.()
+    await Promise.resolve()
+  })
+
+  expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+    sessionId: 'pty-session-1',
+  })
+})
+
 test('no drift tick when driftEnabled is false', async () => {
   renderHook(() =>
     useAgentReattach({
