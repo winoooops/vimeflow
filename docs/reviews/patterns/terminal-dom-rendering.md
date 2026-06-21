@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-21
-ref_count: 4
+ref_count: 5
 ---
 
 # Terminal DOM Rendering
@@ -84,4 +84,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
 - **Finding:** The cursor-split path wrapped styled fragments in an outer style-run span and applied full cell-width layout to that outer wrapper. The inner fragments also received their own styled spans, so the zero-width cursor marker sat inside a container whose min-width duplicated the inner cell widths and could make highlighted backgrounds extend past the intended terminal columns.
 - **Fix:** Removed full style application from the outer cursor wrapper. Inner fragments now own background/reverse color and cell-width layout on each side of the cursor; focused regressions assert the split fragments' widths add up to the original run width.
+- **Commit:** same commit as this entry
+
+### 9. Block-glyph fast paths should match implemented paint coverage
+
+- **Source:** github-claude | PR #591 round 8 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L25
+- **Finding:** `BLOCK_ELEMENT_PATTERN` matched shade glyphs U+2591 through U+2593, but `readBlockGlyphPaint` returned `null` for them. That routed shade runs through the block-glyph splitting path without producing custom paint, creating unnecessary per-character work and an expectation mismatch.
+- **Fix:** Narrowed the pattern to the implemented paint ranges, excluding U+2591 through U+2593 so shade glyphs stay on the standard text-rendering path until a real shade paint implementation exists. Added a DOM regression that asserts shade glyphs render with no custom block-glyph spans.
 - **Commit:** same commit as this entry

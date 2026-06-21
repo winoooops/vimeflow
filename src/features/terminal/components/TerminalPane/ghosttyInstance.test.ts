@@ -1623,6 +1623,48 @@ describe('ghosttyInstance', () => {
     expect(rects[3]?.style.height).toBe('50%')
   })
 
+  test('renders shade glyphs through the standard text path', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['░▒▓'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 3,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '░▒▓',
+              width: 3,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = terminalOutput?.querySelectorAll(
+      '[data-terminal-custom-glyph="block"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('░▒▓')
+    expect(created.viewportReader.readVisibleText()).toBe('░▒▓')
+    expect(glyphs).toHaveLength(0)
+  })
+
   test('paints left partial block glyph widths without overfilling', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({

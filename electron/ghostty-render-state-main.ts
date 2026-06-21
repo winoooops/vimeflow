@@ -422,7 +422,7 @@ class CursorVisibilityScanner {
       }
 
       const final = this.buffer[finalIndex]
-      const parameters = this.buffer.slice(finalStart, finalIndex).split(';')
+      const parameters = this.buffer.slice(finalStart, finalIndex).split(/[;:]/)
 
       if (
         (final === 'h' || final === 'l') &&
@@ -445,7 +445,7 @@ class CursorVisibilityScanner {
         return index
       }
 
-      if (character !== ';' && (character < '0' || character > '9')) {
+      if (character < '\x30' || character > '\x3f') {
         return index
       }
     }
@@ -718,6 +718,7 @@ const splitSnapshotCellByReverseVideoRanges = (
 
   return boundaries.slice(0, -1).map((startColumn, index) => {
     const endColumn = boundaries[index + 1]
+
     const segment: GhosttyRenderStateBridgeSnapshotCell = {
       row: cell.row,
       col: startColumn,

@@ -355,7 +355,7 @@ describe('ghostty render-state main bridge', () => {
     expect(
       bridge.writeBytes(event.sender.id, {
         driverId: createResult.driverId,
-        bytes: encoder.encode('\u001b[?25h'),
+        bytes: encoder.encode('\u001b[?25:1h'),
       })
     ).toEqual({
       ok: true,
@@ -383,6 +383,29 @@ describe('ghostty render-state main bridge', () => {
         })
       ).cursor
     ).not.toHaveProperty('visible')
+
+    expect(
+      bridge.writeBytes(event.sender.id, {
+        driverId: createResult.driverId,
+        bytes: encoder.encode('\u001b[?25:1l'),
+      })
+    ).toEqual({
+      ok: true,
+      result: {
+        events: [],
+      },
+    })
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toMatchObject({
+      ok: true,
+      result: {
+        cursor: {
+          visible: false,
+        },
+      },
+    })
   })
 
   test('drops oversized complete OSC7 cwd effects', () => {
