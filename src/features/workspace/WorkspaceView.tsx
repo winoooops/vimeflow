@@ -937,7 +937,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // Dock panel controlled state.
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
-  const [isDockOpen, setIsDockOpen] = useState(true)
+  const [isDockOpen, setIsDockOpen] = useState(false)
   const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(

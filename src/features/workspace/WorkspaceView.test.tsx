@@ -389,13 +389,17 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders workspace zones (sidebar, terminal, dock panel, agent status panel)', () => {
+  test('renders workspace zones with the dock collapsed by default', () => {
     render(<WorkspaceView />)
 
     // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument() // DockPanel
+    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -1489,10 +1493,14 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('DockPanel is present below TerminalZone', () => {
+  test('DockPanel opens below TerminalZone from the status bar toggle', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // DockPanel should render with Editor tab active
+    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
+
     expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
@@ -1503,6 +1511,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
     await user.click(screen.getByRole('button', { name: /dock: left/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
@@ -1525,6 +1534,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
     await user.click(screen.getByRole('button', { name: /dock: right/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
@@ -1555,12 +1565,10 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Dock starts open.
-    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    // Dock starts closed.
+    expect(screen.queryByTestId('dock-panel')).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    // Closed: the dock is gone and there is no "show panel" peek affordance —
+    // Closed: the dock is gone and there is no "show panel" peek affordance -
     // only the terminal remains. The bottom action bar's dock toggle is the
     // single reopen control.
     expect(screen.queryByTestId('dock-panel')).toBeNull()
@@ -1574,6 +1582,10 @@ describe('WorkspaceView', () => {
 
     expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
     expect(dockToggle).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
+
+    expect(screen.queryByTestId('dock-panel')).toBeNull()
   })
 
   test('main workspace area uses flex-col layout', () => {
@@ -1643,7 +1655,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
+    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
   })
 
   test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
@@ -2448,6 +2460,7 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
     await user.click(screen.getByRole('button', { name: 'Editor' }))
 
     expect(screen.getByTestId('code-editor')).toBeInTheDocument()
