@@ -164,9 +164,9 @@ impl OpenCodeLocator {
     ///   under one pid are sequential sessions of the same opencode server (one
     ///   pane), so newest-wins is the live one, not a cross-pane guess.
     ///
-    /// `None` when no fresh row carries `agent_pid` (the caller then tries the
-    /// cwd fallback), or when a cache exists but is no longer pid-matched (so the
-    /// caller's `cached_or_err` keeps the live binding rather than jumping).
+    /// `None` when no fresh row carries `agent_pid`, or when a cache exists but
+    /// is no longer pid-matched, so the cwd fallback is tried first;
+    /// `cached_or_err` preserves the binding only if cwd also finds nothing.
     fn resolve_by_pid(&self, rows: &[OpencodeIndexRowDto]) -> Option<String> {
         let floor = self.freshness_floor_ms();
         let candidates: Vec<&OpencodeIndexRowDto> = rows

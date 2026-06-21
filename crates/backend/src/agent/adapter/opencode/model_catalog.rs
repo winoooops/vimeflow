@@ -16,12 +16,13 @@
 //! **Best-effort, never fatal.** A missing / unreadable / unparseable cache, or
 //! a model the cache does not list, yields [`OPENCODE_CONTEXT_WINDOW_SIZE`]
 //! (`0` = unknown) and the frontend renders the bar without a denominator
-//! ("window unknown") — exactly the pre-lookup behavior. The catalog is loaded
-//! once per process (opencode refreshes it rarely and a model's context window
-//! is static per version), so lookups after the first are a hashmap hit.
+//! ("window unknown") — exactly the pre-lookup behavior. The first non-empty
+//! catalog is cached for the process (opencode refreshes it rarely and a model's
+//! context window is static per version), so lookups after that are a hashmap
+//! hit while early refresh races can still recover.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use serde_json::Value;
@@ -96,15 +97,32 @@ fn lookup(catalog: &Catalog, provider_id: &str, model_id: &str) -> u64 {
         .unwrap_or(OPENCODE_CONTEXT_WINDOW_SIZE)
 }
 
-/// Process-wide catalog, loaded once from the resolved `models.json`. Any read
-/// or parse failure yields an empty map (every lookup then returns the unknown
-/// sentinel).
-fn catalog() -> &'static Catalog {
+/// Load a catalog from disk. Missing, unreadable, malformed, or empty caches
+/// return `None` so callers can retry after opencode finishes refreshing
+/// `models.json`.
+fn read_catalog(path: &Path) -> Option<Catalog> {
+    let bytes = std::fs::read(path).ok()?;
+    let catalog = parse_catalog(&bytes);
+    (!catalog.is_empty()).then_some(catalog)
+}
+
+/// Catalog cache, populated only after a non-empty `models.json` load succeeds.
+fn cached_catalog<'a>(cache: &'a OnceLock<Catalog>, path: &Path) -> Option<&'a Catalog> {
+    if let Some(catalog) = cache.get() {
+        return Some(catalog);
+    }
+
+    let catalog = read_catalog(path)?;
+    let _ = cache.set(catalog);
+    cache.get()
+}
+
+/// Process-wide catalog, loaded from the resolved `models.json` once a
+/// successful non-empty parse is available. Earlier read/parse misses are not
+/// cached so first-run and refresh-race sessions can recover without restart.
+fn catalog() -> Option<&'static Catalog> {
     static CATALOG: OnceLock<Catalog> = OnceLock::new();
-    CATALOG.get_or_init(|| match std::fs::read(models_json_path()) {
-        Ok(bytes) => parse_catalog(&bytes),
-        Err(_) => Catalog::new(),
-    })
+    cached_catalog(&CATALOG, &models_json_path())
 }
 
 /// Best-effort context-window size (tokens) for `(providerID, modelID)` from
@@ -115,7 +133,9 @@ fn catalog() -> &'static Catalog {
 /// [`super::parser::parse_bridge_snapshot`] injects, so the production decode
 /// path passes this function directly while tests pass a deterministic stub.
 pub(crate) fn context_window(provider_id: &str, model_id: &str) -> u64 {
-    lookup(catalog(), provider_id, model_id)
+    catalog()
+        .map(|catalog| lookup(catalog, provider_id, model_id))
+        .unwrap_or(OPENCODE_CONTEXT_WINDOW_SIZE)
 }
 
 #[cfg(test)]
@@ -184,6 +204,39 @@ mod tests {
             OPENCODE_CONTEXT_WINDOW_SIZE
         );
         assert_eq!(lookup(&Catalog::new(), "opencode", "anything"), 0);
+    }
+
+    #[test]
+    fn cached_catalog_retries_after_initial_missing_cache() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("models.json");
+        let cache = OnceLock::new();
+
+        assert!(cached_catalog(&cache, &path).is_none());
+        std::fs::write(&path, SAMPLE_MODELS_JSON).expect("write models cache");
+
+        let catalog = cached_catalog(&cache, &path).expect("catalog after cache appears");
+        assert_eq!(
+            lookup(catalog, "opencode", "deepseek-v4-flash-free"),
+            200_000
+        );
+    }
+
+    #[test]
+    fn cached_catalog_retries_after_empty_or_malformed_cache() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("models.json");
+        let cache = OnceLock::new();
+
+        std::fs::write(&path, r#"{"opencode":{"models":{}}}"#).expect("write empty cache");
+        assert!(cached_catalog(&cache, &path).is_none());
+
+        std::fs::write(&path, "not json").expect("write malformed cache");
+        assert!(cached_catalog(&cache, &path).is_none());
+
+        std::fs::write(&path, SAMPLE_MODELS_JSON).expect("write valid cache");
+        let catalog = cached_catalog(&cache, &path).expect("catalog after valid cache");
+        assert_eq!(lookup(catalog, "anthropic", "claude-sonnet-4"), 1_000_000);
     }
 
     #[test]
