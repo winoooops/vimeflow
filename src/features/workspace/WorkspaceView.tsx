@@ -521,11 +521,12 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatusResetGeneration
   )
 
-  // Codex watcher relocation recovery (VIM-188/192): `/clear` arms the red
-  // "needs reattach" indicator + a bounded auto-reattach; the always-on drift
-  // tick relocates the active Codex pane so the panel also follows an
-  // undetectable in-session `resume`. Recovery is automatic once codex writes
-  // the conversation (the user sends a prompt) — there is no manual button.
+  // Watcher relocation recovery (VIM-188/192): a `/clear` on a codex or
+  // opencode pane arms the red "needs reattach" indicator + a bounded
+  // auto-reattach; the always-on drift tick additionally relocates the active
+  // Codex pane so the panel follows an undetectable in-session `resume`.
+  // Recovery is automatic once the agent writes the new session (the user
+  // sends a prompt) — there is no manual button.
   const agentReattach = useAgentReattach({
     sessionId: activePtyBackedPanePtyId ?? null,
     agentSessionId: agentStatus.agentSessionId,
@@ -536,7 +537,9 @@ const WorkspaceViewContent = (): ReactElement => {
     staleGeneration: agentStatusResetGeneration,
     // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
     // periodically so the panel follows an in-session `resume` (which is
-    // undetectable and never arms the red state).
+    // undetectable and never arms the red state). opencode does not need drift
+    // — its bridge writes are append-close so the lsof open-FD signal doesn't
+    // apply; `/clear` reattach is covered by the command path above.
     driftEnabled: agentStatus.agentType === 'codex' && agentStatus.isActive,
   })
 
@@ -577,28 +580,29 @@ const WorkspaceViewContent = (): ReactElement => {
   const handleTerminalCommandSubmit = useCallback(
     (ptyId: string, command: string): void => {
       // A codex `/clear` opens a fresh conversation and `/resume` switches to a
-      // different one — both point codex at a NEW rollout, so the live status
-      // is now stale. Treat both as a context switch: reset agent-status and arm
-      // the red "send a prompt to reattach" indicator until the watcher
+      // different one — both point codex/opencode at a NEW session, so the live
+      // status is now stale. Treat both as a context switch: reset agent-status
+      // and arm the red "send a prompt to reattach" indicator until the watcher
       // relocates onto the new conversation (VIM-192). `/resume <id>` is the
-      // arg form.
-      const isCodexContextSwitch =
+      // arg form (codex-only; harmless for opencode which only uses `/clear`).
+      const isContextSwitch =
         command === '/clear' ||
         command === '/resume' ||
         command.startsWith('/resume ')
-      if (!isCodexContextSwitch) {
+      if (!isContextSwitch) {
         return
       }
 
       // Only reset agent-status state when the active pane is actually running
-      // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
-      // syntactically identical to a Codex command, and a false reset for a
-      // live Codex session would suppress same-run events until the next
+      // Codex or opencode. Raw PTY input (e.g. vim's `/clear` search followed
+      // by Enter) is syntactically identical to an agent command, and a false
+      // reset for a live session would suppress same-run events until the next
       // session boundary (Claude Code Review on PR #469).
-      if (
-        ptyId === activePtyBackedPanePtyId &&
-        agentStatus.agentType === 'codex'
-      ) {
+      const at = agentStatus.agentType
+      // opencode follows `/clear` via the command path only; its bridge writes
+      // are append-close so the codex lsof open-FD drift signal doesn't apply.
+      const followsClearReattach = at === 'codex' || at === 'opencode'
+      if (ptyId === activePtyBackedPanePtyId && followsClearReattach) {
         setAgentStatusReset((prev) => ({
           ptyId,
           generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
