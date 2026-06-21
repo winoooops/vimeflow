@@ -18,11 +18,12 @@ use std::path::PathBuf;
 #[allow(unused_imports)]
 pub(crate) use super::install::bridge_dir;
 
-/// opencode context-window size placeholder. opencode does not emit a
-/// context-window size into the bridge JSONL, and v1 has no reliable
-/// per-model table, so the decoder (M4) treats `0` as "unknown" and the
-/// frontend renders the bar without a denominator. Mirrors the
-/// `KIMI_CONTEXT_WINDOW_SIZE` shape, but the value is intentionally `0`.
+/// opencode context-window "unknown" sentinel. opencode does not emit a
+/// context-window size into the bridge JSONL; the decoder resolves it from
+/// opencode's models.dev cache by `(providerID, modelID)` (see
+/// [`super::model_catalog`]). This `0` is what the lookup returns when the
+/// cache is absent or the model is unlisted — the frontend then renders the
+/// bar without a denominator. Mirrors the `KIMI_CONTEXT_WINDOW_SIZE` shape.
 pub(crate) const OPENCODE_CONTEXT_WINDOW_SIZE: u64 = 0;
 
 /// opencode home fallback (registry plumbing only — NOT the bridge dir).

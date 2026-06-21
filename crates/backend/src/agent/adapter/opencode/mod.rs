@@ -14,6 +14,7 @@
 // staged surface keeps a narrow `#[allow(dead_code)]`.
 pub(crate) mod install;
 pub(crate) mod locator;
+pub(crate) mod model_catalog;
 pub(crate) mod parser;
 pub(crate) mod transcript;
 pub(crate) mod transcript_dto;
@@ -72,7 +73,13 @@ impl TranscriptPathSource for OpenCodeAdapter {
 
 impl StateDecoder for OpenCodeAdapter {
     fn decode(&self, session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String> {
-        Ok(parser::parse_bridge_snapshot(session_id, raw))
+        // The bridge stream carries `{providerID, modelID}` but not the model's
+        // context-window size; resolve it from opencode's models.dev cache.
+        Ok(parser::parse_bridge_snapshot(
+            session_id,
+            raw,
+            model_catalog::context_window,
+        ))
     }
 }
 
@@ -150,8 +157,8 @@ use once_cell::sync::Lazy;
 
 /// Serializes every test that mutates the process-wide opencode env vars
 /// (`VIMEFLOW_OPENCODE_BRIDGE_DIR`, `VIMEFLOW_OPENCODE_PLUGINS_DIR`,
-/// `XDG_DATA_HOME`, `HOME`, `OPENCODE_HOME`) so concurrent tests don't observe
-/// each other's mutations.
+/// `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `VIMEFLOW_OPENCODE_MODELS_JSON`, `HOME`,
+/// `OPENCODE_HOME`) so concurrent tests don't observe each other's mutations.
 #[cfg(test)]
 static OPENCODE_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -161,7 +168,9 @@ static OPENCODE_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 const GUARDED_ENV_KEYS: &[&str] = &[
     "VIMEFLOW_OPENCODE_BRIDGE_DIR",
     "VIMEFLOW_OPENCODE_PLUGINS_DIR",
+    "VIMEFLOW_OPENCODE_MODELS_JSON",
     "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
     "HOME",
     "OPENCODE_HOME",
 ];
