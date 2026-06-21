@@ -83,9 +83,11 @@ const workspaceTerminalMock = vi.hoisted(() => {
 })
 
 const agentReattachMock = vi.hoisted(() => ({
-  useAgentReattach: vi.fn((): ReturnType<UseAgentReattach> => ({
-    needsReattach: false,
-  })),
+  useAgentReattach: vi.fn<UseAgentReattach>(
+    (): ReturnType<UseAgentReattach> => ({
+      needsReattach: false,
+    })
+  ),
 }))
 
 const mockMatchMedia = (matches: boolean): (() => void) => {
