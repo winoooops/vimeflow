@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-21
-ref_count: 5
+ref_count: 6
 ---
 
 # Agent-State Guards
@@ -84,4 +84,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** `WorkspaceView` enabled Codex drift relocation from `agentStatus.agentType === 'codex'` alone, but `useAgentStatus` intentionally retains `agentType` after disconnect so the exit UI can describe the last agent. Exited Codex panes could keep the periodic relocation loop active until the PTY closed or was replaced.
 - **Fix:** Gated drift relocation on both Codex identity and `agentStatus.isActive`. Added workspace coverage asserting an inactive retained Codex status passes `driftEnabled: false` into `useAgentReattach`.
+- **Commit:** same commit as this entry
+
+### 9. Unknown token baseline accepted same-id stale status after reset
+
+- **Source:** github-codex-connector | PR #593 round 3 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** After a local `/clear`, the status latch accepted a same-id `agent-status` event with non-zero tokens when the captured pre-reset token baseline was null. In that recovery window, an old watcher still pinned to the stale rollout could repopulate the sidebar and clear run-scoped suppression before the relocated watcher was proven fresh.
+- **Fix:** Kept same-id unknown-baseline status suppressed unless the event is a zero-token reset. Different `agentSessionId` events still clear the latch as the explicit session boundary. Updated the null-context regression test to prove non-zero stale replays stay blocked while zero-token reset events recover.
 - **Commit:** same commit as this entry
