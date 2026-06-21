@@ -1,8 +1,15 @@
 // cspell:ignore ghostty
 import {
-  findTextOffsetForCellColumn,
-  readTextCellWidth,
-} from './terminalDisplayBuffer'
+  readCellDisplayText,
+  readCellRowVisibleText,
+  readCellsByRow,
+  readCursorOffsetInCellRow,
+  readFallbackColumnDeltaForCell,
+  readRowTextByCellColumns,
+  type GhosttyCellTraversalCell,
+  type GhosttyCellsByRow,
+} from '../../../../../shared/ghosttyCellTraversal'
+import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
 import { getSgrStyleSentinel } from './terminalControlParser'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
@@ -12,7 +19,7 @@ export interface GhosttyVtRenderSnapshotCursor {
   readonly textOffset?: number
 }
 
-export interface GhosttyVtRenderSnapshotCell {
+export interface GhosttyVtRenderSnapshotCell extends GhosttyCellTraversalCell {
   readonly row: number
   readonly col: number
   readonly text: string
@@ -30,9 +37,6 @@ export interface GhosttyVtRenderSnapshot {
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
 }
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max)
-
 interface SnapshotStyle {
   readonly bold?: boolean
   readonly italic?: boolean
@@ -40,6 +44,9 @@ interface SnapshotStyle {
   readonly foreground?: string
   readonly background?: string
 }
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max)
 
 const HEX_COLOR_PATTERN = /^#?([0-9a-f]{6})$/i
 
@@ -73,13 +80,6 @@ const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
   ...(cell.background ? { background: cell.background } : {}),
 })
 
-const hasCellStyle = (cell: GhosttyVtRenderSnapshotCell): boolean =>
-  cell.bold === true ||
-  cell.italic === true ||
-  cell.underline === true ||
-  cell.foreground !== undefined ||
-  cell.background !== undefined
-
 const readStyleKey = (style: SnapshotStyle): string =>
   [
     style.bold === true ? '1' : '',
@@ -99,13 +99,6 @@ const readStyleParameters = (style: SnapshotStyle): readonly number[] => [
   ...readSgrColorParameters(38, style.foreground),
   ...readSgrColorParameters(48, style.background),
 ]
-
-const sortCells = (
-  cells: readonly GhosttyVtRenderSnapshotCell[]
-): readonly GhosttyVtRenderSnapshotCell[] =>
-  [...cells].sort((left, right) =>
-    left.row === right.row ? left.col - right.col : left.row - right.row
-  )
 
 const readCellRows = (
   cells: readonly GhosttyVtRenderSnapshotCell[] | undefined
@@ -170,229 +163,7 @@ const trimLeadingEmptyRows = (
 const readSnapshotText = (snapshot: GhosttyVtRenderSnapshot): string =>
   snapshot.rows.join('\n')
 
-const readCellsByRow = (
-  cells: readonly GhosttyVtRenderSnapshotCell[] | undefined
-): Map<number, readonly GhosttyVtRenderSnapshotCell[]> => {
-  const cellsByRow = new Map<number, GhosttyVtRenderSnapshotCell[]>()
-
-  sortCells(cells ?? []).forEach((cell) => {
-    const rowCells = cellsByRow.get(cell.row) ?? []
-
-    rowCells.push(cell)
-    cellsByRow.set(cell.row, rowCells)
-  })
-
-  return cellsByRow
-}
-
-type CellsByRow = ReadonlyMap<number, readonly GhosttyVtRenderSnapshotCell[]>
-
-const readRowTextByCellColumns = (
-  rowText: string,
-  start: number,
-  end: number
-): string => {
-  const startOffset = findTextOffsetForCellColumn(rowText, start)
-  const endOffset = findTextOffsetForCellColumn(rowText, end)
-  const slice = rowText.slice(startOffset, endOffset)
-
-  return slice.padEnd(
-    slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
-    ' '
-  )
-}
-
-const readCellDisplayText = (
-  rowText: string,
-  cell: GhosttyVtRenderSnapshotCell,
-  fallbackColumn: number
-): string => {
-  if (cell.text !== '') {
-    return cell.text
-  }
-
-  return hasCellStyle(cell)
-    ? ' '.repeat(cell.width)
-    : readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + cell.width
-      )
-}
-
-const readFallbackColumnDeltaForCell = (
-  rowText: string,
-  cell: GhosttyVtRenderSnapshotCell,
-  fallbackColumn: number
-): number => {
-  if (cell.text !== '') {
-    return readTextCellWidth(cell.text)
-  }
-
-  if (!hasCellStyle(cell)) {
-    return cell.width
-  }
-
-  const fallbackText = readRowTextByCellColumns(
-    rowText,
-    fallbackColumn,
-    fallbackColumn + cell.width
-  )
-
-  // Ghostty visibleLines omits styled-blank columns; non-blank fallback here belongs to a later column.
-  return fallbackText.trim() === '' ? cell.width : 0
-}
-
-const readTextOffsetForNativeCellColumn = (
-  text: string,
-  nativeCellWidth: number,
-  columnOffset: number
-): number => {
-  const clampedColumn = clamp(columnOffset, 0, nativeCellWidth)
-
-  if (clampedColumn === 0) {
-    return 0
-  }
-
-  if (clampedColumn >= nativeCellWidth) {
-    return text.length
-  }
-
-  return readTextCellWidth(text) >= nativeCellWidth
-    ? findTextOffsetForCellColumn(text, clampedColumn)
-    : 0
-}
-
-const readCellRowVisibleText = (
-  rowText: string,
-  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined
-): string => {
-  if (!rowCells || rowCells.length === 0) {
-    return rowText
-  }
-
-  let output = ''
-  let currentColumn = 0
-  let fallbackColumn = 0
-
-  rowCells.forEach((cell) => {
-    if (cell.col < currentColumn) {
-      currentColumn = Math.max(currentColumn, cell.col + cell.width)
-
-      return
-    }
-
-    if (cell.col > currentColumn) {
-      const gapWidth = cell.col - currentColumn
-
-      output += readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + gapWidth
-      )
-      currentColumn = cell.col
-      fallbackColumn += gapWidth
-    }
-
-    output += readCellDisplayText(rowText, cell, fallbackColumn)
-    fallbackColumn += readFallbackColumnDeltaForCell(
-      rowText,
-      cell,
-      fallbackColumn
-    )
-    currentColumn = cell.col + cell.width
-  })
-
-  const trailingTextOffset = findTextOffsetForCellColumn(
-    rowText,
-    fallbackColumn
-  )
-
-  return `${output}${rowText.slice(trailingTextOffset)}`
-}
-
-const readCursorOffsetInCellRow = (
-  rowText: string,
-  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined,
-  columnOffset: number
-): number => {
-  if (!rowCells || rowCells.length === 0) {
-    return findTextOffsetForCellColumn(rowText, columnOffset)
-  }
-
-  let currentColumn = 0
-  let fallbackColumn = 0
-  let textOffset = 0
-
-  for (const cell of rowCells) {
-    if (cell.col < currentColumn) {
-      if (columnOffset < currentColumn) {
-        return textOffset
-      }
-
-      currentColumn = Math.max(currentColumn, cell.col + cell.width)
-      continue
-    }
-
-    if (columnOffset <= cell.col) {
-      const gapWidth = cell.col - currentColumn
-
-      const gapText = readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + gapWidth
-      )
-
-      return (
-        textOffset +
-        findTextOffsetForCellColumn(gapText, columnOffset - currentColumn)
-      )
-    }
-
-    if (cell.col > currentColumn) {
-      const gapWidth = cell.col - currentColumn
-
-      textOffset += readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + gapWidth
-      ).length
-      currentColumn = cell.col
-      fallbackColumn += gapWidth
-    }
-
-    const cellEndColumn = cell.col + cell.width
-    const cellText = readCellDisplayText(rowText, cell, fallbackColumn)
-
-    if (columnOffset < cellEndColumn) {
-      return (
-        textOffset +
-        readTextOffsetForNativeCellColumn(
-          cellText,
-          cell.width,
-          columnOffset - cell.col
-        )
-      )
-    }
-
-    textOffset += cellText.length
-    fallbackColumn += readFallbackColumnDeltaForCell(
-      rowText,
-      cell,
-      fallbackColumn
-    )
-    currentColumn = cellEndColumn
-  }
-
-  const trailingText = rowText.slice(
-    findTextOffsetForCellColumn(rowText, fallbackColumn)
-  )
-
-  return (
-    textOffset +
-    findTextOffsetForCellColumn(trailingText, columnOffset - currentColumn)
-  )
-}
+type CellsByRow = GhosttyCellsByRow<GhosttyVtRenderSnapshotCell>
 
 const readStyledRowText = (
   rowText: string,
@@ -407,7 +178,7 @@ const readStyledRowText = (
   let currentColumn = 0
   let fallbackColumn = 0
 
-  rowCells.forEach((cell) => {
+  rowCells.forEach((cell, index) => {
     if (cell.col < currentColumn) {
       currentColumn = Math.max(currentColumn, cell.col + cell.width)
 
@@ -443,7 +214,8 @@ const readStyledRowText = (
     fallbackColumn += readFallbackColumnDeltaForCell(
       rowText,
       cell,
-      fallbackColumn
+      fallbackColumn,
+      rowCells[index + 1]
     )
 
     currentColumn = cell.col + cell.width

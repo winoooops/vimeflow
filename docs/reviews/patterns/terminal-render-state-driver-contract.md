@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-21
-ref_count: 5
+ref_count: 6
 ---
 
 # Terminal Render-State Driver Contract
@@ -235,4 +235,22 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts` L217-237
 - **Finding:** Returning `0` fallback-column delta for a styled empty cell over non-blank fallback text relies on Ghostty's compact `visibleLines` encoding, where styled-blank columns are omitted. Without a local comment, the branch looks like it could duplicate or drop text under a different snapshot format.
 - **Fix:** Added the Ghostty `visibleLines` styled-blank invariant comment in both the renderer helper and its Electron bridge counterpart.
+- **Commit:** same commit as this entry
+
+### 25. Shared native-cell traversal must live in one compiled helper
+
+- **Source:** github-claude | PR #591 round 2 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L444-740
+- **Finding:** The Electron bridge and renderer snapshot code each carried a private copy of the native cell traversal helpers. The copies had already started to diverge in small ways, making future cursor or fallback fixes likely to land in only one bundle.
+- **Fix:** Extracted the shared native-cell traversal, sorting, row reconstruction, and cursor-offset logic into `shared/ghosttyCellTraversal.ts`, then imported it from both Electron main and the renderer. The shared helper has direct regression coverage for row grouping, styled blanks, explicit-cell alignment, and skipped wide-cell cursor offsets.
+- **Commit:** same commit as this entry
+
+### 26. Sparse styled blanks must distinguish real fallback whitespace
+
+- **Source:** github-codex-connector | PR #591 round 2 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L631
+- **Finding:** The styled-empty-cell fallback delta used `trim()` to decide whether to advance through fallback text. A real fallback whitespace character after a sparse styled blank was therefore consumed as though it were the omitted styled blank, collapsing `A  B` to `A B`.
+- **Fix:** Removed the `trim()` heuristic from the shared traversal helper. Styled blank fallback consumption is now adjacent-cell aware: sparse styled blanks leave trailing fallback text and non-adjacent gaps intact, while adjacent explicit native cells can still align against compact fallback rows. Added shared regression coverage for all three cases.
 - **Commit:** same commit as this entry

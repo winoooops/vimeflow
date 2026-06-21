@@ -5,6 +5,13 @@ import { createRequire } from 'node:module'
 import { TextDecoder } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import {
+  readCellRowVisibleText,
+  readCellsByRow,
+  readCursorOffsetInCellRow,
+  type GhosttyCellTraversalCell,
+  type GhosttyCellsByRow,
+} from '../shared/ghosttyCellTraversal'
+import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
   GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
@@ -43,7 +50,7 @@ export interface GhosttyRenderStateBridgeSnapshot {
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
 
-export interface GhosttyRenderStateBridgeSnapshotCell {
+export interface GhosttyRenderStateBridgeSnapshotCell extends GhosttyCellTraversalCell {
   row: number
   col: number
   text: string
@@ -441,356 +448,17 @@ const readSnapshotCells = (
   })
 }
 
-const hasSnapshotCellStyle = (
-  cell: GhosttyRenderStateBridgeSnapshotCell
-): boolean =>
-  cell.bold === true ||
-  cell.italic === true ||
-  cell.underline === true ||
-  cell.foreground !== undefined ||
-  cell.background !== undefined
-
-const sortSnapshotCells = (
-  cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
-): readonly GhosttyRenderStateBridgeSnapshotCell[] =>
-  [...cells].sort((left, right) =>
-    left.row === right.row ? left.col - right.col : left.row - right.row
-  )
-
-const readCellsByRow = (
-  cells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined
-): ReadonlyMap<number, readonly GhosttyRenderStateBridgeSnapshotCell[]> => {
-  const cellsByRow = new Map<number, GhosttyRenderStateBridgeSnapshotCell[]>()
-
-  sortSnapshotCells(cells ?? []).forEach((cell) => {
-    const rowCells = cellsByRow.get(cell.row) ?? []
-
-    rowCells.push(cell)
-    cellsByRow.set(cell.row, rowCells)
-  })
-
-  return cellsByRow
-}
-
-const isCombiningCodePoint = (codePoint: number): boolean =>
-  (codePoint >= 0x0300 && codePoint <= 0x036f) ||
-  (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
-  (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
-  (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
-  (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
-  (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
-
-const isPrivateUseCodePoint = (codePoint: number): boolean =>
-  (codePoint >= 0xe000 && codePoint <= 0xf8ff) ||
-  (codePoint >= 0xf0000 && codePoint <= 0xffffd) ||
-  (codePoint >= 0x100000 && codePoint <= 0x10fffd)
-
-const isWideCodePoint = (codePoint: number): boolean =>
-  (codePoint >= 0x1100 && codePoint <= 0x115f) ||
-  codePoint === 0x2329 ||
-  codePoint === 0x232a ||
-  (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
-  (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
-  (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-  (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
-  (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
-  (codePoint >= 0xff00 && codePoint <= 0xff60) ||
-  (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
-  (codePoint >= 0x1f300 && codePoint <= 0x1faff)
-
-const readCodePointLength = (text: string, cursor: number): number => {
-  const codePoint = text.codePointAt(cursor)
-
-  return codePoint !== undefined && codePoint > 0xffff ? 2 : 1
-}
-
-const readTerminalCellWidth = (text: string, cursor: number): number => {
-  const codePoint = text.codePointAt(cursor)
-
-  if (codePoint === undefined || codePoint === 0 || codePoint === 0x0a) {
-    return 0
-  }
-
-  if (isCombiningCodePoint(codePoint)) {
-    return 0
-  }
-
-  if (isPrivateUseCodePoint(codePoint)) {
-    return 1
-  }
-
-  return isWideCodePoint(codePoint) ? 2 : 1
-}
-
-const readTextCellWidth = (text: string): number => {
-  let width = 0
-  let cursor = 0
-
-  while (cursor < text.length) {
-    width += readTerminalCellWidth(text, cursor)
-    cursor += readCodePointLength(text, cursor)
-  }
-
-  return width
-}
-
-const findTextOffsetForCellColumn = (
-  text: string,
-  targetColumn: number
-): number => {
-  if (targetColumn <= 0) {
-    return 0
-  }
-
-  let cursor = 0
-  let column = 0
-
-  while (cursor < text.length) {
-    const width = readTerminalCellWidth(text, cursor)
-    const nextColumn = column + width
-
-    if (nextColumn > targetColumn) {
-      return cursor
-    }
-
-    cursor += readCodePointLength(text, cursor)
-
-    if (nextColumn === targetColumn) {
-      while (cursor < text.length) {
-        const codePoint = text.codePointAt(cursor) ?? 0
-
-        if (!isCombiningCodePoint(codePoint)) {
-          break
-        }
-
-        cursor += readCodePointLength(text, cursor)
-      }
-
-      return cursor
-    }
-
-    column = nextColumn
-  }
-
-  return text.length
-}
-
-const readRowTextByCellColumns = (
-  rowText: string,
-  start: number,
-  end: number
-): string => {
-  const startOffset = findTextOffsetForCellColumn(rowText, start)
-  const endOffset = findTextOffsetForCellColumn(rowText, end)
-  const slice = rowText.slice(startOffset, endOffset)
-
-  return slice.padEnd(
-    slice.length + Math.max(0, end - start - readTextCellWidth(slice)),
-    ' '
-  )
-}
-
-const readCellDisplayText = (
-  rowText: string,
-  cell: GhosttyRenderStateBridgeSnapshotCell,
-  fallbackColumn: number
-): string => {
-  if (cell.text !== '') {
-    return cell.text
-  }
-
-  return hasSnapshotCellStyle(cell)
-    ? ' '.repeat(cell.width)
-    : readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + cell.width
-      )
-}
-
-const readFallbackColumnDeltaForCell = (
-  rowText: string,
-  cell: GhosttyRenderStateBridgeSnapshotCell,
-  fallbackColumn: number
-): number => {
-  if (cell.text !== '') {
-    return readTextCellWidth(cell.text)
-  }
-
-  if (!hasSnapshotCellStyle(cell)) {
-    return cell.width
-  }
-
-  const fallbackText = readRowTextByCellColumns(
-    rowText,
-    fallbackColumn,
-    fallbackColumn + cell.width
-  )
-
-  // Ghostty visibleLines omits styled-blank columns; non-blank fallback here belongs to a later column.
-  return fallbackText.trim() === '' ? cell.width : 0
-}
-
-const readTextOffsetForNativeCellColumn = (
-  text: string,
-  nativeCellWidth: number,
-  columnOffset: number
-): number => {
-  const clampedColumn = Math.min(Math.max(columnOffset, 0), nativeCellWidth)
-
-  if (clampedColumn === 0) {
-    return 0
-  }
-
-  if (clampedColumn >= nativeCellWidth) {
-    return text.length
-  }
-
-  return readTextCellWidth(text) >= nativeCellWidth
-    ? findTextOffsetForCellColumn(text, clampedColumn)
-    : 0
-}
-
-const readCursorOffsetInCellRow = (
-  rowText: string,
-  rowCells: readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined,
-  columnOffset: number
-): number => {
-  if (!rowCells || rowCells.length === 0) {
-    return findTextOffsetForCellColumn(rowText, columnOffset)
-  }
-
-  let currentColumn = 0
-  let fallbackColumn = 0
-  let textOffset = 0
-
-  for (const cell of rowCells) {
-    if (cell.col < currentColumn) {
-      if (columnOffset < currentColumn) {
-        return textOffset
-      }
-
-      currentColumn = Math.max(currentColumn, cell.col + cell.width)
-      continue
-    }
-
-    if (columnOffset <= cell.col) {
-      const gapWidth = cell.col - currentColumn
-
-      const gapText = readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + gapWidth
-      )
-
-      return (
-        textOffset +
-        findTextOffsetForCellColumn(gapText, columnOffset - currentColumn)
-      )
-    }
-
-    if (cell.col > currentColumn) {
-      const gapWidth = cell.col - currentColumn
-
-      textOffset += readRowTextByCellColumns(
-        rowText,
-        fallbackColumn,
-        fallbackColumn + gapWidth
-      ).length
-      currentColumn = cell.col
-      fallbackColumn += gapWidth
-    }
-
-    const cellEndColumn = cell.col + cell.width
-    const cellText = readCellDisplayText(rowText, cell, fallbackColumn)
-
-    if (columnOffset < cellEndColumn) {
-      return (
-        textOffset +
-        readTextOffsetForNativeCellColumn(
-          cellText,
-          cell.width,
-          columnOffset - cell.col
-        )
-      )
-    }
-
-    textOffset += cellText.length
-    fallbackColumn += readFallbackColumnDeltaForCell(
-      rowText,
-      cell,
-      fallbackColumn
-    )
-    currentColumn = cellEndColumn
-  }
-
-  const trailingText = rowText.slice(
-    findTextOffsetForCellColumn(rowText, fallbackColumn)
-  )
-
-  return (
-    textOffset +
-    findTextOffsetForCellColumn(trailingText, columnOffset - currentColumn)
-  )
-}
-
 const readRowsWithCells = (
   rows: readonly string[],
-  cellsByRow: ReadonlyMap<
-    number,
-    readonly GhosttyRenderStateBridgeSnapshotCell[]
-  >
+  cellsByRow: GhosttyCellsByRow<GhosttyRenderStateBridgeSnapshotCell>
 ): readonly string[] => {
   if (cellsByRow.size === 0) {
     return rows
   }
 
-  return rows.map((fallbackRow, rowIndex) => {
-    const rowCells = cellsByRow.get(rowIndex)
-
-    if (!rowCells || rowCells.length === 0) {
-      return fallbackRow
-    }
-
-    let currentColumn = 0
-    let fallbackColumn = 0
-    let rowText = ''
-
-    rowCells.forEach((cell) => {
-      if (cell.col < currentColumn) {
-        currentColumn = Math.max(currentColumn, cell.col + cell.width)
-
-        return
-      }
-
-      if (cell.col > currentColumn) {
-        const gapWidth = cell.col - currentColumn
-
-        rowText += readRowTextByCellColumns(
-          fallbackRow,
-          fallbackColumn,
-          fallbackColumn + gapWidth
-        )
-        currentColumn = cell.col
-        fallbackColumn += gapWidth
-      }
-
-      rowText += readCellDisplayText(fallbackRow, cell, fallbackColumn)
-      fallbackColumn += readFallbackColumnDeltaForCell(
-        fallbackRow,
-        cell,
-        fallbackColumn
-      )
-      currentColumn = cell.col + cell.width
-    })
-
-    const trailingTextOffset = findTextOffsetForCellColumn(
-      fallbackRow,
-      fallbackColumn
-    )
-
-    return `${rowText}${fallbackRow.slice(trailingTextOffset)}`
-  })
+  return rows.map((fallbackRow, rowIndex) =>
+    readCellRowVisibleText(fallbackRow, cellsByRow.get(rowIndex))
+  )
 }
 
 const normalizeSnapshot = (
