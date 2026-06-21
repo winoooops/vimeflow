@@ -455,6 +455,8 @@ class CursorVisibilityScanner {
 }
 
 interface ReverseVideoRange {
+  readonly background?: string
+  readonly reverse?: boolean
   readonly row: number
   readonly startColumn: number
   readonly endColumn: number
@@ -463,6 +465,9 @@ interface ReverseVideoRange {
 const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#39);/g
 const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
+
+const HTML_BACKGROUND_RGB_PATTERN =
+  /background-color:\s*rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/i
 const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
 
 const HTML_VOID_TAG_PATTERN =
@@ -499,16 +504,76 @@ const isClosingHtmlTag = (token: string): boolean =>
 
 const isHtmlTag = (token: string): boolean => /^<[^>]*>$/.test(token)
 
-const hasReverseVideoStyle = (token: string): boolean => {
+const toHexColor = (red: number, green: number, blue: number): string =>
+  `#${[red, green, blue]
+    .map((value) =>
+      Math.min(Math.max(value, 0), 255).toString(16).padStart(2, '0')
+    )
+    .join('')}`
+
+const readTagCellStyle = (token: string): Pick<
+  ReverseVideoRange,
+  'background' | 'reverse'
+> => {
   const match = HTML_STYLE_ATTRIBUTE_PATTERN.exec(token)
 
-  return match ? HTML_REVERSE_FILTER_PATTERN.test(match[1]) : false
+  if (!match) {
+    return {}
+  }
+
+  const style = match[1]
+  const background = HTML_BACKGROUND_RGB_PATTERN.exec(style)
+
+  return {
+    ...(HTML_REVERSE_FILTER_PATTERN.test(style) ? { reverse: true } : {}),
+    ...(background
+      ? {
+          background: toHexColor(
+            Number(background[1]),
+            Number(background[2]),
+            Number(background[3])
+          ),
+        }
+      : {}),
+  }
 }
+
+const mergeCellStyle = (
+  parent: Pick<ReverseVideoRange, 'background' | 'reverse'>,
+  child: Pick<ReverseVideoRange, 'background' | 'reverse'>
+): Pick<ReverseVideoRange, 'background' | 'reverse'> => ({
+  ...(parent.reverse === true || child.reverse === true
+    ? { reverse: true }
+    : {}),
+  ...((child.background ?? parent.background)
+    ? { background: child.background ?? parent.background }
+    : {}),
+})
+
+const hasRangeStyle = (range: Pick<ReverseVideoRange, 'background' | 'reverse'>): boolean =>
+  range.reverse === true || range.background !== undefined
+
+const sameRangeStyle = (
+  left: Pick<ReverseVideoRange, 'background' | 'reverse'>,
+  right: Pick<ReverseVideoRange, 'background' | 'reverse'>
+): boolean =>
+  left.reverse === right.reverse && left.background === right.background
+
+const readRangeStyle = (
+  range: Pick<ReverseVideoRange, 'background' | 'reverse'>
+): Pick<ReverseVideoRange, 'background' | 'reverse'> => ({
+  ...(range.reverse === true ? { reverse: true } : {}),
+  ...(range.background ? { background: range.background } : {}),
+})
 
 const appendReverseVideoRange = (
   ranges: ReverseVideoRange[],
   range: ReverseVideoRange
 ): void => {
+  if (!hasRangeStyle(range)) {
+    return
+  }
+
   if (ranges.length === 0) {
     ranges.push(range)
 
@@ -518,13 +583,16 @@ const appendReverseVideoRange = (
   const previous = ranges[ranges.length - 1]
 
   if (previous.row === range.row && previous.endColumn === range.startColumn) {
-    ranges[ranges.length - 1] = {
-      row: previous.row,
-      startColumn: previous.startColumn,
-      endColumn: range.endColumn,
-    }
+    if (sameRangeStyle(previous, range)) {
+      ranges[ranges.length - 1] = {
+        ...readRangeStyle(previous),
+        row: previous.row,
+        startColumn: previous.startColumn,
+        endColumn: range.endColumn,
+      }
 
-    return
+      return
+    }
   }
 
   ranges.push(range)
@@ -534,7 +602,7 @@ const readReverseVideoRangesFromHtml = (
   html: string
 ): readonly ReverseVideoRange[] => {
   const ranges: ReverseVideoRange[] = []
-  const reverseStack = [false]
+  const styleStack: Pick<ReverseVideoRange, 'background' | 'reverse'>[] = [{}]
   let row = 0
   let column = 0
 
@@ -542,14 +610,18 @@ const readReverseVideoRangesFromHtml = (
     const token = match[0]
 
     if (isOpeningHtmlTag(token)) {
-      const parentReverse = reverseStack[reverseStack.length - 1] ?? false
-      reverseStack.push(parentReverse || hasReverseVideoStyle(token))
+      styleStack.push(
+        mergeCellStyle(
+          styleStack[styleStack.length - 1] ?? {},
+          readTagCellStyle(token)
+        )
+      )
 
       return
     }
 
     if (isClosingHtmlTag(token)) {
-      reverseStack.pop()
+      styleStack.pop()
 
       return
     }
@@ -558,7 +630,7 @@ const readReverseVideoRangesFromHtml = (
       return
     }
 
-    const reverse = reverseStack[reverseStack.length - 1] ?? false
+    const style = styleStack[styleStack.length - 1] ?? {}
 
     for (const character of decodeHtmlText(token)) {
       if (character === '\n') {
@@ -569,8 +641,9 @@ const readReverseVideoRangesFromHtml = (
 
       const width = readTextCellWidth(character)
 
-      if (reverse && width > 0) {
+      if (width > 0) {
         appendReverseVideoRange(ranges, {
+          ...style,
           row,
           startColumn: column,
           endColumn: column + width,
@@ -677,18 +750,34 @@ const readReverseBoundariesForCell = (
   return [...boundaries].sort((left, right) => left - right)
 }
 
-const isColumnSpanReverseVideo = (
+const readColumnSpanStyle = (
   row: number,
   startColumn: number,
   endColumn: number,
   ranges: readonly ReverseVideoRange[]
-): boolean =>
-  ranges.some(
-    (range) =>
-      range.row === row &&
-      startColumn >= range.startColumn &&
-      endColumn <= range.endColumn
+): Pick<ReverseVideoRange, 'background' | 'reverse'> => {
+  const range = ranges.find(
+    (candidate) =>
+      candidate.row === row &&
+      startColumn >= candidate.startColumn &&
+      endColumn <= candidate.endColumn
   )
+
+  return range ? readRangeStyle(range) : {}
+}
+
+const appendRangeStyle = (
+  target: GhosttyRenderStateBridgeSnapshotCell,
+  style: Pick<ReverseVideoRange, 'background' | 'reverse'>
+): void => {
+  if (style.reverse === true) {
+    target.reverse = true
+  }
+
+  if (target.background === undefined && style.background !== undefined) {
+    target.background = style.background
+  }
+}
 
 const splitSnapshotCellByReverseVideoRanges = (
   rowText: string,
@@ -702,15 +791,18 @@ const splitSnapshotCellByReverseVideoRanges = (
   const boundaries = readReverseBoundariesForCell(cell, ranges)
 
   if (boundaries.length <= 2) {
-    if (
-      isColumnSpanReverseVideo(
-        cell.row,
-        cell.col,
-        cell.col + cell.width,
-        ranges
-      )
-    ) {
-      return [{ ...cell, reverse: true }]
+    const style = readColumnSpanStyle(
+      cell.row,
+      cell.col,
+      cell.col + cell.width,
+      ranges
+    )
+
+    if (hasRangeStyle(style)) {
+      const styledCell = { ...cell }
+      appendRangeStyle(styledCell, style)
+
+      return [styledCell]
     }
 
     return [cell]
@@ -728,9 +820,10 @@ const splitSnapshotCellByReverseVideoRanges = (
 
     copySnapshotCellStyle(cell, segment)
 
-    if (isColumnSpanReverseVideo(cell.row, startColumn, endColumn, ranges)) {
-      segment.reverse = true
-    }
+    appendRangeStyle(
+      segment,
+      readColumnSpanStyle(cell.row, startColumn, endColumn, ranges)
+    )
 
     return segment
   })
@@ -759,6 +852,7 @@ const appendMissingReverseCells = (
       .forEach((cell) => {
         if (cell.col > startColumn) {
           cells.push({
+            ...readRangeStyle(range),
             row: range.row,
             col: startColumn,
             text: readRowTextByCellColumns(
@@ -767,7 +861,6 @@ const appendMissingReverseCells = (
               Math.min(cell.col, range.endColumn)
             ),
             width: Math.min(cell.col, range.endColumn) - startColumn,
-            reverse: true,
           })
         }
 
@@ -776,6 +869,7 @@ const appendMissingReverseCells = (
 
     if (startColumn < range.endColumn) {
       cells.push({
+        ...readRangeStyle(range),
         row: range.row,
         col: startColumn,
         text: readRowTextByCellColumns(
@@ -784,7 +878,6 @@ const appendMissingReverseCells = (
           range.endColumn
         ),
         width: range.endColumn - startColumn,
-        reverse: true,
       })
     }
   })

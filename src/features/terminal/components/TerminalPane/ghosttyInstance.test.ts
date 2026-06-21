@@ -1405,6 +1405,39 @@ describe('ghosttyInstance', () => {
     ])
   })
 
+  test('hides native dead cursor parked above an agent prompt row', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['', '>'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 0,
+          },
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const cursor = terminalOutput?.querySelector(
+      '[data-terminal-cursor="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('\n>')
+    expect(created.viewportReader.readVisibleText()).toBe('\n>')
+    expect(cursor).toBeNull()
+  })
+
   test('paints block glyphs as terminal-cell rectangles', () => {
     const created = createTrackedGhosttyTerminal({
       createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({

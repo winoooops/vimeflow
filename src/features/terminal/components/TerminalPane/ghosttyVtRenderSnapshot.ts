@@ -311,6 +311,41 @@ const readSnapshotCursorOffset = (
   return precedingRowsLength + rowTextOffset
 }
 
+const PROMPT_MARKER_PATTERN = /^\s*>/
+
+const shouldHideImplicitPromptCursor = (
+  snapshot: GhosttyVtRenderSnapshot,
+  cellsByRow: CellsByRow
+): boolean => {
+  const cursor = snapshot.cursor
+
+  if (!cursor || cursor.visible !== undefined) {
+    return false
+  }
+
+  const rowIndex = clamp(cursor.rowIndex, 0, snapshot.rows.length - 1)
+
+  const cursorRow = readCellRowVisibleText(
+    snapshot.rows[rowIndex] ?? '',
+    cellsByRow.get(rowIndex)
+  )
+
+  if (cursorRow.trim().length > 0) {
+    return false
+  }
+
+  const nextContentRow = snapshot.rows
+    .slice(rowIndex + 1)
+    .map((row, offset) =>
+      readCellRowVisibleText(row, cellsByRow.get(rowIndex + offset + 1))
+    )
+    .find((row) => row.trim().length > 0)
+
+  return nextContentRow === undefined
+    ? false
+    : PROMPT_MARKER_PATTERN.test(nextContentRow)
+}
+
 export const createGhosttyVtRenderSnapshotOutput = (
   snapshot: GhosttyVtRenderSnapshot
 ): TerminalParserEngineOutput => {
@@ -320,12 +355,16 @@ export const createGhosttyVtRenderSnapshotOutput = (
   const displayText = readSnapshotDisplayText(normalizedSnapshot, cellsByRow)
   const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, cellsByRow)
 
+  const cursorVisible =
+    normalizedSnapshot.cursor?.visible ??
+    (shouldHideImplicitPromptCursor(normalizedSnapshot, cellsByRow)
+      ? false
+      : undefined)
+
   return {
     visibleText: text,
     displayDelta: {
-      ...(normalizedSnapshot.cursor?.visible === undefined
-        ? {}
-        : { cursorVisible: normalizedSnapshot.cursor.visible }),
+      ...(cursorVisible === undefined ? {} : { cursorVisible }),
       operations: [
         {
           type: 'replace',

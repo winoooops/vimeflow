@@ -321,6 +321,18 @@ describe('ghosttyVtRenderSnapshot', () => {
     expect(buffer.readCursorOffset()).toBe(2)
   })
 
+  test('hides implicit cursor parked above an agent prompt row', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['', '> Explain this codebase'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 0,
+      },
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBe(false)
+  })
+
   test('renders styled empty native cells as occupied blanks', () => {
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: ['A B'],
