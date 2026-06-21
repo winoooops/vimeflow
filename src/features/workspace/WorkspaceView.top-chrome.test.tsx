@@ -38,6 +38,13 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
+
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../diff/hooks/useGitStatus')
 vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')

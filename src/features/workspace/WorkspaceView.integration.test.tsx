@@ -36,6 +36,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({

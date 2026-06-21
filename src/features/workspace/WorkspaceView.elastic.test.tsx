@@ -28,6 +28,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
     spawn: vi.fn().mockResolvedValue({ sessionId: 'sess-1', pid: 1, cwd: '~' }),

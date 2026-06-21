@@ -74,6 +74,7 @@ import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
@@ -520,6 +521,25 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatusResetGeneration
   )
 
+  // Codex watcher relocation recovery (VIM-188/192): `/clear` arms the red
+  // "needs reattach" indicator + a bounded auto-reattach; the always-on drift
+  // tick relocates the active Codex pane so the panel also follows an
+  // undetectable in-session `resume`. Recovery is automatic once codex writes
+  // the conversation (the user sends a prompt) — there is no manual button.
+  const agentReattach = useAgentReattach({
+    sessionId: activePtyBackedPanePtyId ?? null,
+    agentSessionId: agentStatus.agentSessionId,
+    agentTokenTotal: agentStatus.contextWindow
+      ? agentStatus.contextWindow.totalInputTokens +
+        agentStatus.contextWindow.totalOutputTokens
+      : null,
+    staleGeneration: agentStatusResetGeneration,
+    // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
+    // periodically so the panel follows an in-session `resume` (which is
+    // undetectable and never arms the red state).
+    driftEnabled: agentStatus.agentType === 'codex' && agentStatus.isActive,
+  })
+
   const visibleAgentStatusPtyIds = useMemo(
     () =>
       activeSession === undefined
@@ -556,14 +576,24 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleTerminalCommandSubmit = useCallback(
     (ptyId: string, command: string): void => {
-      if (command !== '/clear') {
+      // A codex `/clear` opens a fresh conversation and `/resume` switches to a
+      // different one — both point codex at a NEW rollout, so the live status
+      // is now stale. Treat both as a context switch: reset agent-status and arm
+      // the red "send a prompt to reattach" indicator until the watcher
+      // relocates onto the new conversation (VIM-192). `/resume <id>` is the
+      // arg form.
+      const isCodexContextSwitch =
+        command === '/clear' ||
+        command === '/resume' ||
+        command.startsWith('/resume ')
+      if (!isCodexContextSwitch) {
         return
       }
 
       // Only reset agent-status state when the active pane is actually running
       // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
-      // syntactically identical to a Codex `/clear` command, and a false reset
-      // for a live Codex session would suppress same-run events until the next
+      // syntactically identical to a Codex command, and a false reset for a
+      // live Codex session would suppress same-run events until the next
       // session boundary (Claude Code Review on PR #469).
       if (
         ptyId === activePtyBackedPanePtyId &&
@@ -2507,6 +2537,7 @@ const WorkspaceViewContent = (): ReactElement => {
               cwd={activeCwd}
               gitStatus={gitStatus}
               isRefreshing={isAgentStatusRefreshing}
+              needsReattach={agentReattach.needsReattach}
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}

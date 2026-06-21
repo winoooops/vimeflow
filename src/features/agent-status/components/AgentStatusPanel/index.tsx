@@ -37,6 +37,7 @@ interface AgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   gitStatus?: UseGitStatusReturn
   isRefreshing?: boolean
+  needsReattach?: boolean
   agent: Agent
   onCollapse: () => void
   cacheHistory: number[]
@@ -302,6 +303,7 @@ export const AgentStatusPanel = ({
   onOpenFile = undefined,
   gitStatus = undefined,
   isRefreshing = false,
+  needsReattach = false,
   agent,
   onCollapse,
   cacheHistory,
@@ -537,6 +539,7 @@ export const AgentStatusPanel = ({
       <AgentStatusPanelHeader
         agent={agent}
         isRefreshing={showsRefreshing}
+        needsReattach={needsReattach}
         onCollapse={onCollapse}
         reserveWindowControls={reserveWindowControls}
       />
