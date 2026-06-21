@@ -1232,6 +1232,112 @@ describe('ghosttyInstance', () => {
     expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
     expect(blankRun?.style.display).toBe('inline-block')
     expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
+    expect(blankRun?.style.minWidth).toBe(
+      'calc(var(--terminal-cell-width) * 1)'
+    )
+    expect(blankRun?.style.overflow).toBe('visible')
+  })
+
+  test('paints background-only agent input boxes by terminal cell width', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['> Explain this codebase   '],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '>',
+              width: 1,
+            },
+            {
+              row: 0,
+              col: 1,
+              text: ' Explain this codebase   ',
+              width: 25,
+              background: TRUE_COLOR_BASE_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const inputRun = terminalOutput?.querySelector<HTMLElement>(
+      '[data-terminal-style-run="true"]'
+    )
+
+    expect(terminalOutput?.textContent).toBe('> Explain this codebase   ')
+    expect(created.viewportReader.readVisibleText()).toBe(
+      '> Explain this codebase   '
+    )
+    expect(inputRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
+    expect(inputRun?.style.minWidth).toBe(
+      'calc(var(--terminal-cell-width) * 25)'
+    )
+  })
+
+  test('paints block glyphs as terminal-cell rectangles', () => {
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['██'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 2,
+          },
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: '██',
+              width: 2,
+              foreground: TRUE_COLOR_PINK_HEX,
+            },
+          ],
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'wrong',
+      bytesBase64: encodeText('snapshot'),
+      offsetStart: 0,
+      byteLen: 8,
+      phase: 'live',
+    })
+
+    const terminalOutput = created.terminal.element?.querySelector('pre')
+
+    const glyphs = Array.from(
+      terminalOutput?.querySelectorAll<HTMLElement>(
+        '[data-terminal-custom-glyph="block"]'
+      ) ?? []
+    )
+
+    expect(terminalOutput?.textContent).toBe('██')
+    expect(created.viewportReader.readVisibleText()).toBe('██')
+    expect(glyphs).toHaveLength(2)
+    expect(glyphs[0]?.style.backgroundColor).toBe(TRUE_COLOR_PINK)
+    expect(glyphs[0]?.style.color).toBe('transparent')
+    expect(glyphs[0]?.style.fontSize).toBe('0px')
+    expect(glyphs[0]?.style.width).toBe('var(--terminal-cell-width)')
+    expect(glyphs[0]?.style.minWidth).toBe('var(--terminal-cell-width)')
   })
 
   test('does not render overlapping native wide-glyph continuation cells', () => {

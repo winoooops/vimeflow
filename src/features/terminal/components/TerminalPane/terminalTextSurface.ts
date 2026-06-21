@@ -11,6 +11,7 @@ import {
   type TerminalDisplayDelta,
   type TerminalDisplayRun,
   type TerminalDisplayStyle,
+  readTextCellWidth,
 } from './terminalDisplayBuffer'
 import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE } from './terminalFont'
 
@@ -21,6 +22,23 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MEASURED_CHAR_SAMPLE_LENGTH = 80
+const BLOCK_ELEMENT_PATTERN = /[\u2580-\u259f]/
+const BLOCK_ONE_EIGHTH = 12.5
+
+type BlockGlyphPaint =
+  | {
+      readonly kind: 'solid'
+    }
+  | {
+      readonly kind: 'vertical'
+      readonly startPercent: number
+      readonly endPercent: number
+    }
+  | {
+      readonly kind: 'horizontal'
+      readonly startPercent: number
+      readonly endPercent: number
+    }
 
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
@@ -119,6 +137,58 @@ const readCursorRowIndex = (text: string, cursorOffset: number): number => {
   }
 
   return rowIndex
+}
+
+const readBlockGlyphPaint = (character: string): BlockGlyphPaint | null => {
+  const codePoint = character.codePointAt(0)
+
+  if (codePoint === undefined) {
+    return null
+  }
+
+  if (codePoint >= 0x2581 && codePoint <= 0x2588) {
+    const eighths = codePoint - 0x2580
+
+    return eighths === 8
+      ? { kind: 'solid' }
+      : {
+          kind: 'vertical',
+          startPercent: 100 - eighths * BLOCK_ONE_EIGHTH,
+          endPercent: 100,
+        }
+  }
+
+  if (codePoint >= 0x2589 && codePoint <= 0x258f) {
+    const eighths = 9 - (codePoint - 0x2588)
+
+    return {
+      kind: 'horizontal',
+      startPercent: 0,
+      endPercent: eighths * BLOCK_ONE_EIGHTH,
+    }
+  }
+
+  if (character === '\u2580') {
+    return { kind: 'vertical', startPercent: 0, endPercent: 50 }
+  }
+
+  if (character === '\u2590') {
+    return { kind: 'horizontal', startPercent: 50, endPercent: 100 }
+  }
+
+  if (character === '\u2594') {
+    return { kind: 'vertical', startPercent: 0, endPercent: BLOCK_ONE_EIGHTH }
+  }
+
+  if (character === '\u2595') {
+    return {
+      kind: 'horizontal',
+      startPercent: 100 - BLOCK_ONE_EIGHTH,
+      endPercent: 100,
+    }
+  }
+
+  return null
 }
 
 const getKeyboardData = (event: KeyboardEvent): string | null => {
@@ -581,6 +651,9 @@ export class TerminalTextSurface implements TerminalSurface {
       `${APPROXIMATE_LINE_HEIGHT}px`
     )
 
+    const cellWidth = this.measureCharacterWidth()
+
+    this.root.style.setProperty('--terminal-cell-width', `${cellWidth}px`)
     this.root.style.setProperty(
       '--terminal-pty-viewport-height',
       `${viewportHeight}px`
@@ -668,13 +741,18 @@ export class TerminalTextSurface implements TerminalSurface {
 
   private applyStyleToElement(
     element: HTMLElement,
-    style: TerminalDisplayStyle
+    style: TerminalDisplayStyle,
+    text: string
   ): void {
     if (style.background) {
+      const cellWidth = Math.max(1, readTextCellWidth(text))
+
       element.style.backgroundColor = style.background
       element.style.display = 'inline-block'
       element.style.height = 'var(--terminal-line-height)'
       element.style.lineHeight = 'var(--terminal-line-height)'
+      element.style.minWidth = `calc(var(--terminal-cell-width) * ${cellWidth})`
+      element.style.overflow = 'visible'
       element.style.verticalAlign = 'top'
     }
 
@@ -699,17 +777,103 @@ export class TerminalTextSurface implements TerminalSurface {
     }
   }
 
-  private createTextNode(text: string, style: TerminalDisplayStyle): Node {
-    if (!this.hasStyle(style)) {
-      return document.createTextNode(text)
+  private createBlockGlyphElement(
+    character: string,
+    style: TerminalDisplayStyle,
+    paint: BlockGlyphPaint
+  ): HTMLElement {
+    const glyph = document.createElement('span')
+    const foreground = style.foreground ?? 'currentColor'
+    const background = style.background ?? 'transparent'
+
+    glyph.dataset.terminalStyleRun = 'true'
+    glyph.dataset.terminalCustomGlyph = 'block'
+    glyph.textContent = character
+    this.applyStyleToElement(glyph, style, character)
+
+    Object.assign(glyph.style, {
+      color: 'transparent',
+      display: 'inline-block',
+      fontSize: '0',
+      height: 'var(--terminal-line-height)',
+      lineHeight: 'var(--terminal-line-height)',
+      minWidth: 'var(--terminal-cell-width)',
+      overflow: 'hidden',
+      verticalAlign: 'top',
+      width: 'var(--terminal-cell-width)',
+    })
+
+    if (paint.kind === 'solid') {
+      glyph.style.backgroundColor = foreground
+
+      return glyph
+    }
+
+    const direction = paint.kind === 'vertical' ? 'to bottom' : 'to right'
+
+    glyph.style.backgroundColor = background
+    glyph.style.backgroundImage = `linear-gradient(${direction}, ${background} 0%, ${background} ${paint.startPercent}%, ${foreground} ${paint.startPercent}%, ${foreground} ${paint.endPercent}%, ${background} ${paint.endPercent}%, ${background} 100%)`
+
+    return glyph
+  }
+
+  private appendStyledTextFragment(
+    fragment: DocumentFragment,
+    text: string,
+    style: TerminalDisplayStyle
+  ): void {
+    if (text.length === 0) {
+      return
     }
 
     const span = document.createElement('span')
     span.dataset.terminalStyleRun = 'true'
     span.textContent = text
-    this.applyStyleToElement(span, style)
+    this.applyStyleToElement(span, style, text)
+    fragment.append(span)
+  }
 
-    return span
+  private createTextNode(text: string, style: TerminalDisplayStyle): Node {
+    if (!this.hasStyle(style) && !BLOCK_ELEMENT_PATTERN.test(text)) {
+      return document.createTextNode(text)
+    }
+
+    if (!BLOCK_ELEMENT_PATTERN.test(text)) {
+      const span = document.createElement('span')
+      span.dataset.terminalStyleRun = 'true'
+      span.textContent = text
+      this.applyStyleToElement(span, style, text)
+
+      return span
+    }
+
+    const fragment = document.createDocumentFragment()
+    let pendingText = ''
+
+    for (const character of text) {
+      const paint = readBlockGlyphPaint(character)
+
+      if (!paint) {
+        pendingText += character
+        continue
+      }
+
+      if (this.hasStyle(style)) {
+        this.appendStyledTextFragment(fragment, pendingText, style)
+      } else if (pendingText.length > 0) {
+        fragment.append(document.createTextNode(pendingText))
+      }
+      pendingText = ''
+      fragment.append(this.createBlockGlyphElement(character, style, paint))
+    }
+
+    if (this.hasStyle(style)) {
+      this.appendStyledTextFragment(fragment, pendingText, style)
+    } else if (pendingText.length > 0) {
+      fragment.append(document.createTextNode(pendingText))
+    }
+
+    return fragment
   }
 
   private appendRunFragment(
@@ -778,7 +942,7 @@ export class TerminalTextSurface implements TerminalSurface {
         ) {
           const runElement = document.createElement('span')
           runElement.dataset.terminalStyleRun = 'true'
-          this.applyStyleToElement(runElement, style)
+          this.applyStyleToElement(runElement, style, text)
           runElement.append(
             document.createTextNode(text.slice(0, splitOffset)),
             this.createCursorElement(),
