@@ -833,13 +833,51 @@ const splitSnapshotCellByReverseVideoRanges = (
   })
 }
 
+// Ghostty's formatHtml() paints background runs across the full terminal width
+// (erase-to-EOL prompts render every padded column under `white-space: pre`),
+// but the native snapshot omits those trailing blank columns. Synthesizing a
+// cell for every HTML-covered column would fabricate a full-width colored bar
+// that bleeds over agent TUIs and shifts the cursor's visible position. Clamp
+// fabrication to the row's real content extent — the wider of the native cell
+// span and the visible-line text width — so only columns the snapshot actually
+// reported get a background, never the pre-formatted padding beyond them.
+const readRowContentExtents = (
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[],
+  rows: readonly string[]
+): ReadonlyMap<number, number> => {
+  const extents = new Map<number, number>()
+
+  cells.forEach((cell) => {
+    extents.set(
+      cell.row,
+      Math.max(extents.get(cell.row) ?? 0, cell.col + cell.width)
+    )
+  })
+
+  rows.forEach((rowText, row) => {
+    extents.set(
+      row,
+      Math.max(extents.get(row) ?? 0, readTextCellWidth(rowText))
+    )
+  })
+
+  return extents
+}
+
 const appendMissingReverseCells = (
   cells: GhosttyRenderStateBridgeSnapshotCell[],
   rows: readonly string[],
   ranges: readonly ReverseVideoRange[]
 ): void => {
+  const contentExtents = readRowContentExtents(cells, rows)
+
   ranges.forEach((range) => {
-    if (range.row >= rows.length || range.endColumn <= range.startColumn) {
+    const endColumn = Math.min(
+      range.endColumn,
+      contentExtents.get(range.row) ?? 0
+    )
+
+    if (range.row >= rows.length || endColumn <= range.startColumn) {
       return
     }
 
@@ -849,7 +887,7 @@ const appendMissingReverseCells = (
       .filter(
         (cell) =>
           cell.row === range.row &&
-          cell.col < range.endColumn &&
+          cell.col < endColumn &&
           cell.col + cell.width > range.startColumn
       )
       .sort((left, right) => left.col - right.col)
@@ -862,16 +900,16 @@ const appendMissingReverseCells = (
             text: readRowTextByCellColumns(
               rows[range.row] ?? '',
               startColumn,
-              Math.min(cell.col, range.endColumn)
+              Math.min(cell.col, endColumn)
             ),
-            width: Math.min(cell.col, range.endColumn) - startColumn,
+            width: Math.min(cell.col, endColumn) - startColumn,
           })
         }
 
         startColumn = Math.max(startColumn, cell.col + cell.width)
       })
 
-    if (startColumn < range.endColumn) {
+    if (startColumn < endColumn) {
       cells.push({
         ...readRangeStyle(range),
         row: range.row,
@@ -879,9 +917,9 @@ const appendMissingReverseCells = (
         text: readRowTextByCellColumns(
           rows[range.row] ?? '',
           startColumn,
-          range.endColumn
+          endColumn
         ),
-        width: range.endColumn - startColumn,
+        width: endColumn - startColumn,
       })
     }
   })
