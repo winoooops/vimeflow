@@ -1,4 +1,4 @@
-// cspell:ignore ghostty libghostty prebuilds
+// cspell:ignore ghostty libghostty prebuilds powerline Kimi
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -9,6 +9,7 @@ import {
   readTextCellWidth,
   type GhosttyCellTraversalCell,
 } from '../shared/ghosttyCellTraversal'
+import { palette256ToRgb } from '../shared/ansiPalette'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
@@ -466,17 +467,45 @@ interface ReverseVideoRange {
   readonly endColumn: number
 }
 
-const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#39);/g
+const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#[xX][0-9a-fA-F]+|#\d+);/g
 const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
 
 const HTML_BACKGROUND_RGB_PATTERN =
   /background-color:\s*rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/i
+
+const HTML_BACKGROUND_PALETTE_PATTERN =
+  /background-color:\s*var\(--vt-palette-(\d{1,3})\)/i
 const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
 
 const HTML_VOID_TAG_PATTERN =
   /^<(?:area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)\b/i
 
+const decodeNumericHtmlEntity = (entity: string): string => {
+  const body = entity.slice(2, -1)
+
+  const codePoint =
+    body.startsWith('x') || body.startsWith('X')
+      ? Number.parseInt(body.slice(1), 16)
+      : Number.parseInt(body, 10)
+
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+    return entity
+  }
+
+  try {
+    return String.fromCodePoint(codePoint)
+  } catch {
+    return entity
+  }
+}
+
+// Ghostty's formatter emits Nerd Font / powerline glyphs as numeric entities
+// (e.g. the apple logo as &#983093;, the powerline separator as &#57520;).
+// Decoding them is load-bearing for column accounting: an undecoded
+// "&#57520;" is 8 string characters, so readReverseVideoRangesFromHtml would
+// count it as 8 cells instead of 1 and every background range past it would
+// drift right off its real column — bleeding prompt colors onto typed input.
 const decodeHtmlText = (text: string): string =>
   text.replace(HTML_ENTITY_PATTERN, (entity) => {
     if (entity === '&amp;') {
@@ -495,7 +524,7 @@ const decodeHtmlText = (text: string): string =>
       return '"'
     }
 
-    return "'"
+    return decodeNumericHtmlEntity(entity)
   })
 
 const isOpeningHtmlTag = (token: string): boolean =>
@@ -515,6 +544,64 @@ const toHexColor = (red: number, green: number, blue: number): string =>
     )
     .join('')}`
 
+// xterm 0-15 base. These are theme-dependent in a real terminal, but the main
+// process has no DOM/theme access (the renderer resolves them to
+// `var(--terminal-ansi-*)`). The 16-255 range is theme-independent and shared
+// via palette256ToRgb. ponytail: 0-15 input-box backgrounds are vanishingly
+// rare; a standard-hex fallback beats an unpainted box, upgrade to a
+// theme-resolved value if a real 0-15 box ever shows the wrong shade.
+const ANSI_BASE_PALETTE = [
+  '#000000',
+  '#800000',
+  '#008000',
+  '#808000',
+  '#000080',
+  '#800080',
+  '#008080',
+  '#c0c0c0',
+  '#808080',
+  '#ff0000',
+  '#00ff00',
+  '#ffff00',
+  '#0000ff',
+  '#ff00ff',
+  '#00ffff',
+  '#ffffff',
+]
+
+// Ghostty emits indexed (256-color) backgrounds as `var(--vt-palette-N)` rather
+// than rgb(); resolve N to the same hex the native cells already use so a
+// palette-colored input box (Codex/Kimi) paints instead of being dropped.
+const paletteIndexToHex = (index: number): string | undefined => {
+  const rgb = palette256ToRgb(index)
+
+  if (rgb) {
+    return toHexColor(rgb[0], rgb[1], rgb[2])
+  }
+
+  if (Number.isInteger(index) && index >= 0 && index < 16) {
+    return ANSI_BASE_PALETTE[index]
+  }
+
+  return undefined
+}
+
+const readBackgroundColor = (style: string): string | undefined => {
+  const rgb = HTML_BACKGROUND_RGB_PATTERN.exec(style)
+
+  if (rgb) {
+    return toHexColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]))
+  }
+
+  const palette = HTML_BACKGROUND_PALETTE_PATTERN.exec(style)
+
+  if (palette) {
+    return paletteIndexToHex(Number(palette[1]))
+  }
+
+  return undefined
+}
+
 const readTagCellStyle = (
   token: string
 ): Pick<ReverseVideoRange, 'background' | 'reverse'> => {
@@ -525,19 +612,11 @@ const readTagCellStyle = (
   }
 
   const style = match[1]
-  const background = HTML_BACKGROUND_RGB_PATTERN.exec(style)
+  const background = readBackgroundColor(style)
 
   return {
     ...(HTML_REVERSE_FILTER_PATTERN.test(style) ? { reverse: true } : {}),
-    ...(background
-      ? {
-          background: toHexColor(
-            Number(background[1]),
-            Number(background[2]),
-            Number(background[3])
-          ),
-        }
-      : {}),
+    ...(background ? { background } : {}),
   }
 }
 
@@ -998,7 +1077,6 @@ const normalizeSnapshot = (
   reverseVideoRanges: readonly ReverseVideoRange[]
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
-  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
 
   const snapshotCursorVisible =
     typeof snapshot.cursorVisible === 'boolean'
@@ -1012,11 +1090,16 @@ const normalizeSnapshot = (
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
   }
 
+  const cursor = {
+    rowIndex: snapshot.cursorRow,
+    columnOffset: snapshot.cursorCol,
+  }
+  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
+
   return {
     rows,
     cursor: {
-      rowIndex: snapshot.cursorRow,
-      columnOffset: snapshot.cursorCol,
+      ...cursor,
       ...(snapshotCursorVisible === false ? { visible: false } : {}),
     },
     ...(cells === undefined ? {} : { cells }),
