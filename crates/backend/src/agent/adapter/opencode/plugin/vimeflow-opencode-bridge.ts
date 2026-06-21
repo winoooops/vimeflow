@@ -163,9 +163,7 @@ const isSensitiveArgField = (key: string): boolean => {
 
   return (
     SENSITIVE_ARG_FIELDS.has(normalized) ||
-    SENSITIVE_ARG_FIELD_SUFFIXES.some((suffix) =>
-      normalized.endsWith(suffix)
-    )
+    SENSITIVE_ARG_FIELD_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
   )
 }
 
