@@ -213,7 +213,9 @@ export const useAgentReattach = ({
     // No stop-then-start: the backend re-locates and atomically replaces the
     // watcher; a failed relocate leaves the old watcher intact (rollback-safe).
     try {
-      await invoke('start_agent_watcher', { sessionId: ptyId })
+      const watcherChanged = await invoke<boolean>('start_agent_watcher', {
+        sessionId: ptyId,
+      })
 
       const activeSessionChanged =
         currentSessionIdRef.current !== startSessionId
@@ -223,7 +225,7 @@ export const useAgentReattach = ({
         activeSessionChanged ||
         reattachGenerationRef.current !== startGeneration
       if (staleCompletion) {
-        if (activeSessionChanged) {
+        if (activeSessionChanged && watcherChanged) {
           void stopReattachWatcher(ptyId)
         }
 

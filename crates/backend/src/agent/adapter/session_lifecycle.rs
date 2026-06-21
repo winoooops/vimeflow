@@ -955,32 +955,33 @@ impl SessionLifecycle {
         session_id: String,
         app_data_dir: PathBuf,
         provider_home_override: Option<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         crate::debug::debug_log("agent-attach", &format!("start session={}", session_id));
         let attach = match self.resolve_attach(
             &session_id,
             &app_data_dir,
             provider_home_override,
             |shell_pid| {
-            let detected = detect_agent(shell_pid);
+                let detected = detect_agent(shell_pid);
 
-            #[cfg(feature = "e2e-test")]
-            {
-                // E2E tests seed the watcher map instead of launching a real
-                // Claude/Codex process, but still exercise the normal watcher
-                // startup and status-file emission path.
-                detected.or_else(|| {
-                    self.watcher_state
-                        .agent_type_for_pty(&session_id)
-                        .map(|agent_type| (agent_type, shell_pid))
-                })
-            }
+                #[cfg(feature = "e2e-test")]
+                {
+                    // E2E tests seed the watcher map instead of launching a real
+                    // Claude/Codex process, but still exercise the normal watcher
+                    // startup and status-file emission path.
+                    detected.or_else(|| {
+                        self.watcher_state
+                            .agent_type_for_pty(&session_id)
+                            .map(|agent_type| (agent_type, shell_pid))
+                    })
+                }
 
-            #[cfg(not(feature = "e2e-test"))]
-            {
-                detected
-            }
-        }) {
+                #[cfg(not(feature = "e2e-test"))]
+                {
+                    detected
+                }
+            },
+        ) {
             Ok(attach) => attach,
             Err(e) => {
                 crate::debug::debug_log(
@@ -1002,11 +1003,7 @@ impl SessionLifecycle {
         );
         let bindings = self.bind_services(&attach)?;
         let cwd = attach.initial_cwd.clone();
-        // The Codex no-op `changed` flag is only consumed by tests (via
-        // `start_inner_for_test` -> `run_watch_sequence`); production callers
-        // don't read it, so discard it here.
-        self.run_watch_sequence(session_id, bindings, cwd).await?;
-        Ok(())
+        self.run_watch_sequence(session_id, bindings, cwd).await
     }
 
     /// The post-bindings half of `start`: the verb sequence run on the
@@ -1054,8 +1051,6 @@ impl SessionLifecycle {
     /// resolved the SAME rollout the live handle already watches. The drift
     /// tick (VIM-192) calls this every few seconds for the active Codex pane, so
     /// skipping the re-spawn avoids re-tailing a 20-114MB rollout on every tick.
-    /// The `bool` is observed only by tests (`start_inner_for_test`); production
-    /// callers discard it.
     async fn run_watch_sequence(
         &self,
         session_id: String,

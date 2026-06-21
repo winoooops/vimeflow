@@ -405,7 +405,7 @@ impl BackendState {
         &self,
         session_id: String,
         provider_home_override: Option<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         crate::agent::adapter::start_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),

@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-21
-ref_count: 26
+ref_count: 27
 ---
 
 # Async Race Conditions
@@ -676,4 +676,13 @@ prevent showing previous data.
 - **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
 - **Finding:** The success listener read the render-synchronized `staleKey` mirror at callback time. If a second `/clear` advanced the generation before the first reattach success event arrived, the late event marked the newer generation resolved and skipped recovery for the second clear.
 - **Fix:** Added an armed stale-key ref that records the key active when the red-state cycle was entered. A late event resolves only that armed key; if the current key has advanced, the newer key remains armed and still requires its own fresh event. Added regression tests for repeated `/clear` and the late-success generation race.
+- **Commit:** same commit as this entry
+
+### 68. Late drift no-op stopped the still-valid previous watcher
+
+- **Source:** github-codex-connector | PR #593 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`, `crates/backend/src/agent/adapter/session_lifecycle.rs`
+- **Finding:** `useAgentReattach` stopped the captured PTY watcher whenever a drift `start_agent_watcher` completed after the active pane changed. The backend already distinguished real respawns from Codex same-rollout no-ops internally, but the production IPC discarded that `changed` result. A harmless late no-op could therefore kill the original valid watcher for the previous pane.
+- **Fix:** Propagate the backend `changed` boolean through `start_agent_watcher` IPC and only run stale-completion cleanup when the backend actually spawned/replaced a watcher. Added regression coverage for both late respawn cleanup and late no-op preservation.
 - **Commit:** same commit as this entry
