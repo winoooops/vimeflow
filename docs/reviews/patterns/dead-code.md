@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-20
+last_updated: 2026-06-21
 ref_count: 2
 ---
 
@@ -51,4 +51,13 @@ code and should be removed.
 - **File:** `package.json`
 - **Finding:** `test:e2e:ghostty:native:run` set `VITE_E2E`, `VITE_TERMINAL_RENDERER`, and `VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER` even though the Electron bundle had already been built. The runtime assignments could mislead developers into thinking renderer mode changes apply without rebuilding.
 - **Fix:** Removed the build-time `VITE_*` variables from the native Ghostty run script; the build script remains the place where Vite consumes those values.
+- **Commit:** same commit as this entry
+
+### 5. Repeated regex guards can become dead branch signals
+
+- **Source:** github-claude | PR #591 round 6 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L963-L974
+- **Finding:** `createTextNode` evaluated `BLOCK_ELEMENT_PATTERN.test(text)` twice on the same string. The second call was reachable only after the first had already established that block glyphs exist, making the repeated predicate a dead branch signal for future readers.
+- **Fix:** Hoisted the regex result into `hasBlockGlyphs` and reused it in both branches, keeping the branch contract explicit.
 - **Commit:** same commit as this entry

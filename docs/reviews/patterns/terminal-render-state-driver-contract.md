@@ -272,3 +272,12 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** The Electron bridge expanded native fallback rows with cell traversal and still returned the original cells. The renderer then traversed those same cells again, so a sparse styled blank could be inserted twice and move following text or cursor offsets.
 - **Fix:** Stopped pre-normalizing Electron-side rows when cells are present. The bridge now forwards native `visibleLines` as fallback text, still computes `cursor.textOffset` from the native cells, and leaves visible-text/style reconstruction to the renderer's single cell traversal pass.
 - **Commit:** same commit as this entry
+
+### 29. Nonempty native cells must reserve their declared terminal width
+
+- **Source:** github-codex-connector | PR #591 round 6 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `shared/ghosttyCellTraversal.ts` L172
+- **Finding:** Ghostty can report a nonempty cell whose declared `width` exceeds the terminal width of its text, such as a private-use icon occupying two native cells. Returning only `cell.text` made following cells render one terminal column too far left even though cursor mapping used the native width.
+- **Fix:** Padded nonempty cell display text to the declared native width while keeping fallback-source traversal tied to the text's actual cell width. Shared, Electron bridge, and renderer tests now pin the reserved-column behavior for explicit and sparse wide private-use cells.
+- **Commit:** same commit as this entry

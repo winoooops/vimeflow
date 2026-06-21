@@ -122,6 +122,44 @@ describe('ghosttyCellTraversal', () => {
         ],
         3
       )
-    ).toBe('\uf120x'.length)
+    ).toBe('\uf120 x'.length)
+  })
+
+  test('reserves native width for explicit wide private-use cells', () => {
+    expect(
+      readCellRowVisibleText('\uf120xy', [
+        {
+          row: 0,
+          col: 0,
+          text: '\uf120',
+          width: 2,
+        },
+        {
+          row: 0,
+          col: 2,
+          text: 'x',
+          width: 1,
+        },
+        {
+          row: 0,
+          col: 3,
+          text: 'y',
+          width: 1,
+        },
+      ])
+    ).toBe('\uf120 xy')
+  })
+
+  test('keeps fallback text after sparse wide private-use cells', () => {
+    expect(
+      readCellRowVisibleText('\uf120xy', [
+        {
+          row: 0,
+          col: 0,
+          text: '\uf120',
+          width: 2,
+        },
+      ])
+    ).toBe('\uf120 xy')
   })
 })

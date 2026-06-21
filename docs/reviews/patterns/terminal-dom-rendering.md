@@ -67,3 +67,12 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **Finding:** Custom block glyphs without an explicit foreground color used `currentColor` for the fill rectangle, then hid the glyph text by setting the wrapper color to `transparent`. The fill inherited transparent currentColor, making default-color and reverse-video block glyphs disappear.
 - **Fix:** Resolved block-glyph foreground/background colors before hiding the wrapper text. Default fills now use `var(--terminal-foreground)`, and reverse-video block fills swap to the effective terminal background while the wrapper background uses the effective foreground.
 - **Commit:** same commit as this entry
+
+### 7. Reverse-video DOM styling should have one color owner
+
+- **Source:** github-claude | PR #591 round 6 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L856-L889
+- **Finding:** `applyStyleToElement` wrote a background color in the shared background/reverse layout branch and immediately overwrote it in the reverse-video branch. The final DOM style was correct, but the intermediate write used the wrong reverse fallback and obscured which branch owned reverse colors.
+- **Fix:** Limited the shared branch to non-reverse background assignment plus inline-block layout. The reverse branch remains the single owner of reverse foreground/background swapping.
+- **Commit:** same commit as this entry

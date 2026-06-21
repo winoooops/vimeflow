@@ -169,7 +169,9 @@ export const readCellDisplayText = (
   fallbackColumn: number
 ): string => {
   if (cell.text !== '') {
-    return cell.text
+    const missingColumns = Math.max(0, cell.width - readTextCellWidth(cell.text))
+
+    return cell.text.padEnd(cell.text.length + missingColumns, ' ')
   }
 
   return hasCellStyle(cell)

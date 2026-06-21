@@ -490,6 +490,8 @@ const isOpeningDivTag = (token: string): boolean => /^<div\b/i.test(token)
 
 const isClosingDivTag = (token: string): boolean => /^<\/div\s*>$/i.test(token)
 
+const isHtmlTag = (token: string): boolean => /^<[^>]*>$/.test(token)
+
 const hasReverseVideoStyle = (token: string): boolean => {
   const match = HTML_STYLE_ATTRIBUTE_PATTERN.exec(token)
 
@@ -542,6 +544,10 @@ const readReverseVideoRangesFromHtml = (
     if (isClosingDivTag(token)) {
       reverseStack.pop()
 
+      return
+    }
+
+    if (isHtmlTag(token)) {
       return
     }
 

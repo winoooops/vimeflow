@@ -856,8 +856,10 @@ export class TerminalTextSurface implements TerminalSurface {
     if (style.background || style.reverse) {
       const cellWidth = Math.max(1, readTextCellWidth(text))
 
-      element.style.backgroundColor =
-        style.background ?? 'var(--terminal-foreground)'
+      if (style.background && !style.reverse) {
+        element.style.backgroundColor = style.background
+      }
+
       element.style.display = 'inline-block'
       element.style.height = 'var(--terminal-line-height)'
       element.style.lineHeight = 'var(--terminal-line-height)'
@@ -960,11 +962,13 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private createTextNode(text: string, style: TerminalDisplayStyle): Node {
-    if (!this.hasStyle(style) && !BLOCK_ELEMENT_PATTERN.test(text)) {
+    const hasBlockGlyphs = BLOCK_ELEMENT_PATTERN.test(text)
+
+    if (!this.hasStyle(style) && !hasBlockGlyphs) {
       return document.createTextNode(text)
     }
 
-    if (!BLOCK_ELEMENT_PATTERN.test(text)) {
+    if (!hasBlockGlyphs) {
       const span = document.createElement('span')
       span.dataset.terminalStyleRun = 'true'
       span.textContent = text

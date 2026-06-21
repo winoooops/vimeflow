@@ -776,6 +776,53 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('ignores non-div formatter tags while reading reverse-video columns', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: 'abc' }],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><span>a</span><div style="display: inline;filter: invert(100%);">bc</div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['abc'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+          textOffset: 3,
+        },
+        cells: [
+          {
+            row: 0,
+            col: 1,
+            text: 'bc',
+            width: 2,
+            reverse: true,
+          },
+        ],
+      },
+    })
+  })
+
   test('preserves native fallback text before sparse styled empty cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
@@ -879,7 +926,7 @@ describe('ghostty render-state main bridge', () => {
         cursor: {
           rowIndex: 0,
           columnOffset: 3,
-          textOffset: 2,
+          textOffset: 3,
         },
         cells: [
           {
