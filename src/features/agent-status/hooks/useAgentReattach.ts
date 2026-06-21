@@ -24,6 +24,7 @@ import type { AgentStatusEvent } from '../types'
 const REATTACH_AUTO_INITIAL_DELAY_MS = 400
 const REATTACH_AUTO_RETRY_INTERVAL_MS = 700
 const REATTACH_AUTO_MAX_ATTEMPTS = 5
+const REATTACH_AUTO_MAX_TIMER_FIRES = REATTACH_AUTO_MAX_ATTEMPTS * 2
 // Always-on drift tick (VIM-192): the active Codex pane re-locates on this
 // cadence, regardless of the red state. An in-session `resume` is undetectable
 // (it types no `/clear`, so red is never armed) and codex exposes no active-thread
@@ -274,7 +275,8 @@ export const useAgentReattach = ({
         const tokensReset =
           eventTotal !== null &&
           (eventTotal === 0 || staleTotal === null || eventTotal < staleTotal)
-        const isFresh = id !== null && (id !== staleId || tokensReset)
+        const identityChanged = staleId !== null && id !== staleId
+        const isFresh = id !== null && (identityChanged || tokensReset)
         if (needsReattachRef.current && isFresh) {
           resolveArmedReattach()
         }
@@ -347,12 +349,18 @@ export const useAgentReattach = ({
 
     let cancelled = false
     let attempts = 0
+    let timerFires = 0
     let timer: ReturnType<typeof setTimeout>
 
     const run = async (): Promise<void> => {
-      if (cancelled || attempts >= REATTACH_AUTO_MAX_ATTEMPTS) {
+      if (
+        cancelled ||
+        attempts >= REATTACH_AUTO_MAX_ATTEMPTS ||
+        timerFires >= REATTACH_AUTO_MAX_TIMER_FIRES
+      ) {
         return
       }
+      timerFires += 1
       const issued = await reattachAsync()
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the effect cleanup sets `cancelled` across the await above
       if (cancelled) {

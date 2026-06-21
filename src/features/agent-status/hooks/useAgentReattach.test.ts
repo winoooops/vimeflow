@@ -186,6 +186,46 @@ test('the stale session id is ignored; a new id clears needsReattach', () => {
   expect(result.current.needsReattach).toBe(false)
 })
 
+test('an unknown stale session id does not clear on a different id alone', () => {
+  const { result, rerender } = renderHook(
+    ({ aid, total, gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: aid,
+        agentTokenTotal: total,
+        staleGeneration: gen,
+      }),
+    {
+      initialProps: {
+        aid: null as string | null,
+        total: null as number | null,
+        gen: 0,
+      },
+    }
+  )
+
+  act(() => {
+    rerender({ aid: null, total: null, gen: 1 })
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit('agent-status', makeEvent({ agentSessionId: 'codex-old-rollout' }))
+  })
+  expect(result.current.needsReattach).toBe(true)
+
+  act(() => {
+    emit(
+      'agent-status',
+      makeEvent({
+        agentSessionId: 'codex-after-clear',
+        contextWindow: makeContextWindow(0),
+      })
+    )
+  })
+  expect(result.current.needsReattach).toBe(false)
+})
+
 test('repeated /clear preserves the original stale identity', () => {
   const { result, rerender } = renderHook(
     ({ aid, gen }) =>
@@ -511,6 +551,33 @@ test('auto-reattach keeps retrying after an IPC failure', async () => {
     await vi.advanceTimersByTimeAsync(700 * 6)
   })
   expect(invoke).toHaveBeenCalledTimes(5)
+})
+
+test('auto-reattach stops timer retries while an IPC call is stuck', async () => {
+  vi.mocked(invoke).mockImplementation(
+    (() => new Promise(() => undefined)) as unknown as typeof invoke
+  )
+
+  const { rerender } = renderHook(
+    ({ gen }) =>
+      useAgentReattach({
+        sessionId: 'session-1',
+        agentSessionId: null,
+        staleGeneration: gen,
+      }),
+    { initialProps: { gen: 0 } }
+  )
+
+  act(() => {
+    rerender({ gen: 1 })
+  })
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400 + 700 * 12)
+  })
+
+  expect(invoke).toHaveBeenCalledTimes(1)
+  expect(vi.getTimerCount()).toBe(0)
 })
 
 test('a recovered pane does not re-arm when re-selected', () => {

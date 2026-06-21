@@ -197,10 +197,10 @@ impl OpenRolloutFds for NullOpenRolloutFds {
     }
 }
 
-/// Runs `lsof -p <pid> -Fn` and returns its stdout, mapping spawn failure,
-/// timeout, and non-zero exit to `Err`. Behind a trait so the parser and the
-/// `Ok(∅)` / `Err` mapping are unit-tested without spawning `lsof` (the real
-/// spawn only runs on Unix in production; VIM-190).
+/// Runs `lsof -p <pid> -Fn` and returns its stdout, mapping missing `lsof` to
+/// empty output and timeout / non-zero exit to `Err`. Behind a trait so the
+/// parser and the `Ok(∅)` / `Err` mapping are unit-tested without spawning
+/// `lsof` (the real spawn only runs on Unix in production; VIM-190).
 #[cfg(unix)]
 trait LsofRunner: Send + Sync {
     fn run(&self, pid: u32) -> io::Result<String>;
@@ -239,12 +239,16 @@ impl LsofOpenRolloutFds {
 #[cfg(unix)]
 impl OpenRolloutFds for LsofOpenRolloutFds {
     fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>> {
-        // Runner `Err` (spawn failure / timeout / non-zero exit) propagates as
-        // a provider failure — distinct from `Ok(∅)` (lsof ran, the process
-        // has no rollout file open). VIM-191 makes that distinction
-        // authoritative; here it is established (behavior matches the `/proc`
-        // provider, whose caller still treats `Err` as "no FD").
-        let stdout = self.runner.run(pid)?;
+        // Runner `Err` (timeout / non-zero exit) propagates as a provider
+        // failure — distinct from `Ok(∅)` (lsof ran, the process has no rollout
+        // file open). A missing `lsof` binary means the platform signal is
+        // unavailable, so fall back to the pre-lsof behavior instead of blocking
+        // all attach strategies on macOS/BSD.
+        let stdout = match self.runner.run(pid) {
+            Ok(stdout) => stdout,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(err) => return Err(err),
+        };
         Ok(parse_lsof_rollout_names(&stdout, &self.codex_sessions_root))
     }
 }
@@ -288,12 +292,17 @@ impl LsofRunner for RealLsofRunner {
     fn run(&self, pid: u32) -> io::Result<String> {
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new("lsof")
+        let mut child = match Command::new("lsof")
             .args(["-p", &pid.to_string(), "-Fn"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()?;
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(String::new()),
+            Err(err) => return Err(err),
+        };
 
         // Drain stdout on a thread: lsof output for one pid is small, but a
         // full pipe would otherwise deadlock the try_wait loop below.
@@ -2066,8 +2075,8 @@ mod sqlite_first_tests {
     #[cfg(unix)]
     #[test]
     fn lsof_provider_propagates_runner_err() {
-        // The `Err` != `Ok(∅)` contract: a failed lsof (timeout / non-zero exit
-        // / spawn failure) must surface as `Err`, not be conflated with "no FD".
+        // The `Err` != `Ok(∅)` contract: a failed lsof (timeout / non-zero exit)
+        // must surface as `Err`, not be conflated with "no FD".
         let dir = tempfile::tempdir().expect("tempdir");
         let provider = LsofOpenRolloutFds::with_runner(
             dir.path(),
@@ -2077,6 +2086,22 @@ mod sqlite_first_tests {
         );
         let result = provider.open_rollout_paths(1);
         assert!(result.is_err(), "runner Err must propagate as provider Err");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_treats_missing_lsof_as_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Err(io::ErrorKind::NotFound),
+            }),
+        );
+        let got = provider
+            .open_rollout_paths(1)
+            .expect("missing lsof falls back");
+        assert!(got.is_empty());
     }
 
     #[cfg(unix)]

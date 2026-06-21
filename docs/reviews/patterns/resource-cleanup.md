@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 14
+last_updated: 2026-06-21
+ref_count: 15
 ---
 
 # Resource Cleanup
@@ -172,3 +172,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** A periodic drift `start_agent_watcher` could still resolve after the active Codex pane switched away; cleanup cancelled the next timer but did not stop the backend watcher that the late IPC registered for the inactive PTY.
 - **Fix:** Captured the starting session, PTY id, and reattach generation, then stopped the captured PTY watcher if the start resolved after the hook no longer owned that generation. Added a regression test for switching panes while the drift start is in flight.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Auto-retry timer kept firing while IPC was stuck in flight
+
+- **Source:** github-claude | PR #593 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** The bounded `/clear` auto-retry counted issued IPC calls, but a skipped retry while another `start_agent_watcher` call was still in flight did not consume that budget. If the IPC call hung indefinitely, the timer kept waking every retry interval until unmount.
+- **Fix:** Added a secondary wall-clock fire ceiling that advances on every timer wake while preserving the existing issued-call budget. The retry window now stops even when the single in-flight IPC promise never settles, and a regression test pins the stuck-IPC case.
+- **Commit:** same commit as this entry

@@ -2,8 +2,8 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-20
-ref_count: 3
+last_updated: 2026-06-21
+ref_count: 4
 ---
 
 # Agent-State Guards
@@ -57,4 +57,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
 - **Finding:** When the pre-clear status had an `agentSessionId` but no `contextWindow`, `staleTotal` was null, so same-id relocated events with non-zero tokens could never satisfy the freshness predicate. The pane stayed in the red stale state until a pane switch or a different agent session ID arrived.
 - **Fix:** Treat a known post-reset token total as fresh when the captured baseline is unknown, and mirror that rule in `useAgentStatus` so the panel accepts the same event. Added hook and status tests for same-id recovery from a null token baseline.
+- **Commit:** same commit as this entry
+
+### 6. Unknown stale session id let any old rollout clear reattach state
+
+- **Source:** github-codex-connector | PR #593 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** When `/clear` was submitted before the first status event populated `agentSessionId`, the stale identity snapshot was null. The hook treated any later non-null id as different from null, so an old-rollout status event could clear the red reattach state even though the watcher was still pinned to the pre-clear rollout.
+- **Fix:** Require a known captured stale id before the different-id branch can resolve recovery. Unknown-baseline clears now require the existing token-reset freshness signal, and a regression test covers a different-id old-rollout event followed by a zero-token reset event.
 - **Commit:** same commit as this entry
