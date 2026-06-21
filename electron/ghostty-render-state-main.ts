@@ -1,4 +1,4 @@
-// cspell:ignore ghostty libghostty prebuilds
+// cspell:ignore ghostty libghostty prebuilds powerline
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -466,7 +466,7 @@ interface ReverseVideoRange {
   readonly endColumn: number
 }
 
-const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#39);/g
+const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#x[0-9a-fA-F]+|#\d+);/g
 const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
 
@@ -477,6 +477,31 @@ const HTML_REVERSE_FILTER_PATTERN = /filter:\s*invert\(100%\)/i
 const HTML_VOID_TAG_PATTERN =
   /^<(?:area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)\b/i
 
+const decodeNumericHtmlEntity = (entity: string): string => {
+  const body = entity.slice(2, -1)
+
+  const codePoint =
+    body.startsWith('x') || body.startsWith('X')
+      ? Number.parseInt(body.slice(1), 16)
+      : Number.parseInt(body, 10)
+
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+    return entity
+  }
+
+  try {
+    return String.fromCodePoint(codePoint)
+  } catch {
+    return entity
+  }
+}
+
+// Ghostty's formatter emits Nerd Font / powerline glyphs as numeric entities
+// (e.g. the apple logo as &#983093;, the powerline separator as &#57520;).
+// Decoding them is load-bearing for column accounting: an undecoded
+// "&#57520;" is 8 string characters, so readReverseVideoRangesFromHtml would
+// count it as 8 cells instead of 1 and every background range past it would
+// drift right off its real column — bleeding prompt colors onto typed input.
 const decodeHtmlText = (text: string): string =>
   text.replace(HTML_ENTITY_PATTERN, (entity) => {
     if (entity === '&amp;') {
@@ -495,7 +520,7 @@ const decodeHtmlText = (text: string): string =>
       return '"'
     }
 
-    return "'"
+    return decodeNumericHtmlEntity(entity)
   })
 
 const isOpeningHtmlTag = (token: string): boolean =>

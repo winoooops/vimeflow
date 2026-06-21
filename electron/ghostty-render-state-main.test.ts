@@ -1087,6 +1087,55 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('decodes numeric glyph entities so background ranges align to native columns', () => {
+    const separator = String.fromCodePoint(0xe0b0)
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 3,
+          visibleLines: [{ row: 0, text: `${separator}ab` }],
+          cells: [
+            { row: 0, col: 0, text: separator, width: 1 },
+            { row: 0, col: 1, text: 'a', width: 1 },
+            { row: 0, col: 2, text: 'b', width: 1 },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><div style="display: inline;color: rgb(1, 2, 3);">&#57520;</div><div style="display: inline;background-color: rgb(64, 64, 72);">ab</div></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [`${separator}ab`],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 3,
+        },
+        cells: [
+          { row: 0, col: 0, text: separator, width: 1 },
+          { row: 0, col: 1, text: 'a', width: 1, background: '#404048' },
+          { row: 0, col: 2, text: 'b', width: 1, background: '#404048' },
+        ],
+      },
+    })
+  })
+
   test('preserves native fallback text before sparse styled empty cells', () => {
     const bridge = new GhosttyRenderStateMainBridge('/app', {
       createTerminal: (): ReturnType<
