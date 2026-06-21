@@ -511,10 +511,9 @@ const toHexColor = (red: number, green: number, blue: number): string =>
     )
     .join('')}`
 
-const readTagCellStyle = (token: string): Pick<
-  ReverseVideoRange,
-  'background' | 'reverse'
-> => {
+const readTagCellStyle = (
+  token: string
+): Pick<ReverseVideoRange, 'background' | 'reverse'> => {
   const match = HTML_STYLE_ATTRIBUTE_PATTERN.exec(token)
 
   if (!match) {
@@ -550,8 +549,9 @@ const mergeCellStyle = (
     : {}),
 })
 
-const hasRangeStyle = (range: Pick<ReverseVideoRange, 'background' | 'reverse'>): boolean =>
-  range.reverse === true || range.background !== undefined
+const hasRangeStyle = (
+  range: Pick<ReverseVideoRange, 'background' | 'reverse'>
+): boolean => range.reverse === true || range.background !== undefined
 
 const sameRangeStyle = (
   left: Pick<ReverseVideoRange, 'background' | 'reverse'>,
