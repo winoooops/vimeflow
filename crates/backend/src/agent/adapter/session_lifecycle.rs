@@ -310,6 +310,54 @@ mod tests {
         }
     }
 
+    /// Locator that resolves a caller-chosen status path under a trust root,
+    /// for exercising the Codex no-op relocate (idempotency) branch.
+    struct StubPathLocator {
+        status_path: PathBuf,
+        trust_root: PathBuf,
+    }
+
+    impl StatusSourceLocator for StubPathLocator {
+        fn locate(
+            &self,
+            _cwd: &std::path::Path,
+            _session_id: &str,
+        ) -> Result<LocatedStatusSource, String> {
+            Ok(LocatedStatusSource {
+                status_path: self.status_path.clone(),
+                trust_root: self.trust_root.clone(),
+                static_transcript_hint: None,
+                agent_session_id: None,
+            })
+        }
+    }
+
+    fn write_stub_status(path: &Path) {
+        std::fs::create_dir_all(path.parent().expect("status path has parent"))
+            .expect("create status dir");
+        std::fs::write(path, r#"{"session_id":"sid","model":{}}"#).expect("write status");
+    }
+
+    fn stub_bindings(
+        agent_type: AgentType,
+        status_path: PathBuf,
+        trust_root: PathBuf,
+    ) -> AgentBindings {
+        let adapter: Arc<crate::agent::adapter::claude_code::ClaudeCodeAdapter> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        AgentBindings {
+            agent_type,
+            locator: Arc::new(StubPathLocator {
+                status_path,
+                trust_root,
+            }),
+            decoder: adapter.clone(),
+            transcript_paths: adapter.clone(),
+            validator: adapter.clone(),
+            streamer: adapter,
+        }
+    }
+
     #[test]
     fn t_verb_locate_err_forwarding() {
         let adapter: Arc<crate::agent::adapter::claude_code::ClaudeCodeAdapter> =
@@ -575,6 +623,162 @@ mod tests {
 
         watcher_state.remove(&sid);
     }
+
+    #[tokio::test]
+    async fn codex_relocate_same_rollout_is_noop_changed_false() {
+        // Drift tick re-locates the active Codex pane every few seconds. When
+        // the locate resolves the SAME rollout already watched, the relocate
+        // must be a no-op (changed=false) so it neither re-tails the (large)
+        // rollout nor lets the frontend optimistic-clear red (VIM-192).
+        let tmp = TempDir::new().expect("tempdir");
+        let trust_root = tmp.path().to_path_buf();
+        let status_path = trust_root.join("sessions").join("a").join("status.json");
+        write_stub_status(&status_path);
+        let sid = "codex-sess".to_string();
+        let watcher_state = AgentWatcherState::new();
+        let transcript_state = TranscriptState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            watcher_state.clone(),
+            transcript_state,
+            Arc::new(FakeEventSink::new()),
+        );
+
+        // First attach: a real relocate.
+        let changed = lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(AgentType::Codex, status_path.clone(), trust_root.clone()),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("first codex attach");
+        assert!(changed, "first attach must report changed=true");
+        assert_eq!(
+            watcher_state.current_status_path(&sid).as_deref(),
+            Some(status_path.as_path()),
+            "handle records the rollout it watches"
+        );
+
+        // Second attach, same rollout: idempotent no-op.
+        let changed_again = lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(AgentType::Codex, status_path.clone(), trust_root.clone()),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("second codex attach (same rollout)");
+        assert!(
+            !changed_again,
+            "re-locating the SAME rollout must be a no-op (changed=false)"
+        );
+        assert_eq!(
+            watcher_state.current_status_path(&sid).as_deref(),
+            Some(status_path.as_path()),
+            "still watching the same rollout"
+        );
+
+        watcher_state.remove(&sid);
+    }
+
+    #[tokio::test]
+    async fn codex_relocate_changed_rollout_respawns_changed_true() {
+        // A genuine switch (resume -> different rollout becomes newest) must
+        // relocate and report changed=true so the panel follows it.
+        let tmp = TempDir::new().expect("tempdir");
+        let trust_root = tmp.path().to_path_buf();
+        let path1 = trust_root.join("sessions").join("a").join("status.json");
+        let path2 = trust_root.join("sessions").join("b").join("status.json");
+        write_stub_status(&path1);
+        write_stub_status(&path2);
+        let sid = "codex-sess".to_string();
+        let watcher_state = AgentWatcherState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            watcher_state.clone(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+
+        lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(AgentType::Codex, path1.clone(), trust_root.clone()),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("attach path1");
+
+        let changed = lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(AgentType::Codex, path2.clone(), trust_root.clone()),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("relocate to path2");
+        assert!(changed, "switching rollout must report changed=true");
+        assert_eq!(
+            watcher_state.current_status_path(&sid).as_deref(),
+            Some(path2.as_path()),
+            "now watching the new rollout"
+        );
+
+        watcher_state.remove(&sid);
+    }
+
+    #[tokio::test]
+    async fn non_codex_relocate_always_respawns_even_for_same_path() {
+        // The no-op is Codex-scoped: Claude/Kimi keep their always-respawn
+        // restart semantics, so a same-path re-locate still reports changed=true.
+        let tmp = TempDir::new().expect("tempdir");
+        let trust_root = tmp.path().to_path_buf();
+        let status_path = trust_root.join("sessions").join("a").join("status.json");
+        write_stub_status(&status_path);
+        let sid = "claude-sess".to_string();
+        let watcher_state = AgentWatcherState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            watcher_state.clone(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+
+        lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(
+                    AgentType::ClaudeCode,
+                    status_path.clone(),
+                    trust_root.clone(),
+                ),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("first claude attach");
+        let changed_again = lifecycle
+            .start_inner_for_test(
+                sid.clone(),
+                stub_bindings(
+                    AgentType::ClaudeCode,
+                    status_path.clone(),
+                    trust_root.clone(),
+                ),
+                tmp.path().to_path_buf(),
+            )
+            .await
+            .expect("second claude attach");
+        assert!(
+            changed_again,
+            "non-Codex agents always respawn (changed=true) even for the same path"
+        );
+
+        watcher_state.remove(&sid);
+    }
 }
 
 impl SessionLifecycle {
@@ -751,32 +955,33 @@ impl SessionLifecycle {
         session_id: String,
         app_data_dir: PathBuf,
         provider_home_override: Option<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         crate::debug::debug_log("agent-attach", &format!("start session={}", session_id));
         let attach = match self.resolve_attach(
             &session_id,
             &app_data_dir,
             provider_home_override,
             |shell_pid| {
-            let detected = detect_agent(shell_pid);
+                let detected = detect_agent(shell_pid);
 
-            #[cfg(feature = "e2e-test")]
-            {
-                // E2E tests seed the watcher map instead of launching a real
-                // Claude/Codex process, but still exercise the normal watcher
-                // startup and status-file emission path.
-                detected.or_else(|| {
-                    self.watcher_state
-                        .agent_type_for_pty(&session_id)
-                        .map(|agent_type| (agent_type, shell_pid))
-                })
-            }
+                #[cfg(feature = "e2e-test")]
+                {
+                    // E2E tests seed the watcher map instead of launching a real
+                    // Claude/Codex process, but still exercise the normal watcher
+                    // startup and status-file emission path.
+                    detected.or_else(|| {
+                        self.watcher_state
+                            .agent_type_for_pty(&session_id)
+                            .map(|agent_type| (agent_type, shell_pid))
+                    })
+                }
 
-            #[cfg(not(feature = "e2e-test"))]
-            {
-                detected
-            }
-        }) {
+                #[cfg(not(feature = "e2e-test"))]
+                {
+                    detected
+                }
+            },
+        ) {
             Ok(attach) => attach,
             Err(e) => {
                 crate::debug::debug_log(
@@ -840,12 +1045,18 @@ impl SessionLifecycle {
     /// deleted the `evict_old` call: `insert` does the atomic replace
     /// it was designed for, and the spawn-failure-rollback property is
     /// preserved by the spawn-before-register ordering alone.
+    ///
+    /// Returns `Ok(true)` when the watcher was (re)spawned onto the located
+    /// path, and `Ok(false)` for a Codex no-op relocate — a fresh locate that
+    /// resolved the SAME rollout the live handle already watches. The drift
+    /// tick (VIM-192) calls this every few seconds for the active Codex pane, so
+    /// skipping the re-spawn avoids re-tailing a 20-114MB rollout on every tick.
     async fn run_watch_sequence(
         &self,
         session_id: String,
         bindings: AgentBindings,
         cwd: std::path::PathBuf,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         // Locate outside the long-running spawn_blocking closure so kimi's
         // retry delay can be an async `tokio::time::sleep` that yields the
         // task. The actual filesystem work still runs on the blocking pool
@@ -855,6 +1066,23 @@ impl SessionLifecycle {
         let lc = self.clone();
         tokio::task::spawn_blocking(move || {
             let trusted = lc.ensure_trust(located)?;
+
+            // Codex-only no-op: if the fresh locate resolved the SAME rollout
+            // the live handle already watches, skip spawn_watch + register
+            // entirely. Scoped to Codex because only its locator sets
+            // `status_path` to the rollout path (CompositeLocator); Claude /
+            // Kimi keep their existing always-respawn restart semantics.
+            if bindings.agent_type == AgentType::Codex
+                && lc.watcher_state.current_status_path(&session_id).as_deref()
+                    == Some(trusted.status_path())
+            {
+                log::debug!(
+                    "codex relocate: no-op (same rollout still watched) session={} path={}",
+                    session_id,
+                    trusted.status_path().display(),
+                );
+                return Ok::<bool, String>(false);
+            }
 
             log::debug!(
                 "Watcher startup detail: session={}, cwd={}, path={}",
@@ -903,7 +1131,7 @@ impl SessionLifecycle {
             // the full invariant statement (PR #302 cycle 3 deleted a
             // separate `evict_old` call that broke this property).
             lc.register(session_id, handle, agent_type);
-            Ok::<_, String>(())
+            Ok::<bool, String>(true)
         })
         .await
         .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
@@ -920,7 +1148,7 @@ impl SessionLifecycle {
         session_id: String,
         bindings: AgentBindings,
         cwd: std::path::PathBuf,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         self.run_watch_sequence(session_id, bindings, cwd).await
     }
 

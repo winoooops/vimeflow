@@ -101,3 +101,36 @@ test('does not add drag coverage when native controls are not reserved', () => {
     'vf-app-drag-region'
   )
 })
+
+test('shows the red needs-reattach state when stale', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.codex}
+      needsReattach
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(screen.getByTestId('agent-glyph-chip')).toHaveAttribute(
+    'data-stale',
+    'true'
+  )
+  // The red state is an instruction (recovery is automatic once the user sends
+  // a prompt), not a clickable action.
+  expect(screen.getByText('send a prompt to reattach')).toBeInTheDocument()
+  expect(screen.getByText('link_off')).toBeInTheDocument()
+})
+
+test('never renders a manual reattach button (recovery is automatic)', () => {
+  render(
+    <AgentStatusPanelHeader
+      agent={AGENTS.codex}
+      needsReattach
+      onCollapse={() => undefined}
+    />
+  )
+
+  expect(
+    screen.queryByRole('button', { name: /reattach agent session/i })
+  ).not.toBeInTheDocument()
+})

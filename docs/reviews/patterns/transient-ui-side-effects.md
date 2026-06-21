@@ -73,3 +73,17 @@ to persistent state through a separate, explicit path.
   listeners while keeping `localStorage` writes reserved for confirmed `apply`
   calls.
 - **Commit:** same commit as this entry
+
+### 5. Clipboard success indicator ignored the write result
+
+- **Source:** github-claude | PR #575 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** Copy rows called `writeClipboardText(value)` without awaiting the
+  returned boolean, then immediately showed the success check. If both the
+  Clipboard API and fallback copy path failed, the UI still reported success
+  while the clipboard remained unchanged.
+- **Fix:** Awaited `writeClipboardText` and gated the transient check state plus
+  reset timer on a true result. Added regression coverage for both successful
+  async feedback and the failure path that keeps the copy glyph visible.
+- **Commit:** same commit as this entry

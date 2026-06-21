@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-19
-ref_count: 4
+last_updated: 2026-06-21
+ref_count: 5
 ---
 
 # Cross-Platform Paths
@@ -87,4 +87,22 @@ consider using path libraries for cross-platform code.
 - **Finding:** `workspace_bridge_bucket` constructed an app-data directory component from the sanitized cwd basename plus a `_<sha256>` suffix. When the project directory name was long but still a valid filename, the combined component exceeded common filesystems' 255-byte component limit, causing `create_dir_all` to fail and leaving the session without a generated bridge.
 - **Fix:** Truncate the sanitized basename to `MAX_BUCKET_BASENAME_BYTES = 242` bytes (leaving room for the underscore, 6-hex hash, and margin) before appending the hash suffix. The resulting component stays well under 255 bytes even on conservative filesystems.
 - **Commit:** same commit as this entry
+- **Commit:** same commit as this entry
+
+### 9. Path-normalization tests compared case-folded output against raw `$HOME`
+
+- **Source:** github-claude | PR #572 round 2 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/utils/editorFileLifecycleStatus.test.ts`
+- **Finding:** The pre-push Vitest hook failed on macOS because `parentPathForGitStatus('~/repo/src/new.ts')` intentionally lowercases the expanded path on case-insensitive platforms, while the test expected the raw `$HOME` casing (`/Users/...`). The production behavior was correct, but the platform-sensitive expectation made the local gate fail and encouraged a `git push --no-verify` bypass.
+- **Fix:** Keep the direct `expandTildePath` assertion for raw home expansion, but compare the git-status parent path with `normalizePathForComparison(`${home}/repo/src`)` so the expected value follows the same case-folding contract as the API under test.
+- **Commit:** same commit as this entry
+
+### 10. Missing macOS helper binary blocked fallback attach strategies
+
+- **Source:** github-claude | PR #593 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** The non-`/proc` Codex locator relies on `lsof` for macOS/BSD open-rollout detection. If the binary was absent from PATH, the provider surfaced `NotFound` as an authoritative provider error, so the resolver returned `NotYetReady` before resume-argv, logs, or recency fallback strategies could run.
+- **Fix:** Treat `io::ErrorKind::NotFound` from the lsof runner as empty output, preserving the pre-lsof fallback behavior when the platform signal is unavailable. Timeout and non-zero-exit errors still propagate as provider failures.
 - **Commit:** same commit as this entry

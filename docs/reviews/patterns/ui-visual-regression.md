@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-15
-ref_count: 6
+last_updated: 2026-06-20
+ref_count: 8
 ---
 
 # UI Visual Regression
@@ -134,11 +134,38 @@ test case for the state that triggers the collision.
 - **Fix:** Added `rounded-[10px]` to the `className` override so the sidebar new-session button keeps its previous radius.
 - **Commit:** same commit as this entry
 
-### 12. Toolbar icon inherits `text-[0px]` and renders at 0 px
+### 12. ClaudeCode brand icon distorts with non-uniform scaling after cropping to a non-square viewBox
+
+- **Source:** github-claude | PR #572 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.tsx`, `src/agents/brandIcons.test.tsx`
+- **Finding:** The `ClaudeCode` icon was cropped to `viewBox="0 4 24 17"`, but the shared `BrandSvg` wrapper still renders a square SVG (`width={size}` / `height={size}`). Adding `preserveAspectRatio="none"` forced independent X/Y scaling, so the 24:17 mark stretched vertically inside the square chip and undid the intended ratio correction.
+- **Fix:** Removed `preserveAspectRatio="none"` from the `ClaudeCode` `BrandSvg` call so the cropped mark scales uniformly and is letterboxed inside the square icon. Removed the matching `preserveAspectRatio="none"` assertion from the regression test.
+- **Commit:** same commit as this entry
+
+### 13. Toolbar icon inherits `text-[0px]` and renders at 0 px
 
 - **Source:** github-claude | PR #461 round 1 | 2026-06-15
 - **Severity:** MEDIUM
 - **File:** `src/components/SegmentedControl.tsx`
 - **Finding:** The `toolbar` and `toolbarInline` variants set `text-[0px]` on the button to hide labels, but `renderDefaultOption` fell back to `iconClassName ?? 'material-symbols-outlined text-[1.1em]'`. With no explicit `iconClassName`, the icon span inherited the parent's zero font-size and `1.1em` resolved to `0 px`, making the icon invisible.
 - **Fix:** Changed the default icon class fallback to `text-[16px]` so the icon size is independent of the parent button's label-hiding font-size.
+- **Commit:** same commit as this entry
+
+### 14. ClaudeCode crop keeps a square rendered viewport
+
+- **Source:** github-codex-connector | PR #572 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/agents/brandIcons.tsx`, `src/agents/brandIcons.test.tsx`
+- **Finding:** The ClaudeCode icon used a cropped `viewBox="0 4 24 17"` but still rendered into the shared square SVG dimensions. Because the viewBox remained width-limited inside the square viewport, the crop mostly recentered the mark without proving the rendered logo ratio changed.
+- **Fix:** Gave the ClaudeCode SVG a height derived from the cropped 24:17 viewBox while keeping uniform scaling, and added a regression assertion that the rendered width-to-height ratio matches the cropped geometry.
+- **Commit:** same commit as this entry
+
+### 15. ClaudeCode regression test omits the no-distortion invariant
+
+- **Source:** github-claude | PR #572 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/agents/brandIcons.test.tsx`
+- **Finding:** The ClaudeCode regression test asserted the cropped viewBox and removed circle, but did not guard against reintroducing `preserveAspectRatio="none"`. That left the prior non-uniform scaling regression able to return without breaking the test.
+- **Fix:** Added an explicit assertion that the rendered SVG has no `preserveAspectRatio` attribute, preserving the uniform-scaling invariant alongside the rendered-ratio assertion.
 - **Commit:** same commit as this entry

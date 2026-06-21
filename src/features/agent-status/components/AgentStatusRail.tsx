@@ -3,6 +3,7 @@ import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../agents/registry'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { RailMeter } from './RailMeter'
+import { CacheRing } from './CacheRing'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
@@ -90,12 +91,7 @@ export const AgentStatusRail = ({
 
       {cachePct !== null && (
         <div className="vf-app-no-drag mt-4">
-          <RailMeter
-            pct={cachePct}
-            color={cacheTone(cachePct)}
-            label="CACHE"
-            tooltip={`Cache hit rate: ${Math.round(cachePct)}%`}
-          />
+          <CacheRing pct={cachePct} color={cacheTone(cachePct)} />
         </div>
       )}
 

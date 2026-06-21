@@ -9,9 +9,15 @@ export default {
           '0%': { transform: 'translateX(-110%)' },
           '100%': { transform: 'translateX(340%)' },
         },
+        // Entry for the git-ref copy popover (and any future bare hover card).
+        'vf-tip-in': {
+          from: { opacity: '0', transform: 'translateY(-3px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         'browser-load-bar': 'browser-load-bar 1.4s ease-in-out infinite',
+        'vf-tip-in': 'vf-tip-in 110ms ease-out',
       },
       fontFamily: {
         headline: ['Manrope', 'sans-serif'],

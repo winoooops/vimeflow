@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-17
-ref_count: 13
+ref_count: 14
 ---
 
 # Error Surfacing

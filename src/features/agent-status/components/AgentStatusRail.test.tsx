@@ -88,7 +88,7 @@ test('hides cache meter when cacheHitPercentage is null', () => {
   expect(screen.queryByRole('meter', { name: 'CACHE' })).not.toBeInTheDocument()
 })
 
-test('cache meter tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
+test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
@@ -98,9 +98,10 @@ test('cache meter tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
-  expect(
-    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
-  ).toHaveStyle({ color: 'var(--color-success-muted)' })
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-success-muted)'
+  )
 
   rerender(
     <AgentStatusRail
@@ -111,9 +112,10 @@ test('cache meter tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
-  expect(
-    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
-  ).toHaveStyle({ color: 'var(--color-primary)' })
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-primary)'
+  )
 
   rerender(
     <AgentStatusRail
@@ -124,9 +126,44 @@ test('cache meter tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     />
   )
 
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-tertiary)'
+  )
+})
+
+test('renders the cache rate as a ring, not the liquid bar', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={42}
+      cacheHitPercentage={75}
+      onExpand={() => undefined}
+    />
+  )
+
+  const cacheMeter = screen.getByRole('meter', { name: 'CACHE' })
+
+  expect(within(cacheMeter).getByTestId('cache-ring-arc')).toBeInTheDocument()
   expect(
-    within(screen.getByRole('meter', { name: 'CACHE' })).getByText('%')
-  ).toHaveStyle({ color: 'var(--color-tertiary)' })
+    within(cacheMeter).queryByTestId('liquid-base')
+  ).not.toBeInTheDocument()
+})
+
+test('drops the visible CACHE caption from the rail ring', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={null}
+      cacheHitPercentage={75}
+      onExpand={() => undefined}
+    />
+  )
+
+  // The label now lives only in the tooltip + accessible name, not on the ring.
+  expect(
+    within(screen.getByRole('meter', { name: 'CACHE' })).queryByText('CACHE')
+  ).not.toBeInTheDocument()
 })
 
 test('chevron expand button fires onExpand', async () => {

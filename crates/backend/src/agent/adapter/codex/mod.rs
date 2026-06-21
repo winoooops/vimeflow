@@ -438,11 +438,19 @@ mod status_source_tests {
         let pty_start = SystemTime::now() - Duration::from_secs(5);
         let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
 
+        // VIM-191: a fake proc root whose pid has an (empty) fd dir, so the
+        // open-FD provider returns `Ok(∅)` (process alive, no rollout open) and
+        // the resolver falls through to the seeded logs/threads path — rather
+        // than `Err` (the host's real /proc lacks pid 999), which is now an
+        // authoritative not-yet-ready that would exhaust retries.
+        let proc_root = tempfile::tempdir().expect("fake proc root");
+        std::fs::create_dir_all(proc_root.path().join("999").join("fd"))
+            .expect("fake /proc/999/fd");
         let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
             codex_home.path().to_path_buf(),
             999,
             pty_start,
-            Some(PathBuf::from("/proc")),
+            Some(proc_root.path().to_path_buf()),
         )));
         let cwd = codex_home.path().to_path_buf();
 
