@@ -466,7 +466,12 @@ interface ReverseVideoRange {
   readonly endColumn: number
 }
 
-const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#x[0-9a-fA-F]+|#\d+);/g
+interface SnapshotCursorExtent {
+  readonly rowIndex: number
+  readonly columnOffset: number
+}
+
+const HTML_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#[xX][0-9a-fA-F]+|#\d+);/g
 const HTML_TOKEN_PATTERN = /<[^>]*>|[^<]+/g
 const HTML_STYLE_ATTRIBUTE_PATTERN = /\bstyle="([^"]*)"/i
 
@@ -868,7 +873,8 @@ const splitSnapshotCellByReverseVideoRanges = (
 // reported get a background, never the pre-formatted padding beyond them.
 const readRowContentExtents = (
   cells: readonly GhosttyRenderStateBridgeSnapshotCell[],
-  rows: readonly string[]
+  rows: readonly string[],
+  cursor: SnapshotCursorExtent
 ): ReadonlyMap<number, number> => {
   const extents = new Map<number, number>()
 
@@ -886,15 +892,21 @@ const readRowContentExtents = (
     )
   })
 
+  extents.set(
+    cursor.rowIndex,
+    Math.max(extents.get(cursor.rowIndex) ?? 0, cursor.columnOffset)
+  )
+
   return extents
 }
 
 const appendMissingReverseCells = (
   cells: GhosttyRenderStateBridgeSnapshotCell[],
   rows: readonly string[],
-  ranges: readonly ReverseVideoRange[]
+  ranges: readonly ReverseVideoRange[],
+  cursor: SnapshotCursorExtent
 ): void => {
-  const contentExtents = readRowContentExtents(cells, rows)
+  const contentExtents = readRowContentExtents(cells, rows, cursor)
 
   ranges.forEach((range) => {
     const endColumn = Math.min(
@@ -982,7 +994,8 @@ const readSnapshotRows = (
 const readSnapshotCells = (
   snapshot: GhosttyNativeTerminalSnapshot,
   rows: readonly string[],
-  reverseVideoRanges: readonly ReverseVideoRange[]
+  reverseVideoRanges: readonly ReverseVideoRange[],
+  cursor: SnapshotCursorExtent
 ): readonly GhosttyRenderStateBridgeSnapshotCell[] | undefined => {
   if (snapshot.cells === undefined && reverseVideoRanges.length === 0) {
     return undefined
@@ -1048,7 +1061,7 @@ const readSnapshotCells = (
       )
     )
 
-  appendMissingReverseCells(cells, rows, reverseVideoRanges)
+  appendMissingReverseCells(cells, rows, reverseVideoRanges, cursor)
 
   return cells.sort((left, right) =>
     left.row === right.row ? left.col - right.col : left.row - right.row
@@ -1061,7 +1074,6 @@ const normalizeSnapshot = (
   reverseVideoRanges: readonly ReverseVideoRange[]
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
-  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
 
   const snapshotCursorVisible =
     typeof snapshot.cursorVisible === 'boolean'
@@ -1075,11 +1087,16 @@ const normalizeSnapshot = (
     throw new Error('Ghostty native render-state snapshot cursor is invalid')
   }
 
+  const cursor = {
+    rowIndex: snapshot.cursorRow,
+    columnOffset: snapshot.cursorCol,
+  }
+  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges, cursor)
+
   return {
     rows,
     cursor: {
-      rowIndex: snapshot.cursorRow,
-      columnOffset: snapshot.cursorCol,
+      ...cursor,
       ...(snapshotCursorVisible === false ? { visible: false } : {}),
     },
     ...(cells === undefined ? {} : { cells }),

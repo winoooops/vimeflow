@@ -70,3 +70,12 @@ code and should be removed.
 - **Finding:** The Electron bridge computed and transmitted `cursor.textOffset`, but the renderer deliberately recomputed cursor offsets from `columnOffset` and the current cell map. The field was dead API surface and could invite future callers to trust a stale main-process offset.
 - **Fix:** Removed `textOffset` from the Electron bridge, preload type, renderer-side native bridge normalizer, and VT snapshot cursor type. Updated tests to assert only the live `rowIndex`, `columnOffset`, and visibility contract.
 - **Commit:** same commit as this entry
+
+### 7. Parser gates must admit every branch a decoder claims to handle
+
+- **Source:** github-claude | PR #598 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `electron/ghostty-render-state-main.ts` L469-L484
+- **Finding:** `decodeNumericHtmlEntity` accepted uppercase `X` hex entities, but `HTML_ENTITY_PATTERN` only matched lowercase `#x...` entities. The uppercase branch was unreachable, so a valid `&#X...;` entity would pass through as literal text and inflate column accounting.
+- **Fix:** Changed the numeric-entity regex to match `#[xX][0-9a-fA-F]+` and added regression coverage for an uppercase-hex Powerline glyph entity.
+- **Commit:** same commit as this entry

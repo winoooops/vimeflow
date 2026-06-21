@@ -1087,6 +1087,54 @@ describe('ghostty render-state main bridge', () => {
     })
   })
 
+  test('preserves cursor-row background padding up to the cursor', () => {
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 4,
+          visibleLines: [{ row: 0, text: 'AB' }],
+          cells: [
+            { row: 0, col: 0, text: 'A', width: 1 },
+            { row: 0, col: 1, text: 'B', width: 1 },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            `<div style="font-family: monospace; white-space: pre;"><span style="background-color: rgb(64, 64, 72);">AB${' '.repeat(
+              38
+            )}</span></div>`
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: ['AB'],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 4,
+        },
+        cells: [
+          { row: 0, col: 0, text: 'A', width: 1, background: '#404048' },
+          { row: 0, col: 1, text: 'B', width: 1, background: '#404048' },
+          { row: 0, col: 2, text: '  ', width: 2, background: '#404048' },
+        ],
+      },
+    })
+  })
+
   test('decodes numeric glyph entities so background ranges align to native columns', () => {
     const separator = String.fromCodePoint(0xe0b0)
 
@@ -1131,6 +1179,53 @@ describe('ghostty render-state main bridge', () => {
           { row: 0, col: 0, text: separator, width: 1 },
           { row: 0, col: 1, text: 'a', width: 1, background: '#404048' },
           { row: 0, col: 2, text: 'b', width: 1, background: '#404048' },
+        ],
+      },
+    })
+  })
+
+  test('decodes uppercase hex numeric glyph entities', () => {
+    const separator = String.fromCodePoint(0xe0b0)
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', {
+      createTerminal: (): ReturnType<
+        GhosttyNativeBindings['createTerminal']
+      > => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 1,
+          cursorRow: 0,
+          cursorCol: 2,
+          visibleLines: [{ row: 0, text: `${separator}x` }],
+          cells: [
+            { row: 0, col: 0, text: separator, width: 1 },
+            { row: 0, col: 1, text: 'x', width: 1 },
+          ],
+        }),
+        formatHtml: vi.fn(
+          () =>
+            '<div style="font-family: monospace; white-space: pre;"><span>&#XE0B0;</span><span style="background-color: rgb(64, 64, 72);">x</span></div>'
+        ),
+        dispose: vi.fn(),
+      }),
+    })
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    expect(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    ).toEqual({
+      ok: true,
+      result: {
+        rows: [`${separator}x`],
+        cursor: {
+          rowIndex: 0,
+          columnOffset: 2,
+        },
+        cells: [
+          { row: 0, col: 0, text: separator, width: 1 },
+          { row: 0, col: 1, text: 'x', width: 1, background: '#404048' },
         ],
       },
     })

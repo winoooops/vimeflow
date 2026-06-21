@@ -299,3 +299,12 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** A trailing sparse styled blank can intentionally leave `fallbackColumn` behind `currentColumn` so visible text includes both the styled blank and the following fallback row text. Cursor-offset lookup still measured trailing text from `currentColumn`, placing the cursor before the following fallback character.
 - **Fix:** Changed trailing cursor lookup to measure from `fallbackColumn`, matching the text slice used by visible-row reconstruction. Added a shared regression for `A B` with a styled blank at column 1 and the cursor after that terminal cell.
 - **Commit:** same commit as this entry
+
+### 31. Styled range clamps must include cursor-row padding extent
+
+- **Source:** github-codex-connector | PR #598 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** The Electron Ghostty bridge clamped synthesized formatter background/reverse ranges to native cell and visible-text extents only. When Ghostty trimmed trailing blanks on the cursor row, the renderer later padded that row back to `cursor.columnOffset`, but the styled blanks before the cursor had already been dropped.
+- **Fix:** Threaded the validated cursor row/column into reverse-range synthesis and included `cursor.columnOffset` in the effective extent for the cursor row only. Added regression coverage for cursor-row styled padding that preserves style up to the cursor without restoring full-width formatter padding.
+- **Commit:** same commit as this entry
