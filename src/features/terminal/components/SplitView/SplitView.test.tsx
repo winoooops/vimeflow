@@ -1118,6 +1118,35 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
     }
   })
 
+  test('browser pane drag handle is not exposed as a keyboard button', () => {
+    const session = makeSession('vsplit', 2)
+    const browserSession: Session = {
+      ...session,
+      panes: [
+        session.panes[0],
+        { ...session.panes[1], kind: 'browser' as PaneKind },
+      ],
+    }
+
+    render(
+      <SplitView
+        session={browserSession}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={vi.fn()}
+      />
+    )
+
+    const handle = screen.getByTestId('split-view-browser-drag-handle')
+
+    expect(handle).toHaveAttribute('draggable', 'true')
+    expect(handle).not.toHaveAttribute('role', 'button')
+    expect(handle).not.toHaveAttribute('tabindex')
+    expect(
+      screen.queryByRole('button', { name: /drag to move pane/i })
+    ).not.toBeInTheDocument()
+  })
+
   test('dropping pane A header onto pane B swaps their slots', () => {
     const onPanePlacementsChange = vi.fn()
 

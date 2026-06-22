@@ -591,13 +591,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                               content="Drag to move pane"
                               placement="top"
                             >
-                              {/* ponytail: native DnD has no keyboard path; keyboard-driven pane reorder is a deferred a11y follow-up */}
+                              {/* Native DnD has no keyboard reorder path yet; keep this out of the tab order until one exists. */}
                               <div
                                 data-testid="split-view-browser-drag-handle"
                                 data-drag-handle="true"
-                                aria-label="Drag to move pane"
-                                role="button"
-                                tabIndex={0}
                                 draggable
                                 onDragStart={(event): void =>
                                   handlePaneDragStart(pane.id, event)

@@ -745,3 +745,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The browser-pane drag handle rendered as a plain draggable `<div>` with an `aria-label`, but without an interactive role or focus entry point. Assistive technologies could ignore the label, leaving the pane-move affordance undiscoverable.
 - **Fix:** Added `role="button"` and `tabIndex={0}` to make the labelled drag handle discoverable while keyboard-driven pane reorder remains a deferred follow-up.
 - **Commit:** same commit as this entry
+
+### 73. Draggable handle claimed button semantics without activation
+
+- **Source:** github-codex-connector | PR #610 round 4 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle was promoted to `role="button"` and `tabIndex={0}`, but still only implemented pointer drag handlers. Keyboard and screen-reader users could focus a control announced as a button, then press Enter or Space with no activation path.
+- **Fix:** Removed the button role and tab stop from the browser-pane drag handle until keyboard-driven pane reorder exists. Added regression coverage that the handle remains draggable but is not exposed as a keyboard-focusable button.
+- **Commit:** same commit as this entry
