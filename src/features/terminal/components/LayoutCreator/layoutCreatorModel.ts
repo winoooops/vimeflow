@@ -600,7 +600,7 @@ const readYamlScalar = (value: string): string => {
   if (
     trimmed.length >= 2 &&
     (quote === '"' || quote === "'") &&
-    trimmed[trimmed.length - 1] === quote
+    trimmed.endsWith(quote)
   ) {
     return trimmed.slice(1, -1)
   }
