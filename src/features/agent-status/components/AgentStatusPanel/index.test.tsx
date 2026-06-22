@@ -127,6 +127,21 @@ describe('AgentStatusPanel', () => {
     expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
   })
 
+  test('passes the configured reservoir swell to the context bucket', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        reservoirSwell="wide-lift"
+      />
+    )
+
+    expect(screen.getByTestId('water-tank')).toHaveAttribute(
+      'data-swell',
+      'wide-lift'
+    )
+  })
+
   test('has overflow-hidden to clip content inside the fixed panel', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />

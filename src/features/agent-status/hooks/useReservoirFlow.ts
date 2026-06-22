@@ -42,6 +42,11 @@ export const SWELL_PRESETS: Record<SwellVariant, SwellPreset> = {
   'wide-lift': { width: 64, peakAmp: 5, followEase: 9, ampEase: 5 },
 }
 
+export const resolveSwellVariant = (value: string): SwellVariant =>
+  Object.prototype.hasOwnProperty.call(SWELL_PRESETS, value)
+    ? (value as SwellVariant)
+    : 'soft-mound'
+
 const TANK_WIDTH = 248
 const TAU = Math.PI * 2
 // Two surface components summed into one waterline: fast front ripples + a

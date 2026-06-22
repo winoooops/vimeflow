@@ -46,4 +46,13 @@ describe('WaterTank', () => {
       '0 0 248 72'
     )
   })
+
+  test('honors the configured swell variant', () => {
+    render(<WaterTank pct={56} theme="dark" swell="wide-lift" />)
+
+    expect(screen.getByTestId('water-tank')).toHaveAttribute(
+      'data-swell',
+      'wide-lift'
+    )
+  })
 })

@@ -135,6 +135,7 @@ export const WaterTank = ({
     <svg
       ref={svgRef}
       data-testid="water-tank"
+      data-swell={swell}
       viewBox={`0 0 ${TANK_WIDTH} ${height}`}
       width="100%"
       height={height}

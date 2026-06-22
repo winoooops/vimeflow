@@ -27,6 +27,7 @@ pub struct AppSettings {
     pub density: String,
     pub ui_font: String,
     pub mono_font: String,
+    pub reservoir_swell: String,
     pub keymap_preset: String,
     pub agent_shim_enabled: bool,
     #[serde(default, deserialize_with = "lenient_string_map")]
@@ -69,6 +70,7 @@ impl Default for AppSettings {
             density: "comfortable".into(),
             ui_font: "instrument".into(),
             mono_font: "jetbrains".into(),
+            reservoir_swell: "soft-mound".into(),
             keymap_preset: "vimeflow".into(),
             agent_shim_enabled: true,
             custom_keybindings: HashMap::new(),
@@ -173,6 +175,7 @@ mod tests {
             density: "compact".into(),
             ui_font: "inter".into(),
             mono_font: "iosevka".into(),
+            reservoir_swell: "trailing".into(),
             keymap_preset: "vim".into(),
             agent_shim_enabled: false,
             custom_keybindings: HashMap::from([(
@@ -197,6 +200,7 @@ mod tests {
         assert_eq!(s.density, "comfortable");
         assert_eq!(s.ui_font, "instrument");
         assert_eq!(s.mono_font, "jetbrains");
+        assert_eq!(s.reservoir_swell, "soft-mound");
         assert_eq!(s.keymap_preset, "vimeflow");
         assert!(s.agent_shim_enabled);
         assert!(s.custom_keybindings.is_empty());
@@ -218,6 +222,10 @@ mod tests {
             "json: {json}"
         );
         assert!(json.contains("\"accentHue\":285"), "json: {json}");
+        assert!(
+            json.contains("\"reservoirSwell\":\"soft-mound\""),
+            "json: {json}"
+        );
         assert!(json.contains("\"agentShimEnabled\":true"), "json: {json}");
         assert!(
             json.contains("\"keymapPreset\":\"vimeflow\""),
@@ -283,6 +291,7 @@ mod tests {
         assert_eq!(loaded.on_last_window_closed, "platform");
         assert!(loaded.use_system_path_prompts);
         assert_eq!(loaded.density, "comfortable");
+        assert_eq!(loaded.reservoir_swell, "soft-mound");
         assert_eq!(loaded.keymap_preset, "vimeflow");
         assert!(loaded.custom_keybindings.is_empty());
     }
