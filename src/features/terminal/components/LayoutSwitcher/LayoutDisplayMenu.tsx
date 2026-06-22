@@ -163,7 +163,13 @@ export const LayoutDisplayMenu = ({
               isLockedDisplayLayout(layoutId) ||
               visibleLayoutIds.includes(layoutId)
             const isActive = layoutId === activeLayoutId
-            const disabled = isLockedDisplayLayout(layoutId) || isActive
+            // A capacity-blocked built-in can't hold the current panes, so grey
+            // it like custom rows already do — otherwise it reads as available
+            // yet never appears in the (capacity-filtered) switcher.
+            const blocked = blockedLayoutIds.includes(layoutId)
+
+            const disabled =
+              isLockedDisplayLayout(layoutId) || isActive || blocked
 
             return (
               <Menu.Checkbox

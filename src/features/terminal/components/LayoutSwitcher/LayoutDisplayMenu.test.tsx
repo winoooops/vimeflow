@@ -177,6 +177,25 @@ describe('LayoutDisplayMenu', () => {
     ).toBeInTheDocument()
   })
 
+  test('greys a built-in layout that is capacity-blocked, like custom rows', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LayoutDisplayMenuHarness
+        activeLayoutId="grid3x2"
+        blockedLayoutIds={['quad']}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    const quad = await screen.findByRole('menuitemcheckbox', { name: 'Quad' })
+
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+  })
+
   test('normalizes the required single layout back into the visible list when callers omitted it', async () => {
     const user = userEvent.setup()
 
