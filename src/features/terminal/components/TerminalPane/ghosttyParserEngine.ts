@@ -25,6 +25,7 @@ export interface GhosttyByteParserAdapter {
   parseBytes: (
     input: GhosttyByteParserAdapterInput
   ) => TerminalParserEngineOutput
+  flushOutput?: () => TerminalParserEngineOutput | null
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void
@@ -128,6 +129,14 @@ export class GhosttyControlSequenceParserEngine
     this.byteParserAdapter.reset?.()
 
     return super.parseInput(input)
+  }
+
+  flushOutput(): TerminalParserEngineOutput | null {
+    if (this.isDisposed) {
+      return null
+    }
+
+    return this.byteParserAdapter.flushOutput?.() ?? null
   }
 
   reset(): void {

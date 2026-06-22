@@ -1,5 +1,5 @@
 // cspell:ignore ghostty xhigh
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type {
   TerminalDisposable,
   TerminalOutputChunk,
@@ -20,6 +20,22 @@ import {
 import type { GhosttyVtRenderStateDriver } from './ghosttyVtRenderStateDriver'
 import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
+
+// The render-state byte path coalesces rendering to requestAnimationFrame.
+// Run rAF synchronously so these tests can assert the rendered surface right
+// after writeOutput; the coalescing itself is covered in the driver tests.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+
+    return 0
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => undefined)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 const setElementSize = (
   element: HTMLElement,
@@ -1343,9 +1359,7 @@ describe('ghosttyInstance', () => {
     expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
     expect(blankRun?.style.display).toBe('inline-block')
     expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
-    expect(blankRun?.style.minWidth).toBe(
-      'calc(var(--terminal-cell-width) * 1)'
-    )
+    expect(blankRun?.style.width).toBe('calc(var(--terminal-cell-width) * 1)')
     expect(blankRun?.style.overflow).toBe('visible')
   })
 
@@ -1403,7 +1417,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(backgroundRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(backgroundRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])
@@ -1465,7 +1479,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(reverseRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(reverseRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])

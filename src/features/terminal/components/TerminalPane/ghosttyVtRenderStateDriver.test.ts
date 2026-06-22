@@ -24,7 +24,7 @@ const createInput = (
 })
 
 describe('ghosttyVtRenderStateDriver', () => {
-  test('bridges driver-owned render state into replace snapshot output', () => {
+  test('feeds bytes on parseBytes and renders the snapshot only on flushOutput', () => {
     const writeBytes = vi.fn()
 
     const readSnapshot = vi.fn(() => ({
@@ -35,14 +35,22 @@ describe('ghosttyVtRenderStateDriver', () => {
       },
     }))
 
-    const adapter = createGhosttyVtRenderStateByteParserAdapter(() => ({
-      writeBytes,
-      readSnapshot,
-    }))
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot,
+      })
+    )
 
     const bytes = new Uint8Array([0x70, 0x74, 0x79])
 
-    expect(adapter.parseBytes(createInput(bytes))).toEqual({
+    // parseBytes feeds synchronously and defers rendering
+    expect(adapter.parseBytes(createInput(bytes))).toEqual({ visibleText: '' })
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+    expect(readSnapshot).not.toHaveBeenCalled()
+
+    // flushOutput reads the settled snapshot once and renders it
+    expect(adapter.flushOutput?.()).toEqual({
       visibleText: 'prompt\noutput',
       displayDelta: {
         operations: [
@@ -54,8 +62,42 @@ describe('ghosttyVtRenderStateDriver', () => {
         ],
       },
     })
-    expect(writeBytes).toHaveBeenCalledWith(bytes)
     expect(readSnapshot).toHaveBeenCalledOnce()
+  })
+
+  test('coalesces multiple chunks into one flushed render of the latest state', () => {
+    let snapshotReads = 0
+    const writeBytes = vi.fn()
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes,
+        readSnapshot: (): GhosttyVtRenderSnapshot => {
+          snapshotReads += 1
+
+          return {
+            rows: [`frame${snapshotReads}`],
+            cursor: { rowIndex: 0, columnOffset: 0 },
+          }
+        },
+      })
+    )
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+    // three chunks fed without an intervening flush -> no snapshot reads
+    adapter.parseBytes(createInput(encode('a')))
+    adapter.parseBytes(createInput(encode('b')))
+    adapter.parseBytes(createInput(encode('c')))
+    expect(writeBytes).toHaveBeenCalledTimes(3)
+    expect(snapshotReads).toBe(0)
+
+    // one flush -> one snapshot read
+    expect(adapter.flushOutput?.()?.visibleText).toBe('frame1')
+    expect(snapshotReads).toBe(1)
+
+    // a flush with no new bytes paints nothing
+    expect(adapter.flushOutput?.()).toBeNull()
+    expect(snapshotReads).toBe(1)
   })
 
   test('can be injected behind the Ghostty parser engine byte path', () => {
@@ -77,6 +119,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     const parserEngine = createGhosttyParserEngine({ byteParserAdapter })
     const bytes = new Uint8Array([0xff, 0xfe])
 
+    // parseInput feeds (returns empty); flushOutput produces the render
     expect(
       parserEngine.parseInput({
         inputMode: 'bytes',
@@ -84,7 +127,10 @@ describe('ghosttyVtRenderStateDriver', () => {
         text: 'lossy fallback',
         output: null,
       })
-    ).toEqual({
+    ).toEqual({ visibleText: '' })
+    expect(writeBytes).toHaveBeenCalledWith(bytes)
+
+    expect(parserEngine.flushOutput?.()).toEqual({
       visibleText: 'vt prompt',
       displayDelta: {
         operations: [
@@ -96,7 +142,6 @@ describe('ghosttyVtRenderStateDriver', () => {
         ],
       },
     })
-    expect(writeBytes).toHaveBeenCalledWith(bytes)
   })
 
   test('keeps cwd effects on the parser event path', () => {
@@ -172,15 +217,13 @@ describe('ghosttyVtRenderStateDriver', () => {
     const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 
     // chunk ends inside an open 2026 frame (clear sent, redraw pending)
-    expect(
-      adapter.parseBytes(createInput(encode('\x1b[?2026h\x1b[2J partial')))
-    ).toEqual({ visibleText: '' })
+    adapter.parseBytes(createInput(encode('\x1b[?2026h\x1b[2J partial')))
+    expect(adapter.flushOutput?.()).toBeNull()
     expect(snapshotReads).toBe(0)
 
-    // closing chunk completes the frame -> full render
-    expect(
-      adapter.parseBytes(createInput(encode('redraw\x1b[?2026l')))
-    ).toEqual({
+    // closing chunk completes the frame -> flush renders it
+    adapter.parseBytes(createInput(encode('redraw\x1b[?2026l')))
+    expect(adapter.flushOutput?.()).toEqual({
       visibleText: 'composer',
       displayDelta: {
         operations: [{ type: 'replace', text: 'composer', cursorOffset: 2 }],
@@ -189,7 +232,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(snapshotReads).toBe(1)
   })
 
-  test('failsafe renders if a 2026 frame never closes', () => {
+  test('failsafe flushes if a 2026 frame never closes', () => {
     const adapter = createGhosttyVtRenderStateByteParserAdapter(
       (): GhosttyVtRenderStateDriver => ({
         writeBytes: vi.fn(),
@@ -201,14 +244,17 @@ describe('ghosttyVtRenderStateDriver', () => {
     )
     const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
 
-    let output = adapter.parseBytes(createInput(encode('\x1b[?2026h open')))
-    // 8 held chunks, then the failsafe forces a render on the 9th
-    for (let index = 0; index < 8; index += 1) {
-      output = adapter.parseBytes(createInput(encode('still drawing')))
+    // open a 2026 frame and never close it
+    adapter.parseBytes(createInput(encode('\x1b[?2026h open')))
+
+    // first 8 flushes are held; the failsafe forces a render on the 9th
+    let output: ReturnType<NonNullable<typeof adapter.flushOutput>> = null
+    for (let index = 0; index < 9; index += 1) {
+      output = adapter.flushOutput?.() ?? null
     }
 
-    expect(output).not.toEqual({ visibleText: '' })
-    expect(output.visibleText).toBe('held')
+    expect(output).not.toBeNull()
+    expect(output?.visibleText).toBe('held')
   })
 
   test('rejects text input instead of falling back to the text parser', () => {

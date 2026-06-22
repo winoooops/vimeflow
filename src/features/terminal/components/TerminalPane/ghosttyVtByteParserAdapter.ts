@@ -12,12 +12,17 @@ export interface GhosttyVtParserEffects {
 
 export interface GhosttyVtParserDriver {
   /**
-   * Consume raw PTY bytes and return renderer-delta output for the text surface.
-   *
-   * A full libghostty-vt terminal bridge should diff terminal/render state before
-   * returning so callers do not append a whole-screen snapshot per chunk.
+   * Consume raw PTY bytes. Feeds terminal state and fires effects synchronously;
+   * the render output is produced by `flushOutput` so a burst of redraw chunks
+   * coalesces into one render per animation frame.
    */
   writeBytes: (bytes: Uint8Array) => TerminalParserEngineOutput
+  /**
+   * Return the latest pending render output (the settled snapshot), or `null`
+   * when nothing new should paint yet (no new bytes, or still inside an open
+   * synchronized-output frame).
+   */
+  flushOutput?: () => TerminalParserEngineOutput | null
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void
@@ -48,6 +53,14 @@ export class GhosttyVtByteParserAdapter implements GhosttyByteParserAdapter {
     } finally {
       this.activeInput = null
     }
+  }
+
+  flushOutput(): TerminalParserEngineOutput | null {
+    if (this.isDisposed) {
+      return null
+    }
+
+    return this.driver.flushOutput?.() ?? null
   }
 
   reset(): void {

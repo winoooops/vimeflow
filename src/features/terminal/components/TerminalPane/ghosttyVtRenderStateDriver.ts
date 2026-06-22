@@ -21,12 +21,13 @@ import {
 } from './terminalSyncFrame'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
-// No-op render output: holds the surface on its last complete frame.
+// No-op render output: byte feed is synchronous, but the actual render is
+// produced by flushOutput (coalesced to one per animation frame).
 const EMPTY_RENDER_OUTPUT: TerminalParserEngineOutput = { visibleText: '' }
 
-// Failsafe: render even while "inside" a 2026 frame after this many held
-// chunks, so a missed close marker can never freeze the surface.
-const MAX_SUPPRESSED_FRAMES = 8
+// Failsafe: flush even while "inside" a 2026 frame after this many held
+// flushes, so a missed close marker can never freeze the surface.
+const MAX_HELD_FLUSHES = 8
 
 export interface GhosttyVtRenderStateDriver {
   /**
@@ -58,26 +59,35 @@ export const createGhosttyVtRenderStateParserDriverFactory =
   (effects): GhosttyVtParserDriver => {
     const renderStateDriver = createRenderStateDriver(effects)
     let syncFrameState = createSyncFrameParserState()
-    let suppressedFrames = 0
+    let heldFlushes = 0
+    let dirty = false
 
     return {
       writeBytes: (bytes): TerminalParserEngineOutput => {
+        // Feed bytes + track 2026 synchronously (effects fire here, per chunk).
+        // Defer the snapshot read+render to flushOutput so a burst of redraw
+        // chunks coalesces into a single render per animation frame.
         renderStateDriver.writeBytes(bytes)
-
         syncFrameState = readSyncFrameState(bytes, syncFrameState)
+        dirty = true
 
-        // Inside a synchronized-output frame the redraw is mid-flight; holding
-        // the last complete frame avoids rendering a torn/blank intermediate.
-        if (
-          syncFrameState.insideFrame &&
-          suppressedFrames < MAX_SUPPRESSED_FRAMES
-        ) {
-          suppressedFrames += 1
-
-          return EMPTY_RENDER_OUTPUT
+        return EMPTY_RENDER_OUTPUT
+      },
+      flushOutput: (): TerminalParserEngineOutput | null => {
+        if (!dirty) {
+          return null
         }
 
-        suppressedFrames = 0
+        // Inside an open synchronized-output frame the redraw is mid-flight;
+        // hold the last complete frame instead of painting a torn intermediate.
+        if (syncFrameState.insideFrame && heldFlushes < MAX_HELD_FLUSHES) {
+          heldFlushes += 1
+
+          return null
+        }
+
+        heldFlushes = 0
+        dirty = false
 
         return createGhosttyVtRenderSnapshotOutput(
           renderStateDriver.readSnapshot()
@@ -85,7 +95,8 @@ export const createGhosttyVtRenderStateParserDriverFactory =
       },
       reset: (): void => {
         syncFrameState = createSyncFrameParserState()
-        suppressedFrames = 0
+        heldFlushes = 0
+        dirty = false
         renderStateDriver.reset?.()
       },
       resize: (size): void => {
