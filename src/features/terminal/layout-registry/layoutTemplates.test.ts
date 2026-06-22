@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  MAX_LAYOUT_SLOTS,
   PaneLayoutRegistry,
   STARTER_LAYOUT_TEMPLATES,
   createGridTemplate,
@@ -65,15 +66,25 @@ describe('layoutTemplates', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  test('gallery shows the grids bracketing the spanning templates, without 4x4', () => {
-    expect(
-      STARTER_LAYOUT_TEMPLATES.map((definition) => definition.title)
-    ).toEqual([
-      '2 × 3 grid',
-      'Main + right stack',
-      'Main + bottom row',
-      '3 × 3 grid',
-    ])
+  test('gallery order: grids bracket the spanning templates, without 4x4', () => {
+    // Assert on stable ids, not display titles, so a cosmetic rename does not
+    // break this regression guard for the order + 4x4 removal.
+    expect(STARTER_LAYOUT_TEMPLATES.map((definition) => definition.id)).toEqual(
+      [
+        'custom:template-2x3',
+        'custom:template-main-right-stack',
+        'custom:template-main-bottom-row',
+        'custom:template-3x3',
+      ]
+    )
+  })
+
+  test('createGridTemplate respects the 16-slot MAX_LAYOUT_SLOTS boundary', () => {
+    const definition = createGridTemplate(4, 4)
+
+    expect(definition.slots).toHaveLength(16)
+    expect(definition.slots).toHaveLength(MAX_LAYOUT_SLOTS)
+    expectsValid(definition)
   })
 
   test('every starter template tiles every grid cell exactly once', () => {

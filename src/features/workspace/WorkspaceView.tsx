@@ -19,7 +19,10 @@ import {
   readLayoutDisplayPreference,
   writeLayoutDisplayPreference,
 } from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
-import { LayoutCreatorModal } from '../terminal/components/LayoutCreator'
+import {
+  LayoutCreatorModal,
+  createCustomPaneLayoutId,
+} from '../terminal/components/LayoutCreator'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '@/components/sidebar/Sidebar'
@@ -1297,6 +1300,49 @@ const WorkspaceViewContent = (): ReactElement => {
     setLayoutCreatorOpen(true)
     setIsLayoutDisplayMenuOpen(false)
   }, [])
+
+  const handleDuplicateCustomLayout = useCallback(
+    (layoutId: PaneLayoutId): void => {
+      const source = layoutRegistry.getLayout(layoutId)?.definition
+      // Only custom (workspace) layouts can be duplicated; builtins are
+      // immutable seeds.
+      if (source?.source !== 'workspace') {
+        return
+      }
+
+      // Mint the fresh id against every known layout id so the clone never
+      // collides with (or shadows) an existing custom/builtin layout.
+      const existingIds = new Set<PaneLayoutId>(
+        layoutRegistry.layouts.map((layout) => layout.id)
+      )
+      const cloneId = createCustomPaneLayoutId(source.title, existingIds)
+
+      // Deep-clone so the clone shares no references with the source —
+      // slots (incl. each slot's `accepts` restriction), rect, tracks, and
+      // addOrder are all copied. Title is derived; the active session layout
+      // is intentionally left untouched.
+      const clone: PaneLayoutDefinition = {
+        ...source,
+        id: cloneId,
+        title: `Copy of ${source.title}`,
+        tracks: {
+          columns: source.tracks.columns.map((track) => ({ ...track })),
+          rows: source.tracks.rows.map((track) => ({ ...track })),
+        },
+        slots: source.slots.map((slot) => ({
+          ...slot,
+          rect: { ...slot.rect },
+          ...(slot.accepts === undefined ? {} : { accepts: [...slot.accepts] }),
+        })),
+        addOrder: [...source.addOrder],
+      }
+
+      setCustomPaneLayouts((previous) => [...previous, clone], {
+        skipPreservation: true,
+      })
+    },
+    [layoutRegistry, setCustomPaneLayouts]
+  )
 
   const handleSaveCustomLayout = useCallback(
     (definition: PaneLayoutDefinition): void => {
@@ -2581,6 +2627,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onPickLayout={handlePickLayout}
                   onCreateCustomLayout={handleCreateCustomLayout}
                   onEditCustomLayout={handleEditCustomLayout}
+                  onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
                 />

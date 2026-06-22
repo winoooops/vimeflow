@@ -19,6 +19,7 @@ export interface LayoutDisplayMenuProps {
   onPickLayout?: (layoutId: PaneLayoutId) => boolean
   onCreateCustomLayout?: () => void
   onEditCustomLayout?: (layoutId: PaneLayoutId) => void
+  onDuplicateCustomLayout?: (layoutId: PaneLayoutId) => void
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onOpenChange?: (open: boolean) => void
 }
@@ -76,6 +77,7 @@ export const LayoutDisplayMenu = ({
   onPickLayout = undefined,
   onCreateCustomLayout = undefined,
   onEditCustomLayout = undefined,
+  onDuplicateCustomLayout = undefined,
   onDeleteCustomLayout = undefined,
   onOpenChange = undefined,
 }: LayoutDisplayMenuProps): ReactElement => {
@@ -253,6 +255,17 @@ export const LayoutDisplayMenu = ({
                     onClick={(event): void => {
                       event.stopPropagation()
                       onEditCustomLayout?.(layout.id)
+                      closeMenu()
+                    }}
+                  />
+                  <IconButton
+                    icon="content_copy"
+                    label={`Duplicate ${layout.name}`}
+                    size="sm"
+                    className="h-5 w-5 text-on-surface-muted hover:text-primary"
+                    onClick={(event): void => {
+                      event.stopPropagation()
+                      onDuplicateCustomLayout?.(layout.id)
                       closeMenu()
                     }}
                   />

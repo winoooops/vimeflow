@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import type {
   LayoutSlotId,
   Pane,
+  PaneKind,
   PaneLayoutId,
   Session,
 } from '../../../sessions/types'
@@ -271,6 +272,27 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       return gridAreaNameForSlotId(slotId)
     }
 
+    // Resolve a slot's pane-kind restriction from the layout definition.
+    // Narrows the stored `accepts` (typed as string[]) to known PaneKinds so
+    // unknown values are dropped defensively; undefined/empty stays undefined
+    // ("no restriction") so EmptySlot keeps both add-buttons.
+    const acceptsForSlotId = (
+      slotId: LayoutSlotId
+    ): readonly PaneKind[] | undefined => {
+      const accepts = layout.definition.slots.find(
+        (slot) => slot.id === slotId
+      )?.accepts
+      if (accepts === undefined) {
+        return undefined
+      }
+
+      const kinds = accepts.filter(
+        (kind): kind is PaneKind => kind === 'shell' || kind === 'browser'
+      )
+
+      return kinds.length === 0 ? undefined : kinds
+    }
+
     return (
       <div
         data-testid="split-view-canvas"
@@ -419,6 +441,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                       <EmptySlot
                         sessionId={session.id}
                         slotId={slotId}
+                        accepts={acceptsForSlotId(slotId)}
                         onAddPane={onAddPane}
                       />
                     </motion.div>

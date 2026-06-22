@@ -41,6 +41,7 @@ interface HarnessProps {
   layouts?: readonly PaneLayoutDefinition[]
   onPickLayout?: (layoutId: PaneLayoutId) => boolean
   onEditCustomLayout?: (layoutId: PaneLayoutId) => void
+  onDuplicateCustomLayout?: (layoutId: PaneLayoutId) => void
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onCreateCustomLayout?: () => void
 }
@@ -59,6 +60,7 @@ const LayoutDisplayMenuHarness = ({
   layouts = [],
   onPickLayout = undefined,
   onEditCustomLayout = undefined,
+  onDuplicateCustomLayout = undefined,
   onDeleteCustomLayout = undefined,
   onCreateCustomLayout = undefined,
 }: HarnessProps): ReactElement => {
@@ -83,6 +85,7 @@ const LayoutDisplayMenuHarness = ({
         onHiddenCustomLayoutIdsChange={setHiddenCustomLayoutIds}
         onPickLayout={onPickLayout}
         onEditCustomLayout={onEditCustomLayout}
+        onDuplicateCustomLayout={onDuplicateCustomLayout}
         onDeleteCustomLayout={onDeleteCustomLayout}
         onCreateCustomLayout={onCreateCustomLayout}
       />
@@ -251,6 +254,30 @@ describe('LayoutDisplayMenu', () => {
     )
 
     expect(onCreateCustomLayout).toHaveBeenCalledOnce()
+    expect(trigger).toHaveFocus()
+  })
+
+  test('duplicating a custom layout invokes onDuplicateCustomLayout and closes the menu', async () => {
+    const user = userEvent.setup()
+    const onDuplicateCustomLayout = vi.fn()
+
+    render(
+      <LayoutDisplayMenuHarness
+        layouts={[customMainBottomLayout]}
+        onDuplicateCustomLayout={onDuplicateCustomLayout}
+      />
+    )
+
+    const trigger = screen.getByRole('button', {
+      name: 'Configure displayed layouts',
+    })
+    await user.click(trigger)
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Duplicate Main + bottom' })
+    )
+
+    expect(onDuplicateCustomLayout).toHaveBeenCalledWith('custom:main-bottom')
     expect(trigger).toHaveFocus()
   })
 
