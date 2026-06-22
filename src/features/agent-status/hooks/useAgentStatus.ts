@@ -504,18 +504,14 @@ export const useAgentStatus = (
             ) {
               const priorTokenTotal = locallyResetTokenTotalRef.current
               const nextTokenTotal = eventTokenTotal(p.contextWindow)
-              if (priorTokenTotal === null) {
+              if (nextTokenTotal === null) {
                 return prev
               }
 
               if (
-                nextTokenTotal !== null &&
-                nextTokenTotal >= priorTokenTotal
+                nextTokenTotal !== 0 &&
+                (priorTokenTotal === null || nextTokenTotal >= priorTokenTotal)
               ) {
-                return prev
-              }
-
-              if (nextTokenTotal === null) {
                 return prev
               }
 
@@ -568,7 +564,10 @@ export const useAgentStatus = (
               // guard every access to avoid silent TypeError crashes.
               contextWindow: p.contextWindow
                 ? {
-                    usedPercentage: p.contextWindow.usedPercentage ?? 0,
+                    usedPercentage:
+                      p.contextWindow.usedPercentage === null
+                        ? null
+                        : Number(p.contextWindow.usedPercentage),
                     contextWindowSize: Number(
                       p.contextWindow.contextWindowSize
                     ),

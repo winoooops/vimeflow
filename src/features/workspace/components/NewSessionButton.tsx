@@ -18,7 +18,7 @@ export const NewSessionButton = ({
 }: NewSessionButtonProps): ReactElement => (
   <Tooltip content="New session" shortcut={shortcutHint} placement="bottom">
     <Button
-      variant="primary"
+      variant="flat-primary"
       onClick={onClick}
       aria-label="New session"
       aria-keyshortcuts={ariaKeyshortcuts}

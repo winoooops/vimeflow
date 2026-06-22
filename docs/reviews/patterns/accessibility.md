@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 29
+last_updated: 2026-06-22
+ref_count: 79
 ---
 
 # Accessibility
@@ -676,3 +676,63 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `Menu.Row` handled Enter/Space on bubbled keydown events from descendant buttons, preventing native button activation and firing the row's layout-pick action instead. Keyboard users could not activate nested edit/delete/toggle controls without triggering the wrong menu action.
 - **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
 - **Commit:** same commit as this entry
+
+### 66. Tokyo Night muted text falls below contrast threshold
+
+- **Source:** github-codex-connector | PR #557 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/themes/tokyo-night.ts` L62
+- **Finding:** `on-surface-muted` was mapped to the raw comment color `#565f89`, yielding only ~2.76:1 contrast against the theme surface `#1a1b26` and even less on `surface-container` backgrounds. Status-bar and agent-panel labels using this token became hard to read.
+- **Fix:** Changed `on-surface-muted` to `#7f88b3`, raising contrast to ~4.94:1 on the theme surface while preserving the muted hierarchy below `on-surface-variant`.
+- **Commit:** same commit as this entry
+
+### 67. Dialog focus trap misses contenteditable elements
+
+- **Source:** github-claude | PR #548 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L59-66
+- **Finding:** `FOCUSABLE_SELECTOR` omitted `[contenteditable]:not([contenteditable="false"])`, so CodeMirror or rich-text surfaces inside a Dialog were skipped by the manual Tab trap and focus could escape the modal.
+- **Fix:** Added the contenteditable selector to `FOCUSABLE_SELECTOR` and updated `getFocusableElements` filter to treat contenteditable surfaces as focusable even when `tabIndex` is implicitly `-1`. Added a co-located test that tabs through a contenteditable element inside a Dialog and asserts focus stays trapped.
+- **Commit:** same commit as this entry
+
+### 68. Dialog focus collection includes CSS-hidden elements
+
+- **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L69-79
+- **Finding:** `getFocusableElements` filtered disabled, `aria-hidden`, and explicit `tabindex` state, but not `display: none`, `visibility: hidden`, or hidden ancestors. `focusInitialElement` also focused `initialFocusRef.current` without checking visibility. Conditionally hidden controls inside dialogs could receive invisible/no-op initial focus or be included in the Tab cycle, leaving keyboard users with no visible focus target or an apparent skipped focus step.
+- **Fix:** Added `isVisibleFocusableElement`, which walks from the element up through its ancestors and checks `window.getComputedStyle` for `display: none` and `visibility: hidden`. Applied the guard to both `getFocusableElements` and the `initialFocusRef` branch in `focusInitialElement`. Added co-located tests asserting that `display:none`, `visibility:hidden`, and hidden-ancestor elements are skipped when choosing initial focus.
+- **Commit:** same commit as this entry
+
+### 69. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
+
+- **Source:** github-codex-connector | PR #548 round 4 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L69-91
+- **Finding:** `isVisibleFocusableElement` walked ancestors and rejected any ancestor with `visibility: hidden`. CSS `visibility` is inherited but can be overridden by a descendant with `visibility: visible`, so an element's own computed visibility is the authoritative check for that property. In that valid CSS layout, a visibly focusable control would be skipped by initial focus and the Tab trap.
+- **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
+- **Commit:** same commit as this entry
+
+### 70. Interactive tooltip trigger rendered as a non-focusable chip
+
+- **Source:** github-codex-connector | PR #575 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** The git-ref copy popover used an interactive Tooltip around a
+  `Chip`, but the shared `Chip` primitive renders a non-focusable span. Hover
+  users could open the copy controls, while keyboard users could not focus the
+  trigger and therefore could not reach the popover buttons.
+- **Fix:** Added a stable accessible label and `tabIndex={0}` to the chip
+  trigger so the existing Tooltip focus interaction opens the dialog for
+  keyboard navigation. Added a regression test that tabs to the chip and
+  observes the copy buttons in the mounted dialog.
+- **Commit:** same commit as this entry
+
+### 71. Visual token count diverged from meter aria-valuetext
+
+- **Source:** github-claude | PR #603 round 3 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** The unknown-window OpenCode context card used `formatTokenCount` in `aria-valuetext` but rendered the visible token count with `formatTokens`. Screen readers could announce a different token count than the value sighted users saw.
+- **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

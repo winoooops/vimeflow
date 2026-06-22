@@ -6,8 +6,11 @@ use chrono::{Datelike, Duration as ChronoDuration, Local};
 use rusqlite::{named_params, Connection, OpenFlags};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct RolloutLocation {
@@ -113,29 +116,289 @@ fn extract_numeric_suffix(name: &str) -> u32 {
     suffix.parse::<u32>().unwrap_or(0)
 }
 
+/// Provider of the set of rollout files a process currently holds open.
+///
+/// `Err` (the provider itself failed — `/proc` read error, `lsof` timeout,
+/// permission denied) is **distinct from `Ok(∅)`** (the provider ran fine and
+/// the process has no rollout file open). This distinction is load-bearing for
+/// the resolver: a failed provider must not be silently treated as "no open
+/// rollout" and allowed to fall back to possibly-stale argv/sqlite. VIM-189
+/// introduces the seam behavior-preservingly — `resolve_from_proc_fds` still
+/// treats `Err` as "no FD" for now; VIM-191 makes `Err` authoritative.
+///
+/// Implementations must never panic and never block unboundedly.
+pub(super) trait OpenRolloutFds: Send + Sync {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>>;
+}
+
+/// Linux `/proc/<pid>/fd` open-FD provider: reads the process's fd symlinks and
+/// keeps those pointing at `codex_home/sessions/rollout-*.jsonl`.
+pub(super) struct ProcOpenRolloutFds {
+    proc_root: PathBuf,
+    codex_sessions_root: PathBuf,
+}
+
+impl ProcOpenRolloutFds {
+    pub(super) fn new(proc_root: PathBuf, codex_home: &Path) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            proc_root,
+        }
+    }
+}
+
+impl OpenRolloutFds for ProcOpenRolloutFds {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>> {
+        let fd_dir = self.proc_root.join(pid.to_string()).join("fd");
+        let mut rollout_paths = HashSet::new();
+
+        // A failed directory read is a provider error (`Err`), *not* an empty
+        // result: `/proc/<pid>/fd` is unreadable when the pid is gone or access
+        // is denied, and callers must be able to distinguish that from "the
+        // process has nothing open" (VIM-191). Individual unreadable entries
+        // are skipped, mirroring the previous `entries.flatten()` behavior.
+        for entry in std::fs::read_dir(&fd_dir)? {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let Ok(target) = std::fs::read_link(entry.path()) else {
+                continue;
+            };
+            if !target.starts_with(&self.codex_sessions_root) {
+                continue;
+            }
+            let Some(name) = target.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if name.starts_with("rollout-") && name.ends_with(".jsonl") {
+                rollout_paths.insert(target);
+            }
+        }
+
+        Ok(rollout_paths)
+    }
+}
+
+/// No-op provider for platforms without a usable open-FD source (Windows;
+/// `/proc` is Linux-only and `lsof` covers the other Unixes). Reports `Ok(∅)` —
+/// "ran fine, found no open rollout" — so the resolver falls through to the
+/// argv/sqlite strategies exactly as it does today when no FD source exists.
+///
+/// Compiled only where it is actually used — non-Unix production
+/// (`default_non_proc_open_fds`) and tests (as an injected null provider) — so
+/// Unix builds, which always have `/proc` or `lsof`, carry no dead code.
+#[cfg(any(test, not(unix)))]
+pub(super) struct NullOpenRolloutFds;
+
+#[cfg(any(test, not(unix)))]
+impl OpenRolloutFds for NullOpenRolloutFds {
+    fn open_rollout_paths(&self, _pid: u32) -> io::Result<HashSet<PathBuf>> {
+        Ok(HashSet::new())
+    }
+}
+
+/// Runs `lsof -p <pid> -Fn` and returns its stdout, mapping missing `lsof` to
+/// empty output and timeout / non-zero exit to `Err`. Behind a trait so the
+/// parser and the `Ok(∅)` / `Err` mapping are unit-tested without spawning
+/// `lsof` (the real spawn only runs on Unix in production; VIM-190).
+#[cfg(unix)]
+trait LsofRunner: Send + Sync {
+    fn run(&self, pid: u32) -> io::Result<String>;
+}
+
+/// `lsof`-based open-FD provider for the Unixes where `/proc` is unavailable
+/// (macOS/BSD). The open rollout FD is the only reliable per-PID signal for an
+/// in-session `resume`, so without this the relocation fix is inert on macOS
+/// (VIM-188/VIM-190).
+#[cfg(unix)]
+pub(super) struct LsofOpenRolloutFds {
+    codex_sessions_root: PathBuf,
+    runner: Box<dyn LsofRunner>,
+}
+
+#[cfg(unix)]
+impl LsofOpenRolloutFds {
+    pub(super) fn new(codex_home: &Path) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            runner: Box::new(RealLsofRunner {
+                timeout: Duration::from_secs(2),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_runner(codex_home: &Path, runner: Box<dyn LsofRunner>) -> Self {
+        Self {
+            codex_sessions_root: codex_home.join("sessions"),
+            runner,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl OpenRolloutFds for LsofOpenRolloutFds {
+    fn open_rollout_paths(&self, pid: u32) -> io::Result<HashSet<PathBuf>> {
+        // Runner `Err` (timeout / non-zero exit) propagates as a provider
+        // failure — distinct from `Ok(∅)` (lsof ran, the process has no rollout
+        // file open). A missing `lsof` binary means the platform signal is
+        // unavailable, so fall back to the pre-lsof behavior instead of blocking
+        // all attach strategies on macOS/BSD.
+        let stdout = match self.runner.run(pid) {
+            Ok(stdout) => stdout,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(err) => return Err(err),
+        };
+        Ok(parse_lsof_rollout_names(&stdout, &self.codex_sessions_root))
+    }
+}
+
+/// Parse `lsof -Fn` field output: records are newline-separated fields, where a
+/// line beginning with `n` carries a file name. Keep the names that live under
+/// `codex_home/sessions/` and look like `rollout-*.jsonl`. The prefix match is
+/// lexical — the same shared, documented limitation as the `/proc` provider
+/// (a symlinked `codex_home` could spell the prefix differently).
+#[cfg(unix)]
+fn parse_lsof_rollout_names(stdout: &str, codex_sessions_root: &Path) -> HashSet<PathBuf> {
+    let mut rollout_paths = HashSet::new();
+    for line in stdout.lines() {
+        let Some(name) = line.strip_prefix('n') else {
+            continue;
+        };
+        let path = PathBuf::from(name);
+        if !path.starts_with(codex_sessions_root) {
+            continue;
+        }
+        let Some(file) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if file.starts_with("rollout-") && file.ends_with(".jsonl") {
+            rollout_paths.insert(path);
+        }
+    }
+    rollout_paths
+}
+
+/// Production `LsofRunner`: spawns `lsof` with a bounded wall-clock timeout so a
+/// hung/slow `lsof` can never block watcher startup. stdout is drained on a
+/// helper thread so a full pipe cannot deadlock the wait loop.
+#[cfg(unix)]
+struct RealLsofRunner {
+    timeout: Duration,
+}
+
+#[cfg(unix)]
+impl LsofRunner for RealLsofRunner {
+    fn run(&self, pid: u32) -> io::Result<String> {
+        use std::process::{Command, Stdio};
+
+        let mut child = match Command::new("lsof")
+            .args(["-p", &pid.to_string(), "-Fn"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(String::new()),
+            Err(err) => return Err(err),
+        };
+
+        // Drain stdout on a thread: lsof output for one pid is small, but a
+        // full pipe would otherwise deadlock the try_wait loop below.
+        let mut child_stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("lsof child stdout was not captured"))?;
+        let reader = std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = String::new();
+            let _ = child_stdout.read_to_string(&mut buf);
+            buf
+        });
+
+        let deadline = Instant::now() + self.timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let _ = reader.join();
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, "lsof timed out"));
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = reader.join();
+                    return Err(e);
+                }
+            }
+        };
+
+        let stdout = reader
+            .join()
+            .map_err(|_| io::Error::other("lsof stdout reader panicked"))?;
+        if !status.success() {
+            return Err(io::Error::other(format!(
+                "lsof exited unsuccessfully: {status}"
+            )));
+        }
+        Ok(stdout)
+    }
+}
+
+/// Open-FD provider selected when `/proc` is unavailable. `lsof` covers the
+/// Unixes (it is the only per-PID open-rollout signal on macOS/BSD; VIM-190);
+/// Windows has no usable source, so it stays null. On Linux this arm is reached
+/// only by tests — production threads a real `/proc` root through
+/// `with_proc_root` and uses `ProcOpenRolloutFds`.
+fn default_non_proc_open_fds(codex_home: &Path) -> Box<dyn OpenRolloutFds> {
+    #[cfg(unix)]
+    {
+        Box::new(LsofOpenRolloutFds::new(codex_home))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = codex_home;
+        Box::new(NullOpenRolloutFds)
+    }
+}
+
 pub struct SqliteFirstLocator {
     pub codex_home: PathBuf,
     /// `Some(path)` on Linux (and in test harnesses that inject a
     /// tempdir-based fake proc); `None` on macOS/Windows where the
-    /// `/proc` filesystem does not exist. The proc-backed fast-paths
-    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
-    /// SKIP themselves when this is `None` rather than attempting to
-    /// open `/proc/<pid>/cmdline` and silently failing with ENOENT
-    /// (PR #302 Claude review F1 — the previous production fallback
-    /// hardcoded `/proc` even on non-Linux, contradicting the design
-    /// documented on `default_proc_root()` and `CompositeLocator::new`).
+    /// `/proc` filesystem does not exist. Drives the resume-argv fast-path
+    /// (`resume_thread_id_from_proc`, which SKIPs itself when this is `None`
+    /// rather than probing a nonexistent `/proc/<pid>/cmdline`) and selects
+    /// the open-FD provider built in `with_proc_root` — `ProcOpenRolloutFds`
+    /// on Linux, `LsofOpenRolloutFds` on macOS/BSD, `NullOpenRolloutFds` on
+    /// Windows (PR #302 Claude review F1; the `OpenRolloutFds` seam, VIM-189;
+    /// the macOS `lsof` provider, VIM-190).
     proc_root: Option<PathBuf>,
+    /// Open rollout-FD provider consulted by `resolve_from_proc_fds`. Built
+    /// from `proc_root` in `with_proc_root`; the test-only `with_fds`
+    /// constructor injects a fake so the open-FD resolver paths stay
+    /// platform-independent (VIM-189).
+    fds: Box<dyn OpenRolloutFds>,
 }
 
 impl SqliteFirstLocator {
-    /// Default-`Some("/proc")` constructor — used by `locator` unit tests
-    /// that don't need to inject a fake proc root. Production callers
-    /// go through `CompositeLocator::new` → `with_proc_root` so
-    /// `AttachContext.proc_root` (which is `None` on non-Linux) flows
-    /// through and the proc fast-paths gate themselves.
+    /// Test constructor with **inert** proc fast-paths — no real `/proc` and a
+    /// null open-FD provider — so logs / threads / schema-drift tests are
+    /// deterministic and never depend on whether the fake test pid happens to
+    /// exist in the host's real `/proc` (under VIM-191 a missing `/proc/<pid>`
+    /// is a provider `Err` → `NotYetReady`, which would mask the path under
+    /// test). Tests that exercise the proc fast-paths use `with_proc_root`
+    /// (fake proc root) or `with_fds` (injected provider). Production callers go
+    /// through `CompositeLocator::new` → `with_proc_root`.
     #[cfg(test)]
     pub fn new(codex_home: PathBuf) -> Self {
-        Self::with_proc_root(codex_home, Some(PathBuf::from("/proc")))
+        Self::with_fds(codex_home, None, Box::new(NullOpenRolloutFds))
     }
 
     /// Explicit `proc_root` constructor. `pub(super)` so
@@ -147,9 +410,30 @@ impl SqliteFirstLocator {
     /// PR #302 Claude review F1 widened it to `Option` so non-Linux
     /// production callers stop probing nonexistent `/proc` paths).
     pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: Option<PathBuf>) -> Self {
+        let fds: Box<dyn OpenRolloutFds> = match &proc_root {
+            Some(root) => Box::new(ProcOpenRolloutFds::new(root.clone(), &codex_home)),
+            None => default_non_proc_open_fds(&codex_home),
+        };
         Self {
             codex_home,
             proc_root,
+            fds,
+        }
+    }
+
+    /// Test-only constructor injecting an arbitrary open-FD provider so the
+    /// open-FD resolver paths run without a real `/proc` (VIM-189; consumed by
+    /// the VIM-191 relocation test).
+    #[cfg(test)]
+    pub(super) fn with_fds(
+        codex_home: PathBuf,
+        proc_root: Option<PathBuf>,
+        fds: Box<dyn OpenRolloutFds>,
+    ) -> Self {
+        Self {
+            codex_home,
+            proc_root,
+            fds,
         }
     }
 
@@ -260,37 +544,68 @@ impl SqliteFirstLocator {
     ) -> Result<Vec<StateCandidate>, LocatorError> {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| LocatorError::Fatal(format!("open state db: {}", e)))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, rollout_path, cwd, updated_at_ms
-                 FROM threads
-                 ORDER BY updated_at_ms DESC
-                 LIMIT 64",
-            )
-            .map_err(|e| LocatorError::Fatal(format!("prepare candidate query: {}", e)))?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(StateCandidate {
-                    thread_id: row.get::<_, String>(0)?,
-                    rollout_path: PathBuf::from(row.get::<_, String>(1)?),
-                    cwd: row.get::<_, String>(2).unwrap_or_default(),
-                    updated_at_ms: row.get::<_, i64>(3).unwrap_or(0),
-                })
+
+        // Non-capturing → `Copy`, so it can back both query_map calls below.
+        let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<StateCandidate> {
+            Ok(StateCandidate {
+                thread_id: row.get::<_, String>(0)?,
+                rollout_path: PathBuf::from(row.get::<_, String>(1)?),
+                cwd: row.get::<_, String>(2).unwrap_or_default(),
+                updated_at_ms: row.get::<_, i64>(3).unwrap_or(0),
             })
-            .map_err(|e| LocatorError::Fatal(format!("execute candidate query: {}", e)))?;
+        };
 
         let mut candidates = Vec::new();
-        for row in rows {
-            let candidate =
-                row.map_err(|e| LocatorError::Fatal(format!("read candidate row: {}", e)))?;
+        let rows = match rollout_paths {
+            // Open-FD resolver: filter by the open rollout paths IN SQL and drop
+            // the global recency `LIMIT` — otherwise a valid but older open
+            // rollout row could be truncated out of the 64 most-recent threads
+            // in a large history, making the open-FD resolver wrongly report
+            // "not yet ready" (codex review VIM-191 P2).
+            Some(paths) => {
+                if paths.is_empty() {
+                    return Ok(candidates);
+                }
+                let placeholders = vec!["?"; paths.len()].join(", ");
+                let sql = format!(
+                    "SELECT id, rollout_path, cwd, updated_at_ms
+                     FROM threads
+                     WHERE rollout_path IN ({})",
+                    placeholders
+                );
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| LocatorError::Fatal(format!("prepare candidate query: {}", e)))?;
+                let path_params: Vec<String> = paths.iter().cloned().collect();
+                let mapped = stmt
+                    .query_map(rusqlite::params_from_iter(path_params.iter()), map_row)
+                    .map_err(|e| LocatorError::Fatal(format!("execute candidate query: {}", e)))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| LocatorError::Fatal(format!("read candidate row: {}", e)))?;
+                mapped
+            }
+            // Recent-state heuristic: bounded recency window over all threads.
+            None => {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, rollout_path, cwd, updated_at_ms
+                         FROM threads
+                         ORDER BY updated_at_ms DESC
+                         LIMIT 64",
+                    )
+                    .map_err(|e| LocatorError::Fatal(format!("prepare candidate query: {}", e)))?;
+                let mapped = stmt
+                    .query_map([], map_row)
+                    .map_err(|e| LocatorError::Fatal(format!("execute candidate query: {}", e)))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| LocatorError::Fatal(format!("read candidate row: {}", e)))?;
+                mapped
+            }
+        };
+
+        for candidate in rows {
             if let Some(min_updated_at_ms) = updated_since_ms {
                 if candidate.updated_at_ms < min_updated_at_ms {
-                    continue;
-                }
-            }
-            if let Some(paths) = rollout_paths {
-                let rollout_path = candidate.rollout_path.to_string_lossy().to_string();
-                if !paths.contains(&rollout_path) {
                     continue;
                 }
             }
@@ -342,43 +657,130 @@ impl SqliteFirstLocator {
         }
     }
 
-    fn resolve_from_proc_fds(
+    /// Resolve via the per-PID open rollout FD — the **authoritative** signal
+    /// (VIM-191, Option A). Outcomes:
+    ///
+    /// - `Ok(Some)` — an open rollout FD resolved to a thread row. This wins
+    ///   over a stale `resume`-argv (the original bug: an in-session `resume`
+    ///   keeps the same cmdline, so argv-recency would bind the *old* thread).
+    /// - `Ok(None)` — the provider ran and found **no** open rollout FD
+    ///   (`Ok(∅)`): the early window before codex opens the rollout, or a
+    ///   `codex resume <id>` launch. The caller falls back to the resume-argv /
+    ///   logs / recency strategies.
+    /// - `Err(NotYetReady)` — the provider **failed** (lsof error / timeout /
+    ///   denied; or `/proc/<pid>` gone), **or** an FD is open but its thread
+    ///   row is not written yet. Either way this is a not-yet / failed
+    ///   relocation that must **not** silently fall back to possibly-stale
+    ///   argv/sqlite (the false-success trap from codex's review). `retry_locator`
+    ///   retries it, and persistent failure fails safe — the watcher keeps its
+    ///   prior binding and the UI keeps "needs reattach".
+    fn resolve_from_open_fds(
         &self,
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        // Same platform gate as `resolve_from_resume_arg` — opening
-        // `/proc/<pid>/fd/*` only makes sense on Linux (PR #302 Claude
-        // review F1).
-        let Some(proc_root) = self.proc_root.as_deref() else {
-            return Ok(None);
+        let rollout_paths = match self.fds.open_rollout_paths(ctx.pid) {
+            Ok(paths) => paths,
+            Err(err) => {
+                // Provider `Err` != "no FD". Do not fall back to stale
+                // argv/sqlite; surface as not-yet-ready so the bind retries and
+                // ultimately fails safe rather than reporting a false relocation.
+                log::debug!(
+                    "codex locator resolve: decision=provider-err pid={} err={} -> NotYetReady",
+                    ctx.pid,
+                    err
+                );
+                return Err(LocatorError::NotYetReady);
+            }
         };
-        let rollout_paths = open_rollout_paths_from_proc(proc_root, ctx.pid, &self.codex_home);
+
         if rollout_paths.is_empty() {
+            // `Ok(∅)`: no open rollout FD — fall back to the early-window
+            // strategies (resume-argv / logs / recency).
+            log::debug!(
+                "codex locator resolve: decision=empty-fallback pid={} (no open rollout FD)",
+                ctx.pid
+            );
             return Ok(None);
         }
 
         if rollout_paths.len() == 1 {
-            let rollout_path = rollout_paths
-                .iter()
-                .next()
-                .map(PathBuf::from)
-                .expect("len checked");
-            let location = self.query_thread_by_rollout_path(state_path, &rollout_path)?;
-            if location.is_some() {
-                log::debug!(
-                    "codex locator: using /proc fd fast-path pid={} rollout={}",
-                    ctx.pid,
-                    rollout_path.display()
-                );
+            let rollout_path = rollout_paths.iter().next().cloned().expect("len checked");
+            match self.query_thread_by_rollout_path(state_path, &rollout_path)? {
+                Some(location) => {
+                    log::debug!(
+                        "codex locator resolve: decision=single-fd pid={} picked_rollout={} picked_thread={} picked_updated_at_ms={}",
+                        ctx.pid,
+                        location.rollout_path.display(),
+                        location.thread_id,
+                        location.state_updated_at_ms
+                    );
+                    Ok(Some(location))
+                }
+                // FD open but the thread row is not written yet — wait for it
+                // rather than falling back to a possibly-stale candidate.
+                None => {
+                    log::debug!(
+                        "codex locator resolve: decision=single-fd-no-row pid={} open_fd={} -> NotYetReady",
+                        ctx.pid,
+                        rollout_path.display()
+                    );
+                    Err(LocatorError::NotYetReady)
+                }
             }
-            return Ok(location);
-        }
+        } else {
+            // codex keeps OLD rollout FDs open after `/clear` and in-session
+            // `resume` (it does not close them), so a single pid can have
+            // several rollouts open at once. They share the same cwd, so cwd
+            // disambiguation cannot pick the active one — choose the MOST
+            // RECENTLY UPDATED open rollout (the live conversation is the one
+            // being written). Erroring on same-cwd ambiguity here (as
+            // `choose_state_candidate` does) strands the panel after every
+            // `/clear`/`resume` — the actual VIM-188 freeze, confirmed by `lsof`
+            // showing one codex pid holding 3 rollout files open.
+            let rollout_path_strings: HashSet<String> = rollout_paths
+                .iter()
+                .map(|path| path.to_string_lossy().to_string())
+                .collect();
+            let candidates =
+                self.query_candidate_rows(state_path, None, Some(&rollout_path_strings))?;
 
-        let candidates = self.query_candidate_rows(state_path, None, Some(&rollout_paths))?;
-        match choose_state_candidate(&candidates, ctx)? {
-            Some(candidate) => Ok(Some(candidate.into_rollout_location())),
-            None => Ok(None),
+            // One decision line per multi-FD resolve (debug, off by default) so
+            // `RUST_LOG=vimeflow_lib=debug` reveals which rollout was bound.
+            let Some(max_updated_at_ms) = candidates.iter().map(|c| c.updated_at_ms).max() else {
+                // Open FDs present but none has a thread row yet — wait for it.
+                log::debug!(
+                    "codex locator resolve: decision=no-rows pid={} open_fds={} -> NotYetReady",
+                    ctx.pid,
+                    rollout_paths.len()
+                );
+                return Err(LocatorError::NotYetReady);
+            };
+            let mut newest = candidates
+                .into_iter()
+                .filter(|c| c.updated_at_ms == max_updated_at_ms);
+            let candidate = newest.next().expect("a max implies at least one row");
+            if newest.next().is_some() {
+                // Two open rollouts share the newest `updated_at_ms` — we can't
+                // tell which is active (input order is non-deterministic), so
+                // fail safe rather than bind arbitrarily. The live rollout
+                // advances its row and breaks the tie on the next retry.
+                log::debug!(
+                    "codex locator resolve: decision=tie-not-yet-ready pid={} max_updated_at_ms={} -> NotYetReady",
+                    ctx.pid,
+                    max_updated_at_ms
+                );
+                return Err(LocatorError::NotYetReady);
+            }
+            log::debug!(
+                "codex locator resolve: decision=unique-newest pid={} picked_thread={} picked_rollout={} picked_updated_at_ms={} open_fds={}",
+                ctx.pid,
+                candidate.thread_id,
+                candidate.rollout_path.display(),
+                max_updated_at_ms,
+                rollout_paths.len()
+            );
+            Ok(Some(candidate.into_rollout_location()))
         }
     }
 }
@@ -399,10 +801,18 @@ impl CodexSessionLocator for SqliteFirstLocator {
             )));
         };
 
-        if let Some(location) = self.resolve_from_resume_arg(&state_path, ctx)? {
+        // Option A (VIM-191): the per-PID open rollout FD is authoritative, so
+        // it is consulted FIRST. Only on `Ok(None)` (provider ran, no open
+        // rollout FD — the early window before codex opens the rollout, or a
+        // `codex resume <id>` launch) do we fall back to the resume-argv / logs
+        // / recency strategies. A provider failure or an FD-without-a-row-yet
+        // returns `NotYetReady` from `resolve_from_open_fds` and never falls
+        // back to possibly-stale data. (Before this, resume-argv ran first and
+        // an in-session `resume` — same cmdline — bound the OLD thread forever.)
+        if let Some(location) = self.resolve_from_open_fds(&state_path, ctx)? {
             return Ok(location);
         }
-        if let Some(location) = self.resolve_from_proc_fds(&state_path, ctx)? {
+        if let Some(location) = self.resolve_from_resume_arg(&state_path, ctx)? {
             return Ok(location);
         }
 
@@ -508,33 +918,6 @@ fn read_cmdline_args(proc_root: &Path, pid: u32) -> Option<Vec<String>> {
     } else {
         Some(args)
     }
-}
-
-fn open_rollout_paths_from_proc(proc_root: &Path, pid: u32, codex_home: &Path) -> HashSet<String> {
-    let fd_dir = proc_root.join(pid.to_string()).join("fd");
-    let mut rollout_paths = HashSet::new();
-    let codex_sessions_root = codex_home.join("sessions");
-
-    let Ok(entries) = std::fs::read_dir(fd_dir) else {
-        return rollout_paths;
-    };
-
-    for entry in entries.flatten() {
-        let Ok(target) = std::fs::read_link(entry.path()) else {
-            continue;
-        };
-        if !target.starts_with(&codex_sessions_root) {
-            continue;
-        }
-        let Some(name) = target.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        if name.starts_with("rollout-") && name.ends_with(".jsonl") {
-            rollout_paths.insert(target.to_string_lossy().to_string());
-        }
-    }
-
-    rollout_paths
 }
 
 pub struct FsScanFallback {
@@ -917,6 +1300,7 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
             // refactor dropped this wiring, parking `agent-session-title`
             // emits for live Codex sessions).
             agent_session_id: Some(location.thread_id),
+            resolved_directory: None,
         })
     }
 }
@@ -1177,6 +1561,11 @@ mod sqlite_first_tests {
     fn write_cmdline(proc_root: &Path, pid: u32, args: &[&str]) {
         let pid_dir = proc_root.join(pid.to_string());
         std::fs::create_dir_all(&pid_dir).expect("create fake /proc pid dir");
+        // A real /proc/<pid> always has an fd/ dir (every live process holds
+        // fds 0/1/2). Create an empty one so the open-FD provider reports
+        // `Ok(∅)` (process alive, no rollout open) rather than `Err` (dead pid)
+        // — VIM-191's resolver treats those two cases very differently.
+        std::fs::create_dir_all(pid_dir.join("fd")).expect("create fake /proc fd dir");
         let mut bytes = Vec::new();
         for arg in args {
             bytes.extend_from_slice(arg.as_bytes());
@@ -1216,6 +1605,15 @@ mod sqlite_first_tests {
             rusqlite::params![id, rollout, updated_at_ms],
         )
         .expect("insert thread row");
+    }
+
+    fn touch_thread(path: &Path, id: &str, updated_at_ms: i64) {
+        let conn = Connection::open(path).expect("open state db");
+        conn.execute(
+            "UPDATE threads SET updated_at_ms = ? WHERE id = ?",
+            rusqlite::params![updated_at_ms, id],
+        )
+        .expect("update thread row");
     }
 
     fn ctx<'a>(cwd: &'a Path, pid: u32, pty_start: SystemTime) -> BindContext<'a> {
@@ -1408,11 +1806,11 @@ mod sqlite_first_tests {
     #[test]
     fn proc_root_none_skips_proc_fast_paths_and_falls_through_to_logs() {
         // PR #302 Claude review F1 — non-Linux platforms (macOS / Windows)
-        // pass `proc_root: None` so the proc-backed fast-paths
-        // (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
-        // skip themselves rather than probing nonexistent `/proc/<pid>/`
-        // paths. Pin the contract: with `None`, the locator still binds
-        // via the logs-table path.
+        // pass `proc_root: None`, so the resume-argv fast-path
+        // (`resume_thread_id_from_proc`) skips itself and the open-FD provider
+        // is `NullOpenRolloutFds` (`Ok(∅)`) rather than probing nonexistent
+        // `/proc/<pid>/` paths. Pin the contract: with `None`, the locator
+        // still binds via the logs-table path.
         let dir = tempfile::tempdir().expect("tempdir");
         let logs = dir.path().join("logs_1.sqlite");
         let state = dir.path().join("state_1.sqlite");
@@ -1428,9 +1826,15 @@ mod sqlite_first_tests {
         insert_log_row(&logs, "pid:7777:abc", Some("thread-NL"), pty_secs + 5, 0);
         insert_thread(&state, "thread-NL", "/tmp/rollout-NL.jsonl", 1000);
 
-        // Crucially: NO proc root. The proc fast-paths must not crash
-        // even though `self.proc_root` is `None`.
-        let locator = SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), None);
+        // Crucially: NO proc root, and inject a null FD provider so the test
+        // stays hermetic — on Unix, `None` proc_root otherwise selects the real
+        // `lsof` provider (VIM-190). The contract under test is the logs
+        // fallback when no open-FD signal is available.
+        let locator = SqliteFirstLocator::with_fds(
+            dir.path().to_path_buf(),
+            None,
+            Box::new(NullOpenRolloutFds),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 7777, pty_start))
             .expect("logs path binds when proc fast-paths are skipped");
@@ -1475,6 +1879,572 @@ mod sqlite_first_tests {
             result.rollout_path,
             PathBuf::from("/tmp/rollout-recent.jsonl")
         );
+    }
+
+    // --- OpenRolloutFds seam (VIM-189) ---
+
+    /// Fake provider so the open-FD resolver paths can be driven without a real
+    /// `/proc` (and so the VIM-191 relocation test can make the open FD
+    /// disagree with stale argv/sqlite).
+    struct FakeOpenRolloutFds {
+        paths: HashSet<PathBuf>,
+        fail: bool,
+    }
+
+    impl OpenRolloutFds for FakeOpenRolloutFds {
+        fn open_rollout_paths(&self, _pid: u32) -> io::Result<HashSet<PathBuf>> {
+            if self.fail {
+                return Err(io::Error::other("fake provider failure"));
+            }
+            Ok(self.paths.clone())
+        }
+    }
+
+    #[test]
+    fn proc_open_fds_lists_open_rollout_symlinks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout = dir.path().join("sessions").join("rollout-A.jsonl");
+        std::fs::create_dir_all(rollout.parent().expect("parent")).expect("mk sessions dir");
+        std::fs::write(&rollout, b"{}").expect("write rollout");
+
+        let proc_root = fake_proc_root();
+        write_rollout_fd(proc_root.path(), 4242, "7", &rollout);
+        // A non-rollout fd (points outside `sessions/`) must be ignored.
+        write_rollout_fd(proc_root.path(), 4242, "8", dir.path());
+
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let found = provider.open_rollout_paths(4242).expect("provider runs");
+        assert_eq!(found, HashSet::from([rollout]));
+    }
+
+    #[test]
+    fn proc_open_fds_ok_empty_when_no_rollout_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let proc_root = fake_proc_root();
+        // An fd dir exists but holds only a non-rollout symlink.
+        write_rollout_fd(proc_root.path(), 4243, "3", dir.path());
+
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let found = provider.open_rollout_paths(4243).expect("provider runs");
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn proc_open_fds_errs_when_fd_dir_missing() {
+        // The `Err` != `Ok(∅)` contract (VIM-189/191): an unreadable
+        // `/proc/<pid>/fd` (pid gone / denied) is a provider failure, NOT
+        // "the process has no rollout open".
+        let dir = tempfile::tempdir().expect("tempdir");
+        let proc_root = fake_proc_root();
+        let provider = ProcOpenRolloutFds::new(proc_root.path().to_path_buf(), dir.path());
+        let result = provider.open_rollout_paths(999_999);
+        assert!(
+            result.is_err(),
+            "missing fd dir must surface as Err, not Ok(empty)"
+        );
+    }
+
+    #[test]
+    fn null_open_fds_returns_ok_empty() {
+        let found = NullOpenRolloutFds
+            .open_rollout_paths(1)
+            .expect("null provider never fails");
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn injected_fds_provider_drives_proc_fd_resolution() {
+        // The seam is wired into resolve: with no proc root (resume-argv path
+        // skipped) an injected provider's open rollout selects the thread.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let rollout = "/sessions/rollout-INJECTED.jsonl";
+        insert_thread(&state, "thread-INJECTED", rollout, 1000);
+
+        let provider = FakeOpenRolloutFds {
+            paths: HashSet::from([PathBuf::from(rollout)]),
+            fail: false,
+        };
+        let locator =
+            SqliteFirstLocator::with_fds(dir.path().to_path_buf(), None, Box::new(provider));
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 4444, SystemTime::now()))
+            .expect("injected open fd should bind");
+        assert_eq!(result.thread_id, "thread-INJECTED");
+        assert_eq!(result.rollout_path, PathBuf::from(rollout));
+    }
+
+    #[test]
+    fn provider_err_surfaces_not_yet_ready() {
+        // VIM-191 made the provider `Err` authoritative: it surfaces as
+        // `NotYetReady` (retried; persistent failure fails safe) and never
+        // silently falls back to stale data. (Was `provider_err_falls_through_
+        // for_now` under the VIM-189 behavior-preserving seam.)
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        insert_thread(&state, "thread-X", "/sessions/rollout-X.jsonl", 1000);
+
+        let provider = FakeOpenRolloutFds {
+            paths: HashSet::new(),
+            fail: true,
+        };
+        let locator =
+            SqliteFirstLocator::with_fds(dir.path().to_path_buf(), None, Box::new(provider));
+        let result = locator.resolve_rollout(&ctx(dir.path(), 4445, SystemTime::now()));
+        assert!(matches!(result, Err(LocatorError::NotYetReady)));
+    }
+
+    // --- lsof open-FD provider (VIM-190) ---
+
+    #[cfg(unix)]
+    struct FakeLsofRunner {
+        result: Result<String, io::ErrorKind>,
+    }
+
+    #[cfg(unix)]
+    impl LsofRunner for FakeLsofRunner {
+        fn run(&self, _pid: u32) -> io::Result<String> {
+            self.result
+                .clone()
+                .map_err(|kind| io::Error::new(kind, "fake lsof failure"))
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parse_lsof_keeps_only_session_rollouts() {
+        let sessions = PathBuf::from("/home/u/.codex/sessions");
+        let out = concat!(
+            "p4242\n",
+            "fcwd\n",
+            "n/home/u/project\n",
+            "ftxt\n",
+            "n/usr/lib/dyld\n",
+            "f3\n",
+            "n/home/u/.codex/sessions/2026/06/20/rollout-AAA.jsonl\n",
+            "f4\n",
+            "nTCP 127.0.0.1:5151\n",
+            "f5\n",
+            "n/home/u/.codex/sessions/2026/06/20/rollout-BBB.jsonl\n",
+            "f6\n",
+            "n/home/u/.codex/sessions/notes.txt\n",
+        );
+        let got = parse_lsof_rollout_names(out, &sessions);
+        assert_eq!(
+            got,
+            HashSet::from([
+                PathBuf::from("/home/u/.codex/sessions/2026/06/20/rollout-AAA.jsonl"),
+                PathBuf::from("/home/u/.codex/sessions/2026/06/20/rollout-BBB.jsonl"),
+            ])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_lists_rollouts_via_runner() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout = dir
+            .path()
+            .join("sessions")
+            .join("x")
+            .join("rollout-Z.jsonl");
+        let stdout = format!("p1\nf3\nn{}\n", rollout.display());
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner { result: Ok(stdout) }),
+        );
+        let got = provider.open_rollout_paths(1).expect("provider runs");
+        assert_eq!(got, HashSet::from([rollout]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_ok_empty_when_no_rollout_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Ok("p1\nf3\nn/usr/lib/dyld\n".to_string()),
+            }),
+        );
+        let got = provider.open_rollout_paths(1).expect("provider runs");
+        assert!(got.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_propagates_runner_err() {
+        // The `Err` != `Ok(∅)` contract: a failed lsof (timeout / non-zero exit)
+        // must surface as `Err`, not be conflated with "no FD".
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Err(io::ErrorKind::TimedOut),
+            }),
+        );
+        let result = provider.open_rollout_paths(1);
+        assert!(result.is_err(), "runner Err must propagate as provider Err");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lsof_provider_treats_missing_lsof_as_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::with_runner(
+            dir.path(),
+            Box::new(FakeLsofRunner {
+                result: Err(io::ErrorKind::NotFound),
+            }),
+        );
+        let got = provider
+            .open_rollout_paths(1)
+            .expect("missing lsof falls back");
+        assert!(got.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_lsof_runner_runs_bounded_without_panicking() {
+        // Smoke test of the real spawn path (constructs RealLsofRunner): it must
+        // complete within the bounded timeout and never panic. The exact Ok/Err
+        // depends on whether lsof is installed and the pid exists, so only
+        // completion is asserted; the Err mapping is covered above.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let provider = LsofOpenRolloutFds::new(dir.path());
+        let _ = provider.open_rollout_paths(u32::MAX);
+    }
+
+    // --- resolver Option A: open-FD authoritative (VIM-191) ---
+
+    /// THE relocation regression: an in-session `resume` keeps the same cmdline,
+    /// so the stale `resume`-argv would bind the OLD thread (A) forever. The
+    /// open rollout FD points at the NEW thread (B). Option A consults the FD
+    /// first, so B wins. This fails before the resolver reorder (argv → A) and
+    /// passes after (open-FD → B).
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_beats_stale_resume_argv() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+        let rollout_a = sessions.join("rollout-A.jsonl");
+        let rollout_b = sessions.join("rollout-B.jsonl");
+        // A looks "newer" by recency and is named by the stale resume argv …
+        insert_thread(&state, "thread-A", rollout_a.to_str().expect("utf8"), 2000);
+        // … but B is the one whose rollout FD is actually open.
+        insert_thread(&state, "thread-B", rollout_b.to_str().expect("utf8"), 1000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 6001, &["codex", "resume", "thread-A"]);
+        write_rollout_fd(proc_root.path(), 6001, "7", &rollout_b);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 6001, SystemTime::now()))
+            .expect("open rollout FD should bind");
+        assert_eq!(result.thread_id, "thread-B");
+        assert_eq!(result.rollout_path, rollout_b);
+    }
+
+    #[test]
+    fn provider_ok_empty_falls_back_to_resume_argv() {
+        // `codex resume <id>` launch: the rollout FD is not open yet, so the
+        // provider returns `Ok(∅)` and the resolver falls back to the resume
+        // argv (the early-window contract).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        insert_thread(&state, "thread-A", "/s/rollout-A.jsonl", 1000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 6002, &["codex", "resume", "thread-A"]);
+
+        let locator = SqliteFirstLocator::with_fds(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+            Box::new(FakeOpenRolloutFds {
+                paths: HashSet::new(),
+                fail: false,
+            }),
+        );
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 6002, SystemTime::now()))
+            .expect("Ok(empty) falls back to resume argv");
+        assert_eq!(result.thread_id, "thread-A");
+    }
+
+    #[test]
+    fn provider_err_does_not_fall_back_to_stale_argv() {
+        // The false-success trap: a provider `Err` (lsof failed / `/proc` gone)
+        // must NOT silently bind the stale resume-argv thread. It surfaces as
+        // `NotYetReady` (retried; persistent failure fails safe).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        insert_thread(&state, "thread-A", "/s/rollout-A.jsonl", 1000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 6003, &["codex", "resume", "thread-A"]);
+
+        let locator = SqliteFirstLocator::with_fds(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+            Box::new(FakeOpenRolloutFds {
+                paths: HashSet::new(),
+                fail: true,
+            }),
+        );
+        let result = locator.resolve_rollout(&ctx(dir.path(), 6003, SystemTime::now()));
+        assert!(
+            matches!(result, Err(LocatorError::NotYetReady)),
+            "provider Err must be NotYetReady, never a stale-argv bind"
+        );
+    }
+
+    #[test]
+    fn open_fd_without_thread_row_is_not_yet_ready() {
+        // FD authoritative even before its row lands: an open rollout FD whose
+        // thread row is not yet written waits (NotYetReady) rather than falling
+        // back to the stale resume-argv candidate.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        insert_thread(&state, "thread-A", "/s/rollout-A.jsonl", 1000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 6004, &["codex", "resume", "thread-A"]);
+
+        let locator = SqliteFirstLocator::with_fds(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+            Box::new(FakeOpenRolloutFds {
+                // FD open for a rollout that has no thread row yet.
+                paths: HashSet::from([PathBuf::from("/s/rollout-NEW.jsonl")]),
+                fail: false,
+            }),
+        );
+        let result = locator.resolve_rollout(&ctx(dir.path(), 6004, SystemTime::now()));
+        assert!(
+            matches!(result, Err(LocatorError::NotYetReady)),
+            "open FD without a row must wait, not bind stale argv"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_finds_rollout_beyond_recency_limit() {
+        // Codex review VIM-191 P2: with multiple open rollout FDs, the matching
+        // thread row must be found even when it is older than the 64
+        // most-recently-updated threads — the old `LIMIT 64` pre-filter would
+        // truncate it and wrongly yield `NotYetReady`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        // 70 newer, unrelated threads push the open one past the recency window.
+        for i in 0..70 {
+            let rollout = sessions.join(format!("rollout-dummy-{i}.jsonl"));
+            insert_thread(
+                &state,
+                &format!("dummy-{i}"),
+                rollout.to_str().expect("utf8"),
+                10_000 + i as i64,
+            );
+        }
+        // The actually-open rollout's thread row is the OLDEST.
+        let rollout_open = sessions.join("rollout-OPEN.jsonl");
+        insert_thread(
+            &state,
+            "thread-OPEN",
+            rollout_open.to_str().expect("utf8"),
+            1,
+        );
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 7001, &["codex"]);
+        // Two open rollout FDs (multi-FD path); the second has no thread row.
+        write_rollout_fd(proc_root.path(), 7001, "10", &rollout_open);
+        write_rollout_fd(
+            proc_root.path(),
+            7001,
+            "11",
+            &sessions.join("rollout-GHOST.jsonl"),
+        );
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 7001, SystemTime::now()))
+            .expect("multi-fd resolver must find the open rollout beyond the recency limit");
+        assert_eq!(result.thread_id, "thread-OPEN");
+        assert_eq!(result.rollout_path, rollout_open);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_picks_newest_when_codex_leaks_old_rollout_fds() {
+        // codex keeps OLD rollout FDs open across `/clear` and in-session
+        // `resume`, so a single pid holds several same-cwd rollouts open at once
+        // (confirmed by `lsof`). The resolver must pick the most recently updated
+        // (the active conversation) instead of erroring on same-cwd ambiguity —
+        // the latter strands the panel after every `/clear`/`resume` (VIM-188).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_old = sessions.join("rollout-OLD.jsonl");
+        let rollout_new = sessions.join("rollout-NEW.jsonl");
+        // Same cwd ('/tmp', from insert_thread) — only updated_at_ms differs.
+        insert_thread(
+            &state,
+            "thread-OLD",
+            rollout_old.to_str().expect("utf8"),
+            1000,
+        );
+        insert_thread(
+            &state,
+            "thread-NEW",
+            rollout_new.to_str().expect("utf8"),
+            5000,
+        );
+
+        let proc_root = fake_proc_root();
+        // Stale resume-argv points at the OLD thread — the authoritative open-FD
+        // (newest) must still win, since open-FD is consulted before argv.
+        write_cmdline(proc_root.path(), 8001, &["codex", "resume", "thread-OLD"]);
+        // The pid leaks BOTH rollouts open (the bug).
+        write_rollout_fd(proc_root.path(), 8001, "10", &rollout_old);
+        write_rollout_fd(proc_root.path(), 8001, "11", &rollout_new);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        // ctx cwd matches the threads' cwd → the old resolver would error on
+        // same-cwd ambiguity; the recency pick must still bind the newest.
+        let result = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8001, SystemTime::now()))
+            .expect("same-cwd multi-fd must bind the newest open rollout, not error");
+        assert_eq!(result.thread_id, "thread-NEW");
+        assert_eq!(result.rollout_path, rollout_new);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_tied_updated_at_is_not_yet_ready() {
+        // Two open rollouts sharing the newest updated_at_ms are genuinely
+        // ambiguous (input order is non-deterministic) → fail safe with
+        // NotYetReady rather than bind one arbitrarily.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_a = sessions.join("rollout-A.jsonl");
+        let rollout_b = sessions.join("rollout-B.jsonl");
+        insert_thread(&state, "thread-A", rollout_a.to_str().expect("utf8"), 3000);
+        insert_thread(&state, "thread-B", rollout_b.to_str().expect("utf8"), 3000);
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 8002, &["codex"]);
+        write_rollout_fd(proc_root.path(), 8002, "10", &rollout_a);
+        write_rollout_fd(proc_root.path(), 8002, "11", &rollout_b);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+        let result = locator.resolve_rollout(&ctx(Path::new("/tmp"), 8002, SystemTime::now()));
+        assert!(
+            matches!(result, Err(LocatorError::NotYetReady)),
+            "a tie on the newest updated_at_ms must be NotYetReady, not an arbitrary bind"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_fd_multi_self_heals_when_resumed_idle_rollout_is_written() {
+        // The idle-resume signal gap: resuming an OLD conversation does not
+        // advance its `updated_at_ms` until the user interacts, so among leaked
+        // FDs the resolver structurally binds the previously-active (newest)
+        // rollout. There is NO resolver-side signal that can pick the resumed
+        // idle rollout earlier (confirmed: sqlite `updated_at` == file mtime,
+        // no active-thread column, `session_index.jsonl` is a stale title
+        // cache). Recovery is therefore "self-heal on first interaction": once
+        // the resumed rollout is written it becomes newest and the resolver
+        // binds it. This guards the backend half of that contract; the frontend
+        // persistent retry is what re-invokes the resolver until this flips.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path().join("state_1.sqlite");
+        build_state_db(&state);
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+
+        let rollout_active = sessions.join("rollout-ACTIVE.jsonl");
+        let rollout_resumed = sessions.join("rollout-RESUMED.jsonl");
+        // ACTIVE was the previously-live conversation (newest); RESUMED is the
+        // older conversation the user just resumed to but has not yet typed in.
+        insert_thread(
+            &state,
+            "thread-ACTIVE",
+            rollout_active.to_str().expect("utf8"),
+            5000,
+        );
+        insert_thread(
+            &state,
+            "thread-RESUMED",
+            rollout_resumed.to_str().expect("utf8"),
+            1000,
+        );
+
+        let proc_root = fake_proc_root();
+        write_cmdline(proc_root.path(), 8003, &["codex"]);
+        // The pid leaks BOTH rollouts open.
+        write_rollout_fd(proc_root.path(), 8003, "10", &rollout_active);
+        write_rollout_fd(proc_root.path(), 8003, "11", &rollout_resumed);
+
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().to_path_buf()),
+        );
+
+        // Phase 1 — RESUMED is still idle (older): the resolver binds ACTIVE.
+        // This is the unavoidable signal-gap miss, not a bug.
+        let before = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8003, SystemTime::now()))
+            .expect("multi-fd binds the newest open rollout");
+        assert_eq!(
+            before.thread_id, "thread-ACTIVE",
+            "before interaction, the idle resumed rollout cannot be distinguished from the active one"
+        );
+
+        // Phase 2 — the user interacts with RESUMED, advancing its row past
+        // ACTIVE. A re-invoked resolve (what the persistent retry does) now
+        // binds RESUMED, so the panel recovers without a manual click.
+        touch_thread(&state, "thread-RESUMED", 9000);
+        let after = locator
+            .resolve_rollout(&ctx(Path::new("/tmp"), 8003, SystemTime::now()))
+            .expect("multi-fd re-resolve after the resumed rollout is written");
+        assert_eq!(
+            after.thread_id, "thread-RESUMED",
+            "once the resumed rollout is the newest, the resolver self-heals onto it"
+        );
+        assert_eq!(after.rollout_path, rollout_resumed);
     }
 }
 

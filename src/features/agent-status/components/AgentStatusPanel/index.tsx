@@ -12,7 +12,7 @@ import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
-import { ToolCallSummary } from '../ToolCallSummary'
+import { ToolCallsSection } from '../ToolCalls/ToolCallsSection'
 import { FilesChanged } from '../FilesChanged'
 import { TestResults } from '../TestResults'
 import { ActivityFeed } from '../ActivityFeed'
@@ -37,8 +37,8 @@ interface AgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   gitStatus?: UseGitStatusReturn
   isRefreshing?: boolean
+  needsReattach?: boolean
   agent: Agent
-  onCollapse: () => void
   cacheHistory: number[]
   snapshotKey?: string | null
   reserveWindowControls?: boolean
@@ -302,8 +302,8 @@ export const AgentStatusPanel = ({
   onOpenFile = undefined,
   gitStatus = undefined,
   isRefreshing = false,
+  needsReattach = false,
   agent,
-  onCollapse,
   cacheHistory,
   snapshotKey = null,
   reserveWindowControls = false,
@@ -537,7 +537,7 @@ export const AgentStatusPanel = ({
       <AgentStatusPanelHeader
         agent={agent}
         isRefreshing={showsRefreshing}
-        onCollapse={onCollapse}
+        needsReattach={needsReattach}
         reserveWindowControls={reserveWindowControls}
       />
 
@@ -559,10 +559,19 @@ export const AgentStatusPanel = ({
               status.contextWindow?.contextWindowSize ??
               DEFAULT_CONTEXT_WINDOW_SIZE
             }
+            inputTokens={
+              status.contextWindow?.totalInputTokens !== undefined
+                ? Number(status.contextWindow.totalInputTokens)
+                : undefined
+            }
           />
           <TokenCache
             usage={status.contextWindow?.currentUsage ?? null}
             history={bodyCacheHistory}
+          />
+          <ToolCallsSection
+            total={status.toolCalls.total}
+            byType={status.toolCalls.byType}
           />
         </div>
       )}
@@ -584,11 +593,6 @@ export const AgentStatusPanel = ({
               className={isRetainedBody ? 'select-none' : undefined}
               inert={isRetainedBody || undefined}
             >
-              <ToolCallSummary
-                total={status.toolCalls.total}
-                byType={status.toolCalls.byType}
-                active={runningEvent === null ? status.toolCalls.active : null}
-              />
               {runningEvent !== null && (
                 <LiveActionCard
                   event={runningEvent}

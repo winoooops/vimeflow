@@ -189,7 +189,7 @@ The canonical surfaces and their key contracts. Full props live in the code; thi
 
 ### 5.5 GitRefChip
 
-A rounded 22px pill in the pane header / session metadata: optional worktree segment (`account_tree` + name + `›`) then branch (`fork_right` + name); `primary-container` tint normally, two-tone coral (`tertiary`/`error`) when detached. Tooltip lists branch / detached-HEAD / worktree / full cwd verbatim. Props: `branch` (req), `worktree?`, `detached?`.
+A rounded 22px pill in the pane header / session metadata: optional worktree segment (`account_tree` + name + `›`) then branch (`fork_right` + name); `primary-container` tint normally, two-tone coral (`tertiary`/`error`) when detached. On hover it opens a **copy popover** — a 244px `bare interactive` `Tooltip` on the same glass surface as the activity-detail card — with one click-to-copy row per ref fact: worktree (only when set), the full cwd path (only when available), then branch (label reads `detached head` when detached). Each row is a single `<button>`; clicking anywhere on it copies that value and flips the trailing `content_copy` glyph to a `success` check for ~1.3s. The chip's own visuals are unchanged. Props: `branch` (req), `worktreeName`, `cwd?`, `detached?`.
 
 ### 5.5.1 Chip
 
@@ -379,6 +379,44 @@ Rules:
 - Focus is modal (`initialFocus: 0`): focus lands on the first tabbable child on open and `modal: true` engages the focus trap; the consumer's body content is navigable by tab.
 - Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
 - Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
+
+### 5.9.1 `Dialog`
+
+The app-level viewport modal shell. Lives at `src/components/Dialog.tsx`; import via the alias: `import { Dialog } from '@/components/Dialog'`.
+
+```ts
+interface DialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  placement?: 'center' | 'top'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
+  closeOnBackdrop?: boolean
+  closeOnEscape?: boolean
+  dismissDisabled?: boolean
+  restoreFocus?: boolean
+  initialFocusRef?: React.RefObject<HTMLElement | null>
+  'aria-label'?: string
+  'aria-labelledby'?: string
+  'aria-describedby'?: string
+  testId?: string
+  backdropTestId?: string
+  children: ReactNode
+}
+
+// Optional structure helpers:
+// <Dialog.Header>...</Dialog.Header>
+// <Dialog.Body>...</Dialog.Body>
+// <Dialog.Footer>...</Dialog.Footer>
+```
+
+Rules:
+
+- Use `Dialog` for full-screen app modal shells that block workspace interaction, such as unsaved-change confirmation and command-palette style overlays.
+- Do **not** use `Dialog` for anchored or cursor-positioned surfaces. Use `Popover`, `Menu`, or `Dropdown` for those; they stay on `base/floating`.
+- `Dialog` owns the fixed viewport overlay, `z-[100]` stacking, backdrop, Lens glass panel, focus trap, focus restore, Escape/backdrop dismissal, and `aria-modal`.
+- Consumer code owns domain content and callbacks. The primitive must not know about save/discard, command palette selection, terminal focus, or settings state.
+- `dismissDisabled` locks Escape and backdrop dismissal for in-flight actions. Direct child buttons may still call their feature callbacks.
+- `Dialog.Header` / `Body` / `Footer` provide the standard confirmation-dialog spacing and dividers. More complex bodies may render custom layout inside the panel.
 
 ### 5.10 `Button`
 

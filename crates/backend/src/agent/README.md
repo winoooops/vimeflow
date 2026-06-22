@@ -97,7 +97,7 @@ Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAd
 
 - `AgentType::ClaudeCode` → `ClaudeCodeAdapter` (`pid`/`pty_start` discarded)
 - `AgentType::Codex` → `CodexAdapter::new(pid, pty_start)`
-- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder; `pid`/`pty_start` discarded)
+- everything else → `NoOpAdapter::new(t, app_data_dir)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns an app-data bridge status placeholder; `pid`/`pty_start` discarded)
 
 > **Resolved 2026-05-05** by [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](../../../docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md) (issue [#156](https://github.com/winoooops/vimeflow/issues/156)): `BindContext` is now private to `codex/`, the old bind error type is deleted, the trait method is `status_source(cwd, sid) -> Result<_, String>`, and codex's cold-start retry lives inside `CodexAdapter::status_source` via the `retry_locator` helper.
 
@@ -137,6 +137,7 @@ impl BackendState {
             self.agents.clone(),
             self.transcripts.clone(),
             self.events.clone(),
+            self.app_data_dir.clone(),
             session_id,
         )
         .await
@@ -184,15 +185,15 @@ Each method is a "provider hook" — every concrete adapter implements all five.
 
 ### `ClaudeCodeAdapter`
 
-Stateless struct (zero fields). Each hook delegates to a sibling module under `claude_code/`:
+Stateless adapter for parsing and tailing. The status locator carries the app-data root; each hook delegates to a sibling module under `claude_code/`:
 
 ```rust
 impl AgentAdapter for ClaudeCodeAdapter {
     fn agent_type(&self) -> AgentType { AgentType::ClaudeCode }
-    fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
+    fn status_source(&self, app_data_dir, cwd, sid) -> Result<StatusSource, String> {
         Ok(StatusSource {
-            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
-            trust_root: cwd.to_path_buf(),
+            path: crate::terminal::bridge::session_status_file(app_data_dir, cwd, sid),
+            trust_root: app_data_dir.to_path_buf(),
         })
     }
     fn parse_status(&self, sid, raw) -> Result<ParsedStatus, String> {
@@ -215,11 +216,12 @@ The Claude-Code-specific submodules under `adapter/claude_code/`:
 
 ### `NoOpAdapter`
 
-Fallback for `AgentType::Aider` / `Generic` until real adapters ship. One field, one constructor:
+Fallback for `AgentType::Aider` / `Generic` until real adapters ship:
 
 ```rust
 pub(crate) struct NoOpAdapter {
     agent_type: AgentType,
+    app_data_dir: PathBuf,
 }
 
 impl AgentAdapter for NoOpAdapter {
@@ -228,8 +230,8 @@ impl AgentAdapter for NoOpAdapter {
         // Same path Claude uses → watcher's create_dir_all + watch
         // matches today's silent-no-op UX for unsupported agents.
         Ok(StatusSource {
-            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
-            trust_root: cwd.to_path_buf(),
+            path: crate::terminal::bridge::session_status_file(&self.app_data_dir, cwd, sid),
+            trust_root: self.app_data_dir.clone(),
         })
     }
     fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status decoder".into()) }
@@ -240,7 +242,7 @@ impl AgentAdapter for NoOpAdapter {
 }
 ```
 
-**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (gated on `watcherStartedRef.current`) would never run after an unsupported agent session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns the standard `.vimeflow/sessions/{sid}/status.json` path so the watcher starts successfully (no events ever fire because unsupported agents do not write that file), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. Codex no longer uses this path; it has a real adapter.
+**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (gated on `watcherStartedRef.current`) would never run after an unsupported agent session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns the standard app-data bridge status path so the watcher starts successfully (no events ever fire because unsupported agents do not write that file), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. Codex no longer uses this path; it has a real adapter.
 
 ---
 

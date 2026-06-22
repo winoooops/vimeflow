@@ -36,6 +36,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
@@ -102,7 +108,7 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
   describe('1. workspace zones render (VIM-76: icon rail removed)', () => {
-    test('renders sidebar (with top bar), terminal, dock panel, and activity zones', () => {
+    test('renders sidebar, terminal, collapsed dock affordance, and activity zones', () => {
       render(<WorkspaceView />)
 
       // VIM-76: icon rail removed; sidebar chrome remains in the sidebar.
@@ -110,7 +116,11 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('sidebar-top-bar')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-footer-wrapper')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+      expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+      expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      )
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
@@ -176,8 +186,11 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 
-    test('dock panel displays Editor and Diff Viewer tabs', () => {
+    test('dock panel displays Editor and Diff Viewer tabs when opened', async () => {
+      const user = userEvent.setup()
       render(<WorkspaceView />)
+
+      await user.click(screen.getByTestId('status-bar-dock-toggle'))
 
       const dockPanel = screen.getByTestId('dock-panel')
 
@@ -195,7 +208,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    // Child sections (StatusCard, BudgetMetrics, ContextReservoirCard, ToolCallSummary)
+    // Child sections (StatusCard, BudgetMetrics, ContextReservoirCard, ToolCallsSection)
     // will be tested in sub-specs 5-7
   })
 
@@ -265,7 +278,11 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       // Verify all zones are present (VIM-76: icon rail removed).
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+      expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+      expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      )
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })

@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-22
-ref_count: 1
+ref_count: 6
 ---
 
 # Dead Code
@@ -60,4 +60,13 @@ code and should be removed.
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
 - **Finding:** `handleSlotDrop` recovered a pane id from `dataTransfer` when drag state was lost, but the next `canDropOnSlot` guard returned false whenever `draggingPaneId` was null. The fallback path could never complete a drop, making the resilience comment misleading.
 - **Fix:** Let `canDropOnSlot` validate an explicit pane id while retaining its default state-backed behavior for dragover/highlight checks. The drop handler now passes the recovered id into the same accepts and source-slot validation used on the normal path.
+- **Commit:** same commit as this entry
+
+### 6. `emitAgentStatus` helper and payload factory are dead code in E2E spec
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** LOW
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The `emitAgentStatus` function called `invokeBackend('e2e_emit_agent_status', ...)` but had no call sites in the spec. The `AgentStatusPayload` interface and `createAgentStatusPayload` factory existed only to support it. The dead code implied coverage for a direct-emit status scenario that did not exist.
+- **Fix:** Removed the unused `emitAgentStatus` helper, `AgentStatusPayload` interface, and `createAgentStatusPayload` factory from the spec.
 - **Commit:** same commit as this entry

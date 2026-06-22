@@ -4,7 +4,9 @@ import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 import { KimiUsageGate } from '../../agent-status/components/KimiUsageGate'
+import { QuotaUnavailableNotice } from '../../agent-status/components/QuotaUnavailableNotice'
 import { parseModelTitle } from '../utils/parseModelTitle'
+import type { QuotaNotice } from '@/agents/registry'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
 // ONE fixed card height in every state: switching the active pane between an
@@ -33,6 +35,9 @@ export interface AgentStatusCardProps {
   /** The backend `usageFetched` signal — true once a real kimi `/usages` fetch
    * has landed; lets the gate tell ON (incl. genuine 0%) from LOADING. */
   hasUsageData?: boolean
+  /** Set for agents with no readable usage API (opencode): the quota slot shows
+   * this notice + a feature-request link instead of rate-limit bars. */
+  quotaNotice?: QuotaNotice | null
   /** Resolved shell path/name for pure shell panes, e.g. `/bin/zsh`. */
   shellName?: string | null
 }
@@ -193,6 +198,7 @@ export const AgentStatusCard = ({
   weekPct = null,
   isKimi = false,
   hasUsageData = false,
+  quotaNotice = null,
   shellName = null,
 }: AgentStatusCardProps): ReactElement => {
   const hasUsage = fiveHourPct !== null || weekPct !== null
@@ -259,6 +265,8 @@ export const AgentStatusCard = ({
                 weekPct={weekPct}
                 hasUsageData={hasUsageData}
               />
+            ) : quotaNotice ? (
+              <QuotaUnavailableNotice {...quotaNotice} />
             ) : (
               hasUsage && (
                 <div

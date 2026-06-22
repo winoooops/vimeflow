@@ -12,6 +12,8 @@ export const buttonVariants = tv({
         'bg-surface-container-high/60 text-on-surface-variant hover:bg-surface-container-highest/80 hover:text-on-surface aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface',
       primary:
         'border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)] hover:brightness-110 active:translate-y-px',
+      'flat-primary':
+        'border border-primary/25 bg-primary text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)] hover:brightness-110 active:translate-y-px',
       danger:
         'bg-transparent text-error hover:bg-error/10 hover:text-error aria-pressed:bg-error/15 aria-expanded:bg-error/15',
     },

@@ -1,5 +1,6 @@
 // cspell:ignore worktree
-import type { ContextWindowStatus } from '../../../bindings/ContextWindowStatus'
+import type { ContextWindowStatus as GeneratedContextWindowStatus } from '../../../bindings/ContextWindowStatus'
+import type { CurrentUsage } from '../../../bindings/CurrentUsage'
 import type { RateLimits } from '../../../bindings/RateLimits'
 
 // Re-export bindings, but NOT AgentStatusEvent — we override it below
@@ -21,12 +22,22 @@ export interface AgentStatusEvent {
   modelId: string | null
   modelDisplayName: string | null
   version: string | null
-  contextWindow: ContextWindowStatus | null
+  contextWindow: AgentContextWindowStatus | null
   cost: CostMetrics | null
   rateLimits: RateLimits | null
   // True once kimi's network usage fetch has landed; false for claude/codex
   // and a kimi session that hasn't fetched yet.
   usageFetched: boolean
+}
+
+// Runtime-accurate override for ContextWindowStatus. Rust Option<f64>
+// serializes to null, but ts-rs currently marks the field optional.
+export type AgentContextWindowStatus = Omit<
+  GeneratedContextWindowStatus,
+  'currentUsage' | 'usedPercentage'
+> & {
+  currentUsage?: CurrentUsage | null
+  usedPercentage: number | null
 }
 
 // Runtime-accurate override for CostMetrics. Rust Option<f64> serializes to
@@ -48,7 +59,14 @@ export interface AgentStatus {
    * metrics during its exit window.
    */
   agentExited: boolean
-  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic' | null
+  agentType:
+    | 'claude-code'
+    | 'codex'
+    | 'kimi'
+    | 'opencode'
+    | 'aider'
+    | 'generic'
+    | null
   modelId: string | null
   modelDisplayName: string | null
   version: string | null
@@ -138,7 +156,7 @@ export interface CurrentUsageState {
 }
 
 export interface ContextWindowState {
-  usedPercentage: number
+  usedPercentage: number | null
   contextWindowSize: number
   totalInputTokens: number
   totalOutputTokens: number
@@ -184,4 +202,24 @@ export interface RecentToolCall {
    * AgentToolCallEvent — see `crates/backend/src/agent/adapter/claude_code/test_runners/test_file_patterns.rs`.
    */
   isTestFile: boolean
+}
+
+/**
+ * A single tool's call tally. The Packed/Tags views render one tile/pill per
+ * entry, keyed by `name`, in stable (insertion) order so they morph in place
+ * instead of reshuffling on every update.
+ */
+export interface ToolCount {
+  name: string
+  count: number
+}
+
+/**
+ * A display entry for the Tool Calls jar/tags. Real tools carry just
+ * `name`/`count`; the synthetic aggregate entry adds `others` — the bundled
+ * trivial tools, sorted by count desc — and renders as the neutral "others"
+ * shape with a hover breakdown.
+ */
+export interface ToolJarEntry extends ToolCount {
+  others?: ToolCount[]
 }

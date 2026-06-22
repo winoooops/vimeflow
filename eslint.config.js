@@ -36,6 +36,12 @@ export default defineConfig([
       'vite-plugin-*.ts',
       'target',
       'crates/backend/bindings/',
+      // The vendored opencode bridge plugin is a Bun/Node build asset (not part
+      // of the React app); its hook params are `any` and it has no
+      // `@opencode-ai/*` types. It is verified separately by
+      // `npm run type-check:bridge` (tsconfig.opencode-bridge.json) and stays
+      // under prettier (`format:check`).
+      'crates/backend/src/agent/adapter/opencode/plugin/**',
       '.claude/**',
       'src/bindings/',
       'docs/**',

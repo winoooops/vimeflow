@@ -100,6 +100,7 @@ export const AGENT_IDS = [
   'shell',
   'browser',
   'kimi',
+  'opencode',
 ] as const
 
 export const AGENT_ACCENT_FIELDS = [
@@ -128,6 +129,8 @@ export type ThemeId =
   | 'flexoki'
   | 'gruvbox-dark'
   | 'gruvbox-light'
+  | 'tokyo-night'
+  | 'dracula'
 
 export type ThemeKind = 'dark' | 'light'
 

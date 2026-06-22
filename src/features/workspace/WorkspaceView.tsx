@@ -84,6 +84,7 @@ import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
@@ -99,7 +100,11 @@ import {
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
-import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
+import {
+  AGENTS,
+  agentTypeToRegistryKey,
+  type AgentDef,
+} from '../../agents/registry'
 import type { PaneLayoutId, SessionCloseResult } from '../sessions/types'
 import {
   buildWorkspaceCommands,
@@ -194,6 +199,9 @@ const SIDEBAR_TOP_BAR_HEIGHT = 42
 const SIDEBAR_TOGGLE_SIZE = 28
 const SIDEBAR_TOGGLE_TOP = 7
 const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
+// Right-edge inset for the activity-panel toggle. (44 - 28) / 2 = 8 centers it
+// in the collapsed rail, so the control reads as symmetric in both states.
+const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
@@ -634,6 +642,28 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatusResetGeneration
   )
 
+  // Watcher relocation recovery (VIM-188/192): a `/clear` on a codex or
+  // opencode pane arms the red "needs reattach" indicator + a bounded
+  // auto-reattach; the always-on drift tick additionally relocates the active
+  // Codex pane so the panel follows an undetectable in-session `resume`.
+  // Recovery is automatic once the agent writes the new session (the user
+  // sends a prompt) — there is no manual button.
+  const agentReattach = useAgentReattach({
+    sessionId: activePtyBackedPanePtyId ?? null,
+    agentSessionId: agentStatus.agentSessionId,
+    agentTokenTotal: agentStatus.contextWindow
+      ? agentStatus.contextWindow.totalInputTokens +
+        agentStatus.contextWindow.totalOutputTokens
+      : null,
+    staleGeneration: agentStatusResetGeneration,
+    // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
+    // periodically so the panel follows an in-session `resume` (which is
+    // undetectable and never arms the red state). opencode does not need drift
+    // — its bridge writes are append-close so the lsof open-FD signal doesn't
+    // apply; `/clear` reattach is covered by the command path above.
+    driftEnabled: agentStatus.agentType === 'codex' && agentStatus.isActive,
+  })
+
   const visibleAgentStatusPtyIds = useMemo(
     () =>
       activeSession === undefined
@@ -670,19 +700,30 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleTerminalCommandSubmit = useCallback(
     (ptyId: string, command: string): void => {
-      if (command !== '/clear') {
+      // A codex `/clear` opens a fresh conversation and `/resume` switches to a
+      // different one — both point codex/opencode at a NEW session, so the live
+      // status is now stale. Treat both as a context switch: reset agent-status
+      // and arm the red "send a prompt to reattach" indicator until the watcher
+      // relocates onto the new conversation (VIM-192). `/resume <id>` is the
+      // arg form (codex-only; harmless for opencode which only uses `/clear`).
+      const isContextSwitch =
+        command === '/clear' ||
+        command === '/resume' ||
+        command.startsWith('/resume ')
+      if (!isContextSwitch) {
         return
       }
 
       // Only reset agent-status state when the active pane is actually running
-      // Codex. Raw PTY input (e.g. vim's `/clear` search followed by Enter) is
-      // syntactically identical to a Codex `/clear` command, and a false reset
-      // for a live Codex session would suppress same-run events until the next
+      // Codex or opencode. Raw PTY input (e.g. vim's `/clear` search followed
+      // by Enter) is syntactically identical to an agent command, and a false
+      // reset for a live session would suppress same-run events until the next
       // session boundary (Claude Code Review on PR #469).
-      if (
-        ptyId === activePtyBackedPanePtyId &&
-        agentStatus.agentType === 'codex'
-      ) {
+      const at = agentStatus.agentType
+      // opencode follows `/clear` via the command path only; its bridge writes
+      // are append-close so the codex lsof open-FD drift signal doesn't apply.
+      const followsClearReattach = at === 'codex' || at === 'opencode'
+      if (ptyId === activePtyBackedPanePtyId && followsClearReattach) {
         setAgentStatusReset((prev) => ({
           ptyId,
           generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
@@ -1051,7 +1092,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // Dock panel controlled state.
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
-  const [isDockOpen, setIsDockOpen] = useState(true)
+  const [isDockOpen, setIsDockOpen] = useState(false)
   const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
@@ -1817,6 +1858,13 @@ const WorkspaceViewContent = (): ReactElement => {
   const sidebarCardIsKimi = agentStatus.agentType === 'kimi'
   const sidebarCardHasUsageData = agentStatus.usageFetched ?? false
 
+  // Agents with no readable usage API (opencode) show a notice + feature-request
+  // link in the quota slot instead of bars; the data is registry-driven. The
+  // `as AgentDef` upcast reaches the optional `quotaNotice` past the `as const`
+  // union of literals (only the opencode entry carries it).
+  const sidebarCardQuotaNotice =
+    (activityPanelAgent as AgentDef).quotaNotice ?? null
+
   // Non-kimi bars use `rateLimitPercentage` (a zeroed/placeholder window reads
   // as absent). For kimi, `usageFetched` proves a fetch landed, not that every
   // window came back — `/usages` can be weekly-only, and the required backend
@@ -2492,6 +2540,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   weekPct={sidebarCardWeekPct}
                   isKimi={sidebarCardIsKimi}
                   hasUsageData={sidebarCardHasUsageData}
+                  quotaNotice={sidebarCardQuotaNotice}
                   shellName={activePtyBackedPane?.shell ?? null}
                 />
               }
@@ -2725,6 +2774,35 @@ const WorkspaceViewContent = (): ReactElement => {
         />
       </main>
 
+      {/* Persistent activity-panel toggle — the right-edge mirror of the
+          sidebar toggle. Anchored to the workspace root (not the rail/header)
+          so it holds one fixed coordinate while the panel collapses/expands;
+          `mirrored` flips the glyph to a right-docked panel and the fill flips
+          with the collapse state. The rail/header carry a no-drag clearance
+          span so this floats reliably over the macOS drag region. */}
+      {!isCompactViewport && (
+        <div
+          data-testid="activity-toggle-fixed-shell"
+          className="vf-app-no-drag absolute z-40"
+          style={{ right: ACTIVITY_TOGGLE_RIGHT, top: SIDEBAR_TOGGLE_TOP }}
+        >
+          <SidebarToggle
+            collapsed={activityPanelCollapsed}
+            mirrored
+            onClick={() => {
+              handleActivityPanelCollapsed(!activityPanelCollapsed)
+            }}
+            size={SIDEBAR_TOGGLE_SIZE}
+            label={
+              activityPanelCollapsed
+                ? 'Expand activity panel'
+                : 'Collapse activity panel'
+            }
+            data-testid="activity-toggle-fixed"
+          />
+        </div>
+      )}
+
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
@@ -2742,9 +2820,6 @@ const WorkspaceViewContent = (): ReactElement => {
               cacheHitPercentage={cacheHitPercentage(
                 agentStatus.contextWindow?.currentUsage
               )}
-              onExpand={() => {
-                handleActivityPanelCollapsed(false)
-              }}
               reserveWindowControls={reserveWindowControls}
             />
           ) : (
@@ -2754,13 +2829,11 @@ const WorkspaceViewContent = (): ReactElement => {
               cwd={activeCwd}
               gitStatus={gitStatus}
               isRefreshing={isAgentStatusRefreshing}
+              needsReattach={agentReattach.needsReattach}
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
               snapshotKey={activePtyBackedPanePtyId ?? null}
-              onCollapse={() => {
-                handleActivityPanelCollapsed(true)
-              }}
               reserveWindowControls={reserveWindowControls}
             />
           )}

@@ -173,7 +173,14 @@ const MAX_TABS: usize = 50;
 const MAX_HISTORY: usize = 100;
 const MAX_URL_LEN: usize = 4096;
 const MAX_TITLE_LEN: usize = 1024;
-const KNOWN_AGENTS: [&str; 5] = ["claude-code", "codex", "kimi", "aider", "generic"];
+const KNOWN_AGENTS: [&str; 6] = [
+    "claude-code",
+    "codex",
+    "kimi",
+    "opencode",
+    "aider",
+    "generic",
+];
 const PANE_KINDS: [&str; 2] = ["shell", "browser"];
 
 fn builtin_layout_capacity(layout: &str) -> Option<usize> {
@@ -1360,6 +1367,21 @@ mod tests {
         );
         let s = shell(&store.sessions[0].panes[0]);
         assert_eq!(s.agent_type, "kimi"); // kimi is a known agent, not coerced to generic
+    }
+
+    #[test]
+    fn preserves_known_opencode_agent_type() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{
+                "id": "s", "layout": "single", "active": true,
+                "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true,
+                      "ptyId": "x", "cwd": "/", "agentType": "opencode", "agentSessionId": null } ] }] }),
+            "proj",
+            "/",
+        );
+        let s = shell(&store.sessions[0].panes[0]);
+        assert_eq!(s.agent_type, "opencode");
     }
 
     #[test]

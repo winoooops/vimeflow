@@ -5,6 +5,7 @@ import {
   fileExistsInDirectory,
   fileNameFromPath,
   isNotFoundError,
+  normalizePathForComparison,
   parentPathForFileLookup,
   parentPathForGitStatus,
   relativePathFromCwd,
@@ -26,7 +27,9 @@ describe('editorFileLifecycleStatus', () => {
     }
 
     expect(expandTildePath('~/repo/src/new.ts')).toBe(`${home}/repo/src/new.ts`)
-    expect(parentPathForGitStatus('~/repo/src/new.ts')).toBe(`${home}/repo/src`)
+    expect(parentPathForGitStatus('~/repo/src/new.ts')).toBe(
+      normalizePathForComparison(`${home}/repo/src`)
+    )
   })
 
   test('keeps home-relative paths intact for filesystem parent lookup', () => {

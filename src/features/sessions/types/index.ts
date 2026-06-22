@@ -57,7 +57,7 @@ export interface Pane {
   shell?: string
 
   /** Detected agent CLI for this pane. */
-  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
 
   /**
    * Title emitted by the agent for the agent session bound to this PTY.
@@ -125,7 +125,7 @@ export interface Session {
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
-  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
   /** Per-session canvas layout. Builtin ids or validated workspace custom ids. */
   layout: PaneLayoutId
   /**

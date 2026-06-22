@@ -10,6 +10,8 @@ test(':set theme lists every registered theme and applies on execute', () => {
     'set-theme-flexoki',
     'set-theme-gruvbox-dark',
     'set-theme-gruvbox-light',
+    'set-theme-tokyo-night',
+    'set-theme-dracula',
   ])
 
   findCommandById(defaultCommands, 'set-theme-flexoki')?.execute?.('')
@@ -20,6 +22,18 @@ test(':set theme lists every registered theme and applies on execute', () => {
 
   findCommandById(defaultCommands, 'set-theme-gruvbox-light')?.execute?.('')
   expect(themeService.current().id).toBe('gruvbox-light')
+
+  findCommandById(defaultCommands, 'set-theme-tokyo-night')?.preview?.()
+  expect(themeService.current().id).toBe('gruvbox-light')
+
+  findCommandById(defaultCommands, 'set-theme-tokyo-night')?.execute?.('')
+  expect(themeService.current().id).toBe('tokyo-night')
+
+  findCommandById(defaultCommands, 'set-theme-dracula')?.preview?.()
+  expect(themeService.current().id).toBe('tokyo-night')
+
+  findCommandById(defaultCommands, 'set-theme-dracula')?.execute?.('')
+  expect(themeService.current().id).toBe('dracula')
 
   findCommandById(defaultCommands, 'set-theme-obsidian-lens')?.execute?.('')
   expect(themeService.current().id).toBe('obsidian-lens')

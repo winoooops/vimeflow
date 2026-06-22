@@ -75,6 +75,16 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
         home_subdir: Some(".kimi-code"),
     },
     AgentSpec {
+        agent_type: AgentType::Opencode,
+        display_name: "opencode",
+        binary_names: &["opencode"],
+        // TODO(M6): opencode uses the platform data directory
+        // (`dirs::data_dir().join("opencode")`), not a home-relative
+        // dotdir. Leave this unresolved until the opencode adapter consumes
+        // provider_home so non-Linux builds do not receive a bad path.
+        home_subdir: None,
+    },
+    AgentSpec {
         agent_type: AgentType::Aider,
         display_name: "Aider",
         binary_names: &["aider"],
@@ -162,6 +172,7 @@ mod tests {
             AgentType::ClaudeCode
             | AgentType::Codex
             | AgentType::Kimi
+            | AgentType::Opencode
             | AgentType::Aider
             | AgentType::Generic => spec_for(at),
         };
@@ -173,6 +184,7 @@ mod tests {
             AgentType::ClaudeCode,
             AgentType::Codex,
             AgentType::Kimi,
+            AgentType::Opencode,
             AgentType::Aider,
             AgentType::Generic,
         ] {
@@ -197,6 +209,10 @@ mod tests {
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
         assert_eq!(agent_type_for_binary("kimi"), Some(AgentType::Kimi));
         assert_eq!(agent_type_for_binary("kimi-code"), Some(AgentType::Kimi));
+        assert_eq!(
+            agent_type_for_binary("opencode"),
+            Some(AgentType::Opencode)
+        );
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }
 
@@ -221,6 +237,9 @@ mod tests {
 
     #[test]
     fn provider_home_is_none_when_subdir_missing() {
+        let opencode = spec_for(AgentType::Opencode);
+        assert_eq!(opencode.provider_home(), None);
+
         let aider = spec_for(AgentType::Aider);
         assert_eq!(aider.provider_home(), None);
 

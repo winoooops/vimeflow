@@ -1,11 +1,12 @@
 import { test, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { ClaudeCode, Codex, Kimi, type AgentIcon } from './brandIcons'
+import { ClaudeCode, Codex, Kimi, OpenCode, type AgentIcon } from './brandIcons'
 
 const BRAND_ICONS: readonly (readonly [string, AgentIcon])[] = [
   ['ClaudeCode', ClaudeCode],
   ['Codex', Codex],
   ['Kimi', Kimi],
+  ['OpenCode', OpenCode],
 ]
 
 test.each(BRAND_ICONS)(
@@ -20,3 +21,20 @@ test.each(BRAND_ICONS)(
     expect(svg?.getAttribute('width')).toBe('16')
   }
 )
+
+test('ClaudeCode keeps the original mark and adjusts only its rendered ratio', () => {
+  const { container } = render(<ClaudeCode size={16} />)
+  // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying vendored SVG shape
+  const svg = container.querySelector('svg')
+  // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying vendored SVG shape
+  const path = container.querySelector('path')
+
+  // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying no avatar background is rendered
+  expect(container.querySelector('circle')).toBeNull()
+  expect(svg?.getAttribute('viewBox')).toBe('0 4 24 17')
+  expect(svg?.getAttribute('preserveAspectRatio')).toBeNull()
+  expect(
+    Number(svg?.getAttribute('width')) / Number(svg?.getAttribute('height'))
+  ).toBeCloseTo(24 / 17, 5)
+  expect(path?.getAttribute('clip-rule')).toBe('evenodd')
+})

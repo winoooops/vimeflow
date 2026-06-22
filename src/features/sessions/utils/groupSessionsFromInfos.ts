@@ -40,6 +40,7 @@ const KNOWN_AGENT_TYPES: readonly AgentType[] = [
   'claude-code',
   'codex',
   'kimi',
+  'opencode',
   'aider',
   'generic',
 ]

@@ -1,9 +1,11 @@
 // src/theme/service.ts
 import { toCssVars } from './cssVars'
+import { dracula } from './themes/dracula'
 import { flexoki } from './themes/flexoki'
 import { gruvboxDark } from './themes/gruvbox/gruvbox-dark'
 import { gruvboxLight } from './themes/gruvbox/gruvbox-light'
 import { obsidianLens } from './themes/obsidian-lens'
+import { tokyoNightTheme } from './themes/tokyo-night'
 import type { ThemeDefinition, ThemeId } from './types'
 
 export const THEME_STORAGE_KEY = 'vimeflow:theme'
@@ -24,6 +26,14 @@ const themeModules = [
   {
     exportName: 'gruvboxLight',
     fallback: gruvboxLight,
+  },
+  {
+    exportName: 'tokyoNightTheme',
+    fallback: tokyoNightTheme,
+  },
+  {
+    exportName: 'dracula',
+    fallback: dracula,
   },
 ] as const
 
@@ -59,8 +69,16 @@ const apply = (id: ThemeId): void => {
   listeners.forEach((listener) => listener(next))
 }
 
+const preview = (id: ThemeId): void => {
+  const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
+
+  writeDom(next)
+  listeners.forEach((listener) => listener(next))
+}
+
 export const themeService = {
   apply,
+  preview,
   current: (): ThemeDefinition => active,
   list: (): readonly ThemeDefinition[] => themes,
   subscribe: (listener: Listener): (() => void) => {
@@ -91,6 +109,8 @@ if (import.meta.hot) {
       './themes/flexoki',
       './themes/gruvbox/gruvbox-dark',
       './themes/gruvbox/gruvbox-light',
+      './themes/tokyo-night',
+      './themes/dracula',
     ],
     (mods) => {
       themes = themeModules.map((themeModule, index) => {

@@ -6,6 +6,7 @@ import {
 } from './useCommandPalette'
 import type { Command } from '../registry/types'
 import * as chordRegistry from '../chordRegistry'
+import { themeService } from '../../../theme'
 import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
@@ -73,6 +74,104 @@ describe('useCommandPalette', () => {
       expect(result.current.state.currentNamespace).toBe(null)
       // filteredResults is derived from query ':' so it shows all default commands
       expect(result.current.filteredResults.length).toBeGreaterThan(0)
+    })
+
+    test('close() restores the theme active when the palette opened', () => {
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.executeSelected()
+      })
+
+      act(() => {
+        result.current.close()
+      })
+
+      expect(themeService.current().id).toBe('obsidian-lens')
+    })
+
+    test('close() restores the original theme after a non-theme command previews a theme leaf', () => {
+      const nonThemeExecute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+        {
+          id: 'noop',
+          label: 'Flexible no-op',
+          icon: 'check',
+          execute: nonThemeExecute,
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':flex')
+      })
+
+      // Fuzzy search surfaces the theme leaf; preview changes the displayed theme.
+      expect(
+        result.current.filteredResults.some((cmd) => cmd.id === 'theme-flexoki')
+      ).toBe(true)
+
+      // Select and execute the non-theme leaf without any preview callback.
+      const noopIndex = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'noop'
+      )
+
+      expect(noopIndex).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(noopIndex)
+        result.current.executeSelected()
+      })
+
+      expect(nonThemeExecute).toHaveBeenCalled()
+      expect(themeService.current().id).toBe('obsidian-lens')
     })
 
     test('disabled palette rejects opens and closes current state', async () => {
@@ -1109,6 +1208,54 @@ describe('useCommandPalette', () => {
       })
 
       expect(result.current.state.selectedIndex).toBe(5)
+    })
+
+    test('previews namespace children as the highlight moves', async () => {
+      const previewCatppuccin = vi.fn()
+      const previewDracula = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-catppuccin',
+              label: 'Catppuccin',
+              icon: 'palette',
+              preview: previewCatppuccin,
+              execute: vi.fn(),
+            },
+            {
+              id: 'theme-dracula',
+              label: 'Dracula',
+              icon: 'palette',
+              preview: previewDracula,
+              execute: vi.fn(),
+            },
+          ],
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.executeSelected()
+      })
+
+      await waitFor(() => {
+        expect(previewCatppuccin).toHaveBeenCalled()
+      })
+
+      act(() => {
+        result.current.navigateDown()
+      })
+
+      await waitFor(() => {
+        expect(previewDracula).toHaveBeenCalled()
+      })
     })
   })
 

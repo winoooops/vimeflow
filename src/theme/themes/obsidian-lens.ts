@@ -147,5 +147,11 @@ export const obsidianLens: ThemeDefinition = {
       accentSoft: 'rgb(250 179 135 / 0.32)',
       onAccent: '#2a1608',
     },
+    opencode: {
+      accent: '#74c7ec',
+      accentDim: 'rgb(116 199 236 / 0.16)',
+      accentSoft: 'rgb(116 199 236 / 0.32)',
+      onAccent: '#062030',
+    },
   },
 }
