@@ -863,7 +863,9 @@ export class TerminalTextSurface implements TerminalSurface {
       left: '0',
       position: 'absolute',
       top: '0',
-      width: '0.62em',
+      // Overlay exactly one terminal cell so the block cursor stays on the grid
+      // (a fixed em guess drifts off the measured monospace cell width).
+      width: 'var(--terminal-cell-width)',
     })
 
     cursor.append(marker)
@@ -898,7 +900,10 @@ export class TerminalTextSurface implements TerminalSurface {
       element.style.display = 'inline-block'
       element.style.height = 'var(--terminal-line-height)'
       element.style.lineHeight = 'var(--terminal-line-height)'
-      element.style.minWidth = `calc(var(--terminal-cell-width) * ${cellWidth})`
+      // Fixed cell geometry: a styled cell must occupy exactly its column span,
+      // not just a minimum, so backgrounds/reverse cells stay on the grid
+      // instead of drifting with proportional glyph metrics.
+      element.style.width = `calc(var(--terminal-cell-width) * ${cellWidth})`
       element.style.overflow = 'visible'
       element.style.verticalAlign = 'top'
     }

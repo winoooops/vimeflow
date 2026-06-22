@@ -184,7 +184,7 @@ describe('plainTextInstance', () => {
     expect(marker?.style.borderLeft).toBe('')
     expect(marker?.style.animationName).toBe('vfTerminalCursorBlink')
     expect(marker?.style.position).toBe('absolute')
-    expect(marker?.style.width).toBe('0.62em')
+    expect(marker?.style.width).toBe('var(--terminal-cell-width)')
     expect(created.viewportReader.readVisibleText()).toBe('abc')
   })
 
