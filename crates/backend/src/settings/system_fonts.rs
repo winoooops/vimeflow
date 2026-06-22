@@ -12,18 +12,20 @@ pub struct SystemFont {
 }
 
 pub fn list_system_fonts() -> Vec<SystemFont> {
-    list_system_font_families()
+    list_system_monospace_font_families()
         .into_iter()
-        .filter(|family| looks_like_monospace_family(family))
         .map(|family| SystemFont { family })
         .collect()
 }
 
-fn list_system_font_families() -> Vec<String> {
+fn list_system_monospace_font_families() -> Vec<String> {
     let candidates = if cfg!(target_os = "macos") {
-        list_macos_font_families()
+        list_macos_monospace_font_families()
     } else if cfg!(target_os = "windows") {
         list_windows_font_families()
+            .into_iter()
+            .filter(|family| looks_like_monospace_family(family))
+            .collect()
     } else {
         list_fontconfig_families()
     };
@@ -37,7 +39,7 @@ fn list_fontconfig_families() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn list_macos_font_families() -> Vec<String> {
+fn list_macos_monospace_font_families() -> Vec<String> {
     if let Some(stdout) = command_stdout("fc-list", &[":spacing=100", "family"]) {
         let families = parse_fontconfig_families(&stdout);
         if !families.is_empty() {
@@ -48,6 +50,12 @@ fn list_macos_font_families() -> Vec<String> {
     command_stdout("system_profiler", &["SPFontsDataType", "-json"])
         .and_then(|stdout| serde_json::from_str::<Value>(&stdout).ok())
         .map(|value| parse_system_profiler_families(&value))
+        .map(|families| {
+            families
+                .into_iter()
+                .filter(|family| looks_like_monospace_family(family))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -266,5 +274,17 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(fonts, vec!["Iosevka".to_string(), "Menlo".to_string()]);
+    }
+
+    #[test]
+    fn fontconfig_families_are_trusted_as_monospace_candidates() {
+        let fonts = unique_sorted_families(parse_fontconfig_families(
+            "Terminus:style=Regular\nNimbus Mono PS:style=Regular\n",
+        ));
+
+        assert_eq!(
+            fonts,
+            vec!["Nimbus Mono PS".to_string(), "Terminus".to_string()]
+        );
     }
 }

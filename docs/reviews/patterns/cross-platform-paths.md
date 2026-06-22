@@ -3,7 +3,7 @@ id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 3
+ref_count: 4
 ---
 
 # Cross-Platform Paths

@@ -956,12 +956,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
+    const requestDeferredFontFit = (): void => {
+      pendingDeferredFitFlushRef.current = true
+      pendingDeferredRefreshAfterFitRef.current = true
+
+      if (flushFitSessionIdRef.current === sessionId) {
+        flushFitRef.current?.()
+      }
+    }
+
     let frameId: number | null = window.requestAnimationFrame(() => {
       frameId = null
 
       if (deferFitRef.current || node.offsetWidth <= 0) {
-        pendingDeferredFitFlushRef.current = true
-        pendingDeferredRefreshAfterFitRef.current = true
+        requestDeferredFontFit()
 
         return
       }
@@ -976,7 +984,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         window.cancelAnimationFrame(frameId)
       }
     }
-  }, [resolvedTerminalFontFamily, terminal])
+  }, [resolvedTerminalFontFamily, sessionId, terminal])
 
   const clipboard = useTerminalClipboard({
     terminal,
