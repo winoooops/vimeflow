@@ -87,7 +87,11 @@ import { LAYOUT_IDS } from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
-import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
+import {
+  AGENTS,
+  agentTypeToRegistryKey,
+  type AgentDef,
+} from '../../agents/registry'
 import type { PaneLayoutId, SessionCloseResult } from '../sessions/types'
 import {
   buildWorkspaceCommands,
@@ -1614,6 +1618,13 @@ const WorkspaceViewContent = (): ReactElement => {
   const sidebarCardIsKimi = agentStatus.agentType === 'kimi'
   const sidebarCardHasUsageData = agentStatus.usageFetched ?? false
 
+  // Agents with no readable usage API (opencode) show a notice + feature-request
+  // link in the quota slot instead of bars; the data is registry-driven. The
+  // `as AgentDef` upcast reaches the optional `quotaNotice` past the `as const`
+  // union of literals (only the opencode entry carries it).
+  const sidebarCardQuotaNotice =
+    (activityPanelAgent as AgentDef).quotaNotice ?? null
+
   // Non-kimi bars use `rateLimitPercentage` (a zeroed/placeholder window reads
   // as absent). For kimi, `usageFetched` proves a fetch landed, not that every
   // window came back — `/usages` can be weekly-only, and the required backend
@@ -2288,6 +2299,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   weekPct={sidebarCardWeekPct}
                   isKimi={sidebarCardIsKimi}
                   hasUsageData={sidebarCardHasUsageData}
+                  quotaNotice={sidebarCardQuotaNotice}
                   shellName={activePtyBackedPane?.shell ?? null}
                 />
               }
