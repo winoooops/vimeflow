@@ -105,12 +105,13 @@ describe('AppearancePane', () => {
     renderPane()
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Reservoir swell')).toHaveValue(
-        'soft-mound'
-      )
+      expect(screen.getByLabelText('Reservoir swell')).toHaveValue('soft-mound')
     })
 
-    await user.selectOptions(screen.getByLabelText('Reservoir swell'), 'wide-lift')
+    await user.selectOptions(
+      screen.getByLabelText('Reservoir swell'),
+      'wide-lift'
+    )
 
     await waitFor(() => {
       expect(save).toHaveBeenCalledWith(

@@ -84,6 +84,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 12       | 6    | 2026-06-13   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 1        | 0    | 2026-06-11   |
+| [Own Property Validation](patterns/own-property-validation.md)                                       | correctness        | 1        | 0    | 2026-06-22   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 2        | 1    | 2026-06-18   |
 | [Synchronous Calls in Async Electron Handlers](patterns/sync-calls-in-async-electron-handlers.md)    | code-quality       | 1        | 0    | 2026-06-12   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 2        | 1    | 2026-06-15   |

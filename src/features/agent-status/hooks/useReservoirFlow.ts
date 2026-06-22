@@ -43,7 +43,9 @@ export const SWELL_PRESETS: Record<SwellVariant, SwellPreset> = {
 }
 
 export const resolveSwellVariant = (value: string): SwellVariant =>
-  value in SWELL_PRESETS ? (value as SwellVariant) : 'soft-mound'
+  Object.prototype.hasOwnProperty.call(SWELL_PRESETS, value)
+    ? (value as SwellVariant)
+    : 'soft-mound'
 
 const TANK_WIDTH = 248
 const TAU = Math.PI * 2

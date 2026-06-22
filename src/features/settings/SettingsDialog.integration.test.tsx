@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsDialog } from './SettingsDialog'
+import { SettingsProvider } from './SettingsProvider'
 import { useSettingsDialog } from './hooks/useSettingsDialog'
 import { SidebarSettingsFooter } from '../workspace/components/SidebarSettingsFooter'
 
@@ -20,7 +21,11 @@ const SettingsIntegration = (): ReactElement => {
 describe('SettingsDialog integration', () => {
   test('opens from sidebar footer trigger and closes via Escape', async () => {
     const user = userEvent.setup()
-    render(<SettingsIntegration />)
+    render(
+      <SettingsProvider>
+        <SettingsIntegration />
+      </SettingsProvider>
+    )
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
 
@@ -35,7 +40,11 @@ describe('SettingsDialog integration', () => {
 
   test('closes when backdrop is clicked', async () => {
     const user = userEvent.setup()
-    render(<SettingsIntegration />)
+    render(
+      <SettingsProvider>
+        <SettingsIntegration />
+      </SettingsProvider>
+    )
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
 

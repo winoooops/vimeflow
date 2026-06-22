@@ -699,7 +699,7 @@ describe('SettingsDialog', () => {
 
     // Move focus to the last focusable element in the default Appearance pane
     // and press Tab; focus should wrap back to the close button.
-    const lastFocusable = screen.getByLabelText('Mono font')
+    const lastFocusable = screen.getByLabelText('Reservoir swell')
 
     lastFocusable.focus()
     await user.tab()

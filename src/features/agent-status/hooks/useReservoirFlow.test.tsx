@@ -13,6 +13,7 @@ import {
   useReservoirFlow,
   buildReservoirSurface,
   SWELL_PRESETS,
+  resolveSwellVariant,
   type ReservoirSurfaceRefs,
   type ReservoirGeom,
 } from './useReservoirFlow'
@@ -165,6 +166,11 @@ describe('SWELL_PRESETS', () => {
       'trailing',
       'wide-lift',
     ])
+  })
+
+  test('falls back for prototype-chain keys', () => {
+    expect(resolveSwellVariant('toString')).toBe('soft-mound')
+    expect(resolveSwellVariant('__proto__')).toBe('soft-mound')
   })
 })
 
