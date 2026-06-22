@@ -60,7 +60,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 76       | 28   | 2026-06-19   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 70       | 22   | 2026-06-20   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 3        | 2    | 2026-06-22   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 4    | 2026-06-14   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 3        | 1    | 2026-04-20   |
@@ -98,4 +98,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Modulo Correctness](patterns/modulo-correctness.md)                                                 | correctness        | 1        | 0    | 2026-06-15   |
 | [Catalog Identifier Safety](patterns/catalog-identifier-safety.md)                                   | correctness        | 1        | 0    | 2026-06-18   |
 | [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 2        | 1    | 2026-06-20   |
-| [Platform Metadata Semantics](patterns/platform-metadata-semantics.md)                               | cross-platform     | 1        | 0    | 2026-06-22   |
+| [Platform Metadata Semantics](patterns/platform-metadata-semantics.md)                               | cross-platform     | 2        | 1    | 2026-06-22   |

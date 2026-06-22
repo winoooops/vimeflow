@@ -733,7 +733,7 @@ mod router {
                 state.save_app_settings(&p.settings)?;
                 Ok(Value::Null)
             }
-            "list_system_fonts" => encode_result(state.list_system_fonts()),
+            "list_system_fonts" => encode_result(state.list_system_fonts().await),
             "load_agent_aliases" => encode_result(state.load_agent_aliases()),
             "save_agent_aliases" => {
                 #[derive(Deserialize)]

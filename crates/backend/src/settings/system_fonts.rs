@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::process::Command;
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::process::Command;
+
+const SYSTEM_FONT_ENUMERATION_TIMEOUT: Duration = Duration::from_secs(2);
+const SYSTEM_FONT_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -11,36 +16,43 @@ pub struct SystemFont {
     pub family: String,
 }
 
-pub fn list_system_fonts() -> Vec<SystemFont> {
-    list_system_monospace_font_families()
+pub async fn list_system_fonts() -> Vec<SystemFont> {
+    tokio::time::timeout(
+        SYSTEM_FONT_ENUMERATION_TIMEOUT,
+        list_system_monospace_font_families(),
+    )
+    .await
+    .unwrap_or_default()
         .into_iter()
         .map(|family| SystemFont { family })
         .collect()
 }
 
-fn list_system_monospace_font_families() -> Vec<String> {
+async fn list_system_monospace_font_families() -> Vec<String> {
     let candidates = if cfg!(target_os = "macos") {
-        list_macos_monospace_font_families()
+        list_macos_monospace_font_families().await
     } else if cfg!(target_os = "windows") {
         list_windows_font_families()
+            .await
             .into_iter()
             .filter(|family| looks_like_monospace_family(family))
             .collect()
     } else {
-        list_fontconfig_families()
+        list_fontconfig_families().await
     };
 
     unique_sorted_families(candidates)
 }
 
-fn list_fontconfig_families() -> Vec<String> {
+async fn list_fontconfig_families() -> Vec<String> {
     command_stdout("fc-list", &[":spacing=100", "family"])
+        .await
         .map(|stdout| parse_fontconfig_families(&stdout))
         .unwrap_or_default()
 }
 
-fn list_macos_monospace_font_families() -> Vec<String> {
-    if let Some(stdout) = command_stdout("fc-list", &[":spacing=100", "family"]) {
+async fn list_macos_monospace_font_families() -> Vec<String> {
+    if let Some(stdout) = command_stdout("fc-list", &[":spacing=100", "family"]).await {
         let families = parse_fontconfig_families(&stdout);
         if !families.is_empty() {
             return families;
@@ -48,6 +60,7 @@ fn list_macos_monospace_font_families() -> Vec<String> {
     }
 
     command_stdout("system_profiler", &["SPFontsDataType", "-json"])
+        .await
         .and_then(|stdout| serde_json::from_str::<Value>(&stdout).ok())
         .map(|value| parse_system_profiler_families(&value))
         .map(|families| {
@@ -59,7 +72,7 @@ fn list_macos_monospace_font_families() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn list_windows_font_families() -> Vec<String> {
+async fn list_windows_font_families() -> Vec<String> {
     command_stdout(
         "powershell",
         &[
@@ -68,12 +81,28 @@ fn list_windows_font_families() -> Vec<String> {
             "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts','HKCU:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts' -ErrorAction SilentlyContinue | ForEach-Object { $_.PSObject.Properties | ForEach-Object { $_.Name } }",
         ],
     )
+    .await
     .map(|stdout| parse_windows_registry_fonts(&stdout))
     .unwrap_or_default()
 }
 
-fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
+async fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let child = Command::new(program)
+        .kill_on_drop(true)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    let output = match tokio::time::timeout(SYSTEM_FONT_COMMAND_TIMEOUT, child.wait_with_output())
+        .await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(_)) => return None,
+        Err(_) => return None,
+    };
+
     if !output.status.success() {
         return None;
     }
@@ -175,7 +204,9 @@ fn looks_like_monospace_family(family: &str) -> bool {
         "monaco",
         "iosevka",
         "hack",
-        "fira",
+        "fira code",
+        "fira mono",
+        "firacode",
         "cascadia",
         "inconsolata",
         "source code",
@@ -186,7 +217,7 @@ fn looks_like_monospace_family(family: &str) -> bool {
         "berkeley",
         "operator",
         "cartograph",
-        "input",
+        "input mono",
         "victor",
     ]
     .iter()
@@ -266,6 +297,9 @@ mod tests {
             "Arial".to_string(),
             "Menlo".to_string(),
             "Symbols Nerd Font Mono".to_string(),
+            "Fira Sans".to_string(),
+            "Input Sans".to_string(),
+            "Input Serif".to_string(),
             "Iosevka".to_string(),
             "menlo".to_string(),
         ])
@@ -286,5 +320,19 @@ mod tests {
             fonts,
             vec!["Nimbus Mono PS".to_string(), "Terminus".to_string()]
         );
+    }
+
+    #[test]
+    fn monospace_heuristic_keeps_explicit_fira_and_input_mono_variants() {
+        for family in ["Fira Code", "Fira Mono", "FiraCode Nerd Font", "Input Mono"] {
+            assert!(looks_like_monospace_family(family));
+        }
+    }
+
+    #[test]
+    fn monospace_heuristic_rejects_proportional_fira_and_input_variants() {
+        for family in ["Fira Sans", "Fira Sans Condensed", "Input Sans", "Input Serif"] {
+            assert!(!looks_like_monospace_family(family));
+        }
     }
 }

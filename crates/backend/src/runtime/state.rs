@@ -127,8 +127,8 @@ impl BackendState {
     }
 
     /// List installed monospace font families for terminal configuration.
-    pub fn list_system_fonts(&self) -> Vec<SystemFont> {
-        list_system_fonts()
+    pub async fn list_system_fonts(&self) -> Vec<SystemFont> {
+        list_system_fonts().await
     }
 
     /// Load the durable agent aliases store; missing / corrupt → empty Vec.
