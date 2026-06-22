@@ -2,7 +2,7 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-22
 ref_count: 6
 ---
 
@@ -237,3 +237,12 @@ preserve their original Tauri-era paths.
 - **Finding:** `fileSystemService.listDir` maps to the backend `list_dir`, which skips names starting with `.`. Open dotfiles such as `.env` or `.gitignore` were therefore marked as deleted even though they existed.
 - **Fix:** Replaced the directory-listing existence check with a direct `readFile` check, which is not filtered by the backend listing logic.
 - **Commit:** see current commit
+
+### 25. OpenCode transcript tail used stale PTY spawn cwd
+
+- **Source:** github-claude | PR #603 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`
+- **Finding:** OpenCode's locator resolved the project directory from its index row, but transcript startup still passed `pty_state.get_cwd()` to `start_or_replace`. Because OpenCode does not emit OSC 7, that cwd can remain the terminal spawn directory, causing the file explorer, git watcher, and test-run parser to follow the wrong workspace.
+- **Fix:** Thread the located status source into `maybe_start_transcript` and prefer `LocatedStatusSource.resolved_directory` over the live PTY cwd when present. Other adapters continue to fall back to the PTY cwd.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
