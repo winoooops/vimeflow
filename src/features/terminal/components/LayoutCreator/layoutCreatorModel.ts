@@ -655,6 +655,12 @@ const modelToDraft = (value: unknown): DraftPaneLayout => {
 
   const cols = readTrackUnits(value.tracks.columns)
   const rows = readTrackUnits(value.tracks.rows)
+  if (cols.length > MAX_LAYOUT_TRACKS || rows.length > MAX_LAYOUT_TRACKS) {
+    throw new Error(
+      `Imported layout has too many tracks (max ${MAX_LAYOUT_TRACKS})`
+    )
+  }
+
   if (!Array.isArray(value.slots)) {
     throw new Error('Slots must be an array')
   }
@@ -668,13 +674,11 @@ const modelToDraft = (value: unknown): DraftPaneLayout => {
   const validation = validateDraftLayout(draft)
   if (!validation.ok) {
     throw new Error(
-      validation.trackOverCapacity
-        ? `Imported layout has too many tracks (max ${MAX_LAYOUT_TRACKS})`
-        : validation.overCapacity
-          ? `Imported layout supports up to ${validation.maxSlots} panes`
-          : validation.overlap
-            ? 'Imported layout has overlapping panes'
-            : 'Imported layout must cover every grid cell'
+      validation.overCapacity
+        ? `Imported layout supports up to ${validation.maxSlots} panes`
+        : validation.overlap
+          ? 'Imported layout has overlapping panes'
+          : 'Imported layout must cover every grid cell'
     )
   }
 

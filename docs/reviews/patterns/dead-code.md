@@ -3,7 +3,7 @@ id: dead-code
 category: code-quality
 created: 2026-06-13
 last_updated: 2026-06-22
-ref_count: 6
+ref_count: 7
 ---
 
 # Dead Code
@@ -69,4 +69,13 @@ code and should be removed.
 - **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
 - **Finding:** The `emitAgentStatus` function called `invokeBackend('e2e_emit_agent_status', ...)` but had no call sites in the spec. The `AgentStatusPayload` interface and `createAgentStatusPayload` factory existed only to support it. The dead code implied coverage for a direct-emit status scenario that did not exist.
 - **Fix:** Removed the unused `emitAgentStatus` helper, `AgentStatusPayload` interface, and `createAgentStatusPayload` factory from the spec.
+- **Commit:** same commit as this entry
+
+### 7. Imported-layout track-cap error was unreachable after normalization
+
+- **Source:** github-claude | PR #610 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
+- **Finding:** `modelToDraft` normalized imported track units before validation, and `normalizeUnits` caps over-capacity axes to `MAX_LAYOUT_TRACKS`. The later `validation.trackOverCapacity` error branch could never fire for imported 25+ track layouts.
+- **Fix:** Reject imported layouts whose raw column or row count exceeds `MAX_LAYOUT_TRACKS` before normalization, then remove the dead post-normalization `trackOverCapacity` branch.
 - **Commit:** same commit as this entry

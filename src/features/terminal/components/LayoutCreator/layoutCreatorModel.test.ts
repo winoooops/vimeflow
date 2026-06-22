@@ -231,6 +231,25 @@ describe('layoutCreatorModel', () => {
     })
   })
 
+  test('rejects imported layouts whose track count exceeds the cap', () => {
+    const json = JSON.stringify({
+      tracks: {
+        columns: Array.from({ length: 25 }, (_, index) => ({
+          id: `c${index}`,
+          units: 1,
+        })),
+        rows: [{ id: 'r0', units: 24 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+      ],
+    })
+
+    expect(() => parseDraftLayoutText(json, 'json')).toThrow(
+      'Imported layout has too many tracks'
+    )
+  })
+
   test('emits slot.accepts from a draft slot restriction', () => {
     const definition = definitionFromDraft({
       title: 'Restricted',

@@ -254,6 +254,24 @@ impl PtyState {
         sessions.remove(session_id)
     }
 
+    /// Snapshot bridge cleanup paths before killing a PTY.
+    ///
+    /// The reader thread can observe EOF and remove the session while
+    /// `kill_pty` is waiting for the child to exit. Capturing these paths
+    /// before signalling the child lets `kill_pty` clean the bridge directory
+    /// even if the reader wins that race and `remove` later returns `None`.
+    pub fn bridge_cleanup_paths(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<(String, Option<String>)> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions.get(session_id)?;
+        session
+            .bridge_dir
+            .as_ref()
+            .map(|bridge_dir| (bridge_dir.clone(), session.shim_dir.clone()))
+    }
+
     /// Remove a PTY session only if its generation matches the expected value.
     /// Prevents a stale reader thread from removing a replacement session.
     pub fn remove_if_generation(

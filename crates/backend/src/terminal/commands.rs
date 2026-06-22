@@ -531,6 +531,8 @@ pub(crate) fn kill_pty_inner(
 ) -> Result<(), String> {
     log::info!("Killing PTY session: {}", request.session_id);
 
+    let bridge_cleanup_paths = state.bridge_cleanup_paths(&request.session_id);
+
     match state.kill(&request.session_id) {
         // Either we just killed it, or it was already gone — both are
         // safe to follow with cache cleanup.
@@ -572,6 +574,8 @@ pub(crate) fn kill_pty_inner(
         if let Some(bridge_dir) = session.bridge_dir.as_deref() {
             let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
         }
+    } else if let Some((bridge_dir, shim_dir)) = bridge_cleanup_paths {
+        let _ = super::bridge::cleanup_bridge_files(&bridge_dir, shim_dir.as_deref());
     }
 
     // Clean up cache: remove from sessions map and session_order
