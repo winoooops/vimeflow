@@ -42,7 +42,8 @@ export const ClaudeCode = ({
   <BrandSvg
     size={size}
     viewBox="0 4 24 17"
-    height={(size * CLAUDE_CODE_VIEW_BOX_HEIGHT) / CLAUDE_CODE_VIEW_BOX_WIDTH}
+    width={(size * CLAUDE_CODE_VIEW_BOX_WIDTH) / CLAUDE_CODE_VIEW_BOX_HEIGHT}
+    height={size}
     {...props}
   >
     <path
