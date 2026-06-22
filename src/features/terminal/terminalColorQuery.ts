@@ -13,22 +13,49 @@
 
 export type TerminalColorQueryTarget = 'foreground' | 'background'
 
+export interface TerminalColorQueryScanResult {
+  targets: readonly TerminalColorQueryTarget[]
+  carry: string
+}
+
 // OSC 10;? (fg) or OSC 11;? (bg), terminated by BEL (\x07) or ST (\x1b\\).
 const COLOR_QUERY_PATTERN = /\x1b\]1([01]);\?(?:\x07|\x1b\\)/g
+const MAX_COLOR_QUERY_CARRY_LENGTH = '\x1b]10;?\x1b\\'.length - 1
 
 const HEX_COLOR_PATTERN = /^#?([0-9a-fA-F]{6})$/
 
 /** Detect OSC 10/11 color queries in a chunk of raw PTY output. */
 export const scanTerminalColorQueries = (
   data: string
-): readonly TerminalColorQueryTarget[] => {
-  const targets: TerminalColorQueryTarget[] = []
+): readonly TerminalColorQueryTarget[] =>
+  scanTerminalColorQueriesWithCarry(data, '').targets
 
-  for (const match of data.matchAll(COLOR_QUERY_PATTERN)) {
+/**
+ * Detect OSC 10/11 color queries across arbitrary PTY event boundaries.
+ *
+ * The carry is at most one byte shorter than the longest query sequence, and
+ * starts after the last complete match so already-answered queries do not
+ * repeat on the next scan.
+ */
+export const scanTerminalColorQueriesWithCarry = (
+  data: string,
+  previousCarry: string
+): TerminalColorQueryScanResult => {
+  const scannedData = `${previousCarry}${data}`
+  const targets: TerminalColorQueryTarget[] = []
+  let lastConsumedIndex = 0
+
+  for (const match of scannedData.matchAll(COLOR_QUERY_PATTERN)) {
     targets.push(match[1] === '0' ? 'foreground' : 'background')
+    lastConsumedIndex = match.index + match[0].length
   }
 
-  return targets
+  const unconsumed = scannedData.slice(lastConsumedIndex)
+
+  return {
+    targets,
+    carry: unconsumed.slice(-MAX_COLOR_QUERY_CARRY_LENGTH),
+  }
 }
 
 /** Convert `#1e1e2e` to the xterm OSC color form `rgb:1e1e/1e1e/2e2e`. */

@@ -15,7 +15,10 @@ import {
   createGhosttyVtRenderSnapshotOutput,
   type GhosttyVtRenderSnapshot,
 } from './ghosttyVtRenderSnapshot'
-import { readSyncFrameState } from './terminalSyncFrame'
+import {
+  createSyncFrameParserState,
+  readSyncFrameState,
+} from './terminalSyncFrame'
 import type { TerminalParserEngineOutput } from './terminalParserEngine'
 
 // No-op render output: holds the surface on its last complete frame.
@@ -54,18 +57,21 @@ export const createGhosttyVtRenderStateParserDriverFactory =
   ): GhosttyVtParserDriverFactory =>
   (effects): GhosttyVtParserDriver => {
     const renderStateDriver = createRenderStateDriver(effects)
-    let insideSyncFrame = false
+    let syncFrameState = createSyncFrameParserState()
     let suppressedFrames = 0
 
     return {
       writeBytes: (bytes): TerminalParserEngineOutput => {
         renderStateDriver.writeBytes(bytes)
 
-        insideSyncFrame = readSyncFrameState(bytes, insideSyncFrame)
+        syncFrameState = readSyncFrameState(bytes, syncFrameState)
 
         // Inside a synchronized-output frame the redraw is mid-flight; holding
         // the last complete frame avoids rendering a torn/blank intermediate.
-        if (insideSyncFrame && suppressedFrames < MAX_SUPPRESSED_FRAMES) {
+        if (
+          syncFrameState.insideFrame &&
+          suppressedFrames < MAX_SUPPRESSED_FRAMES
+        ) {
           suppressedFrames += 1
 
           return EMPTY_RENDER_OUTPUT
@@ -78,7 +84,7 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         )
       },
       reset: (): void => {
-        insideSyncFrame = false
+        syncFrameState = createSyncFrameParserState()
         suppressedFrames = 0
         renderStateDriver.reset?.()
       },

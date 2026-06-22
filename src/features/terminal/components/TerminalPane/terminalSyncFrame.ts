@@ -16,31 +16,36 @@ const ESC = 0x1b
 const SEQUENCE_PREFIX = [0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36]
 const SET_FINAL = 0x68 // 'h' — begin synchronized update
 const RESET_FINAL = 0x6c // 'l' — end synchronized update
+const SYNC_FRAME_SEQUENCE_LENGTH = SEQUENCE_PREFIX.length + 2
+const MAX_CARRY_LENGTH = SYNC_FRAME_SEQUENCE_LENGTH - 1
+
+export interface SyncFrameParserState {
+  insideFrame: boolean
+  carryBytes: Uint8Array
+}
 
 /**
  * Fold a chunk of raw PTY bytes into the running synchronized-output state.
- * Returns whether, after this chunk, the stream is inside an open 2026 frame.
- *
- * ponytail: scans complete `\x1b[?2026h/l` sequences only — a sequence split
- * across a chunk boundary is missed, which at worst renders one torn frame or
- * holds the previous frame one extra chunk before the next marker corrects it.
+ * Returns whether, after this chunk, the stream is inside an open 2026 frame
+ * plus enough trailing bytes to recognize a marker split across the next chunk.
  */
 export const readSyncFrameState = (
   bytes: Uint8Array,
-  previousInsideFrame: boolean
-): boolean => {
-  let insideFrame = previousInsideFrame
+  previousState: SyncFrameParserState
+): SyncFrameParserState => {
+  let insideFrame = previousState.insideFrame
+  const scannedBytes = appendCarryBytes(previousState.carryBytes, bytes)
 
   // last index where ESC + 6 prefix bytes + 1 final byte all fit
-  const lastStart = bytes.length - (SEQUENCE_PREFIX.length + 2)
+  const lastStart = scannedBytes.length - SYNC_FRAME_SEQUENCE_LENGTH
   for (let index = 0; index <= lastStart; index += 1) {
-    if (bytes[index] !== ESC) {
+    if (scannedBytes[index] !== ESC) {
       continue
     }
 
     let matchesPrefix = true
     for (let offset = 0; offset < SEQUENCE_PREFIX.length; offset += 1) {
-      if (bytes[index + 1 + offset] !== SEQUENCE_PREFIX[offset]) {
+      if (scannedBytes[index + 1 + offset] !== SEQUENCE_PREFIX[offset]) {
         matchesPrefix = false
         break
       }
@@ -50,7 +55,7 @@ export const readSyncFrameState = (
       continue
     }
 
-    const final = bytes[index + 1 + SEQUENCE_PREFIX.length]
+    const final = scannedBytes[index + 1 + SEQUENCE_PREFIX.length]
 
     if (final === SET_FINAL) {
       insideFrame = true
@@ -59,5 +64,36 @@ export const readSyncFrameState = (
     }
   }
 
-  return insideFrame
+  return {
+    insideFrame,
+    carryBytes: sliceCarryBytes(scannedBytes),
+  }
+}
+
+export const createSyncFrameParserState = (): SyncFrameParserState => ({
+  insideFrame: false,
+  carryBytes: new Uint8Array(),
+})
+
+const appendCarryBytes = (
+  carryBytes: Uint8Array,
+  bytes: Uint8Array
+): Uint8Array => {
+  if (carryBytes.length === 0) {
+    return bytes
+  }
+
+  const combined = new Uint8Array(carryBytes.length + bytes.length)
+  combined.set(carryBytes)
+  combined.set(bytes, carryBytes.length)
+
+  return combined
+}
+
+const sliceCarryBytes = (bytes: Uint8Array): Uint8Array => {
+  if (bytes.length <= MAX_CARRY_LENGTH) {
+    return bytes.slice()
+  }
+
+  return bytes.slice(bytes.length - MAX_CARRY_LENGTH)
 }

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import type { ITerminalService } from '../services/terminalService'
 import {
   formatTerminalColorResponse,
-  scanTerminalColorQueries,
+  scanTerminalColorQueriesWithCarry,
 } from '../terminalColorQuery'
 import type {
   TerminalOutputChunk,
@@ -238,6 +238,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Events with offsetStart < cursor are dropped. Advances on every write
   // so a buffered drain that overlaps a live event is filtered (no doubled bytes).
   const cursorRef = useRef<number>(restoredFrom?.replayEndOffset ?? 0)
+  const colorQueryCarryRef = useRef('')
 
   // Latest onPaneReady, kept in a ref so the data-subscribe effect can call
   // it without depending on the function identity (which would re-run the
@@ -541,6 +542,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       return
     }
 
+    colorQueryCarryRef.current = ''
+
     const handleData = (
       eventSessionId: string,
       data: string,
@@ -580,7 +583,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // renderer never sets them, so an empty read self-gates this off there.
     // cspell:ignore ghostty
     const respondToColorQueries = (data: string): void => {
-      const targets = scanTerminalColorQueries(data)
+      const result = scanTerminalColorQueriesWithCarry(
+        data,
+        colorQueryCarryRef.current
+      )
+      const targets = result.targets
+      colorQueryCarryRef.current = result.carry
       const element = terminal.element
 
       if (targets.length === 0 || !element) {

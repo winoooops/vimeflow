@@ -5,6 +5,7 @@ import {
   formatTerminalColorResponse,
   hexToOscColor,
   scanTerminalColorQueries,
+  scanTerminalColorQueriesWithCarry,
 } from './terminalColorQuery'
 
 describe('scanTerminalColorQueries', () => {
@@ -30,6 +31,33 @@ describe('scanTerminalColorQueries', () => {
     expect(
       scanTerminalColorQueries('regular output, no osc query here')
     ).toEqual([])
+  })
+
+  test('detects a query split before the ST terminator', () => {
+    const first = scanTerminalColorQueriesWithCarry('\x1b]11;?', '')
+    expect(first.targets).toEqual([])
+
+    const second = scanTerminalColorQueriesWithCarry('\x1b\\', first.carry)
+    expect(second.targets).toEqual(['background'])
+  })
+
+  test('detects a query split before the BEL terminator', () => {
+    const first = scanTerminalColorQueriesWithCarry('\x1b]10;?', '')
+    expect(first.targets).toEqual([])
+
+    const second = scanTerminalColorQueriesWithCarry('\x07', first.carry)
+    expect(second.targets).toEqual(['foreground'])
+  })
+
+  test('does not repeat a completed trailing query on the next scan', () => {
+    const first = scanTerminalColorQueriesWithCarry('\x1b]11;?\x07', '')
+    expect(first.targets).toEqual(['background'])
+
+    const second = scanTerminalColorQueriesWithCarry(
+      'regular output',
+      first.carry
+    )
+    expect(second.targets).toEqual([])
   })
 })
 
