@@ -203,3 +203,23 @@ export interface RecentToolCall {
    */
   isTestFile: boolean
 }
+
+/**
+ * A single tool's call tally. The Packed/Tags views render one tile/pill per
+ * entry, keyed by `name`, in stable (insertion) order so they morph in place
+ * instead of reshuffling on every update.
+ */
+export interface ToolCount {
+  name: string
+  count: number
+}
+
+/**
+ * A display entry for the Tool Calls jar/tags. Real tools carry just
+ * `name`/`count`; the synthetic aggregate entry adds `others` — the bundled
+ * trivial tools, sorted by count desc — and renders as the neutral "others"
+ * shape with a hover breakdown.
+ */
+export interface ToolJarEntry extends ToolCount {
+  others?: ToolCount[]
+}

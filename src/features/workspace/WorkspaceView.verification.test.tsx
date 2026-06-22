@@ -208,7 +208,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    // Child sections (StatusCard, BudgetMetrics, ContextReservoirCard, ToolCallSummary)
+    // Child sections (StatusCard, BudgetMetrics, ContextReservoirCard, ToolCallsSection)
     // will be tested in sub-specs 5-7
   })
 

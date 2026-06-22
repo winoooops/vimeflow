@@ -263,7 +263,7 @@ describe('AgentStatusPanel', () => {
     }
   })
 
-  test('renders ToolCallSummary and ActivityFeed inside the scrollable region', () => {
+  test('pins ToolCallsSection above the scrollable activity region', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -289,18 +289,23 @@ describe('AgentStatusPanel', () => {
       />
     )
 
-    const toolCallsHeader = screen.getByRole('button', { name: /tool calls/i })
+    const scrollRegion = screen.getByTestId('agent-status-panel-scroll-region')
+    const toolCallsSection = screen.getByTestId('tool-calls-section')
 
     const activityHeader = screen.getByRole('button', {
       name: /activity\s*1/i,
     })
 
-    expect(toolCallsHeader.compareDocumentPosition(activityHeader)).toBe(
+    // Tool Calls is pinned with the metric cards (outside the scroll region);
+    // the activity feed scrolls within it.
+    expect(scrollRegion.contains(toolCallsSection)).toBe(false)
+    expect(scrollRegion.contains(activityHeader)).toBe(true)
+    expect(toolCallsSection.compareDocumentPosition(activityHeader)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     )
   })
 
-  test('keeps ToolCallSummary consumer mounted alongside the ActivityFeed', () => {
+  test('keeps the Tool Calls section mounted alongside the ActivityFeed', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -326,7 +331,7 @@ describe('AgentStatusPanel', () => {
       />
     )
 
-    expect(screen.getAllByText('Edit').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('tool-calls-section')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /activity\s*1/i })
     ).toBeInTheDocument()
