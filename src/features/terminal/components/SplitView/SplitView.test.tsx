@@ -1120,6 +1120,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
 
   test('browser pane drag handle is not exposed as a keyboard button', () => {
     const session = makeSession('vsplit', 2)
+
     const browserSession: Session = {
       ...session,
       panes: [
