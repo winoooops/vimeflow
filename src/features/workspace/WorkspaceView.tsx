@@ -37,6 +37,7 @@ import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
+import { resolveSwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
 import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
 import type { RateLimitsState } from '../agent-status/types'
@@ -333,6 +334,7 @@ export const WorkspaceView = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { settings } = useSettings()
+  const reservoirSwell = resolveSwellVariant(settings.reservoirSwell)
   const { activeTab, setActiveTab } = useSidebarTab()
 
   // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
@@ -2540,6 +2542,7 @@ export const WorkspaceView = (): ReactElement => {
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}
+              reservoirSwell={reservoirSwell}
               reserveWindowControls={reserveWindowControls}
             />
           )}

@@ -96,6 +96,15 @@ describe('ContextBucket tank + waterline', () => {
     expect(screen.getByTestId('tank-water')).toBeInTheDocument()
   })
 
+  test('passes the selected reservoir swell to the water tank', () => {
+    render(<ContextBucket {...defaultProps} reservoirSwell="trailing" />)
+
+    expect(screen.getByTestId('water-tank')).toHaveAttribute(
+      'data-swell',
+      'trailing'
+    )
+  })
+
   test('rides a value pill on the waterline showing the used tokens', () => {
     render(<ContextBucket {...defaultProps} />)
 

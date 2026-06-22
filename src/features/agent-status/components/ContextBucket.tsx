@@ -1,11 +1,13 @@
 import type { CSSProperties, ReactElement } from 'react'
 import { useTheme } from '@/theme/useTheme'
 import { WaterTank } from './WaterTank'
+import type { SwellVariant } from '../hooks/useReservoirFlow'
 import { resolveContextTone, tankChrome } from '../utils/contextTone'
 
 export interface ContextBucketProps {
   usedPercentage: number | null
   contextWindowSize: number
+  reservoirSwell?: SwellVariant
 }
 
 // Compact token label: `1M` / `562k` / `999`. Distinct from utils/format's
@@ -42,6 +44,7 @@ const DASH = '—'
 export const ContextBucket = ({
   usedPercentage,
   contextWindowSize,
+  reservoirSwell = 'soft-mound',
 }: ContextBucketProps): ReactElement => {
   const pct = usedPercentage
   const mode = useTheme().kind
@@ -114,7 +117,12 @@ export const ContextBucket = ({
 
         {/* Tank with scale ticks + floating waterline value */}
         <div className="relative">
-          <WaterTank pct={effectivePct} theme={mode} empty={pct === null} />
+          <WaterTank
+            pct={effectivePct}
+            theme={mode}
+            empty={pct === null}
+            swell={reservoirSwell}
+          />
 
           <span
             className="pointer-events-none absolute right-[7px] top-[6px] font-mono text-[8.5px] font-semibold tracking-[0.04em]"

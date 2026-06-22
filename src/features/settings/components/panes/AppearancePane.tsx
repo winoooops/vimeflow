@@ -1,12 +1,24 @@
 import { useState, type ReactElement } from 'react'
+import {
+  resolveSwellVariant,
+  type SwellVariant,
+} from '@/features/agent-status/hooks/useReservoirFlow'
 import { BUILTIN_SCHEMES, SETTINGS_TARGET_IDS } from '../../sections'
+import { useSettings } from '../../hooks/useSettings'
 import type { SettingsPaneTargetProps } from '../../types'
 import { Icon } from '../Icon'
 import { GhostButton, PaneTitle, Row, Select } from '../controls'
 
+const RESERVOIR_SWELL_OPTIONS: { id: SwellVariant; label: string }[] = [
+  { id: 'soft-mound', label: 'Soft Mound' },
+  { id: 'trailing', label: 'Trailing' },
+  { id: 'wide-lift', label: 'Wide Lift' },
+]
+
 export const AppearancePane = ({
   activeTargetId = null,
 }: SettingsPaneTargetProps): ReactElement => {
+  const { settings, update } = useSettings()
   const [activeScheme, setActiveScheme] = useState('obsidian')
   const [accentHue, setAccentHue] = useState(285)
   const [density, setDensity] = useState('comfortable')
@@ -179,7 +191,6 @@ export const AppearancePane = ({
         settingsTargetActive={
           activeTargetId === SETTINGS_TARGET_IDS.appearanceMonoFont
         }
-        last
       >
         <Select
           value={monoFont}
@@ -190,6 +201,25 @@ export const AppearancePane = ({
             { id: 'iosevka', label: 'Iosevka' },
             { id: 'fira', label: 'Fira Code' },
           ]}
+        />
+      </Row>
+
+      <Row
+        label="Reservoir Swell"
+        hint="Hover motion for the context reservoir waterline."
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceReservoirSwell}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceReservoirSwell
+        }
+        last
+      >
+        <Select
+          value={resolveSwellVariant(settings.reservoirSwell)}
+          onChange={(value): void =>
+            update({ reservoirSwell: resolveSwellVariant(value) })
+          }
+          aria-label="Reservoir swell"
+          options={RESERVOIR_SWELL_OPTIONS}
         />
       </Row>
     </>

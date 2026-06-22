@@ -19,6 +19,7 @@ const createLoadedSettings = (): AppSettings => ({
   density: 'compact',
   uiFont: 'inter',
   monoFont: 'fira',
+  reservoirSwell: 'trailing',
   keymapPreset: 'vscode',
   agentShimEnabled: false,
   customKeybindings: {},

@@ -39,6 +39,7 @@ export const SETTINGS_TARGET_IDS = {
   appearanceDensity: 'appearance-density',
   appearanceUiFont: 'appearance-ui-font',
   appearanceMonoFont: 'appearance-mono-font',
+  appearanceReservoirSwell: 'appearance-reservoir-swell',
   keymapPreset: 'keymap-preset',
   agentsManageAliases: 'agents-manage-aliases',
   agentsShellAliases: 'agents-shell-aliases',
@@ -320,6 +321,13 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     label: 'Mono Font',
     hint: 'Used in the terminal, editor, and all code blocks.',
     subsection: 'Fonts',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceReservoirSwell,
+    section: 'appearance',
+    label: 'Reservoir Swell',
+    hint: 'Hover motion for the context reservoir waterline.',
+    subsection: 'Interface',
   },
   {
     id: SETTINGS_TARGET_IDS.keymapPreset,

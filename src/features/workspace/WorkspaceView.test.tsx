@@ -16,6 +16,7 @@ import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import type { SwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
@@ -24,6 +25,7 @@ import {
   installMockResizeObserver,
 } from '../../test/mockResizeObserver'
 import { SettingsProvider } from '../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -174,6 +176,7 @@ const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reservoirSwell?: SwellVariant
   reserveWindowControls?: boolean
 } = {}
 
@@ -181,6 +184,7 @@ interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reservoirSwell?: SwellVariant
   reserveWindowControls?: boolean
 }
 
@@ -189,11 +193,13 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
     agentStatus = undefined,
+    reservoirSwell = undefined,
     reserveWindowControls = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
     capturedAgentStatusPanelProps.agentStatus = agentStatus
+    capturedAgentStatusPanelProps.reservoirSwell = reservoirSwell
     capturedAgentStatusPanelProps.reserveWindowControls = reserveWindowControls
 
     // Render the panel testid so the existing zone-presence tests
@@ -279,7 +285,9 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    capturedAgentStatusPanelProps.reservoirSwell = undefined
     capturedAgentStatusPanelProps.reserveWindowControls = undefined
+    delete window.vimeflow
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -2091,6 +2099,27 @@ describe('WorkspaceView', () => {
     expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
       isActive: true,
       agentType: 'claude-code',
+    })
+  })
+
+  test('passes the configured reservoir swell to AgentStatusPanel', async () => {
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue({
+          ...DEFAULT_SETTINGS,
+          reservoirSwell: 'wide-lift',
+        }),
+        save: vi.fn().mockResolvedValue(undefined),
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    await waitFor(() => {
+      expect(capturedAgentStatusPanelProps.reservoirSwell).toBe('wide-lift')
     })
   })
 
