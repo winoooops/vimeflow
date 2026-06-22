@@ -345,7 +345,7 @@ describe('WorkspaceView Integration Tests', () => {
       // Panel is a shell — collapsible sections will be added in sub-specs 5-7
     })
 
-    test('clicking the header chevron renders the rail; clicking the rail chevron returns to the panel', async () => {
+    test('clicking the fixed activity toggle switches between panel and rail states', async () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
@@ -353,12 +353,14 @@ describe('WorkspaceView Integration Tests', () => {
       expect(
         screen.getByTestId('agent-status-panel-header')
       ).toBeInTheDocument()
+      expect(screen.queryByTestId('agent-status-rail')).not.toBeInTheDocument()
 
-      await user.click(
-        screen.getByRole('button', { name: /collapse activity panel/i })
-      )
+      await user.click(screen.getByTestId('activity-toggle-fixed'))
 
       expect(await screen.findByTestId('agent-status-rail')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('agent-status-panel-header')
+      ).not.toBeInTheDocument()
 
       // Session-scoped UI state — must NOT call the agent/PTY backend.
       const serviceResults = vi.mocked(createTerminalService).mock.results
@@ -369,13 +371,12 @@ describe('WorkspaceView Integration Tests', () => {
       }
       expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
 
-      await user.click(
-        screen.getByRole('button', { name: /expand activity panel/i })
-      )
+      await user.click(screen.getByTestId('activity-toggle-fixed'))
 
       expect(
         await screen.findByTestId('agent-status-panel-header')
       ).toBeInTheDocument()
+      expect(screen.queryByTestId('agent-status-rail')).not.toBeInTheDocument()
     })
   })
 
