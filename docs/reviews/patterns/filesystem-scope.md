@@ -3,7 +3,7 @@ id: filesystem-scope
 category: security
 created: 2026-04-09
 last_updated: 2026-06-22
-ref_count: 6
+ref_count: 7
 ---
 
 # Filesystem Scope
@@ -245,4 +245,13 @@ preserve their original Tauri-era paths.
 - **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`
 - **Finding:** OpenCode's locator resolved the project directory from its index row, but transcript startup still passed `pty_state.get_cwd()` to `start_or_replace`. Because OpenCode does not emit OSC 7, that cwd can remain the terminal spawn directory, causing the file explorer, git watcher, and test-run parser to follow the wrong workspace.
 - **Fix:** Thread the located status source into `maybe_start_transcript` and prefer `LocatedStatusSource.resolved_directory` over the live PTY cwd when present. Other adapters continue to fall back to the PTY cwd.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. OpenCode bridge used raw session IDs as JSONL filenames
+
+- **Source:** github-codex-connector | PR #603 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The OpenCode bridge appended per-session JSONL records with `appendLine(`${sessionID}.jsonl`, ...)` after only checking that `sessionID` was a string. A crafted session ID containing separators or `..` could escape the Vimeflow-owned bridge directory because the writer joined the value directly into the output path.
+- **Fix:** Added a shared session-filename helper that allows only alphanumeric, underscore, and hyphen session IDs with a length cap. All event/tool per-session writes now route through that helper and drop invalid IDs before calling the filesystem writer.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

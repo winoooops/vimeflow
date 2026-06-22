@@ -26,6 +26,8 @@ const SCHEMA_VERSION = 1
 
 // Max bytes for a tool-output excerpt and max chars for any other string field.
 const MAX_FIELD = 2048
+const MAX_SESSION_ID = 128
+const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 // Whitelisted bus event types. Everything else (esp. high-volume
 // `message.part.delta`, `catalog.updated`, `plugin.added`) is dropped, and
@@ -358,6 +360,29 @@ const appendLine = (file: string, record: any): void => {
   }
 }
 
+const sessionFilename = (sessionID: any): string | undefined => {
+  if (
+    typeof sessionID !== 'string' ||
+    sessionID.length === 0 ||
+    sessionID.length > MAX_SESSION_ID ||
+    !SAFE_SESSION_ID.test(sessionID)
+  ) {
+    return undefined
+  }
+
+  return `${sessionID}.jsonl`
+}
+
+const appendSessionLine = (sessionID: any, record: any): void => {
+  const file = sessionFilename(sessionID)
+
+  if (file == null) {
+    return
+  }
+
+  appendLine(file, record)
+}
+
 const now = (): number => Date.now()
 
 // Last-seen directory per session, so we only append an index row on
@@ -447,7 +472,7 @@ const handleEvent = (event: any): void => {
     return
   }
 
-  appendLine(`${sessionID}.jsonl`, {
+  appendSessionLine(sessionID, {
     v: SCHEMA_VERSION,
     ts: now(),
     kind: 'event',
@@ -476,7 +501,7 @@ export const VimeflowOpencodeBridge = async (input: any) => {
           return
         }
 
-        appendLine(`${sessionID}.jsonl`, {
+        appendSessionLine(sessionID, {
           v: SCHEMA_VERSION,
           ts: now(),
           kind: 'tool.before',
@@ -503,7 +528,7 @@ export const VimeflowOpencodeBridge = async (input: any) => {
             ? output.metadata
             : {}
 
-        appendLine(`${sessionID}.jsonl`, {
+        appendSessionLine(sessionID, {
           v: SCHEMA_VERSION,
           ts: now(),
           kind: 'tool.after',
