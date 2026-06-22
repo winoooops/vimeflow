@@ -186,6 +186,9 @@ const SIDEBAR_TOP_BAR_HEIGHT = 42
 const SIDEBAR_TOGGLE_SIZE = 28
 const SIDEBAR_TOGGLE_TOP = 7
 const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
+// Right-edge inset for the activity-panel toggle. (44 - 28) / 2 = 8 centers it
+// in the collapsed rail, so the control reads as symmetric in both states.
+const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
@@ -2524,6 +2527,35 @@ const WorkspaceViewContent = (): ReactElement => {
         />
       </main>
 
+      {/* Persistent activity-panel toggle — the right-edge mirror of the
+          sidebar toggle. Anchored to the workspace root (not the rail/header)
+          so it holds one fixed coordinate while the panel collapses/expands;
+          `mirrored` flips the glyph to a right-docked panel and the fill flips
+          with the collapse state. The rail/header carry a no-drag clearance
+          span so this floats reliably over the macOS drag region. */}
+      {!isCompactViewport && (
+        <div
+          data-testid="activity-toggle-fixed-shell"
+          className="vf-app-no-drag absolute z-40"
+          style={{ right: ACTIVITY_TOGGLE_RIGHT, top: SIDEBAR_TOGGLE_TOP }}
+        >
+          <SidebarToggle
+            collapsed={activityPanelCollapsed}
+            mirrored
+            onClick={() => {
+              handleActivityPanelCollapsed(!activityPanelCollapsed)
+            }}
+            size={SIDEBAR_TOGGLE_SIZE}
+            label={
+              activityPanelCollapsed
+                ? 'Expand activity panel'
+                : 'Collapse activity panel'
+            }
+            data-testid="activity-toggle-fixed"
+          />
+        </div>
+      )}
+
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
@@ -2541,9 +2573,6 @@ const WorkspaceViewContent = (): ReactElement => {
               cacheHitPercentage={cacheHitPercentage(
                 agentStatus.contextWindow?.currentUsage
               )}
-              onExpand={() => {
-                handleActivityPanelCollapsed(false)
-              }}
               reserveWindowControls={reserveWindowControls}
             />
           ) : (
@@ -2558,9 +2587,6 @@ const WorkspaceViewContent = (): ReactElement => {
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
               snapshotKey={activePtyBackedPanePtyId ?? null}
-              onCollapse={() => {
-                handleActivityPanelCollapsed(true)
-              }}
               reserveWindowControls={reserveWindowControls}
             />
           )}

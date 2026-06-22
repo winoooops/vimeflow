@@ -39,7 +39,6 @@ interface AgentStatusPanelProps {
   isRefreshing?: boolean
   needsReattach?: boolean
   agent: Agent
-  onCollapse: () => void
   cacheHistory: number[]
   snapshotKey?: string | null
   reserveWindowControls?: boolean
@@ -305,7 +304,6 @@ export const AgentStatusPanel = ({
   isRefreshing = false,
   needsReattach = false,
   agent,
-  onCollapse,
   cacheHistory,
   snapshotKey = null,
   reserveWindowControls = false,
@@ -540,7 +538,6 @@ export const AgentStatusPanel = ({
         agent={agent}
         isRefreshing={showsRefreshing}
         needsReattach={needsReattach}
-        onCollapse={onCollapse}
         reserveWindowControls={reserveWindowControls}
       />
 

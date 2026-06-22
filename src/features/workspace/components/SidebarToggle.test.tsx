@@ -50,6 +50,22 @@ describe('SidebarToggle', () => {
     expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('Ctrl+⇧B')
   })
 
+  test('label: overrides the default accessible name and tooltip content', async () => {
+    const user = userEvent.setup()
+    renderToggle({ collapsed: false, label: 'Collapse activity panel' })
+
+    const button = screen.getByRole('button', {
+      name: 'Collapse activity panel',
+    })
+    expect(button).toHaveAttribute('aria-label', 'Collapse activity panel')
+
+    await user.hover(button)
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Collapse activity panel'
+    )
+  })
+
   // Open glyph = outline rect + rail-fill rect (2); collapsed glyph drops the
   // rail fill (1). The divider <path> is always drawn either way. SVG shapes
   // have no accessible role, so container.querySelectorAll is the only option.
@@ -75,6 +91,20 @@ describe('SidebarToggle', () => {
     expect(paths).toHaveLength(1)
   })
 
+  test('mirrored=false: leaves the svg without the mirror class', () => {
+    const { container } = renderToggle({ collapsed: false })
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG has no a11y role
+    expect(container.querySelector('svg')).not.toHaveClass('scale-x-[-1]')
+  })
+
+  test('mirrored=true: applies the svg mirror class', () => {
+    const { container } = renderToggle({ collapsed: false, mirrored: true })
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG has no a11y role
+    expect(container.querySelector('svg')).toHaveClass('scale-x-[-1]')
+  })
+
   test('fireEvent: calls onClick when clicked', () => {
     const onClick = vi.fn()
     renderToggle({ collapsed: false, onClick })
@@ -94,10 +124,11 @@ describe('SidebarToggle', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  test('variant=inset: className includes the recessed-well background', () => {
+  test('variant=inset: transparent at rest (no recessed-well background)', () => {
     renderToggle({ collapsed: false, variant: 'inset' })
 
-    expect(screen.getByRole('button')).toHaveClass(
+    // Blends into the parent surface — no resting fill, only a hover lift.
+    expect(screen.getByRole('button')).not.toHaveClass(
       'bg-surface-container-lowest/[0.45]'
     )
   })

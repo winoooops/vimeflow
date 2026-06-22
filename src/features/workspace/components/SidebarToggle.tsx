@@ -11,26 +11,28 @@ export interface SidebarToggleProps {
   /** Square hit-target size in px. Rail wants 34 to match other rail buttons; in-card wants 28. */
   size?: number
   /**
-   * `ghost` (default): transparent with a hover tint — for the icon rail.
-   * `inset`: a recessed well (fill only, no visible border) so the control
-   * belongs to the top bar without leaving a sticky outline after focus restore.
+   * `ghost` (default) and `inset` are both transparent at rest with no visible
+   * border — they differ only in hover-tint strength (`inset` lifts slightly
+   * more). Use `inset` for the top-bar toggle, `ghost` for icon rails.
    */
   variant?: SidebarToggleVariant
   'data-testid'?: string
-  /** Platform-appropriate shortcut hint shown as the tooltip chip (e.g. '⌘B' or 'Ctrl+⇧B'). Default '⌘B'. */
+  /** Platform-appropriate shortcut hint shown as the tooltip chip (e.g. '⌘B' or 'Ctrl+⇧B'). Omit for controls with no shortcut (e.g. the activity panel). */
   shortcutHint?: string
+  /** Mirror the glyph so the rail/fill sits on the RIGHT — for a right-docked panel. */
+  mirrored?: boolean
+  /** Override the default Show/Hide-sidebar tooltip + aria label (e.g. 'Expand activity panel'). */
+  label?: string
 }
 
 const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
   ghost:
     'border border-transparent text-on-surface-muted hover:bg-primary/[0.08] hover:text-primary',
-  // Inset = a recessed well at rest (surface-container-lowest); on hover it
-  // lifts with a primary (lavender) tint in both collapse states, matching the
-  // ghost variant's primary hover. An earlier revision deepened the well toward
-  // navy on hover when expanded, but against the now-transparent sidebar that
-  // read as no change at all — so the toggle always lifts lighter.
+  // Inset = transparent at rest so the control is the same color as its parent
+  // (the transparent sidebar surface) with no recessed-well chip. On hover it
+  // lifts with a primary (lavender) tint, slightly stronger than ghost.
   inset:
-    'border border-transparent bg-surface-container-lowest/[0.45] text-on-surface-muted hover:bg-primary/[0.14] hover:text-primary',
+    'border border-transparent text-on-surface-muted hover:bg-primary/[0.14] hover:text-primary',
 }
 
 // Codex / VS-Code-style "panel-left" glyph. Outline + left-rail divider are
@@ -47,56 +49,63 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
       size = 28,
       variant = 'ghost',
       'data-testid': testId = 'sidebar-toggle',
-      shortcutHint = '⌘B',
+      shortcutHint = undefined,
+      mirrored = false,
+      label = undefined,
     },
     ref
-  ): ReactElement => (
-    <Tooltip
-      content={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-      shortcut={shortcutHint}
-      placement="bottom"
-    >
-      <button
-        ref={ref}
-        type="button"
-        data-testid={testId}
-        onClick={onClick}
-        aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-        aria-expanded={!collapsed}
-        style={{ width: size, height: size }}
-        className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
+  ): ReactElement => {
+    const resolvedLabel = label ?? (collapsed ? 'Show sidebar' : 'Hide sidebar')
+
+    return (
+      <Tooltip
+        content={resolvedLabel}
+        shortcut={shortcutHint}
+        placement="bottom"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
+        <button
+          ref={ref}
+          type="button"
+          data-testid={testId}
+          onClick={onClick}
+          aria-label={resolvedLabel}
+          aria-expanded={!collapsed}
+          style={{ width: size, height: size }}
+          className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
         >
-          <rect
-            x="1.6"
-            y="2.6"
-            width="12.8"
-            height="10.8"
-            rx="2.4"
-            stroke="currentColor"
-            strokeWidth="1.3"
-          />
-          <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
-          {!collapsed && (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+            className={mirrored ? 'scale-x-[-1]' : undefined}
+          >
             <rect
-              x="2.2"
-              y="3.2"
-              width="3.1"
-              height="9.6"
-              rx="1.4"
-              fill="currentColor"
-              fillOpacity="0.28"
+              x="1.6"
+              y="2.6"
+              width="12.8"
+              height="10.8"
+              rx="2.4"
+              stroke="currentColor"
+              strokeWidth="1.3"
             />
-          )}
-        </svg>
-      </button>
-    </Tooltip>
-  )
+            <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
+            {!collapsed && (
+              <rect
+                x="2.2"
+                y="3.2"
+                width="3.1"
+                height="9.6"
+                rx="1.4"
+                fill="currentColor"
+                fillOpacity="0.28"
+              />
+            )}
+          </svg>
+        </button>
+      </Tooltip>
+    )
+  }
 )
 SidebarToggle.displayName = 'SidebarToggle'

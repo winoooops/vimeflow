@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 36
+last_updated: 2026-06-22
+ref_count: 37
 ---
 
 # Testing Gaps
@@ -799,3 +799,21 @@ filesystem scope restrictions).
 - **Finding:** The OpenCode locator had tests for a missing index with a populated cache and for a present nonmatching index with no cache, but not for a present index whose rows no longer matched cwd after a successful resolve. That left the `resolve_by_cwd -> None` cached fallback contract unpinned.
 - **Fix:** Added a regression test that resolves `ses_A`, rewrites the index to contain only another cwd, and asserts the second `locate` returns the cached `ses_A`.
 - **Commit:** same commit as this entry
+
+### 82. Shared UI control props used in production lacked branch coverage
+
+- **Source:** github-claude | PR #605 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/SidebarToggle.test.tsx`
+- **Finding:** `SidebarToggle` added exported `label` and `mirrored` props for the right-docked activity-panel toggle, but the sibling tests only covered the updated `inset` variant behavior. A later regression could break the activity-panel accessible name, tooltip text, or mirrored glyph orientation without any focused test failure.
+- **Fix:** Added focused tests asserting `label` overrides both the button accessible name and shared tooltip content, and asserting the SVG mirror class is absent by default and present when `mirrored` is true.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 83. Moved shell control lost integration-level state-transition coverage
+
+- **Source:** github-claude | PR #605 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.integration.test.tsx`
+- **Finding:** The activity-panel expand/collapse control moved out of the rail/header subcomponents and into `WorkspaceView` as the root-owned `activity-toggle-fixed` control, but the deleted lower-level callback tests were not re-expressed at the new owner boundary. A wrong boolean update or stale handler wiring regression could leave the user-facing activity panel toggle broken while the suite stayed green.
+- **Fix:** Updated the WorkspaceView integration coverage to click `activity-toggle-fixed` directly and assert both transitions: expanded panel header to collapsed rail, then collapsed rail back to expanded panel header.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
