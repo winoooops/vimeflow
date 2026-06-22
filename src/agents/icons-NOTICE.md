@@ -2,18 +2,12 @@
 
 # Agent brand icon attribution
 
-The Claude Code, Codex (OpenAI), and Kimi (Moonshot AI) agent brand marks in
-`brandIcons.tsx` are vendored (mono variant) from **@lobehub/icons** (Lobe
-Icons), used under the MIT License.
+The Claude Code, Codex (OpenAI), Kimi (Moonshot AI), and OpenCode agent brand
+marks in `brandIcons.tsx` are vendored (mono variant) from **@lobehub/icons**
+(Lobe Icons), used under the MIT License.
 
 - Source: https://github.com/lobehub/lobe-icons
 - SPDX-License-Identifier: MIT
-
-## Original marks
-
-The Opencode mark in `brandIcons.tsx` is an original Vimeflow geometric terminal
-mark. It is not vendored from **@lobehub/icons** and is not copied from the
-upstream opencode project.
 
 ## License (Lobe Icons)
 

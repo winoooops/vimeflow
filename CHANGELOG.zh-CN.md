@@ -8,7 +8,8 @@
 
 ### Added
 
-- 官方代理可观测性支持范围现包含 Claude Code、Codex CLI 和 Kimi Code。Kimi Code 检测会识别 `kimi` / `kimi-code`，读取 `~/.kimi-code/` 下的状态，实时流式展示持久化 `wire.jsonl` 活动，并把套餐用量的网络抓取放在显式同意之后。
+- 官方代理可观测性支持范围现包含 Claude Code、Codex CLI、Kimi Code 和 OpenCode。Kimi Code 检测会识别 `kimi` / `kimi-code`，读取 `~/.kimi-code/` 下的状态，实时流式展示持久化 `wire.jsonl` 活动，并把套餐用量的网络抓取放在显式同意之后。
+- OpenCode 代理可观测性。检测会识别 `opencode`；一个随仓库内置、自动安装的桥接插件，会把每个会话的事件以「每会话一份 JSONL」的形式写入 Vimeflow 自有目录（采用 Kimi 式的纯文件系统方案，不与 SQLite/数据库耦合），Rust 适配器对其进行 tail，实时展示模型、上下文窗口与工具活动。上下文窗口用量基于 OpenCode 的 models.dev 缓存推算，并且会计入缓存命中的 prompt token（与 OpenCode 自身的用量条一致）；由于 OpenCode 的 TUI 不发出 OSC 7，会话改用 pid 绑定以确保正确接入，并支持 `/clear` 后的重新接入。桥接插件不访问任何凭据或账号 token。OpenCode 未提供用量配额 API，因此代理状态卡片以「OpenCode 暂未暴露用量上限」提示加上游请求链接（[sst/opencode#16017](https://github.com/sst/opencode/issues/16017)）替代套餐用量条。
 - 运行时主题系统：Catppuccin（深色，默认）与 Flexoki（浅色）现可通过命令面板（`:theme <名称>`）即时切换，无需重启应用。终端（xterm.js）、代码编辑器（CodeMirror）以及 Diff 查看器（Pierre）均通过各自的桥接适配器实时换肤。所有原先硬编码的十六进制颜色已迁移为语义化 CSS 变量 token，统一定义于 `src/theme/themes/*.ts`，并由 `src/theme/service.ts` 在运行时应用。新增 ESLint 规则 `vimeflow/no-hardcoded-colors` 与 CSS 守卫测试，防止颜色回归。规格文档：[`docs/superpowers/specs/2026-06-11-theme-system-design.md`](./docs/superpowers/specs/2026-06-11-theme-system-design.md)。
 
 ### Changed

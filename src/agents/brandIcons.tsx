@@ -74,14 +74,11 @@ export const Kimi = ({
   </BrandSvg>
 )
 
-export const Opencode = ({
+export const OpenCode = ({
   size = DEFAULT_SIZE,
   ...props
 }: AgentIconProps): ReactElement => (
   <BrandSvg size={size} {...props}>
-    <path
-      clipRule="evenodd"
-      d="M12 2a10 10 0 100 20A10 10 0 0012 2zm-1.5 6a.75.75 0 00-1.06 1.06L11.94 11.5l-2.5 2.44a.75.75 0 101.06 1.06l3-2.94a.75.75 0 000-1.06l-3-3zm3.75 5.75a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z"
-    />
+    <path d="M16 6H8v12h8V6zm4 16H4V2h16v20z" />
   </BrandSvg>
 )

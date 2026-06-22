@@ -24,7 +24,7 @@ export const QuotaUnavailableNotice = ({
     <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
       {message}
     </span>
-    <Tooltip content="Opencode usage API — open the feature request (sst/opencode#16017)">
+    <Tooltip content="OpenCode usage API — open the feature request (sst/opencode#16017)">
       <a
         href={trackUrl}
         target="_blank"

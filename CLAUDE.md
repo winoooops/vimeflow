@@ -10,7 +10,7 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 Vimeflow is a **CLI coding agent control plane** — an Electron desktop application (Rust sidecar + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
 
-**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and agent adapter modules for Claude Code, Codex CLI, and Kimi Code. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
+**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and agent adapter modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
 
 ## Commands
 

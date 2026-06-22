@@ -81,7 +81,7 @@ test('opencode is sapphire-blue with null model', () => {
   expect(AGENTS.opencode.short).toBe('OPENCODE')
   expect(AGENTS.opencode.glyph).toBe('◈')
   expect(AGENTS.opencode.model).toBeNull()
-  expect(AGENTS.opencode.name).toBe('Opencode')
+  expect(AGENTS.opencode.name).toBe('OpenCode')
 })
 
 test('agentTypeToRegistryKey maps opencode to opencode', () => {
