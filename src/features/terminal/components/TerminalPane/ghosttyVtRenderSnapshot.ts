@@ -309,7 +309,31 @@ const readSnapshotCursorOffset = (
 
 const PROMPT_MARKER_PATTERN = /^\s*>/
 
-const shouldHideImplicitPromptCursor = (
+const hasCellStyle = (cell: GhosttyVtRenderSnapshotCell): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  cell.foreground !== undefined ||
+  cell.background !== undefined ||
+  cell.reverse === true
+
+const hasStyledBlankCellAtCursor = (
+  rowCells: readonly GhosttyVtRenderSnapshotCell[] | undefined,
+  columnOffset: number
+): boolean =>
+  rowCells?.some(
+    (cell) =>
+      hasCellStyle(cell) &&
+      cell.text.trim().length === 0 &&
+      cell.col <= columnOffset &&
+      columnOffset < cell.col + cell.width
+  ) ?? false
+
+// A missing cursor.visible flag means "native default visible", not
+// "synthetic cursor". Keep ordinary blank-row cursors visible unless the
+// snapshot matches a known stale parked-cursor shape: an agent prompt follower
+// or a styled blank native cell stranded above later content.
+const shouldHideImplicitParkedCursor = (
   snapshot: GhosttyVtRenderSnapshot,
   cellsByRow: CellsByRow
 ): boolean => {
@@ -337,9 +361,14 @@ const shouldHideImplicitPromptCursor = (
     )
     .find((row) => row.trim().length > 0)
 
-  return nextContentRow === undefined
-    ? false
-    : PROMPT_MARKER_PATTERN.test(nextContentRow)
+  if (nextContentRow === undefined) {
+    return false
+  }
+
+  return (
+    PROMPT_MARKER_PATTERN.test(nextContentRow) ||
+    hasStyledBlankCellAtCursor(cellsByRow.get(rowIndex), cursor.columnOffset)
+  )
 }
 
 export const createGhosttyVtRenderSnapshotOutput = (
@@ -353,7 +382,7 @@ export const createGhosttyVtRenderSnapshotOutput = (
 
   const cursorVisible =
     normalizedSnapshot.cursor?.visible ??
-    (shouldHideImplicitPromptCursor(normalizedSnapshot, cellsByRow)
+    (shouldHideImplicitParkedCursor(normalizedSnapshot, cellsByRow)
       ? false
       : undefined)
 

@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-21
-ref_count: 9
+ref_count: 10
 ---
 
 # Terminal Render-State Driver Contract
@@ -307,4 +307,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts`
 - **Finding:** The Electron Ghostty bridge clamped synthesized formatter background/reverse ranges to native cell and visible-text extents only. When Ghostty trimmed trailing blanks on the cursor row, the renderer later padded that row back to `cursor.columnOffset`, but the styled blanks before the cursor had already been dropped.
 - **Fix:** Threaded the validated cursor row/column into reverse-range synthesis and included `cursor.columnOffset` in the effective extent for the cursor row only. Added regression coverage for cursor-row styled padding that preserves style up to the cursor without restoring full-width formatter padding.
+- **Commit:** same commit as this entry
+
+### 32. Omitted native cursor visibility means default visible
+
+- **Source:** github-codex-connector | PR #600 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts`
+- **Finding:** The VT snapshot renderer treated a missing `cursor.visible` field as an implicit stale-cursor signal and hid any cursor on a blank row with later content. Ghostty omits `visible` for normal visible cursors, so legitimate editor/TUI cursors on blank lines above status or menu rows disappeared.
+- **Fix:** Missing `cursor.visible` now preserves the default visible cursor unless the snapshot matches a known parked-cursor shape: an agent prompt follower or a styled blank native cursor artifact above later content. Regression coverage pins both the preserved `rows: ['', 'menu']` case and the styled parked-cursor case.
 - **Commit:** same commit as this entry

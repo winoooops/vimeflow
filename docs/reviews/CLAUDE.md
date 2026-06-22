@@ -58,7 +58,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 26       | 9    | 2026-06-21   |
 | [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 10       | 6    | 2026-06-21   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
-| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 32       | 9    | 2026-06-21   |
+| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 33       | 10   | 2026-06-21   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 24   | 2026-06-18   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
