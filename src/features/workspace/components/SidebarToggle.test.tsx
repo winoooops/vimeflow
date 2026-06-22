@@ -94,10 +94,11 @@ describe('SidebarToggle', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  test('variant=inset: className includes the recessed-well background', () => {
+  test('variant=inset: transparent at rest (no recessed-well background)', () => {
     renderToggle({ collapsed: false, variant: 'inset' })
 
-    expect(screen.getByRole('button')).toHaveClass(
+    // Blends into the parent surface — no resting fill, only a hover lift.
+    expect(screen.getByRole('button')).not.toHaveClass(
       'bg-surface-container-lowest/[0.45]'
     )
   })

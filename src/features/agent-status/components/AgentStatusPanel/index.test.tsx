@@ -112,7 +112,6 @@ const defaultProps = {
   cwd: '/test',
   onOpenDiff: vi.fn(),
   agent: AGENTS.shell,
-  onCollapse: (): void => undefined,
   cacheHistory: [],
 }
 
@@ -1249,15 +1248,13 @@ describe('AgentStatusPanel', () => {
     )
   })
 
-  test('renders Header above the body with the provided agent status and onCollapse', async () => {
-    const onCollapse = vi.fn()
+  test('renders Header above the body with the provided agent status', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
         agentStatus={inactiveAgentStatus}
         cwd="/home/x"
         agent={AGENTS.claude}
-        onCollapse={onCollapse}
       />
     )
 
@@ -1266,11 +1263,6 @@ describe('AgentStatusPanel', () => {
     expect(
       header.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /collapse activity panel/i })
-    )
-    expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 
   test('passes refreshing state into the fixed header affordance', () => {

@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react'
-import { IconButton } from '@/components/IconButton'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import type { Agent } from '../../../../agents/registry'
 
@@ -12,7 +11,6 @@ export interface AgentStatusPanelHeaderProps {
    * (i.e. when the user sends a prompt), so this is an instruction, not a button.
    */
   needsReattach?: boolean
-  onCollapse: () => void
   reserveWindowControls?: boolean
 }
 
@@ -20,17 +18,13 @@ export const AgentStatusPanelHeader = ({
   agent,
   isRefreshing = false,
   needsReattach = false,
-  onCollapse,
   reserveWindowControls = false,
 }: AgentStatusPanelHeaderProps): ReactElement => (
   <div
     data-testid="agent-status-panel-header"
-    className={`relative flex h-11 shrink-0 items-center gap-2.5 pr-2 pl-3.5 ${
+    className={`relative flex h-11 shrink-0 items-center gap-2.5 pr-[44px] pl-3.5 ${
       reserveWindowControls ? 'vf-app-drag-region' : ''
     }`}
-    style={{
-      background: `linear-gradient(180deg, ${agent.accentDim}, transparent 80%)`,
-    }}
   >
     <div
       data-testid="agent-glyph-chip"
@@ -78,12 +72,18 @@ export const AgentStatusPanelHeader = ({
             : 'updated now'}
       </span>
     </div>
-    <IconButton
-      icon="chevron_right"
-      label="Collapse activity panel"
-      onClick={onCollapse}
-      className="vf-app-no-drag shrink-0"
-    />
+    {/* No-drag clearance for the workspace-root activity toggle that floats
+        above this header (top:7/right:8/28²), matching the collapsed rail. The
+        floating toggle is a sibling of the drag region, so this descendant span
+        carves the hole that keeps it clickable. */}
+    {reserveWindowControls && (
+      <span
+        aria-hidden="true"
+        data-testid="activity-toggle-clearance"
+        className="vf-app-no-drag pointer-events-none absolute"
+        style={{ top: 7, right: 8, width: 28, height: 28 }}
+      />
+    )}
     <div
       className="absolute right-0 bottom-0 left-0 h-px overflow-hidden bg-outline-variant/25"
       aria-hidden="true"

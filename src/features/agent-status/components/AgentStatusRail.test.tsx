@@ -1,6 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { test, expect, vi } from 'vitest'
+import { test, expect } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
 import { ctxTone } from '../utils/contextTone'
@@ -11,7 +10,6 @@ test('renders glyph chip, context meter, and cache meter', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={42}
       cacheHitPercentage={75}
-      onExpand={() => undefined}
     />
   )
 
@@ -40,7 +38,6 @@ test('context meter color follows the shared ctxTone sweep', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={92}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -53,7 +50,6 @@ test('context meter color follows the shared ctxTone sweep', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={40}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -68,7 +64,6 @@ test('hides context meter when contextUsedPercentage is null', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -81,7 +76,6 @@ test('hides cache meter when cacheHitPercentage is null', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -94,7 +88,6 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={85}
-      onExpand={() => undefined}
     />
   )
 
@@ -108,7 +101,6 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={55}
-      onExpand={() => undefined}
     />
   )
 
@@ -122,7 +114,6 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={20}
-      onExpand={() => undefined}
     />
   )
 
@@ -138,7 +129,6 @@ test('renders the cache rate as a ring, not the liquid bar', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={42}
       cacheHitPercentage={75}
-      onExpand={() => undefined}
     />
   )
 
@@ -156,7 +146,6 @@ test('drops the visible CACHE caption from the rail ring', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={75}
-      onExpand={() => undefined}
     />
   )
 
@@ -166,31 +155,12 @@ test('drops the visible CACHE caption from the rail ring', () => {
   ).not.toBeInTheDocument()
 })
 
-test('chevron expand button fires onExpand', async () => {
-  const onExpand = vi.fn()
-
-  render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={10}
-      cacheHitPercentage={null}
-      onExpand={onExpand}
-    />
-  )
-
-  await userEvent.click(
-    screen.getByRole('button', { name: /expand activity panel/i })
-  )
-  expect(onExpand).toHaveBeenCalledTimes(1)
-})
-
 test('rail is 44px wide', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -203,7 +173,6 @@ test('rail sits on the canvas surface token', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
@@ -213,13 +182,12 @@ test('rail sits on the canvas surface token', () => {
   expect(rail.className).not.toContain('bg-surface-container')
 })
 
-test('adds macOS drag coverage while keeping expand clickable', () => {
+test('adds macOS drag coverage with a no-drag clearance for the floating toggle', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
       reserveWindowControls
     />
   )
@@ -228,9 +196,23 @@ test('adds macOS drag coverage while keeping expand clickable', () => {
     'vf-app-drag-region'
   )
 
+  expect(screen.getByTestId('activity-toggle-clearance')).toHaveClass(
+    'vf-app-no-drag'
+  )
+})
+
+test('omits the drag clearance when native controls are not reserved', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+    />
+  )
+
   expect(
-    screen.getByRole('button', { name: /expand activity panel/i })
-  ).toHaveClass('vf-app-no-drag')
+    screen.queryByTestId('activity-toggle-clearance')
+  ).not.toBeInTheDocument()
 })
 
 test('does not add rail drag coverage when native controls are not reserved', () => {
@@ -239,7 +221,6 @@ test('does not add rail drag coverage when native controls are not reserved', ()
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      onExpand={() => undefined}
     />
   )
 
