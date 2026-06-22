@@ -18,8 +18,10 @@ import type { CustomPaneLayoutId } from '../../../sessions/types'
 import {
   MAX_LAYOUT_TRACKS,
   MAX_LAYOUT_SLOTS,
+  STARTER_LAYOUT_TEMPLATES,
   type PaneLayoutDefinition,
 } from '../../layout-registry'
+import { LayoutGlyph } from '../LayoutSwitcher/LayoutGlyph'
 import {
   addFirstFreeSlot,
   addSlotRect,
@@ -726,6 +728,41 @@ const TrackStepper = ({
   </div>
 )
 
+interface TemplateGalleryProps {
+  onSelect: (definition: PaneLayoutDefinition) => void
+}
+
+const TemplateGallery = ({ onSelect }: TemplateGalleryProps): ReactElement => (
+  <div className="flex flex-col gap-2">
+    <span
+      id="layout-template-gallery-label"
+      className="font-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-muted"
+    >
+      Start from a template
+    </span>
+    <div
+      role="group"
+      aria-labelledby="layout-template-gallery-label"
+      className="flex flex-wrap gap-2"
+    >
+      {STARTER_LAYOUT_TEMPLATES.map((definition) => (
+        <button
+          key={definition.id}
+          type="button"
+          aria-label={`Start from ${definition.title}`}
+          className="group flex items-center gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-lowest/55 px-2.5 py-1.5 text-left text-on-surface-variant outline-none transition hover:border-primary/45 hover:bg-primary/10 hover:text-on-surface focus-visible:ring-1 focus-visible:ring-primary/60"
+          onClick={(): void => onSelect(definition)}
+        >
+          <span className="text-primary/80 transition group-hover:text-primary">
+            <LayoutGlyph layoutId={definition.id} definition={definition} />
+          </span>
+          <span className="font-mono text-[11px]">{definition.title}</span>
+        </button>
+      ))}
+    </div>
+  </div>
+)
+
 export const LayoutCreatorModal = ({
   isOpen,
   existingLayouts,
@@ -1032,6 +1069,14 @@ export const LayoutCreatorModal = ({
                 {LAYOUT_CREATOR_UNIT_TOTAL}-unit tracks
               </span>
             </div>
+
+            {editLayout === undefined && (
+              <TemplateGallery
+                onSelect={(definition): void =>
+                  updateDraft(draftFromDefinition(definition))
+                }
+              />
+            )}
 
             <GridCanvas draft={draft} onDraftChange={updateDraft} />
 
