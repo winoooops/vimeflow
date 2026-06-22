@@ -10,7 +10,7 @@ const BRAND_ICONS: readonly (readonly [string, AgentIcon])[] = [
 ]
 
 test.each(BRAND_ICONS)(
-  '%s renders a mono currentColor svg sized by the size prop',
+  '%s renders a mono currentColor svg with height sized by the size prop',
   (_name, Icon) => {
     const { container } = render(<Icon size={16} />)
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying vendored SVG shape
@@ -18,7 +18,7 @@ test.each(BRAND_ICONS)(
 
     expect(svg).toBeInTheDocument()
     expect(svg?.getAttribute('fill')).toBe('currentColor')
-    expect(svg?.getAttribute('width')).toBe('16')
+    expect(svg?.getAttribute('height')).toBe('16')
   }
 )
 
@@ -33,6 +33,7 @@ test('ClaudeCode keeps the original mark and adjusts only its rendered ratio', (
   expect(container.querySelector('circle')).toBeNull()
   expect(svg?.getAttribute('viewBox')).toBe('0 4 24 17')
   expect(svg?.getAttribute('preserveAspectRatio')).toBeNull()
+  expect(svg?.getAttribute('height')).toBe('16')
   expect(
     Number(svg?.getAttribute('width')) / Number(svg?.getAttribute('height'))
   ).toBeCloseTo(24 / 17, 5)
