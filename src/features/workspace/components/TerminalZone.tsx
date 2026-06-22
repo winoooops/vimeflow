@@ -6,7 +6,12 @@ import {
   type PointerEvent,
   type ReactElement,
 } from 'react'
-import type { LayoutSlotId, PaneKind, Session } from '../../sessions/types'
+import type {
+  LayoutSlotId,
+  PaneKind,
+  PanePlacement,
+  Session,
+} from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
 import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
@@ -58,6 +63,11 @@ export interface TerminalZoneProps {
   ) => void
   addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
+  /** VIM-167: persist a drag-into-slot swap/move. Forwarded to SplitView. */
+  setSessionPlacements?: (
+    sessionId: string,
+    placements: PanePlacement[]
+  ) => void
   isZoneFocused?: boolean
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
@@ -89,6 +99,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       updateBrowserPaneUrl = undefined,
       addPane,
       removePane,
+      setSessionPlacements = undefined,
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
@@ -196,6 +207,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onRequestFocus={onContainerFocus}
                     onAddPane={addPane}
                     onClosePane={removePane}
+                    onPanePlacementsChange={setSessionPlacements}
                     onBurner={onBurner}
                     layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}

@@ -311,4 +311,27 @@ describe('layoutCreatorModel', () => {
 
     expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
   })
+
+  test('round-trips a two-kind slot.accepts list through YAML', () => {
+    // Exercises the inline-sequence parser with more than one entry
+    // (`accepts: [browser, shell]`).
+    const draft: DraftPaneLayout = {
+      cols: [12, 12],
+      rows: [24],
+      slots: [
+        {
+          col: 0,
+          row: 0,
+          colSpan: 1,
+          rowSpan: 1,
+          accepts: ['browser', 'shell'],
+        },
+        { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+      ],
+    }
+
+    const yaml = serializeDraftLayout(draft, 'yaml')
+
+    expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
+  })
 })

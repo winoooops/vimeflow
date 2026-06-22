@@ -187,4 +187,37 @@ describe('Header', () => {
       'true'
     )
   })
+
+  test('is not draggable by default', () => {
+    render(<Header {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveAttribute(
+      'draggable',
+      'true'
+    )
+  })
+
+  test('draggable header exposes the drag handle and fires drag callbacks', () => {
+    const onHeaderDragStart = vi.fn()
+    const onHeaderDragEnd = vi.fn()
+
+    render(
+      <Header
+        {...baseProps}
+        draggable
+        onHeaderDragStart={onHeaderDragStart}
+        onHeaderDragEnd={onHeaderDragEnd}
+      />
+    )
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveAttribute('draggable', 'true')
+    expect(header).toHaveAttribute('data-drag-handle', 'true')
+
+    fireEvent.dragStart(header)
+    expect(onHeaderDragStart).toHaveBeenCalledTimes(1)
+
+    fireEvent.dragEnd(header)
+    expect(onHeaderDragEnd).toHaveBeenCalledTimes(1)
+  })
 })

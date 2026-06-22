@@ -106,7 +106,9 @@ export const MIN_LAYOUT_SLOTS = 1
 export const MAX_LAYOUT_SLOTS = 16
 
 const BUILTIN_LAYOUT_IDS = new Set<string>(LAYOUT_IDS)
-const PANE_KINDS: readonly PaneKind[] = ['shell', 'browser']
+
+/** The closed set of pane kinds a slot's `accepts` restriction may list. */
+export const PANE_KINDS: readonly PaneKind[] = ['shell', 'browser']
 
 export const isBuiltinPaneLayoutId = (
   value: string
@@ -172,7 +174,8 @@ const isFinitePositive = (value: number): boolean =>
 const isFiniteNonNegative = (value: number): boolean =>
   Number.isFinite(value) && value >= 0
 
-const isSupportedPaneKind = (value: string): value is PaneKind =>
+/** Single source of truth for narrowing a raw string to a known PaneKind. */
+export const isSupportedPaneKind = (value: string): value is PaneKind =>
   (PANE_KINDS as readonly string[]).includes(value)
 
 const validateSourceAndId = (

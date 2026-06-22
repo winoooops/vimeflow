@@ -263,6 +263,7 @@ const WorkspaceViewContent = (): ReactElement => {
     setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
+    setSessionPlacements,
     addPane,
     removePane,
     loading,
@@ -1303,10 +1304,10 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleDuplicateCustomLayout = useCallback(
     (layoutId: PaneLayoutId): void => {
-      const source = layoutRegistry.getLayout(layoutId)?.definition
+      const definition = layoutRegistry.getLayout(layoutId)?.definition
       // Only custom (workspace) layouts can be duplicated; builtins are
       // immutable seeds.
-      if (source?.source !== 'workspace') {
+      if (definition?.source !== 'workspace') {
         return
       }
 
@@ -1315,26 +1316,26 @@ const WorkspaceViewContent = (): ReactElement => {
       const existingIds = new Set<PaneLayoutId>(
         layoutRegistry.layouts.map((layout) => layout.id)
       )
-      const cloneId = createCustomPaneLayoutId(source.title, existingIds)
+      const cloneId = createCustomPaneLayoutId(definition.title, existingIds)
 
       // Deep-clone so the clone shares no references with the source —
       // slots (incl. each slot's `accepts` restriction), rect, tracks, and
       // addOrder are all copied. Title is derived; the active session layout
       // is intentionally left untouched.
       const clone: PaneLayoutDefinition = {
-        ...source,
+        ...definition,
         id: cloneId,
-        title: `Copy of ${source.title}`,
+        title: `Copy of ${definition.title}`,
         tracks: {
-          columns: source.tracks.columns.map((track) => ({ ...track })),
-          rows: source.tracks.rows.map((track) => ({ ...track })),
+          columns: definition.tracks.columns.map((track) => ({ ...track })),
+          rows: definition.tracks.rows.map((track) => ({ ...track })),
         },
-        slots: source.slots.map((slot) => ({
+        slots: definition.slots.map((slot) => ({
           ...slot,
           rect: { ...slot.rect },
           ...(slot.accepts === undefined ? {} : { accepts: [...slot.accepts] }),
         })),
-        addOrder: [...source.addOrder],
+        addOrder: [...definition.addOrder],
       }
 
       setCustomPaneLayouts((previous) => [...previous, clone], {
@@ -2663,6 +2664,7 @@ const WorkspaceViewContent = (): ReactElement => {
               updateBrowserPaneUrl={updateBrowserPaneUrl}
               addPane={addPane}
               removePane={removePane}
+              setSessionPlacements={setSessionPlacements}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)

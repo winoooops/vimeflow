@@ -7,6 +7,7 @@ import type {
 import {
   createIndexedPaneSlotId,
   CUSTOM_PANE_LAYOUT_ID_PREFIX,
+  isSupportedPaneKind,
   MAX_LAYOUT_TRACKS,
   MAX_LAYOUT_SLOTS,
   PANE_LAYOUT_SCHEMA_VERSION,
@@ -21,14 +22,10 @@ export const LAYOUT_CREATOR_MIN_UNITS = 1
 
 export type LayoutCreatorCodeFormat = 'json' | 'yaml'
 
-const PANE_KINDS: readonly PaneKind[] = ['shell', 'browser']
-
-const isPaneKind = (value: unknown): value is PaneKind =>
-  typeof value === 'string' && (PANE_KINDS as readonly string[]).includes(value)
-
 // undefined OR an empty list both mean "no restriction" — never persist a dead,
-// unusable slot. Unknown kinds are dropped defensively. Returns undefined
-// whenever the restriction would be empty so callers can omit `accepts`.
+// unusable slot. Unknown kinds are dropped defensively via the shared
+// `isSupportedPaneKind` guard. Returns undefined whenever the restriction would
+// be empty so callers can omit `accepts`.
 const normalizeAccepts = (
   accepts: readonly string[] | undefined
 ): readonly PaneKind[] | undefined => {
@@ -36,7 +33,7 @@ const normalizeAccepts = (
     return undefined
   }
 
-  const kinds = accepts.filter(isPaneKind)
+  const kinds = accepts.filter(isSupportedPaneKind)
 
   return kinds.length === 0 ? undefined : kinds
 }
