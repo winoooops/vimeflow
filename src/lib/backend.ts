@@ -1,5 +1,6 @@
 import type { AgentAlias } from '../bindings/AgentAlias'
 import type { AppSettings } from '../bindings/AppSettings'
+import type { SystemFont } from '../bindings/SystemFont'
 import type {
   RenameAgentSessionErrorReason,
   RenameAgentSessionRequest,
@@ -24,6 +25,7 @@ export interface CommandPaletteBindingSync {
 export interface SettingsBridge {
   load: () => Promise<AppSettings>
   save: (settings: AppSettings) => Promise<void>
+  listSystemFonts?: () => Promise<SystemFont[]>
   openFile: () => Promise<void>
   openWindow?: () => Promise<void>
   syncSnapshot: (settings: AppSettings) => Promise<void>

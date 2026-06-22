@@ -666,7 +666,7 @@ describe('SettingsDialog', () => {
     const user = userEvent.setup()
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    // Click a placeholder section (Terminal)
+    // Click a non-matching section (Terminal)
     await user.click(screen.getByRole('option', { name: 'Terminal' }))
 
     // Type a query that filters Terminal out of the sidebar
@@ -678,10 +678,14 @@ describe('SettingsDialog', () => {
     // Terminal button should be gone from sidebar
     expect(screen.queryByRole('option', { name: 'Terminal' })).toBeNull()
 
-    // But the placeholder pane for Terminal should still render
+    // But the active Terminal pane should still render
     expect(
-      screen.getByText(/Terminal settings haven't been wired yet/)
+      within(screen.getByTestId('settings-dialog-content')).getByRole(
+        'heading',
+        { name: 'Terminal' }
+      )
     ).toBeInTheDocument()
+    expect(screen.getByLabelText('Terminal font family')).toBeInTheDocument()
   })
 
   test('moves focus to the close button when opened', async () => {
@@ -847,7 +851,7 @@ describe('SettingsDialog', () => {
 
     expect(
       within(screen.getByTestId('settings-dialog-content')).getByText(
-        /Terminal settings haven't been wired yet/
+        'Font Family'
       )
     ).toBeInTheDocument()
 

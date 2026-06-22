@@ -2457,6 +2457,7 @@ export const WorkspaceView = (): ReactElement => {
               onBurner={(target): void => void toggleBurner(target)}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
+              terminalFontFamily={settings.terminalFontFamily}
             />
           </div>
           {!dockBeforeTerminal ? dockPanel : null}

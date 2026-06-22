@@ -11,7 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
-import { TERMINAL_FONT_FAMILY } from './terminalFont'
+import { TERMINAL_FONT_FAMILY, resolveTerminalFontFamily } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { obsidianLens } from '../../../../theme'
@@ -210,6 +210,37 @@ describe('Body', () => {
         })
       )
     })
+  })
+
+  test('updates the mounted terminal font family without recreating xterm', async () => {
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    })
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        terminalFontFamily="Iosevka"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.options.fontFamily).toBe(
+        resolveTerminalFontFamily('Iosevka')
+      )
+    })
+
+    expect(Terminal).toHaveBeenCalledTimes(1)
   })
 
   test('applies Catppuccin Mocha theme', async () => {

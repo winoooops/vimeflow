@@ -50,6 +50,7 @@ export interface TerminalPaneProps {
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
   showFocusHighlight?: boolean
+  terminalFontFamily?: string
 }
 
 export interface TerminalPaneHandle {
@@ -81,6 +82,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onRestart = undefined,
       deferFit = false,
       showFocusHighlight = true,
+      terminalFontFamily = undefined,
     }: TerminalPaneProps,
     ref
   ): ReactElement {
@@ -281,6 +283,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               mode={mode}
               onPtyStatusChange={setPtyStatus}
               deferFit={deferFit}
+              terminalFontFamily={terminalFontFamily}
             />
           </div>
         )}

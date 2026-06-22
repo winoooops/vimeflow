@@ -55,6 +55,7 @@ export interface SplitViewProps {
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
+  terminalFontFamily?: string
 }
 
 export interface SplitViewHandle {
@@ -98,6 +99,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
+      terminalFontFamily = undefined,
     }: SplitViewProps,
     ref
   ): ReactElement {
@@ -333,6 +335,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}
+                          terminalFontFamily={terminalFontFamily}
                         />
                       )}
                     </div>

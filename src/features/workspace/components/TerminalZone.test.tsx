@@ -61,6 +61,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       onClose,
       session,
       isActive,
+      terminalFontFamily,
     }: TerminalPaneProps): ReactElement => (
       <div
         data-testid="terminal-pane-mock"
@@ -75,6 +76,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
         data-session-agent-type={session.agentType}
+        data-terminal-font-family={terminalFontFamily}
       >
         Mocked TerminalPane
         {/* Expose the onRestart wiring so tests can assert TerminalZone
@@ -173,6 +175,14 @@ describe('TerminalZone', () => {
       'data-show-focus-highlight',
       'true'
     )
+  })
+
+  test('forwards terminal font family to rendered panes', () => {
+    render(<TerminalZone {...defaultProps} terminalFontFamily="Iosevka" />)
+
+    screen.getAllByTestId('terminal-pane-mock').forEach((pane) => {
+      expect(pane).toHaveAttribute('data-terminal-font-family', 'Iosevka')
+    })
   })
 
   test('isZoneFocused=true by default does not apply dim class', () => {

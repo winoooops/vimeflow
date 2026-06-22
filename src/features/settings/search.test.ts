@@ -30,12 +30,14 @@ describe('searchSettings', () => {
 
     expect(model.sections.map((section) => section.label)).toEqual([
       'Appearance',
+      'Terminal',
     ])
 
     expect(model.targets.slice(0, 2).map((target) => target.label)).toEqual([
       'UI Font',
       'Mono Font',
     ])
+    expect(targetLabels('font')).toContain('Terminal Font')
 
     expect(model.results[0]).toMatchObject({
       kind: 'target',
@@ -50,5 +52,6 @@ describe('searchSettings', () => {
 
   test('matches category and subsection context for settings', () => {
     expect(targetLabels('appearance fonts')).toEqual(['UI Font', 'Mono Font'])
+    expect(targetLabels('terminal typography')).toEqual(['Terminal Font'])
   })
 })

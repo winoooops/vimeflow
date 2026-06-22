@@ -135,6 +135,14 @@ describe('TerminalPane index', () => {
     )
   })
 
+  test('forwards terminal font family to Body', () => {
+    render(<TerminalPane {...baseProps} terminalFontFamily="Iosevka" />)
+
+    expect(bodyPropsSpy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ terminalFontFamily: 'Iosevka' })
+    )
+  })
+
   test('the burner button activates its pane (spec §8) then toggles its burner', async () => {
     const onBurner = vi.fn()
     const onRequestActive = vi.fn()

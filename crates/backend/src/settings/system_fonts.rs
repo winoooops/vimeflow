@@ -1,0 +1,270 @@
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::process::Command;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, ts(export))]
+pub struct SystemFont {
+    pub family: String,
+}
+
+pub fn list_system_fonts() -> Vec<SystemFont> {
+    list_system_font_families()
+        .into_iter()
+        .filter(|family| looks_like_monospace_family(family))
+        .map(|family| SystemFont { family })
+        .collect()
+}
+
+fn list_system_font_families() -> Vec<String> {
+    let candidates = if cfg!(target_os = "macos") {
+        list_macos_font_families()
+    } else if cfg!(target_os = "windows") {
+        list_windows_font_families()
+    } else {
+        list_fontconfig_families()
+    };
+
+    unique_sorted_families(candidates)
+}
+
+fn list_fontconfig_families() -> Vec<String> {
+    command_stdout("fc-list", &[":spacing=100", "family"])
+        .map(|stdout| parse_fontconfig_families(&stdout))
+        .unwrap_or_default()
+}
+
+fn list_macos_font_families() -> Vec<String> {
+    if let Some(stdout) = command_stdout("fc-list", &[":spacing=100", "family"]) {
+        let families = parse_fontconfig_families(&stdout);
+        if !families.is_empty() {
+            return families;
+        }
+    }
+
+    command_stdout("system_profiler", &["SPFontsDataType", "-json"])
+        .and_then(|stdout| serde_json::from_str::<Value>(&stdout).ok())
+        .map(|value| parse_system_profiler_families(&value))
+        .unwrap_or_default()
+}
+
+fn list_windows_font_families() -> Vec<String> {
+    command_stdout(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts','HKCU:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts' -ErrorAction SilentlyContinue | ForEach-Object { $_.PSObject.Properties | ForEach-Object { $_.Name } }",
+        ],
+    )
+    .map(|stdout| parse_windows_registry_fonts(&stdout))
+    .unwrap_or_default()
+}
+
+fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout).ok()
+}
+
+fn parse_fontconfig_families(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .flat_map(|line| line.split(':').next().unwrap_or(line).split(','))
+        .filter_map(normalize_family_name)
+        .collect()
+}
+
+fn parse_windows_registry_fonts(stdout: &str) -> Vec<String> {
+    stdout.lines().filter_map(normalize_family_name).collect()
+}
+
+fn parse_system_profiler_families(value: &Value) -> Vec<String> {
+    let mut families = Vec::new();
+    collect_system_profiler_families(value, &mut families);
+    families
+}
+
+fn collect_system_profiler_families(value: &Value, families: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (key, nested) in map {
+                if matches!(key.as_str(), "family" | "_name") {
+                    if let Some(family) = nested.as_str().and_then(normalize_family_name) {
+                        families.push(family);
+                    }
+                }
+                collect_system_profiler_families(nested, families);
+            }
+        }
+        Value::Array(values) => {
+            for nested in values {
+                collect_system_profiler_families(nested, families);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_family_name(value: &str) -> Option<String> {
+    let mut name = value.trim().trim_matches('"').trim().to_string();
+
+    loop {
+        let mut changed = false;
+
+        for suffix in [
+            " (TrueType)",
+            " (OpenType)",
+            " Regular",
+            " Bold Italic",
+            " Bold",
+            " Italic",
+            " Medium",
+            " Light",
+            " Thin",
+            " Black",
+        ] {
+            if name.ends_with(suffix) {
+                name.truncate(name.len() - suffix.len());
+                name = name.trim().to_string();
+                changed = true;
+                break;
+            }
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    if name.is_empty() || name.starts_with('.') {
+        return None;
+    }
+
+    Some(name.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+fn looks_like_monospace_family(family: &str) -> bool {
+    let lower = family.to_lowercase();
+
+    if lower.contains("emoji") || lower.contains("symbol") {
+        return false;
+    }
+
+    [
+        "mono",
+        "code",
+        "console",
+        "consolas",
+        "courier",
+        "menlo",
+        "monaco",
+        "iosevka",
+        "hack",
+        "fira",
+        "cascadia",
+        "inconsolata",
+        "source code",
+        "anonymous pro",
+        "commitmono",
+        "monaspace",
+        "0xproto",
+        "berkeley",
+        "operator",
+        "cartograph",
+        "input",
+        "victor",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn unique_sorted_families(families: Vec<String>) -> Vec<String> {
+    let mut by_key = BTreeMap::new();
+
+    for family in families {
+        let key = family.to_lowercase();
+        by_key.entry(key).or_insert(family);
+    }
+
+    by_key.into_values().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_fontconfig_families_splits_and_normalizes_candidates() {
+        let families = parse_fontconfig_families(
+            "JetBrains Mono,JetBrainsMono Nerd Font:style=Regular\nMenlo\n",
+        );
+
+        assert_eq!(
+            families,
+            vec![
+                "JetBrains Mono".to_string(),
+                "JetBrainsMono Nerd Font".to_string(),
+                "Menlo".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_windows_registry_fonts_strips_font_suffixes() {
+        let families = parse_windows_registry_fonts(
+            "Cascadia Mono (TrueType)\nCourier New Bold (OpenType)\n",
+        );
+
+        assert_eq!(
+            families,
+            vec!["Cascadia Mono".to_string(), "Courier New".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_system_profiler_families_collects_nested_family_names() {
+        let value = serde_json::json!({
+            "SPFontsDataType": [
+                {
+                    "_name": "Menlo",
+                    "typefaces": [
+                        { "family": "Menlo", "style": "Regular" },
+                        { "family": "JetBrains Mono", "style": "Regular" }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(
+            parse_system_profiler_families(&value),
+            vec![
+                "Menlo".to_string(),
+                "Menlo".to_string(),
+                "JetBrains Mono".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn list_system_fonts_filters_to_text_monospace_families() {
+        let fonts = unique_sorted_families(vec![
+            "Arial".to_string(),
+            "Menlo".to_string(),
+            "Symbols Nerd Font Mono".to_string(),
+            "Iosevka".to_string(),
+            "menlo".to_string(),
+        ])
+        .into_iter()
+        .filter(|family| looks_like_monospace_family(family))
+        .collect::<Vec<_>>();
+
+        assert_eq!(fonts, vec!["Iosevka".to_string(), "Menlo".to_string()]);
+    }
+}

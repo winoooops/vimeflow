@@ -65,6 +65,7 @@ export interface TerminalZoneProps {
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
+  terminalFontFamily?: string
 }
 
 export interface TerminalZoneHandle {
@@ -92,6 +93,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
+      terminalFontFamily = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -197,6 +199,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
+                    terminalFontFamily={terminalFontFamily}
                     // The active pane keeps its highlight even when the dock
                     // (or another container) has focus, so the user never
                     // loses track of which pane is active. The zone still dims

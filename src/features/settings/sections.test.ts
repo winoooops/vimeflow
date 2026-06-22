@@ -67,6 +67,11 @@ describe('SETTINGS_TARGETS', () => {
           section: 'keymap',
           label: 'Command palette leader',
         }),
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.terminalFontFamily,
+          section: 'terminal',
+          label: 'Terminal Font',
+        }),
       ])
     )
   })
@@ -97,6 +102,13 @@ describe('SETTINGS_SUBSECTIONS', () => {
           id: 'keymap-global',
           section: 'keymap',
           label: 'Global',
+        }),
+        expect.objectContaining({
+          id: 'terminal-typography',
+          section: 'terminal',
+          label: 'Typography',
+          targetId: SETTINGS_TARGET_IDS.terminalFontFamily,
+          targetIds: [SETTINGS_TARGET_IDS.terminalFontFamily],
         }),
       ])
     )
