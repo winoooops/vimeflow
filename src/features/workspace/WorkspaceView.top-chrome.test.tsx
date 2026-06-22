@@ -705,6 +705,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       [createMockSession('session-1', 'auth refactor', { layout: 'single' })],
       'session-1'
     )
+
     mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
       inactiveCustomLayout,
     ])

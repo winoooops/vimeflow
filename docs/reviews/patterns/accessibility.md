@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-22
-ref_count: 79
+ref_count: 80
 ---
 
 # Accessibility
@@ -736,3 +736,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The unknown-window OpenCode context card used `formatTokenCount` in `aria-valuetext` but rendered the visible token count with `formatTokens`. Screen readers could announce a different token count than the value sighted users saw.
 - **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 72. Draggable handle carried a label without an interactive role
+
+- **Source:** github-claude | PR #610 round 3 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle rendered as a plain draggable `<div>` with an `aria-label`, but without an interactive role or focus entry point. Assistive technologies could ignore the label, leaving the pane-move affordance undiscoverable.
+- **Fix:** Added `role="button"` and `tabIndex={0}` to make the labelled drag handle discoverable while keyboard-driven pane reorder remains a deferred follow-up.
+- **Commit:** same commit as this entry

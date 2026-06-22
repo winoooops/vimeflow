@@ -106,7 +106,11 @@ export const usePaneShortcuts = ({
         const layout = layoutRegistryRef.current.getFallbackLayout(
           activeSession.layout
         )
-        const targetSlotId = layout.definition.addOrder[slotIndex]
+
+        const targetSlotId = layout.definition.addOrder.find(
+          (_, index) => index === slotIndex
+        )
+
         if (targetSlotId === undefined) {
           return
         }

@@ -596,6 +596,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                                 data-testid="split-view-browser-drag-handle"
                                 data-drag-handle="true"
                                 aria-label="Drag to move pane"
+                                role="button"
+                                tabIndex={0}
                                 draggable
                                 onDragStart={(event): void =>
                                   handlePaneDragStart(pane.id, event)

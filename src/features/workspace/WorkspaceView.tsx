@@ -1379,6 +1379,7 @@ const WorkspaceViewContent = (): ReactElement => {
     (definition: PaneLayoutDefinition): void => {
       const isEditingActiveLayout =
         layoutCreatorEditId !== null && activeSession?.layout === definition.id
+
       const shouldApplyToActiveSession =
         layoutCreatorEditId === null || isEditingActiveLayout
 
@@ -1390,6 +1391,7 @@ const WorkspaceViewContent = (): ReactElement => {
       setHiddenCustomLayoutIds((previous) =>
         previous.filter((layoutId) => layoutId !== definition.id)
       )
+
       if (
         shouldApplyToActiveSession &&
         activeSessionId &&
