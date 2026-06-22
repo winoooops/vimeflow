@@ -395,7 +395,7 @@ const writeIndexRow = (
   directory: any,
   slug: any
 ): void => {
-  if (typeof sessionID !== 'string') {
+  if (sessionFilename(sessionID) == null) {
     return
   }
 
@@ -424,7 +424,7 @@ const handleSessionInfo = (type: string, info: any): void => {
 
   if (type === 'session.created' || previous !== directory) {
     lastDirectory.set(sessionID, directory)
-    writeIndexRow(sessionID, process.pid, info.directory, info.slug)
+    writeIndexRow(sessionID, process.pid, directory, info.slug)
   }
 }
 

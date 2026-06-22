@@ -2,7 +2,6 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useTheme } from '@/theme/useTheme'
 import { WaterTank } from './WaterTank'
 import { resolveContextTone, tankChrome } from '../utils/contextTone'
-import { formatTokens } from '../utils/format'
 
 export interface ContextReservoirCardProps {
   usedPercentage: number | null
@@ -10,7 +9,7 @@ export interface ContextReservoirCardProps {
   /**
    * Absolute input-token count, used only when `usedPercentage === null` (the
    * window size is unknown, e.g. opencode does not expose a context window). In
-   * that state the footer shows this count ("11.8k tokens · window unknown")
+   * that state the footer shows this count ("11,800 tokens · window unknown")
    * instead of a dash, so the card is not blank. Ignored when a percentage is
    * known — the reconstructed `used` figure stays authoritative there. A value
    * of 0 is treated as "data not yet available" and renders as dashes.
@@ -181,7 +180,7 @@ export const ContextReservoirCard = ({
               {pct !== null
                 ? formatTokenCount(used)
                 : hasUnknownWindowTokens
-                  ? formatTokens(inputTokens)
+                  ? formatTokenCount(inputTokens)
                   : DASH}
             </span>
             <span className="text-[9.5px] text-on-surface-muted"> tokens</span>

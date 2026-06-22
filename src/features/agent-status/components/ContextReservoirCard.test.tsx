@@ -195,7 +195,7 @@ describe('ContextReservoirCard unknown-window with token count', () => {
     )
 
     expect(screen.getByTestId('token-count-detail')).toHaveTextContent(
-      '11.8k tokens'
+      '11,781 tokens'
     )
 
     expect(screen.getByTestId('context-headroom')).toHaveTextContent(

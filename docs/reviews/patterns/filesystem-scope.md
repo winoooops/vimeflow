@@ -255,3 +255,21 @@ preserve their original Tauri-era paths.
 - **Finding:** The OpenCode bridge appended per-session JSONL records with `appendLine(`${sessionID}.jsonl`, ...)` after only checking that `sessionID` was a string. A crafted session ID containing separators or `..` could escape the Vimeflow-owned bridge directory because the writer joined the value directly into the output path.
 - **Fix:** Added a shared session-filename helper that allows only alphanumeric, underscore, and hyphen session IDs with a length cap. All event/tool per-session writes now route through that helper and drop invalid IDs before calling the filesystem writer.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. OpenCode bridge index rows retained raw session IDs
+
+- **Source:** local-codex | PR #603 round 3 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The bridge had hardened per-session JSONL writes but still allowed raw `sessionID` values into `index.jsonl`. The Rust locator later turns an index `sessionID` into `<sessionID>.jsonl`, so a traversal-shaped ID could escape the bridge root before downstream validation rejected tailing.
+- **Fix:** Reused the bridge's `sessionFilename` allowlist in `writeIndexRow`, dropping unsafe IDs before writing index rows. Added a bridge regression test proving an unsafe session ID creates neither an index row nor an escaped session file.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. OpenCode bridge index row bypassed coerced directory
+
+- **Source:** github-claude | PR #603 round 3 | 2026-06-22
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** `handleSessionInfo` normalized `info.directory` to a string for change detection but passed the raw value into `writeIndexRow`. Missing or non-string directory values could serialize as absent/null and remove the locator's cwd fallback signal.
+- **Fix:** Passed the already-coerced `directory` binding into `writeIndexRow`, so invalid directory payloads become an explicit empty string. Added a bridge regression test for an omitted directory field.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

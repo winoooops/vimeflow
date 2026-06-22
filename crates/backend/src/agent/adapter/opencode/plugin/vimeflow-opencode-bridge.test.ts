@@ -1,9 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 interface BridgeHooks {
+  event: (params: {
+    event: {
+      type: string
+      properties: Record<string, unknown>
+    }
+  }) => Promise<void>
   'tool.execute.before': (
     input: { sessionID: string; tool: string; callID: string },
     output: { args: Record<string, unknown> }
@@ -66,6 +72,60 @@ describe('VimeflowOpencodeBridge', () => {
         signingKey: '[redacted]',
         webhookSigningKey: '[redacted]',
       })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('drops unsafe session ids before writing session or index files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vimeflow-opencode-bridge-'))
+    process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR = dir
+
+    try {
+      const bridge = await importBridge()
+
+      await bridge.event({
+        event: {
+          type: 'session.created',
+          properties: {
+            info: {
+              id: '../escaped',
+              directory: '/workspace/project',
+            },
+          },
+        },
+      })
+
+      expect(existsSync(join(dir, 'index.jsonl'))).toBe(false)
+      expect(existsSync(join(dir, '..', 'escaped.jsonl'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('writes coerced directory values to index rows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vimeflow-opencode-bridge-'))
+    process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR = dir
+
+    try {
+      const bridge = await importBridge()
+
+      await bridge.event({
+        event: {
+          type: 'session.created',
+          properties: {
+            info: {
+              id: 'session-index',
+              slug: 'Index Session',
+            },
+          },
+        },
+      })
+
+      const line = readFileSync(join(dir, 'index.jsonl'), 'utf8')
+      const record = JSON.parse(line) as { directory: string }
+
+      expect(record.directory).toBe('')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
