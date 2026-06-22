@@ -44,13 +44,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 23       | 4    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 40       | 17   | 2026-06-20   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 41       | 18   | 2026-06-22   |
 | [React Key Stability](patterns/react-key-stability.md)                                               | react-patterns     | 3        | 1    | 2026-06-19   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 14       | 12   | 2026-06-13   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 3    | 2026-06-15   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 7        | 4    | 2026-06-15   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 12       | 8    | 2026-06-20   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 12       | 9    | 2026-06-20   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
@@ -60,7 +60,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 76       | 28   | 2026-06-19   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 70       | 22   | 2026-06-20   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 3        | 2    | 2026-06-22   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 4    | 2026-06-14   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 3        | 1    | 2026-04-20   |
@@ -80,7 +80,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 11       | 8    | 2026-06-12   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 12       | 9    | 2026-06-15   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 12       | 6    | 2026-06-13   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 1        | 0    | 2026-06-11   |
@@ -98,3 +98,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Modulo Correctness](patterns/modulo-correctness.md)                                                 | correctness        | 1        | 0    | 2026-06-15   |
 | [Catalog Identifier Safety](patterns/catalog-identifier-safety.md)                                   | correctness        | 1        | 0    | 2026-06-18   |
 | [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 2        | 1    | 2026-06-20   |
+| [Platform Metadata Semantics](patterns/platform-metadata-semantics.md)                               | cross-platform     | 2        | 1    | 2026-06-22   |

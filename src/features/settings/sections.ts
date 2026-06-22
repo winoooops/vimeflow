@@ -40,6 +40,7 @@ export const SETTINGS_TARGET_IDS = {
   appearanceUiFont: 'appearance-ui-font',
   appearanceMonoFont: 'appearance-mono-font',
   appearanceReservoirSwell: 'appearance-reservoir-swell',
+  terminalFontFamily: 'terminal-font-family',
   keymapPreset: 'keymap-preset',
   agentsManageAliases: 'agents-manage-aliases',
   agentsShellAliases: 'agents-shell-aliases',
@@ -328,6 +329,13 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     label: 'Reservoir Swell',
     hint: 'Hover motion for the context reservoir waterline.',
     subsection: 'Interface',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.terminalFontFamily,
+    section: 'terminal',
+    label: 'Terminal Font',
+    hint: 'Font family used by terminal panes.',
+    subsection: 'Typography',
   },
   {
     id: SETTINGS_TARGET_IDS.keymapPreset,

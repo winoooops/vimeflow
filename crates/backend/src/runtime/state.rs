@@ -7,7 +7,7 @@ use crate::agent::types::{
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::aliases::{AgentAlias, AgentAliasesStore, AliasesCache, CURRENT_AGENT_ALIASES_VERSION};
 use crate::git::watcher::GitWatcherState;
-use crate::settings::{AppSettings, AppSettingsCache};
+use crate::settings::{list_system_fonts, AppSettings, AppSettingsCache, SystemFont};
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
@@ -124,6 +124,11 @@ impl BackendState {
     /// Persist app settings.
     pub fn save_app_settings(&self, settings: &AppSettings) -> Result<(), String> {
         self.app_settings.save(settings)
+    }
+
+    /// List installed monospace font families for terminal configuration.
+    pub async fn list_system_fonts(&self) -> Vec<SystemFont> {
+        list_system_fonts().await
     }
 
     /// Load the durable agent aliases store; missing / corrupt → empty Vec.

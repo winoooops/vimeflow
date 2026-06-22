@@ -2,8 +2,8 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-05-20
-ref_count: 1
+last_updated: 2026-06-22
+ref_count: 2
 ---
 
 # Tokio Blocking On Async Worker
@@ -38,3 +38,12 @@ original Tauri command wording.
 - **Finding:** `run_git_with_timeout` used synchronous `Command::new("taskkill").status()` in the async timeout branch. On Windows, `taskkill.exe` can block long enough to hold a Tokio worker thread while the timed-out git child is being cleaned up.
 - **Fix:** Wrap the Windows `taskkill` subprocess in `tokio::task::spawn_blocking` and detach the handle, matching the existing fire-and-forget Unix kill semantics without blocking the async worker.
 - **Commit:** _(see git log for the PR #214 Windows timeout cleanup review-fix commit)_
+
+### 3. Font enumeration ran synchronous OS commands inside the IPC handler
+
+- **Source:** github-claude | PR #607 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/settings/system_fonts.rs`
+- **Finding:** `list_system_fonts` reached `std::process::Command::output()` from the async IPC router. Slow platform font commands such as macOS `system_profiler` or Windows PowerShell could pin a Tokio worker thread while terminal, git, or filesystem IPC work waited behind it.
+- **Fix:** Made system font listing async at the backend state and IPC boundary, switched the subprocess helper to `tokio::process::Command`, and wrapped both individual commands and the overall enumeration in two-second timeouts that fall back to an empty font list.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

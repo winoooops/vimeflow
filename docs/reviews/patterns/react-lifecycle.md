@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 17
+last_updated: 2026-06-22
+ref_count: 18
 ---
 
 # React Lifecycle
@@ -373,4 +373,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/settings/hooks/useSettingsDialog.ts`
 - **Finding:** The `toggle` callback closed over `isOpenRef` before the `const isOpenRef = useRef(isOpen)` declaration appeared in the component body. Runtime behavior was safe because the callback is not invoked during render, but the forward reference creates a temporal-dead-zone footgun for future synchronous invocation changes.
 - **Fix:** Moved the `isOpenRef` declaration above the callbacks that read it so hook-local refs are declared before dependent closures.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Hidden terminal font changes only set deferred flags without forcing the later refit
+
+- **Source:** github-codex-connector | PR #607 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** Changing the terminal font while a different session was inactive left that pane mounted but hidden. The font-change effect saw `offsetWidth <= 0` and only set pending deferred-fit flags; when the pane later became visible, the normal resize path could skip fitting because the container dimensions matched `lastFitSize`, leaving xterm with stale columns and rows until a manual resize.
+- **Fix:** Route hidden font changes into the existing forced deferred-fit path by calling the session-owned `flushFitRef` after marking the pending font refresh. The forced path retries while width is zero, bypasses the size-cache skip once visible, and refreshes the terminal after fit. Added a regression test that changes fonts while the container width is zero, then restores width and verifies a forced fit plus refresh happens without recreating xterm.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

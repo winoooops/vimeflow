@@ -55,3 +55,7 @@ export type { ToolCallStatus } from './ToolCallStatus'
 export type { AgentToolCallEvent } from './AgentToolCallEvent'
 export type { AgentAlias } from './AgentAlias'
 export type { AgentAliasesStore } from './AgentAliasesStore'
+
+// Settings types
+export type { AppSettings } from './AppSettings'
+export type { SystemFont } from './SystemFont'

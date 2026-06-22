@@ -27,6 +27,7 @@ import { AppearancePane } from './components/panes/AppearancePane'
 import { GeneralPane } from './components/panes/GeneralPane'
 import { KeymapPane } from './components/panes/KeymapPane'
 import { PlaceholderPane } from './components/panes/PlaceholderPane'
+import { TerminalSettingsPane } from './components/panes/TerminalSettingsPane'
 import { isKeymapCaptureTarget } from '../keymap/capture'
 
 const REAL_PANES: readonly SettingsSectionId[] = [
@@ -34,6 +35,7 @@ const REAL_PANES: readonly SettingsSectionId[] = [
   'appearance',
   'keymap',
   'agents',
+  'terminal',
 ]
 
 const SETTINGS_SCROLL_STEP = 96
@@ -552,6 +554,7 @@ export const SettingsContent = (): ReactElement => {
           {section === 'appearance' && <AppearancePane />}
           {section === 'keymap' && <KeymapPane />}
           {section === 'agents' && <AgentsPane />}
+          {section === 'terminal' && <TerminalSettingsPane />}
           {!REAL_PANES.includes(section) && activeSection && (
             <PlaceholderPane section={activeSection} />
           )}

@@ -28,6 +28,7 @@ const createLoadedSettings = (): AppSettings => ({
   density: 'compact',
   uiFont: 'inter',
   monoFont: 'fira',
+  terminalFontFamily: 'Iosevka',
   reservoirSwell: 'trailing',
   keymapPreset: 'vscode',
   agentShimEnabled: false,

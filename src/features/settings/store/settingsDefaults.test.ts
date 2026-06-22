@@ -16,6 +16,7 @@ describe('DEFAULT_SETTINGS', () => {
       density: 'comfortable',
       uiFont: 'instrument',
       monoFont: 'jetbrains',
+      terminalFontFamily: 'JetBrains Mono',
       reservoirSwell: 'soft-mound',
       keymapPreset: 'vimeflow',
       agentShimEnabled: true,

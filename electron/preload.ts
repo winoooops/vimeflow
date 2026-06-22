@@ -12,6 +12,7 @@ import {
 } from './ipc-channels'
 import type { AgentAlias } from '../src/bindings/AgentAlias'
 import type { AppSettings } from '../src/bindings/AppSettings'
+import type { SystemFont } from '../src/bindings/SystemFont'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -244,6 +245,7 @@ contextBridge.exposeInMainWorld('vimeflow', {
     load: (): Promise<AppSettings> => invoke('load_app_settings'),
     save: (settings: AppSettings): Promise<void> =>
       invoke('save_app_settings', { settings }),
+    listSystemFonts: (): Promise<SystemFont[]> => invoke('list_system_fonts'),
     openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
     openWindow: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_WINDOW),
     syncSnapshot: (settings: AppSettings): Promise<void> =>

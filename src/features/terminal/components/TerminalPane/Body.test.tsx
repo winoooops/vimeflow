@@ -11,7 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
-import { TERMINAL_FONT_FAMILY } from './terminalFont'
+import { TERMINAL_FONT_FAMILY, resolveTerminalFontFamily } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { obsidianLens } from '../../../../theme'
@@ -210,6 +210,113 @@ describe('Body', () => {
         })
       )
     })
+  })
+
+  test('updates the mounted terminal font family without recreating xterm', async () => {
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    })
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        terminalFontFamily="Iosevka"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.options.fontFamily).toBe(
+        resolveTerminalFontFamily('Iosevka')
+      )
+    })
+
+    expect(Terminal).toHaveBeenCalledTimes(1)
+  })
+
+  test('forces a deferred font refit when a hidden terminal becomes visible', async () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    let containerWidth = 840
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockImplementation(() => containerWidth)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(Terminal).toHaveBeenCalledTimes(1)
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+      containerWidth = 0
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          terminalFontFamily="Iosevka"
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.options.fontFamily).toBe(
+          resolveTerminalFontFamily('Iosevka')
+        )
+      })
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+      containerWidth = 840
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
   })
 
   test('applies Catppuccin Mocha theme', async () => {
