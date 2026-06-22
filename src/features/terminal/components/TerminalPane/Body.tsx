@@ -229,9 +229,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const pendingDeferredFitFlushRef = useRef(false)
   const pendingDeferredRefreshAfterFitRef = useRef(false)
 
-  const resolvedTerminalFontFamily = resolveTerminalFontFamily(
-    terminalFontFamily
-  )
+  const resolvedTerminalFontFamily =
+    resolveTerminalFontFamily(terminalFontFamily)
   const resolvedTerminalFontFamilyRef = useRef(resolvedTerminalFontFamily)
   const appliedTerminalFontFamilyRef = useRef<string | null>(null)
   const agentCwdOutputBufferRef = useRef('')
@@ -937,7 +936,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   }, [sessionId])
 
   useEffect(() => {
-    if (!terminal || appliedTerminalFontFamilyRef.current === resolvedTerminalFontFamily) {
+    if (
+      !terminal ||
+      appliedTerminalFontFamilyRef.current === resolvedTerminalFontFamily
+    ) {
       return
     }
 

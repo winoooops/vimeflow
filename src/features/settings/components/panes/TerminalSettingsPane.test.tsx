@@ -51,7 +51,9 @@ describe('TerminalSettingsPane', () => {
   test('renders the terminal font setting with the default family', () => {
     renderPane()
 
-    expect(screen.getByRole('heading', { name: 'Terminal' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Terminal' })
+    ).toBeInTheDocument()
     expect(screen.getByText('Shell · Typography')).toBeInTheDocument()
     expect(screen.getByLabelText('Terminal font family')).toHaveValue(
       'JetBrains Mono'
@@ -68,7 +70,9 @@ describe('TerminalSettingsPane', () => {
 
     await waitFor(() => {
       expect(listSystemFonts).toHaveBeenCalled()
-      expect(screen.getByRole('option', { name: 'Iosevka' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('option', { name: 'Iosevka' })
+      ).toBeInTheDocument()
     })
 
     expect(screen.getByRole('option', { name: 'Menlo' })).toBeInTheDocument()
@@ -81,7 +85,9 @@ describe('TerminalSettingsPane', () => {
     renderPane()
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'Iosevka' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('option', { name: 'Iosevka' })
+      ).toBeInTheDocument()
     })
 
     await user.selectOptions(screen.getByLabelText('Terminal font family'), [
