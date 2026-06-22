@@ -2,8 +2,8 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-21
-ref_count: 9
+last_updated: 2026-06-22
+ref_count: 10
 ---
 
 # Terminal Control Sequence Handling
@@ -252,4 +252,22 @@ all required state through pure display-state helpers.
 - **File:** `electron/ghostty-render-state-main.ts` L420
 - **Finding:** `CursorVisibilityScanner` kept an unterminated private CSI sequence from `ESC[?` onward with no size limit. A process could stream arbitrary parameter bytes without a final byte and grow the Electron main-process buffer indefinitely.
 - **Fix:** Added a private-CSI pending-buffer limit matching the OSC limit and discard overlong pending sequences before they can accumulate. Added a regression that writes an over-limit unterminated private CSI sequence, then verifies a later suffix cannot complete it into a cursor visibility toggle.
+- **Commit:** same commit as this entry
+
+### 27. DEC 2026 markers split across PTY chunks were missed
+
+- **Source:** github-codex-connector | PR #608 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalSyncFrame.ts`
+- **Finding:** The Ghostty synchronized-output tracker scanned only complete `\x1b[?2026h/l` markers inside the current byte chunk. PTY event boundaries are arbitrary, so a split begin marker allowed torn redraw snapshots and a split end marker could keep suppressing frames until the failsafe.
+- **Fix:** Threaded a `SyncFrameParserState` through the Ghostty render-state driver, carrying the last seven bytes so split DEC 2026 markers are recognized on the next chunk. Added regression coverage for split begin and end markers.
+- **Commit:** same commit as this entry
+
+### 28. OSC color queries split across PTY chunks were not answered
+
+- **Source:** github-codex-connector | PR #608 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/terminalColorQuery.ts`
+- **Finding:** The Ghostty OSC 10/11 responder matched only complete color queries inside one string chunk. If Codex's query split before the BEL or ST terminator, no target was detected and the composer fell back to degraded rendering.
+- **Fix:** Added a carry-aware color query scanner and stored the carry in `useTerminal` for the active PTY subscription. Tests now cover ST-terminated and BEL-terminated queries split across chunks and ensure completed trailing queries are not answered twice.
 - **Commit:** same commit as this entry

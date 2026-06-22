@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-14
-ref_count: 26
+last_updated: 2026-06-22
+ref_count: 27
 ---
 
 # Documentation Accuracy
@@ -809,4 +809,22 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `docs/design/UNIFIED.md`
 - **Finding:** The Popover contract in `UNIFIED.md` §5.9 said focus is modal with `initialFocus: -1` and lands on the container on open, but `src/components/Popover.tsx` passes `focus={{ initialFocus: 0, modal: true }}` and `src/components/Popover.test.tsx` asserts focus lands on the first tabbable child. The mismatch creates a misleading public primitive contract that future consumers or tests may encode the wrong expectation against.
 - **Fix:** Updated the Popover focus rule to document `initialFocus: 0`, focus landing on the first tabbable child on open, and `modal: true` engaging the focus trap.
+- **Commit:** same commit as this entry
+
+### 87. Sync-frame docblock understated split END marker hold duration
+
+- **Source:** github-claude | PR #608 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalSyncFrame.ts`
+- **Finding:** The sync-frame helper comment claimed a split marker would at worst render one torn frame or hold the previous frame for one extra chunk. A split END marker with no later DEC 2026 marker could instead keep the Ghostty renderer suppressed until the eight-frame failsafe.
+- **Fix:** Replaced the stale caveat by implementing carry-aware marker parsing, so the documented limitation no longer applies. Regression tests now cover split begin and end markers.
+- **Commit:** same commit as this entry
+
+### 88. Non-standard doc label obscured a sync-frame caveat
+
+- **Source:** github-claude | PR #608 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalSyncFrame.ts`
+- **Finding:** The docblock used `ponytail:` as a caveat label, which is not a recognized JSDoc or project convention and made the limitation look accidental rather than intentional.
+- **Fix:** Removed the obsolete caveat while making the parser carry-aware across chunk boundaries, eliminating the misleading label and the documented limitation together.
 - **Commit:** same commit as this entry

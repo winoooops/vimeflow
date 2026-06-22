@@ -270,6 +270,72 @@ describe('ghostty render-state main bridge', () => {
     expect(terminals[0]?.snapshot).toHaveBeenCalledWith({ includeCells: true })
   })
 
+  // Regression: codex's input composer is a full-width truecolor background bar
+  // (rgb(57,57,71)) drawn over mostly-blank cells. libghostty's native snapshot
+  // carries no color and omits blank cells, so the bar exists only in formatHtml.
+  // The bridge must synthesize bg cells across the WHOLE row width from
+  // formatHtml ranges — a transient "clamp to native content extent" once dropped
+  // the blank portions and made the bar vanish (Ghostty terminal BUG-1). This
+  // locks the synthesis so the regression can't return.
+  test('synthesizes a full-width background bar from formatHtml when native cells omit blank styled cells', () => {
+    const barRow =
+      '<div style="display: inline;background-color: rgb(57, 57, 71);">                    </div>'
+
+    const inputRow =
+      '<div style="display: inline;background-color: rgb(57, 57, 71);font-weight: bold;">&gt;</div>' +
+      '<div style="display: inline;background-color: rgb(57, 57, 71);"> hi                </div>'
+    const html = [barRow, inputRow, barRow].join('\n')
+
+    // cspell:ignore truecolor
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 1,
+          cursorCol: 4,
+          visibleLines: [
+            { row: 0, text: '' },
+            { row: 1, text: '> hi' },
+            { row: 2, text: '' },
+          ],
+          // native cells: text only, no color, blank cells omitted
+          cells: [
+            { row: 1, col: 0, text: '>', width: 1 },
+            { row: 1, col: 2, text: 'h', width: 1 },
+            { row: 1, col: 3, text: 'i', width: 1 },
+          ],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+    const cells = snapshot.cells ?? []
+
+    // every column on each composer row (0,1,2) must be covered by a cell
+    // carrying the bar background, including the blank-only top/bottom rows
+    for (const row of [0, 1, 2]) {
+      for (let col = 0; col < 20; col += 1) {
+        const covering = cells.find(
+          (cell) =>
+            cell.row === row && cell.col <= col && col < cell.col + cell.width
+        )
+        expect(covering?.background, `row ${row} col ${col}`).toBe('#393947')
+      }
+    }
+  })
+
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
