@@ -43,6 +43,11 @@ export interface PersistedBrowserPane {
 
 export type PersistedWorkspacePane = PersistedShellPane | PersistedBrowserPane
 
+export interface PersistedPanePlacement {
+  paneId: string
+  slotId: string
+}
+
 export interface PersistedTrackSpec {
   readonly id: string
   readonly units: number
@@ -79,6 +84,7 @@ export interface PersistedWorkspaceSession {
   id: string
   projectId: string
   layout: string
+  placements: PersistedPanePlacement[]
   workingDirectory: string
   active: boolean
   open: boolean
@@ -119,6 +125,7 @@ export interface PersistedWorkspaceSessionShape {
   id: string
   projectId: string
   layout: string
+  placements?: PersistedPanePlacement[]
   workingDirectory: string
   active: boolean
   open: boolean

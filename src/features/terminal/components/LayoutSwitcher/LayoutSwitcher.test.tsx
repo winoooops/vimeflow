@@ -84,6 +84,65 @@ describe('LayoutSwitcher', () => {
     expect(onPick).not.toHaveBeenCalled()
   })
 
+  test('renders a blocked layout as a present-but-disabled pill that does not pick', async () => {
+    const user = userEvent.setup()
+    const onPick = vi.fn()
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        blockedLayoutIds={['quad']}
+        onPick={onPick}
+      />
+    )
+
+    // The blocked layout still renders as a pill (visibility is not affected).
+    const quad = screen.getByRole('button', { name: /quad/i })
+    expect(quad).toBeInTheDocument()
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(quad)
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  test('a blocked pill exposes the reduce-panes explanation as its accessible name and tooltip', async () => {
+    const user = userEvent.setup()
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        blockedLayoutIds={['quad']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Reduce panes to switch to Quad' })
+    ).toBeInTheDocument()
+
+    await user.hover(
+      screen.getByRole('button', { name: 'Reduce panes to switch to Quad' })
+    )
+
+    expect(
+      await screen.findByRole('tooltip', {
+        name: 'Reduce panes to switch to Quad',
+      })
+    ).toBeInTheDocument()
+  })
+
+  test('the active layout is never disabled even if listed as blocked', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="quad"
+        blockedLayoutIds={['quad']}
+        onPick={vi.fn()}
+      />
+    )
+
+    const quad = screen.getByRole('button', { name: 'Quad' })
+    expect(quad).not.toHaveAttribute('aria-disabled', 'true')
+    expect(quad).toHaveAttribute('data-active', 'true')
+  })
+
   test('docks a trailing control inside the pillar after a hairline divider', () => {
     render(
       <LayoutSwitcher

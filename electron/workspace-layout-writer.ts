@@ -165,6 +165,7 @@ export class WorkspaceLayoutWriter
         id: session.id,
         projectId: session.projectId,
         layout: session.layout,
+        placements: session.placements ?? [],
         workingDirectory: session.workingDirectory,
         active: session.active,
         open: session.open,

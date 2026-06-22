@@ -105,6 +105,10 @@ describe('buildWorkspaceShape', () => {
           id: 's1',
           projectId: 'proj-1',
           layout: 'vsplit',
+          placements: [
+            { paneId: 'p0', slotId: 'slot:p0' },
+            { paneId: 'p1', slotId: 'slot:p1' },
+          ],
           workingDirectory: '/repo',
           active: true,
           open: true,
@@ -137,6 +141,22 @@ describe('buildWorkspaceShape', () => {
       buildWorkspaceShape([makeSession()], 's1', [customLayout])
         .customPaneLayouts
     ).toEqual([customLayout])
+  })
+
+  test('preserves explicit custom-slot placements when they match the layout', () => {
+    expect(
+      buildWorkspaceShape(
+        [
+          makeSession({
+            layout: 'custom:test',
+            panes: [shellPane()],
+            placements: [{ paneId: 'p0', slotId: 'slot:main' }],
+          }),
+        ],
+        's1',
+        [customLayout]
+      ).sessions[0].placements
+    ).toEqual([{ paneId: 'p0', slotId: 'slot:main' }])
   })
 })
 

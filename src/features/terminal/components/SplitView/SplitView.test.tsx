@@ -13,9 +13,19 @@ import {
   resolveLayoutRatios,
   type SplitViewHandle,
 } from './SplitView'
-import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import type {
+  LayoutId,
+  Pane,
+  PaneKind,
+  PanePlacement,
+  Session,
+} from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
-import { LAYOUTS } from '../../layout-registry'
+import {
+  LAYOUTS,
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../../layout-registry'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -64,6 +74,20 @@ vi.mock('../TerminalPane/Body', async () => {
     terminalCache: new Map<string, unknown>(),
     clearTerminalCache: (): void => undefined,
     disposeTerminalSession: (): void => undefined,
+  }
+})
+
+// BrowserPane pulls in the native-surface overlay stack (OverlayStackProvider)
+// and Electron browser bridge — neither is mounted in this harness. Stub it
+// with a minimal element so the drag-into-slot accepts test can render a
+// browser-kind pane. focusBrowserPane stays a no-op fn for the focus handle.
+vi.mock('../../../browser', async () => {
+  const React = await import('react')
+
+  return {
+    BrowserPane: (): React.ReactElement =>
+      React.createElement('div', { 'data-testid': 'browser-pane-mock' }),
+    focusBrowserPane: vi.fn(() => Promise.resolve(undefined)),
   }
 })
 
@@ -471,6 +495,25 @@ describe('SplitView - multi-pane layouts', () => {
     expect(slots[3]).toHaveStyle({ gridArea: 'p3' })
   })
 
+  test('explicit placements choose grid areas independently of pane order', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p3' })
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[1]).toHaveStyle({ gridArea: 'p0' })
+  })
+
   test('focus marker follows pane.active and inactive panes are dimmed', () => {
     render(
       <SplitView
@@ -627,7 +670,7 @@ describe('SplitView - under-capacity', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('clicking empty slot add button calls onAddPane with session id', async () => {
+  test('clicking empty slot add button calls onAddPane with session id and empty slot', async () => {
     const user = userEvent.setup()
     const onAddPane = vi.fn()
 
@@ -643,7 +686,7 @@ describe('SplitView - under-capacity', () => {
     await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(onAddPane).toHaveBeenCalledOnce()
-    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell')
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell', 'slot:p1')
   })
 })
 
@@ -1011,5 +1054,505 @@ describe('SplitView - over-capacity rescued active render', () => {
     // not panes[1] (which would be the naive prefix slice).
     expect(slots[1]).toHaveAttribute('data-pane-id', 'p2')
     expect(slots[1]).toHaveStyle({ gridArea: 'p1' })
+  })
+})
+
+describe('SplitView - drag panes into slots (VIM-167)', () => {
+  // Minimal DataTransfer stub: jsdom does not implement it, so fireEvent's
+  // synthetic drag events need one supplied for setData/getData to round-trip.
+  const makeDataTransfer = (): DataTransfer => {
+    const store = new Map<string, string>()
+
+    return {
+      setData: (format: string, value: string): void => {
+        store.set(format, value)
+      },
+      getData: (format: string): string => store.get(format) ?? '',
+      setDragImage: (): void => undefined,
+      dropEffect: 'none',
+      effectAllowed: 'all',
+    } as unknown as DataTransfer
+  }
+
+  const slotByPaneId = (paneId: string): HTMLElement => {
+    const slot = screen
+      .getAllByTestId('split-view-slot')
+      .find((node) => node.getAttribute('data-pane-id') === paneId)
+    if (!slot) {
+      throw new Error(`no slot for pane ${paneId}`)
+    }
+
+    return slot
+  }
+
+  const headerInSlot = (slot: HTMLElement): HTMLElement => {
+    // eslint-disable-next-line testing-library/no-node-access -- drag handle is the header element inside the slot
+    const header = slot.querySelector('[data-testid="terminal-pane-header"]')
+    if (!(header instanceof HTMLElement)) {
+      throw new Error('no terminal-pane-header in slot')
+    }
+
+    return header
+  }
+
+  test('terminal pane header is draggable but the body is not', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={vi.fn()}
+      />
+    )
+
+    expect(headerInSlot(slotByPaneId('p0'))).toHaveAttribute(
+      'draggable',
+      'true'
+    )
+
+    // The xterm body must NOT be draggable — dragging it would steal the
+    // pointer from terminal text selection.
+    const bodies = screen.getAllByTestId('body-mock')
+    for (const body of bodies) {
+      expect(body).not.toHaveAttribute('draggable', 'true')
+    }
+  })
+
+  test('browser pane drag handle is not exposed as a keyboard button', () => {
+    const session = makeSession('vsplit', 2)
+
+    const browserSession: Session = {
+      ...session,
+      panes: [
+        session.panes[0],
+        { ...session.panes[1], kind: 'browser' as PaneKind },
+      ],
+    }
+
+    render(
+      <SplitView
+        session={browserSession}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={vi.fn()}
+      />
+    )
+
+    const handle = screen.getByTestId('split-view-browser-drag-handle')
+
+    expect(handle).toHaveAttribute('draggable', 'true')
+    expect(handle).not.toHaveAttribute('role', 'button')
+    expect(handle).not.toHaveAttribute('tabindex')
+    expect(
+      screen.queryByRole('button', { name: /drag to move pane/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('dropping pane A header onto pane B swaps their slots', () => {
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    fireEvent.dragStart(headerInSlot(slotByPaneId('p0')), { dataTransfer })
+
+    const target = slotByPaneId('p1')
+    fireEvent.dragOver(target, { dataTransfer })
+    fireEvent.drop(target, { dataTransfer })
+
+    expect(onPanePlacementsChange).toHaveBeenCalledOnce()
+    const [sessionId, placements] = onPanePlacementsChange.mock.calls[0]
+    expect(sessionId).toBe('sess-fix')
+    // Guard against duplicate / ghost placements: a 2-pane swap yields exactly
+    // two placement entries, never a stale extra.
+    expect(placements).toHaveLength(2)
+    expect(placements).toEqual(
+      expect.arrayContaining([
+        { paneId: 'p0', slotId: 'slot:p1' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ])
+    )
+  })
+
+  test('dropping a pane header onto an empty slot moves it there', () => {
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={makeSession('quad', 2)}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    fireEvent.dragStart(headerInSlot(slotByPaneId('p0')), { dataTransfer })
+
+    const emptySlot = screen
+      .getAllByTestId('split-view-empty-slot')
+      .find((node) => node.getAttribute('data-slot-id') === 'slot:p2')
+    if (!emptySlot) {
+      throw new Error('no empty slot:p2')
+    }
+
+    fireEvent.dragOver(emptySlot, { dataTransfer })
+    fireEvent.drop(emptySlot, { dataTransfer })
+
+    expect(onPanePlacementsChange).toHaveBeenCalledOnce()
+
+    const placements: PanePlacement[] = onPanePlacementsChange.mock.calls[0][1]
+    // Guard against duplicate / ghost placements: moving one of two panes still
+    // yields exactly two placement entries.
+    expect(placements).toHaveLength(2)
+    expect(placements).toEqual(
+      expect.arrayContaining([
+        { paneId: 'p0', slotId: 'slot:p2' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ])
+    )
+
+    // p0's old slot is freed.
+    expect(placements.some((placement) => placement.slotId === 'slot:p0')).toBe(
+      false
+    )
+  })
+
+  test('a swap that violates slot.accepts is a no-op', () => {
+    // Custom layout: slot:p0 accepts only shell; slot:p1 accepts both
+    // shell and browser. Pane p1 is a browser pane occupying slot:p1.
+    // Dropping the browser pane onto slot:p0 (shell-only) would land a
+    // browser where it is not accepted, so the swap must be rejected — the
+    // rejection comes from the shell-only TARGET, not from slot:p1.
+    const definition: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:accepts-fixture',
+      title: 'Accepts fixture',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'c0', units: 1 },
+          { id: 'c1', units: 1 },
+        ],
+        rows: [{ id: 'r0', units: 1 }],
+      },
+      slots: [
+        {
+          id: 'slot:p0',
+          rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          accepts: ['shell'],
+        },
+        {
+          id: 'slot:p1',
+          rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+          accepts: ['shell', 'browser'],
+        },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+    const registry = new PaneLayoutRegistry([definition])
+
+    const session = makeSession('vsplit', 2)
+
+    const browserSession: Session = {
+      ...session,
+      layout: 'custom:accepts-fixture',
+      panes: [
+        session.panes[0],
+        { ...session.panes[1], kind: 'browser' as PaneKind },
+      ],
+    }
+
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={browserSession}
+        service={makeMockService()}
+        isActive
+        layoutRegistry={registry}
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+
+    // Drag the browser pane (p1, in slot:p1) onto slot:p0 (shell-only) via its
+    // dedicated drag handle.
+    fireEvent.dragStart(screen.getByTestId('split-view-browser-drag-handle'), {
+      dataTransfer,
+    })
+
+    const target = slotByPaneId('p0')
+    fireEvent.dragOver(target, { dataTransfer })
+    // Invalid target must not be highlighted.
+    expect(target).not.toHaveAttribute('data-drop-active', 'true')
+
+    fireEvent.drop(target, { dataTransfer })
+
+    expect(onPanePlacementsChange).not.toHaveBeenCalled()
+  })
+
+  test('a valid drop target is highlighted on dragover; invalid is not', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={vi.fn()}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    fireEvent.dragStart(headerInSlot(slotByPaneId('p0')), { dataTransfer })
+
+    const target = slotByPaneId('p1')
+    fireEvent.dragOver(target, { dataTransfer })
+    expect(target).toHaveAttribute('data-drop-active', 'true')
+
+    fireEvent.dragLeave(target, { dataTransfer })
+    expect(target).not.toHaveAttribute('data-drop-active', 'true')
+  })
+
+  test('dragging a pane onto itself does not fire a placement change', () => {
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    const slot = slotByPaneId('p0')
+    fireEvent.dragStart(headerInSlot(slot), { dataTransfer })
+    fireEvent.dragOver(slot, { dataTransfer })
+    fireEvent.drop(slot, { dataTransfer })
+
+    expect(onPanePlacementsChange).not.toHaveBeenCalled()
+  })
+
+  test('without onPanePlacementsChange the header is not draggable', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(headerInSlot(slotByPaneId('p0'))).not.toHaveAttribute(
+      'draggable',
+      'true'
+    )
+  })
+
+  test('moving a browser pane onto a shell-only empty slot is a no-op', () => {
+    // Custom 2-slot layout: slot:p0 unrestricted, slot:p1 accepts only shell.
+    // The session has a single browser pane in slot:p0, leaving slot:p1 empty.
+    // Dragging the browser onto the shell-only empty slot must be rejected
+    // (move-path accepts gate, canDropOnSlot empty-target branch).
+    const definition: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:shell-only-empty',
+      title: 'Shell-only empty',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'c0', units: 1 },
+          { id: 'c1', units: 1 },
+        ],
+        rows: [{ id: 'r0', units: 1 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+        {
+          id: 'slot:p1',
+          rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+          accepts: ['shell'],
+        },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+    const registry = new PaneLayoutRegistry([definition])
+
+    const base = makeSession('vsplit', 1)
+
+    const session: Session = {
+      ...base,
+      layout: 'custom:shell-only-empty',
+      panes: [{ ...base.panes[0], kind: 'browser' as PaneKind }],
+    }
+
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+        layoutRegistry={registry}
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    fireEvent.dragStart(screen.getByTestId('split-view-browser-drag-handle'), {
+      dataTransfer,
+    })
+
+    const emptySlot = screen
+      .getAllByTestId('split-view-empty-slot')
+      .find((node) => node.getAttribute('data-slot-id') === 'slot:p1')
+    if (!emptySlot) {
+      throw new Error('no empty slot:p1')
+    }
+
+    fireEvent.dragOver(emptySlot, { dataTransfer })
+    // Invalid (shell-only) empty target must never be highlighted.
+    expect(emptySlot).not.toHaveAttribute('data-drop-active', 'true')
+
+    fireEvent.drop(emptySlot, { dataTransfer })
+
+    expect(onPanePlacementsChange).not.toHaveBeenCalled()
+  })
+
+  test('a reverse-direction swap that violates the source slot is a no-op', () => {
+    // Custom 2-slot layout: slot:p0 accepts only shell and holds a shell pane;
+    // slot:p1 is unrestricted and holds a browser pane. Dragging the shell pane
+    // onto slot:p1 would swap the browser back into the shell-only slot:p0, so
+    // the swap must be rejected — this exercises the SECOND operand of the swap
+    // gate (the dragging slot must accept the displaced occupant).
+    const definition: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:reverse-swap',
+      title: 'Reverse swap',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'c0', units: 1 },
+          { id: 'c1', units: 1 },
+        ],
+        rows: [{ id: 'r0', units: 1 }],
+      },
+      slots: [
+        {
+          id: 'slot:p0',
+          rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          accepts: ['shell'],
+        },
+        { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+    const registry = new PaneLayoutRegistry([definition])
+
+    const base = makeSession('vsplit', 2)
+
+    const session: Session = {
+      ...base,
+      layout: 'custom:reverse-swap',
+      panes: [base.panes[0], { ...base.panes[1], kind: 'browser' as PaneKind }],
+    }
+
+    const onPanePlacementsChange = vi.fn()
+
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isActive
+        layoutRegistry={registry}
+        onPanePlacementsChange={onPanePlacementsChange}
+      />
+    )
+
+    const dataTransfer = makeDataTransfer()
+    // Drag the shell pane (p0, in shell-only slot:p0) onto slot:p1.
+    fireEvent.dragStart(headerInSlot(slotByPaneId('p0')), { dataTransfer })
+
+    const target = slotByPaneId('p1')
+    fireEvent.dragOver(target, { dataTransfer })
+    // The swap would send the browser into the shell-only source, so the
+    // target must not be highlighted.
+    expect(target).not.toHaveAttribute('data-drop-active', 'true')
+
+    fireEvent.drop(target, { dataTransfer })
+
+    expect(onPanePlacementsChange).not.toHaveBeenCalled()
+  })
+
+  test('a browser-only empty slot hides the Shell add-button', () => {
+    // Custom 2-slot layout with a browser-only empty slot and one fewer pane
+    // than slots. acceptsForSlotId must flow the restriction into EmptySlot so
+    // the Shell add-button is absent for that slot (end-to-end pass-through).
+    const definition: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:browser-only-empty',
+      title: 'Browser-only empty',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'c0', units: 1 },
+          { id: 'c1', units: 1 },
+        ],
+        rows: [{ id: 'r0', units: 1 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+        {
+          id: 'slot:p1',
+          rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+          accepts: ['browser'],
+        },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+    const registry = new PaneLayoutRegistry([definition])
+
+    const base = makeSession('vsplit', 1)
+
+    const session: Session = {
+      ...base,
+      layout: 'custom:browser-only-empty',
+    }
+
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+        layoutRegistry={registry}
+        onPanePlacementsChange={vi.fn()}
+      />
+    )
+
+    const emptySlot = screen
+      .getAllByTestId('split-view-empty-slot')
+      .find((node) => node.getAttribute('data-slot-id') === 'slot:p1')
+    if (!emptySlot) {
+      throw new Error('no empty slot:p1')
+    }
+
+    expect(
+      within(emptySlot).queryByRole('button', { name: 'add shell pane' })
+    ).toBeNull()
+
+    expect(
+      within(emptySlot).getByRole('button', { name: 'add browser pane' })
+    ).toBeInTheDocument()
   })
 })

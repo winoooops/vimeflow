@@ -2,12 +2,16 @@
 import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { emptyActivity } from '../../sessions/constants'
-import type { LayoutId, Session } from '../../sessions/types'
+import type { PaneLayoutId, Session } from '../../sessions/types'
+import {
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../layout-registry'
 import { usePaneShortcuts } from './usePaneShortcuts'
 
 const makeSession = (
   id: string,
-  layout: LayoutId,
+  layout: PaneLayoutId,
   paneIds: string[],
   activeIndex = 0
 ): Session => ({
@@ -37,7 +41,7 @@ const makeSession = (
 // QWERTZ) work too; tests synthesize both fields the way a real
 // keypress would.
 const codeFor = (key: string): string | undefined => {
-  if (key >= '1' && key <= '6') {
+  if (key >= '1' && key <= '9') {
     return `Digit${key}`
   }
   if (key === '\\') {
@@ -258,6 +262,100 @@ describe('usePaneShortcuts', () => {
     expect(setSessionActivePane).toHaveBeenNthCalledWith(2, 's1', 'p5')
   })
 
+  test('Ctrl+1 focuses the pane assigned to visual slot 1', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [
+          {
+            ...makeSession('s1', 'vsplit', ['p0', 'p1'], 1),
+            placements: [
+              { paneId: 'p0', slotId: 'slot:p1' },
+              { paneId: 'p1', slotId: 'slot:p0' },
+            ],
+          },
+        ],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    const swappedEvent = fire('2', { ctrlKey: true })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+    expect(swappedEvent.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('Ctrl+9 focuses the pane assigned to a custom layout ninth slot', () => {
+    const customLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:nine',
+      title: 'Nine',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'col-0', units: 8 },
+          { id: 'col-1', units: 8 },
+          { id: 'col-2', units: 8 },
+        ],
+        rows: [
+          { id: 'row-0', units: 8 },
+          { id: 'row-1', units: 8 },
+          { id: 'row-2', units: 8 },
+        ],
+      },
+      slots: Array.from({ length: 9 }, (_, index) => ({
+        id: `slot:p${index}` as const,
+        rect: {
+          col: index % 3,
+          row: Math.floor(index / 3),
+          colSpan: 1,
+          rowSpan: 1,
+        },
+      })),
+      addOrder: Array.from(
+        { length: 9 },
+        (_, index) => `slot:p${index}` as const
+      ),
+    }
+
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [
+          makeSession('s1', 'custom:nine', [
+            'p0',
+            'p1',
+            'p2',
+            'p3',
+            'p4',
+            'p5',
+            'p6',
+            'p7',
+            'p8',
+          ]),
+        ],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        layoutRegistry: new PaneLayoutRegistry([customLayout]),
+      })
+    )
+
+    const event = fire('9', { ctrlKey: true })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p8')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
   test('Ctrl+1 with already-active p0 lets the event propagate (no preventDefault)', () => {
     // The shortcut's job is to MOVE focus. When the target is already
     // active (the common single-pane case where Cmd+1 always targets
@@ -343,7 +441,7 @@ describe('usePaneShortcuts', () => {
 
     const sessionWithBadLayout = {
       ...makeSession('s1', 'single', ['p0']),
-      layout: 'invalid-old-layout' as LayoutId,
+      layout: 'invalid-old-layout' as PaneLayoutId,
     }
     renderHook(() =>
       usePaneShortcuts({

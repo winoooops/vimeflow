@@ -581,6 +581,65 @@ describe('Menu.Submenu', () => {
   })
 })
 
+describe('Menu.Row', () => {
+  test('nested button arrow keys do not move menu row focus', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha">
+          <span>Layout Alpha</span>
+          <button type="button">Edit Alpha</button>
+        </Menu.Row>
+        <Menu.Row label="Layout Beta">
+          <span>Layout Beta</span>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{ArrowDown}')
+
+    expect(editButton).toHaveFocus()
+    expect(
+      screen.getByRole('menuitem', { name: 'Layout Beta' })
+    ).not.toHaveFocus()
+  })
+
+  test('nested button Enter activates the button instead of the menu row', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onEdit = vi.fn()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha" onSelect={onSelect}>
+          <span>Layout Alpha</span>
+          <button type="button" onClick={onEdit}>
+            Edit Alpha
+          </button>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onEdit).toHaveBeenCalledOnce()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
 describe('Menu.Context', () => {
   test('renders nothing when closed', () => {
     const closed = false

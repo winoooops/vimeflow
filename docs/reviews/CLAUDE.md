@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 83       | 37   | 2026-06-22   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 92       | 90   | 2026-06-22   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 73       | 31   | 2026-06-22   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 69       | 69   | 2026-06-21   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
@@ -75,7 +75,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 41       | 14   | 2026-06-17   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 44       | 15   | 2026-06-20   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 24       | 10   | 2026-06-19   |
@@ -85,7 +85,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 15       | 9    | 2026-06-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 11       | 8    | 2026-06-12   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 14       | 8    | 2026-06-22   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 13       | 6    | 2026-06-20   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
@@ -93,9 +93,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 5        | 2    | 2026-06-19   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 7        | 7    | 2026-06-22   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 7        | 3    | 2026-06-19   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 8        | 5    | 2026-06-20   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 10       | 7    | 2026-06-22   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
@@ -107,7 +107,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
-| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 1        | 0    | 2026-06-19   |
+| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 13       | 5    | 2026-06-22   |
+| [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 3        | 1    | 2026-06-22   |
 | [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 5        | 1    | 2026-06-20   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |

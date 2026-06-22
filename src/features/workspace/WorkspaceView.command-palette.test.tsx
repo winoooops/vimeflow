@@ -202,6 +202,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),

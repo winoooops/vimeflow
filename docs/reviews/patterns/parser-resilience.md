@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-12
+last_updated: 2026-06-22
 ref_count: 8
 ---
 
@@ -210,4 +210,31 @@ true` and drop the chunk.
 - **File:** `eslint-rules/no-hardcoded-colors.js` L9
 - **Finding:** The new `no-hardcoded-colors` rule matched white/black utilities for `text`, `bg`, `border`, etc., but omitted the Tailwind gradient-stop prefixes `from`, `via`, and `to`. Class strings such as `from-white/5`, `via-black`, and `to-white/20` passed lint even though they are hardcoded colors, weakening the per-commit guard for the runtime theme migration.
 - **Fix:** Extended the white/black utility regex to include `from|via|to` and added invalid `RuleTester` cases for `from-white/5`, `via-black`, and `to-white/20`.
+- **Commit:** same commit as this entry
+
+### 12. YAML mode swallows validation errors, shows JSON SyntaxError instead
+
+- **Source:** github-claude | PR #569 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts` L713-723
+- **Finding:** `parseDraftLayoutText` used a bare `catch {}` around `modelToDraft(parseYamlModel(trimmed))` so it could fall through to a JSON fallback. Valid YAML that produced a semantically invalid model (e.g., missing covered cells, overlapping panes) threw a descriptive validation error, but that error was discarded. The subsequent `JSON.parse(trimmed)` always failed on YAML text, surfacing a cryptic `SyntaxError: Unexpected token '-'` instead of the actionable validation message.
+- **Fix:** Capture the YAML error in a local variable, attempt the JSON fallback, and re-throw the original YAML error if the fallback also fails. This preserves descriptive validation messages for valid YAML with semantic problems while keeping the JSON-pasted-into-YAML-mode convenience path.
+- **Commit:** same commit as this entry
+
+### 13. Quoted YAML flow-sequence accepts entries are silently dropped
+
+- **Source:** github-codex-connector | PR #609 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
+- **Finding:** The YAML `accepts` flow-sequence parser split entries and trimmed whitespace, but it left scalar quote characters in values such as `'browser'` and `"shell"`. Those quoted strings failed the supported-pane-kind filter, so valid YAML restrictions normalized to `undefined` and made the slot unrestricted.
+- **Fix:** Added YAML scalar unwrapping before `readAccepts` normalizes flow-sequence entries. Regression coverage imports quoted single- and double-quoted accepts entries and verifies both pane kinds survive.
+- **Commit:** same commit as this entry
+
+### 14. YAML block-sequence accepts entries are ignored as unknown slot keys
+
+- **Source:** github-claude | PR #609 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
+- **Finding:** The hand-written YAML parser only supported `accepts: [browser, shell]`. A user-authored block list under `accepts:` was parsed as unrelated `- browser` slot-level lines, so the restriction was dropped without an error.
+- **Fix:** Added a narrow `accepts:` block-list state that accumulates following `- kind` scalars into the current slot restriction. The new test covers block-sequence YAML and verifies both values are preserved.
 - **Commit:** same commit as this entry

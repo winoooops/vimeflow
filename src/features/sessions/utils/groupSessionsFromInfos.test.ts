@@ -138,6 +138,13 @@ describe('groupSessionsFromInfos', () => {
       'p3',
     ])
 
+    expect(restored.placements).toEqual([
+      { paneId: 'p0', slotId: 'slot:p0' },
+      { paneId: 'p1', slotId: 'slot:p1' },
+      { paneId: 'p2', slotId: 'slot:p2' },
+      { paneId: 'p3', slotId: 'slot:p3' },
+    ])
+
     expect(restored.panes.map((pane) => pane.agentType)).toEqual([
       'claude-code',
       'codex',
@@ -566,6 +573,34 @@ describe('reconstructWorkspace', () => {
     expect(s.layout).toBe('vsplit')
   })
 
+  test('preserves valid store placements and fills invalid or missing entries', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-placements',
+        layout: 'quad',
+        placements: [
+          { paneId: 'p2', slotId: 'slot:p1' },
+          { paneId: 'missing', slotId: 'slot:p0' },
+          { paneId: 'p0', slotId: 'slot:p1' },
+          { paneId: 'p1', slotId: 'slot:missing' },
+        ],
+        panes: [
+          browserShape({ paneId: 'p0', paneIndex: 0, active: true }),
+          browserShape({ paneId: 'p1', paneIndex: 1, active: false }),
+          browserShape({ paneId: 'p2', paneIndex: 2, active: false }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions[0].placements).toEqual([
+      { paneId: 'p2', slotId: 'slot:p1' },
+      { paneId: 'p0', slotId: 'slot:p0' },
+      { paneId: 'p1', slotId: 'slot:p2' },
+    ])
+  })
+
   test('preserves a persisted custom layout when its definition is present', () => {
     const store = storeOf(
       [
@@ -600,6 +635,9 @@ describe('reconstructWorkspace', () => {
 
     expect(sessions).toHaveLength(1)
     expect(sessions[0].layout).toBe('single')
+    expect(sessions[0].placements).toEqual([
+      { paneId: 'p0', slotId: 'slot:p0' },
+    ])
   })
 
   test('reload shape restores browser-only and mixed browser sessions together', () => {

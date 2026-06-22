@@ -15,6 +15,13 @@ export interface SegmentedControlOption<T extends string | number> {
   icon?: string
   tooltip?: ReactNode
   shortcut?: ShortcutInput
+  /**
+   * Dim the option and ignore clicks/keyboard selection without removing it.
+   * The Tooltip still appears on hover (we deliberately avoid
+   * `pointer-events-none` and the native `disabled` attribute, which would
+   * both suppress hover) so the caller can explain why it's unavailable.
+   */
+  disabled?: boolean
 }
 
 const segmentedTrackVariants = tv({
@@ -160,24 +167,48 @@ const keyToOffset = (key: string): number | 'first' | 'last' | null => {
   return null
 }
 
-const nextIndexForKey = (
+const nextIndexForKey = <T extends string | number>(
   key: string,
   index: number,
-  total: number
+  options: readonly SegmentedControlOption<T>[]
 ): number | null => {
   const offset = keyToOffset(key)
+  const total = options.length
 
   if (offset === null || total === 0) {
     return null
   }
-  if (offset === 'first') {
-    return 0
-  }
-  if (offset === 'last') {
-    return total - 1
+
+  const isEnabled = (candidate: number): boolean =>
+    options[candidate].disabled !== true
+
+  // Home/End scan inward from the respective edge to the first enabled option.
+  if (offset === 'first' || offset === 'last') {
+    const step = offset === 'first' ? 1 : -1
+    const start = offset === 'first' ? 0 : total - 1
+
+    for (let candidate = start; candidate >= 0 && candidate < total; ) {
+      if (isEnabled(candidate)) {
+        return candidate
+      }
+
+      candidate += step
+    }
+
+    return null
   }
 
-  return (index + offset + total) % total
+  // Arrows walk in the step direction, wrapping, until an enabled option is
+  // found. Bail after a full loop so an all-disabled control does nothing.
+  for (let step = 1; step <= total; step += 1) {
+    const candidate = (index + offset * step + total * step) % total
+
+    if (isEnabled(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
 }
 
 export const SegmentedControl = <T extends string | number>({
@@ -237,7 +268,7 @@ export const SegmentedControl = <T extends string | number>({
     event: KeyboardEvent<HTMLButtonElement>,
     index: number
   ): void => {
-    const nextIndex = nextIndexForKey(event.key, index, options.length)
+    const nextIndex = nextIndexForKey(event.key, index, options)
 
     if (nextIndex === null) {
       return
@@ -276,6 +307,7 @@ export const SegmentedControl = <T extends string | number>({
       )}
       {options.map((option, index) => {
         const active = option.value === value
+        const disabled = option.disabled === true
 
         const extraButtonClass =
           typeof buttonClassName === 'function'
@@ -288,18 +320,25 @@ export const SegmentedControl = <T extends string | number>({
             type="button"
             aria-label={option.ariaLabel ?? option.label}
             aria-pressed={active}
+            aria-disabled={disabled ? 'true' : undefined}
             data-active={active ? 'true' : undefined}
+            data-disabled={disabled ? 'true' : undefined}
             tabIndex={index === focusIndex ? 0 : -1}
             onClick={
-              active && skipActiveReselect
+              disabled || (active && skipActiveReselect)
                 ? undefined
                 : (): void => onChange(option.value)
             }
             onKeyDown={(event): void => handleKeyDown(event, index)}
+            // Deliberately NOT `disabled`/`pointer-events-none` — both kill the
+            // hover that the Tooltip needs. `cursor-not-allowed` + dimming +
+            // `aria-disabled` convey unavailability while keeping hover alive.
             className={segmentedItemVariants({
               variant,
               active,
-              class: extraButtonClass,
+              class: disabled
+                ? `${extraButtonClass ?? ''} cursor-not-allowed opacity-40`
+                : extraButtonClass,
             })}
           >
             {renderOption !== undefined

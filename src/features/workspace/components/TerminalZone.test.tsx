@@ -846,7 +846,7 @@ describe('TerminalZone', () => {
     await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(addPane).toHaveBeenCalledOnce()
-    expect(addPane).toHaveBeenCalledWith('s1', 'shell')
+    expect(addPane).toHaveBeenCalledWith('s1', 'shell', 'slot:p1')
   })
 
   test('clicking a pane close control forwards removePane with both ids', async () => {

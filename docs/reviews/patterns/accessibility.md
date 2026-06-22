@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-22
-ref_count: 31
+ref_count: 80
 ---
 
 # Accessibility
@@ -623,7 +623,61 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
 - **Commit:** same commit as this entry
 
-### 60. Tokyo Night muted text falls below contrast threshold
+### 60. Layout creator modal lacks focus trap and focus restoration
+
+- **Source:** github-codex-connector (P2 / MEDIUM) | PR #569 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L833-833
+- **Finding:** The layout creator dialog declared `aria-modal="true"` but only handled Escape and ⌘Enter. It did not trap Tab focus or restore the previously focused element, so keyboard users could tab into the workspace behind the overlay and trigger unrelated controls while the modal was active.
+- **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
+- **Commit:** same commit as this entry
+
+### 61. Programmatic menu close unmounts the focused row
+
+- **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L79-294
+- **Finding:** `LayoutDisplayMenu` closed custom-layout actions by changing the `Menu` key. The remount destroyed the focused row and trigger, so delete left focus on `document.body`, while create/edit opened the modal after the wrong focus restoration target had been captured.
+- **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
+- **Commit:** same commit as this entry
+
+### 62. Custom multi-action menu rows bypass roving keyboard navigation
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
+- **Finding:** Custom layout rows were rendered as raw `<div>` and `<button>` elements inside `Menu`, so they never registered with the floating-ui list navigation model. Arrow-key navigation reached only the built-in layout checkboxes and skipped the custom section.
+- **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
+- **Commit:** same commit as this entry
+
+### 63. Layout creator empty grid cells ignored keyboard activation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L466-479
+- **Finding:** Empty layout grid cells rendered as enabled buttons with aria labels and tab stops, but only handled pointerdown. Native keyboard activation dispatches click, so Enter/Space on the focused cell announced an actionable control that did nothing.
+- **Fix:** Added a keyboard/synthetic click path for paintable cells that commits the same 1x1 slot as pointer single-cell painting, while ignoring pointer-generated clicks to avoid double-adds after pointerup. Added regression coverage for Enter on an empty grid cell.
+- **Commit:** same commit as this entry
+
+### 64. Nested action button arrow keys leaked into Menu.Row navigation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx` L499-522
+- **Finding:** `Menu.Row` allowed ArrowUp/ArrowDown keydown events from focused descendant buttons to bubble into the menu's roving-focus handler, moving focus away from the nested action before the user completed that interaction.
+- **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
+- **Commit:** same commit as this entry
+
+### 65. Menu.Row intercepted nested button activation keys
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx` L502-518
+- **Finding:** `Menu.Row` handled Enter/Space on bubbled keydown events from descendant buttons, preventing native button activation and firing the row's layout-pick action instead. Keyboard users could not activate nested edit/delete/toggle controls without triggering the wrong menu action.
+- **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
+- **Commit:** same commit as this entry
+
+### 66. Tokyo Night muted text falls below contrast threshold
 
 - **Source:** github-codex-connector | PR #557 round 1 | 2026-06-19
 - **Severity:** P2 / MEDIUM
@@ -632,7 +686,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Changed `on-surface-muted` to `#7f88b3`, raising contrast to ~4.94:1 on the theme surface while preserving the muted hierarchy below `on-surface-variant`.
 - **Commit:** same commit as this entry
 
-### 69. Dialog focus trap misses contenteditable elements
+### 67. Dialog focus trap misses contenteditable elements
 
 - **Source:** github-claude | PR #548 round 1 | 2026-06-19
 - **Severity:** MEDIUM
@@ -641,7 +695,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added the contenteditable selector to `FOCUSABLE_SELECTOR` and updated `getFocusableElements` filter to treat contenteditable surfaces as focusable even when `tabIndex` is implicitly `-1`. Added a co-located test that tabs through a contenteditable element inside a Dialog and asserts focus stays trapped.
 - **Commit:** same commit as this entry
 
-### 70. Dialog focus collection includes CSS-hidden elements
+### 68. Dialog focus collection includes CSS-hidden elements
 
 - **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
 - **Severity:** MEDIUM
@@ -650,7 +704,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `isVisibleFocusableElement`, which walks from the element up through its ancestors and checks `window.getComputedStyle` for `display: none` and `visibility: hidden`. Applied the guard to both `getFocusableElements` and the `initialFocusRef` branch in `focusInitialElement`. Added co-located tests asserting that `display:none`, `visibility:hidden`, and hidden-ancestor elements are skipped when choosing initial focus.
 - **Commit:** same commit as this entry
 
-### 71. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
+### 69. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
 
 - **Source:** github-codex-connector | PR #548 round 4 | 2026-06-19
 - **Severity:** MEDIUM
@@ -659,7 +713,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
 - **Commit:** same commit as this entry
 
-### 72. Interactive tooltip trigger rendered as a non-focusable chip
+### 70. Interactive tooltip trigger rendered as a non-focusable chip
 
 - **Source:** github-codex-connector | PR #575 round 1 | 2026-06-20
 - **Severity:** P2 / MEDIUM
@@ -674,7 +728,7 @@ handlers must not trap focus without implementing the promised behavior.
   observes the copy buttons in the mounted dialog.
 - **Commit:** same commit as this entry
 
-### 73. Visual token count diverged from meter aria-valuetext
+### 71. Visual token count diverged from meter aria-valuetext
 
 - **Source:** github-claude | PR #603 round 3 | 2026-06-22
 - **Severity:** MEDIUM
@@ -682,3 +736,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The unknown-window OpenCode context card used `formatTokenCount` in `aria-valuetext` but rendered the visible token count with `formatTokens`. Screen readers could announce a different token count than the value sighted users saw.
 - **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 72. Draggable handle carried a label without an interactive role
+
+- **Source:** github-claude | PR #610 round 3 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle rendered as a plain draggable `<div>` with an `aria-label`, but without an interactive role or focus entry point. Assistive technologies could ignore the label, leaving the pane-move affordance undiscoverable.
+- **Fix:** Added `role="button"` and `tabIndex={0}` to make the labelled drag handle discoverable while keyboard-driven pane reorder remains a deferred follow-up.
+- **Commit:** same commit as this entry
+
+### 73. Draggable handle claimed button semantics without activation
+
+- **Source:** github-codex-connector | PR #610 round 4 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle was promoted to `role="button"` and `tabIndex={0}`, but still only implemented pointer drag handlers. Keyboard and screen-reader users could focus a control announced as a button, then press Enter or Space with no activation path.
+- **Fix:** Removed the button role and tab stop from the browser-pane drag handle until keyboard-driven pane reorder exists. Added regression coverage that the handle remains draggable but is not exposed as a keyboard-focusable button.
+- **Commit:** same commit as this entry

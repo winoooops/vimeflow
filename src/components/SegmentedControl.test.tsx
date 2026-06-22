@@ -149,6 +149,84 @@ describe('SegmentedControl', () => {
     )
   })
 
+  test('a disabled option does not fire onChange when clicked and is aria-disabled', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(
+      <SegmentedControl
+        aria-label="Diff view"
+        value="split"
+        options={[
+          { value: 'split', label: 'Split' },
+          { value: 'unified', label: 'Unified', disabled: true },
+        ]}
+        onChange={handleChange}
+      />
+    )
+
+    const unified = screen.getByRole('button', { name: 'Unified' })
+    expect(unified).toHaveAttribute('aria-disabled', 'true')
+    expect(unified).toHaveAttribute('data-disabled', 'true')
+
+    await user.click(unified)
+
+    expect(handleChange).not.toHaveBeenCalled()
+  })
+
+  test('a disabled option still renders its tooltip trigger so the hint is reachable', async () => {
+    const user = userEvent.setup()
+    render(
+      <SegmentedControl
+        aria-label="Diff view"
+        value="split"
+        options={[
+          { value: 'split', label: 'Split' },
+          {
+            value: 'unified',
+            label: 'Unified',
+            disabled: true,
+            tooltip: 'Reduce panes to switch to Unified',
+          },
+        ]}
+        onChange={vi.fn()}
+      />
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Unified' }))
+
+    expect(
+      await screen.findByRole('tooltip', {
+        name: 'Reduce panes to switch to Unified',
+      })
+    ).toBeInTheDocument()
+  })
+
+  test('arrow-key navigation skips a disabled option', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(
+      <SegmentedControl
+        aria-label="Diff view"
+        value="split"
+        options={[
+          { value: 'split', label: 'Split' },
+          { value: 'unified', label: 'Unified', disabled: true },
+          { value: 'inline', label: 'Inline' },
+        ]}
+        onChange={handleChange}
+      />
+    )
+
+    const split = screen.getByRole('button', { name: 'Split' })
+    split.focus()
+
+    await user.keyboard('{ArrowRight}')
+
+    // The disabled middle option is skipped, landing on the next enabled one.
+    expect(handleChange).toHaveBeenCalledWith('inline')
+    expect(screen.getByRole('button', { name: 'Inline' })).toHaveFocus()
+  })
+
   test('unmatched value does not render thumb and keeps first option tabbable', () => {
     render(
       <SegmentedControl
