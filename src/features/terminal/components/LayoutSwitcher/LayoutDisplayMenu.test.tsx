@@ -177,7 +177,7 @@ describe('LayoutDisplayMenu', () => {
     ).toBeInTheDocument()
   })
 
-  test('greys a built-in layout that is capacity-blocked, like custom rows', async () => {
+  test('keeps a capacity-blocked built-in checkbox freely toggled (visibility only)', async () => {
     const user = userEvent.setup()
 
     render(
@@ -193,7 +193,15 @@ describe('LayoutDisplayMenu', () => {
 
     const quad = await screen.findByRole('menuitemcheckbox', { name: 'Quad' })
 
-    expect(quad).toHaveAttribute('aria-disabled', 'true')
+    // The display menu is a pure visibility toggle — capacity does not grey
+    // built-in checkboxes. Toggling Quad off updates the visible-layout list.
+    expect(quad).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(quad)
+
+    expect(
+      screen.getByText('single,vsplit,hsplit,threeRight,grid3x2')
+    ).toBeInTheDocument()
   })
 
   test('normalizes the required single layout back into the visible list when callers omitted it', async () => {

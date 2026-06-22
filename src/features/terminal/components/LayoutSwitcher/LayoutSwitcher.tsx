@@ -11,6 +11,13 @@ export interface LayoutSwitcherProps {
   activeLayoutId: PaneLayoutId
   visibleLayoutIds?: readonly PaneLayoutId[]
   layouts?: readonly LayoutShape[]
+  /**
+   * Layouts the active session cannot switch to right now because it has more
+   * panes than the layout's capacity. They still render as pills (visibility
+   * is decoupled from capacity) but appear dimmed and non-clickable with a
+   * tooltip explaining why. The active layout is never treated as blocked.
+   */
+  blockedLayoutIds?: readonly PaneLayoutId[]
   onPick: (next: PaneLayoutId) => void
   /**
    * Optional control docked INSIDE the pill container, after a hairline
@@ -27,6 +34,7 @@ export const LayoutSwitcher = ({
     (layout) => layout.id
   ),
   layouts = BUILTIN_PANE_LAYOUT_REGISTRY.layouts,
+  blockedLayoutIds = [],
   onPick,
   trailing = undefined,
 }: LayoutSwitcherProps): ReactElement => {
@@ -65,11 +73,24 @@ export const LayoutSwitcher = ({
         role="presentation"
         variant="toolbarInline"
         value={activeLayoutId}
-        options={renderedLayoutIds.map((layoutId) => ({
-          value: layoutId,
-          label: layoutById.get(layoutId)?.name ?? layoutId,
-          tooltip: layoutById.get(layoutId)?.name ?? layoutId,
-        }))}
+        options={renderedLayoutIds.map((layoutId) => {
+          const name = layoutById.get(layoutId)?.name ?? layoutId
+
+          const disabled =
+            blockedLayoutIds.includes(layoutId) && layoutId !== activeLayoutId
+          const label = disabled ? `Reduce panes to switch to ${name}` : name
+
+          return {
+            value: layoutId,
+            label: name,
+            // Drive both the accessible name and the tooltip from the same
+            // string so the reduce-panes explanation is reachable by screen
+            // readers and on hover when the layout is blocked.
+            ariaLabel: label,
+            tooltip: label,
+            disabled,
+          }
+        })}
         onChange={onPick}
         skipActiveReselect
         renderOption={(layout) => (

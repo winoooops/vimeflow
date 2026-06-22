@@ -563,18 +563,6 @@ const WorkspaceViewContent = (): ReactElement => {
     [activeSession, layoutRegistry.layouts]
   )
 
-  const layoutSwitcherLayouts = useMemo(
-    () =>
-      activeSession === undefined
-        ? layoutRegistry.layouts
-        : layoutRegistry.layouts.filter(
-            (layout) =>
-              layout.id === activeSession.layout ||
-              activeSession.panes.length <= layout.capacity
-          ),
-    [activeSession, layoutRegistry.layouts]
-  )
-
   const layoutCreatorEditLayout = useMemo(() => {
     if (layoutCreatorEditId === null) {
       return undefined
@@ -2664,7 +2652,8 @@ const WorkspaceViewContent = (): ReactElement => {
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
               visibleLayoutIds={visibleLayoutSwitcherIds}
-              layouts={layoutSwitcherLayouts}
+              layouts={layoutRegistry.layouts}
+              blockedLayoutIds={blockedLayoutIds}
               onPick={handlePickLayout}
               trailing={
                 <LayoutDisplayMenu

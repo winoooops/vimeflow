@@ -783,6 +783,47 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeNull()
   })
 
+  test('an over-capacity checked layout renders as a disabled pill instead of vanishing', async () => {
+    const baseSession = createMockSession('session-1', 'auth refactor', {
+      layout: 'single',
+    })
+
+    // Five panes exceed Quad's capacity (4) but fit 3x2 grid (6): Quad is
+    // blocked, grid3x2 is not.
+    const fivePaneSession: Session = {
+      ...baseSession,
+      panes: [0, 1, 2, 3, 4].map((index) => ({
+        id: `p${index}`,
+        ptyId: `pty-session-1-${index}`,
+        cwd: '/home/user',
+        agentType: 'claude-code',
+        status: 'running',
+        active: index === 0,
+      })),
+    }
+
+    await setupSessionManager([fivePaneSession], 'session-1')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'quad', 'grid3x2'])
+    )
+    render(<WorkspaceView />)
+
+    const switcher = screen.getByTestId('layout-switcher')
+
+    // Quad still renders (visibility is decoupled from capacity) but is
+    // disabled with a reduce-panes explanation.
+    const quad = within(switcher).getByRole('button', {
+      name: 'Reduce panes to switch to Quad',
+    })
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+
+    // A layout that DOES fit the pane count stays enabled.
+    expect(
+      within(switcher).getByRole('button', { name: '3x2 grid' })
+    ).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
   test('the layout display menu can hide a non-active layout pill from the pillar', async () => {
     const user = userEvent.setup()
 
