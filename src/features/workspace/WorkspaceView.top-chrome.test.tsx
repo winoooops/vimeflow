@@ -176,6 +176,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
@@ -670,6 +671,84 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       { skipPreservation: true }
     )
     expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
+  test('duplicating a custom layout clones it under a fresh custom id without changing the active session layout', async () => {
+    const user = userEvent.setup()
+
+    const sourceCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:main-bottom',
+      title: 'Main + bottom',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'col-0', units: 8 },
+          { id: 'col-1', units: 8 },
+          { id: 'col-2', units: 8 },
+        ],
+        rows: [
+          { id: 'row-0', units: 16 },
+          { id: 'row-1', units: 8 },
+        ],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 } },
+        {
+          id: 'slot:p1',
+          rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 },
+          accepts: ['browser'],
+        },
+        { id: 'slot:p2', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+        { id: 'slot:p3', rect: { col: 2, row: 1, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+    }
+
+    const singleSession = createMockSession('session-1', 'auth refactor', {
+      layout: 'single',
+    })
+
+    await setupSessionManager([singleSession], 'session-1')
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      sourceCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [sourceCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Duplicate Main + bottom' })
+    )
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledWith(
+      expect.any(Function),
+      { skipPreservation: true }
+    )
+    // Duplicating must never re-point the active session at the clone.
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+
+    const updater = vi.mocked(mockSessionManager.setCustomPaneLayouts).mock
+      .calls[0][0] as (
+      prev: readonly PaneLayoutDefinition[]
+    ) => readonly PaneLayoutDefinition[]
+    const next = updater([sourceCustomLayout])
+
+    expect(next).toHaveLength(2)
+    expect(next[0]).toBe(sourceCustomLayout)
+
+    const clone = next[1]
+    expect(clone.id).not.toBe(sourceCustomLayout.id)
+    expect(clone.id).toMatch(/^custom:copy-of-main-bottom-/)
+    expect(clone.title).toBe('Copy of Main + bottom')
+    expect(clone.source).toBe('workspace')
+    expect(clone.tracks).toEqual(sourceCustomLayout.tracks)
+    expect(clone.slots).toEqual(sourceCustomLayout.slots)
+    expect(clone.addOrder).toEqual(sourceCustomLayout.addOrder)
   })
 
   test('single layout: same chrome as the splits — config docked in the pillar', () => {

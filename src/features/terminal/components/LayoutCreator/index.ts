@@ -4,6 +4,7 @@ export {
 } from './LayoutCreatorModal'
 
 export {
+  createCustomPaneLayoutId,
   createSingleDraftLayout,
   definitionFromDraft,
   draftFromDefinition,

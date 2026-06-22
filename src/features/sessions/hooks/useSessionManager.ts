@@ -5,6 +5,7 @@ import type {
   Pane,
   PaneKind,
   PaneLayoutId,
+  PanePlacement,
   Session,
   SessionStatus,
 } from '../types'
@@ -91,6 +92,18 @@ export interface SessionManager {
     setOptions?: { skipPreservation?: boolean }
   ) => void
   setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
+  /**
+   * Replace a session's explicit pane-to-slot placements (VIM-167
+   * drag-into-slot swap/move). The supplied array is written verbatim — the
+   * caller (SplitView drop handler) computes a fully-normalized placement list
+   * via `swapPanePlacements` / `movePaneToSlot`, so this action stays a thin
+   * setter. Persisted through the same workspace push bridge as every other
+   * `sessions[]` change. No-op on an unknown session id.
+   */
+  setSessionPlacements: (
+    sessionId: string,
+    placements: readonly PanePlacement[]
+  ) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
   addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
@@ -1208,6 +1221,33 @@ export const useSessionManager = (
     []
   )
 
+  const setSessionPlacements = useCallback(
+    (sessionId: string, placements: readonly PanePlacement[]): void => {
+      // Warn outside `setSessions` for StrictMode parity with setSessionLayout
+      // (the updater may run twice; the warn must fire once).
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        log.warn(`setSessionPlacements: no session ${sessionId}`)
+
+        return
+      }
+
+      setSessions((prev) => {
+        const sessionIndex = prev.findIndex((s) => s.id === sessionId)
+        if (sessionIndex === -1) {
+          return prev
+        }
+
+        return [
+          ...prev.slice(0, sessionIndex),
+          { ...prev[sessionIndex], placements: [...placements] },
+          ...prev.slice(sessionIndex + 1),
+        ]
+      })
+    },
+    []
+  )
+
   const setSessionActivePane = useCallback(
     (sessionId: string, paneId: string): void => {
       // Warn outside `setSessions` for StrictMode parity (same reason
@@ -2140,6 +2180,7 @@ export const useSessionManager = (
     createBrowserSession,
     removeSession,
     setSessionLayout,
+    setSessionPlacements,
     setSessionActivePane,
     addPane,
     removePane,

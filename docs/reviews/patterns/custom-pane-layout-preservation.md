@@ -2,7 +2,7 @@
 id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
-last_updated: 2026-06-21
+last_updated: 2026-06-22
 ref_count: 4
 ---
 
@@ -93,4 +93,13 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx` L1301-1310
 - **Finding:** `handleSaveCustomLayout` saved edited definitions through `setCustomPaneLayouts` without marking the update as intentional. When an existing custom layout was edited down to fewer slots while an over-capacity session still referenced it, the preservation guard could restore the old definition and make the modal close as though the reduced-capacity edit had saved.
 - **Fix:** Pass `{ skipPreservation: true }` from `handleSaveCustomLayout` so intentional edits bypass the preservation guard, matching the delete path. The existing session migration path handles sessions that no longer fit the edited layout.
+- **Commit:** same commit as this entry
+
+### 10. Duplicated custom layout id is minted from the source title
+
+- **Source:** github-claude | PR #609 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleDuplicateCustomLayout` generated the clone id from the source layout title while assigning the visible clone title `Copy of ...`. The layout was unique, but persisted ids and UI/debug surfaces could show a slug unrelated to the clone's display title.
+- **Fix:** Derive `cloneTitle` once and pass it to `createCustomPaneLayoutId`, then assign the same title to the cloned definition. The top-chrome regression test now expects the duplicated id slug to begin with `custom:copy-of-...`.
 - **Commit:** same commit as this entry

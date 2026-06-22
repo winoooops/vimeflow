@@ -5755,4 +5755,94 @@ describe('useSessionManager', () => {
       })
     })
   })
+
+  describe('setSessionPlacements', () => {
+    test('writes the supplied placements onto the session', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = result.current.sessions[0].id
+
+      act(() => {
+        result.current.setSessionLayout(sessionId, 'vsplit')
+      })
+
+      await waitFor(() => {
+        expect(result.current.sessions[0].layout).toBe('vsplit')
+      })
+
+      act(() => {
+        result.current.addPane(sessionId, 'browser')
+      })
+
+      await waitFor(() => {
+        expect(result.current.sessions[0].panes).toHaveLength(2)
+      })
+
+      act(() => {
+        result.current.setSessionPlacements(sessionId, [
+          { paneId: 'p0', slotId: 'slot:p1' },
+          { paneId: 'p1', slotId: 'slot:p0' },
+        ])
+      })
+
+      expect(result.current.sessions[0].placements).toEqual([
+        { paneId: 'p0', slotId: 'slot:p1' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ])
+    })
+
+    test('ignores an unknown session id', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionsBefore = result.current.sessions
+
+      act(() => {
+        result.current.setSessionPlacements('does-not-exist', [
+          { paneId: 'p0', slotId: 'slot:p1' },
+        ])
+      })
+
+      expect(result.current.sessions).toBe(sessionsBefore)
+    })
+  })
 })

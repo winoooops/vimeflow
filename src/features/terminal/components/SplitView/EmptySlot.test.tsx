@@ -43,4 +43,54 @@ describe('EmptySlot', () => {
     expect(onAddPane).toHaveBeenCalledOnce()
     expect(onAddPane).toHaveBeenCalledWith('s1', 'browser', 'slot:test')
   })
+
+  test('shows only the allowed kind when accepts restricts the slot', () => {
+    render(
+      <EmptySlot
+        sessionId="s1"
+        slotId="slot:test"
+        accepts={['browser']}
+        onAddPane={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'add browser pane' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'add shell pane' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('shows both kinds when accepts is undefined', () => {
+    render(<EmptySlot sessionId="s1" slotId="slot:test" onAddPane={vi.fn()} />)
+
+    expect(
+      screen.getByRole('button', { name: 'add shell pane' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'add browser pane' })
+    ).toBeInTheDocument()
+  })
+
+  test('shows both kinds when accepts is empty (no restriction)', () => {
+    render(
+      <EmptySlot
+        sessionId="s1"
+        slotId="slot:test"
+        accepts={[]}
+        onAddPane={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'add shell pane' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'add browser pane' })
+    ).toBeInTheDocument()
+  })
 })

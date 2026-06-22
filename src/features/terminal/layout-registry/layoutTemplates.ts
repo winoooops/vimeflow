@@ -174,8 +174,7 @@ export const createMainBottomRowTemplate = (): PaneLayoutDefinition => {
  */
 export const STARTER_LAYOUT_TEMPLATES: readonly PaneLayoutDefinition[] = [
   createGridTemplate(2, 3),
-  createGridTemplate(3, 3),
-  createGridTemplate(4, 4),
   createMainRightStackTemplate(),
   createMainBottomRowTemplate(),
+  createGridTemplate(3, 3),
 ]

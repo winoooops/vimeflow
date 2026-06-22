@@ -4,14 +4,34 @@ import type { LayoutSlotId, PaneKind } from '../../../sessions/types'
 export interface EmptySlotProps {
   sessionId: string
   slotId: LayoutSlotId
+  /**
+   * Pane kinds this slot will accept. undefined OR an empty list both mean
+   * "no restriction" — render every add-button. Unknown values are ignored
+   * defensively. Authoring lives in the layout code panel; a visual kind
+   * picker is deferred.
+   *
+   * ponytail: a per-slot visual kind picker (GridCanvas affordance) is a
+   * deferred follow-up — code-panel authoring of `accepts` is enough for now.
+   */
+  accepts?: readonly PaneKind[]
   onAddPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
 }
+
+const allowsKind = (
+  accepts: readonly PaneKind[] | undefined,
+  kind: PaneKind
+): boolean =>
+  accepts === undefined || accepts.length === 0 || accepts.includes(kind)
 
 export const EmptySlot = ({
   sessionId,
   slotId,
+  accepts = undefined,
   onAddPane,
 }: EmptySlotProps): ReactElement => {
+  const showShell = allowsKind(accepts, 'shell')
+  const showBrowser = allowsKind(accepts, 'browser')
+
   // Round 13, Claude LOW: dropped the previous `event.stopPropagation()`.
   // SplitView's empty-slot `motion.div` wrapper carries no `onClick`, and
   // the outer grid container doesn't either — the call was inert. If a
@@ -39,22 +59,26 @@ export const EmptySlot = ({
           add pane
         </span>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label="add shell pane"
-            onClick={handleShellClick}
-            className="rounded-md bg-wash-subtle px-3 py-2 text-[11px] text-on-surface transition hover:bg-wash-soft focus:outline-none focus:ring-2 focus:ring-primary/45"
-          >
-            Shell
-          </button>
-          <button
-            type="button"
-            aria-label="add browser pane"
-            onClick={handleBrowserClick}
-            className="rounded-md bg-primary/15 px-3 py-2 text-[11px] text-primary transition hover:bg-primary/25 focus:outline-none focus:ring-2 focus:ring-primary/45"
-          >
-            Browser
-          </button>
+          {showShell && (
+            <button
+              type="button"
+              aria-label="add shell pane"
+              onClick={handleShellClick}
+              className="rounded-md bg-wash-subtle px-3 py-2 text-[11px] text-on-surface transition hover:bg-wash-soft focus:outline-none focus:ring-2 focus:ring-primary/45"
+            >
+              Shell
+            </button>
+          )}
+          {showBrowser && (
+            <button
+              type="button"
+              aria-label="add browser pane"
+              onClick={handleBrowserClick}
+              className="rounded-md bg-primary/15 px-3 py-2 text-[11px] text-primary transition hover:bg-primary/25 focus:outline-none focus:ring-2 focus:ring-primary/45"
+            >
+              Browser
+            </button>
+          )}
         </div>
       </div>
     </div>

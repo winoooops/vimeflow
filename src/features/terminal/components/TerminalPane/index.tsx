@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type ReactElement,
 } from 'react'
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
@@ -51,6 +52,13 @@ export interface TerminalPaneProps {
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
   showFocusHighlight?: boolean
+  /**
+   * VIM-167: make this pane's header the drag handle for drag-into-slot. The
+   * terminal body is never draggable so xterm selection keeps the pointer.
+   */
+  paneDraggable?: boolean
+  onHeaderDragStart?: (event: DragEvent<HTMLDivElement>) => void
+  onHeaderDragEnd?: (event: DragEvent<HTMLDivElement>) => void
 }
 
 export interface TerminalPaneHandle {
@@ -83,6 +91,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onRestart = undefined,
       deferFit = false,
       showFocusHighlight = true,
+      paneDraggable = false,
+      onHeaderDragStart = undefined,
+      onHeaderDragEnd = undefined,
     }: TerminalPaneProps,
     ref
   ): ReactElement {
@@ -260,6 +271,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           burnerShellExists={
             runningBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
+          draggable={paneDraggable}
+          onHeaderDragStart={onHeaderDragStart}
+          onHeaderDragEnd={onHeaderDragEnd}
         />
 
         {isAwaitingRestart ? (

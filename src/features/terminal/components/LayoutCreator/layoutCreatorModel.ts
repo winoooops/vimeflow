@@ -1,11 +1,13 @@
 import type {
   CustomPaneLayoutId,
   LayoutSlotId,
+  PaneKind,
   PaneLayoutId,
 } from '../../../sessions/types'
 import {
   createIndexedPaneSlotId,
   CUSTOM_PANE_LAYOUT_ID_PREFIX,
+  isSupportedPaneKind,
   MAX_LAYOUT_TRACKS,
   MAX_LAYOUT_SLOTS,
   PANE_LAYOUT_SCHEMA_VERSION,
@@ -20,7 +22,25 @@ export const LAYOUT_CREATOR_MIN_UNITS = 1
 
 export type LayoutCreatorCodeFormat = 'json' | 'yaml'
 
-export type DraftLayoutSlot = PaneSlotRect
+// undefined OR an empty list both mean "no restriction" — never persist a dead,
+// unusable slot. Unknown kinds are dropped defensively via the shared
+// `isSupportedPaneKind` guard. Returns undefined whenever the restriction would
+// be empty so callers can omit `accepts`.
+const normalizeAccepts = (
+  accepts: readonly string[] | undefined
+): readonly PaneKind[] | undefined => {
+  if (accepts === undefined) {
+    return undefined
+  }
+
+  const kinds = accepts.filter(isSupportedPaneKind)
+
+  return kinds.length === 0 ? undefined : kinds
+}
+
+export interface DraftLayoutSlot extends PaneSlotRect {
+  readonly accepts?: readonly PaneKind[]
+}
 
 export interface DraftPaneLayout {
   readonly cols: readonly number[]
@@ -45,7 +65,8 @@ interface LayoutModel {
   }
   readonly slots: readonly {
     readonly id: LayoutSlotId
-    readonly rect: DraftLayoutSlot
+    readonly rect: PaneSlotRect
+    readonly accepts?: readonly PaneKind[]
   }[]
 }
 
@@ -140,8 +161,15 @@ const normalizeSlot = (
   const row = Math.max(0, Math.min(slot.row, rowCount - 1))
   const colSpan = Math.max(1, Math.min(slot.colSpan, colCount - col))
   const rowSpan = Math.max(1, Math.min(slot.rowSpan, rowCount - row))
+  const accepts = normalizeAccepts(slot.accepts)
 
-  return { col, row, colSpan, rowSpan }
+  return {
+    col,
+    row,
+    colSpan,
+    rowSpan,
+    ...(accepts === undefined ? {} : { accepts }),
+  }
 }
 
 export const normalizeDraftLayout = (
@@ -477,10 +505,20 @@ const draftToModel = (draft: DraftPaneLayout): LayoutModel => ({
       units: unit,
     })),
   },
-  slots: draft.slots.map((slot, index) => ({
-    id: createIndexedPaneSlotId(index),
-    rect: { ...slot },
-  })),
+  slots: draft.slots.map((slot, index) => {
+    const accepts = normalizeAccepts(slot.accepts)
+
+    return {
+      id: createIndexedPaneSlotId(index),
+      rect: {
+        col: slot.col,
+        row: slot.row,
+        colSpan: slot.colSpan,
+        rowSpan: slot.rowSpan,
+      },
+      ...(accepts === undefined ? {} : { accepts }),
+    }
+  }),
 })
 
 export const serializeDraftLayout = (
@@ -508,6 +546,9 @@ export const serializeDraftLayout = (
     lines.push(
       `    rect: { col: ${slot.rect.col}, row: ${slot.rect.row}, colSpan: ${slot.rect.colSpan}, rowSpan: ${slot.rect.rowSpan} }`
     )
+    if (slot.accepts !== undefined) {
+      lines.push(`    accepts: [${slot.accepts.join(', ')}]`)
+    }
   })
 
   return lines.join('\n')
@@ -538,6 +579,35 @@ const readTrackUnits = (value: unknown): readonly number[] => {
   return units
 }
 
+// Slot-level `accepts` restriction. undefined / empty / all-unknown collapse
+// to "no restriction" (returns undefined) so a slot is never left unusable.
+const readAccepts = (value: unknown): readonly PaneKind[] | undefined => {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Slot accepts must be an array of pane kinds')
+  }
+
+  return normalizeAccepts(value.map((entry) => String(entry).trim()))
+}
+
+const readYamlScalar = (value: string): string => {
+  const trimmed = value.trim()
+  const quote = trimmed[0]
+
+  if (
+    trimmed.length >= 2 &&
+    (quote === '"' || quote === "'") &&
+    trimmed.endsWith(quote)
+  ) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
 const readSlotRect = (value: unknown): DraftLayoutSlot => {
   if (!isRecord(value)) {
     throw new Error('Each slot must be an object')
@@ -560,7 +630,15 @@ const readSlotRect = (value: unknown): DraftLayoutSlot => {
     throw new Error('Slot rects require col, row, colSpan, and rowSpan')
   }
 
-  return { col, row, colSpan, rowSpan }
+  const accepts = readAccepts(value.accepts)
+
+  return {
+    col,
+    row,
+    colSpan,
+    rowSpan,
+    ...(accepts === undefined ? {} : { accepts }),
+  }
 }
 
 const modelToDraft = (value: unknown): DraftPaneLayout => {
@@ -599,10 +677,20 @@ const modelToDraft = (value: unknown): DraftPaneLayout => {
 const parseYamlModel = (text: string): LayoutModel => {
   const columns: { id: string; units: number }[] = []
   const rows: { id: string; units: number }[] = []
-  const slots: { id: LayoutSlotId; rect: DraftLayoutSlot }[] = []
+
+  const slots: {
+    id: LayoutSlotId
+    rect: PaneSlotRect
+    accepts?: readonly PaneKind[]
+  }[] = []
   let section: 'columns' | 'rows' | 'slots' | null = null
   let currentTrack: { id?: string; units?: number } | null = null
-  let currentSlot: { id?: LayoutSlotId; rect?: DraftLayoutSlot } | null = null
+  let currentSlot: {
+    id?: LayoutSlotId
+    rect?: DraftLayoutSlot
+    accepts?: readonly PaneKind[]
+  } | null = null
+  let acceptingSlotAccepts = false
 
   const commitTrack = (): void => {
     if (currentTrack === null || section === 'slots') {
@@ -623,9 +711,11 @@ const parseYamlModel = (text: string): LayoutModel => {
       return
     }
 
+    const accepts = currentSlot.accepts
     slots.push({
       id: currentSlot.id ?? createIndexedPaneSlotId(slots.length),
       rect: currentSlot.rect,
+      ...(accepts === undefined ? {} : { accepts }),
     })
   }
 
@@ -642,6 +732,7 @@ const parseYamlModel = (text: string): LayoutModel => {
         if (section === 'slots') {
           commitSlot()
           currentSlot = null
+          acceptingSlotAccepts = false
         } else {
           commitTrack()
           currentTrack = null
@@ -652,6 +743,22 @@ const parseYamlModel = (text: string): LayoutModel => {
       }
 
       const itemBody = line.startsWith('- ') ? line.slice(2).trim() : line
+      if (
+        section === 'slots' &&
+        acceptingSlotAccepts &&
+        line.startsWith('- ') &&
+        !itemBody.includes(':')
+      ) {
+        currentSlot ??= {}
+        currentSlot.accepts = readAccepts([
+          ...(currentSlot.accepts ?? []),
+          readYamlScalar(itemBody),
+        ])
+
+        return
+      }
+
+      acceptingSlotAccepts = false
       if (line.startsWith('- ')) {
         if (section === 'slots') {
           commitSlot()
@@ -687,6 +794,19 @@ const parseYamlModel = (text: string): LayoutModel => {
             colSpan: rectValues.get('colSpan'),
             rowSpan: rectValues.get('rowSpan'),
           })
+        }
+        if (key === 'accepts') {
+          if (value.length === 0) {
+            acceptingSlotAccepts = true
+          } else {
+            currentSlot.accepts = readAccepts(
+              value
+                .replace(/[[\]]/g, '')
+                .split(',')
+                .map(readYamlScalar)
+                .filter((entry) => entry.length > 0)
+            )
+          }
         }
 
         return
@@ -793,10 +913,22 @@ export const definitionFromDraft = ({
   const normalizedDraft = normalizeDraftLayout(draft)
   const id = existingId ?? createCustomPaneLayoutId(title, existingIds)
 
-  const slots = normalizedDraft.slots.map((slot, index) => ({
-    id: createIndexedPaneSlotId(index),
-    rect: { ...slot },
-  }))
+  const slots = normalizedDraft.slots.map((slot, index) => {
+    const accepts = normalizeAccepts(slot.accepts)
+
+    return {
+      id: createIndexedPaneSlotId(index),
+      rect: {
+        col: slot.col,
+        row: slot.row,
+        colSpan: slot.colSpan,
+        rowSpan: slot.rowSpan,
+      },
+      // Only emit `accepts` when it is a real restriction; undefined/empty
+      // collapse to "no restriction" so the slot never becomes unusable.
+      ...(accepts === undefined ? {} : { accepts }),
+    }
+  })
 
   const definition: PaneLayoutDefinition = {
     schemaVersion: PANE_LAYOUT_SCHEMA_VERSION,
@@ -835,7 +967,14 @@ export const draftFromDefinition = (
   return normalizeDraftLayout({
     cols: definition.tracks.columns.map((track) => track.units),
     rows: definition.tracks.rows.map((track) => track.units),
-    slots: definition.slots.map((slot) => ({ ...slot.rect })),
+    slots: definition.slots.map((slot) => {
+      const accepts = normalizeAccepts(slot.accepts)
+
+      return {
+        ...slot.rect,
+        ...(accepts === undefined ? {} : { accepts }),
+      }
+    }),
   })
 }
 

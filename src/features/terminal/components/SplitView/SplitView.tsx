@@ -7,17 +7,24 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type DragEvent,
   type ReactElement,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type {
   LayoutSlotId,
   Pane,
+  PaneKind,
   PaneLayoutId,
+  PanePlacement,
   Session,
 } from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
-import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
+import {
+  movePaneToSlot,
+  resolvePanePlacement,
+  swapPanePlacements,
+} from '../../../sessions/utils/panePlacements'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
@@ -35,6 +42,7 @@ import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   equalTrackRatios,
   gridAreaNameForSlotId,
+  isSupportedPaneKind,
   type LayoutShape,
   type PaneLayoutRegistry,
   type LayoutRatios,
@@ -64,6 +72,17 @@ export interface SplitViewProps {
     slotId?: LayoutSlotId
   ) => void
   onClosePane?: (sessionId: string, paneId: string) => void
+  /**
+   * VIM-167: persist a new pane-to-slot placement set after a drag-into-slot
+   * swap/move. SplitView computes the fully-normalized placements (and enforces
+   * `slot.accepts` gating) internally, then calls this with the result. Omit to
+   * disable drag-into-slot (headers become non-draggable). Wired to
+   * `useSessionManager.setSessionPlacements`.
+   */
+  onPanePlacementsChange?: (
+    sessionId: string,
+    placements: PanePlacement[]
+  ) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
   layoutRegistry?: PaneLayoutRegistry
@@ -144,6 +163,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onRequestFocus = undefined,
       onAddPane = undefined,
       onClosePane = undefined,
+      onPanePlacementsChange = undefined,
       onBurner = undefined,
       layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
       activeBurnerPaneKeys = undefined,
@@ -189,6 +209,15 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       const rect = outerDivRef.current?.getBoundingClientRect()
       setHasSize(Boolean(rect && rect.width > 0 && rect.height > 0))
     }, [isActive])
+
+    // VIM-167 drag-into-slot state: which pane is mid-drag, and which slot the
+    // cursor is over (drives the valid-target highlight). Both reset on
+    // dragend / drop.
+    const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
+
+    const [dragOverSlotId, setDragOverSlotId] = useState<LayoutSlotId | null>(
+      null
+    )
 
     const paneHandleRefs = useRef<Map<string, TerminalPaneHandle | null>>(
       new Map()
@@ -271,6 +300,181 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       return gridAreaNameForSlotId(slotId)
     }
 
+    // Resolve a slot's pane-kind restriction from the layout definition.
+    // Narrows the stored `accepts` (typed as string[]) to known PaneKinds so
+    // unknown values are dropped defensively; undefined/empty stays undefined
+    // ("no restriction") so EmptySlot keeps both add-buttons.
+    const acceptsForSlotId = (
+      slotId: LayoutSlotId
+    ): readonly PaneKind[] | undefined => {
+      const accepts = layout.definition.slots.find(
+        (slot) => slot.id === slotId
+      )?.accepts
+      if (accepts === undefined) {
+        return undefined
+      }
+
+      const kinds = accepts.filter(isSupportedPaneKind)
+
+      return kinds.length === 0 ? undefined : kinds
+    }
+
+    // VIM-167 drag-into-slot. Enabled only when a placements sink is wired.
+    const dndEnabled = onPanePlacementsChange !== undefined
+
+    const kindForPane = (pane: Pane): PaneKind => pane.kind ?? 'shell'
+
+    // undefined / empty accepts means "no restriction" — never blocks.
+    const slotAcceptsKind = (slotId: LayoutSlotId, kind: PaneKind): boolean => {
+      const accepts = acceptsForSlotId(slotId)
+
+      return accepts === undefined || accepts.includes(kind)
+    }
+
+    const slotIdByPaneId = new Map(
+      visiblePaneAssignments.map(({ pane, slotId }) => [pane.id, slotId])
+    )
+
+    const paneById = new Map(
+      visiblePaneAssignments.map(({ pane }) => [pane.id, pane])
+    )
+
+    const paneBySlotId = new Map(
+      visiblePaneAssignments.map(({ pane, slotId }) => [slotId, pane])
+    )
+
+    // Whether the in-flight drag may legally land on `targetSlotId`. For a swap
+    // (occupied target) BOTH destination slots must accept the kind that will
+    // occupy them; for a move (empty target) only the target slot is checked.
+    const canDropOnSlot = (
+      targetSlotId: LayoutSlotId,
+      paneId = draggingPaneId
+    ): boolean => {
+      if (paneId === null) {
+        return false
+      }
+
+      const draggingPane = paneById.get(paneId)
+      const draggingSlotId = slotIdByPaneId.get(paneId)
+      if (!draggingPane || draggingSlotId === undefined) {
+        return false
+      }
+
+      // Dropping a pane onto its own slot is a no-op, never a valid target.
+      if (draggingSlotId === targetSlotId) {
+        return false
+      }
+
+      const draggingKind = kindForPane(draggingPane)
+      const occupant = paneBySlotId.get(targetSlotId)
+      if (occupant) {
+        return (
+          slotAcceptsKind(targetSlotId, draggingKind) &&
+          slotAcceptsKind(draggingSlotId, kindForPane(occupant))
+        )
+      }
+
+      return slotAcceptsKind(targetSlotId, draggingKind)
+    }
+
+    const handlePaneDragStart = (
+      paneId: string,
+      event: DragEvent<HTMLDivElement>
+    ): void => {
+      if (!dndEnabled) {
+        return
+      }
+
+      setDraggingPaneId(paneId)
+      // text/plain carries the paneId for environments that read it on drop;
+      // the highlight + drop logic relies on `draggingPaneId` state because
+      // dataTransfer is unreadable during dragover.
+      event.dataTransfer.setData('text/plain', paneId)
+      event.dataTransfer.effectAllowed = 'move'
+    }
+
+    const handlePaneDragEnd = (): void => {
+      setDraggingPaneId(null)
+      setDragOverSlotId(null)
+    }
+
+    const handleSlotDragOver = (
+      slotId: LayoutSlotId,
+      event: DragEvent<HTMLDivElement>
+    ): void => {
+      if (!dndEnabled || !canDropOnSlot(slotId)) {
+        return
+      }
+
+      // preventDefault marks this element a valid drop target so `drop` fires.
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      if (dragOverSlotId !== slotId) {
+        setDragOverSlotId(slotId)
+      }
+    }
+
+    const handleSlotDragLeave = (
+      slotId: LayoutSlotId,
+      event: DragEvent<HTMLDivElement>
+    ): void => {
+      // Ignore dragleave when the pointer merely crosses between child
+      // elements of the same slot — relatedTarget still lives inside the slot.
+      // Without this guard the highlight flickers off/on as the cursor moves
+      // over inner content (drag handle, terminal body, drop indicator).
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        return
+      }
+
+      setDragOverSlotId((current) => (current === slotId ? null : current))
+    }
+
+    const handleSlotDrop = (
+      slotId: LayoutSlotId,
+      event: DragEvent<HTMLDivElement>
+    ): void => {
+      if (!onPanePlacementsChange) {
+        return
+      }
+
+      const transferred = event.dataTransfer.getData('text/plain')
+
+      const paneId =
+        draggingPaneId ?? (transferred.length > 0 ? transferred : null)
+
+      setDraggingPaneId(null)
+      setDragOverSlotId(null)
+
+      if (paneId === null || !canDropOnSlot(slotId, paneId)) {
+        return
+      }
+
+      event.preventDefault()
+
+      const occupant = paneBySlotId.get(slotId)
+
+      const nextPlacements = occupant
+        ? swapPanePlacements(
+            visiblePanes,
+            layout,
+            session.placements,
+            paneId,
+            occupant.id
+          )
+        : movePaneToSlot(
+            visiblePanes,
+            layout,
+            session.placements,
+            paneId,
+            slotId
+          )
+
+      onPanePlacementsChange(session.id, nextPlacements)
+    }
+
+    const isValidDropActive = (slotId: LayoutSlotId): boolean =>
+      dragOverSlotId === slotId && canDropOnSlot(slotId)
+
     return (
       <div
         data-testid="split-view-canvas"
@@ -327,6 +531,28 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   data-cwd={pane.cwd}
                   data-slot-id={slotId}
                   data-slot-index={slotIndex}
+                  data-drop-active={
+                    isValidDropActive(slotId) ? 'true' : undefined
+                  }
+                  // onDragOver/onDrop/onDragLeave are standard DOM events that
+                  // pass through motion.div untouched (framer-motion only
+                  // overrides onDragStart/onDrag/onDragEnd for its gesture
+                  // API, which we never use here).
+                  onDragOver={
+                    dndEnabled
+                      ? (event): void => handleSlotDragOver(slotId, event)
+                      : undefined
+                  }
+                  onDragLeave={
+                    dndEnabled
+                      ? (event): void => handleSlotDragLeave(slotId, event)
+                      : undefined
+                  }
+                  onDrop={
+                    dndEnabled
+                      ? (event): void => handleSlotDrop(slotId, event)
+                      : undefined
+                  }
                   className="relative min-h-0 min-w-0"
                   style={{ gridArea: gridAreaForSlotId(slotId) }}
                 >
@@ -359,17 +585,45 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                     by `pane.id` so layout slot identity is preserved across
                     restarts. */}
                       {isBrowserPane ? (
-                        <BrowserPane
-                          key={pane.ptyId}
-                          session={session}
-                          pane={pane}
-                          isActive={isActive}
-                          onClose={closeHandler}
-                          onRequestActive={onSetActivePane}
-                          onRequestFocus={onRequestFocus}
-                          onUrlChange={onBrowserPaneUrlChange}
-                          showFocusHighlight={showPaneFocusHighlight}
-                        />
+                        <>
+                          {dndEnabled ? (
+                            <Tooltip
+                              content="Drag to move pane"
+                              placement="top"
+                            >
+                              {/* ponytail: native DnD has no keyboard path; keyboard-driven pane reorder is a deferred a11y follow-up */}
+                              <div
+                                data-testid="split-view-browser-drag-handle"
+                                data-drag-handle="true"
+                                aria-label="Drag to move pane"
+                                draggable
+                                onDragStart={(event): void =>
+                                  handlePaneDragStart(pane.id, event)
+                                }
+                                onDragEnd={handlePaneDragEnd}
+                                className="absolute top-1 right-1 z-40 flex h-5 w-5 cursor-grab items-center justify-center rounded bg-surface-container/80 text-on-surface-muted hover:bg-surface-container"
+                              >
+                                <span
+                                  className="material-symbols-outlined text-[14px] leading-none"
+                                  aria-hidden="true"
+                                >
+                                  drag_indicator
+                                </span>
+                              </div>
+                            </Tooltip>
+                          ) : null}
+                          <BrowserPane
+                            key={pane.ptyId}
+                            session={session}
+                            pane={pane}
+                            isActive={isActive}
+                            onClose={closeHandler}
+                            onRequestActive={onSetActivePane}
+                            onRequestFocus={onRequestFocus}
+                            onUrlChange={onBrowserPaneUrlChange}
+                            showFocusHighlight={showPaneFocusHighlight}
+                          />
+                        </>
                       ) : (
                         <TerminalPane
                           key={pane.ptyId}
@@ -392,14 +646,26 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}
+                          paneDraggable={dndEnabled}
+                          onHeaderDragStart={(event): void =>
+                            handlePaneDragStart(pane.id, event)
+                          }
+                          onHeaderDragEnd={handlePaneDragEnd}
                         />
                       )}
+                      {isValidDropActive(slotId) ? (
+                        <span
+                          data-testid="split-view-drop-indicator"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border-2 border-primary bg-primary/10"
+                        />
+                      ) : null}
                     </div>
                   </Tooltip>
                 </motion.div>
               )
             })}
-            {onAddPane
+            {onAddPane || dndEnabled
               ? emptySlotIds.map((slotId) => {
                   const slotIndex = layout.definition.addOrder.indexOf(slotId)
 
@@ -413,14 +679,44 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                       data-testid="split-view-empty-slot"
                       data-slot-id={slotId}
                       data-slot-index={slotIndex}
+                      data-drop-active={
+                        isValidDropActive(slotId) ? 'true' : undefined
+                      }
+                      onDragOver={
+                        dndEnabled
+                          ? (event): void => handleSlotDragOver(slotId, event)
+                          : undefined
+                      }
+                      onDragLeave={
+                        dndEnabled
+                          ? (event): void => handleSlotDragLeave(slotId, event)
+                          : undefined
+                      }
+                      onDrop={
+                        dndEnabled
+                          ? (event): void => handleSlotDrop(slotId, event)
+                          : undefined
+                      }
                       className="relative min-h-0 min-w-0"
                       style={{ gridArea: gridAreaForSlotId(slotId) }}
                     >
-                      <EmptySlot
-                        sessionId={session.id}
-                        slotId={slotId}
-                        onAddPane={onAddPane}
-                      />
+                      {onAddPane ? (
+                        <EmptySlot
+                          sessionId={session.id}
+                          slotId={slotId}
+                          accepts={acceptsForSlotId(slotId)}
+                          onAddPane={onAddPane}
+                        />
+                      ) : (
+                        <div className="h-full w-full rounded-lg border border-dashed border-outline-variant/35 bg-surface-container/35" />
+                      )}
+                      {isValidDropActive(slotId) ? (
+                        <span
+                          data-testid="split-view-drop-indicator"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 z-30 rounded-lg border-2 border-primary bg-primary/10"
+                        />
+                      ) : null}
                     </motion.div>
                   )
                 })

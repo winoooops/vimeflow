@@ -66,6 +66,27 @@ describe('layoutTemplates', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  test('gallery order: grids bracket the spanning templates, without 4x4', () => {
+    // Assert on stable ids, not display titles, so a cosmetic rename does not
+    // break this regression guard for the order + 4x4 removal.
+    expect(STARTER_LAYOUT_TEMPLATES.map((definition) => definition.id)).toEqual(
+      [
+        'custom:template-2x3',
+        'custom:template-main-right-stack',
+        'custom:template-main-bottom-row',
+        'custom:template-3x3',
+      ]
+    )
+  })
+
+  test('createGridTemplate respects the 16-slot MAX_LAYOUT_SLOTS boundary', () => {
+    const definition = createGridTemplate(4, 4)
+
+    expect(definition.slots).toHaveLength(16)
+    expect(definition.slots).toHaveLength(MAX_LAYOUT_SLOTS)
+    expectsValid(definition)
+  })
+
   test('every starter template tiles every grid cell exactly once', () => {
     for (const definition of STARTER_LAYOUT_TEMPLATES) {
       const grid = cellOwners(definition)
@@ -116,14 +137,6 @@ describe('layoutTemplates', () => {
     expect(definition.tracks.columns).toHaveLength(3)
     expect(definition.tracks.rows).toHaveLength(3)
     expect(definition.slots).toHaveLength(9)
-    expectsValid(definition)
-  })
-
-  test('4x4 grid fills exactly the maximum slot capacity', () => {
-    const definition = createGridTemplate(4, 4)
-
-    expect(definition.slots).toHaveLength(16)
-    expect(definition.slots).toHaveLength(MAX_LAYOUT_SLOTS)
     expectsValid(definition)
   })
 

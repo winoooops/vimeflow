@@ -12,6 +12,7 @@ import {
   setTrackCount,
   updateTrackBoundary,
   validateDraftLayout,
+  type DraftPaneLayout,
 } from './layoutCreatorModel'
 
 const mainWithBottomStack = (): PaneLayoutDefinition => ({
@@ -227,5 +228,162 @@ describe('layoutCreatorModel', () => {
       overCapacity: false,
       overlap: false,
     })
+  })
+
+  test('emits slot.accepts from a draft slot restriction', () => {
+    const definition = definitionFromDraft({
+      title: 'Restricted',
+      draft: {
+        cols: [12, 12],
+        rows: [24],
+        slots: [
+          { col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: ['browser'] },
+          { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+        ],
+      },
+      existingIds: new Set(),
+    })
+
+    expect(definition.slots[0].accepts).toEqual(['browser'])
+    expect(definition.slots[1].accepts).toBeUndefined()
+  })
+
+  test('omits slot.accepts when the draft restriction is empty', () => {
+    const definition = definitionFromDraft({
+      title: 'Unrestricted',
+      draft: {
+        cols: [24],
+        rows: [24],
+        slots: [{ col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: [] }],
+      },
+      existingIds: new Set(),
+    })
+
+    expect(definition.slots[0].accepts).toBeUndefined()
+  })
+
+  test('reads slot.accepts back into the draft via draftFromDefinition', () => {
+    const definition = definitionFromDraft({
+      title: 'Restricted',
+      draft: {
+        cols: [12, 12],
+        rows: [24],
+        slots: [
+          { col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: ['shell'] },
+          { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+        ],
+      },
+      existingIds: new Set(),
+    })
+
+    const draft = draftFromDefinition(definition)
+
+    expect(draft.slots[0].accepts).toEqual(['shell'])
+    expect(draft.slots[1].accepts).toBeUndefined()
+  })
+
+  test('round-trips slot.accepts through JSON serialization', () => {
+    const draft: DraftPaneLayout = {
+      cols: [12, 12],
+      rows: [24],
+      slots: [
+        { col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: ['browser'] },
+        { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+      ],
+    }
+
+    const json = serializeDraftLayout(draft, 'json')
+
+    expect(parseDraftLayoutText(json, 'json')).toEqual(draft)
+  })
+
+  test('round-trips slot.accepts through YAML serialization', () => {
+    const draft: DraftPaneLayout = {
+      cols: [12, 12],
+      rows: [24],
+      slots: [
+        { col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: ['browser'] },
+        { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+      ],
+    }
+
+    const yaml = serializeDraftLayout(draft, 'yaml')
+
+    expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
+  })
+
+  test('round-trips a two-kind slot.accepts list through YAML', () => {
+    // Exercises the inline-sequence parser with more than one entry
+    // (`accepts: [browser, shell]`).
+    const draft: DraftPaneLayout = {
+      cols: [12, 12],
+      rows: [24],
+      slots: [
+        {
+          col: 0,
+          row: 0,
+          colSpan: 1,
+          rowSpan: 1,
+          accepts: ['browser', 'shell'],
+        },
+        { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+      ],
+    }
+
+    const yaml = serializeDraftLayout(draft, 'yaml')
+
+    expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
+  })
+
+  test('parses quoted slot.accepts entries from YAML flow sequences', () => {
+    const yaml = [
+      'tracks:',
+      '  columns:',
+      '    - id: c0',
+      '      units: 12',
+      '    - id: c1',
+      '      units: 12',
+      '  rows:',
+      '    - id: r0',
+      '      units: 24',
+      'slots:',
+      '  - id: slot:p0',
+      '    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 }',
+      '    accepts: [\'browser\', "shell"]',
+      '  - id: slot:p1',
+      '    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 }',
+    ].join('\n')
+
+    expect(parseDraftLayoutText(yaml, 'yaml').slots[0].accepts).toEqual([
+      'browser',
+      'shell',
+    ])
+  })
+
+  test('parses slot.accepts entries from YAML block sequences', () => {
+    const yaml = [
+      'tracks:',
+      '  columns:',
+      '    - id: c0',
+      '      units: 12',
+      '    - id: c1',
+      '      units: 12',
+      '  rows:',
+      '    - id: r0',
+      '      units: 24',
+      'slots:',
+      '  - id: slot:p0',
+      '    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 }',
+      '    accepts:',
+      '      - browser',
+      '      - shell',
+      '  - id: slot:p1',
+      '    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 }',
+    ].join('\n')
+
+    expect(parseDraftLayoutText(yaml, 'yaml').slots[0].accepts).toEqual([
+      'browser',
+      'shell',
+    ])
   })
 })
