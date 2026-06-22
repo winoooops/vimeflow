@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-21
+last_updated: 2026-06-22
 ref_count: 90
 ---
 
@@ -854,4 +854,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
 - **Finding:** The comment said a pid miss with a prior cache returns `None` so `cached_or_err` keeps the live binding. In reality `locate` tries the cwd fallback first, and only preserves the cached binding when cwd also finds nothing.
 - **Fix:** Reworded the comment to document the actual fallback order: pid miss triggers cwd resolution first, and `cached_or_err` preserves the binding only after cwd also misses.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 92. OpenCode technical notes were checked in as generated HTML instead of source Markdown
+
+- **Source:** github-human | PR #603 round 5 | 2026-06-22
+- **Severity:** HUMAN
+- **File:** `docs/opencode/opencode-adapter-technical-note.zh.html`
+- **Finding:** The PR added two OpenCode technical notes as standalone HTML artifacts even though the reviewer wanted the source form to live as Markdown for easier maintenance and Linear references. Keeping only generated HTML makes future edits and issue-link reuse more expensive than necessary.
+- **Fix:** Replaced both OpenCode HTML notes with Markdown equivalents, updated the OpenCode adapter design spec to reference the `.md` paths, and kept the documentation content in repo-native Markdown form.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

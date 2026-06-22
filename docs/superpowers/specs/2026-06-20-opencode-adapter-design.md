@@ -6,8 +6,8 @@ Scope: add **opencode** as a supported coding agent in Vimeflow, at **parity wit
 
 Grounding (committed on this branch, authoritative):
 
-- `docs/opencode/opencode-event-stream-research.zh.html` — the two-plane model (observation=read vs interaction=write), the verified opencode plugin event catalog + payload shapes, security red-lines.
-- `docs/opencode/opencode-adapter-technical-note.zh.html`, `docs/opencode/opencode-adapter-exploration.md` — opencode SQLite schema and the five-trait mapping.
+- `docs/opencode/opencode-event-stream-research.zh.md` — the two-plane model (observation=read vs interaction=write), the verified opencode plugin event catalog + payload shapes, security red-lines.
+- `docs/opencode/opencode-adapter-technical-note.zh.md`, `docs/opencode/opencode-adapter-exploration.md` — opencode SQLite schema and the five-trait mapping.
 
 ---
 
