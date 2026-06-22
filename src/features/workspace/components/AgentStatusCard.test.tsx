@@ -212,6 +212,8 @@ describe('AgentStatusCard', () => {
         quotaNotice={{
           message: 'Usage limits not exposed by OpenCode yet',
           trackUrl: 'https://github.com/sst/opencode/issues/16017',
+          tooltipLabel:
+            'OpenCode usage API — open the feature request (sst/opencode#16017)',
         }}
       />
     )

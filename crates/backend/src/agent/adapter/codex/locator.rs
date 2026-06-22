@@ -1300,6 +1300,7 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
             // refactor dropped this wiring, parking `agent-session-title`
             // emits for live Codex sessions).
             agent_session_id: Some(location.thread_id),
+            resolved_directory: None,
         })
     }
 }

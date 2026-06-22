@@ -111,8 +111,9 @@ fn parse_version(source: &str) -> Option<u32> {
 }
 
 /// Atomically write `bytes` to `target`: write to a uniquely-named temp file in
-/// `dir` (mode `0600` on unix), flush, then `rename` over `target`. The rename
-/// is atomic on the same filesystem, so a reader never observes a partial file.
+/// `dir` (mode `0600` on unix), flush, then replace `target`. Unix keeps the
+/// atomic rename-over-existing behavior; Windows removes an existing target
+/// first because `std::fs::rename` does not replace files there.
 fn atomic_write(dir: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
     let tmp = dir.join(format!(
         ".{}.tmp-{}",
@@ -144,13 +145,29 @@ fn atomic_write(dir: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
         return Err(e);
     }
 
-    if let Err(e) = fs::rename(&tmp, target) {
+    if let Err(e) = replace_file(&tmp, target) {
         let _ = fs::remove_file(&tmp);
 
         return Err(e);
     }
 
     Ok(())
+}
+
+#[cfg(windows)]
+fn replace_file(tmp: &Path, target: &Path) -> io::Result<()> {
+    match fs::remove_file(target) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+
+    fs::rename(tmp, target)
+}
+
+#[cfg(not(windows))]
+fn replace_file(tmp: &Path, target: &Path) -> io::Result<()> {
+    fs::rename(tmp, target)
 }
 
 /// `$HOME` (or a relative fallback for headless/service sessions where home is

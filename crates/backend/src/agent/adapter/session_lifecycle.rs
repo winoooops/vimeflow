@@ -136,6 +136,7 @@ mod tests {
                 trust_root: cwd.to_path_buf(),
                 static_transcript_hint: None,
                 agent_session_id: None,
+                resolved_directory: None,
             })
         }
     }
@@ -328,6 +329,7 @@ mod tests {
                 trust_root: self.trust_root.clone(),
                 static_transcript_hint: None,
                 agent_session_id: None,
+                resolved_directory: None,
             })
         }
     }
@@ -396,6 +398,7 @@ mod tests {
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
         let lifecycle = SessionLifecycle::new(
             PtyState::new(),
@@ -412,6 +415,7 @@ mod tests {
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
         let result = lifecycle.ensure_trust(outside);
         assert!(result.is_err(), "outside trust root should fail");
@@ -467,6 +471,7 @@ mod tests {
             trust_root: app_data.path().to_path_buf(),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
 
         let lifecycle = SessionLifecycle::new(

@@ -19,12 +19,13 @@ import type { QuotaNotice } from '@/agents/registry'
 export const QuotaUnavailableNotice = ({
   message,
   trackUrl,
+  tooltipLabel,
 }: QuotaNotice): ReactElement => (
   <div className="flex flex-col gap-[7px]">
     <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
       {message}
     </span>
-    <Tooltip content="OpenCode usage API — open the feature request (sst/opencode#16017)">
+    <Tooltip content={tooltipLabel}>
       <a
         href={trackUrl}
         target="_blank"

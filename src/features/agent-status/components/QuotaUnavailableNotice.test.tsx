@@ -8,6 +8,7 @@ describe('QuotaUnavailableNotice', () => {
       <QuotaUnavailableNotice
         message="Usage limits not exposed by OpenCode yet"
         trackUrl="https://github.com/sst/opencode/issues/16017"
+        tooltipLabel="OpenCode usage API — open the feature request (sst/opencode#16017)"
       />
     )
 
@@ -24,7 +25,11 @@ describe('QuotaUnavailableNotice', () => {
 
   test('opens the link safely in a new tab', () => {
     render(
-      <QuotaUnavailableNotice message="m" trackUrl="https://example.test/fr" />
+      <QuotaUnavailableNotice
+        message="m"
+        trackUrl="https://example.test/fr"
+        tooltipLabel="Open the feature request"
+      />
     )
 
     const link = screen.getByRole('link', { name: /track the request/i })

@@ -684,9 +684,14 @@ fn maybe_start_transcript(
         }
     };
 
-    let cwd = pty_state
-        .get_cwd(&session_id.to_string())
-        .map(PathBuf::from);
+    let cwd = located
+        .resolved_directory
+        .clone()
+        .or_else(|| {
+            pty_state
+                .get_cwd(&session_id.to_string())
+                .map(PathBuf::from)
+        });
 
     // Step B'': `TranscriptState::start_or_replace` now takes
     // `Arc<dyn TranscriptStreamer>` directly (was `Arc<dyn AgentAdapter>`

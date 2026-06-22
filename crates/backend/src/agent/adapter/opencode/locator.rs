@@ -59,10 +59,10 @@ use super::transcript_dto::OpencodeIndexRowDto;
 const SLACK_MS: i64 = 5_000;
 
 /// Filesystem pid-primary opencode locator. Holds the last successful
-/// resolve `(sessionID, status_path)` behind an `Arc<Mutex<…>>` (the Kimi
-/// shared-state pattern) as a transient-empty-read FALLBACK — `locate`
-/// re-reads the index and re-resolves on every call. M5's validator delegates
-/// to [`OpenCodeLocator::effective_bridge_root`].
+/// resolve `(sessionID, status_path, resolved_directory)` behind an
+/// `Arc<Mutex<…>>` (the Kimi shared-state pattern) as a transient-empty-read
+/// FALLBACK — `locate` re-reads the index and re-resolves on every call. M5's
+/// validator delegates to [`OpenCodeLocator::effective_bridge_root`].
 pub(crate) struct OpenCodeLocator {
     /// The bridge dir (`trust_root`) — `index.jsonl` and every
     /// `<sessionID>.jsonl` live directly under it.
@@ -74,11 +74,12 @@ pub(crate) struct OpenCodeLocator {
     /// PTY start instant; both resolve paths reject rows older than
     /// `pty_start − SLACK`.
     pty_start: SystemTime,
-    /// `(sessionID, status_path)` of the last successful `locate`. `None` until
+    /// `(sessionID, status_path, resolved_directory)` of the last successful
+    /// `locate`. `None` until
     /// the first resolve. NOT a short-circuit — used only as a fallback when a
     /// re-`locate`'s index read yields no qualifying row, so a transient empty
     /// read doesn't drop a live binding. Overwritten on every fresh resolve.
-    resolved: Arc<Mutex<Option<(String, PathBuf)>>>,
+    resolved: Arc<Mutex<Option<(String, PathBuf, Option<PathBuf>)>>>,
 }
 
 impl OpenCodeLocator {
@@ -108,11 +109,20 @@ impl OpenCodeLocator {
     }
 
     /// Build (and cache) a [`LocatedStatusSource`] for a resolved session id.
-    fn locate_session(&self, session_id: String) -> LocatedStatusSource {
+    fn locate_session(
+        &self,
+        session_id: String,
+        resolved_directory: Option<PathBuf>,
+    ) -> LocatedStatusSource {
         let status_path = self.status_path_for(&session_id);
         *self.resolved.lock().expect("opencode resolved lock") =
-            Some((session_id.clone(), status_path.clone()));
-        located_from(status_path, self.bridge_root.clone(), session_id)
+            Some((session_id.clone(), status_path.clone(), resolved_directory.clone()));
+        located_from(
+            status_path,
+            self.bridge_root.clone(),
+            session_id,
+            resolved_directory,
+        )
     }
 
     /// All usable index rows (a `sessionID` is required; everything else is
@@ -286,14 +296,20 @@ impl StatusSourceLocator for OpenCodeLocator {
         // session. Binds correctly even when Vimeflow's OSC7-tracked cwd never
         // caught up to opencode's real cwd — which `resolve_by_cwd` cannot.
         if let Some(session_id) = self.resolve_by_pid(&rows) {
-            return Ok(self.locate_session(session_id));
+            let resolved_directory = resolved_directory_for(&rows, &session_id);
+
+            return Ok(self.locate_session(session_id, resolved_directory));
         }
 
         // Fallback: an unambiguous fresh same-cwd session, for the rare case
         // where the detected `agent_pid` carries no index row (pid detection
         // drifted to a wrapper/child).
         match self.resolve_by_cwd(&rows, cwd) {
-            Ok(Some(session_id)) => Ok(self.locate_session(session_id)),
+            Ok(Some(session_id)) => {
+                let resolved_directory = resolved_directory_for(&rows, &session_id);
+
+                Ok(self.locate_session(session_id, resolved_directory))
+            }
             Ok(None) => self.cached_or_err(format!(
                 "opencode index not ready: no fresh session for pid={} or cwd={} in {}",
                 self.agent_pid,
@@ -311,7 +327,7 @@ impl OpenCodeLocator {
             .lock()
             .expect("opencode resolved lock")
             .as_ref()
-            .map(|(session_id, _)| session_id.clone())
+            .map(|(session_id, _, _)| session_id.clone())
     }
 
     /// Fallback for a `locate` that found no qualifying row: return the last
@@ -320,9 +336,12 @@ impl OpenCodeLocator {
     /// index read; the cache is only ever populated by a fresh resolve.
     fn cached_or_err(&self, not_ready: String) -> Result<LocatedStatusSource, String> {
         match self.resolved.lock().expect("opencode resolved lock").clone() {
-            Some((session_id, status_path)) => {
-                Ok(located_from(status_path, self.bridge_root.clone(), session_id))
-            }
+            Some((session_id, status_path, resolved_directory)) => Ok(located_from(
+                status_path,
+                self.bridge_root.clone(),
+                session_id,
+                resolved_directory,
+            )),
             None => Err(not_ready),
         }
     }
@@ -335,13 +354,23 @@ fn located_from(
     status_path: PathBuf,
     bridge_root: PathBuf,
     session_id: String,
+    resolved_directory: Option<PathBuf>,
 ) -> LocatedStatusSource {
     LocatedStatusSource {
         static_transcript_hint: Some(status_path.to_string_lossy().into_owned()),
         status_path,
         trust_root: bridge_root,
         agent_session_id: Some(session_id),
+        resolved_directory,
     }
+}
+
+fn resolved_directory_for(rows: &[OpencodeIndexRowDto], session_id: &str) -> Option<PathBuf> {
+    rows.iter()
+        .filter(|row| row.session_id.as_deref() == Some(session_id))
+        .max_by_key(|row| row.time)
+        .and_then(|row| row.directory.as_ref())
+        .map(PathBuf::from)
 }
 
 /// True when index `directory` and the attach `cwd` name the same directory.
@@ -535,6 +564,7 @@ mod tests {
             .locate(&tracked_cwd, "pty")
             .expect("pid match binds despite cwd mismatch");
         assert_eq!(located.agent_session_id.as_deref(), Some("ses_live"));
+        assert_eq!(located.resolved_directory.as_deref(), Some(project.as_path()));
     }
 
     /// Two opencode panes sharing one project dir are NOT ambiguous under

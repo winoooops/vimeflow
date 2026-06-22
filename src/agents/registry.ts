@@ -21,6 +21,8 @@ export interface QuotaNotice {
   message: string
   /** Upstream feature-request URL the "track" link opens. */
   trackUrl: string
+  /** Tooltip label for the "track" link. */
+  tooltipLabel: string
 }
 
 export interface AgentDef extends PaneIdentity {
@@ -103,6 +105,8 @@ export const AGENTS = {
     quotaNotice: {
       message: 'Usage limits not exposed by OpenCode yet',
       trackUrl: 'https://github.com/sst/opencode/issues/16017',
+      tooltipLabel:
+        'OpenCode usage API — open the feature request (sst/opencode#16017)',
     },
   },
 } as const satisfies Record<string, AgentDef>

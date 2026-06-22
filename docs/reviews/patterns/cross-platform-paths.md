@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 11
+last_updated: 2026-06-22
+ref_count: 12
 ---
 
 # Cross-Platform Paths
@@ -114,4 +114,13 @@ consider using path libraries for cross-platform code.
 - **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
 - **Finding:** The non-`/proc` Codex locator relies on `lsof` for macOS/BSD open-rollout detection. If the binary was absent from PATH, the provider surfaced `NotFound` as an authoritative provider error, so the resolver returned `NotYetReady` before resume-argv, logs, or recency fallback strategies could run.
 - **Fix:** Treat `io::ErrorKind::NotFound` from the lsof runner as empty output, preserving the pre-lsof fallback behavior when the platform signal is unavailable. Timeout and non-zero-exit errors still propagate as provider failures.
+- **Commit:** same commit as this entry
+
+### 12. Windows rename does not replace existing bridge plugin files
+
+- **Source:** github-codex-connector | PR #603 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/install.rs` L147
+- **Finding:** `std::fs::rename(tmp, target)` replaces an existing file on Unix but fails on Windows when `target` already exists. Because OpenCode bridge install errors are non-fatal, Windows users with a stale or unparsable plugin file could remain on the old schema indefinitely.
+- **Fix:** Routed replacement through a platform helper: Unix keeps atomic rename-over-existing, while Windows removes an existing target before renaming the temp file into place and cleans up the temp file on failure.
 - **Commit:** same commit as this entry

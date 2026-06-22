@@ -241,6 +241,7 @@ mod adapter_tests {
             trust_root: PathBuf::from("/tmp/opencode-bridge"),
             static_transcript_hint: Some("/tmp/opencode-bridge/ses_x.jsonl".to_string()),
             agent_session_id: Some("ses_x".to_string()),
+            resolved_directory: Some(PathBuf::from("/tmp/project")),
         };
         assert_eq!(
             tps.static_hint(&located).as_deref(),
@@ -252,6 +253,7 @@ mod adapter_tests {
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
         assert_eq!(tps.static_hint(&without), None);
     }

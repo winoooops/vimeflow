@@ -12,7 +12,8 @@ export interface ContextReservoirCardProps {
    * window size is unknown, e.g. opencode does not expose a context window). In
    * that state the footer shows this count ("11.8k tokens · window unknown")
    * instead of a dash, so the card is not blank. Ignored when a percentage is
-   * known — the reconstructed `used` figure stays authoritative there.
+   * known — the reconstructed `used` figure stays authoritative there. A value
+   * of 0 is treated as "data not yet available" and renders as dashes.
    */
   inputTokens?: number
 }
