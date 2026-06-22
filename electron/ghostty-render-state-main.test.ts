@@ -412,6 +412,110 @@ describe('ghostty render-state main bridge', () => {
     ).toBe(true)
   })
 
+  test('anchors the bar to the visible viewport and drops scrollback bg rows (/resume, codex with history)', () => {
+    // formatHtml carries the WHOLE terminal: scrollback (here two dimmed old
+    // composer prompts) + the visible viewport. The native snapshot carries only
+    // the 5-row viewport. With a fixed wrapper/leading offset the scrollback bar
+    // rows mapped straight onto visible history rows (the /resume "Verified:" /
+    // status bleed). The synthesis must anchor formatHtml's last content row to
+    // the snapshot's last non-blank row and drop everything above the viewport.
+    const bg = 'background-color: rgb(57, 57, 71)'
+    const dim = `${bg};opacity: 0.5`
+
+    const wrapperOpen =
+      '<div style="font-family: monospace; white-space: pre;">'
+    const barRow = `<div style="display: inline;${bg};">                    </div>`
+
+    const composerRow =
+      `<div style="display: inline;${bg};font-weight: bold;">&gt;</div>` +
+      `<div style="display: inline;${bg};"> hi                </div>`
+
+    const oldPrompt =
+      `<div style="display: inline;${dim};font-weight: bold;">&gt;</div>` +
+      `<div style="display: inline;${dim};"> old prompt         </div>`
+
+    const plain = (text: string): string =>
+      `<div style="display: inline;">${text}</div>`
+
+    const statusRow =
+      '<div style="display: inline;color: rgb(241, 189, 69);">status</div></div>'
+
+    // 8 content rows: [0..2] scrollback (incl. a dimmed bar), then the visible
+    // viewport [3..7] = old output / bar / composer / bar / status.
+    const html = `${wrapperOpen}\n${[
+      oldPrompt,
+      plain('history line a'),
+      plain('history line b'),
+      plain('old output'),
+      barRow,
+      composerRow,
+      barRow,
+      statusRow,
+    ].join('\n')}`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 2,
+          cursorCol: 4,
+          // visible viewport only — the bottom 5 rows of the grid
+          visibleLines: [
+            { row: 0, text: 'old output' },
+            { row: 1, text: '' },
+            { row: 2, text: '> hi' },
+            { row: 3, text: '' },
+            { row: 4, text: 'status' },
+          ],
+          cells: [
+            { row: 1, col: 0, text: ' ', width: 1, background: '#393947' },
+            { row: 2, col: 0, text: '>', width: 1, background: '#393947' },
+            { row: 2, col: 2, text: 'h', width: 1, background: '#393947' },
+            { row: 2, col: 3, text: 'i', width: 1, background: '#393947' },
+            { row: 3, col: 0, text: ' ', width: 1, background: '#393947' },
+            { row: 4, col: 0, text: 's', width: 1, foreground: '#f1bd45' },
+          ],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+    const cells = snapshot.cells ?? []
+
+    // bar rows 1,2,3 fully covered by the bar background
+    for (const row of [1, 2, 3]) {
+      for (let col = 0; col < 20; col += 1) {
+        const covering = cells.find(
+          (cell) =>
+            cell.row === row && cell.col <= col && col < cell.col + cell.width
+        )
+        expect(covering?.background, `row ${row} col ${col}`).toBe('#393947')
+      }
+    }
+
+    // visible history row 0 ('old output') and the status row 4 must stay clean —
+    // the scrollback's dimmed prompt bg must NOT bleed onto them
+    expect(
+      cells.some((cell) => cell.row === 0 && cell.background !== undefined)
+    ).toBe(false)
+
+    expect(
+      cells.some((cell) => cell.row === 4 && cell.background !== undefined)
+    ).toBe(false)
+  })
+
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)

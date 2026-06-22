@@ -681,9 +681,18 @@ const appendReverseVideoRange = (
   ranges.push(range)
 }
 
+interface ReverseVideoRangesResult {
+  readonly ranges: readonly ReverseVideoRange[]
+  // Total number of terminal rows formatHtml emitted (scrollback + visible,
+  // wrapper line excluded). Used to anchor these rows onto the visible-only
+  // native snapshot — formatHtml carries the whole scrollback, the snapshot
+  // carries just the viewport, so a fixed offset cannot align them.
+  readonly contentRowCount: number
+}
+
 const readReverseVideoRangesFromHtml = (
   html: string
-): readonly ReverseVideoRange[] => {
+): ReverseVideoRangesResult => {
   const ranges: ReverseVideoRange[] = []
   const styleStack: Pick<ReverseVideoRange, 'background' | 'reverse'>[] = [{}]
   let row = 0
@@ -748,20 +757,28 @@ const readReverseVideoRangesFromHtml = (
     }
   })
 
-  return ranges
+  // `row` indexes the last terminal row the parser walked; +1 makes it a count.
+  // formatHtml trims truly-blank LEADING and TRAILING rows, so the last content
+  // row is the grid's last non-blank row.
+  return { ranges, contentRowCount: ranges.length === 0 ? 0 : row + 1 }
+}
+
+const EMPTY_REVERSE_VIDEO_RESULT: ReverseVideoRangesResult = {
+  ranges: [],
+  contentRowCount: 0,
 }
 
 const readTerminalReverseVideoRanges = (
   terminal: GhosttyNativeTerminal
-): readonly ReverseVideoRange[] => {
+): ReverseVideoRangesResult => {
   if (!terminal.formatHtml) {
-    return []
+    return EMPTY_REVERSE_VIDEO_RESULT
   }
 
   try {
     return readReverseVideoRangesFromHtml(terminal.formatHtml())
   } catch {
-    return []
+    return EMPTY_REVERSE_VIDEO_RESULT
   }
 }
 
@@ -1085,7 +1102,7 @@ const readSnapshotCells = (
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
-  reverseVideoRanges: readonly ReverseVideoRange[]
+  reverseVideo: ReverseVideoRangesResult
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
 
@@ -1106,37 +1123,29 @@ const normalizeSnapshot = (
     columnOffset: snapshot.cursorCol,
   }
 
-  // formatHtml drops truly-blank rows that lead the grid before the first row
-  // with content (in addition to the wrapper <div> line that
-  // readReverseVideoRangesFromHtml already skips). Shift the reverse-video
-  // ranges back down by that leading count so they land on the same rows as
-  // the native snapshot — otherwise the bar bg lands one row too high on a
-  // shell (empty row 0) and one too low when the wrapper is the only lead
-  // (codex). "Content" includes a styled blank row (native bg cell), which
-  // formatHtml keeps, so a leading bar row is NOT counted. See the alignment tests.
-  const nativeBgRows = new Set<number>()
-  ;(snapshot.cells ?? []).forEach((cell) => {
-    if (
-      isRecord(cell) &&
-      cell.background !== undefined &&
-      isNonNegativeInteger(cell.row)
-    ) {
-      nativeBgRows.add(cell.row)
+  // formatHtml carries the whole terminal (scrollback + viewport) with blank
+  // leading/trailing rows trimmed; the native snapshot carries only the visible
+  // viewport. Anchor formatHtml's LAST content row to the snapshot's last
+  // non-blank row (both are the grid's last non-blank row), then shift every
+  // reverse-video range by that delta and drop rows that fall outside the
+  // viewport (scrollback above, padding below). A fixed wrapper/leading offset
+  // cannot do this: with scrollback the offset is the scrollback height (e.g.
+  // 118 rows on /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
+  let lastNonBlankRow = -1
+  rows.forEach((row, index) => {
+    if (row.trim().length > 0) {
+      lastNonBlankRow = index
     }
   })
 
-  const firstContentRow = rows.findIndex(
-    (row, index) => row.trim().length > 0 || nativeBgRows.has(index)
-  )
-  const leadingEmptyRows = firstContentRow < 0 ? 0 : firstContentRow
+  const rowShift =
+    reverseVideo.contentRowCount > 0 && lastNonBlankRow >= 0
+      ? lastNonBlankRow - (reverseVideo.contentRowCount - 1)
+      : 0
 
-  const alignedRanges =
-    leadingEmptyRows === 0
-      ? reverseVideoRanges
-      : reverseVideoRanges.map((range) => ({
-          ...range,
-          row: range.row + leadingEmptyRows,
-        }))
+  const alignedRanges = reverseVideo.ranges
+    .map((range) => ({ ...range, row: range.row + rowShift }))
+    .filter((range) => range.row >= 0 && range.row < rows.length)
 
   const cells = readSnapshotCells(snapshot, rows, alignedRanges)
 
