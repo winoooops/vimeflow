@@ -349,7 +349,7 @@ describe('layoutCreatorModel', () => {
       'slots:',
       '  - id: slot:p0',
       '    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 }',
-      "    accepts: ['browser', \"shell\"]",
+      '    accepts: [\'browser\', "shell"]',
       '  - id: slot:p1',
       '    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 }',
     ].join('\n')
