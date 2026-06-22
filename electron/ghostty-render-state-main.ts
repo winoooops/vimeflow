@@ -688,6 +688,7 @@ const readReverseVideoRangesFromHtml = (
   const styleStack: Pick<ReverseVideoRange, 'background' | 'reverse'>[] = [{}]
   let row = 0
   let column = 0
+  let skippedWrapperNewline = false
 
   Array.from(html.matchAll(HTML_TOKEN_PATTERN)).forEach((match) => {
     const token = match[0]
@@ -717,6 +718,16 @@ const readReverseVideoRangesFromHtml = (
 
     for (const character of decodeHtmlText(token)) {
       if (character === '\n') {
+        // formatHtml wraps all rows in an outer <div ...> whose opening tag
+        // sits on its own line, ending with a structural newline before the
+        // first terminal row. Counting it shifts every range down one row
+        // (the composer bar bg bleeds onto the status line below). Skip that
+        // one leading newline so range rows align with the native snapshot.
+        if (!skippedWrapperNewline && row === 0 && column === 0) {
+          skippedWrapperNewline = true
+          continue
+        }
+
         row += 1
         column = 0
         continue
@@ -1094,7 +1105,40 @@ const normalizeSnapshot = (
     rowIndex: snapshot.cursorRow,
     columnOffset: snapshot.cursorCol,
   }
-  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
+
+  // formatHtml drops truly-blank rows that lead the grid before the first row
+  // with content (in addition to the wrapper <div> line that
+  // readReverseVideoRangesFromHtml already skips). Shift the reverse-video
+  // ranges back down by that leading count so they land on the same rows as
+  // the native snapshot — otherwise the bar bg lands one row too high on a
+  // shell (empty row 0) and one too low when the wrapper is the only lead
+  // (codex). "Content" includes a styled blank row (native bg cell), which
+  // formatHtml keeps, so a leading bar row is NOT counted. See the alignment tests.
+  const nativeBgRows = new Set<number>()
+  ;(snapshot.cells ?? []).forEach((cell) => {
+    if (
+      isRecord(cell) &&
+      cell.background !== undefined &&
+      isNonNegativeInteger(cell.row)
+    ) {
+      nativeBgRows.add(cell.row)
+    }
+  })
+
+  const firstContentRow = rows.findIndex(
+    (row, index) => row.trim().length > 0 || nativeBgRows.has(index)
+  )
+  const leadingEmptyRows = firstContentRow < 0 ? 0 : firstContentRow
+
+  const alignedRanges =
+    leadingEmptyRows === 0
+      ? reverseVideoRanges
+      : reverseVideoRanges.map((range) => ({
+          ...range,
+          row: range.row + leadingEmptyRows,
+        }))
+
+  const cells = readSnapshotCells(snapshot, rows, alignedRanges)
 
   return {
     rows,

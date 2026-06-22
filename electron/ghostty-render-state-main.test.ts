@@ -277,14 +277,25 @@ describe('ghostty render-state main bridge', () => {
   // formatHtml ranges — a transient "clamp to native content extent" once dropped
   // the blank portions and made the bar vanish (Ghostty terminal BUG-1). This
   // locks the synthesis so the regression can't return.
-  test('synthesizes a full-width background bar from formatHtml when native cells omit blank styled cells', () => {
-    const barRow =
-      '<div style="display: inline;background-color: rgb(57, 57, 71);">                    </div>'
+  test('synthesizes the background bar on the bar rows without bleeding onto the status row below (formatHtml wrapper offset)', () => {
+    // formatHtml wraps every terminal row in an outer <div ...> whose opening
+    // tag sits on its own line. The bar covers terminal rows 0-2 (blank /
+    // composer / blank); a non-bg status line sits at row 3. If the synthesis
+    // counts the wrapper's leading newline, every range shifts +1 and the bar
+    // bleeds onto the status row.
+    const bg = 'background-color: rgb(57, 57, 71)'
 
-    const inputRow =
-      '<div style="display: inline;background-color: rgb(57, 57, 71);font-weight: bold;">&gt;</div>' +
-      '<div style="display: inline;background-color: rgb(57, 57, 71);"> hi                </div>'
-    const html = [barRow, inputRow, barRow].join('\n')
+    const wrapperOpen =
+      '<div style="font-family: monospace; white-space: pre;">'
+    const barRow = `<div style="display: inline;${bg};">                    </div>`
+
+    const composerRow =
+      `<div style="display: inline;${bg};font-weight: bold;">&gt;</div>` +
+      `<div style="display: inline;${bg};"> hi                </div>`
+
+    const statusRow =
+      '<div style="display: inline;color: rgb(241, 189, 69);">status</div></div>'
+    const html = `${wrapperOpen}\n${[barRow, composerRow, barRow, statusRow].join('\n')}`
 
     // cspell:ignore truecolor
     const bindings: GhosttyNativeBindings = {
@@ -292,19 +303,25 @@ describe('ghostty render-state main bridge', () => {
         feed: vi.fn(),
         resize: vi.fn(),
         snapshot: () => ({
-          rows: 5,
+          rows: 6,
           cursorRow: 1,
           cursorCol: 4,
           visibleLines: [
             { row: 0, text: '' },
             { row: 1, text: '> hi' },
             { row: 2, text: '' },
+            { row: 3, text: 'status' },
           ],
-          // native cells: text only, no color, blank cells omitted
+          // native cells carry the bar bg on rows 0-2 (formatHtml keeps these
+          // styled-blank rows, so there is no leading-empty trim); the status
+          // row 3 is foreground-only.
           cells: [
-            { row: 1, col: 0, text: '>', width: 1 },
-            { row: 1, col: 2, text: 'h', width: 1 },
-            { row: 1, col: 3, text: 'i', width: 1 },
+            { row: 0, col: 0, text: ' ', width: 1, background: '#393947' },
+            { row: 1, col: 0, text: '>', width: 1, background: '#393947' },
+            { row: 1, col: 2, text: 'h', width: 1, background: '#393947' },
+            { row: 1, col: 3, text: 'i', width: 1, background: '#393947' },
+            { row: 2, col: 0, text: ' ', width: 1, background: '#393947' },
+            { row: 3, col: 0, text: 's', width: 1, foreground: '#f1bd45' },
           ],
         }),
         formatHtml: () => html,
@@ -323,8 +340,7 @@ describe('ghostty render-state main bridge', () => {
     )
     const cells = snapshot.cells ?? []
 
-    // every column on each composer row (0,1,2) must be covered by a cell
-    // carrying the bar background, including the blank-only top/bottom rows
+    // bar rows 0,1,2 must be fully covered by the bar background
     for (const row of [0, 1, 2]) {
       for (let col = 0; col < 20; col += 1) {
         const covering = cells.find(
@@ -334,6 +350,66 @@ describe('ghostty render-state main bridge', () => {
         expect(covering?.background, `row ${row} col ${col}`).toBe('#393947')
       }
     }
+
+    // the status row (3) must NOT receive the bar background (no bleed)
+    expect(
+      cells.some((cell) => cell.row === 3 && cell.background !== undefined)
+    ).toBe(false)
+  })
+
+  test('keeps the bar on the prompt row when formatHtml trims a truly-empty leading row (shell)', () => {
+    // A shell leaves row 0 truly empty (no text, no bg). formatHtml drops that
+    // leading blank line, so its first content line is the prompt (native row
+    // 1). The synthesis must add the trimmed leading-empty count back, or the
+    // prompt bg lands one row too high on the empty row 0.
+    const bg = 'background-color: rgb(57, 57, 71)'
+
+    const wrapperOpen =
+      '<div style="font-family: monospace; white-space: pre;">'
+    const promptRow = `<div style="display: inline;${bg};">prompt $          </div></div>`
+    // formatHtml omits the empty leading row entirely
+    const html = `${wrapperOpen}\n${promptRow}`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 1,
+          cursorCol: 8,
+          visibleLines: [
+            { row: 0, text: '' },
+            { row: 1, text: 'prompt $' },
+          ],
+          cells: [
+            { row: 1, col: 0, text: 'p', width: 1, background: '#393947' },
+          ],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+    const cells = snapshot.cells ?? []
+
+    // the prompt bar must be on row 1, never on the empty leading row 0
+    expect(
+      cells.some((cell) => cell.row === 0 && cell.background !== undefined)
+    ).toBe(false)
+
+    expect(
+      cells.some((cell) => cell.row === 1 && cell.background === '#393947')
+    ).toBe(true)
   })
 
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
