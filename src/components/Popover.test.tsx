@@ -173,4 +173,26 @@ describe('Popover', () => {
     expect(dialog.className).toContain('rounded-lg')
     expect(dialog.className).toContain('backdrop-blur-md')
   })
+
+  test('can render a pointer-transparent non-modal card', () => {
+    const anchor = makeAnchor()
+
+    render(
+      <Popover
+        anchor={anchor}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Hover details"
+        pointerEvents="none"
+        focus="none"
+      >
+        <span>Details</span>
+      </Popover>
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Hover details' })
+
+    expect(dialog).toHaveStyle({ pointerEvents: 'none' })
+    expect(screen.getByText('Details')).toBeInTheDocument()
+  })
 })

@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-19
-ref_count: 25
+last_updated: 2026-06-22
+ref_count: 26
 ---
 
 # React Lifecycle
@@ -534,3 +534,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The layer-registration `useEffect` listed `requestClose` (which depends on `onOpenChange`) and `closeOnEscape` in its dependency array. Because parents often pass an inline `onOpenChange` callback, every parent re-render unregistered and re-registered an already-open lower dialog, pushing it to the top of the module-level `dialogStack`. In stacked modal use, Escape and Tab then targeted the background dialog instead of the visible top dialog.
 - **Fix:** Captured `requestClose` and `closeOnEscape` in refs that are updated synchronously each render, and keyed the registration effect only to `open`. The layer's close handler now reads the latest ref values, so prop changes are honored without re-registering the layer and corrupting stack order. Added a regression test that re-renders a parent with two open dialogs and asserts Escape still closes only the topmost.
 - **Commit:** same commit as this entry
+
+### 56. Tool jar auto-fit effect re-ran on every count tick
+
+- **Source:** github-claude | PR #576 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ToolCalls/ToolJarTile.tsx`
+- **Finding:** The tile auto-fit `useLayoutEffect` depended on `data.count`, so every increment disconnected and recreated observers plus delayed measurement timers. The measured content width only changes when the count gains or loses a digit, making same-digit ticks unnecessary layout work.
+- **Fix:** Derived `countDigits = String(data.count).length` and used that primitive in the dependency array. The effect still remeasures at digit boundaries and on tile size changes, but avoids churn for hot same-width count updates.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

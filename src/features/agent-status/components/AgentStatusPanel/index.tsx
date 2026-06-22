@@ -12,7 +12,7 @@ import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import { ContextReservoirCard } from '../ContextReservoirCard'
 import { TokenCache } from '../TokenCache'
-import { ToolCallSummary } from '../ToolCallSummary'
+import { ToolCallsSection } from '../ToolCalls/ToolCallsSection'
 import { FilesChanged } from '../FilesChanged'
 import { TestResults } from '../TestResults'
 import { ActivityFeed } from '../ActivityFeed'
@@ -567,6 +567,10 @@ export const AgentStatusPanel = ({
             usage={status.contextWindow?.currentUsage ?? null}
             history={bodyCacheHistory}
           />
+          <ToolCallsSection
+            total={status.toolCalls.total}
+            byType={status.toolCalls.byType}
+          />
         </div>
       )}
 
@@ -587,11 +591,6 @@ export const AgentStatusPanel = ({
               className={isRetainedBody ? 'select-none' : undefined}
               inert={isRetainedBody || undefined}
             >
-              <ToolCallSummary
-                total={status.toolCalls.total}
-                byType={status.toolCalls.byType}
-                active={runningEvent === null ? status.toolCalls.active : null}
-              />
               {runningEvent !== null && (
                 <LiveActionCard
                   event={runningEvent}
