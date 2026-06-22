@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react'
 import type { PaneLayoutId, Session } from '../../sessions/types'
 import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
+  type PaneLayoutRegistry,
   isKnownLayoutId,
 } from '../layout-registry/layoutRegistry'
+import { resolvePanePlacement } from '../../sessions/utils/panePlacements'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -28,6 +31,7 @@ export interface UsePaneShortcutsOptions {
   preferModifier?: PaneShortcutModifier
   onTerminalZoneFocus?: () => void
   isTerminalContainerActive?: boolean
+  layoutRegistry?: PaneLayoutRegistry
 }
 
 export const usePaneShortcuts = ({
@@ -38,17 +42,20 @@ export const usePaneShortcuts = ({
   preferModifier = 'ctrl',
   onTerminalZoneFocus = undefined,
   isTerminalContainerActive = undefined,
+  layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
 }: UsePaneShortcutsOptions): void => {
   const sessionsRef = useRef(sessions)
   const activeSessionIdRef = useRef(activeSessionId)
   const preferModifierRef = useRef(preferModifier)
   const onTerminalZoneFocusRef = useRef(onTerminalZoneFocus)
   const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
+  const layoutRegistryRef = useRef(layoutRegistry)
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   preferModifierRef.current = preferModifier
   onTerminalZoneFocusRef.current = onTerminalZoneFocus
   isTerminalContainerActiveRef.current = isTerminalContainerActive
+  layoutRegistryRef.current = layoutRegistry
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -86,15 +93,31 @@ export const usePaneShortcuts = ({
         return
       }
 
-      const digitMatch = /^Digit([1-6])$/.exec(event.code)
+      const digitMatch = /^Digit([1-9])$/.exec(event.code)
       if (digitMatch) {
-        const paneIndex = Number.parseInt(digitMatch[1], 10) - 1
+        const slotIndex = Number.parseInt(digitMatch[1], 10) - 1
 
         // Dialog guard covers the full digit-key path — both reclaim and
-        // pane-switch — so Ctrl+1-6 is fully suppressed while any modal is open.
+        // pane-switch — so Ctrl+1-9 is fully suppressed while any modal is open.
         if (document.querySelector(DIALOG_SELECTOR)) {
           return
         }
+
+        const layout = layoutRegistryRef.current.getFallbackLayout(
+          activeSession.layout
+        )
+        const targetSlotId = layout.definition.addOrder[slotIndex]
+        if (targetSlotId === undefined) {
+          return
+        }
+
+        const target = resolvePanePlacement(
+          activeSession.panes,
+          layout,
+          activeSession.placements
+        ).assignments.find(
+          (assignment) => assignment.slotId === targetSlotId
+        )?.pane
 
         const isTerminalContainerActiveValue =
           isTerminalContainerActiveRef.current
@@ -120,8 +143,7 @@ export const usePaneShortcuts = ({
             } else {
               return
             }
-          } else if (paneIndex < activeSession.panes.length) {
-            const target = activeSession.panes[paneIndex]
+          } else if (target !== undefined) {
             if (target.active) {
               if (activeElement?.closest('.xterm-helper-textarea')) {
                 return
@@ -142,11 +164,10 @@ export const usePaneShortcuts = ({
         // there's no pane to focus would silently swallow user input
         // with no visible action. We intercept only when a pane
         // actually exists at the requested index.
-        if (paneIndex >= activeSession.panes.length) {
+        if (target === undefined) {
           return
         }
 
-        const target = activeSession.panes[paneIndex]
         // Already-active: let the key propagate. The default single-
         // pane session is `panes.length === 1`, so Ctrl/Cmd+1
         // permanently maps to `panes[0]` which is always active. If

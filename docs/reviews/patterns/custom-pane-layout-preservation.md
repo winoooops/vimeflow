@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-22
-ref_count: 4
+ref_count: 5
 ---
 
 # Custom Pane Layout Preservation
@@ -102,4 +102,31 @@ Custom pane layouts can define capacities larger than any builtin layout. When a
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** `handleDuplicateCustomLayout` generated the clone id from the source layout title while assigning the visible clone title `Copy of ...`. The layout was unique, but persisted ids and UI/debug surfaces could show a slug unrelated to the clone's display title.
 - **Fix:** Derive `cloneTitle` once and pass it to `createCustomPaneLayoutId`, then assign the same title to the cloned definition. The top-chrome regression test now expects the duplicated id slug to begin with `custom:copy-of-...`.
+- **Commit:** same commit as this entry
+
+### 11. Saving over-capacity custom layout edits bypasses preservation
+
+- **Source:** github-codex-connector | PR #610 round 1 | 2026-06-22
+- **Severity:** P1 / HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1380-1386
+- **Finding:** `handleSaveCustomLayout` passed `skipPreservation` for every save. Editing a custom layout down to fewer slots while a 7+ pane session still used it bypassed the guard that keeps the old over-capacity definition alive, allowing durable repair to drop panes beyond the builtin cap after reload.
+- **Fix:** Removed the preservation bypass from ordinary saves so `setCustomPaneLayouts` can preserve depended-on over-capacity definitions. Intentional delete and duplicate flows keep their explicit behavior.
+- **Commit:** same commit as this entry
+
+### 12. Editing inactive custom layouts can unexpectedly switch the active session
+
+- **Source:** github-codex-connector | PR #610 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1391-1397
+- **Finding:** Saving edits to any custom layout called `setSessionLayout` for the active session when the pane count fit, even if the edited layout was not the active session's current layout. A rename or metadata edit to an inactive layout could unexpectedly change the workspace layout.
+- **Fix:** Gate auto-apply to newly created layouts and edits of the active layout only. Edits to inactive custom layouts now persist the definition without rebinding the active session.
+- **Commit:** same commit as this entry
+
+### 13. Slot resize can discard custom pane-kind restrictions
+
+- **Source:** github-codex-connector | PR #610 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts` L475-479
+- **Finding:** Resizing or moving a slot replaced the existing draft slot with geometry returned from the drag operation. If the original slot carried an `accepts` pane-kind restriction, that restriction was silently dropped from the saved custom layout.
+- **Fix:** Preserve the existing slot's `accepts` restriction when `moveSlot` receives geometry that does not specify one, while still allowing explicit model updates to clear or replace restrictions.
 - **Commit:** same commit as this entry

@@ -475,7 +475,14 @@ export const moveSlot = (
   return {
     ...draft,
     slots: draft.slots.map((slot, index) =>
-      index === slotIndex ? normalizedRect : slot
+      index === slotIndex
+        ? {
+            ...normalizedRect,
+            ...(rect.accepts === undefined && slot.accepts !== undefined
+              ? { accepts: [...slot.accepts] }
+              : {}),
+          }
+        : slot
     ),
   }
 }

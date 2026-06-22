@@ -12,7 +12,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
-import type { Session, SessionStatus, LayoutId } from '../sessions/types'
+import type { Session, SessionStatus, PaneLayoutId } from '../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   PaneLayoutRegistry,
@@ -92,7 +92,7 @@ vi.mock('../editor/components/UnsavedChangesDialog', () => ({
 }))
 
 interface MockSessionOptions {
-  layout?: LayoutId
+  layout?: PaneLayoutId
   status?: SessionStatus
   agentType?: Session['agentType']
 }
@@ -674,9 +674,58 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
     expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
     expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledWith(
-      expect.any(Function),
-      { skipPreservation: true }
+      expect.any(Function)
     )
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
+  test('editing an inactive custom layout does not switch the active session layout', async () => {
+    const user = userEvent.setup()
+
+    const inactiveCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:main-bottom',
+      title: 'Main + bottom',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'col-0', units: 12 },
+          { id: 'col-1', units: 12 },
+        ],
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+        { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+
+    await setupSessionManager(
+      [createMockSession('session-1', 'auth refactor', { layout: 'single' })],
+      'session-1'
+    )
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      inactiveCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [inactiveCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Edit Main + bottom' })
+    )
+    await user.clear(screen.getByRole('textbox', { name: 'Layout name' }))
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Main + bottom renamed'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
     expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
   })
 

@@ -3,7 +3,7 @@ id: type-contract-safety
 category: code-quality
 created: 2026-06-15
 last_updated: 2026-06-20
-ref_count: 4
+ref_count: 5
 ---
 
 # Type Contract Safety

@@ -7,6 +7,7 @@ import {
   definitionFromDraft,
   draftFromDefinition,
   evenUnits,
+  moveSlot,
   parseDraftLayoutText,
   serializeDraftLayout,
   setTrackCount,
@@ -280,6 +281,26 @@ describe('layoutCreatorModel', () => {
 
     expect(draft.slots[0].accepts).toEqual(['shell'])
     expect(draft.slots[1].accepts).toBeUndefined()
+  })
+
+  test('preserves slot.accepts when moving a restricted slot', () => {
+    const draft: DraftPaneLayout = {
+      cols: [8, 8, 8],
+      rows: [24],
+      slots: [
+        { col: 0, row: 0, colSpan: 1, rowSpan: 1, accepts: ['browser'] },
+        { col: 2, row: 0, colSpan: 1, rowSpan: 1 },
+      ],
+    }
+
+    const next = moveSlot(draft, 0, {
+      col: 0,
+      row: 0,
+      colSpan: 2,
+      rowSpan: 1,
+    })
+
+    expect(next.slots[0].accepts).toEqual(['browser'])
   })
 
   test('round-trips slot.accepts through JSON serialization', () => {

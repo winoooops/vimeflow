@@ -1377,18 +1377,21 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleSaveCustomLayout = useCallback(
     (definition: PaneLayoutDefinition): void => {
-      setCustomPaneLayouts(
-        (previous) => [
-          ...previous.filter((layout) => layout.id !== definition.id),
-          definition,
-        ],
-        { skipPreservation: true }
-      )
+      const isEditingActiveLayout =
+        layoutCreatorEditId !== null && activeSession?.layout === definition.id
+      const shouldApplyToActiveSession =
+        layoutCreatorEditId === null || isEditingActiveLayout
+
+      setCustomPaneLayouts((previous) => [
+        ...previous.filter((layout) => layout.id !== definition.id),
+        definition,
+      ])
 
       setHiddenCustomLayoutIds((previous) =>
         previous.filter((layoutId) => layoutId !== definition.id)
       )
       if (
+        shouldApplyToActiveSession &&
         activeSessionId &&
         activeSession &&
         activeSession.panes.length <= getPaneLayoutCapacity(definition)
@@ -1401,6 +1404,7 @@ const WorkspaceViewContent = (): ReactElement => {
     [
       activeSessionId,
       activeSession,
+      layoutCreatorEditId,
       setCustomPaneLayouts,
       setHiddenCustomLayoutIds,
       setSessionLayout,
@@ -1604,6 +1608,7 @@ const WorkspaceViewContent = (): ReactElement => {
     preferModifier,
     onTerminalZoneFocus: claimTerminal,
     isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
+    layoutRegistry,
   })
 
   useDockShortcuts({
