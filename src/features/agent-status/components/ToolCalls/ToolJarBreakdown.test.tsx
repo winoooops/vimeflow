@@ -23,7 +23,9 @@ describe('ToolJarBreakdown', () => {
     expect(card).toHaveTextContent('Others · 2 tools')
     expect(card).toHaveTextContent('list_dir')
     expect(card).toHaveTextContent('save_comment')
-    expect(card.className).toContain('pointer-events-none')
+    expect(
+      screen.getByRole('dialog', { name: 'Other tool calls' })
+    ).toHaveStyle({ pointerEvents: 'none' })
 
     document.body.removeChild(anchor)
   })
