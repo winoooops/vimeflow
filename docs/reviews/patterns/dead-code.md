@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-19
+last_updated: 2026-06-22
 ref_count: 1
 ---
 
@@ -51,4 +51,13 @@ code and should be removed.
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
 - **Finding:** The helper returned `p${slotIndex}` when the index was outside `definition.slots.length`, but every caller is already bounded by `layout.capacity`, which equals `definition.slots.length`. The fallback was unreachable and, once custom non-`p{N}` slot ids are wired, would silently place a pane outside the generated CSS grid.
 - **Fix:** Replaced the silent fallback with an explicit out-of-bounds error so any future capacity/slot bookkeeping divergence fails loudly instead of dropping a pane.
+- **Commit:** same commit as this entry
+
+### 5. DataTransfer drop fallback is blocked by state-only validation
+
+- **Source:** github-claude | PR #609 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `handleSlotDrop` recovered a pane id from `dataTransfer` when drag state was lost, but the next `canDropOnSlot` guard returned false whenever `draggingPaneId` was null. The fallback path could never complete a drop, making the resilience comment misleading.
+- **Fix:** Let `canDropOnSlot` validate an explicit pane id while retaining its default state-backed behavior for dragover/highlight checks. The drop handler now passes the recovered id into the same accepts and source-slot validation used on the normal path.
 - **Commit:** same commit as this entry

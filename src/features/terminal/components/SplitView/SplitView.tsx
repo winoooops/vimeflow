@@ -346,13 +346,16 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     // Whether the in-flight drag may legally land on `targetSlotId`. For a swap
     // (occupied target) BOTH destination slots must accept the kind that will
     // occupy them; for a move (empty target) only the target slot is checked.
-    const canDropOnSlot = (targetSlotId: LayoutSlotId): boolean => {
-      if (draggingPaneId === null) {
+    const canDropOnSlot = (
+      targetSlotId: LayoutSlotId,
+      paneId = draggingPaneId
+    ): boolean => {
+      if (paneId === null) {
         return false
       }
 
-      const draggingPane = paneById.get(draggingPaneId)
-      const draggingSlotId = slotIdByPaneId.get(draggingPaneId)
+      const draggingPane = paneById.get(paneId)
+      const draggingSlotId = slotIdByPaneId.get(paneId)
       if (!draggingPane || draggingSlotId === undefined) {
         return false
       }
@@ -436,16 +439,13 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
       const transferred = event.dataTransfer.getData('text/plain')
 
-      // The dataTransfer fallback is resilience-only (recovers the paneId if
-      // drag state was lost); canDropOnSlot below intentionally gates on the
-      // committed `draggingPaneId` state, not this transferred value.
       const paneId =
         draggingPaneId ?? (transferred.length > 0 ? transferred : null)
 
       setDraggingPaneId(null)
       setDragOverSlotId(null)
 
-      if (paneId === null || !canDropOnSlot(slotId)) {
+      if (paneId === null || !canDropOnSlot(slotId, paneId)) {
         return
       }
 

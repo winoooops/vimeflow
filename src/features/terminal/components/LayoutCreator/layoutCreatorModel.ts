@@ -593,6 +593,21 @@ const readAccepts = (value: unknown): readonly PaneKind[] | undefined => {
   return normalizeAccepts(value.map((entry) => String(entry).trim()))
 }
 
+const readYamlScalar = (value: string): string => {
+  const trimmed = value.trim()
+  const quote = trimmed[0]
+
+  if (
+    trimmed.length >= 2 &&
+    (quote === '"' || quote === "'") &&
+    trimmed[trimmed.length - 1] === quote
+  ) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
 const readSlotRect = (value: unknown): DraftLayoutSlot => {
   if (!isRecord(value)) {
     throw new Error('Each slot must be an object')
@@ -675,6 +690,7 @@ const parseYamlModel = (text: string): LayoutModel => {
     rect?: DraftLayoutSlot
     accepts?: readonly PaneKind[]
   } | null = null
+  let acceptingSlotAccepts = false
 
   const commitTrack = (): void => {
     if (currentTrack === null || section === 'slots') {
@@ -716,6 +732,7 @@ const parseYamlModel = (text: string): LayoutModel => {
         if (section === 'slots') {
           commitSlot()
           currentSlot = null
+          acceptingSlotAccepts = false
         } else {
           commitTrack()
           currentTrack = null
@@ -726,6 +743,22 @@ const parseYamlModel = (text: string): LayoutModel => {
       }
 
       const itemBody = line.startsWith('- ') ? line.slice(2).trim() : line
+      if (
+        section === 'slots' &&
+        acceptingSlotAccepts &&
+        line.startsWith('- ') &&
+        !itemBody.includes(':')
+      ) {
+        currentSlot ??= {}
+        currentSlot.accepts = readAccepts([
+          ...(currentSlot.accepts ?? []),
+          readYamlScalar(itemBody),
+        ])
+
+        return
+      }
+
+      acceptingSlotAccepts = false
       if (line.startsWith('- ')) {
         if (section === 'slots') {
           commitSlot()
@@ -763,14 +796,17 @@ const parseYamlModel = (text: string): LayoutModel => {
           })
         }
         if (key === 'accepts') {
-          // Inline YAML flow sequence: `accepts: [browser, shell]`.
-          currentSlot.accepts = readAccepts(
-            value
-              .replace(/[[\]]/g, '')
-              .split(',')
-              .map((entry) => entry.trim())
-              .filter((entry) => entry.length > 0)
-          )
+          if (value.length === 0) {
+            acceptingSlotAccepts = true
+          } else {
+            currentSlot.accepts = readAccepts(
+              value
+                .replace(/[[\]]/g, '')
+                .split(',')
+                .map(readYamlScalar)
+                .filter((entry) => entry.length > 0)
+            )
+          }
         }
 
         return

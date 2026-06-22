@@ -84,7 +84,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 12       | 8    | 2026-06-20   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 14       | 8    | 2026-06-22   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 10       | 4    | 2026-06-19   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
@@ -92,7 +92,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 4        | 1    | 2026-06-19   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 5        | 1    | 2026-06-22   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 8        | 4    | 2026-06-20   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 1        | 0    | 2026-06-15   |
@@ -106,5 +106,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
-| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 9        | 4    | 2026-06-21   |
+| [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 10       | 4    | 2026-06-22   |
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 2        | 0    | 2026-06-19   |

@@ -743,7 +743,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
     const clone = next[1]
     expect(clone.id).not.toBe(sourceCustomLayout.id)
-    expect(clone.id).toMatch(/^custom:/)
+    expect(clone.id).toMatch(/^custom:copy-of-main-bottom-/)
     expect(clone.title).toBe('Copy of Main + bottom')
     expect(clone.source).toBe('workspace')
     expect(clone.tracks).toEqual(sourceCustomLayout.tracks)

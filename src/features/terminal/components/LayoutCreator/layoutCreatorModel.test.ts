@@ -334,4 +334,56 @@ describe('layoutCreatorModel', () => {
 
     expect(parseDraftLayoutText(yaml, 'yaml')).toEqual(draft)
   })
+
+  test('parses quoted slot.accepts entries from YAML flow sequences', () => {
+    const yaml = [
+      'tracks:',
+      '  columns:',
+      '    - id: c0',
+      '      units: 12',
+      '    - id: c1',
+      '      units: 12',
+      '  rows:',
+      '    - id: r0',
+      '      units: 24',
+      'slots:',
+      '  - id: slot:p0',
+      '    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 }',
+      "    accepts: ['browser', \"shell\"]",
+      '  - id: slot:p1',
+      '    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 }',
+    ].join('\n')
+
+    expect(parseDraftLayoutText(yaml, 'yaml').slots[0].accepts).toEqual([
+      'browser',
+      'shell',
+    ])
+  })
+
+  test('parses slot.accepts entries from YAML block sequences', () => {
+    const yaml = [
+      'tracks:',
+      '  columns:',
+      '    - id: c0',
+      '      units: 12',
+      '    - id: c1',
+      '      units: 12',
+      '  rows:',
+      '    - id: r0',
+      '      units: 24',
+      'slots:',
+      '  - id: slot:p0',
+      '    rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 }',
+      '    accepts:',
+      '      - browser',
+      '      - shell',
+      '  - id: slot:p1',
+      '    rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 }',
+    ].join('\n')
+
+    expect(parseDraftLayoutText(yaml, 'yaml').slots[0].accepts).toEqual([
+      'browser',
+      'shell',
+    ])
+  })
 })

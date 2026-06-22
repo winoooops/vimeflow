@@ -1316,7 +1316,8 @@ const WorkspaceViewContent = (): ReactElement => {
       const existingIds = new Set<PaneLayoutId>(
         layoutRegistry.layouts.map((layout) => layout.id)
       )
-      const cloneId = createCustomPaneLayoutId(definition.title, existingIds)
+      const cloneTitle = `Copy of ${definition.title}`
+      const cloneId = createCustomPaneLayoutId(cloneTitle, existingIds)
 
       // Deep-clone so the clone shares no references with the source —
       // slots (incl. each slot's `accepts` restriction), rect, tracks, and
@@ -1325,7 +1326,7 @@ const WorkspaceViewContent = (): ReactElement => {
       const clone: PaneLayoutDefinition = {
         ...definition,
         id: cloneId,
-        title: `Copy of ${definition.title}`,
+        title: cloneTitle,
         tracks: {
           columns: definition.tracks.columns.map((track) => ({ ...track })),
           rows: definition.tracks.rows.map((track) => ({ ...track })),
