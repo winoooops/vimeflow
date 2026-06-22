@@ -63,6 +63,7 @@ export const ToolJarTile = ({
   const [scale, setScale] = useState(1)
   const tileRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
+  const countDigits = String(data.count).length
 
   const m = Math.min(w, h)
   const nameFs = Math.max(8.5, Math.min(13, 8.5 + (m - 56) * 0.08))
@@ -125,7 +126,7 @@ export const ToolJarTile = ({
       ro.disconnect()
       timers.forEach((t) => window.clearTimeout(t))
     }
-  }, [w, h, data.count])
+  }, [w, h, countDigits])
 
   const radius = Math.min(10, m * 0.16)
 

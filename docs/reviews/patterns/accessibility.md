@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-20
-ref_count: 30
+ref_count: 31
 ---
 
 # Accessibility

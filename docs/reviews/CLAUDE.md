@@ -45,10 +45,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 24       | 6    | 2026-06-17   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 55       | 25   | 2026-06-19   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 56       | 26   | 2026-06-22   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
-| [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
+| [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 18       | 15   | 2026-06-21   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 10       | 5    | 2026-06-21   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 74       | 34   | 2026-06-18   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 89       | 27   | 2026-06-21   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 72       | 30   | 2026-06-20   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 72       | 31   | 2026-06-20   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 68       | 27   | 2026-06-21   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
@@ -82,7 +82,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 20       | 1    | 2026-06-18   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 15       | 8    | 2026-06-20   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 15       | 9    | 2026-06-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 11       | 8    | 2026-06-12   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 11       | 5    | 2026-06-19   |
@@ -97,7 +97,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 7        | 3    | 2026-06-19   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 9        | 6    | 2026-06-21   |
-| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 6        | 4    | 2026-06-19   |
+| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 7        | 5    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 0    | 2026-06-15   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 1    | 2026-06-15   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 3        | 0    | 2026-06-17   |
