@@ -220,4 +220,17 @@ describe('Header', () => {
     fireEvent.dragEnd(header)
     expect(onHeaderDragEnd).toHaveBeenCalledTimes(1)
   })
+
+  test('rounds all corners during the drag so the snapshot reads as a pill', () => {
+    render(<Header {...baseProps} draggable onHeaderDragStart={vi.fn()} />)
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header.style.borderRadius).toBe('')
+
+    fireEvent.dragStart(header)
+    expect(header.style.borderRadius).toBe('10px')
+
+    fireEvent.dragEnd(header)
+    expect(header.style.borderRadius).toBe('')
+  })
 })

@@ -60,6 +60,21 @@ export const Header = ({
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
 
+  // The pane clips the header's top corners (rounded) but its bottom sits
+  // mid-pane and stays square, so the native drag snapshot reads as a slab.
+  // Round all corners for the duration of the drag so the snapshot looks like a
+  // pill (matching the pane's 10px). Chromium paints the drag image after this
+  // synchronous handler, so the inline radius is captured; reverted on drag end.
+  const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
+    event.currentTarget.style.borderRadius = '10px'
+    onHeaderDragStart?.(event)
+  }
+
+  const handleDragEnd = (event: DragEvent<HTMLDivElement>): void => {
+    event.currentTarget.style.borderRadius = ''
+    onHeaderDragEnd?.(event)
+  }
+
   const headerStyle = isFocused
     ? {
         background: `linear-gradient(180deg, ${agent.accentDim}, color-mix(in srgb, var(--color-surface-container-lowest) 0%, transparent))`,
@@ -81,8 +96,8 @@ export const Header = ({
       data-collapsed={isCollapsed || undefined}
       data-drag-handle={draggable || undefined}
       draggable={draggable}
-      onDragStart={onHeaderDragStart}
-      onDragEnd={onHeaderDragEnd}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       style={{
         ...headerStyle,
         cursor: draggable ? 'grab' : undefined,
