@@ -562,6 +562,11 @@ export const AgentStatusPanel = ({
               status.contextWindow?.contextWindowSize ??
               DEFAULT_CONTEXT_WINDOW_SIZE
             }
+            inputTokens={
+              status.contextWindow?.totalInputTokens !== undefined
+                ? Number(status.contextWindow.totalInputTokens)
+                : undefined
+            }
           />
           <TokenCache
             usage={status.contextWindow?.currentUsage ?? null}

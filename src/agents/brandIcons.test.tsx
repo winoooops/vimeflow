@@ -1,11 +1,12 @@
 import { test, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { ClaudeCode, Codex, Kimi, type AgentIcon } from './brandIcons'
+import { ClaudeCode, Codex, Kimi, OpenCode, type AgentIcon } from './brandIcons'
 
 const BRAND_ICONS: readonly (readonly [string, AgentIcon])[] = [
   ['ClaudeCode', ClaudeCode],
   ['Codex', Codex],
   ['Kimi', Kimi],
+  ['OpenCode', OpenCode],
 ]
 
 test.each(BRAND_ICONS)(

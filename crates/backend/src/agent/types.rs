@@ -14,6 +14,8 @@ pub enum AgentType {
     Codex,
     /// Kimi Code (Moonshot kimi-code CLI)
     Kimi,
+    /// opencode (AI coding agent by SST)
+    Opencode,
     /// Aider (AI pair programming tool)
     Aider,
     /// Generic/unknown agent

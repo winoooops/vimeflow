@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-19
-ref_count: 8
+last_updated: 2026-06-21
+ref_count: 11
 ---
 
 # Derived State Consistency
@@ -157,4 +157,22 @@ base data is technically "correct."
 - **File:** `src/features/terminal/layout-registry/layoutDefinition.ts` L136-141 and `src/features/terminal/layout-registry/prebuiltLayouts.ts`
 - **Finding:** `getPaneLayoutRatios(definition)` returned raw prebuilt track units such as `[14, 10]` for `threeRight`, while `DEFAULT_RATIOS.threeRight.cols` used `[1.4, 1]`. The proportions were identical for CSS grid rendering, but the numeric scales differed, so an equality check like `equalTrackRatios(currentRatios, getPaneLayoutRatios(layout.definition))` would report a mismatch even when the layout was at its default state.
 - **Fix:** Normalized all prebuilt track units to the same scale as `DEFAULT_RATIOS` (e.g., `columns(1.4, 1)` for `threeRight`) and added a JSDoc note to `getPaneLayoutRatios` clarifying that it returns raw definition units and that callers needing canonical defaults should read `layout.defaultRatios`.
+- **Commit:** same commit as this entry
+
+### 13. Null context-window percentage normalized to known zero percent
+
+- **Source:** github-codex-connector | PR #590 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The agent-status hook normalized `contextWindow.usedPercentage: null` to `0`, so opencode sessions with known input tokens but unknown context-window size reached the UI as a known 0%-used state. The existing `ContextReservoirCard` unknown-window token display never activated.
+- **Fix:** Changed `ContextWindowState.usedPercentage` to `number | null`, preserved null during hook normalization, and added a regression test for an unknown-window opencode payload with input tokens.
+- **Commit:** same commit as this entry
+
+### 14. Tool args upgrade left test-file classification stale
+
+- **Source:** github-codex-connector | PR #590 round 2 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode live path refreshed an in-flight tool record when `tool.before` supplied authoritative args after an empty pending part, but only patched `tool` and `args`. The derived `is_test_file` flag stayed at the pending placeholder value, so the terminal `tool.after` event could report a test-file tool call as non-test-file.
+- **Fix:** Derive test-file status from authoritative `filePath` args and patch `entry.is_test_file` alongside the upgraded tool and args. Added a pending-empty -> `tool.before` test-file -> `tool.after` regression test that asserts the terminal event keeps `isTestFile: true`.
 - **Commit:** same commit as this entry

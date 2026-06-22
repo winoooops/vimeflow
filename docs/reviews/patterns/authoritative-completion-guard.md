@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-06-17
-ref_count: 0
+last_updated: 2026-06-20
+ref_count: 2
 ---
 
 # Authoritative Completion Guard
@@ -58,4 +58,20 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   and the now-unused `emit_exec_test_run_snapshot` and
   `exec_function_output_exit_code` helpers. Left `process_exec_command_end` as the
   sole authoritative path for exec snapshots.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Model-side completion emitted success before authoritative process exit
+
+- **Source:** github-claude | PR #588 round 2 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode decoder treated `message.part.updated[completed]`
+  as a terminal Done event even when a prior `tool.before` meant a later
+  `tool.after` was expected. If the command then exited non-zero, the decoder
+  emitted both Done and Failed for one tool call.
+- **Fix:** Made `tool.after` the authoritative terminal source for calls with
+  cached `tool.before` metadata, and retained a resolved-by-`tool.after` guard
+  after metadata cleanup so delayed terminal part updates stay suppressed. Added
+  regression tests for completed part updates before and after non-zero
+  `tool.after`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

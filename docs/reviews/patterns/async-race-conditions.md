@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-21
-ref_count: 27
+ref_count: 69
 ---
 
 # Async Race Conditions
@@ -686,3 +686,12 @@ prevent showing previous data.
 - **Finding:** `useAgentReattach` stopped the captured PTY watcher whenever a drift `start_agent_watcher` completed after the active pane changed. The backend already distinguished real respawns from Codex same-rollout no-ops internally, but the production IPC discarded that `changed` result. A harmless late no-op could therefore kill the original valid watcher for the previous pane.
 - **Fix:** Propagate the backend `changed` boolean through `start_agent_watcher` IPC and only run stale-completion cleanup when the backend actually spawned/replaced a watcher. Added regression coverage for both late respawn cleanup and late no-op preservation.
 - **Commit:** same commit as this entry
+
+### 69. Terminal event updates consumed metadata needed by later authoritative output events
+
+- **Source:** github-codex-connector | PR #588 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode decoder removed an in-flight bash call when a completed `message.part.updated` arrived. If the later `tool.after` event carried the command output, test-run parsing no longer had the original command and silently skipped the snapshot.
+- **Fix:** Added a per-call metadata cache that survives display-state completion until `tool.after` runs, and covered the `tool.before` -> completed part update -> bash `tool.after` ordering with a regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

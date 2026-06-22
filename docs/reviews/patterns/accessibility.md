@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-20
+last_updated: 2026-06-22
 ref_count: 31
 ---
 
@@ -673,3 +673,12 @@ handlers must not trap focus without implementing the promised behavior.
   keyboard navigation. Added a regression test that tabs to the chip and
   observes the copy buttons in the mounted dialog.
 - **Commit:** same commit as this entry
+
+### 73. Visual token count diverged from meter aria-valuetext
+
+- **Source:** github-claude | PR #603 round 3 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** The unknown-window OpenCode context card used `formatTokenCount` in `aria-valuetext` but rendered the visible token count with `formatTokens`. Screen readers could announce a different token count than the value sighted users saw.
+- **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

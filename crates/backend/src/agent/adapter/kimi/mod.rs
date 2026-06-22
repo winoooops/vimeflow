@@ -191,6 +191,7 @@ mod adapter_tests {
                 "/home/u/.kimi-code/sessions/wd/session_1/agents/main/wire.jsonl".to_string(),
             ),
             agent_session_id: Some("session_1".to_string()),
+            resolved_directory: None,
         };
         assert_eq!(
             tps.static_hint(&located).as_deref(),
@@ -202,6 +203,7 @@ mod adapter_tests {
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
         assert_eq!(tps.static_hint(&without), None);
     }

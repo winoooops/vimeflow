@@ -633,6 +633,7 @@ fn maybe_start_transcript(
     transcript_state: &TranscriptState,
     session_id: &str,
     transcript_path: &str,
+    located: &LocatedStatusSource,
     // PR #302 cycle 9 — the `claim_flag` is threaded all the way down
     // to `TranscriptState::start_or_replace`, which sets it while
     // STILL HOLDING the per-session gate. That gate-held write is
@@ -684,9 +685,14 @@ fn maybe_start_transcript(
         }
     };
 
-    let cwd = pty_state
-        .get_cwd(&session_id.to_string())
-        .map(PathBuf::from);
+    let cwd = located
+        .resolved_directory
+        .clone()
+        .or_else(|| {
+            pty_state
+                .get_cwd(&session_id.to_string())
+                .map(PathBuf::from)
+        });
 
     // Step B'': `TranscriptState::start_or_replace` now takes
     // `Arc<dyn TranscriptStreamer>` directly (was `Arc<dyn AgentAdapter>`
@@ -974,6 +980,7 @@ pub(crate) fn start_watching(
                             &transcript_state_for_cb,
                             &sid,
                             &path,
+                            &located_for_cb,
                             Some(claimed_transcript_for_cb.clone()),
                             Some(alive_for_cb.clone()),
                         );
@@ -1085,6 +1092,7 @@ pub(crate) fn start_watching(
                                 &initial_transcript_state,
                                 &initial_sid,
                                 &path,
+                                &initial_located,
                                 Some(claimed_transcript.clone()),
                                 None,
                             );
@@ -1221,6 +1229,7 @@ pub(crate) fn start_watching(
                                     &poll_transcript_state,
                                     &poll_sid,
                                     &path,
+                                    &poll_located,
                                     Some(poll_claimed_transcript.clone()),
                                     Some(poll_alive.clone()),
                                 );

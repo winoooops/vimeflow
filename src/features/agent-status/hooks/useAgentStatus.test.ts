@@ -461,6 +461,43 @@ describe('useAgentStatus', () => {
     expect(result.current.contextWindow?.currentUsage).toBeNull()
   })
 
+  test('preserves null context percentage when window size is unknown', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'opencode/gpt-5',
+        modelDisplayName: 'GPT-5',
+        version: '1.0',
+        agentSessionId: 'a-1',
+        contextWindow: {
+          usedPercentage: null,
+          remainingPercentage: null,
+          contextWindowSize: 0,
+          totalInputTokens: 11781,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 11781,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.contextWindow?.usedPercentage).toBeNull()
+    expect(result.current.contextWindow?.contextWindowSize).toBe(0)
+    expect(result.current.contextWindow?.totalInputTokens).toBe(11781)
+  })
+
   test('preserves null totalCostUsd through normalization', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

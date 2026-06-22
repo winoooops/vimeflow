@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-21
-ref_count: 15
+ref_count: 19
 ---
 
 # Resource Cleanup
@@ -181,3 +181,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** The bounded `/clear` auto-retry counted issued IPC calls, but a skipped retry while another `start_agent_watcher` call was still in flight did not consume that budget. If the IPC call hung indefinitely, the timer kept waking every retry interval until unmount.
 - **Fix:** Added a secondary wall-clock fire ceiling that advances on every timer wake while preserving the existing issued-call budget. The retry window now stops even when the single in-flight IPC promise never settles, and a regression test pins the stuck-IPC case.
 - **Commit:** same commit as this entry
+
+### 19. Part-update-only opencode tool calls retained metadata forever
+
+- **Source:** github-claude | PR #588 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** `message.part.updated` running events cached tool metadata for every call, but the terminal part-update path only removed `in_flight` state. Calls without a later `tool.after` left one stale metadata entry per completed tool call for the lifetime of the session.
+- **Fix:** Remove the call's metadata immediately after a terminal part update is accepted for calls that do not expect `tool.after`, and add a regression test that asserts pure part-update completion clears the metadata cache.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

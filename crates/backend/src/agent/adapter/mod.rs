@@ -11,6 +11,7 @@ pub mod claude_code;
 pub mod codex;
 mod error;
 pub mod kimi;
+pub mod opencode;
 mod serde_helpers;
 mod session_lifecycle;
 mod traits;
@@ -142,6 +143,7 @@ impl traits::StatusSourceLocator for NoOpAdapter {
             trust_root: self.app_data_dir.clone(),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         })
     }
 }
@@ -450,6 +452,7 @@ mod noop_tests {
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: Some("/tmp/ignored.jsonl".to_string()),
             agent_session_id: None,
+            resolved_directory: None,
         };
         assert_eq!(tps.static_hint(&located), None);
         assert_eq!(tps.dynamic_hint(r#"{"transcript_path":"/tmp/x"}"#), None);

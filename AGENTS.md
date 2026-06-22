@@ -6,7 +6,7 @@ Project context for OpenAI Codex code review.
 
 Vimeflow is an Electron desktop application (Rust sidecar + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules for Claude Code, Codex CLI, and Kimi Code. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
+**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 

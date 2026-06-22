@@ -1,4 +1,4 @@
-import { ClaudeCode, Codex, Kimi, type AgentIcon } from './brandIcons'
+import { ClaudeCode, Codex, Kimi, OpenCode, type AgentIcon } from './brandIcons'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
@@ -12,10 +12,30 @@ export interface PaneIdentity {
   onAccent: string
 }
 
+/**
+ * Notice shown in the agent status card's quota slot for an agent that exposes
+ * no readable usage/quota API, in place of rate-limit bars.
+ */
+export interface QuotaNotice {
+  /** One-line reason the quota bars are absent. */
+  message: string
+  /** Upstream feature-request URL the "track" link opens. */
+  trackUrl: string
+  /** Tooltip label for the "track" link. */
+  tooltipLabel: string
+}
+
 export interface AgentDef extends PaneIdentity {
   id: string
   model: string | null
   Icon?: AgentIcon
+  /**
+   * Set only for agents that have no readable usage/quota API: the status card
+   * renders this notice + a link to the upstream feature request instead of
+   * 5-hour / weekly bars. Currently opencode (see sst/opencode#16017); cleared
+   * once opencode ships a usage endpoint.
+   */
+  quotaNotice?: QuotaNotice
 }
 
 export const AGENTS = {
@@ -67,6 +87,28 @@ export const AGENTS = {
     accentSoft: 'var(--color-agent-shell-accent-soft)',
     onAccent: 'var(--color-agent-shell-on-accent)',
   },
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    short: 'OPENCODE',
+    glyph: '◈',
+    Icon: OpenCode,
+    model: null,
+    accent: 'var(--color-agent-opencode-accent)',
+    accentDim: 'var(--color-agent-opencode-accent-dim)',
+    accentSoft: 'var(--color-agent-opencode-accent-soft)',
+    onAccent: 'var(--color-agent-opencode-on-accent)',
+    // opencode exposes no readable usage/quota API (Zen is pay-as-you-go
+    // credits; Go's 5h/weekly windows live in opencode.ai's cloud with no
+    // queryable endpoint). Show a notice + link to the upstream request rather
+    // than fabricating empty bars.
+    quotaNotice: {
+      message: 'Usage limits not exposed by OpenCode yet',
+      trackUrl: 'https://github.com/sst/opencode/issues/16017',
+      tooltipLabel:
+        'OpenCode usage API — open the feature request (sst/opencode#16017)',
+    },
+  },
 } as const satisfies Record<string, AgentDef>
 
 export type AgentId = keyof typeof AGENTS
@@ -83,6 +125,8 @@ export const agentTypeToRegistryKey = (
       return 'codex'
     case 'kimi':
       return 'kimi'
+    case 'opencode':
+      return 'opencode'
     default:
       return 'shell'
   }

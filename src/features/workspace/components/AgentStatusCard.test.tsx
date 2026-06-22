@@ -1,4 +1,4 @@
-// cspell:ignore cheatsheet incard powershell pwsh zsh
+// cspell:ignore cheatsheet deepseek incard powershell pwsh zsh
 import type { ReactElement } from 'react'
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi } from 'vitest'
@@ -201,6 +201,32 @@ describe('AgentStatusCard', () => {
 
     expect(screen.queryByTestId('kimi-usage-gate')).not.toBeInTheDocument()
     expect(screen.getByText('5-hour Session')).toBeInTheDocument()
+  })
+
+  test('renders the quota-unavailable notice + feature-request link (not bars) when quotaNotice is set', () => {
+    render(
+      <AgentStatusCard
+        title="deepseek-v4-pro"
+        fiveHourPct={null}
+        weekPct={null}
+        quotaNotice={{
+          message: 'Usage limits not exposed by OpenCode yet',
+          trackUrl: 'https://github.com/sst/opencode/issues/16017',
+          tooltipLabel:
+            'OpenCode usage API — open the feature request (sst/opencode#16017)',
+        }}
+      />
+    )
+
+    expect(
+      screen.getByText('Usage limits not exposed by OpenCode yet')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('link', { name: /track the request/i })
+    ).toHaveAttribute('href', 'https://github.com/sst/opencode/issues/16017')
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kimi-usage-gate')).not.toBeInTheDocument()
   })
 
   test('renders zero turns in the header pill', () => {

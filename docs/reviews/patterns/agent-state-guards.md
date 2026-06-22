@@ -2,8 +2,8 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-21
-ref_count: 6
+last_updated: 2026-06-22
+ref_count: 7
 ---
 
 # Agent-State Guards
@@ -93,4 +93,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** After a local `/clear`, the status latch accepted a same-id `agent-status` event with non-zero tokens when the captured pre-reset token baseline was null. In that recovery window, an old watcher still pinned to the stale rollout could repopulate the sidebar and clear run-scoped suppression before the relocated watcher was proven fresh.
 - **Fix:** Kept same-id unknown-baseline status suppressed unless the event is a zero-token reset. Different `agentSessionId` events still clear the latch as the explicit session boundary. Updated the null-context regression test to prove non-zero stale replays stay blocked while zero-token reset events recover.
+- **Commit:** same commit as this entry
+
+### 10. OpenCode attach emitted stale PTY cwd instead of resolved project directory
+
+- **Source:** github-claude | PR #603 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs` L88-110
+- **Finding:** OpenCode did not emit OSC 7, so the runtime passed the terminal spawn cwd into transcript tailing even when the locator had resolved a project directory from the bridge index. The initial `agent-cwd` event could therefore point the file explorer, git watcher, and test-run parser at `~` instead of the OpenCode project.
+- **Fix:** Added `resolved_directory` to `LocatedStatusSource`, populated it from OpenCode index rows and cache fallback, and made the watcher runtime prefer it over PTY cwd when starting transcript tailing.
 - **Commit:** same commit as this entry

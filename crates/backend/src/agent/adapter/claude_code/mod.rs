@@ -41,6 +41,7 @@ pub(super) fn claude_status_path(
         // the locator — the runtime keys on the Vimeflow PTY session id
         // exclusively, and the title-sync watcher is codex-only.
         agent_session_id: None,
+        resolved_directory: None,
     }
 }
 
@@ -219,6 +220,7 @@ mod tests {
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: Some("/tmp/should_be_ignored.jsonl".to_string()),
             agent_session_id: None,
+            resolved_directory: None,
         };
         assert_eq!(tps.static_hint(&located), None);
     }
