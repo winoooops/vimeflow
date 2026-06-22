@@ -5,6 +5,7 @@ import {
   useState,
   type ReactElement,
 } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import type { ToolJarEntry } from '../../types'
 import { toolJarTone, type ToolJarPalette } from '../../utils/toolJarTone'
 import { OdometerNumber } from './OdometerNumber'
@@ -66,7 +67,9 @@ export const ToolJarTile = ({
   const m = Math.min(w, h)
   const nameFs = Math.max(8.5, Math.min(13, 8.5 + (m - 56) * 0.08))
   const countFs = Math.max(13, Math.min(30, 9 + m * 0.18))
-  const tone = toolJarTone(data.count, max, palette)
+  // Uniform tile color: tile size already encodes weight, so every tile renders
+  // at the same (heaviest-hitter) tone instead of ramping its color by count.
+  const tone = toolJarTone(max, max, palette)
 
   useLayoutEffect(() => {
     const tile = tileRef.current
@@ -137,76 +140,82 @@ export const ToolJarTile = ({
     : 'inset 0 1px 0 color-mix(in srgb, var(--color-primary) 25%, transparent), inset 0 -2px 7px color-mix(in srgb, var(--color-surface-container-lowest) 55%, transparent), 0 1px 4px color-mix(in srgb, var(--color-surface-container-lowest) 60%, transparent)'
 
   return (
-    <div
-      ref={tileRef}
-      data-testid={`tool-jar-tile-${data.name}`}
-      onMouseEnter={isOthers ? (): void => setHover(true) : undefined}
-      onMouseLeave={isOthers ? (): void => setHover(false) : undefined}
-      className="tj-enter tj-tile-move absolute flex items-start justify-start overflow-hidden"
-      style={{
-        left: x + 1.5,
-        top: y + 1.5,
-        width: Math.max(0, w - 3),
-        height: Math.max(0, h - 3),
-        borderRadius: radius,
-        background: fill,
-        boxShadow,
-        cursor: isOthers ? 'help' : 'default',
-        zIndex: hover ? 3 : 1,
-        padding: '5px 8px',
-        outline:
-          isOthers && hover
-            ? '1px solid color-mix(in srgb, var(--color-primary) 50%, transparent)'
-            : undefined,
-      }}
+    <Tooltip
+      content={data.name}
+      placement="top"
+      disabled={isOthers || data.name.length <= 7}
     >
       <div
-        ref={innerRef}
-        className="flex flex-col items-start text-left"
+        ref={tileRef}
+        data-testid={`tool-jar-tile-${data.name}`}
+        onMouseEnter={isOthers ? (): void => setHover(true) : undefined}
+        onMouseLeave={isOthers ? (): void => setHover(false) : undefined}
+        className="tj-enter tj-tile-move absolute flex items-start justify-start overflow-hidden"
         style={{
-          width: '100%',
-          gap: 3,
-          transform: `scale(${scale})`,
-          transformOrigin: 'left top',
+          left: x + 1.5,
+          top: y + 1.5,
+          width: Math.max(0, w - 3),
+          height: Math.max(0, h - 3),
+          borderRadius: radius,
+          background: fill,
+          boxShadow,
+          cursor: 'default',
+          zIndex: hover ? 3 : 1,
+          padding: '5px 8px',
+          outline:
+            isOthers && hover
+              ? '1px solid color-mix(in srgb, var(--color-primary) 50%, transparent)'
+              : undefined,
         }}
       >
-        <span
-          className="font-mono"
+        <div
+          ref={innerRef}
+          className="flex flex-col items-start text-left"
           style={{
-            fontWeight: 600,
-            color: nameColor,
-            fontSize: nameFs,
-            lineHeight: 1,
-            letterSpacing: '-0.02em',
-            overflowWrap: 'break-word',
-            wordBreak: 'break-word',
-            maxWidth: '100%',
+            width: '100%',
+            gap: 3,
+            transform: `scale(${scale})`,
+            transformOrigin: 'left top',
           }}
         >
-          {isOthers ? 'others' : splitName(data.name)}
-        </span>
-        <div className="flex items-baseline" style={{ gap: 5 }}>
-          <OdometerNumber
-            value={data.count}
-            fontSize={countFs}
-            color={countColor}
-          />
-          {isOthers && data.others ? (
-            <span
-              className="font-mono"
-              style={{
-                fontSize: Math.max(7.5, nameFs - 1.5),
-                color: 'var(--color-on-surface-muted)',
-              }}
-            >
-              {data.others.length} tools
-            </span>
-          ) : null}
+          <span
+            className="font-mono"
+            style={{
+              fontWeight: 600,
+              color: nameColor,
+              fontSize: nameFs,
+              lineHeight: 1,
+              letterSpacing: '-0.02em',
+              overflowWrap: 'break-word',
+              wordBreak: 'break-word',
+              maxWidth: '100%',
+            }}
+          >
+            {isOthers ? 'others' : splitName(data.name)}
+          </span>
+          <div className="flex items-baseline" style={{ gap: 5 }}>
+            <OdometerNumber
+              value={data.count}
+              fontSize={countFs}
+              color={countColor}
+            />
+            {isOthers && data.others ? (
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: Math.max(7.5, nameFs - 1.5),
+                  color: 'var(--color-on-surface-muted)',
+                }}
+              >
+                {data.others.length} tools
+              </span>
+            ) : null}
+          </div>
         </div>
+        {isOthers && hover && data.others ? (
+          <ToolJarBreakdown anchorRef={tileRef} items={data.others} />
+        ) : null}
       </div>
-      {isOthers && hover && data.others ? (
-        <ToolJarBreakdown anchorRef={tileRef} items={data.others} />
-      ) : null}
-    </div>
+    </Tooltip>
   )
 }

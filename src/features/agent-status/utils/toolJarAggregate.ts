@@ -1,40 +1,34 @@
 import type { ToolCount, ToolJarEntry } from '../types'
 
-// Tools fold into a single "others" shape only when that genuinely reduces
-// clutter — never on a hard total-calls cap. A tool is "trivial" when it is
-// both small in absolute terms (<= TJ_OTHERS_MAX) AND a tiny share of all
-// calls (< TJ_TRIVIAL_SHARE), so the bar scales with the session. Folding
-// happens only when there are enough tiles to be crowded (> TJ_MIN_TILES) and
-// enough trivial tools to be worth bundling (>= TJ_MIN_FOLD). Otherwise every
-// tool shows individually — a short session stays fully expanded.
-export const TJ_OTHERS_MAX = 3
-
-export const TJ_TRIVIAL_SHARE = 0.05
-
-export const TJ_MIN_TILES = 8
-
-export const TJ_MIN_FOLD = 3
+// Cap how many tiles the jar (and tags view) can show so a long session with
+// many tools can't shatter into a mosaic of illegible slivers. Tools are ranked
+// by count; everything past the top (TJ_MAX_TILES - 1) folds into a single
+// "others" tile that keeps the full list for its hover breakdown. Only fold
+// membership is by count — the shown tiles stay in their original (insertion)
+// order so they hold position as counts tick (the packer lays tiles in input
+// order and avoids jitter only if that order is stable). A session at or under
+// the cap stays fully expanded.
+export const TJ_MAX_TILES = 8
 
 export const toolJarAggregate = (tools: ToolCount[]): ToolJarEntry[] => {
-  const total = tools.reduce((sum, t) => sum + t.count, 0) || 1
-
-  const isTrivial = (t: ToolCount): boolean =>
-    t.count <= TJ_OTHERS_MAX && t.count / total < TJ_TRIVIAL_SHARE
-  const small = tools.filter(isTrivial)
-
-  if (tools.length <= TJ_MIN_TILES || small.length < TJ_MIN_FOLD) {
+  if (tools.length <= TJ_MAX_TILES) {
     return tools
   }
 
-  const major = tools.filter((t) => !isTrivial(t))
-  const sum = small.reduce((acc, t) => acc + t.count, 0)
+  // Names of the top (TJ_MAX_TILES - 1) tools by count — these keep their tile.
+  const kept = new Set(
+    [...tools]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, TJ_MAX_TILES - 1)
+      .map((t) => t.name)
+  )
 
-  return [
-    ...major,
-    {
-      name: 'others',
-      count: sum,
-      others: [...small].sort((a, b) => b.count - a.count),
-    },
-  ]
+  const majors = tools.filter((t) => kept.has(t.name))
+
+  const folded = tools
+    .filter((t) => !kept.has(t.name))
+    .sort((a, b) => b.count - a.count)
+  const sum = folded.reduce((acc, t) => acc + t.count, 0)
+
+  return [...majors, { name: 'others', count: sum, others: folded }]
 }

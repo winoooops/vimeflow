@@ -65,7 +65,9 @@ export const ToolJarBreakdown = ({
       >
         Others · {items.length} tools
       </div>
-      <div style={{ maxHeight: 188, overflowY: 'auto' }}>
+      {/* ponytail: expand to fit every tool — no inner scroll (UX ask). A very
+          long others list could outgrow the viewport; cap only if that shows up. */}
+      <div>
         {items.map((item) => (
           <div
             key={item.name}

@@ -263,7 +263,7 @@ describe('AgentStatusPanel', () => {
     }
   })
 
-  test('renders ToolCallsSection and ActivityFeed inside the scrollable region', () => {
+  test('pins ToolCallsSection above the scrollable activity region', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -289,12 +289,17 @@ describe('AgentStatusPanel', () => {
       />
     )
 
+    const scrollRegion = screen.getByTestId('agent-status-panel-scroll-region')
     const toolCallsSection = screen.getByTestId('tool-calls-section')
 
     const activityHeader = screen.getByRole('button', {
       name: /activity\s*1/i,
     })
 
+    // Tool Calls is pinned with the metric cards (outside the scroll region);
+    // the activity feed scrolls within it.
+    expect(scrollRegion.contains(toolCallsSection)).toBe(false)
+    expect(scrollRegion.contains(activityHeader)).toBe(true)
     expect(toolCallsSection.compareDocumentPosition(activityHeader)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     )

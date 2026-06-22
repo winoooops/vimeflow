@@ -47,4 +47,28 @@ describe('ToolCallsSection', () => {
     expect(section.className).toContain('cursor-default')
     expect(section.className).toContain('select-none')
   })
+
+  test('overlays a one-time skeleton on the first busy jar render', () => {
+    const busy = {
+      Read: 158,
+      Bash: 323,
+      Write: 47,
+      Edit: 201,
+      Save: 15,
+      Task: 9,
+      Tool: 11,
+      Ask: 6,
+    }
+    render(<ToolCallsSection total={868} byType={busy} />)
+
+    expect(screen.getByTestId('tool-calls-skeleton').style.opacity).toBe('1')
+    // The jar lays out underneath the overlay.
+    expect(screen.getByTestId('tool-jar-vessel')).toBeInTheDocument()
+  })
+
+  test('keeps the skeleton hidden for a small idle tool set', () => {
+    render(<ToolCallsSection total={3} byType={{ Read: 3 }} />)
+
+    expect(screen.getByTestId('tool-calls-skeleton').style.opacity).toBe('0')
+  })
 })

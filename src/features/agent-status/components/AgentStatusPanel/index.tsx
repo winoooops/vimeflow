@@ -567,6 +567,10 @@ export const AgentStatusPanel = ({
             usage={status.contextWindow?.currentUsage ?? null}
             history={bodyCacheHistory}
           />
+          <ToolCallsSection
+            total={status.toolCalls.total}
+            byType={status.toolCalls.byType}
+          />
         </div>
       )}
 
@@ -587,10 +591,6 @@ export const AgentStatusPanel = ({
               className={isRetainedBody ? 'select-none' : undefined}
               inert={isRetainedBody || undefined}
             >
-              <ToolCallsSection
-                total={status.toolCalls.total}
-                byType={status.toolCalls.byType}
-              />
               {runningEvent !== null && (
                 <LiveActionCard
                   event={runningEvent}

@@ -35,7 +35,7 @@ describe('ToolJarTile', () => {
 
     expect(tile).toHaveTextContent('others')
     expect(tile).toHaveTextContent('3 tools')
-    expect(tile.style.cursor).toBe('help')
+    expect(tile.style.cursor).toBe('default')
   })
 
   test('reveals the breakdown card when the others tile is hovered', () => {
