@@ -91,7 +91,7 @@ describe('SidebarToggle', () => {
     expect(paths).toHaveLength(1)
   })
 
-  test('mirrored=false: leaves the svg unmirrored', () => {
+  test('mirrored=false: leaves the svg without the mirror class', () => {
     const { container } = renderToggle({ collapsed: false })
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG has no a11y role
