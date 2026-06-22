@@ -71,6 +71,13 @@ export {
 } from './prebuiltLayouts'
 
 export {
+  STARTER_LAYOUT_TEMPLATES,
+  createGridTemplate,
+  createMainBottomRowTemplate,
+  createMainRightStackTemplate,
+} from './layoutTemplates'
+
+export {
   DEFAULT_RATIOS,
   SPLIT_DIVIDER_PX,
   buildTrackTemplate,

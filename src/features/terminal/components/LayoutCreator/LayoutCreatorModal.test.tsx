@@ -233,6 +233,99 @@ describe('LayoutCreatorModal', () => {
     ).toBeDisabled()
   })
 
+  test('seeds the grid from a starter template without touching the name', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn<SaveSpy>()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const nameInput = screen.getByRole('textbox', { name: 'Layout name' })
+    expect(nameInput).toHaveValue('')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Start from 2 × 3 grid' })
+    )
+
+    expect(nameInput).toHaveValue('')
+    expect(
+      screen.getAllByRole('button', { name: /^Remove pane p/ })
+    ).toHaveLength(6)
+
+    await user.type(nameInput, 'From template')
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0].title).toBe('From template')
+    expect(onSave.mock.calls[0][0].slots).toHaveLength(6)
+    // The template seed id is discarded; save mints a fresh custom id.
+    expect(onSave.mock.calls[0][0].id).toMatch(/^custom:/)
+    expect(onSave.mock.calls[0][0].id).not.toBe('custom:template-2x3')
+  })
+
+  test('seeds a spanning-slot template through the gallery', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Start from Main + right stack' })
+    )
+
+    // Main + right stack is a 4-slot layout with one row-spanning main pane.
+    expect(
+      screen.getAllByRole('button', { name: /^Remove pane / })
+    ).toHaveLength(4)
+  })
+
+  test('hides the template gallery when editing an existing layout', () => {
+    const editLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:existing',
+      title: 'Existing',
+      source: 'workspace',
+      tracks: {
+        columns: [{ id: 'col-0', units: 24 }],
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0'],
+    }
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        editLayout={editLayout}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Start from 2 × 3 grid' })
+    ).not.toBeInTheDocument()
+
+    expect(screen.getByRole('textbox', { name: 'Layout name' })).toHaveValue(
+      'Existing'
+    )
+  })
+
   test('adds an empty grid cell through keyboard activation', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn<SaveSpy>()
