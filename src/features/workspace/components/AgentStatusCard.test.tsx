@@ -210,14 +210,14 @@ describe('AgentStatusCard', () => {
         fiveHourPct={null}
         weekPct={null}
         quotaNotice={{
-          message: 'Usage limits not exposed by opencode yet',
+          message: 'Usage limits not exposed by OpenCode yet',
           trackUrl: 'https://github.com/sst/opencode/issues/16017',
         }}
       />
     )
 
     expect(
-      screen.getByText('Usage limits not exposed by opencode yet')
+      screen.getByText('Usage limits not exposed by OpenCode yet')
     ).toBeInTheDocument()
 
     expect(

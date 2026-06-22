@@ -1,4 +1,4 @@
-import { ClaudeCode, Codex, Kimi, Opencode, type AgentIcon } from './brandIcons'
+import { ClaudeCode, Codex, Kimi, OpenCode, type AgentIcon } from './brandIcons'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
@@ -87,10 +87,10 @@ export const AGENTS = {
   },
   opencode: {
     id: 'opencode',
-    name: 'Opencode',
+    name: 'OpenCode',
     short: 'OPENCODE',
     glyph: '◈',
-    Icon: Opencode,
+    Icon: OpenCode,
     model: null,
     accent: 'var(--color-agent-opencode-accent)',
     accentDim: 'var(--color-agent-opencode-accent-dim)',
@@ -101,7 +101,7 @@ export const AGENTS = {
     // queryable endpoint). Show a notice + link to the upstream request rather
     // than fabricating empty bars.
     quotaNotice: {
-      message: 'Usage limits not exposed by opencode yet',
+      message: 'Usage limits not exposed by OpenCode yet',
       trackUrl: 'https://github.com/sst/opencode/issues/16017',
     },
   },

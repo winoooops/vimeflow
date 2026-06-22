@@ -6,13 +6,13 @@ describe('QuotaUnavailableNotice', () => {
   test('renders the message and a track-the-request link to the feature request', () => {
     render(
       <QuotaUnavailableNotice
-        message="Usage limits not exposed by opencode yet"
+        message="Usage limits not exposed by OpenCode yet"
         trackUrl="https://github.com/sst/opencode/issues/16017"
       />
     )
 
     expect(
-      screen.getByText('Usage limits not exposed by opencode yet')
+      screen.getByText('Usage limits not exposed by OpenCode yet')
     ).toBeInTheDocument()
 
     const link = screen.getByRole('link', { name: /track the request/i })

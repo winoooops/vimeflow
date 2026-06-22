@@ -12,7 +12,7 @@
 
 </div>
 
-Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路进程。它把终端会话、多 pane 布局、文件浏览、代码编辑、Git Diff 审查、命令面板，以及 Claude Code、Codex CLI 和 Kimi Code 的实时可观测性集中在一个工作空间中。
+Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路进程。它把终端会话、多 pane 布局、文件浏览、代码编辑、Git Diff 审查、命令面板，以及 Claude Code、Codex CLI、Kimi Code 和 OpenCode 的实时可观测性集中在一个工作空间中。
 
 ## 当前支持范围
 
@@ -21,7 +21,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 - 支持的版本线：`0.1.0`
 - 支持的打包目标：在本地从源码构建 Linux x64 AppImage 和 macOS arm64 DMG
 - 桌面运行时：Electron 42 + Rust 旁路，通过 LSP 帧 JSON IPC 通信
-- agent可观测性：Claude Code、Codex CLI 和 Kimi Code
+- agent可观测性：Claude Code、Codex CLI、Kimi Code 和 OpenCode
 - 暂不支持：托管二进制发布、Windows 打包、生产签名/公证、自动更新
 
 打包路径与主机相关：Linux x64 AppImage 需要在 Linux x64 主机上构建，macOS arm64 DMG 需要在 Apple Silicon Mac 上构建。
@@ -86,11 +86,13 @@ macOS DMG 会写入 `release/vimeflow-*-arm64.dmg`。它面向本地源码构建
 ## 使用 Vimeflow
 
 1. 使用 `npm run electron:dev` 或本地构建的安装包启动 Vimeflow。
-2. 打开终端 pane，并运行 `claude`、`codex` 或 `kimi`。
+2. 打开终端 pane，并运行 `claude`、`codex`、`kimi` 或 `opencode`。
 3. 在工作空间中拆分 pane、浏览文件、编辑代码并审查 Git Diff。
 4. 检测到受支持代理后，代理状态面板会自动显示。
 
 Kimi Code 的套餐用量抓取需要显式开启，因为它会把已配置的 Kimi 凭据发送到 Kimi API。检测、transcript tailing 和活动流会从 `~/.kimi-code/` 下的 Kimi Code 状态文件本地读取。
+
+OpenCode 通过一个自动安装的小型桥接插件在本地检测，并把每个会话的活动写入 Vimeflow 自有目录；状态面板会显示其模型、上下文窗口（基于 OpenCode 的 models.dev 缓存推算）以及工具活动，且不访问任何凭据。OpenCode 未提供用量配额 API，因此状态卡片以上游请求链接（[sst/opencode#16017](https://github.com/sst/opencode/issues/16017)）替代套餐用量条。
 
 **在同一个 pane 中运行你心爱的 TUI** —— `nvim`、`htop`、`less` 等全屏工具可以和代理会话并排运行。应用内终端是真正的 PTY，本机终端能跑的程序在这里同样能跑。
 
