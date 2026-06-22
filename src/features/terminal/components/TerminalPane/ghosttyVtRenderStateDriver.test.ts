@@ -153,6 +153,64 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(dispose).toHaveBeenCalledOnce()
   })
 
+  test('holds the last frame while inside a synchronized-output (2026) frame', () => {
+    let snapshotReads = 0
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => {
+          snapshotReads += 1
+
+          return {
+            rows: ['composer'],
+            cursor: { rowIndex: 0, columnOffset: 2 },
+          }
+        },
+      })
+    )
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+    // chunk ends inside an open 2026 frame (clear sent, redraw pending)
+    expect(
+      adapter.parseBytes(createInput(encode('\x1b[?2026h\x1b[2J partial')))
+    ).toEqual({ visibleText: '' })
+    expect(snapshotReads).toBe(0)
+
+    // closing chunk completes the frame -> full render
+    expect(
+      adapter.parseBytes(createInput(encode('redraw\x1b[?2026l')))
+    ).toEqual({
+      visibleText: 'composer',
+      displayDelta: {
+        operations: [{ type: 'replace', text: 'composer', cursorOffset: 2 }],
+      },
+    })
+    expect(snapshotReads).toBe(1)
+  })
+
+  test('failsafe renders if a 2026 frame never closes', () => {
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['held'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+        }),
+      })
+    )
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+    let output = adapter.parseBytes(createInput(encode('\x1b[?2026h open')))
+    // 8 held chunks, then the failsafe forces a render on the 9th
+    for (let index = 0; index < 8; index += 1) {
+      output = adapter.parseBytes(createInput(encode('still drawing')))
+    }
+
+    expect(output).not.toEqual({ visibleText: '' })
+    expect(output.visibleText).toBe('held')
+  })
+
   test('rejects text input instead of falling back to the text parser', () => {
     const writeBytes = vi.fn()
     const reset = vi.fn()
