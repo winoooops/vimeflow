@@ -182,6 +182,37 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(readScrollback).not.toHaveBeenCalled()
   })
 
+  test('drops scrollback entering the alt screen and restores it on exit', () => {
+    let isAltScreen = false
+    const readScrollback = vi.fn(() => ({ rows: ['h1', 'h2'], cells: [] }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount: 2,
+          isAltScreen,
+        }),
+        readScrollback,
+      })
+    )
+
+    const flush = (byte: number): string | undefined => {
+      adapter.parseBytes(createInput(new Uint8Array([byte])))
+
+      return adapter.flushOutput?.()?.visibleText
+    }
+
+    expect(flush(0x61)).toBe('h1\nh2\np') // main screen: history shown
+    isAltScreen = true
+    expect(flush(0x62)).toBe('p') // alt screen: history dropped
+    isAltScreen = false
+    expect(flush(0x63)).toBe('h1\nh2\np') // back to main: history restored
+    expect(readScrollback).toHaveBeenCalledTimes(2) // re-fetched on return
+  })
+
   test('can be injected behind the Ghostty parser engine byte path', () => {
     const writeBytes = vi.fn()
 

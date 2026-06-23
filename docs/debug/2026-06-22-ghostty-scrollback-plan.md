@@ -122,12 +122,18 @@ viewport (content history now, styling later) — same integration risk, less wa
   fg/bg→hex, shared `computeRowShift`); real `/resume` capture = 118 styled rows verified.
 - **Step 4** ✅ `45563d04` — preload + renderer bridge plumbing (`readScrollback`,
   `scrollbackRowCount`/`isAltScreen` threaded). Full data path done + tested.
-- **Step 5** ⏭ THE risky composition. Plan (opus): encode scrollback `{rows,cells}` via the
-  existing `readStyledRowText` sentinel encoder → concatenate ahead of the viewport `displayText`
-  as one replace op; bypass `trimLeadingEmptyRows` for the scrollback prefix; shift the cursor
-  offset by the prepended text. Wire the surface↔driver back-channel (surface exposes
-  `isScrolledUp` / fetches `readScrollback`). **Prototype against one real frame first.**
-- **Step 6** — alt↔main transition reset + e2e → rebuild → eyeball → milestone PR.
+- **Step 5** ✅ `137226ea` — `encodeScrollback` + `prependScrollbackToOutput`; `flushOutput`
+  composes scrollback ahead of the viewport (cached on `scrollbackRowCount`, suppressed on alt
+  screen). No back-channel needed: scrollback is always in the DOM when it exists, so the step-1
+  scroll machine handles read/freeze/resume. Cursor shift = scrollback visible length + 1 (buffer
+  indexes cursor in visible space). Cursor math locked by unit test; prototyped on the real
+  `/resume` frame (148 rows = 118 scrollback + 30 viewport, composer at row 143).
+- **Step 6** ✅ alt↔main transition handled by the cache (alt → count 0 → suppress; exit →
+  re-fetch), locked by a test. Full terminal+bridge suite (1172) green. **Live rebuild = the e2e.**
+
+All steps done. Next: rebuild → user eyeball (scroll up shows styled history; live output flows at
+the bottom; typing/scroll-to-bottom resumes) → milestone PR `fix/ghostty-scrollback → umbrella`
+(auto-review/auto-approve).
 
 ## Steps (TDD, co-located *.test.ts)
 
