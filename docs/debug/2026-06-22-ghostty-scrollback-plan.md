@@ -64,6 +64,56 @@ scroll-anchoring across an async boundary. This collapses the riskiest part of t
   sync `READ_SCROLLBACK` channel. (libghostty gives no styled scrollback; `formatHtml` is per-frame
   already, but READ_SCROLLBACK is called only on scroll-up so the parse cost is paid only then.)
 
+## Step 3 — codex verdict corrections (2026-06-23)
+
+Codex reviewed the design ("sound") with concrete corrections, adopted:
+1. **Shared tokenizer, two readers** — do NOT make the per-frame `readReverseVideoRangesFromHtml`
+   emit styled cells (allocates scrollback-sized data every frame). Extract the tokenizer/style-stack
+   walk once; keep `readReverseVideoRangesFromHtml` (per-frame bg) + add
+   `readStyledScrollbackFromHtml` (lazy, scrollback only) on top.
+2. **Parse CSS declarations** (split on `;`), not a loose `color:` regex — else it matches inside
+   `background-color:`.
+3. **Convert fg + bg to HEX** (reuse `paletteIndexToHex`/`toHexColor`); do NOT pass
+   `var(--vt-palette-N)` through — `createGhosttyVtRenderSnapshotOutput` only encodes hex into SGR
+   sentinels and drops raw CSS vars before DOM styling.
+4. **Coalesce styled runs** into sparse cells (not one-per-char) — sync-IPC payload sanity at 10k.
+5. Return `{ rows, cells }`, omit cursor; **`rows.length = -rowShift`** (preserve internal blank
+   scrollback rows); cell `row` relative to returned rows.
+6. **Share the `rowShift`/`canAlign` helper** with `normalizeSnapshot` (no duplication); return empty
+   on alt-screen or when alignment is impossible. Test `/resume` + a trailing styled-blank row.
+
+(Awaiting the opus review of the surface-integration path before implementing.)
+
+## Opus review — CRITICAL finding (2026-06-23): the surface has no rows+cells path
+
+Both codex and opus return **GO-WITH-CHANGES** (design sound). But opus traced the full pipeline and
+found the brief's premise wrong: the surface does NOT render rows+cells. `createGhosttyVtRenderSnapshotOutput`
+collapses `{rows, cells}` into ONE flat string (SGR sentinels via `readStyledRowText`) →
+`displayDelta` `replace` → `TerminalDisplayBuffer.replace()` (clear+rewrite the whole buffer every
+frame) → flat `runs[]` → DOM. There is no viewport/scrollback region; `userScrolledUp` only moves
+scroll position. So "return {rows,cells} and the surface prepends them" describes a path that does
+not exist.
+
+**Consequence — revised steps:**
+- **Step 3 (main, low-risk, isolated):** `readScrollback` returns styled `{rows, cells}` (0-based,
+  top-down). Corrections: extract a shared `computeRowShift(snapshot, rows, contentRowCount)` used by
+  BOTH `normalizeSnapshot` and `readScrollback` (never recompute from a 2nd snapshot — desync). New
+  parallel `HtmlCellStyle` type + `readStyledCellsFromHtml` reusing the tokenizer primitives
+  (do NOT widen `ReverseVideoRange` helpers). fg+bg→HEX (`paletteIndexToHex`/`toHexColor`; raw
+  `var()` is dropped by `readSgrColorParameters`). Parse CSS declarations (split `;`). Coalesce runs.
+  `rows.length = -rowShift`. Clamp the `rowShift==-1` false-positive blank row. Bound payload
+  (bottom-N) + streaming `regex.exec`. Alt-screen → empty.
+- **Step 4 (plumbing, currently MISSING):** `scrollbackRowCount`/`isAltScreen` are dropped today at
+  `normalizeNativeSnapshot` AND the preload type — thread them through both so the renderer can gate.
+- **Step 5 (THE real integration, bigger than scoped):** on scroll-up, encode each scrollback row
+  via the existing `readStyledRowText` sentinel encoder, **concatenate ahead of the viewport
+  `displayText`** as one `replace`; handle `trimLeadingEmptyRows` (don't rotate history) + cursor
+  offset shift. Prototype against one real frame first.
+- **Step 6:** alt↔main transition reset + e2e.
+
+opus fallback if styling proves too costly: render text-only `scrollbackLines` unstyled above the
+viewport (content history now, styling later) — same integration risk, less walker work.
+
 ## Steps (TDD, co-located *.test.ts)
 
 1. **Surface scroll state machine** (common): `userScrolledUp` flag + wheel/scroll listeners on the

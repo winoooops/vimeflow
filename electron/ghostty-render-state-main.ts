@@ -1144,6 +1144,26 @@ const readSnapshotCells = (
   )
 }
 
+// Shared anchor for mapping formatHtml content rows onto the viewport-only
+// snapshot. formatHtml's LAST content row is the grid's last non-blank row, so
+// `contentRow + rowShift` is its viewport row; `< 0` is scrollback above the
+// viewport. normalizeSnapshot (bg synthesis) and readScrollback (styled history)
+// MUST use the identical shift — recomputing from a second snapshot() a frame
+// later can shift the last-styled-row anchor out of sync and move the boundary.
+const computeRowShift = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  rows: readonly string[],
+  contentRowCount: number
+): { rowShift: number; canAlign: boolean } => {
+  const lastContentRow = readLastSnapshotContentRow(snapshot, rows)
+  const canAlign = contentRowCount > 0 && lastContentRow >= 0
+
+  return {
+    canAlign,
+    rowShift: canAlign ? lastContentRow - (contentRowCount - 1) : 0,
+  }
+}
+
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
@@ -1177,12 +1197,11 @@ const normalizeSnapshot = (
   // snapshot row text trims empty. A fixed wrapper/leading offset cannot do
   // this: with scrollback the offset is the scrollback height (e.g. 118 rows on
   // /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
-  const lastContentRow = readLastSnapshotContentRow(snapshot, rows)
-  const canAlign = reverseVideo.contentRowCount > 0 && lastContentRow >= 0
-
-  const rowShift = canAlign
-    ? lastContentRow - (reverseVideo.contentRowCount - 1)
-    : 0
+  const { rowShift, canAlign } = computeRowShift(
+    snapshot,
+    rows,
+    reverseVideo.contentRowCount
+  )
 
   const alignedRanges = canAlign
     ? reverseVideo.ranges
