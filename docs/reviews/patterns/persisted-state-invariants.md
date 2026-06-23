@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-20
-ref_count: 6
+last_updated: 2026-06-23
+ref_count: 7
 ---
 
 # Persisted State Invariants
@@ -129,4 +129,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
 - **Finding:** The opencode locator treated any row with `pid == agent_pid` as authoritative before applying the existing freshness gate. Because the bridge index is append-only, OS PID reuse could make an old row for the same pid bind a new opencode process to a previous session's transcript instead of returning the startup-window retry signal.
 - **Fix:** Applied the `pty_start - SLACK` freshness floor to pid matches as well as cwd fallback matches, preserving pid-first disambiguation only for fresh rows. Added a reused-PID regression test proving stale pid rows return the not-ready error.
+- **Commit:** same commit as this entry
+
+### 14. Exited-only PTY cache masked durable restore failure
+
+- **Source:** github-claude | PR #613 round 1 | 2026-06-23
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** The store-load failure guard treated any non-empty PTY cache as a usable fallback. If the durable workspace layout was unreadable and `listSessions()` returned only `Exited` rows, restore reconstructed stale completed sessions and called `onRestore` instead of taking the intended failure path.
+- **Fix:** Changed the fallback eligibility check to require at least one `Alive` PTY row before suppressing the store-load failure. Added a regression test proving an exited-only cache after store-load failure does not call `onRestore` and still releases hydration.
 - **Commit:** same commit as this entry

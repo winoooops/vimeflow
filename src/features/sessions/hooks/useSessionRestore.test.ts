@@ -169,6 +169,48 @@ describe('useSessionRestore', () => {
     expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
   })
 
+  test('does not treat exited-only PTY cache as a restore fallback after store load failure', async () => {
+    loadWorkspaceForRestore.mockRejectedValue(
+      new Error('corrupt workspace layout')
+    )
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-old',
+            cwd: '/home/will/repo',
+            shell: '/bin/zsh',
+            status: {
+              kind: 'Exited',
+              exit_code: 0,
+            },
+          },
+        ],
+        activeSessionId: null,
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.listSessions).toHaveBeenCalled()
+    expect(onRestore).not.toHaveBeenCalled()
+    expect(onActiveResolved).not.toHaveBeenCalled()
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
   // Fragmentation regression (captured evidence for the multi-pane restore
   // bug): when several PTYs belonged to ONE workspace session (e.g. a quad
   // layout with 3 agents + 1 shell), restore currently fragments them into

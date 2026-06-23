@@ -395,9 +395,13 @@ export const useSessionRestore = ({
           return
         }
 
-        if (storeLoadFailed && list.sessions.length === 0) {
+        const hasRecoverablePtySession = list.sessions.some(
+          (session) => session.status.kind === 'Alive'
+        )
+
+        if (storeLoadFailed && !hasRecoverablePtySession) {
           throw new Error(
-            'workspace layout restore failed and PTY cache was empty'
+            'workspace layout restore failed and PTY cache had no live sessions'
           )
         }
 
