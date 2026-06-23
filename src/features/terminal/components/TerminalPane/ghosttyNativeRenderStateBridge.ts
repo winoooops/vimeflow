@@ -7,7 +7,10 @@ import type {
   GhosttyVtRenderStateDriver,
   GhosttyVtRenderStateDriverFactory,
 } from './ghosttyVtRenderStateDriver'
-import type { GhosttyVtRenderSnapshot } from './ghosttyVtRenderSnapshot'
+import type {
+  GhosttyVtRenderSnapshot,
+  GhosttyVtRenderScrollback,
+} from './ghosttyVtRenderSnapshot'
 import { readTextCellWidth } from './terminalDisplayBuffer'
 
 export const GHOSTTY_NATIVE_RENDER_STATE_DRIVER_PROVIDER_ID = 'native'
@@ -187,6 +190,25 @@ const normalizeNativeSnapshot = (
     rows: paddedRows,
     ...(cursor === undefined ? {} : { cursor }),
     ...(cells === undefined ? {} : { cells }),
+    ...(isNonNegativeInteger(snapshot.scrollbackRowCount)
+      ? { scrollbackRowCount: snapshot.scrollbackRowCount }
+      : {}),
+    ...(snapshot.isAltScreen === true ? { isAltScreen: true } : {}),
+  }
+}
+
+const normalizeNativeScrollback = (
+  scrollback: unknown
+): GhosttyVtRenderScrollback => {
+  if (!isRecord(scrollback)) {
+    throw new Error('Ghostty native render-state scrollback is invalid')
+  }
+
+  const rows = readSnapshotRows(scrollback)
+
+  return {
+    rows,
+    cells: readSnapshotCells(scrollback, rows.length) ?? [],
   }
 }
 
@@ -204,6 +226,10 @@ export const createGhosttyNativeRenderStateDriver: GhosttyVtRenderStateDriverFac
       },
       readSnapshot: (): GhosttyVtRenderSnapshot =>
         normalizeNativeSnapshot(driver.readSnapshot()),
+      readScrollback: (): GhosttyVtRenderScrollback =>
+        driver.readScrollback
+          ? normalizeNativeScrollback(driver.readScrollback())
+          : { rows: [], cells: [] },
       reset: (): void => {
         driver.reset?.()
       },

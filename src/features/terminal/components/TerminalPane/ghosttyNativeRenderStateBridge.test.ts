@@ -234,6 +234,81 @@ describe('ghosttyNativeRenderStateBridge', () => {
     })
   })
 
+  test('threads scrollbackRowCount and isAltScreen onto the snapshot', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({
+          rows: ['prompt'],
+          scrollbackRowCount: 7,
+          isAltScreen: false,
+        }),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    const snapshot = driver.readSnapshot()
+    expect(snapshot.scrollbackRowCount).toBe(7)
+    expect(snapshot.isAltScreen).toBeUndefined() // false → omitted
+  })
+
+  test('readScrollback normalizes the native styled scrollback', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({ rows: [] }),
+        readScrollback: (): unknown => ({
+          rows: ['old A', 'old B'],
+          cells: [
+            {
+              row: 0,
+              col: 0,
+              text: 'old A',
+              width: 5,
+              foreground: 'var(--terminal-ansi-red)',
+            },
+          ],
+        }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(driver.readScrollback?.()).toEqual({
+      rows: ['old A', 'old B'],
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: 'old A',
+          width: 5,
+          foreground: 'var(--terminal-ansi-red)',
+        },
+      ],
+    })
+  })
+
+  test('readScrollback returns empty when the bridge driver omits it', () => {
+    installBridge({
+      createDriver: () => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): unknown => ({ rows: [] }),
+      }),
+    })
+
+    const driver = createGhosttyNativeRenderStateDriver({
+      onCwdChange: vi.fn(),
+    })
+
+    expect(driver.readScrollback?.()).toEqual({ rows: [], cells: [] })
+  })
+
   test('does not pad a wide-glyph row that already reaches the cursor column', () => {
     installBridge({
       createDriver: () => ({

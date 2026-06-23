@@ -14,6 +14,7 @@ import {
 import {
   createGhosttyVtRenderSnapshotOutput,
   type GhosttyVtRenderSnapshot,
+  type GhosttyVtRenderScrollback,
 } from './ghosttyVtRenderSnapshot'
 import {
   createSyncFrameParserState,
@@ -43,6 +44,9 @@ export interface GhosttyVtRenderStateDriver {
    */
   writeBytes: (bytes: Uint8Array) => void
   readSnapshot: () => GhosttyVtRenderSnapshot
+  // Lazily fetch the styled scrollback above the viewport (called on scroll-up,
+  // not per frame). Optional: non-native drivers may not support it.
+  readScrollback?: () => GhosttyVtRenderScrollback
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void

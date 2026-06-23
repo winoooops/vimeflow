@@ -25,6 +25,7 @@ export interface GhosttyRenderStateBridgeSize {
 export interface GhosttyRenderStateBridgeDriver {
   writeBytes: (bytes: Uint8Array) => void
   readSnapshot: () => unknown
+  readScrollback?: () => unknown
   reset?: () => void
   resize?: (size: GhosttyRenderStateBridgeSize) => void
   dispose?: () => void

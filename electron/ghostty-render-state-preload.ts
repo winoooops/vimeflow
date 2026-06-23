@@ -3,6 +3,7 @@ import { ipcRenderer } from 'electron'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
+  GHOSTTY_RENDER_STATE_READ_SCROLLBACK,
   GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
   GHOSTTY_RENDER_STATE_RESET,
   GHOSTTY_RENDER_STATE_RESIZE,
@@ -27,6 +28,13 @@ export interface GhosttyRenderStateBridgeSnapshot {
     visible?: boolean
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
+  scrollbackRowCount?: number
+  isAltScreen?: boolean
+}
+
+export interface GhosttyRenderStateBridgeScrollback {
+  rows: readonly string[]
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
 
 export interface GhosttyRenderStateBridgeSnapshotCell {
@@ -45,6 +53,7 @@ export interface GhosttyRenderStateBridgeSnapshotCell {
 export interface GhosttyRenderStateBridgeDriver {
   writeBytes: (bytes: Uint8Array) => void
   readSnapshot: () => GhosttyRenderStateBridgeSnapshot
+  readScrollback: () => GhosttyRenderStateBridgeScrollback
   reset: () => void
   resize: (size: GhosttyRenderStateBridgeSize) => void
   dispose: () => void
@@ -151,6 +160,14 @@ export const createGhosttyRenderStateBridgeFromIpc =
 
           return readIpcResult<GhosttyRenderStateBridgeSnapshot>(
             GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
+            { driverId }
+          )
+        },
+        readScrollback: (): GhosttyRenderStateBridgeScrollback => {
+          assertActive()
+
+          return readIpcResult<GhosttyRenderStateBridgeScrollback>(
+            GHOSTTY_RENDER_STATE_READ_SCROLLBACK,
             { driverId }
           )
         },

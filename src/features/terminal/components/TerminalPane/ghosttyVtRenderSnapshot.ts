@@ -36,6 +36,15 @@ export interface GhosttyVtRenderSnapshot {
   readonly rows: readonly string[]
   readonly cursor?: GhosttyVtRenderSnapshotCursor
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
+  // Count of scrollback rows the native terminal holds above the viewport (0 on
+  // the alt screen). Styled rows are fetched lazily via the driver's readScrollback.
+  readonly scrollbackRowCount?: number
+  readonly isAltScreen?: boolean
+}
+
+export interface GhosttyVtRenderScrollback {
+  readonly rows: readonly string[]
+  readonly cells: readonly GhosttyVtRenderSnapshotCell[]
 }
 
 interface SnapshotStyle {
