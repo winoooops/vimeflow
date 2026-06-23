@@ -18,6 +18,7 @@
     "electron:build:linux:x64": "node scripts/package-electron.mjs linux-x64",
     "electron:build:mac:arm64": "node scripts/package-electron.mjs mac-arm64",
     "electron:dev": "npm run generate:bindings && npm run backend:build && vite --mode electron",
+    "dev:ghostty": "bash scripts/dev-ghostty.sh",
     "prepare": "husky",
     "lint": "npm run generate:bindings:if-missing && eslint .",
     "lint:fix": "npm run generate:bindings:if-missing && eslint . --fix",
