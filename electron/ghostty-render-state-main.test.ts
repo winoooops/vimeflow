@@ -334,6 +334,177 @@ describe('ghostty render-state main bridge', () => {
     expect(snapshot.isAltScreen).toBe(true)
   })
 
+  const WRAPPER_OPEN =
+    '<div style="font-family: monospace; white-space: pre;">'
+
+  test('readScrollback returns styled scrollback rows above the viewport', () => {
+    // formatHtml: two scrollback rows (one red) then the viewport row. The
+    // viewport anchors to its last content row, so the scrollback maps above it.
+    const html = `${WRAPPER_OPEN}\n${[
+      '<div style="display: inline;color: rgb(255, 0, 0);">old line A</div>',
+      '<div style="display: inline;">old line B</div>',
+      '<div style="display: inline;">current output</div></div>',
+    ].join('\n')}`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: false,
+          visibleLines: [
+            { row: 0, text: 'current output' },
+            { row: 1, text: '' },
+            { row: 2, text: '' },
+            { row: 3, text: '' },
+            { row: 4, text: '' },
+          ],
+          scrollbackLines: [
+            { row: 0, text: 'old line A' },
+            { row: 1, text: 'old line B' },
+          ],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const scrollback = requireResult(
+      bridge.readScrollback(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+
+    expect(scrollback.rows).toEqual(['old line A', 'old line B'])
+    // one coalesced styled cell for the red run; the plain row carries no cell
+    expect(scrollback.cells).toEqual([
+      { row: 0, col: 0, text: 'old line A', width: 10, foreground: '#ff0000' },
+    ])
+  })
+
+  test('readScrollback returns empty on the alt screen', () => {
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: true,
+          visibleLines: [{ row: 0, text: 'vim' }],
+          scrollbackLines: [{ row: 0, text: 'history' }],
+        }),
+        formatHtml: () =>
+          `${WRAPPER_OPEN}\n<div style="display: inline;">vim</div></div>`,
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const scrollback = requireResult(
+      bridge.readScrollback(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+
+    expect(scrollback.rows).toEqual([])
+    expect(scrollback.cells).toEqual([])
+  })
+
+  test('readScrollback returns empty when there is no native scrollback', () => {
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 5,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: false,
+          visibleLines: [
+            { row: 0, text: 'prompt' },
+            { row: 1, text: '' },
+          ],
+        }),
+        formatHtml: () =>
+          `${WRAPPER_OPEN}\n<div style="display: inline;">prompt</div></div>`,
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const scrollback = requireResult(
+      bridge.readScrollback(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+
+    expect(scrollback.rows).toEqual([])
+    expect(scrollback.cells).toEqual([])
+  })
+
+  test('readScrollback resolves fg + bg colors and bold in coalesced cells', () => {
+    const html = `${WRAPPER_OPEN}\n${[
+      '<div style="display: inline;background-color: rgb(0, 0, 255);color: rgb(255, 255, 0);font-weight: bold;">WARN</div>',
+      '<div style="display: inline;">live</div></div>',
+    ].join('\n')}`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 4,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: false,
+          visibleLines: [
+            { row: 0, text: 'live' },
+            { row: 1, text: '' },
+            { row: 2, text: '' },
+            { row: 3, text: '' },
+          ],
+          scrollbackLines: [{ row: 0, text: 'WARN' }],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const scrollback = requireResult(
+      bridge.readScrollback(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+
+    expect(scrollback.rows).toEqual(['WARN'])
+    expect(scrollback.cells).toEqual([
+      {
+        row: 0,
+        col: 0,
+        text: 'WARN',
+        width: 4,
+        foreground: '#ffff00',
+        background: '#0000ff',
+        bold: true,
+      },
+    ])
+  })
+
   // Regression: codex's input composer is a full-width truecolor background bar
   // (rgb(57,57,71)) drawn over mostly-blank cells. libghostty's native snapshot
   // carries no color and omits blank cells, so the bar exists only in formatHtml.

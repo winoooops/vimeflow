@@ -13,6 +13,7 @@ import { palette256ToRgb } from '../shared/ansiPalette'
 import {
   GHOSTTY_RENDER_STATE_CREATE,
   GHOSTTY_RENDER_STATE_DISPOSE,
+  GHOSTTY_RENDER_STATE_READ_SCROLLBACK,
   GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
   GHOSTTY_RENDER_STATE_RESET,
   GHOSTTY_RENDER_STATE_RESIZE,
@@ -70,6 +71,13 @@ export interface GhosttyRenderStateBridgeSnapshotCell extends GhosttyCellTravers
   foreground?: string
   background?: string
   reverse?: boolean
+}
+
+export interface GhosttyRenderStateScrollback {
+  // Styled scrollback ABOVE the viewport, top-down, 0-based. `rows` carries the
+  // text; `cells` are coalesced styled spans (row relative to `rows`).
+  rows: readonly string[]
+  cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
 }
 
 interface GhosttyNativeTerminalOptions {
@@ -170,6 +178,7 @@ type WriteBytesResult = IpcResult<{
   events: readonly GhosttyRenderStateEvent[]
 }>
 type SnapshotResult = IpcResult<GhosttyRenderStateBridgeSnapshot>
+type ScrollbackResult = IpcResult<GhosttyRenderStateScrollback>
 type EmptyResult = IpcResult<null>
 
 interface GhosttyRenderStateEvent {
@@ -790,6 +799,239 @@ const readTerminalReverseVideoRanges = (
   }
 }
 
+// Full cell style parsed from a formatHtml inline-style attribute. Parallel to
+// ReverseVideoRange's bg/reverse pick so the per-frame bg-synthesis helpers stay
+// untouched; this richer style is only used for the lazy styled-scrollback walk.
+interface HtmlCellStyle {
+  foreground?: string
+  background?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  reverse?: boolean
+}
+
+const CSS_RGB_VALUE_PATTERN =
+  /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i
+const CSS_PALETTE_VALUE_PATTERN = /^var\(--vt-palette-(\d{1,3})\)$/i
+
+// Resolve a CSS color VALUE (fg or bg) to hex. Must resolve `var(--vt-palette-N)`
+// to hex here: createGhosttyVtRenderSnapshotOutput only encodes hex cell colors
+// into SGR sentinels and drops raw CSS vars before DOM styling.
+const readCssColorValue = (value: string): string | undefined => {
+  const rgb = CSS_RGB_VALUE_PATTERN.exec(value)
+
+  if (rgb) {
+    return toHexColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]))
+  }
+
+  const palette = CSS_PALETTE_VALUE_PATTERN.exec(value)
+
+  if (palette) {
+    return paletteIndexToHex(Number(palette[1]))
+  }
+
+  return undefined
+}
+
+// Parse declarations (split on `;`) rather than a loose `color:` regex, which
+// would also match inside `background-color:`.
+const readTagHtmlCellStyle = (token: string): HtmlCellStyle => {
+  const match = HTML_STYLE_ATTRIBUTE_PATTERN.exec(token)
+
+  if (!match) {
+    return {}
+  }
+
+  const style: HtmlCellStyle = {}
+
+  for (const declaration of match[1].split(';')) {
+    const separator = declaration.indexOf(':')
+
+    if (separator < 0) {
+      continue
+    }
+
+    const property = declaration.slice(0, separator).trim().toLowerCase()
+    const value = declaration.slice(separator + 1).trim()
+
+    if (property === 'color') {
+      const foreground = readCssColorValue(value)
+
+      if (foreground) {
+        style.foreground = foreground
+      }
+    } else if (property === 'background-color') {
+      const background = readCssColorValue(value)
+
+      if (background) {
+        style.background = background
+      }
+    } else if (property === 'font-weight' && value === 'bold') {
+      style.bold = true
+    } else if (property === 'font-style' && value === 'italic') {
+      style.italic = true
+    } else if (property === 'text-decoration' && /underline/i.test(value)) {
+      style.underline = true
+    } else if (property === 'filter' && /invert\(100%\)/i.test(value)) {
+      style.reverse = true
+    }
+  }
+
+  return style
+}
+
+const mergeHtmlCellStyle = (
+  parent: HtmlCellStyle,
+  child: HtmlCellStyle
+): HtmlCellStyle => {
+  const foreground = child.foreground ?? parent.foreground
+  const background = child.background ?? parent.background
+
+  return {
+    ...(foreground ? { foreground } : {}),
+    ...(background ? { background } : {}),
+    ...(parent.bold || child.bold ? { bold: true } : {}),
+    ...(parent.italic || child.italic ? { italic: true } : {}),
+    ...(parent.underline || child.underline ? { underline: true } : {}),
+    ...(parent.reverse || child.reverse ? { reverse: true } : {}),
+  }
+}
+
+const hasHtmlCellStyle = (style: HtmlCellStyle): boolean =>
+  style.foreground !== undefined ||
+  style.background !== undefined ||
+  style.bold === true ||
+  style.italic === true ||
+  style.underline === true ||
+  style.reverse === true
+
+const sameHtmlCellStyle = (left: HtmlCellStyle, right: HtmlCellStyle): boolean =>
+  left.foreground === right.foreground &&
+  left.background === right.background &&
+  left.bold === right.bold &&
+  left.italic === right.italic &&
+  left.underline === right.underline &&
+  left.reverse === right.reverse
+
+interface StyledHtmlParseResult {
+  readonly rows: readonly string[]
+  readonly cells: readonly GhosttyRenderStateBridgeSnapshotCell[]
+  readonly contentRowCount: number
+}
+
+interface StyledRun {
+  startColumn: number
+  text: string
+  style: HtmlCellStyle
+}
+
+const styledRunToCell = (
+  run: StyledRun,
+  row: number,
+  endColumn: number
+): GhosttyRenderStateBridgeSnapshotCell => ({
+  row,
+  col: run.startColumn,
+  text: run.text,
+  width: endColumn - run.startColumn,
+  ...run.style,
+})
+
+// Walk formatHtml into per-row text + coalesced styled-run cells (one cell per
+// contiguous same-style run; unstyled spans carry no cell — the row text
+// supplies them, matching how the viewport feeds readStyledRowText). Reuses the
+// same tokenizer/entity-decode/wrapper-skip as readReverseVideoRangesFromHtml.
+const readStyledCellsFromHtml = (html: string): StyledHtmlParseResult => {
+  const rows: string[] = []
+  const cells: GhosttyRenderStateBridgeSnapshotCell[] = []
+  const styleStack: HtmlCellStyle[] = [{}]
+  let row = 0
+  let column = 0
+  let rowText = ''
+  let run: StyledRun | null = null
+  let skippedWrapperNewline = false
+
+  const flushRun = (): void => {
+    if (run && hasHtmlCellStyle(run.style)) {
+      cells.push(styledRunToCell(run, row, column))
+    }
+    run = null
+  }
+
+  Array.from(html.matchAll(HTML_TOKEN_PATTERN)).forEach((match) => {
+    const token = match[0]
+
+    if (isOpeningHtmlTag(token)) {
+      styleStack.push(
+        mergeHtmlCellStyle(
+          styleStack[styleStack.length - 1] ?? {},
+          readTagHtmlCellStyle(token)
+        )
+      )
+
+      return
+    }
+
+    if (isClosingHtmlTag(token)) {
+      styleStack.pop()
+
+      return
+    }
+
+    if (isHtmlTag(token)) {
+      return
+    }
+
+    const style = styleStack[styleStack.length - 1] ?? {}
+
+    for (const character of decodeHtmlText(token)) {
+      if (character === '\n') {
+        if (!skippedWrapperNewline && row === 0 && column === 0) {
+          skippedWrapperNewline = true
+          continue
+        }
+
+        flushRun()
+        rows.push(rowText)
+        rowText = ''
+        row += 1
+        column = 0
+        continue
+      }
+
+      const width = readTextCellWidth(character)
+
+      if (width <= 0) {
+        continue
+      }
+
+      rowText += character
+
+      if (hasHtmlCellStyle(style)) {
+        if (run && sameHtmlCellStyle(run.style, style)) {
+          run.text += character
+        } else {
+          flushRun()
+          run = { startColumn: column, text: character, style }
+        }
+      } else {
+        flushRun()
+      }
+
+      column += width
+    }
+  })
+
+  flushRun()
+
+  if (rows.length > 0 || rowText.length > 0) {
+    rows.push(rowText)
+  }
+
+  return { rows, cells, contentRowCount: rows.length }
+}
+
 const hasSnapshotCellStyle = (
   cell: GhosttyRenderStateBridgeSnapshotCell
 ): boolean =>
@@ -1164,6 +1406,55 @@ const computeRowShift = (
   }
 }
 
+// Bound the styled-scrollback payload over sync IPC: return the bottom N rows
+// nearest the viewport (what the user sees first on scroll-up). Older history
+// paging is a follow-up.
+const MAX_SCROLLBACK_FETCH_ROWS = 2000
+
+const EMPTY_SCROLLBACK: GhosttyRenderStateScrollback = { rows: [], cells: [] }
+
+// Styled scrollback above the viewport, from formatHtml, using the SAME rowShift
+// anchor as normalizeSnapshot. Scrollback = content rows mapping above the
+// viewport (contentRow + rowShift < 0). Requires native scrollback to exist
+// (else a rowShift == -1 trimmed leading blank would masquerade as history),
+// and keeps the bottom MAX rows nearest the viewport.
+const normalizeScrollback = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  html: string
+): GhosttyRenderStateScrollback => {
+  if (snapshot.isAltScreen === true) {
+    return EMPTY_SCROLLBACK
+  }
+
+  const rows = readSnapshotRows(snapshot)
+  const parsed = readStyledCellsFromHtml(html)
+
+  const { rowShift, canAlign } = computeRowShift(
+    snapshot,
+    rows,
+    parsed.contentRowCount
+  )
+
+  if (!canAlign || rowShift >= 0) {
+    return EMPTY_SCROLLBACK
+  }
+
+  if ((snapshot.scrollbackLines?.length ?? 0) === 0) {
+    return EMPTY_SCROLLBACK
+  }
+
+  const scrollbackEnd = -rowShift // content rows [0, scrollbackEnd) are scrollback
+  const keep = Math.min(scrollbackEnd, MAX_SCROLLBACK_FETCH_ROWS)
+  const start = scrollbackEnd - keep
+
+  return {
+    rows: parsed.rows.slice(start, scrollbackEnd),
+    cells: parsed.cells
+      .filter((cell) => cell.row >= start && cell.row < scrollbackEnd)
+      .map((cell) => ({ ...cell, row: cell.row - start })),
+  }
+}
+
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
@@ -1353,6 +1644,28 @@ export class GhosttyRenderStateMainBridge {
     )
   }
 
+  readScrollback(ownerWebContentsId: number, payload: unknown): ScrollbackResult {
+    return this.withDriver(ownerWebContentsId, payload, (record) => {
+      if (!record.terminal.formatHtml) {
+        return ok(EMPTY_SCROLLBACK)
+      }
+
+      try {
+        return ok(
+          normalizeScrollback(
+            record.terminal.snapshot({
+              includeCells: true,
+              includeScrollback: true,
+            }),
+            record.terminal.formatHtml()
+          )
+        )
+      } catch (error) {
+        return fail(stringifyError(error))
+      }
+    })
+  }
+
   resize(ownerWebContentsId: number, payload: unknown): EmptyResult {
     try {
       const { driverId, size } = readSizePayload(payload)
@@ -1526,6 +1839,11 @@ export const setupGhosttyRenderStateIpc = (
       options.ipcMain,
       GHOSTTY_RENDER_STATE_READ_SNAPSHOT,
       (event, payload) => bridge.readSnapshot(event.sender.id, payload)
+    ),
+    registerSyncHandler(
+      options.ipcMain,
+      GHOSTTY_RENDER_STATE_READ_SCROLLBACK,
+      (event, payload) => bridge.readScrollback(event.sender.id, payload)
     ),
     registerSyncHandler(
       options.ipcMain,
