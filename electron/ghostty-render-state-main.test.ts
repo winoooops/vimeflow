@@ -267,7 +267,71 @@ describe('ghostty render-state main bridge', () => {
         ],
       },
     })
-    expect(terminals[0]?.snapshot).toHaveBeenCalledWith({ includeCells: true })
+
+    expect(terminals[0]?.snapshot).toHaveBeenCalledWith({
+      includeCells: true,
+      includeScrollback: true,
+    })
+  })
+
+  test('reports scrollbackRowCount from the native snapshot on the main screen', () => {
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 4,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: false,
+          visibleLines: [{ row: 0, text: 'prompt' }],
+          scrollbackLines: [
+            { row: 0, text: 'old line 1' },
+            { row: 1, text: 'old line 2' },
+            { row: 2, text: 'old line 3' },
+          ],
+        }),
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    )
+
+    expect(snapshot.scrollbackRowCount).toBe(3)
+    expect(snapshot.isAltScreen).toBeUndefined()
+  })
+
+  test('suppresses scrollback on the alt screen (full-screen TUIs own scrolling)', () => {
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 4,
+          cursorRow: 0,
+          cursorCol: 0,
+          isAltScreen: true,
+          visibleLines: [{ row: 0, text: 'vim' }],
+          scrollbackLines: [{ row: 0, text: 'stale history' }],
+        }),
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    )
+
+    expect(snapshot.scrollbackRowCount).toBeUndefined() // 0 → omitted
+    expect(snapshot.isAltScreen).toBe(true)
   })
 
   // Regression: codex's input composer is a full-width truecolor background bar

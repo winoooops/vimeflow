@@ -52,6 +52,11 @@ export interface GhosttyRenderStateBridgeSnapshot {
     visible?: boolean
   }
   cells?: readonly GhosttyRenderStateBridgeSnapshotCell[]
+  // Count of scrollback rows libghostty holds above the viewport (0 on the alt
+  // screen). The viewport rows/cells above stay viewport-only per frame; the
+  // styled scrollback itself is fetched lazily via readScrollback on scroll-up.
+  scrollbackRowCount?: number
+  isAltScreen?: boolean
 }
 
 export interface GhosttyRenderStateBridgeSnapshotCell extends GhosttyCellTraversalCell {
@@ -96,7 +101,9 @@ interface GhosttyNativeTerminalSnapshot {
   cursorRow: number
   cursorCol: number
   cursorVisible?: boolean
+  isAltScreen?: boolean
   visibleLines: readonly GhosttyNativeTerminalLine[]
+  scrollbackLines?: readonly GhosttyNativeTerminalLine[]
   cells?: readonly GhosttyNativeTerminalSnapshotCell[]
 }
 
@@ -105,6 +112,7 @@ interface GhosttyNativeTerminal {
   resize: (cols: number, rows: number) => void
   snapshot: (options?: {
     includeCells?: boolean
+    includeScrollback?: boolean
   }) => GhosttyNativeTerminalSnapshot
   dispose: () => void
   formatHtml?: () => string
@@ -1184,6 +1192,14 @@ const normalizeSnapshot = (
 
   const cells = readSnapshotCells(snapshot, rows, alignedRanges)
 
+  // Scrollback is meaningless on the alt screen (full-screen TUIs own their own
+  // scrolling), so report 0 there and let the renderer suppress history.
+  const isAltScreen = snapshot.isAltScreen === true
+
+  const scrollbackRowCount = isAltScreen
+    ? 0
+    : (snapshot.scrollbackLines?.length ?? 0)
+
   return {
     rows,
     cursor: {
@@ -1191,6 +1207,8 @@ const normalizeSnapshot = (
       ...(snapshotCursorVisible === false ? { visible: false } : {}),
     },
     ...(cells === undefined ? {} : { cells }),
+    ...(scrollbackRowCount > 0 ? { scrollbackRowCount } : {}),
+    ...(isAltScreen ? { isAltScreen: true } : {}),
   }
 }
 
@@ -1305,7 +1323,10 @@ export class GhosttyRenderStateMainBridge {
     return this.withDriver(ownerWebContentsId, payload, (record) =>
       ok(
         normalizeSnapshot(
-          record.terminal.snapshot({ includeCells: true }),
+          record.terminal.snapshot({
+            includeCells: true,
+            includeScrollback: true,
+          }),
           record.cursorVisibilityScanner.readVisible(),
           readTerminalReverseVideoRanges(record.terminal)
         )
