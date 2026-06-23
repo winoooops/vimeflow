@@ -114,6 +114,21 @@ not exist.
 opus fallback if styling proves too costly: render text-only `scrollbackLines` unstyled above the
 viewport (content history now, styling later) — same integration risk, less walker work.
 
+## Progress (2026-06-23)
+
+- **Step 1** ✅ `2e28d726` — sticky-bottom scroll state machine (6 tests).
+- **Step 2** ✅ `a94a8a9b` — bridge `scrollbackRowCount` + `isAltScreen`.
+- **Step 3** ✅ `f663c34c` — `READ_SCROLLBACK` channel + styled `formatHtml` parser (coalesced cells,
+  fg/bg→hex, shared `computeRowShift`); real `/resume` capture = 118 styled rows verified.
+- **Step 4** ✅ `45563d04` — preload + renderer bridge plumbing (`readScrollback`,
+  `scrollbackRowCount`/`isAltScreen` threaded). Full data path done + tested.
+- **Step 5** ⏭ THE risky composition. Plan (opus): encode scrollback `{rows,cells}` via the
+  existing `readStyledRowText` sentinel encoder → concatenate ahead of the viewport `displayText`
+  as one replace op; bypass `trimLeadingEmptyRows` for the scrollback prefix; shift the cursor
+  offset by the prepended text. Wire the surface↔driver back-channel (surface exposes
+  `isScrolledUp` / fetches `readScrollback`). **Prototype against one real frame first.**
+- **Step 6** — alt↔main transition reset + e2e → rebuild → eyeball → milestone PR.
+
 ## Steps (TDD, co-located *.test.ts)
 
 1. **Surface scroll state machine** (common): `userScrolledUp` flag + wheel/scroll listeners on the
