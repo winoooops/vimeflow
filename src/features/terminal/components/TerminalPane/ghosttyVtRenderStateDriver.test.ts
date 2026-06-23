@@ -100,6 +100,88 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(snapshotReads).toBe(1)
   })
 
+  test('prepends scrollback above the viewport when the snapshot reports it', () => {
+    const readScrollback = vi.fn(() => ({
+      rows: ['history line'],
+      cells: [],
+    }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['prompt'],
+          cursor: { rowIndex: 0, columnOffset: 2 },
+          scrollbackRowCount: 1,
+        }),
+        readScrollback,
+      })
+    )
+
+    adapter.parseBytes(createInput(new Uint8Array([0x61])))
+    const output = adapter.flushOutput?.()
+
+    expect(output?.visibleText).toBe('history line\nprompt')
+    expect(output?.displayDelta?.operations[0]).toEqual({
+      type: 'replace',
+      text: 'history line\nprompt',
+      // 12 (scrollback visible) + 1 (newline) + 2 (viewport cursor) = 15
+      cursorOffset: 15,
+    })
+    expect(readScrollback).toHaveBeenCalledOnce()
+  })
+
+  test('re-fetches scrollback only when the row count changes', () => {
+    let scrollbackRowCount = 1
+    const readScrollback = vi.fn(() => ({ rows: ['h'], cells: [] }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount,
+        }),
+        readScrollback,
+      })
+    )
+
+    adapter.parseBytes(createInput(new Uint8Array([0x61])))
+    adapter.flushOutput?.()
+    adapter.parseBytes(createInput(new Uint8Array([0x62])))
+    adapter.flushOutput?.()
+    expect(readScrollback).toHaveBeenCalledOnce() // count unchanged → cached
+
+    scrollbackRowCount = 2
+    adapter.parseBytes(createInput(new Uint8Array([0x63])))
+    adapter.flushOutput?.()
+    expect(readScrollback).toHaveBeenCalledTimes(2) // count grew → re-fetch
+  })
+
+  test('suppresses scrollback on the alt screen', () => {
+    const readScrollback = vi.fn(() => ({ rows: ['stale'], cells: [] }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['vim'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount: 5,
+          isAltScreen: true,
+        }),
+        readScrollback,
+      })
+    )
+
+    adapter.parseBytes(createInput(new Uint8Array([0x61])))
+    const output = adapter.flushOutput?.()
+
+    expect(output?.visibleText).toBe('vim')
+    expect(readScrollback).not.toHaveBeenCalled()
+  })
+
   test('can be injected behind the Ghostty parser engine byte path', () => {
     const writeBytes = vi.fn()
 

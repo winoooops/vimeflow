@@ -409,3 +409,56 @@ export const createGhosttyVtRenderSnapshotOutput = (
     },
   }
 }
+
+// Encode styled scrollback rows into the same SGR-sentinel displayText + plain
+// visibleText the viewport uses, so it can be prepended to the viewport buffer.
+// Scrollback is NOT trimmed (it is history, rendered verbatim).
+export const encodeScrollback = (
+  scrollback: GhosttyVtRenderScrollback
+): { displayText: string; visibleText: string } => {
+  const cellsByRow = readCellsByRow(scrollback.cells)
+
+  return {
+    displayText: scrollback.rows
+      .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
+      .join('\n'),
+    visibleText: scrollback.rows
+      .map((row, rowIndex) =>
+        readCellRowVisibleText(row, cellsByRow.get(rowIndex))
+      )
+      .join('\n'),
+  }
+}
+
+// Prepend encoded scrollback ABOVE the viewport's replace op. Shifts the cursor
+// offset by the scrollback's VISIBLE length + 1 (the joining newline) because
+// the buffer indexes cursorOffset against visible text. Composing at the string
+// level keeps the viewport's leading-empty-row trim from rotating history.
+export const prependScrollbackToOutput = (
+  output: TerminalParserEngineOutput,
+  encoded: { displayText: string; visibleText: string }
+): TerminalParserEngineOutput => {
+  const delta = output.displayDelta
+  const operation = delta?.operations[0]
+
+  if (!delta || operation?.type !== 'replace') {
+    return output
+  }
+
+  return {
+    ...output,
+    visibleText: `${encoded.visibleText}\n${output.visibleText}`,
+    displayDelta: {
+      ...delta,
+      operations: [
+        {
+          type: 'replace',
+          text: `${encoded.displayText}\n${operation.text}`,
+          cursorOffset:
+            (operation.cursorOffset ?? 0) + encoded.visibleText.length + 1,
+        },
+        ...delta.operations.slice(1),
+      ],
+    },
+  }
+}

@@ -1,7 +1,11 @@
 // cspell:ignore ghostty winoooops
 import { describe, expect, test } from 'vitest'
 import { TerminalDisplayBuffer } from './terminalDisplayBuffer'
-import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
+import {
+  createGhosttyVtRenderSnapshotOutput,
+  encodeScrollback,
+  prependScrollbackToOutput,
+} from './ghosttyVtRenderSnapshot'
 
 const TRUE_COLOR_PINK_HEX = ['#', 'f38ba8'].join('')
 const TRUE_COLOR_BASE_HEX = ['#', '181825'].join('')
@@ -673,5 +677,51 @@ describe('ghosttyVtRenderSnapshot', () => {
 
     expect(buffer.readVisibleText()).toBe(`${NERD_FONT_TERMINAL_ICON}xy`)
     expect(buffer.readCursorOffset()).toBe(`${NERD_FONT_TERMINAL_ICON}x`.length)
+  })
+})
+
+describe('scrollback composition', () => {
+  test('encodeScrollback renders plain rows verbatim and styled runs distinctly', () => {
+    expect(encodeScrollback({ rows: ['ab', 'cd'], cells: [] })).toEqual({
+      displayText: 'ab\ncd',
+      visibleText: 'ab\ncd',
+    })
+
+    const styled = encodeScrollback({
+      rows: ['x'],
+      cells: [{ row: 0, col: 0, text: 'x', width: 1, bold: true }],
+    })
+    expect(styled.visibleText).toBe('x')
+    // a styled run wraps the glyph in an SGR sentinel, so displayText differs
+    expect(styled.displayText).not.toBe('x')
+    expect(styled.displayText).toContain('x')
+  })
+
+  test('prependScrollbackToOutput stacks history above the viewport and shifts the cursor', () => {
+    const viewport = createGhosttyVtRenderSnapshotOutput({
+      rows: ['PROMPT'],
+      cursor: { rowIndex: 0, columnOffset: 3 },
+    })
+
+    const combined = prependScrollbackToOutput(viewport, {
+      displayText: 'history',
+      visibleText: 'history',
+    })
+
+    expect(combined.visibleText).toBe('history\nPROMPT')
+    expect(combined.displayDelta?.operations[0]).toEqual({
+      type: 'replace',
+      text: 'history\nPROMPT',
+      // 7 (scrollback visible) + 1 (newline) + 3 (viewport cursor) = 11
+      cursorOffset: 11,
+    })
+  })
+
+  test('prependScrollbackToOutput leaves an output without a replace delta untouched', () => {
+    const output = { visibleText: 'live' }
+
+    expect(
+      prependScrollbackToOutput(output, { displayText: 'h', visibleText: 'h' })
+    ).toBe(output)
   })
 })

@@ -13,6 +13,8 @@ import {
 } from './ghosttyVtByteParserAdapter'
 import {
   createGhosttyVtRenderSnapshotOutput,
+  encodeScrollback,
+  prependScrollbackToOutput,
   type GhosttyVtRenderSnapshot,
   type GhosttyVtRenderScrollback,
 } from './ghosttyVtRenderSnapshot'
@@ -65,6 +67,39 @@ export const createGhosttyVtRenderStateParserDriverFactory =
     let syncFrameState = createSyncFrameParserState()
     let heldFlushes = 0
     let dirty = false
+    // Cache the encoded styled scrollback; only re-fetch (sync IPC) when the
+    // native scrollback row count changes, then prepend it every frame so the
+    // history stays in the DOM and remains scrollable.
+    let cachedScrollbackRowCount = -1
+    let cachedScrollback: { displayText: string; visibleText: string } | null =
+      null
+
+    const composeWithScrollback = (
+      snapshot: GhosttyVtRenderSnapshot,
+      output: TerminalParserEngineOutput
+    ): TerminalParserEngineOutput => {
+      const count = snapshot.isAltScreen
+        ? 0
+        : (snapshot.scrollbackRowCount ?? 0)
+
+      if (count <= 0 || !renderStateDriver.readScrollback) {
+        cachedScrollbackRowCount = count
+        cachedScrollback = null
+
+        return output
+      }
+
+      if (count !== cachedScrollbackRowCount) {
+        const scrollback = renderStateDriver.readScrollback()
+        cachedScrollback =
+          scrollback.rows.length > 0 ? encodeScrollback(scrollback) : null
+        cachedScrollbackRowCount = count
+      }
+
+      return cachedScrollback
+        ? prependScrollbackToOutput(output, cachedScrollback)
+        : output
+    }
 
     return {
       writeBytes: (bytes): TerminalParserEngineOutput => {
@@ -93,8 +128,11 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         heldFlushes = 0
         dirty = false
 
-        return createGhosttyVtRenderSnapshotOutput(
-          renderStateDriver.readSnapshot()
+        const snapshot = renderStateDriver.readSnapshot()
+
+        return composeWithScrollback(
+          snapshot,
+          createGhosttyVtRenderSnapshotOutput(snapshot)
         )
       },
       hasPendingOutput: (): boolean => dirty,
@@ -102,6 +140,8 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         syncFrameState = createSyncFrameParserState()
         heldFlushes = 0
         dirty = false
+        cachedScrollbackRowCount = -1
+        cachedScrollback = null
         renderStateDriver.reset?.()
       },
       resize: (size): void => {
