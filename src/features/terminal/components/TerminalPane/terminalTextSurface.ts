@@ -1232,19 +1232,15 @@ export class TerminalTextSurface implements TerminalSurface {
       this.outputBuffer.readCursorVisible()
     )
 
-    const previousScrollTop = this.root.scrollTop
-    const previousScrollHeight = this.root.scrollHeight
-
     this.output.replaceChildren(...fragments)
 
-    if (this.userScrolledUp) {
-      // Anchor the reading position: replaceChildren rebuilds every row and the
-      // scrollback above may grow as live lines scroll off, so re-add the height
-      // delta to keep what the user is reading in place.
-      this.root.scrollTop =
-        previousScrollTop + (this.root.scrollHeight - previousScrollHeight)
-    }
-
+    // While the user is reading history we never reposition (applyScrollMode
+    // early-returns). Crucially we do NOT re-anchor scrollTop here: terminal
+    // history grows at the BOTTOM of scrollback (just above the viewport, below
+    // the reader), so a height-delta anchor would creep the reading position
+    // downward, fire a programmatic 'scroll', and let handleScroll flip the
+    // freeze off — snapping back to the bottom. Leaving scrollTop alone keeps
+    // the reading position put because the rows above it are unchanged.
     this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
   }
 

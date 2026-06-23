@@ -45,7 +45,11 @@ const surfaces: TerminalTextSurface[] = []
 
 const mountSurface = (
   geometry = { clientHeight: 100, scrollHeight: 1000 }
-): { surface: TerminalTextSurface; root: HTMLElement; input: HTMLTextAreaElement } => {
+): {
+  surface: TerminalTextSurface
+  root: HTMLElement
+  input: HTMLTextAreaElement
+} => {
   const surface = new TerminalTextSurface({
     rendererId: 'test',
     transformOutput: (data): TerminalTextSurfaceOutput => ({
@@ -106,19 +110,23 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
     dispatchWheel(root, -50) // freeze
     root.scrollTop = 400
 
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true })
+    )
     surface.write('echoed input\n')
 
     expect(root.scrollTop).toBe(root.scrollHeight)
   })
 
-  test('anchors the reading position as content grows while frozen', () => {
+  test('holds the reading position as content grows below the frozen reader', () => {
     const { surface, root } = mountSurface()
     dispatchWheel(root, -50) // freeze
     root.scrollTop = 400
 
-    // content grows by 200px across the next render (scrollback prepended / live
-    // output appended): the reading position must shift by the same delta.
+    // Content grows by 200px across the next render. Terminal history grows at
+    // the bottom (below the reader), so the reading position must NOT move — the
+    // rows above scrollTop are unchanged. A height-delta anchor here was the
+    // regression that crept the reader to the bottom and snapped live.
     const heights = [1000, 1200]
     let read = 0
     Object.defineProperty(root, 'scrollHeight', {
@@ -128,7 +136,7 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
 
     surface.write('appended\n')
 
-    expect(root.scrollTop).toBe(600) // 400 + (1200 - 1000)
+    expect(root.scrollTop).toBe(400) // held, not anchored to 600
   })
 
   test('does not scroll on a wheel-down (stays following the bottom)', () => {
@@ -145,7 +153,9 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
     // 40 rows (scrollback + viewport) taller than the 100px pane; the cursor is
     // at the very end. Without pinToBottom the replace heuristic would jump to
     // the top (deep cursor row); pinToBottom must follow the bottom (the input).
-    const tallText = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+    const tallText = Array.from({ length: 40 }, (_, i) => `line ${i}`).join(
+      '\n'
+    )
 
     surface.writeParsedOutput({
       visibleText: tallText,
