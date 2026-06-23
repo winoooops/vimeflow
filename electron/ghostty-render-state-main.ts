@@ -760,7 +760,7 @@ const readReverseVideoRangesFromHtml = (
   // `row` indexes the last terminal row the parser walked; +1 makes it a count.
   // formatHtml trims truly-blank LEADING and TRAILING rows, so the last content
   // row is the grid's last non-blank row.
-  return { ranges, contentRowCount: ranges.length === 0 ? 0 : row + 1 }
+  return { ranges, contentRowCount: row === 0 && column === 0 ? 0 : row + 1 }
 }
 
 const EMPTY_REVERSE_VIDEO_RESULT: ReverseVideoRangesResult = {
@@ -791,6 +791,41 @@ const hasSnapshotCellStyle = (
   cell.foreground !== undefined ||
   cell.background !== undefined ||
   cell.reverse === true
+
+const hasRawSnapshotCellStyle = (cell: Record<string, unknown>): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  typeof cell.foreground === 'string' ||
+  typeof cell.background === 'string' ||
+  cell.reverse === true
+
+const hasSnapshotRowStyledCell = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  rowIndex: number
+): boolean =>
+  Array.isArray(snapshot.cells) &&
+  snapshot.cells.some(
+    (cell) =>
+      isRecord(cell) &&
+      cell.row === rowIndex &&
+      hasRawSnapshotCellStyle(cell)
+  )
+
+const readLastSnapshotContentRow = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  rows: readonly string[]
+): number => {
+  let lastContentRow = -1
+
+  rows.forEach((row, index) => {
+    if (row.trim().length > 0 || hasSnapshotRowStyledCell(snapshot, index)) {
+      lastContentRow = index
+    }
+  })
+
+  return lastContentRow
+}
 
 const copySnapshotCellStyle = (
   source: GhosttyRenderStateBridgeSnapshotCell,
@@ -1125,22 +1160,18 @@ const normalizeSnapshot = (
 
   // formatHtml carries the whole terminal (scrollback + viewport) with blank
   // leading/trailing rows trimmed; the native snapshot carries only the visible
-  // viewport. Anchor formatHtml's LAST content row to the snapshot's last
-  // non-blank row (both are the grid's last non-blank row), then shift every
-  // reverse-video range by that delta and drop rows that fall outside the
-  // viewport (scrollback above, padding below). A fixed wrapper/leading offset
-  // cannot do this: with scrollback the offset is the scrollback height (e.g.
-  // 118 rows on /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
-  let lastNonBlankRow = -1
-  rows.forEach((row, index) => {
-    if (row.trim().length > 0) {
-      lastNonBlankRow = index
-    }
-  })
+  // viewport. Anchor formatHtml's LAST content row to the snapshot's last row
+  // with text OR native styling, then shift every reverse-video range by that
+  // delta and drop rows that fall outside the viewport (scrollback above,
+  // padding below). Styled-blank rows are content in formatHtml even though the
+  // snapshot row text trims empty. A fixed wrapper/leading offset cannot do
+  // this: with scrollback the offset is the scrollback height (e.g. 118 rows on
+  // /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
+  const lastContentRow = readLastSnapshotContentRow(snapshot, rows)
 
   const rowShift =
-    reverseVideo.contentRowCount > 0 && lastNonBlankRow >= 0
-      ? lastNonBlankRow - (reverseVideo.contentRowCount - 1)
+    reverseVideo.contentRowCount > 0 && lastContentRow >= 0
+      ? lastContentRow - (reverseVideo.contentRowCount - 1)
       : 0
 
   const alignedRanges = reverseVideo.ranges

@@ -52,6 +52,7 @@ class GhosttyTerminalModel {
   private syncedParserEngineSize: TerminalSize | null = null
   private renderFlushScheduled = false
   private renderFlushHandle: number | null = null
+  private renderFlushToken = 0
   readonly terminal: TerminalTextSurface
   readonly parser: TerminalParser
 
@@ -125,8 +126,13 @@ class GhosttyTerminalModel {
     }
 
     this.renderFlushScheduled = true
+    const flushToken = this.renderFlushToken
 
     const flush = (): void => {
+      if (flushToken !== this.renderFlushToken) {
+        return
+      }
+
       this.renderFlushScheduled = false
       this.renderFlushHandle = null
       this.flushRender()
@@ -148,6 +154,7 @@ class GhosttyTerminalModel {
       cancelAnimationFrame(this.renderFlushHandle)
     }
 
+    this.renderFlushToken += 1
     this.renderFlushScheduled = false
     this.renderFlushHandle = null
   }
@@ -161,6 +168,12 @@ class GhosttyTerminalModel {
 
     if (output) {
       this.terminal.writeParsedOutput(output)
+
+      return
+    }
+
+    if (this.parserEngine.hasPendingOutput?.()) {
+      this.scheduleRenderFlush()
     }
   }
 

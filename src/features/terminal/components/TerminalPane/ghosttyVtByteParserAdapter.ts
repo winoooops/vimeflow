@@ -23,6 +23,7 @@ export interface GhosttyVtParserDriver {
    * synchronized-output frame).
    */
   flushOutput?: () => TerminalParserEngineOutput | null
+  hasPendingOutput?: () => boolean
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void
@@ -61,6 +62,14 @@ export class GhosttyVtByteParserAdapter implements GhosttyByteParserAdapter {
     }
 
     return this.driver.flushOutput?.() ?? null
+  }
+
+  hasPendingOutput(): boolean {
+    if (this.isDisposed) {
+      return false
+    }
+
+    return this.driver.hasPendingOutput?.() ?? false
   }
 
   reset(): void {

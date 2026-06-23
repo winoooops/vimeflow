@@ -51,6 +51,7 @@ export interface TerminalParserEngine {
    * synchronously from `parseOutput` return `null` (or omit this).
    */
   flushOutput?: () => TerminalParserEngineOutput | null
+  hasPendingOutput?: () => boolean
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void

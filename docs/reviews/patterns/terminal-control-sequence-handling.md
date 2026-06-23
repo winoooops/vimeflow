@@ -2,8 +2,8 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-22
-ref_count: 10
+last_updated: 2026-06-23
+ref_count: 11
 ---
 
 # Terminal Control Sequence Handling
@@ -270,4 +270,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/terminalColorQuery.ts`
 - **Finding:** The Ghostty OSC 10/11 responder matched only complete color queries inside one string chunk. If Codex's query split before the BEL or ST terminator, no target was detected and the composer fell back to degraded rendering.
 - **Fix:** Added a carry-aware color query scanner and stored the carry in `useTerminal` for the active PTY subscription. Tests now cover ST-terminated and BEL-terminated queries split across chunks and ensure completed trailing queries are not answered twice.
+- **Commit:** same commit as this entry
+
+### 29. Held DEC 2026 flushes need an explicit pending-output signal
+
+- **Source:** github-codex-connector | PR #612 round 1 | 2026-06-23
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts`
+- **Finding:** When a DEC 2026 synchronized-output frame opened and the close marker was lost, `flushOutput()` returned `null` while keeping the driver dirty. The terminal model treated `null` as settled and did not schedule another frame, so the held-flush failsafe could only advance if more PTY bytes arrived later.
+- **Fix:** Added `hasPendingOutput()` through the parser/adapter interfaces and implemented it from the render-state driver's dirty flag. The terminal model now re-arms render flushes after `null` only when the parser still reports pending output, letting the failsafe paint without creating an infinite loop for settled parsers.
 - **Commit:** same commit as this entry

@@ -257,6 +257,33 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(output?.visibleText).toBe('held')
   })
 
+  test('reports pending output while a 2026 frame is held', () => {
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['held'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+        }),
+      })
+    )
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+    adapter.parseBytes(createInput(encode('\x1b[?2026h open')))
+
+    expect(adapter.hasPendingOutput?.()).toBe(true)
+    expect(adapter.flushOutput?.()).toBeNull()
+    expect(adapter.hasPendingOutput?.()).toBe(true)
+
+    let output: ReturnType<NonNullable<typeof adapter.flushOutput>> = null
+    for (let index = 0; index < 8; index += 1) {
+      output = adapter.flushOutput?.() ?? null
+    }
+
+    expect(output?.visibleText).toBe('held')
+    expect(adapter.hasPendingOutput?.()).toBe(false)
+  })
+
   test('rejects text input instead of falling back to the text parser', () => {
     const writeBytes = vi.fn()
     const reset = vi.fn()

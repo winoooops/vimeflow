@@ -268,6 +268,97 @@ describe('ghosttyInstance', () => {
     expect(cursor?.previousSibling?.textContent).toBe('rendered')
   })
 
+  test('re-arms held VT render-state flushes until the failsafe paints', () => {
+    const animationFrames: FrameRequestCallback[] = []
+
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animationFrames.push(callback)
+
+      return animationFrames.length
+    })
+
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['failsafe frame'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 8,
+          },
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'lossy fallback',
+      bytesBase64: encodeText('\x1b[?2026h redraw without close'),
+      offsetStart: 0,
+      byteLen: 28,
+      phase: 'live',
+    })
+
+    for (let index = 0; index < 9; index += 1) {
+      const frame = animationFrames.shift()
+
+      if (frame === undefined) {
+        throw new Error(`Expected frame ${index} to be scheduled`)
+      }
+
+      frame(index)
+    }
+
+    expect(created.viewportReader.readVisibleText()).toBe('failsafe frame')
+  })
+
+  test('cancels queued microtask render flushes when clearing', async () => {
+    vi.stubGlobal('requestAnimationFrame', undefined)
+    vi.stubGlobal('cancelAnimationFrame', undefined)
+
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const flushOutput = vi.fn((): TerminalParserEngineOutput => ({
+      visibleText: 'stale render',
+    }))
+    const reset = vi.fn()
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => ({
+        inputMode: 'bytes' as const,
+        capabilities: ghosttyTerminalRenderer.capabilities,
+        parser,
+        parseText: (text: string): TerminalParserEngineOutput => ({
+          visibleText: text,
+        }),
+        parseInput: (
+          input: TerminalParserEngineInput
+        ): TerminalParserEngineOutput => ({
+          visibleText: input.text,
+        }),
+        parseOutput: (): TerminalParserEngineOutput => ({ visibleText: '' }),
+        flushOutput,
+        reset,
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'pending',
+      bytesBase64: encodeText('pending'),
+      offsetStart: 0,
+      byteLen: 7,
+      phase: 'live',
+    })
+    created.terminal.clear()
+
+    await Promise.resolve()
+
+    expect(reset).toHaveBeenCalledOnce()
+    expect(flushOutput).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe('')
+  })
+
   test('syncs terminal size and clear resets into the VT render-state driver', () => {
     const reset = vi.fn()
     const resize = vi.fn()

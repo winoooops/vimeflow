@@ -516,6 +516,67 @@ describe('ghostty render-state main bridge', () => {
     ).toBe(false)
   })
 
+  test('anchors to a trailing styled-blank bar row without a status row below it', () => {
+    const bg = 'background-color: rgb(57, 57, 71)'
+
+    const wrapperOpen =
+      '<div style="font-family: monospace; white-space: pre;">'
+
+    const barRow = `<div style="display: inline;${bg};">                    </div>`
+
+    const composerRow =
+      `<div style="display: inline;${bg};font-weight: bold;">&gt;</div>` +
+      `<div style="display: inline;${bg};"> hi                </div></div>`
+    const html = `${wrapperOpen}\n${[barRow, composerRow, barRow].join('\n')}`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 3,
+          cursorRow: 1,
+          cursorCol: 4,
+          visibleLines: [
+            { row: 0, text: '' },
+            { row: 1, text: '> hi' },
+            { row: 2, text: '' },
+          ],
+          cells: [
+            { row: 0, col: 0, text: ' ', width: 1, background: '#393947' },
+            { row: 1, col: 0, text: '>', width: 1, background: '#393947' },
+            { row: 1, col: 2, text: 'h', width: 1, background: '#393947' },
+            { row: 1, col: 3, text: 'i', width: 1, background: '#393947' },
+            { row: 2, col: 0, text: ' ', width: 1, background: '#393947' },
+          ],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+    const cells = snapshot.cells ?? []
+
+    for (const row of [0, 1, 2]) {
+      for (let col = 0; col < 20; col += 1) {
+        const covering = cells.find(
+          (cell) =>
+            cell.row === row && cell.col <= col && col < cell.col + cell.width
+        )
+        expect(covering?.background, `row ${row} col ${col}`).toBe('#393947')
+      }
+    }
+  })
+
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)

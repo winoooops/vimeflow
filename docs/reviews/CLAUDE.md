@@ -55,14 +55,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 34   | 2026-06-20   |
-| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 28       | 10   | 2026-06-22   |
+| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 29       | 11   | 2026-06-23   |
 | [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 10       | 6    | 2026-06-21   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
-| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 33       | 10   | 2026-06-21   |
+| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 35       | 11   | 2026-06-23   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 27   | 2026-06-22   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 24   | 2026-06-18   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 23   | 2026-06-08   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 64       | 24   | 2026-06-23   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
@@ -83,7 +83,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 9        | 4    | 2026-06-13   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 13       | 10   | 2026-06-21   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 13       | 11   | 2026-06-21   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 8        | 4    | 2026-06-13   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 1        | 0    | 2026-06-11   |

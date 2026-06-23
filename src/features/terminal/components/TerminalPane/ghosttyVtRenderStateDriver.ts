@@ -93,6 +93,7 @@ export const createGhosttyVtRenderStateParserDriverFactory =
           renderStateDriver.readSnapshot()
         )
       },
+      hasPendingOutput: (): boolean => dirty,
       reset: (): void => {
         syncFrameState = createSyncFrameParserState()
         heldFlushes = 0

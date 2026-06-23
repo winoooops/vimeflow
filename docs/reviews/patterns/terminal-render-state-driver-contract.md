@@ -2,8 +2,8 @@
 id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
-last_updated: 2026-06-21
-ref_count: 10
+last_updated: 2026-06-23
+ref_count: 11
 ---
 
 # Terminal Render-State Driver Contract
@@ -316,4 +316,22 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts`
 - **Finding:** The VT snapshot renderer treated a missing `cursor.visible` field as an implicit stale-cursor signal and hid any cursor on a blank row with later content. Ghostty omits `visible` for normal visible cursors, so legitimate editor/TUI cursors on blank lines above status or menu rows disappeared.
 - **Fix:** Missing `cursor.visible` now preserves the default visible cursor unless the snapshot matches a known parked-cursor shape: an agent prompt follower or a styled blank native cursor artifact above later content. Regression coverage pins both the preserved `rows: ['', 'menu']` case and the styled parked-cursor case.
+- **Commit:** same commit as this entry
+
+### 33. Reverse-video viewport anchors must count styled-blank native rows
+
+- **Source:** github-claude | PR #612 round 1 | 2026-06-23
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** Ghostty `formatHtml()` includes styled-blank composer bar rows, but the bridge anchored reverse-video row shifts to the last snapshot row whose text was non-blank after `trim()`. When the trailing bar row was the last viewport row with no status row below it, the anchor moved one row too high and full-width bar ranges were shifted off their intended rows.
+- **Fix:** Anchor to the last snapshot row that has non-blank text OR a native styled cell. Added a regression with bar/composer/bar and no status row, asserting all three styled rows keep full-width background coverage.
+- **Commit:** same commit as this entry
+
+### 34. Formatter row-count metadata must not depend on emitted style ranges
+
+- **Source:** github-claude | PR #612 round 1 | 2026-06-23
+- **Severity:** LOW
+- **File:** `electron/ghostty-render-state-main.ts`
+- **Finding:** `contentRowCount` documented the number of rows walked from `formatHtml()`, but returned `0` whenever no reverse/background ranges were emitted. Plain-text formatter output therefore carried inconsistent metadata that happened not to affect the only current range consumer.
+- **Fix:** Return the walked row count whenever terminal content was parsed, independent of whether any ranges were emitted. Keep the empty-wrapper case at `0`.
 - **Commit:** same commit as this entry
