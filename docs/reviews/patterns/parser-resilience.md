@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-06-21
-ref_count: 10
+ref_count: 11
 ---
 
 # Parser Resilience

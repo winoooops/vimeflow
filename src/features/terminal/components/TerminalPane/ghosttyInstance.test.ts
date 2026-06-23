@@ -1,5 +1,5 @@
 // cspell:ignore ghostty xhigh
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type {
   TerminalDisposable,
   TerminalOutputChunk,
@@ -20,6 +20,22 @@ import {
 import type { GhosttyVtRenderStateDriver } from './ghosttyVtRenderStateDriver'
 import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
+
+// The render-state byte path coalesces rendering to requestAnimationFrame.
+// Run rAF synchronously so these tests can assert the rendered surface right
+// after writeOutput; the coalescing itself is covered in the driver tests.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+
+    return 0
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => undefined)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 const setElementSize = (
   element: HTMLElement,
@@ -250,6 +266,99 @@ describe('ghosttyInstance', () => {
     )
     expect(cursor?.parentElement?.textContent).toBe('rendered output')
     expect(cursor?.previousSibling?.textContent).toBe('rendered')
+  })
+
+  test('re-arms held VT render-state flushes until the failsafe paints', () => {
+    const animationFrames: FrameRequestCallback[] = []
+
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animationFrames.push(callback)
+
+      return animationFrames.length
+    })
+
+    const created = createTrackedGhosttyTerminal({
+      createVtRenderStateDriver: (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: () => ({
+          rows: ['failsafe frame'],
+          cursor: {
+            rowIndex: 0,
+            columnOffset: 8,
+          },
+        }),
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'lossy fallback',
+      bytesBase64: encodeText('\x1b[?2026h redraw without close'),
+      offsetStart: 0,
+      byteLen: 28,
+      phase: 'live',
+    })
+
+    for (let index = 0; index < 9; index += 1) {
+      const frame = animationFrames.shift()
+
+      if (frame === undefined) {
+        throw new Error(`Expected frame ${index} to be scheduled`)
+      }
+
+      frame(index)
+    }
+
+    expect(created.viewportReader.readVisibleText()).toBe('failsafe frame')
+  })
+
+  test('cancels queued microtask render flushes when clearing', async () => {
+    vi.stubGlobal('requestAnimationFrame', undefined)
+    vi.stubGlobal('cancelAnimationFrame', undefined)
+
+    const parser: TerminalParser = {
+      onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
+    }
+
+    const flushOutput = vi.fn(
+      (): TerminalParserEngineOutput => ({
+        visibleText: 'stale render',
+      })
+    )
+    const reset = vi.fn()
+
+    const created = createTrackedGhosttyTerminal({
+      createParserEngine: () => ({
+        inputMode: 'bytes' as const,
+        capabilities: ghosttyTerminalRenderer.capabilities,
+        parser,
+        parseText: (text: string): TerminalParserEngineOutput => ({
+          visibleText: text,
+        }),
+        parseInput: (
+          input: TerminalParserEngineInput
+        ): TerminalParserEngineOutput => ({
+          visibleText: input.text,
+        }),
+        parseOutput: (): TerminalParserEngineOutput => ({ visibleText: '' }),
+        flushOutput,
+        reset,
+      }),
+    })
+
+    created.output.writeOutput({
+      text: 'pending',
+      bytesBase64: encodeText('pending'),
+      offsetStart: 0,
+      byteLen: 7,
+      phase: 'live',
+    })
+    created.terminal.clear()
+
+    await Promise.resolve()
+
+    expect(reset).toHaveBeenCalledOnce()
+    expect(flushOutput).not.toHaveBeenCalled()
+    expect(created.viewportReader.readVisibleText()).toBe('')
   })
 
   test('syncs terminal size and clear resets into the VT render-state driver', () => {
@@ -1343,9 +1452,7 @@ describe('ghosttyInstance', () => {
     expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
     expect(blankRun?.style.display).toBe('inline-block')
     expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
-    expect(blankRun?.style.minWidth).toBe(
-      'calc(var(--terminal-cell-width) * 1)'
-    )
+    expect(blankRun?.style.width).toBe('calc(var(--terminal-cell-width) * 1)')
     expect(blankRun?.style.overflow).toBe('visible')
   })
 
@@ -1403,7 +1510,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(backgroundRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(backgroundRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])
@@ -1465,7 +1572,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(reverseRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(reverseRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])

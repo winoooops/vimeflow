@@ -50,6 +50,9 @@ class GhosttyTerminalModel {
   private isDisposed = false
   private isRendererDisposed = false
   private syncedParserEngineSize: TerminalSize | null = null
+  private renderFlushScheduled = false
+  private renderFlushHandle: number | null = null
+  private renderFlushToken = 0
   readonly terminal: TerminalTextSurface
   readonly parser: TerminalParser
 
@@ -73,6 +76,7 @@ class GhosttyTerminalModel {
 
     const originalTerminalClear = this.terminal.clear.bind(this.terminal)
     this.terminal.clear = (): void => {
+      this.cancelRenderFlush()
       originalTerminalClear()
       this.parserEngine.reset?.()
       this.syncParserEngineSize({ force: true })
@@ -85,6 +89,7 @@ class GhosttyTerminalModel {
       }
 
       this.isDisposed = true
+      this.cancelRenderFlush()
       originalTerminalDispose()
       this.parserEngine.dispose?.()
     }
@@ -100,10 +105,76 @@ class GhosttyTerminalModel {
         return
       }
 
+      // Feed bytes synchronously — OSC7 effects + 2026 tracking happen here.
+      // Synchronous parsers return their render delta now; the render-state
+      // byte path returns empty and renders later via flushOutput.
       const output = this.parserEngine.parseOutput(chunk)
-
       this.terminal.writeParsedOutput(output, callback)
+
+      // Coalesce the render-state snapshot read + render to one per animation
+      // frame so transient mid-redraw frames are never painted. A no-op for the
+      // synchronous path (its flushOutput returns null).
+      if (this.parserEngine.flushOutput) {
+        this.scheduleRenderFlush()
+      }
     },
+  }
+
+  private scheduleRenderFlush(): void {
+    if (this.renderFlushScheduled) {
+      return
+    }
+
+    this.renderFlushScheduled = true
+    const flushToken = this.renderFlushToken
+
+    const flush = (): void => {
+      if (flushToken !== this.renderFlushToken) {
+        return
+      }
+
+      this.renderFlushScheduled = false
+      this.renderFlushHandle = null
+      this.flushRender()
+    }
+
+    if (typeof requestAnimationFrame === 'function') {
+      this.renderFlushHandle = requestAnimationFrame(flush)
+    } else {
+      // Non-browser (tests): fall back to a microtask.
+      queueMicrotask(flush)
+    }
+  }
+
+  private cancelRenderFlush(): void {
+    if (
+      this.renderFlushHandle !== null &&
+      typeof cancelAnimationFrame === 'function'
+    ) {
+      cancelAnimationFrame(this.renderFlushHandle)
+    }
+
+    this.renderFlushToken += 1
+    this.renderFlushScheduled = false
+    this.renderFlushHandle = null
+  }
+
+  private flushRender(): void {
+    if (this.terminal.isDisposed()) {
+      return
+    }
+
+    const output = this.parserEngine.flushOutput?.()
+
+    if (output) {
+      this.terminal.writeParsedOutput(output)
+
+      return
+    }
+
+    if (this.parserEngine.hasPendingOutput?.()) {
+      this.scheduleRenderFlush()
+    }
   }
 
   readonly viewportReader: TerminalViewportReader = {

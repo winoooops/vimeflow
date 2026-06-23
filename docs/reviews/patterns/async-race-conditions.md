@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-08
-ref_count: 23
+last_updated: 2026-06-23
+ref_count: 24
 ---
 
 # Async Race Conditions
@@ -640,4 +640,13 @@ prevent showing previous data.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
 - **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
+- **Commit:** same commit as this entry
+
+### 63. Non-cancellable microtask fallbacks need an identity guard
+
+- **Source:** github-claude | PR #612 round 1 | 2026-06-23
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyInstance.ts`
+- **Finding:** The Ghostty render flush scheduler used `queueMicrotask` as its non-browser fallback, but `cancelRenderFlush()` could only cancel a stored `requestAnimationFrame` handle. A queued microtask from before `clear()` or `dispose()` could still run later if future `flushRender` changes added side effects.
+- **Fix:** Added a monotonically increasing render-flush token. Scheduled callbacks capture the token and return early after cancellation increments it, covering both rAF callbacks that survive cancellation and microtask fallbacks that cannot be cancelled directly.
 - **Commit:** same commit as this entry

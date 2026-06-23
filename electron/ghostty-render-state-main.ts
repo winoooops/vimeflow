@@ -681,13 +681,23 @@ const appendReverseVideoRange = (
   ranges.push(range)
 }
 
+interface ReverseVideoRangesResult {
+  readonly ranges: readonly ReverseVideoRange[]
+  // Total number of terminal rows formatHtml emitted (scrollback + visible,
+  // wrapper line excluded). Used to anchor these rows onto the visible-only
+  // native snapshot — formatHtml carries the whole scrollback, the snapshot
+  // carries just the viewport, so a fixed offset cannot align them.
+  readonly contentRowCount: number
+}
+
 const readReverseVideoRangesFromHtml = (
   html: string
-): readonly ReverseVideoRange[] => {
+): ReverseVideoRangesResult => {
   const ranges: ReverseVideoRange[] = []
   const styleStack: Pick<ReverseVideoRange, 'background' | 'reverse'>[] = [{}]
   let row = 0
   let column = 0
+  let skippedWrapperNewline = false
 
   Array.from(html.matchAll(HTML_TOKEN_PATTERN)).forEach((match) => {
     const token = match[0]
@@ -717,6 +727,16 @@ const readReverseVideoRangesFromHtml = (
 
     for (const character of decodeHtmlText(token)) {
       if (character === '\n') {
+        // formatHtml wraps all rows in an outer <div ...> whose opening tag
+        // sits on its own line, ending with a structural newline before the
+        // first terminal row. Counting it shifts every range down one row
+        // (the composer bar bg bleeds onto the status line below). Skip that
+        // one leading newline so range rows align with the native snapshot.
+        if (!skippedWrapperNewline && row === 0 && column === 0) {
+          skippedWrapperNewline = true
+          continue
+        }
+
         row += 1
         column = 0
         continue
@@ -737,20 +757,28 @@ const readReverseVideoRangesFromHtml = (
     }
   })
 
-  return ranges
+  // `row` indexes the last terminal row the parser walked; +1 makes it a count.
+  // formatHtml trims truly-blank LEADING and TRAILING rows, so the last content
+  // row is the grid's last non-blank row.
+  return { ranges, contentRowCount: row === 0 && column === 0 ? 0 : row + 1 }
+}
+
+const EMPTY_REVERSE_VIDEO_RESULT: ReverseVideoRangesResult = {
+  ranges: [],
+  contentRowCount: 0,
 }
 
 const readTerminalReverseVideoRanges = (
   terminal: GhosttyNativeTerminal
-): readonly ReverseVideoRange[] => {
+): ReverseVideoRangesResult => {
   if (!terminal.formatHtml) {
-    return []
+    return EMPTY_REVERSE_VIDEO_RESULT
   }
 
   try {
     return readReverseVideoRangesFromHtml(terminal.formatHtml())
   } catch {
-    return []
+    return EMPTY_REVERSE_VIDEO_RESULT
   }
 }
 
@@ -763,6 +791,39 @@ const hasSnapshotCellStyle = (
   cell.foreground !== undefined ||
   cell.background !== undefined ||
   cell.reverse === true
+
+const hasRawSnapshotCellStyle = (cell: Record<string, unknown>): boolean =>
+  cell.bold === true ||
+  cell.italic === true ||
+  cell.underline === true ||
+  typeof cell.foreground === 'string' ||
+  typeof cell.background === 'string' ||
+  cell.reverse === true
+
+const hasSnapshotRowStyledCell = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  rowIndex: number
+): boolean =>
+  Array.isArray(snapshot.cells) &&
+  snapshot.cells.some(
+    (cell) =>
+      isRecord(cell) && cell.row === rowIndex && hasRawSnapshotCellStyle(cell)
+  )
+
+const readLastSnapshotContentRow = (
+  snapshot: GhosttyNativeTerminalSnapshot,
+  rows: readonly string[]
+): number => {
+  let lastContentRow = -1
+
+  rows.forEach((row, index) => {
+    if (row.trim().length > 0 || hasSnapshotRowStyledCell(snapshot, index)) {
+      lastContentRow = index
+    }
+  })
+
+  return lastContentRow
+}
 
 const copySnapshotCellStyle = (
   source: GhosttyRenderStateBridgeSnapshotCell,
@@ -1066,6 +1127,10 @@ const readSnapshotCells = (
 
   appendMissingReverseCells(cells, rows, reverseVideoRanges)
 
+  if (cells.length === 0) {
+    return undefined
+  }
+
   return cells.sort((left, right) =>
     left.row === right.row ? left.col - right.col : left.row - right.row
   )
@@ -1074,7 +1139,7 @@ const readSnapshotCells = (
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
-  reverseVideoRanges: readonly ReverseVideoRange[]
+  reverseVideo: ReverseVideoRangesResult
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
 
@@ -1094,7 +1159,30 @@ const normalizeSnapshot = (
     rowIndex: snapshot.cursorRow,
     columnOffset: snapshot.cursorCol,
   }
-  const cells = readSnapshotCells(snapshot, rows, reverseVideoRanges)
+
+  // formatHtml carries the whole terminal (scrollback + viewport) with blank
+  // leading/trailing rows trimmed; the native snapshot carries only the visible
+  // viewport. Anchor formatHtml's LAST content row to the snapshot's last row
+  // with text OR native styling, then shift every reverse-video range by that
+  // delta and drop rows that fall outside the viewport (scrollback above,
+  // padding below). Styled-blank rows are content in formatHtml even though the
+  // snapshot row text trims empty. A fixed wrapper/leading offset cannot do
+  // this: with scrollback the offset is the scrollback height (e.g. 118 rows on
+  // /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
+  const lastContentRow = readLastSnapshotContentRow(snapshot, rows)
+  const canAlign = reverseVideo.contentRowCount > 0 && lastContentRow >= 0
+
+  const rowShift = canAlign
+    ? lastContentRow - (reverseVideo.contentRowCount - 1)
+    : 0
+
+  const alignedRanges = canAlign
+    ? reverseVideo.ranges
+        .map((range) => ({ ...range, row: range.row + rowShift }))
+        .filter((range) => range.row >= 0 && range.row < rows.length)
+    : []
+
+  const cells = readSnapshotCells(snapshot, rows, alignedRanges)
 
   return {
     rows,
