@@ -34,6 +34,21 @@ styled**. Because per-frame styled-scrollback over IPC would jank, styling is fe
 - Perf: per-frame stays cheap; on very long sessions the lazy fetch + render of history is the cost,
   paid only while reading. Virtualization (windowed render) is the documented follow-up if needed.
 
+## Architecture note (de-risked 2026-06-22)
+
+The render-state IPC is **synchronous** (`ipcRenderer.sendSync`, see
+`ghostty-render-state-preload`). So `READ_SCROLLBACK` is a **synchronous** channel: the surface
+fetches styled scrollback inline on scroll-up — no async fetch, no fetch/live-frame race, no
+scroll-anchoring across an async boundary. This collapses the riskiest part of the plan.
+
+## Progress
+
+- **Step 1 DONE** — committed `2e28d726`. Scroll state machine in `terminalTextSurface.ts`
+  (`userScrolledUp` + wheel/scroll listeners; `applyScrollMode` no-op while scrolled; scroll-anchor
+  in `renderOutput`; typing/scroll-to-bottom resumes). 6 mutation-checked tests in the new
+  `terminalTextSurface.test.ts`. (Note: a `git checkout` clobbered the WIP mid-step; recovered by
+  re-applying via Edit — never `git checkout <file>` with uncommitted WIP.)
+
 ## Steps (TDD, co-located *.test.ts)
 
 1. **Surface scroll state machine** (common): `userScrolledUp` flag + wheel/scroll listeners on the
