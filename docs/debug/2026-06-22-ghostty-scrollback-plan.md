@@ -49,6 +49,21 @@ scroll-anchoring across an async boundary. This collapses the riskiest part of t
   `terminalTextSurface.test.ts`. (Note: a `git checkout` clobbered the WIP mid-step; recovered by
   re-applying via Edit — never `git checkout <file>` with uncommitted WIP.)
 
+## Step 2 DONE + Step 3 design (refined 2026-06-23)
+
+- **Step 2 DONE** — committed `a94a8a9b`. Bridge requests `snapshot({includeScrollback:true})`,
+  reports `scrollbackRowCount` (computed in main, lines stay there) + `isAltScreen`; suppressed
+  (count 0) on alt screen. 2 tests; bridge suite 39 green.
+- **Confirmed:** native `cells` are **viewport-only** (rows 0..viewport-1, never negative/scrollback);
+  `scrollbackLines` is text-only `{row,text}`. **The only styled source for scrollback is
+  `formatHtml`** — so Step 3 must parse it.
+- **Step 3 approach:** extend the existing HTML walker (`readReverseVideoRangesFromHtml` + its
+  `readTagCellStyle`) to emit **full styled cells** (text + fg/bg/bold/italic/underline), reuse the
+  existing `rowShift` anchor, and take the rows that map **outside** the viewport above
+  (`contentRow + rowShift < 0`) as scrollback, re-indexed 0-based top-down. Return them over a new
+  sync `READ_SCROLLBACK` channel. (libghostty gives no styled scrollback; `formatHtml` is per-frame
+  already, but READ_SCROLLBACK is called only on scroll-up so the parse cost is paid only then.)
+
 ## Steps (TDD, co-located *.test.ts)
 
 1. **Surface scroll state machine** (common): `userScrolledUp` flag + wheel/scroll listeners on the
