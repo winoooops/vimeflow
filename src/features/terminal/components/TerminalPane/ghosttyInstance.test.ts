@@ -319,9 +319,11 @@ describe('ghosttyInstance', () => {
       onEvent: (): TerminalDisposable => ({ dispose: vi.fn() }),
     }
 
-    const flushOutput = vi.fn((): TerminalParserEngineOutput => ({
-      visibleText: 'stale render',
-    }))
+    const flushOutput = vi.fn(
+      (): TerminalParserEngineOutput => ({
+        visibleText: 'stale render',
+      })
+    )
     const reset = vi.fn()
 
     const created = createTrackedGhosttyTerminal({

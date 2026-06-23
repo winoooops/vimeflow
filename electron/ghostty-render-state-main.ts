@@ -807,9 +807,7 @@ const hasSnapshotRowStyledCell = (
   Array.isArray(snapshot.cells) &&
   snapshot.cells.some(
     (cell) =>
-      isRecord(cell) &&
-      cell.row === rowIndex &&
-      hasRawSnapshotCellStyle(cell)
+      isRecord(cell) && cell.row === rowIndex && hasRawSnapshotCellStyle(cell)
   )
 
 const readLastSnapshotContentRow = (
