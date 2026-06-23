@@ -26,7 +26,6 @@ export const ToolJarBreakdown = ({
   >
     <div
       data-testid="tool-jar-breakdown"
-      className="tj-enter-pop"
       style={{
         padding: '8px 4px 6px',
       }}
