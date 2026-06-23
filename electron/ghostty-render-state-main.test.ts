@@ -577,6 +577,46 @@ describe('ghostty render-state main bridge', () => {
     }
   })
 
+  test('drops formatter ranges when a blank native viewport has no content anchor', () => {
+    const bg = 'background-color: rgb(57, 57, 71)'
+    const wrapperOpen =
+      '<div style="font-family: monospace; white-space: pre;">'
+    const barRow = `<div style="display: inline;${bg};">                    </div>`
+    const html = `${wrapperOpen}\n${[barRow, 'old scrollback'].join('\n')}</div>`
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        snapshot: () => ({
+          rows: 3,
+          cursorRow: 0,
+          cursorCol: 0,
+          visibleLines: [
+            { row: 0, text: '' },
+            { row: 1, text: '' },
+            { row: 2, text: '' },
+          ],
+          cells: [],
+        }),
+        formatHtml: () => html,
+        dispose: vi.fn(),
+      }),
+    }
+
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, {
+        driverId: createResult.driverId,
+      })
+    )
+
+    expect(snapshot.cells).toBeUndefined()
+  })
+
   test('returns OSC7 cwd effects across byte chunks before feeding native state', () => {
     const { bindings, terminals } = createNativeBindings()
     const bridge = new GhosttyRenderStateMainBridge('/app', bindings)

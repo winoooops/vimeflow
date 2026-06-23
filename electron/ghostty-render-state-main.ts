@@ -1166,15 +1166,17 @@ const normalizeSnapshot = (
   // this: with scrollback the offset is the scrollback height (e.g. 118 rows on
   // /resume), without it it is 0 (fresh) or -1 (shell empty row 0).
   const lastContentRow = readLastSnapshotContentRow(snapshot, rows)
+  const canAlign = reverseVideo.contentRowCount > 0 && lastContentRow >= 0
 
-  const rowShift =
-    reverseVideo.contentRowCount > 0 && lastContentRow >= 0
-      ? lastContentRow - (reverseVideo.contentRowCount - 1)
-      : 0
+  const rowShift = canAlign
+    ? lastContentRow - (reverseVideo.contentRowCount - 1)
+    : 0
 
-  const alignedRanges = reverseVideo.ranges
-    .map((range) => ({ ...range, row: range.row + rowShift }))
-    .filter((range) => range.row >= 0 && range.row < rows.length)
+  const alignedRanges = canAlign
+    ? reverseVideo.ranges
+        .map((range) => ({ ...range, row: range.row + rowShift }))
+        .filter((range) => range.row >= 0 && range.row < rows.length)
+    : []
 
   const cells = readSnapshotCells(snapshot, rows, alignedRanges)
 

@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-23
-ref_count: 11
+ref_count: 12
 ---
 
 # Terminal Render-State Driver Contract
@@ -334,4 +334,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts`
 - **Finding:** `contentRowCount` documented the number of rows walked from `formatHtml()`, but returned `0` whenever no reverse/background ranges were emitted. Plain-text formatter output therefore carried inconsistent metadata that happened not to affect the only current range consumer.
 - **Fix:** Return the walked row count whenever terminal content was parsed, independent of whether any ranges were emitted. Keep the empty-wrapper case at `0`.
+- **Commit:** same commit as this entry
+
+### 35. Blank native viewports must not align formatter scrollback ranges
+
+- **Source:** local-codex | PR #612 round 2 | 2026-06-23
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L1170
+- **Finding:** When a native viewport was fully blank, reverse-video range alignment still used a `rowShift` of `0`. Old styled rows from `formatHtml()` scrollback whose original rows fit inside the viewport could be synthesized into a blank snapshot during clear/redraw gaps.
+- **Fix:** Added an explicit alignment guard so formatter ranges are shifted and filtered only when the formatter has content rows and the native snapshot has a visible content anchor. Added a regression for a blank native viewport with stale highlighted formatter scrollback.
 - **Commit:** same commit as this entry
