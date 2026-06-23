@@ -1,5 +1,5 @@
 // cspell:ignore ghostty
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   TerminalTextSurface,
   type TerminalTextSurfaceOutput,
@@ -174,5 +174,14 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
     })
 
     expect(root.scrollTop).toBe(400) // frozen, not pinned to the bottom
+  })
+
+  test('clicking focuses the input without scrolling it into view (no jump to top)', () => {
+    const { root, input } = mountSurface()
+    const focusSpy = vi.spyOn(input, 'focus')
+
+    root.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
   })
 })

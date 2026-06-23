@@ -468,7 +468,10 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   focus(): void {
-    this.input.focus()
+    // The capture textarea sits at top:0; focusing it without preventScroll makes
+    // the browser scroll it into view — jumping a scrollback-tall buffer to the
+    // top on every click. preventScroll keeps the reading/live position.
+    this.input.focus({ preventScroll: true })
   }
 
   dispose(): void {
