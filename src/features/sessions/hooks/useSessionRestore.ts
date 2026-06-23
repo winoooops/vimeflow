@@ -370,11 +370,22 @@ export const useSessionRestore = ({
         hydrationStarted = true
 
         // The durable store is the authoritative shape; live PTYs overlay it
-        // by ptyId. Load both, then reconstruct.
-        let storeShape = await loadWorkspaceForRestore({
-          projectId,
-          workingDirectory,
-        })
+        // by ptyId. If the shape store is unreadable, keep the PTY cache as a
+        // fallback when it has sessions to recover.
+        let storeShape: PersistedWorkspaceShape | null = null
+        let storeLoadFailed = false
+        try {
+          storeShape = await loadWorkspaceForRestore({
+            projectId,
+            workingDirectory,
+          })
+        } catch (err) {
+          storeLoadFailed = true
+          log.warn(
+            'workspace layout restore failed; falling back to PTY sessions',
+            err
+          )
+        }
         onCustomPaneLayoutsRestoreRef.current?.(
           storeShape?.customPaneLayouts ?? []
         )
@@ -382,6 +393,12 @@ export const useSessionRestore = ({
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {
           return
+        }
+
+        if (storeLoadFailed && list.sessions.length === 0) {
+          throw new Error(
+            'workspace layout restore failed and PTY cache was empty'
+          )
         }
 
         let liveSessions = list.sessions
