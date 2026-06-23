@@ -100,7 +100,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(snapshotReads).toBe(1)
   })
 
-  test('prepends scrollback above the viewport when the snapshot reports it', () => {
+  test('attaches scrollback as a separate field and keeps viewport output standalone', () => {
     const readScrollback = vi.fn(() => ({
       rows: ['history line'],
       cells: [],
@@ -121,17 +121,24 @@ describe('ghosttyVtRenderStateDriver', () => {
     adapter.parseBytes(createInput(new Uint8Array([0x61])))
     const output = adapter.flushOutput?.()
 
-    expect(output?.visibleText).toBe('history line\nprompt')
+    // The viewport output is standalone: no prepended history, no cursor shift.
+    expect(output?.visibleText).toBe('prompt')
     expect(output?.displayDelta?.operations[0]).toEqual({
       type: 'replace',
-      text: 'history line\nprompt',
-      // 12 (scrollback visible) + 1 (newline) + 2 (viewport cursor) = 15
-      cursorOffset: 15,
+      text: 'prompt',
+      cursorOffset: 2,
+    })
+    // The viewport follows the bottom while history sits above it.
+    expect(output?.displayDelta?.pinToBottom).toBe(true)
+    // History travels as a separate static payload for the surface's region.
+    expect(output?.scrollback).toEqual({
+      displayText: 'history line',
+      visibleText: 'history line',
     })
     expect(readScrollback).toHaveBeenCalledOnce()
   })
 
-  test('re-fetches scrollback only when the row count changes', () => {
+  test('attaches scrollback only when the row count changes', () => {
     let scrollbackRowCount = 1
     const readScrollback = vi.fn(() => ({ rows: ['h'], cells: [] }))
 
@@ -148,18 +155,26 @@ describe('ghosttyVtRenderStateDriver', () => {
     )
 
     adapter.parseBytes(createInput(new Uint8Array([0x61])))
-    adapter.flushOutput?.()
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({
+      displayText: 'h',
+      visibleText: 'h',
+    })
+
     adapter.parseBytes(createInput(new Uint8Array([0x62])))
-    adapter.flushOutput?.()
-    expect(readScrollback).toHaveBeenCalledOnce() // count unchanged → cached
+    // Count unchanged → no payload; the surface keeps its static region.
+    expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+    expect(readScrollback).toHaveBeenCalledOnce()
 
     scrollbackRowCount = 2
     adapter.parseBytes(createInput(new Uint8Array([0x63])))
-    adapter.flushOutput?.()
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({
+      displayText: 'h',
+      visibleText: 'h',
+    })
     expect(readScrollback).toHaveBeenCalledTimes(2) // count grew → re-fetch
   })
 
-  test('suppresses scrollback on the alt screen', () => {
+  test('clears scrollback (null payload) on the alt screen without fetching', () => {
     const readScrollback = vi.fn(() => ({ rows: ['stale'], cells: [] }))
 
     const adapter = createGhosttyVtRenderStateByteParserAdapter(
@@ -179,10 +194,11 @@ describe('ghosttyVtRenderStateDriver', () => {
     const output = adapter.flushOutput?.()
 
     expect(output?.visibleText).toBe('vim')
+    expect(output?.scrollback).toBeNull()
     expect(readScrollback).not.toHaveBeenCalled()
   })
 
-  test('drops scrollback entering the alt screen and restores it on exit', () => {
+  test('clears scrollback entering the alt screen and re-attaches it on exit', () => {
     let isAltScreen = false
     const readScrollback = vi.fn(() => ({ rows: ['h1', 'h2'], cells: [] }))
 
@@ -199,17 +215,34 @@ describe('ghosttyVtRenderStateDriver', () => {
       })
     )
 
-    const flush = (byte: number): string | undefined => {
+    const flush = (
+      byte: number
+    ): ReturnType<NonNullable<typeof adapter.flushOutput>> => {
       adapter.parseBytes(createInput(new Uint8Array([byte])))
 
-      return adapter.flushOutput?.()?.visibleText
+      return adapter.flushOutput?.() ?? null
     }
 
-    expect(flush(0x61)).toBe('h1\nh2\np') // main screen: history shown
+    const main1 = flush(0x61) // main screen: history attached
+    expect(main1?.visibleText).toBe('p')
+    expect(main1?.scrollback).toEqual({
+      displayText: 'h1\nh2',
+      visibleText: 'h1\nh2',
+    })
+
     isAltScreen = true
-    expect(flush(0x62)).toBe('p') // alt screen: history dropped
+    const alt = flush(0x62) // alt screen: history cleared (null)
+    expect(alt?.visibleText).toBe('p')
+    expect(alt?.scrollback).toBeNull()
+
     isAltScreen = false
-    expect(flush(0x63)).toBe('h1\nh2\np') // back to main: history restored
+    const main2 = flush(0x63) // back to main: history re-attached
+    expect(main2?.visibleText).toBe('p')
+    expect(main2?.scrollback).toEqual({
+      displayText: 'h1\nh2',
+      visibleText: 'h1\nh2',
+    })
+
     expect(readScrollback).toHaveBeenCalledTimes(2) // re-fetched on return
   })
 

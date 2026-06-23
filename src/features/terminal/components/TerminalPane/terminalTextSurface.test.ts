@@ -150,6 +150,7 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
 
   test('pins to the bottom on a scrollback render even when the cursor row is deep', () => {
     const { surface, root } = mountSurface()
+
     // 40 rows (scrollback + viewport) taller than the 100px pane; the cursor is
     // at the very end. Without pinToBottom the replace heuristic would jump to
     // the top (deep cursor row); pinToBottom must follow the bottom (the input).
@@ -193,5 +194,98 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
     root.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
 
     expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+  })
+})
+
+describe('TerminalTextSurface static scrollback region', () => {
+  const readRegions = (
+    root: HTMLElement
+  ): { scrollback: HTMLElement; viewport: HTMLElement } => ({
+    scrollback: root.querySelector<HTMLElement>('[data-terminal-scrollback]')!,
+    viewport: root.querySelector<HTMLElement>('pre')!,
+  })
+
+  const writeWithScrollback = (
+    surface: TerminalTextSurface,
+    scrollback: { displayText: string; visibleText: string } | null | undefined,
+    viewportText = 'prompt>'
+  ): void => {
+    surface.writeParsedOutput({
+      visibleText: viewportText,
+      ...(scrollback === undefined ? {} : { scrollback }),
+      displayDelta: {
+        pinToBottom: true,
+        operations: [
+          {
+            type: 'replace',
+            text: viewportText,
+            cursorOffset: viewportText.length,
+          },
+        ],
+      },
+    })
+  }
+
+  test('renders history into the static region, separate from the viewport', () => {
+    const { surface, root } = mountSurface()
+
+    writeWithScrollback(surface, {
+      displayText: 'history one\nhistory two',
+      visibleText: 'history one\nhistory two',
+    })
+
+    const { scrollback, viewport } = readRegions(root)
+    expect(scrollback.style.display).toBe('block')
+    expect(scrollback.textContent).toContain('history one')
+    expect(scrollback.textContent).toContain('history two')
+    // The viewport pre holds only the live line, never the history.
+    expect(viewport.textContent).toContain('prompt>')
+    expect(viewport.textContent).not.toContain('history one')
+  })
+
+  test('does not rebuild history when the payload is absent (viewport-only frame)', () => {
+    const { surface, root } = mountSurface()
+    writeWithScrollback(surface, {
+      displayText: 'kept history',
+      visibleText: 'kept history',
+    })
+    const { scrollback } = readRegions(root)
+    const firstRow = scrollback.firstChild
+
+    // A frame with no scrollback field must leave the history DOM untouched.
+    writeWithScrollback(surface, undefined, 'prompt> typing')
+
+    expect(scrollback.textContent).toContain('kept history')
+    expect(scrollback.firstChild).toBe(firstRow) // same node, not rebuilt
+  })
+
+  test('clears the static region on a null payload (alt screen / no history)', () => {
+    const { surface, root } = mountSurface()
+    writeWithScrollback(surface, {
+      displayText: 'history',
+      visibleText: 'history',
+    })
+    const { scrollback } = readRegions(root)
+    expect(scrollback.style.display).toBe('block')
+
+    writeWithScrollback(surface, null)
+
+    expect(scrollback.style.display).toBe('none')
+    expect(scrollback.textContent).toBe('')
+  })
+
+  test('select-all spans the history region and the viewport', () => {
+    const { surface } = mountSurface()
+    writeWithScrollback(
+      surface,
+      { displayText: 'history line', visibleText: 'history line' },
+      'live prompt'
+    )
+
+    surface.selectAll()
+
+    // jsdom has no real selection geometry, so getSelection falls back to the
+    // combined visible text — which must include BOTH regions.
+    expect(surface.getSelection()).toBe('history line\nlive prompt')
   })
 })

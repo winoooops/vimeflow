@@ -14,7 +14,6 @@ import {
 import {
   createGhosttyVtRenderSnapshotOutput,
   encodeScrollback,
-  prependScrollbackToOutput,
   type GhosttyVtRenderSnapshot,
   type GhosttyVtRenderScrollback,
 } from './ghosttyVtRenderSnapshot'
@@ -31,6 +30,18 @@ const EMPTY_RENDER_OUTPUT: TerminalParserEngineOutput = { visibleText: '' }
 // Failsafe: flush even while "inside" a 2026 frame after this many held
 // flushes, so a missed close marker can never freeze the surface.
 const MAX_HELD_FLUSHES = 8
+
+// The live viewport sits below the history region, so follow the bottom on each
+// frame (the surface's sticky-scroll freeze still wins while the user reads up).
+const pinViewportToBottom = (
+  output: TerminalParserEngineOutput
+): TerminalParserEngineOutput =>
+  output.displayDelta
+    ? {
+        ...output,
+        displayDelta: { ...output.displayDelta, pinToBottom: true },
+      }
+    : output
 
 export interface GhosttyVtRenderStateDriver {
   /**
@@ -67,38 +78,44 @@ export const createGhosttyVtRenderStateParserDriverFactory =
     let syncFrameState = createSyncFrameParserState()
     let heldFlushes = 0
     let dirty = false
-    // Cache the encoded styled scrollback; only re-fetch (sync IPC) when the
-    // native scrollback row count changes, then prepend it every frame so the
-    // history stays in the DOM and remains scrollable.
+    // History renders into the surface's SEPARATE static region, rebuilt only
+    // when it changes — so return viewport-only output every frame and attach
+    // the encoded scrollback (a sync-IPC fetch) ONLY when the native row count
+    // changes. This keeps the per-frame work viewport-sized; the heavy history
+    // DOM is not re-parsed or re-rendered while the agent redraws the viewport.
     let cachedScrollbackRowCount = -1
-    let cachedScrollback: { displayText: string; visibleText: string } | null =
-      null
 
-    const composeWithScrollback = (
+    const attachScrollback = (
       snapshot: GhosttyVtRenderSnapshot,
       output: TerminalParserEngineOutput
     ): TerminalParserEngineOutput => {
-      const count = snapshot.isAltScreen
-        ? 0
-        : (snapshot.scrollbackRowCount ?? 0)
-
-      if (count <= 0 || !renderStateDriver.readScrollback) {
-        cachedScrollbackRowCount = count
-        cachedScrollback = null
-
+      // Non-native drivers have no scrollback region: leave the output alone.
+      if (!renderStateDriver.readScrollback) {
         return output
       }
 
-      if (count !== cachedScrollbackRowCount) {
-        const scrollback = renderStateDriver.readScrollback()
-        cachedScrollback =
-          scrollback.rows.length > 0 ? encodeScrollback(scrollback) : null
-        cachedScrollbackRowCount = count
+      const count = snapshot.isAltScreen
+        ? 0
+        : (snapshot.scrollbackRowCount ?? 0)
+      const viewport = count > 0 ? pinViewportToBottom(output) : output
+
+      // Unchanged count → keep the surface's current static region (no field).
+      if (count === cachedScrollbackRowCount) {
+        return viewport
+      }
+      cachedScrollbackRowCount = count
+
+      if (count <= 0) {
+        return { ...viewport, scrollback: null }
       }
 
-      return cachedScrollback
-        ? prependScrollbackToOutput(output, cachedScrollback)
-        : output
+      const scrollback = renderStateDriver.readScrollback()
+
+      return {
+        ...viewport,
+        scrollback:
+          scrollback.rows.length > 0 ? encodeScrollback(scrollback) : null,
+      }
     }
 
     return {
@@ -130,7 +147,7 @@ export const createGhosttyVtRenderStateParserDriverFactory =
 
         const snapshot = renderStateDriver.readSnapshot()
 
-        return composeWithScrollback(
+        return attachScrollback(
           snapshot,
           createGhosttyVtRenderSnapshotOutput(snapshot)
         )
@@ -141,7 +158,6 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         heldFlushes = 0
         dirty = false
         cachedScrollbackRowCount = -1
-        cachedScrollback = null
         renderStateDriver.reset?.()
       },
       resize: (size): void => {

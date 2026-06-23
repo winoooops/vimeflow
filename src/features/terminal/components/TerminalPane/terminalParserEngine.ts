@@ -18,6 +18,16 @@ export interface TerminalParserEngineOutput {
   readonly visibleText: string
   readonly displayText?: string
   readonly displayDelta?: TerminalDisplayDelta
+  // Styled scrollback for the surface's separate, STATIC history region. The
+  // surface renders this once into its own buffer and leaves it alone, so the
+  // per-frame viewport render never rebuilds history. Tri-state:
+  //   undefined = unchanged (keep the current region)
+  //   object    = replace the region with this history
+  //   null      = clear the region (alt screen / no history)
+  readonly scrollback?: {
+    readonly displayText: string
+    readonly visibleText: string
+  } | null
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode

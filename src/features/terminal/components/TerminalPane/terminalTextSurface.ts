@@ -67,6 +67,12 @@ export interface TerminalTextSurfaceOutput {
   readonly visibleText: string
   readonly displayText?: string
   readonly displayDelta?: TerminalDisplayDelta
+  // Styled history for the separate static region. undefined = unchanged,
+  // object = replace, null = clear. See TerminalParserEngineOutput.scrollback.
+  readonly scrollback?: {
+    readonly displayText: string
+    readonly visibleText: string
+  } | null
 }
 
 type RenderScrollMode = 'bottom' | 'cursor' | 'top'
@@ -107,7 +113,8 @@ const getControlKeyData = (key: string): string | null => {
 
 const readContainedSelection = (
   root: HTMLElement,
-  output: HTMLElement,
+  contentStart: Node | null,
+  contentEnd: Node | null,
   selectAllText: string
 ): string => {
   const selection = window.getSelection()
@@ -129,15 +136,20 @@ const readContainedSelection = (
   }
 
   const range = selection.getRangeAt(0)
-  const outputRange = document.createRange()
-  outputRange.selectNodeContents(output)
 
-  const includesAllOutput =
-    range.compareBoundaryPoints(Range.START_TO_START, outputRange) <= 0 &&
-    range.compareBoundaryPoints(Range.END_TO_END, outputRange) >= 0
+  // The selectable content spans the history region + the viewport (two <pre>s).
+  if (contentStart && contentEnd) {
+    const contentRange = document.createRange()
+    contentRange.setStartBefore(contentStart)
+    contentRange.setEndAfter(contentEnd)
 
-  if (includesAllOutput) {
-    return selectAllText
+    const includesAllContent =
+      range.compareBoundaryPoints(Range.START_TO_START, contentRange) <= 0 &&
+      range.compareBoundaryPoints(Range.END_TO_END, contentRange) >= 0
+
+    if (includesAllContent) {
+      return selectAllText
+    }
   }
 
   return selection.toString()
@@ -367,6 +379,11 @@ const getKeyboardData = (event: KeyboardEvent): string | null => {
 
 export class TerminalTextSurface implements TerminalSurface {
   private readonly root = document.createElement('div')
+  // Static history region: rendered once when scrollback changes, then left
+  // alone. The viewport (this.output) re-renders per frame; history does not. A
+  // <div> (not <pre>) so `querySelector('pre')` still resolves the viewport; the
+  // row spans inside carry the monospace/pre layout regardless of the wrapper.
+  private readonly scrollbackOutput = document.createElement('div')
   private readonly output = document.createElement('pre')
   private readonly input = document.createElement('textarea')
   private readonly dataHandlers = new Set<(data: string) => void>()
@@ -374,6 +391,9 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly selectionHandlers = new Set<() => void>()
   private readonly keyHandlers = new Set<TerminalKeyEventHandler>()
   private readonly outputBuffer = new TerminalDisplayBuffer({
+    columns: DEFAULT_COLS,
+  })
+  private readonly scrollbackBuffer = new TerminalDisplayBuffer({
     columns: DEFAULT_COLS,
   })
   private container: HTMLElement | null = null
@@ -390,7 +410,7 @@ export class TerminalTextSurface implements TerminalSurface {
   constructor(private readonly options: TerminalTextSurfaceOptions) {
     this.root.dataset.terminalRenderer = options.rendererId
     this.root.tabIndex = -1
-    this.root.append(this.output, this.input)
+    this.root.append(this.scrollbackOutput, this.output, this.input)
 
     Object.assign(this.root.style, {
       height: '100%',
@@ -413,6 +433,25 @@ export class TerminalTextSurface implements TerminalSurface {
       minHeight: 'max(100%, var(--terminal-pty-viewport-height))',
       overflowX: 'hidden',
       padding: '8px',
+      whiteSpace: 'normal',
+      width: '100%',
+      wordBreak: 'normal',
+    })
+
+    // History region: same type metrics as the viewport, but its NATURAL height
+    // (no min-height fill) and no bottom padding so it abuts the viewport. Hidden
+    // until it holds history, so a fresh session has no extra top gap.
+    this.scrollbackOutput.dataset.terminalScrollback = 'true'
+    Object.assign(this.scrollbackOutput.style, {
+      boxSizing: 'border-box',
+      display: 'none',
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: `${TERMINAL_FONT_SIZE}px`,
+      lineHeight: 'var(--terminal-line-height)',
+      margin: '0',
+      maxWidth: '100%',
+      overflowX: 'hidden',
+      padding: '8px 8px 0',
       whiteSpace: 'normal',
       width: '100%',
       wordBreak: 'normal',
@@ -495,6 +534,9 @@ export class TerminalTextSurface implements TerminalSurface {
 
   clear(): void {
     this.outputBuffer.clear()
+    this.scrollbackBuffer.clear()
+    this.scrollbackOutput.replaceChildren()
+    this.scrollbackOutput.style.display = 'none'
     this.renderOutput()
   }
 
@@ -520,6 +562,12 @@ export class TerminalTextSurface implements TerminalSurface {
       callback?.()
 
       return
+    }
+
+    // Update the static history region first (only when it changed) so the
+    // viewport render's scroll math below sees the combined height.
+    if (output.scrollback !== undefined) {
+      this.renderScrollback(output.scrollback)
     }
 
     if (output.displayDelta) {
@@ -588,14 +636,17 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   selectAll(): void {
-    if (!this.output.firstChild) {
+    const { start, end } = this.readContentBoundaries()
+
+    if (!start || !end) {
       return
     }
 
-    this.selectAllSelectionText = this.outputBuffer.readVisibleText()
+    this.selectAllSelectionText = this.readCombinedVisibleText()
 
     const range = document.createRange()
-    range.selectNodeContents(this.output)
+    range.setStartBefore(start)
+    range.setEndAfter(end)
 
     const selection = window.getSelection()
     selection?.removeAllRanges()
@@ -699,6 +750,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.colsValue = nextCols
     this.rowsValue = nextRows
     this.outputBuffer.setColumns(nextCols)
+    this.scrollbackBuffer.setColumns(nextCols)
     this.syncPtyViewportGeometry()
     this.notifyResize()
   }
@@ -748,10 +800,13 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private readSelectionText(): string {
+    const { start, end } = this.readContentBoundaries()
+
     const nativeSelectionText = readContainedSelection(
       this.root,
-      this.output,
-      this.outputBuffer.readVisibleText()
+      start,
+      end,
+      this.readCombinedVisibleText()
     )
 
     if (nativeSelectionText.length > 0) {
@@ -759,6 +814,26 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     return this.selectAllSelectionText ?? ''
+  }
+
+  // The selectable content spans the history region (if present) then the
+  // viewport, so selection + select-all reach across both <pre> elements.
+  private readContentBoundaries(): {
+    start: Node | null
+    end: Node | null
+  } {
+    return {
+      start: this.scrollbackOutput.firstChild ?? this.output.firstChild,
+      end: this.output.lastChild ?? this.scrollbackOutput.lastChild,
+    }
+  }
+
+  private readCombinedVisibleText(): string {
+    const viewport = this.outputBuffer.readVisibleText()
+
+    return this.scrollbackOutput.firstChild
+      ? `${this.scrollbackBuffer.readVisibleText()}\n${viewport}`
+      : viewport
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -1213,6 +1288,35 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     return rows
+  }
+
+  private renderScrollback(
+    payload: { displayText: string; visibleText: string } | null
+  ): void {
+    if (payload === null) {
+      this.scrollbackBuffer.clear()
+      this.scrollbackOutput.replaceChildren()
+      this.scrollbackOutput.style.display = 'none'
+
+      return
+    }
+
+    this.scrollbackBuffer.applyDelta({
+      operations: [
+        { type: 'replace', text: payload.displayText, cursorOffset: 0 },
+      ],
+    })
+
+    // History has no cursor: render the styled runs only. This is the ONLY place
+    // the history DOM is built — never in the per-frame viewport render.
+    this.scrollbackOutput.replaceChildren(
+      ...this.createOutputFragments(
+        this.scrollbackBuffer.readStyledRuns(),
+        0,
+        false
+      )
+    )
+    this.scrollbackOutput.style.display = 'block'
   }
 
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
