@@ -579,6 +579,7 @@ describe('ghostty render-state main bridge', () => {
 
   test('drops formatter ranges when a blank native viewport has no content anchor', () => {
     const bg = 'background-color: rgb(57, 57, 71)'
+
     const wrapperOpen =
       '<div style="font-family: monospace; white-space: pre;">'
     const barRow = `<div style="display: inline;${bg};">                    </div>`
