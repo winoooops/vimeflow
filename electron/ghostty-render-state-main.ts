@@ -1127,6 +1127,10 @@ const readSnapshotCells = (
 
   appendMissingReverseCells(cells, rows, reverseVideoRanges)
 
+  if (cells.length === 0) {
+    return undefined
+  }
+
   return cells.sort((left, right) =>
     left.row === right.row ? left.col - right.col : left.row - right.row
   )
