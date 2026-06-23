@@ -139,4 +139,40 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
 
     expect(root.scrollTop).toBe(root.scrollHeight)
   })
+
+  test('pins to the bottom on a scrollback render even when the cursor row is deep', () => {
+    const { surface, root } = mountSurface()
+    // 40 rows (scrollback + viewport) taller than the 100px pane; the cursor is
+    // at the very end. Without pinToBottom the replace heuristic would jump to
+    // the top (deep cursor row); pinToBottom must follow the bottom (the input).
+    const tallText = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+
+    surface.writeParsedOutput({
+      visibleText: tallText,
+      displayDelta: {
+        pinToBottom: true,
+        operations: [
+          { type: 'replace', text: tallText, cursorOffset: tallText.length },
+        ],
+      },
+    })
+
+    expect(root.scrollTop).toBe(root.scrollHeight)
+  })
+
+  test('a scrollback render does not override the user scrolled-up freeze', () => {
+    const { surface, root } = mountSurface()
+    dispatchWheel(root, -50) // user reads history
+    root.scrollTop = 400
+
+    surface.writeParsedOutput({
+      visibleText: 'x\ny',
+      displayDelta: {
+        pinToBottom: true,
+        operations: [{ type: 'replace', text: 'x\ny', cursorOffset: 0 }],
+      },
+    })
+
+    expect(root.scrollTop).toBe(400) // frozen, not pinned to the bottom
+  })
 })

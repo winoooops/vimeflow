@@ -450,6 +450,8 @@ export const prependScrollbackToOutput = (
     visibleText: `${encoded.visibleText}\n${output.visibleText}`,
     displayDelta: {
       ...delta,
+      // viewport/input is now below the prepended scrollback — follow the bottom
+      pinToBottom: true,
       operations: [
         {
           type: 'replace',

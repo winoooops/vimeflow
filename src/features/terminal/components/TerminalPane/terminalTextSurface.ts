@@ -527,9 +527,11 @@ export class TerminalTextSurface implements TerminalSurface {
 
       this.outputBuffer.applyDelta(output.displayDelta)
 
-      const scrollMode: RenderScrollMode = hasReplaceOperation
-        ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
-        : 'bottom'
+      const scrollMode: RenderScrollMode = output.displayDelta.pinToBottom
+        ? 'bottom'
+        : hasReplaceOperation
+          ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
+          : 'bottom'
 
       this.renderOutput({ scrollMode })
       callback?.()
