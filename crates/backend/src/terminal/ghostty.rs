@@ -187,6 +187,10 @@ impl GhosttyTerminalState {
         while let Some(row) = row_iteration.next() {
             let row_index = rows.len() as u16;
             let mut row_text = String::new();
+            // Display columns currently materialised in `row_text`. Tracked
+            // explicitly (not via byte length) so blank-column gaps left by
+            // multi-byte glyphs stay aligned with the sparse cells.
+            let mut row_columns = 0u16;
             let mut current_column = 0u16;
             let mut cell_iteration = self
                 .cell_iterator
@@ -206,7 +210,13 @@ impl GhosttyTerminalState {
                     cell.graphemes_utf8(&mut text)
                         .map_err(|error| error.to_string())?;
 
-                    append_row_text(&mut row_text, current_column, &text);
+                    append_row_text(
+                        &mut row_text,
+                        &mut row_columns,
+                        current_column,
+                        cell_width,
+                        &text,
+                    );
 
                     let style = cell.style().map_err(|error| error.to_string())?;
                     let foreground = cell
@@ -283,16 +293,30 @@ impl GhosttyTerminalState {
     }
 }
 
-fn append_row_text(row_text: &mut String, column: u16, text: &str) {
+/// Append a cell's text at its grid `column`, padding any blank-column gap with
+/// spaces so `row_text`'s display columns stay aligned with the (sparse) cells.
+///
+/// `row_columns` tracks how many display columns `row_text` already spans. It
+/// must be measured in columns, not bytes: a glyph like `•` (U+2022) is three
+/// UTF-8 bytes but one column, so a byte-based gap calculation under-pads and
+/// the frontend's gap-fill then duplicates the next styled run's first char.
+fn append_row_text(
+    row_text: &mut String,
+    row_columns: &mut u16,
+    column: u16,
+    width: u16,
+    text: &str,
+) {
     if text.is_empty() {
         return;
     }
 
-    let target = usize::from(column);
-    if row_text.len() < target {
-        row_text.push_str(&" ".repeat(target - row_text.len()));
+    if *row_columns < column {
+        row_text.push_str(&" ".repeat(usize::from(column - *row_columns)));
+        *row_columns = column;
     }
     row_text.push_str(text);
+    *row_columns = row_columns.saturating_add(width);
 }
 
 fn trim_trailing_spaces(value: &mut String) {
@@ -335,6 +359,35 @@ mod tests {
             "rows scrolled past a 3-row viewport must report scrollback"
         );
         assert_eq!(snapshot.is_alt_screen, None, "primary screen is not alt");
+    }
+
+    #[test]
+    fn row_text_stays_column_aligned_across_a_multibyte_prefix_gap() {
+        // A bullet (U+2022 — 3 bytes, 1 column) then the cursor jumps one column
+        // ahead, leaving a blank column before styled text. This is exactly how
+        // codex/claude position text when they treat such glyphs as wide. The
+        // rowText must keep the blank column (a space) so its column offsets stay
+        // aligned with the sparse cells; otherwise the frontend's gap-fill reads
+        // the wrong rowText offset and duplicates the styled run's first char.
+        let mut state = make_state(80, 24);
+        state
+            .write(b"\xe2\x80\xa2\x1b[3G\x1b[1mStart\x1b[0m")
+            .expect("write");
+        let snapshot = state.snapshot().expect("snap");
+
+        let s_cell = snapshot
+            .cells
+            .iter()
+            .flatten()
+            .find(|c| c.text == "S")
+            .expect("the S cell");
+        assert_eq!(
+            snapshot.rows[0].chars().nth(usize::from(s_cell.col)),
+            Some('S'),
+            "rowText {:?} is not column-aligned with the S cell at col {}",
+            snapshot.rows[0],
+            s_cell.col
+        );
     }
 
     #[test]
