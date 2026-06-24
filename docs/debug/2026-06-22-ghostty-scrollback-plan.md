@@ -67,6 +67,7 @@ scroll-anchoring across an async boundary. This collapses the riskiest part of t
 ## Step 3 — codex verdict corrections (2026-06-23)
 
 Codex reviewed the design ("sound") with concrete corrections, adopted:
+
 1. **Shared tokenizer, two readers** — do NOT make the per-frame `readReverseVideoRangesFromHtml`
    emit styled cells (allocates scrollback-sized data every frame). Extract the tokenizer/style-stack
    walk once; keep `readReverseVideoRangesFromHtml` (per-frame bg) + add
@@ -95,6 +96,7 @@ scroll position. So "return {rows,cells} and the surface prepends them" describe
 not exist.
 
 **Consequence — revised steps:**
+
 - **Step 3 (main, low-risk, isolated):** `readScrollback` returns styled `{rows, cells}` (0-based,
   top-down). Corrections: extract a shared `computeRowShift(snapshot, rows, contentRowCount)` used by
   BOTH `normalizeSnapshot` and `readScrollback` (never recompute from a 2nd snapshot — desync). New
@@ -135,7 +137,7 @@ All steps done. Next: rebuild → user eyeball (scroll up shows styled history; 
 the bottom; typing/scroll-to-bottom resumes) → milestone PR `fix/ghostty-scrollback → umbrella`
 (auto-review/auto-approve).
 
-## Steps (TDD, co-located *.test.ts)
+## Steps (TDD, co-located \*.test.ts)
 
 1. **Surface scroll state machine** (common): `userScrolledUp` flag + wheel/scroll listeners on the
    surface root; `applyScrollMode` no-op while scrolled; scroll-anchor in `renderOutput` across

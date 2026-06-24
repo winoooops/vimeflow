@@ -906,7 +906,10 @@ const hasHtmlCellStyle = (style: HtmlCellStyle): boolean =>
   style.underline === true ||
   style.reverse === true
 
-const sameHtmlCellStyle = (left: HtmlCellStyle, right: HtmlCellStyle): boolean =>
+const sameHtmlCellStyle = (
+  left: HtmlCellStyle,
+  right: HtmlCellStyle
+): boolean =>
   left.foreground === right.foreground &&
   left.background === right.background &&
   left.bold === right.bold &&
@@ -1644,7 +1647,10 @@ export class GhosttyRenderStateMainBridge {
     )
   }
 
-  readScrollback(ownerWebContentsId: number, payload: unknown): ScrollbackResult {
+  readScrollback(
+    ownerWebContentsId: number,
+    payload: unknown
+  ): ScrollbackResult {
     return this.withDriver(ownerWebContentsId, payload, (record) => {
       if (!record.terminal.formatHtml) {
         return ok(EMPTY_SCROLLBACK)

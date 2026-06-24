@@ -334,8 +334,7 @@ describe('ghostty render-state main bridge', () => {
     expect(snapshot.isAltScreen).toBe(true)
   })
 
-  const WRAPPER_OPEN =
-    '<div style="font-family: monospace; white-space: pre;">'
+  const WRAPPER_OPEN = '<div style="font-family: monospace; white-space: pre;">'
 
   test('readScrollback returns styled scrollback rows above the viewport', () => {
     // formatHtml: two scrollback rows (one red) then the viewport row. The
