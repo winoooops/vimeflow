@@ -557,10 +557,10 @@ const MenuRow = ({
       aria-disabled={disabled ? true : undefined}
       aria-label={label}
       className={className}
-      onKeyDownCapture={handleKeyDownCapture}
       {...menu.getItemProps({
         onClick: handleClick,
         onKeyDown: handleKeyDown,
+        onKeyDownCapture: handleKeyDownCapture,
       })}
     >
       {children}
