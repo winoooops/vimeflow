@@ -32,7 +32,7 @@ const PASTE_SHORTCUT: ShortcutInput = IS_MAC
   ? ['Mod', 'V']
   : ['Ctrl', 'Shift', 'V']
 
-const PASTE_IMAGE_SHORTCUT: ShortcutInput = ['Mod', 'V']
+const PASTE_IMAGE_SHORTCUT: ShortcutInput | null = IS_MAC ? null : ['Ctrl', 'V']
 
 const TERMINAL_MENU_ROW_CLASSES =
   'flex min-h-7 w-40 items-center justify-between gap-6 px-2.5 py-1 ' +
@@ -110,9 +110,11 @@ export const TerminalContextMenu = ({
           }}
         >
           <span>Paste Image</span>
-          <kbd className={TERMINAL_MENU_SHORTCUT_CLASSES} aria-hidden="true">
-            {formatShortcut(PASTE_IMAGE_SHORTCUT)}
-          </kbd>
+          {PASTE_IMAGE_SHORTCUT === null ? null : (
+            <kbd className={TERMINAL_MENU_SHORTCUT_CLASSES} aria-hidden="true">
+              {formatShortcut(PASTE_IMAGE_SHORTCUT)}
+            </kbd>
+          )}
         </Menu.Row>
       ) : null}
     </Menu.Context>

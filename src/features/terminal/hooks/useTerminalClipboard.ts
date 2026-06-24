@@ -60,6 +60,9 @@ const writeViaTextarea = (text: string): boolean => {
 
 const noopAsync = (): Promise<void> => Promise.resolve()
 
+const MAX_PASTE_IMAGE_BYTES = 512 * 1024
+const IMAGE_CLIPBOARD_OPEN_DELAY_MS = 50
+
 interface ClipboardImageItem {
   types: readonly string[]
   getType: (type: string) => Promise<Blob>
@@ -228,6 +231,15 @@ export const useTerminalClipboard = ({
         return false
       }
 
+      if (image.size > MAX_PASTE_IMAGE_BYTES) {
+        setCanPasteImage(false)
+        onPasteErrorRef.current?.(
+          new Error('Clipboard image is too large to paste')
+        )
+
+        return false
+      }
+
       terminal.paste(await blobToDataUrl(image))
 
       return true
@@ -267,6 +279,8 @@ export const useTerminalClipboard = ({
 
     let isDragging = false
     let pendingSelection = false
+    let disposed = false
+    const pendingOpenTimers = new Set<number>()
 
     const handleMouseDown = (event: MouseEvent): void => {
       if (event.button !== 0) {
@@ -306,20 +320,35 @@ export const useTerminalClipboard = ({
       event.preventDefault()
       event.stopPropagation()
       setCanPasteImage(false)
-      if (!enableImagePaste) {
+
+      const openMenu = (): void => {
+        if (disposed) {
+          return
+        }
+
         setIsOpen(true)
         setOpenAt({ x: event.clientX, y: event.clientY })
+      }
+
+      if (!enableImagePaste) {
+        openMenu()
 
         return
       }
 
       const itemsPromise = readClipboardItems()
       if (itemsPromise === null) {
-        setIsOpen(true)
-        setOpenAt({ x: event.clientX, y: event.clientY })
+        openMenu()
 
         return
       }
+
+      const fallbackOpenTimer = window.setTimeout(() => {
+        pendingOpenTimers.delete(fallbackOpenTimer)
+        openMenu()
+      }, IMAGE_CLIPBOARD_OPEN_DELAY_MS)
+
+      pendingOpenTimers.add(fallbackOpenTimer)
 
       void (async (): Promise<void> => {
         try {
@@ -328,10 +357,15 @@ export const useTerminalClipboard = ({
           )
         } catch {
           setCanPasteImage(false)
+        } finally {
+          const timerPending = pendingOpenTimers.delete(fallbackOpenTimer)
+          window.clearTimeout(fallbackOpenTimer)
+
+          if (timerPending) {
+            openMenu()
+          }
         }
       })()
-      setIsOpen(true)
-      setOpenAt({ x: event.clientX, y: event.clientY })
     }
 
     const isMac = preferModifier === 'meta'
@@ -373,7 +407,7 @@ export const useTerminalClipboard = ({
 
       if (event.code === 'KeyV') {
         const imagePasteShortcut = isMac
-          ? event.metaKey && !event.ctrlKey && !event.altKey
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
           : event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey
 
         if (enableImagePaste && imagePasteShortcut) {
@@ -417,6 +451,12 @@ export const useTerminalClipboard = ({
     })
 
     return (): void => {
+      disposed = true
+      pendingOpenTimers.forEach((timerId) => {
+        window.clearTimeout(timerId)
+      })
+      pendingOpenTimers.clear()
+
       try {
         selectionDisposable.dispose()
       } catch {

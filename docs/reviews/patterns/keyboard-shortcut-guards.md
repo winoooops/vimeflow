@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-18
-ref_count: 1
+last_updated: 2026-06-24
+ref_count: 2
 ---
 
 # Keyboard Shortcut Guards
@@ -291,4 +291,22 @@ against three classes of false-fire:
   right panes unreachable by keyboard.
 - **Fix:** Extended the regex from `^Digit([1-4])$` to `^Digit([1-6])$` and
   added a test covering `Ctrl+5` / `Ctrl+6` focus in a `grid3x2` session.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Image paste shortcut stole shifted macOS text paste
+
+- **Source:** github-codex-connector | PR #618 round 1 | 2026-06-24
+- **Severity:** P2
+- **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
+- **Finding:** The macOS image-paste shortcut matched `Cmd+Shift+V` because it did not require `!event.shiftKey`. In agent panes with image paste enabled, this branch ran before the normal text-paste shortcut and regressed the shifted terminal paste chord.
+- **Fix:** Required `!event.shiftKey` for the macOS image-paste shortcut so `Cmd+Shift+V` continues through the normal text paste path. Added a regression test with image paste enabled and an image-capable clipboard.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Duplicate macOS shortcut chips for semantically different paste rows
+
+- **Source:** github-claude | PR #618 round 1 | 2026-06-24
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalContextMenu.tsx`
+- **Finding:** On macOS, both the Paste and Paste Image context-menu rows rendered the same shortcut chip, making the menu look contradictory even though the image path has priority only when the clipboard contains an image.
+- **Fix:** Made the Paste Image shortcut chip platform-aware and omitted it on macOS while keeping the distinct `Ctrl+V` chip on non-mac platforms. Added a macOS module-load regression test for the rendered row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 import { TerminalContextMenu } from './TerminalContextMenu'
@@ -110,6 +110,47 @@ test('renders shortcut chips beside Copy and Paste', () => {
   expect(screen.getByText('Ctrl+Shift+C')).toBeInTheDocument()
   expect(screen.getByText('Ctrl+Shift+V')).toBeInTheDocument()
   expect(screen.getByText('Ctrl+V')).toBeInTheDocument()
+})
+
+test('omits duplicate Paste Image shortcut chip on macOS', async () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(
+    window.navigator,
+    'platform'
+  )
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: 'MacIntel',
+  })
+  vi.resetModules()
+
+  try {
+    const { TerminalContextMenu: MacTerminalContextMenu } = await import(
+      './TerminalContextMenu'
+    )
+
+    render(
+      <MacTerminalContextMenu
+        {...baseProps}
+        canPasteImage
+        isOpen
+        position={{ x: 50, y: 60 }}
+      />
+    )
+
+    const pasteRow = screen.getByRole('menuitem', { name: 'Paste' })
+    const pasteImageRow = screen.getByRole('menuitem', { name: 'Paste Image' })
+
+    expect(within(pasteRow).getByText(/V$/)).toBeInTheDocument()
+    expect(within(pasteImageRow).queryByText(/V$/)).not.toBeInTheDocument()
+  } finally {
+    if (originalPlatform === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+    } else {
+      Object.defineProperty(window.navigator, 'platform', originalPlatform)
+    }
+    vi.resetModules()
+  }
 })
 
 test('Copy item has aria-disabled="true" when canCopy is false', () => {

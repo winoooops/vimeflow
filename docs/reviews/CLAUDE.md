@@ -57,7 +57,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 83       | 37   | 2026-06-22   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 92       | 90   | 2026-06-22   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
@@ -81,7 +81,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 24       | 10   | 2026-06-19   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 16       | 3    | 2026-06-15   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 20       | 1    | 2026-06-18   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 22       | 2    | 2026-06-24   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 15       | 9    | 2026-06-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
@@ -109,6 +109,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
 | [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 13       | 5    | 2026-06-22   |
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 3        | 1    | 2026-06-22   |
-| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 5        | 1    | 2026-06-20   |
+| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 6        | 2    | 2026-06-24   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |
