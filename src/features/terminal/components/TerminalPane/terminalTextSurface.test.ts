@@ -282,3 +282,147 @@ describe('TerminalTextSurface static scrollback region', () => {
     expect(surface.getSelection()).toBe('history line\nlive prompt')
   })
 })
+
+describe('TerminalTextSurface eager-delta scrollback updates', () => {
+  const readScrollback = (root: HTMLElement): HTMLElement =>
+    root.querySelector<HTMLElement>('[data-terminal-scrollback="true"]')!
+
+  test('accumulates appended rows across frames', () => {
+    const { surface, root } = mountSurface()
+
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 1,
+        appendDisplayText: 'old line 1',
+      },
+    })
+
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 2,
+        appendDisplayText: 'old line 2',
+      },
+    })
+
+    const scrollback = readScrollback(root)
+    expect(scrollback.style.display).toBe('block')
+    expect(scrollback.textContent).toContain('old line 1')
+    expect(scrollback.textContent).toContain('old line 2')
+  })
+
+  test('hides on alt screen and re-shows on return without refetching', () => {
+    const { surface, root } = mountSurface()
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 1,
+        appendDisplayText: 'persisted history',
+      },
+    })
+    const scrollback = readScrollback(root)
+    expect(scrollback.style.display).toBe('block')
+
+    // Enter alt screen — region hidden but content retained.
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: { isAltScreen: true, rowCount: 0 },
+    })
+    expect(scrollback.style.display).toBe('none')
+    expect(scrollback.textContent).toContain('persisted history')
+
+    // Return from alt screen with no new rows — region re-shown from the cache.
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: { isAltScreen: false, rowCount: 1 },
+    })
+    expect(scrollback.style.display).toBe('block')
+    expect(scrollback.textContent).toContain('persisted history')
+  })
+
+  test('clears the region when rowCount drops to zero', () => {
+    const { surface, root } = mountSurface()
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 1,
+        appendDisplayText: 'about to clear',
+      },
+    })
+
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
+    })
+
+    const scrollback = readScrollback(root)
+    expect(scrollback.style.display).toBe('none')
+    expect(scrollback.textContent).toBe('')
+  })
+
+  test('resets and re-accumulates when the count drops below what was rendered', () => {
+    const { surface, root } = mountSurface()
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 1,
+        appendDisplayText: 'stale one',
+      },
+    })
+
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 2,
+        appendDisplayText: 'stale two',
+      },
+    })
+
+    // A clear/reset happened upstream: rowCount fell to 1 with fresh content.
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: {
+        isAltScreen: false,
+        rowCount: 1,
+        appendDisplayText: 'fresh',
+      },
+    })
+
+    const scrollback = readScrollback(root)
+    expect(scrollback.textContent).toContain('fresh')
+    expect(scrollback.textContent).not.toContain('stale one')
+    expect(scrollback.textContent).not.toContain('stale two')
+  })
+
+  test('does not freeze auto-follow on a no-op wheel-up without overflow', () => {
+    const { surface, root } = mountSurface({
+      clientHeight: 100,
+      scrollHeight: 100,
+    })
+
+    dispatchWheel(root, -50) // wheel up, but nothing to scroll
+    surface.write('x\n')
+
+    expect(root.scrollTop).toBe(root.scrollHeight) // auto-follow NOT frozen
+  })
+
+  test('freezes auto-follow on a wheel-up when there is overflow to scroll', () => {
+    const { surface, root } = mountSurface({
+      clientHeight: 100,
+      scrollHeight: 1000,
+    })
+
+    dispatchWheel(root, -50) // wheel up with room to scroll → freeze
+    root.scrollTop = 400 // user reads history
+    surface.write('x\n')
+
+    expect(root.scrollTop).toBe(400) // frozen where the user left it
+  })
+})

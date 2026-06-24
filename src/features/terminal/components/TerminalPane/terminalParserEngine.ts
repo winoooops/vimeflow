@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import type {
   TerminalOutputInputMode,
   TerminalOutputChunk,
@@ -14,6 +15,21 @@ import {
 } from './terminalOutputPayload'
 import type { TerminalDisplayDelta } from './terminalDisplayBuffer'
 
+// Eager-delta history update for the Rust snapshot path (VIM-224 "path A").
+// The backend pushes only the rows newly evicted above the viewport; the
+// surface APPENDS them to its static history region. Distinct from the
+// `scrollback` replace/clear tri-state below (the now-dead JS driver path).
+export interface GhosttyScrollbackUpdate {
+  // Alt screen active — hide the region (full-screen apps own the viewport),
+  // but keep what was built so returning to the normal screen needs no refetch.
+  readonly isAltScreen: boolean
+  // Total scrollback rows. 0 = clear the region; a value below what the surface
+  // has already appended signals a clear/reset (then deltas re-accumulate).
+  readonly rowCount: number
+  // Encoded rows newly evicted this frame, to append. Absent when nothing grew.
+  readonly appendDisplayText?: string
+}
+
 export interface TerminalParserEngineOutput {
   readonly visibleText: string
   readonly displayText?: string
@@ -25,6 +41,8 @@ export interface TerminalParserEngineOutput {
   //   object    = replace the region with this history
   //   null      = clear the region (alt screen / no history)
   readonly scrollback?: { readonly displayText: string } | null
+  // Eager-delta history update (Rust snapshot path). See GhosttyScrollbackUpdate.
+  readonly scrollbackUpdate?: GhosttyScrollbackUpdate
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode

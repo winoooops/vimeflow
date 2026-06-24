@@ -30,6 +30,7 @@ describe('ghosttyVtRenderSnapshot', () => {
           },
         ],
       },
+      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
     })
   })
 

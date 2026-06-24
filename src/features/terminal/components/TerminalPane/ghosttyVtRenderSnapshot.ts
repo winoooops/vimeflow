@@ -11,7 +11,10 @@ import {
 } from '../../../../../shared/ghosttyCellTraversal'
 import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
 import { getSgrStyleSentinel } from './terminalControlParser'
-import type { TerminalParserEngineOutput } from './terminalParserEngine'
+import type {
+  GhosttyScrollbackUpdate,
+  TerminalParserEngineOutput,
+} from './terminalParserEngine'
 
 export interface GhosttyVtRenderSnapshotCursor {
   readonly rowIndex: number
@@ -37,9 +40,16 @@ export interface GhosttyVtRenderSnapshot {
   readonly cursor?: GhosttyVtRenderSnapshotCursor
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
   // Count of scrollback rows the native terminal holds above the viewport (0 on
-  // the alt screen). Styled rows are fetched lazily via the driver's readScrollback.
+  // the alt screen). The surface appends history eagerly via scrollbackDelta.
   readonly scrollbackRowCount?: number
   readonly isAltScreen?: boolean
+  // Rows newly evicted above the viewport this frame (eager-delta, path A). The
+  // surface APPENDS these styled rows to its static history region. `cells` is
+  // omitted on the wire when the delta is entirely unstyled.
+  readonly scrollbackDelta?: {
+    readonly rows: readonly string[]
+    readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
+  }
 }
 
 export interface GhosttyVtRenderScrollback {
@@ -395,6 +405,23 @@ export const createGhosttyVtRenderSnapshotOutput = (
       ? false
       : undefined)
 
+  // Scrollback uses the ORIGINAL snapshot (history is independent of the
+  // viewport's leading-empty-row trimming).
+  const delta = snapshot.scrollbackDelta
+
+  const scrollbackUpdate: GhosttyScrollbackUpdate = {
+    isAltScreen: snapshot.isAltScreen === true,
+    rowCount: snapshot.scrollbackRowCount ?? 0,
+    ...(delta && delta.rows.length > 0
+      ? {
+          appendDisplayText: encodeScrollback({
+            rows: delta.rows,
+            cells: delta.cells ?? [],
+          }).displayText,
+        }
+      : {}),
+  }
+
   return {
     visibleText: text,
     displayDelta: {
@@ -407,6 +434,7 @@ export const createGhosttyVtRenderSnapshotOutput = (
         },
       ],
     },
+    scrollbackUpdate,
   }
 }
 

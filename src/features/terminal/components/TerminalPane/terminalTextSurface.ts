@@ -1,4 +1,6 @@
+// cspell:ignore ghostty
 import { themeService } from '../../../../theme'
+import type { GhosttyScrollbackUpdate } from './terminalParserEngine'
 import type {
   TerminalDisposable,
   TerminalKeyEventHandler,
@@ -70,6 +72,9 @@ export interface TerminalTextSurfaceOutput {
   // Styled history for the separate static region. undefined = unchanged,
   // object = replace, null = clear. See TerminalParserEngineOutput.scrollback.
   readonly scrollback?: { readonly displayText: string } | null
+  // Eager-delta history update (Rust snapshot path): rows newly evicted above
+  // the viewport are APPENDED to the static region. See GhosttyScrollbackUpdate.
+  readonly scrollbackUpdate?: GhosttyScrollbackUpdate
 }
 
 type RenderScrollMode = 'bottom' | 'cursor' | 'top'
@@ -394,6 +399,10 @@ export class TerminalTextSurface implements TerminalSurface {
     columns: DEFAULT_COLS,
   })
   private container: HTMLElement | null = null
+  // Eager-delta history accounting: how many scrollback rows the static region
+  // currently holds. Lets the next GhosttyScrollbackUpdate detect a clear/reset
+  // (count dropped) versus a normal grow (append the delta).
+  private renderedScrollbackRows = 0
   // Sticky-bottom scroll state: while true the user has scrolled up to read
   // history, so renders must NOT yank the view back to the bottom.
   private userScrolledUp = false
@@ -565,6 +574,13 @@ export class TerminalTextSurface implements TerminalSurface {
     // viewport render's scroll math below sees the combined height.
     if (output.scrollback !== undefined) {
       this.renderScrollback(output.scrollback)
+    }
+
+    // Eager-delta history (Rust snapshot path): append newly-evicted rows. Run
+    // before the viewport render so the bottom-pin below accounts for the new
+    // history height. Parallel to the scrollback replace path above.
+    if (output.scrollbackUpdate !== undefined) {
+      this.handleScrollbackUpdate(output.scrollbackUpdate)
     }
 
     if (output.displayDelta) {
@@ -763,8 +779,15 @@ export class TerminalTextSurface implements TerminalSurface {
 
   // Freeze auto-scroll the instant the user wheels up, before the resulting
   // 'scroll' event/layout settles — otherwise the next render snaps to bottom.
+  // Only freeze when there is actually room to scroll up: a no-op wheel-up on a
+  // short terminal (no overflow) fires no 'scroll' event to reset the freeze, so
+  // an unconditional freeze would permanently strand auto-follow.
   private readonly handleWheel = (event: WheelEvent): void => {
-    if (event.deltaY < 0) {
+    if (
+      event.deltaY < 0 &&
+      this.root.scrollHeight - this.root.clientHeight >
+        SCROLL_BOTTOM_THRESHOLD_PX
+    ) {
       this.userScrolledUp = true
     }
   }
@@ -1312,6 +1335,71 @@ export class TerminalTextSurface implements TerminalSurface {
       )
     )
     this.scrollbackOutput.style.display = 'block'
+  }
+
+  // Eager-delta history update (Rust snapshot path). Distinct from the dead
+  // JS-driver `renderScrollback` replace path above: here the backend hands us
+  // only the rows newly evicted above the viewport and we APPEND them, so the
+  // history DOM grows by the delta instead of being rebuilt every frame.
+  private handleScrollbackUpdate(update: GhosttyScrollbackUpdate): void {
+    if (update.isAltScreen) {
+      // Full-screen app owns the viewport: hide the region but keep the buffer
+      // and the rendered-row count so returning from alt re-shows it untouched,
+      // with no refetch of history the backend already evicted.
+      this.scrollbackOutput.style.display = 'none'
+
+      return
+    }
+
+    if (update.rowCount === 0) {
+      this.clearScrollback()
+
+      return
+    }
+
+    if (update.rowCount < this.renderedScrollbackRows) {
+      // The total fell below what we hold: a clear/reset happened upstream. Drop
+      // the stale region and fall through to re-accumulate from this frame.
+      this.clearScrollback()
+    }
+
+    if (update.appendDisplayText !== undefined) {
+      this.appendScrollbackRows(update.appendDisplayText)
+      this.renderedScrollbackRows = update.rowCount
+    } else if (this.renderedScrollbackRows > 0) {
+      // Returning from alt screen with history already built: re-show the cache.
+      this.scrollbackOutput.style.display = 'block'
+    }
+  }
+
+  private appendScrollbackRows(displayText: string): void {
+    // Accumulate into the selection buffer (joined by newlines), so select-all
+    // across the history region still yields the full text. ponytail: the
+    // scrollbackBuffer enforces a line cap, so selection of extremely old
+    // history may truncate while the appended DOM does not — bounded overall by
+    // the backend's 10k scrollback cap, so not worth a separate unbounded store.
+    const prefix = this.renderedScrollbackRows > 0 ? '\n' : ''
+    this.scrollbackBuffer.write(prefix + displayText)
+
+    // Render ONLY the new rows and append them — O(delta), never rebuilding the
+    // whole region (which would be O(n²) as history accrues). A throwaway buffer
+    // styles just this delta into fragments we tack onto the existing region.
+    const delta = new TerminalDisplayBuffer({ columns: this.colsValue })
+    delta.applyDelta({
+      operations: [{ type: 'replace', text: displayText, cursorOffset: 0 }],
+    })
+
+    this.scrollbackOutput.append(
+      ...this.createOutputFragments(delta.readStyledRuns(), 0, false)
+    )
+    this.scrollbackOutput.style.display = 'block'
+  }
+
+  private clearScrollback(): void {
+    this.scrollbackBuffer.clear()
+    this.scrollbackOutput.replaceChildren()
+    this.scrollbackOutput.style.display = 'none'
+    this.renderedScrollbackRows = 0
   }
 
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
