@@ -2,12 +2,14 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
 use libghostty_vt::render::{CellIterator, RenderState, RowIterator};
-use libghostty_vt::screen::{CellWide, Screen};
-use libghostty_vt::style::{RgbColor, Underline};
+use libghostty_vt::screen::{CellContentTag, CellWide, Screen};
+use libghostty_vt::style::{RgbColor, StyleColor, Underline};
+use libghostty_vt::terminal::{Point, PointCoordinate};
 use libghostty_vt::{Terminal, TerminalOptions};
 
 use super::types::{
     GhosttyVtRenderSnapshot, GhosttyVtRenderSnapshotCell, GhosttyVtRenderSnapshotCursor,
+    GhosttyVtScrollback,
 };
 
 const DEFAULT_MAX_SCROLLBACK: usize = 10_000;
@@ -271,6 +273,124 @@ impl GhosttyTerminalState {
         })
     }
 
+    /// Read a window of SCROLLBACK (history) rows `[start_row, start_row +
+    /// row_count)`, clamped to the available scrollback, returning styled rows
+    /// shaped like [`snapshot`](Self::snapshot)'s cells. Each cell's `row` is
+    /// the 0-based index WITHIN the returned window (row 0 = the first returned
+    /// row); `rows[i]` is the column-aligned plain text of returned row `i`.
+    ///
+    /// Unlike `snapshot()` (which reads the visible viewport via the RenderState
+    /// `CellIteration` API), history rows are read through the lower-level
+    /// `grid_ref` / `screen::Cell` / `Style` API. That path exposes raw
+    /// `StyleColor`s (which may be palette indices) rather than pre-resolved
+    /// RGB, so colors are resolved through the terminal palette here to match
+    /// snapshot's resolved `#rrggbb` output. The grid reference is only valid
+    /// until the next terminal mutation, so each cell's data is read into owned
+    /// values immediately and never held across another `grid_ref` call.
+    pub fn read_scrollback(
+        &mut self,
+        start_row: u32,
+        row_count: u16,
+    ) -> Result<GhosttyVtScrollback, String> {
+        let scrollback_rows = self
+            .terminal
+            .scrollback_rows()
+            .map_err(|error| error.to_string())? as u32;
+        // Resolve palette indices the same way the RenderState path does, so
+        // history colors match the live snapshot's resolved RGB output.
+        let palette = self
+            .terminal
+            .color_palette()
+            .map_err(|error| error.to_string())?;
+        let cols = self.terminal.cols().map_err(|error| error.to_string())?;
+
+        // Clamp the requested window to the rows that actually exist.
+        let end_row = start_row
+            .saturating_add(u32::from(row_count))
+            .min(scrollback_rows);
+        let mut rows = Vec::new();
+        let mut cells = Vec::new();
+
+        let mut history_row = start_row;
+        while history_row < end_row {
+            let row_index = rows.len() as u16;
+            let mut row_text = String::new();
+            // Display columns currently materialised in `row_text` — tracked in
+            // columns (not bytes) so multi-byte glyphs stay aligned with the
+            // sparse cells. Mirrors `snapshot()`.
+            let mut row_columns = 0u16;
+
+            for column in 0..cols {
+                // The GridRef is only valid until the next terminal update, so
+                // read everything we need from this cell into owned values
+                // before resolving the next column's reference.
+                let grid_ref = self
+                    .terminal
+                    .grid_ref(Point::History(PointCoordinate {
+                        x: column,
+                        y: history_row,
+                    }))
+                    .map_err(|error| error.to_string())?;
+
+                let cell = grid_ref.cell().map_err(|error| error.to_string())?;
+                let wide = cell.wide().map_err(|error| error.to_string())?;
+                let cell_width = match wide {
+                    CellWide::Wide => 2,
+                    CellWide::Narrow | CellWide::SpacerTail | CellWide::SpacerHead => 1,
+                };
+
+                if matches!(wide, CellWide::SpacerTail | CellWide::SpacerHead) {
+                    continue;
+                }
+
+                let text = read_grapheme_text(&grid_ref).map_err(|error| error.to_string())?;
+                let style = grid_ref.style().map_err(|error| error.to_string())?;
+                // `bg_color` can also come from a bg-color-only cell's content
+                // tag (no style), so flatten that source too — matching how
+                // `snapshot()`'s RenderState `bg_color()` flattens the cell's
+                // palette/RGB background with the style background.
+                let content_tag = cell.content_tag().map_err(|error| error.to_string())?;
+                let foreground = resolve_style_color(style.fg_color, &palette);
+                let background = match resolve_style_color(style.bg_color, &palette) {
+                    Some(color) => Some(color),
+                    None => resolve_cell_bg_color(&cell, content_tag, &palette)?,
+                }
+                .map(format_color);
+                let foreground = foreground.map(format_color);
+
+                append_row_text(&mut row_text, &mut row_columns, column, cell_width, &text);
+
+                if !text.is_empty()
+                    || style.bold
+                    || style.italic
+                    || style.underline != Underline::None
+                    || style.inverse
+                    || foreground.is_some()
+                    || background.is_some()
+                {
+                    cells.push(GhosttyVtRenderSnapshotCell {
+                        row: row_index,
+                        col: column,
+                        text,
+                        width: cell_width,
+                        bold: style.bold.then_some(true),
+                        italic: style.italic.then_some(true),
+                        underline: (style.underline != Underline::None).then_some(true),
+                        foreground,
+                        background,
+                        reverse: style.inverse.then_some(true),
+                    });
+                }
+            }
+
+            trim_trailing_spaces(&mut row_text);
+            rows.push(row_text);
+            history_row += 1;
+        }
+
+        Ok(GhosttyVtScrollback { rows, cells })
+    }
+
     fn take_cwd_uri(&self) -> Option<String> {
         self.latest_cwd_uri
             .lock()
@@ -326,6 +446,63 @@ fn trim_trailing_spaces(value: &mut String) {
 
 fn format_color(color: RgbColor) -> String {
     format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
+}
+
+/// Read a history cell's grapheme cluster into an owned UTF-8 string.
+///
+/// `GridRef::graphemes` writes codepoints (`char`s), not UTF-8 bytes (there is
+/// no utf8 variant on the lower-level grid API the way RenderState has
+/// `graphemes_utf8`), so the codepoints are collected into a `String` here.
+/// A small inline buffer covers virtually every cell; on the rare
+/// `OutOfSpace` the call reports the required length and we retry once.
+fn read_grapheme_text(grid_ref: &libghostty_vt::screen::GridRef<'_>) -> Result<String, String> {
+    let mut buf = ['\0'; 8];
+    let len = match grid_ref.graphemes(&mut buf) {
+        Ok(len) => len,
+        Err(libghostty_vt::Error::OutOfSpace { required }) => {
+            let mut grown = vec!['\0'; required];
+            let len = grid_ref
+                .graphemes(&mut grown)
+                .map_err(|error| error.to_string())?;
+            return Ok(grown[..len].iter().collect());
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+
+    Ok(buf[..len].iter().collect())
+}
+
+/// Resolve a [`StyleColor`] to RGB the same way the RenderState path does:
+/// an explicit RGB passes through, a palette index is looked up in the
+/// terminal palette, and an unset color stays `None` (the caller then falls
+/// back to the terminal default, exactly like `snapshot()`'s `fg_color()`).
+fn resolve_style_color(color: StyleColor, palette: &[RgbColor; 256]) -> Option<RgbColor> {
+    match color {
+        StyleColor::None => None,
+        StyleColor::Rgb(rgb) => Some(rgb),
+        StyleColor::Palette(index) => palette.get(usize::from(index.0)).copied(),
+    }
+}
+
+/// Flatten a bg-color-only cell's background (where the color lives on the
+/// cell's content tag rather than its style) to RGB, resolving palette
+/// indices through the terminal palette. Mirrors the cell-sourced half of
+/// the RenderState `bg_color()` flattening used by `snapshot()`.
+fn resolve_cell_bg_color(
+    cell: &libghostty_vt::screen::Cell,
+    content_tag: CellContentTag,
+    palette: &[RgbColor; 256],
+) -> Result<Option<RgbColor>, String> {
+    match content_tag {
+        CellContentTag::BgColorRgb => Ok(Some(
+            cell.bg_color_rgb().map_err(|error| error.to_string())?,
+        )),
+        CellContentTag::BgColorPalette => {
+            let index = cell.bg_color_palette().map_err(|error| error.to_string())?;
+            Ok(palette.get(usize::from(index.0)).copied())
+        }
+        CellContentTag::Codepoint | CellContentTag::CodepointGrapheme => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -434,6 +611,55 @@ mod tests {
         assert_eq!(
             snapshot.scrollback_row_count, None,
             "scrollback is meaningless on the alt screen"
+        );
+    }
+
+    #[test]
+    fn read_scrollback_returns_history_rows_that_scrolled_off_screen() {
+        // A 3-row viewport pushes the early `line {i}` writes into scrollback.
+        // Reading the history window back must surface that off-screen text.
+        let mut state = make_state(80, 3);
+        fill_past_viewport(&mut state);
+
+        let scrollback = state.read_scrollback(0, 10).expect("read scrollback");
+
+        assert!(
+            scrollback.rows.iter().any(|row| row.contains("line 0")),
+            "scrollback must contain the earliest off-screen line, got {:?}",
+            scrollback.rows
+        );
+        assert!(
+            scrollback.rows.iter().any(|row| row.contains("line 1")),
+            "scrollback must contain subsequent off-screen lines, got {:?}",
+            scrollback.rows
+        );
+    }
+
+    #[test]
+    fn read_scrollback_resolves_styled_history_foreground_to_rgb() {
+        // A truecolor-styled line repeated enough times to scroll the earliest
+        // copies into history. Reading them back must preserve the resolved
+        // foreground hex on the styled cells — history fidelity matches the
+        // live snapshot's resolved colors.
+        let mut state = make_state(80, 3);
+        for _ in 0..12 {
+            state
+                .write(b"\x1b[38;2;137;180;250mhello\x1b[0m\r\n")
+                .expect("write styled line");
+        }
+
+        let scrollback = state.read_scrollback(0, 20).expect("read scrollback");
+
+        let h_cell = scrollback
+            .cells
+            .iter()
+            .find(|cell| cell.text == "h")
+            .expect("a styled 'h' cell in history");
+        assert_eq!(
+            h_cell.foreground,
+            Some("#89b4fa".to_string()),
+            "styled history foreground must resolve to RGB hex, got {:?}",
+            h_cell.foreground
         );
     }
 }

@@ -182,6 +182,21 @@ pub struct GhosttyVtRenderSnapshot {
     pub is_alt_screen: Option<bool>,
 }
 
+/// A window of terminal SCROLLBACK (history) rows, shaped like a render
+/// snapshot so the frontend can render scroll-up history on the Rust VT path.
+/// `rows[i]` is the column-aligned plain text of returned row `i`, and each
+/// `cells[]` entry's `row` is the 0-based index WITHIN the returned window
+/// (row 0 = the first returned history row), reusing the snapshot cell shape.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GhosttyVtScrollback {
+    pub rows: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cells: Vec<GhosttyVtRenderSnapshotCell>,
+}
+
 /// PTY exit event payload (emitted when process exits)
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
