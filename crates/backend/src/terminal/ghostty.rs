@@ -95,6 +95,9 @@ pub(crate) struct GhosttyTerminalState {
     latest_cwd_uri: Arc<Mutex<Option<String>>>,
     latest_snapshot: Arc<Mutex<Option<GhosttyVtRenderSnapshot>>>,
     resize_rx: Receiver<GhosttyResize>,
+    /// Scrollback row count emitted on the previous frame, so `write` can read
+    /// just the newly-evicted rows (the delta) instead of the whole buffer.
+    last_scrollback_count: u32,
 }
 
 impl GhosttyTerminalState {
@@ -126,19 +129,58 @@ impl GhosttyTerminalState {
             latest_cwd_uri,
             latest_snapshot: reader.latest_snapshot,
             resize_rx: reader.resize_rx,
+            last_scrollback_count: 0,
         })
     }
 
     pub fn write(&mut self, bytes: &[u8]) -> Result<GhosttyWriteResult, String> {
         self.apply_pending_resize()?;
         self.terminal.vt_write(bytes);
-        let snapshot = self.snapshot()?;
+        let mut snapshot = self.snapshot()?;
+        // Publish the delta-FREE snapshot for reattach: a fresh attach rebuilds
+        // history from scratch, so replaying a delta would double-append.
         self.publish_snapshot(snapshot.clone());
+        snapshot.scrollback_delta = self.take_scrollback_delta(&snapshot)?;
 
         Ok(GhosttyWriteResult {
             snapshot,
             cwd_uri: self.take_cwd_uri(),
         })
+    }
+
+    /// Read the scrollback rows newly evicted above the viewport since the
+    /// previous frame, advancing the tracked count so the renderer can APPEND
+    /// them to its static history region. Returns `None` on the alt screen
+    /// (history is suppressed there) and when nothing grew; a shrink
+    /// (clear/reset) just rewinds the count — the renderer detects the reset
+    /// from `scrollback_row_count` dropping below what it has rendered.
+    fn take_scrollback_delta(
+        &mut self,
+        snapshot: &GhosttyVtRenderSnapshot,
+    ) -> Result<Option<GhosttyVtScrollback>, String> {
+        if snapshot.is_alt_screen == Some(true) {
+            // Leave the count untouched: the normal-screen scrollback is
+            // unchanged underneath, so we resume cleanly when alt exits.
+            return Ok(None);
+        }
+
+        let new_count = snapshot.scrollback_row_count.unwrap_or(0);
+        let last = self.last_scrollback_count;
+
+        // No growth, or a shrink (clear/reset): rewind and emit nothing. Note:
+        // once the buffer caps at DEFAULT_MAX_SCROLLBACK the count plateaus, so
+        // rows evicted past the cap stop appending — acceptable for the eager
+        // path; VIM-224's lazy fetch removes the cap dependency.
+        if new_count <= last {
+            self.last_scrollback_count = new_count;
+            return Ok(None);
+        }
+
+        let added = u16::try_from(new_count - last).unwrap_or(u16::MAX);
+        let delta = self.read_scrollback(last, added)?;
+        self.last_scrollback_count = new_count;
+
+        Ok((!delta.rows.is_empty()).then_some(delta))
     }
 
     fn resize(&mut self, cols: u16, rows: u16) -> Result<(), String> {
@@ -270,6 +312,9 @@ impl GhosttyTerminalState {
             cells: (!cells.is_empty()).then_some(cells),
             scrollback_row_count,
             is_alt_screen: is_alt_screen.then_some(true),
+            // The per-frame delta is attached by `write`, not the base snapshot
+            // (which is also used for the reattach cache).
+            scrollback_delta: None,
         })
     }
 
@@ -611,6 +656,62 @@ mod tests {
         assert_eq!(
             snapshot.scrollback_row_count, None,
             "scrollback is meaningless on the alt screen"
+        );
+    }
+
+    #[test]
+    fn write_emits_scrollback_delta_for_newly_evicted_rows() {
+        let mut state = make_state(80, 3);
+        let mut delta_rows: Vec<String> = Vec::new();
+        for index in 0..8 {
+            let result = state
+                .write(format!("line {index}\r\n").as_bytes())
+                .expect("write");
+            if let Some(delta) = result.snapshot.scrollback_delta {
+                delta_rows.extend(delta.rows);
+            }
+        }
+        assert!(
+            delta_rows.iter().any(|row| row.contains("line 0")),
+            "rows evicted past the 3-row viewport must arrive as a delta, got {delta_rows:?}"
+        );
+    }
+
+    #[test]
+    fn scrollback_deltas_tile_every_evicted_row_exactly_once() {
+        let mut state = make_state(80, 3);
+        let mut delta_total = 0u32;
+        for index in 0..10 {
+            let result = state
+                .write(format!("line {index}\r\n").as_bytes())
+                .expect("write");
+            if let Some(delta) = result.snapshot.scrollback_delta {
+                delta_total += delta.rows.len() as u32;
+            }
+        }
+        let final_count = state
+            .snapshot()
+            .expect("snapshot")
+            .scrollback_row_count
+            .unwrap_or(0);
+        // The renderer APPENDS each delta, so the deltas must cover the whole
+        // scrollback with no duplicates and no gaps.
+        assert_eq!(
+            delta_total, final_count,
+            "sum of delta rows must equal total scrollback count"
+        );
+    }
+
+    #[test]
+    fn write_suppresses_scrollback_delta_on_the_alternate_screen() {
+        let mut state = make_state(80, 3);
+        fill_past_viewport(&mut state);
+        let result = state
+            .write(b"\x1b[?1049h\x1b[1mfullscreen\x1b[0m")
+            .expect("write alt");
+        assert!(
+            result.snapshot.scrollback_delta.is_none(),
+            "history is suppressed on the alt screen"
         );
     }
 

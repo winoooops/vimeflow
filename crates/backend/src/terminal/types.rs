@@ -180,6 +180,14 @@ pub struct GhosttyVtRenderSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub is_alt_screen: Option<bool>,
+    /// Scrollback rows newly evicted above the viewport since the previous
+    /// frame — styled and ready to APPEND to the renderer's static history
+    /// region. Present only when the scrollback grew this frame; suppressed on
+    /// the alt screen (the renderer hides history via `is_alt_screen`). A reset
+    /// (the count dropping) is detected renderer-side from `scrollback_row_count`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scrollback_delta: Option<GhosttyVtScrollback>,
 }
 
 /// A window of terminal SCROLLBACK (history) rows, shaped like a render
