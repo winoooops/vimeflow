@@ -6,16 +6,10 @@ import type { Agent } from '../../../../agents/registry'
 import type { Session } from '../../../sessions/types'
 import { register, unregister } from '../../paneHeaderRefs'
 import { HeaderActions } from './HeaderActions'
-import { HeaderMetadata } from './HeaderMetadata'
 
 export interface HeaderProps {
   agent: Agent
   session: Session
-  worktreeName: string | null
-  branch: string | null
-  cwd?: string
-  added: number
-  removed: number
   isFocused: boolean
   isCollapsed: boolean
   ptyId: string
@@ -31,11 +25,6 @@ export interface HeaderProps {
 export const Header = ({
   agent,
   session,
-  worktreeName,
-  branch,
-  cwd = undefined,
-  added,
-  removed,
   isFocused,
   isCollapsed,
   ptyId,
@@ -78,7 +67,7 @@ export const Header = ({
         tone="custom"
         radius="md"
         size="custom"
-        className="gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
+        className="shrink-0 gap-1.5 rounded-md border px-2 py-[3px] font-semibold tracking-[0.04em]"
         style={{
           background: agent.accentDim,
           borderColor: agent.accentSoft,
@@ -91,31 +80,21 @@ export const Header = ({
         <span>{agent.short}</span>
       </Chip>
 
-      <span ref={titleRef} className="min-w-0 truncate text-on-surface">
+      {/* Flexible title truncates so the fixed action zone never clips. */}
+      <span ref={titleRef} className="min-w-0 flex-1 truncate text-on-surface">
         {paneUserLabel ?? paneAgentTitle ?? session.name}
       </span>
 
-      {!isCollapsed && (
-        <HeaderMetadata
-          worktreeName={worktreeName}
-          branch={branch}
-          cwd={cwd}
-          added={added}
-          removed={removed}
-          session={session}
+      <div className="flex shrink-0 items-center gap-2.5">
+        <HeaderActions
+          isCollapsed={isCollapsed}
+          onToggleCollapse={onToggleCollapse}
+          onClose={onClose}
+          onBurner={onBurner}
+          burnerActive={burnerActive}
+          burnerShellExists={burnerShellExists}
         />
-      )}
-
-      <span className="flex-1" />
-
-      <HeaderActions
-        isCollapsed={isCollapsed}
-        onToggleCollapse={onToggleCollapse}
-        onClose={onClose}
-        onBurner={onBurner}
-        burnerActive={burnerActive}
-        burnerShellExists={burnerShellExists}
-      />
+      </div>
     </div>
   )
 }

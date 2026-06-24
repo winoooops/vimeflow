@@ -190,6 +190,9 @@ describe('TerminalPane index', () => {
 
     expect(screen.queryByTestId('body-mock')).not.toBeInTheDocument()
     expect(screen.getByText('Session exited.')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('terminal-pane-status-bar')
+    ).not.toBeInTheDocument()
   })
 
   test('Header shows agent chip resolved from pane.agentType', () => {
@@ -208,10 +211,9 @@ describe('TerminalPane index', () => {
     )
 
     expect(screen.getByText('CODEX')).toBeInTheDocument()
-    expect(screen.getByText(/click to focus codex/i)).toBeInTheDocument()
   })
 
-  test('generic sessions render shell footer copy', () => {
+  test('generic sessions render the SHELL agent chip', () => {
     render(
       <TerminalPane
         {...baseProps}
@@ -221,14 +223,36 @@ describe('TerminalPane index', () => {
     )
 
     expect(screen.getByText('SHELL')).toBeInTheDocument()
-    expect(screen.getByText(/click to focus shell/i)).toBeInTheDocument()
   })
 
-  test('Header shows line changes from git status files', () => {
+  test('status bar shows line changes from git status files', () => {
     render(<TerminalPane {...baseProps} />)
 
-    expect(screen.getByText('+10')).toBeInTheDocument()
-    expect(screen.getByText('−3')).toBeInTheDocument()
+    const statusBar = screen.getByTestId('terminal-pane-status-bar')
+
+    expect(statusBar).toHaveTextContent('+10')
+    expect(statusBar).toHaveTextContent('−3')
+  })
+
+  test('the pane wrapper is a size container for responsive chrome', () => {
+    render(<TerminalPane {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveClass(
+      '@container/pane'
+    )
+  })
+
+  test('collapsing the pane hides the status bar', async () => {
+    const user = userEvent.setup()
+    render(<TerminalPane {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /collapse status/i }))
+
+    expect(
+      screen.queryByTestId('terminal-pane-status-bar')
+    ).not.toBeInTheDocument()
   })
 
   test('forwards pane.ptyId to Body as sessionId', () => {
@@ -287,25 +311,11 @@ describe('TerminalPane index', () => {
     expect(focusRing).toHaveClass('pointer-events-none')
   })
 
-  test('Footer placeholder uses awaiting-restart override', () => {
-    const completedSession: Session = {
-      ...session,
-      status: 'completed',
-      panes: [{ ...session.panes[0], status: 'completed' }],
-    }
+  test('does not render a message-input footer banner', () => {
+    render(<TerminalPane {...baseProps} />)
 
-    render(
-      <TerminalPane
-        {...baseProps}
-        mode="awaiting-restart"
-        session={completedSession}
-        pane={completedSession.panes[0]}
-      />
-    )
-
-    expect(
-      screen.getByText(/session ended — restart to resume claude/i)
-    ).toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-pane-footer')).not.toBeInTheDocument()
+    expect(screen.queryByText(/message claude/i)).not.toBeInTheDocument()
   })
 
   test('inactive pane renders dimmed', () => {

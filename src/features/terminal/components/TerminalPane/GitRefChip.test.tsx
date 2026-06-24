@@ -48,6 +48,14 @@ test('branch label has min-w-0 truncate classes', () => {
   )
 })
 
+test('chip frame caps at its container so the branch can ellipsis-truncate', () => {
+  render(<GitRefChip worktreeName="feat-jose" branch="feat/jose-auth" />)
+  const chip = screen.getByTestId('git-ref-chip')
+
+  expect(chip.className).toMatch(/min-w-0/)
+  expect(chip.className).toMatch(/max-w-full/)
+})
+
 test('worktree label has max-w-[120px] + truncate + shrink-0 classes', () => {
   render(
     <GitRefChip
@@ -59,6 +67,32 @@ test('worktree label has max-w-[120px] + truncate + shrink-0 classes', () => {
   expect(wtLabel.className).toMatch(/max-w-\[120px\]/)
   expect(wtLabel.className).toMatch(/truncate/)
   expect(wtLabel.className).toMatch(/shrink-0/)
+})
+
+test('collapsibleWorktree hides the worktree segment in a narrow container', () => {
+  render(
+    <GitRefChip worktreeName="feat-jose" branch="main" collapsibleWorktree />
+  )
+
+  expect(screen.getByTestId('git-ref-chip-wt-icon').className).toMatch(
+    /@max-\[280px\]:hidden/
+  )
+
+  expect(screen.getByTestId('git-ref-chip-wt-label').className).toMatch(
+    /@max-\[280px\]:hidden/
+  )
+
+  expect(screen.getByTestId('git-ref-chip-chevron').className).toMatch(
+    /@max-\[280px\]:hidden/
+  )
+})
+
+test('worktree segment stays put without collapsibleWorktree', () => {
+  render(<GitRefChip worktreeName="feat-jose" branch="main" />)
+
+  expect(screen.getByTestId('git-ref-chip-wt-label').className).not.toMatch(
+    /@max-\[280px\]:hidden/
+  )
 })
 
 test('detached=true applies two-tone coral (text-tertiary branch, text-error worktree)', () => {

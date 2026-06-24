@@ -306,6 +306,20 @@ describe('Body', () => {
     })
   })
 
+  test('paints the surface behind xterm with the terminal background', () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-body-wrapper')).toHaveStyle({
+      backgroundColor: obsidianLens.terminal.background,
+    })
+  })
+
   test('repaints the terminal when the window regains focus', async () => {
     render(
       <Body

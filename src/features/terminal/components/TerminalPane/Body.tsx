@@ -15,7 +15,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 // WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
-import { themeService } from '../../../../theme'
+import { themeService, useTheme } from '../../../../theme'
 import { toXtermTheme } from '../../theme/toXtermTheme'
 import {
   useTerminal,
@@ -225,6 +225,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 ): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
+  // xterm fits to whole character rows, leaving a sub-row strip below the last
+  // row where its viewport paints raw black. Paint the surface behind xterm
+  // with the live terminal background so that strip is invisible.
+  const theme = useTheme()
   const fitAddonRef = useRef<FitAddon | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
@@ -983,6 +987,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     <div
       data-testid="terminal-pane-body-wrapper"
       className="terminal-pane-body relative h-full w-full overflow-hidden"
+      style={{ backgroundColor: theme.terminal.background }}
     >
       <div
         ref={containerRef}
