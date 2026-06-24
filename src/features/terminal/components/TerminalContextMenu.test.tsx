@@ -125,9 +125,8 @@ test('omits duplicate Paste Image shortcut chip on macOS', async () => {
   vi.resetModules()
 
   try {
-    const { TerminalContextMenu: MacTerminalContextMenu } = await import(
-      './TerminalContextMenu'
-    )
+    const { TerminalContextMenu: MacTerminalContextMenu } =
+      await import('./TerminalContextMenu')
 
     render(
       <MacTerminalContextMenu
