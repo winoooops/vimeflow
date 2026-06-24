@@ -244,7 +244,11 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     scrollSender.mockClear()
 
     input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+        cancelable: true,
+      })
     )
 
     expect(scrollSender).toHaveBeenCalledTimes(1)
@@ -258,7 +262,11 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     surface.setScrollSender(scrollSender)
 
     input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+        cancelable: true,
+      })
     )
 
     expect(scrollSender).not.toHaveBeenCalled()
