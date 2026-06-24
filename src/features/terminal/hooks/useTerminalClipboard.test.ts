@@ -779,6 +779,33 @@ test('preferModifier="meta" + Cmd+Shift+V suppresses and pastes', async () => {
   }
 })
 
+test('preferModifier="meta" + Cmd+V suppresses and pastes', async () => {
+  const mock = createMockTerminal()
+  const pasteSpy = vi.spyOn(mock.terminal, 'paste')
+
+  const clipboard = installClipboardMock({
+    readText: () => Promise.resolve('pasted'),
+  })
+
+  try {
+    renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        preferModifier: 'meta',
+      })
+    )
+    const handler = captureKeyHandler(mock)
+
+    const result = handler(keyboardEvent({ code: 'KeyV', metaKey: true }))
+    await flushMicrotasks()
+
+    expect(result).toBe(false)
+    expect(pasteSpy).toHaveBeenCalledWith('pasted')
+  } finally {
+    clipboard.restore()
+  }
+})
+
 test('unrelated key passes through unchanged', () => {
   const mock = createMockTerminal()
   renderHook(() => useTerminalClipboard({ terminal: mock.terminal }))

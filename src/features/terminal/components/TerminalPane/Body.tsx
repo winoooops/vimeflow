@@ -668,6 +668,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         theme: toXtermTheme(themeService.current().terminal),
         scrollback: 10000,
         allowProposedApi: true,
+        macOptionClickForcesSelection: true,
       })
 
       // Create and load fit addon
