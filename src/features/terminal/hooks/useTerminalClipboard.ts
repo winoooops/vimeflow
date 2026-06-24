@@ -240,7 +240,7 @@ export const useTerminalClipboard = ({
 
       if (event.code === 'KeyV') {
         const matched = isMac
-          ? event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey
+          ? event.metaKey && !event.ctrlKey && !event.altKey
           : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey
 
         if (matched) {

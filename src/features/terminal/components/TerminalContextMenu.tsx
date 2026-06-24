@@ -11,8 +11,8 @@ export interface TerminalContextMenuProps {
   canCopy: boolean
 }
 
-// Chips reflect the active platform's actual binding (see spec §4 table):
-//   macOS:        Cmd+C copy / Cmd+Shift+V paste     → renders ⌘C / ⌘⇧V
+// Chips reflect the active platform's handled terminal clipboard shortcuts:
+//   macOS:        Cmd+C copy / Cmd+V paste           → renders ⌘C / ⌘V
 //   Linux/Win:    Ctrl+Shift+C / Ctrl+Shift+V        → renders Ctrl+Shift+C / Ctrl+Shift+V
 // Computed at module load — there's no live platform-flip use case.
 const IS_MAC = isMacPlatform()
@@ -22,7 +22,7 @@ const COPY_SHORTCUT: ShortcutInput = IS_MAC
   : ['Ctrl', 'Shift', 'C']
 
 const PASTE_SHORTCUT: ShortcutInput = IS_MAC
-  ? ['Mod', 'Shift', 'V']
+  ? ['Mod', 'V']
   : ['Ctrl', 'Shift', 'V']
 
 export const TerminalContextMenu = ({
