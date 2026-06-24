@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-20
-ref_count: 1
+last_updated: 2026-06-24
+ref_count: 2
 ---
 
 # Transient UI Side Effects
@@ -87,3 +87,12 @@ to persistent state through a separate, explicit path.
   reset timer on a true result. Added regression coverage for both successful
   async feedback and the failure path that keeps the copy glyph visible.
 - **Commit:** same commit as this entry
+
+### 6. Context menu opened before async clipboard-derived state settled
+
+- **Source:** github-claude | PR #618 round 1 | 2026-06-24
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
+- **Finding:** The terminal context menu reset `canPasteImage` to false and opened immediately while the clipboard image-type read was still pending. Fast reads produced a visible disabled-to-enabled transition for the Paste Image row.
+- **Fix:** Deferred menu open until a fast clipboard image check resolves, with a short fallback timer for slow or permission-gated reads. Cleanup now cancels pending fallback timers, and a regression test asserts the fast-read path opens with image state already settled.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

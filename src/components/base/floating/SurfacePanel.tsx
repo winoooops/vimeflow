@@ -13,9 +13,9 @@ export interface SurfacePanelProps {
   width?: number
   // FloatingFocusManager config; an object turns focus management on. Default off.
   focus?: false | { initialFocus?: number; modal?: boolean }
+  className?: string
   children: ReactNode
-  // getFloatingProps() output is spread through; NO arbitrary className —
-  // GLASS_SURFACE is the single chrome so the glass panel cannot drift.
+  // getFloatingProps() output is spread through.
   [prop: string]: unknown
 }
 
@@ -29,6 +29,7 @@ export const SurfacePanel = ({
   context,
   width = undefined,
   focus = false,
+  className = GLASS_SURFACE,
   children,
   ...floatingProps
 }: SurfacePanelProps): ReactElement => {
@@ -37,7 +38,7 @@ export const SurfacePanel = ({
       ref={setFloating}
       style={{ ...style, width }}
       {...floatingProps}
-      className={GLASS_SURFACE}
+      className={className}
     >
       {children}
     </div>

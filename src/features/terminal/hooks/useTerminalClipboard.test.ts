@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { IDisposable, Terminal } from '@xterm/xterm'
 import { expect, test, vi } from 'vitest'
 import { useTerminalClipboard } from './useTerminalClipboard'
@@ -62,6 +62,12 @@ const installClipboardMock = (
   overrides: {
     writeText?: () => Promise<void>
     readText?: () => Promise<string>
+    read?: () => Promise<
+      {
+        types: readonly string[]
+        getType: (type: string) => Promise<Blob>
+      }[]
+    >
   } = {}
 ): ClipboardMockControls => {
   const writeTextMock = vi.fn(
@@ -71,10 +77,18 @@ const installClipboardMock = (
   const readTextMock = vi.fn(
     overrides.readText ?? ((): Promise<string> => Promise.resolve(''))
   )
+
+  const readMock =
+    overrides.read === undefined ? undefined : vi.fn(overrides.read)
+
   const original = window.navigator.clipboard
 
   Object.defineProperty(window.navigator, 'clipboard', {
-    value: { writeText: writeTextMock, readText: readTextMock },
+    value: {
+      writeText: writeTextMock,
+      readText: readTextMock,
+      ...(readMock === undefined ? {} : { read: readMock }),
+    },
     configurable: true,
     writable: true,
   })
@@ -485,6 +499,193 @@ test('right-click on terminal.element sets isOpen=true, openAt={x,y}, and calls 
   expect(preventDefaultSpy).toHaveBeenCalledOnce()
 })
 
+test('right-click enables image paste only when the top clipboard item is an image', async () => {
+  const mock = createMockTerminal()
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['image/png'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+        },
+      ]),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+      })
+    )
+
+    await act(async () => {
+      mock.element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 200,
+        })
+      )
+      await flushMicrotasks()
+    })
+
+    await waitFor(() => {
+      expect(result.current.canPasteImage).toBe(true)
+    })
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('right-click waits for a fast image clipboard read before opening', async () => {
+  const mock = createMockTerminal()
+  let resolveRead:
+    | ((
+        items: {
+          types: readonly string[]
+          getType: (type: string) => Promise<Blob>
+        }[]
+      ) => void)
+    | null = null
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      new Promise((resolve) => {
+        resolveRead = resolve
+      }),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+      })
+    )
+
+    act(() => {
+      mock.element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 200,
+        })
+      )
+    })
+
+    expect(result.current.isOpen).toBe(false)
+
+    await act(async () => {
+      resolveRead?.([
+        {
+          types: ['image/png'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+        },
+      ])
+      await flushMicrotasks()
+    })
+
+    await waitFor(() => {
+      expect(result.current.isOpen).toBe(true)
+      expect(result.current.canPasteImage).toBe(true)
+      expect(result.current.openAt).toEqual({ x: 100, y: 200 })
+    })
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('right-click does not enable image paste for copied image-path text', async () => {
+  const mock = createMockTerminal()
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['text/plain'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(
+              new Blob(['/tmp/codex-clipboard-image.png'], {
+                type: 'text/plain',
+              })
+            ),
+        },
+      ]),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+      })
+    )
+
+    await act(async () => {
+      mock.element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 200,
+        })
+      )
+      await flushMicrotasks()
+    })
+
+    expect(result.current.canPasteImage).toBe(false)
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('pasteImage() rejects clipboard images above the paste size cap', async () => {
+  const mock = createMockTerminal()
+  const pasteSpy = vi.spyOn(mock.terminal, 'paste')
+  const onPasteError = vi.fn()
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['image/png'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(
+              new Blob([new Uint8Array(512 * 1024 + 1)], {
+                type: 'image/png',
+              })
+            ),
+        },
+      ]),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+        onPasteError,
+      })
+    )
+
+    await result.current.pasteImage()
+
+    expect(pasteSpy).not.toHaveBeenCalled()
+    expect(onPasteError).toHaveBeenCalledOnce()
+    expect((onPasteError.mock.calls[0][0] as Error).message).toBe(
+      'Clipboard image is too large to paste'
+    )
+  } finally {
+    clipboard.restore()
+  }
+})
+
 test('close() resets isOpen and openAt and is idempotent', () => {
   const mock = createMockTerminal()
 
@@ -774,6 +975,45 @@ test('preferModifier="meta" + Cmd+Shift+V suppresses and pastes', async () => {
 
     expect(result).toBe(false)
     expect(pasteSpy).toHaveBeenCalledWith('pasted')
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('preferModifier="meta" + Cmd+Shift+V still text-pastes when image paste is enabled', async () => {
+  const mock = createMockTerminal()
+  const pasteSpy = vi.spyOn(mock.terminal, 'paste')
+
+  const clipboard = installClipboardMock({
+    readText: () => Promise.resolve('pasted text'),
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['image/png'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+        },
+      ]),
+  })
+
+  try {
+    renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        preferModifier: 'meta',
+        enableImagePaste: true,
+      })
+    )
+    const handler = captureKeyHandler(mock)
+
+    const result = handler(
+      keyboardEvent({ code: 'KeyV', metaKey: true, shiftKey: true })
+    )
+    await flushMicrotasks()
+
+    expect(result).toBe(false)
+    expect(clipboard.readTextMock).toHaveBeenCalledOnce()
+    expect(pasteSpy).toHaveBeenCalledWith('pasted text')
   } finally {
     clipboard.restore()
   }

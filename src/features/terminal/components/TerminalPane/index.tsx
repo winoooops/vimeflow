@@ -210,6 +210,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
+    const enableImagePaste = pane.agentType !== 'generic'
 
     const footerPlaceholder = isAwaitingRestart
       ? `session ended — restart to resume ${agent.short.toLowerCase()}`
@@ -297,6 +298,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               mode={mode}
               onPtyStatusChange={setPtyStatus}
               deferFit={deferFit}
+              enableImagePaste={enableImagePaste}
             />
           </div>
         )}
