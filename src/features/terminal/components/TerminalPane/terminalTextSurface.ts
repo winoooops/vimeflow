@@ -23,6 +23,10 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MEASURED_CHAR_SAMPLE_LENGTH = 80
+// Within this many px of the bottom counts as "stuck to bottom" (live). The
+// epsilon absorbs fractional-pixel line heights so auto-scroll doesn't get
+// stuck one sub-pixel short of the end.
+const SCROLL_BOTTOM_THRESHOLD_PX = 8
 const BLOCK_ELEMENT_PATTERN = /[\u2580-\u2590\u2594-\u259f]/
 const BLOCK_ONE_EIGHTH = 12.5
 
@@ -63,6 +67,9 @@ export interface TerminalTextSurfaceOutput {
   readonly visibleText: string
   readonly displayText?: string
   readonly displayDelta?: TerminalDisplayDelta
+  // Styled history for the separate static region. undefined = unchanged,
+  // object = replace, null = clear. See TerminalParserEngineOutput.scrollback.
+  readonly scrollback?: { readonly displayText: string } | null
 }
 
 type RenderScrollMode = 'bottom' | 'cursor' | 'top'
@@ -103,7 +110,8 @@ const getControlKeyData = (key: string): string | null => {
 
 const readContainedSelection = (
   root: HTMLElement,
-  output: HTMLElement,
+  contentStart: Node | null,
+  contentEnd: Node | null,
   selectAllText: string
 ): string => {
   const selection = window.getSelection()
@@ -125,15 +133,20 @@ const readContainedSelection = (
   }
 
   const range = selection.getRangeAt(0)
-  const outputRange = document.createRange()
-  outputRange.selectNodeContents(output)
 
-  const includesAllOutput =
-    range.compareBoundaryPoints(Range.START_TO_START, outputRange) <= 0 &&
-    range.compareBoundaryPoints(Range.END_TO_END, outputRange) >= 0
+  // The selectable content spans the history region + the viewport (two <pre>s).
+  if (contentStart && contentEnd) {
+    const contentRange = document.createRange()
+    contentRange.setStartBefore(contentStart)
+    contentRange.setEndAfter(contentEnd)
 
-  if (includesAllOutput) {
-    return selectAllText
+    const includesAllContent =
+      range.compareBoundaryPoints(Range.START_TO_START, contentRange) <= 0 &&
+      range.compareBoundaryPoints(Range.END_TO_END, contentRange) >= 0
+
+    if (includesAllContent) {
+      return selectAllText
+    }
   }
 
   return selection.toString()
@@ -363,6 +376,11 @@ const getKeyboardData = (event: KeyboardEvent): string | null => {
 
 export class TerminalTextSurface implements TerminalSurface {
   private readonly root = document.createElement('div')
+  // Static history region: rendered once when scrollback changes, then left
+  // alone. The viewport (this.output) re-renders per frame; history does not. A
+  // <div> (not <pre>) so `querySelector('pre')` still resolves the viewport; the
+  // row spans inside carry the monospace/pre layout regardless of the wrapper.
+  private readonly scrollbackOutput = document.createElement('div')
   private readonly output = document.createElement('pre')
   private readonly input = document.createElement('textarea')
   private readonly dataHandlers = new Set<(data: string) => void>()
@@ -372,7 +390,13 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly outputBuffer = new TerminalDisplayBuffer({
     columns: DEFAULT_COLS,
   })
+  private readonly scrollbackBuffer = new TerminalDisplayBuffer({
+    columns: DEFAULT_COLS,
+  })
   private container: HTMLElement | null = null
+  // Sticky-bottom scroll state: while true the user has scrolled up to read
+  // history, so renders must NOT yank the view back to the bottom.
+  private userScrolledUp = false
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
   private cachedCharacterWidth: number | null = null
@@ -383,7 +407,7 @@ export class TerminalTextSurface implements TerminalSurface {
   constructor(private readonly options: TerminalTextSurfaceOptions) {
     this.root.dataset.terminalRenderer = options.rendererId
     this.root.tabIndex = -1
-    this.root.append(this.output, this.input)
+    this.root.append(this.scrollbackOutput, this.output, this.input)
 
     Object.assign(this.root.style, {
       height: '100%',
@@ -411,6 +435,25 @@ export class TerminalTextSurface implements TerminalSurface {
       wordBreak: 'normal',
     })
 
+    // History region: same type metrics as the viewport, but its NATURAL height
+    // (no min-height fill) and no bottom padding so it abuts the viewport. Hidden
+    // until it holds history, so a fresh session has no extra top gap.
+    this.scrollbackOutput.dataset.terminalScrollback = 'true'
+    Object.assign(this.scrollbackOutput.style, {
+      boxSizing: 'border-box',
+      display: 'none',
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: `${TERMINAL_FONT_SIZE}px`,
+      lineHeight: 'var(--terminal-line-height)',
+      margin: '0',
+      maxWidth: '100%',
+      overflowX: 'hidden',
+      padding: '8px 8px 0',
+      whiteSpace: 'normal',
+      width: '100%',
+      wordBreak: 'normal',
+    })
+
     Object.assign(this.input.style, {
       height: '1px',
       left: '0',
@@ -424,6 +467,8 @@ export class TerminalTextSurface implements TerminalSurface {
     this.input.setAttribute('aria-label', 'Terminal input')
     this.syncPtyViewportGeometry()
     this.root.addEventListener('mousedown', this.handlePointerDown)
+    this.root.addEventListener('wheel', this.handleWheel, { passive: true })
+    this.root.addEventListener('scroll', this.handleScroll, { passive: true })
     document.addEventListener('selectionchange', this.handleSelectionChange)
     this.input.addEventListener('keydown', this.handleKeyDown)
     this.input.addEventListener('paste', this.handlePaste)
@@ -459,12 +504,17 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   focus(): void {
-    this.input.focus()
+    // The capture textarea sits at top:0; focusing it without preventScroll makes
+    // the browser scroll it into view — jumping a scrollback-tall buffer to the
+    // top on every click. preventScroll keeps the reading/live position.
+    this.input.focus({ preventScroll: true })
   }
 
   dispose(): void {
     this.disposed = true
     this.root.removeEventListener('mousedown', this.handlePointerDown)
+    this.root.removeEventListener('wheel', this.handleWheel)
+    this.root.removeEventListener('scroll', this.handleScroll)
     document.removeEventListener('selectionchange', this.handleSelectionChange)
     this.input.removeEventListener('keydown', this.handleKeyDown)
     this.input.removeEventListener('paste', this.handlePaste)
@@ -481,6 +531,9 @@ export class TerminalTextSurface implements TerminalSurface {
 
   clear(): void {
     this.outputBuffer.clear()
+    this.scrollbackBuffer.clear()
+    this.scrollbackOutput.replaceChildren()
+    this.scrollbackOutput.style.display = 'none'
     this.renderOutput()
   }
 
@@ -508,6 +561,12 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
+    // Update the static history region first (only when it changed) so the
+    // viewport render's scroll math below sees the combined height.
+    if (output.scrollback !== undefined) {
+      this.renderScrollback(output.scrollback)
+    }
+
     if (output.displayDelta) {
       const hasReplaceOperation = output.displayDelta.operations.some(
         (operation) => operation.type === 'replace'
@@ -516,9 +575,11 @@ export class TerminalTextSurface implements TerminalSurface {
 
       this.outputBuffer.applyDelta(output.displayDelta)
 
-      const scrollMode: RenderScrollMode = hasReplaceOperation
-        ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
-        : 'bottom'
+      const scrollMode: RenderScrollMode = output.displayDelta.pinToBottom
+        ? 'bottom'
+        : hasReplaceOperation
+          ? this.readReplaceSnapshotScrollMode(replaceCursorRowIndex)
+          : 'bottom'
 
       this.renderOutput({ scrollMode })
       callback?.()
@@ -572,14 +633,17 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   selectAll(): void {
-    if (!this.output.firstChild) {
+    const { start, end } = this.readContentBoundaries()
+
+    if (!start || !end) {
       return
     }
 
-    this.selectAllSelectionText = this.outputBuffer.readVisibleText()
+    this.selectAllSelectionText = this.readCombinedVisibleText()
 
     const range = document.createRange()
-    range.selectNodeContents(this.output)
+    range.setStartBefore(start)
+    range.setEndAfter(end)
 
     const selection = window.getSelection()
     selection?.removeAllRanges()
@@ -683,6 +747,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.colsValue = nextCols
     this.rowsValue = nextRows
     this.outputBuffer.setColumns(nextCols)
+    this.scrollbackBuffer.setColumns(nextCols)
     this.syncPtyViewportGeometry()
     this.notifyResize()
   }
@@ -694,6 +759,29 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly handlePointerDown = (): void => {
     this.selectAllSelectionText = null
     this.focus()
+  }
+
+  // Freeze auto-scroll the instant the user wheels up, before the resulting
+  // 'scroll' event/layout settles — otherwise the next render snaps to bottom.
+  private readonly handleWheel = (event: WheelEvent): void => {
+    if (event.deltaY < 0) {
+      this.userScrolledUp = true
+    }
+  }
+
+  // Source of truth for the sticky state: re-derive it from the scroll position
+  // after any scroll (user drag, wheel, or our own programmatic snap).
+  private readonly handleScroll = (): void => {
+    this.userScrolledUp = !this.isScrolledToBottom()
+  }
+
+  private isScrolledToBottom(): boolean {
+    return (
+      this.root.scrollTop >=
+      this.root.scrollHeight -
+        this.root.clientHeight -
+        SCROLL_BOTTOM_THRESHOLD_PX
+    )
   }
 
   private readonly handleSelectionChange = (): void => {
@@ -709,10 +797,13 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private readSelectionText(): string {
+    const { start, end } = this.readContentBoundaries()
+
     const nativeSelectionText = readContainedSelection(
       this.root,
-      this.output,
-      this.outputBuffer.readVisibleText()
+      start,
+      end,
+      this.readCombinedVisibleText()
     )
 
     if (nativeSelectionText.length > 0) {
@@ -720,6 +811,26 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     return this.selectAllSelectionText ?? ''
+  }
+
+  // The selectable content spans the history region (if present) then the
+  // viewport, so selection + select-all reach across both <pre> elements.
+  private readContentBoundaries(): {
+    start: Node | null
+    end: Node | null
+  } {
+    return {
+      start: this.scrollbackOutput.firstChild ?? this.output.firstChild,
+      end: this.output.lastChild ?? this.scrollbackOutput.lastChild,
+    }
+  }
+
+  private readCombinedVisibleText(): string {
+    const viewport = this.outputBuffer.readVisibleText()
+
+    return this.scrollbackOutput.firstChild
+      ? `${this.scrollbackBuffer.readVisibleText()}\n${viewport}`
+      : viewport
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -739,6 +850,9 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     event.preventDefault()
+    // Typing returns to the live prompt: drop the sticky-scroll freeze so the
+    // next render follows output to the bottom again.
+    this.userScrolledUp = false
     this.emitData(data)
   }
 
@@ -863,7 +977,9 @@ export class TerminalTextSurface implements TerminalSurface {
       left: '0',
       position: 'absolute',
       top: '0',
-      width: '0.62em',
+      // Overlay exactly one terminal cell so the block cursor stays on the grid
+      // (a fixed em guess drifts off the measured monospace cell width).
+      width: 'var(--terminal-cell-width)',
     })
 
     cursor.append(marker)
@@ -898,7 +1014,10 @@ export class TerminalTextSurface implements TerminalSurface {
       element.style.display = 'inline-block'
       element.style.height = 'var(--terminal-line-height)'
       element.style.lineHeight = 'var(--terminal-line-height)'
-      element.style.minWidth = `calc(var(--terminal-cell-width) * ${cellWidth})`
+      // Fixed cell geometry: a styled cell must occupy exactly its column span,
+      // not just a minimum, so backgrounds/reverse cells stay on the grid
+      // instead of drifting with proportional glyph metrics.
+      element.style.width = `calc(var(--terminal-cell-width) * ${cellWidth})`
       element.style.overflow = 'visible'
       element.style.verticalAlign = 'top'
     }
@@ -1168,6 +1287,33 @@ export class TerminalTextSurface implements TerminalSurface {
     return rows
   }
 
+  private renderScrollback(payload: { displayText: string } | null): void {
+    if (payload === null) {
+      this.scrollbackBuffer.clear()
+      this.scrollbackOutput.replaceChildren()
+      this.scrollbackOutput.style.display = 'none'
+
+      return
+    }
+
+    this.scrollbackBuffer.applyDelta({
+      operations: [
+        { type: 'replace', text: payload.displayText, cursorOffset: 0 },
+      ],
+    })
+
+    // History has no cursor: render the styled runs only. This is the ONLY place
+    // the history DOM is built — never in the per-frame viewport render.
+    this.scrollbackOutput.replaceChildren(
+      ...this.createOutputFragments(
+        this.scrollbackBuffer.readStyledRuns(),
+        0,
+        false
+      )
+    )
+    this.scrollbackOutput.style.display = 'block'
+  }
+
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
     const text = this.outputBuffer.readText()
     const runs = this.outputBuffer.readStyledRuns()
@@ -1186,6 +1332,14 @@ export class TerminalTextSurface implements TerminalSurface {
     )
 
     this.output.replaceChildren(...fragments)
+
+    // While the user is reading history we never reposition (applyScrollMode
+    // early-returns). Crucially we do NOT re-anchor scrollTop here: terminal
+    // history grows at the BOTTOM of scrollback (just above the viewport, below
+    // the reader), so a height-delta anchor would creep the reading position
+    // downward, fire a programmatic 'scroll', and let handleScroll flip the
+    // freeze off — snapping back to the bottom. Leaving scrollTop alone keeps
+    // the reading position put because the rows above it are unchanged.
     this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
   }
 
@@ -1193,6 +1347,11 @@ export class TerminalTextSurface implements TerminalSurface {
     scrollMode: RenderScrollMode,
     cursorRowIndex: number
   ): void {
+    // While the user is reading history, never reposition the viewport.
+    if (this.userScrolledUp) {
+      return
+    }
+
     if (scrollMode === 'bottom') {
       this.root.scrollTop = this.root.scrollHeight
 

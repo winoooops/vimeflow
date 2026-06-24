@@ -338,6 +338,38 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_captures_alt_screen_styled_content_with_resolved_colors() {
+        // A coding-agent TUI draws a styled box on the alt screen. The snapshot
+        // must carry the text AND resolve the ANSI colors to RGB hex — the Rust
+        // engine is where agent color/text fidelity is proven.
+        let mut state = make_state(80, 24);
+        state
+            .write(b"\x1b[?1049h\x1b[H\x1b[44;37m box \x1b[0m")
+            .expect("write alt box");
+
+        let snapshot = state.snapshot().expect("snapshot");
+
+        assert_eq!(snapshot.is_alt_screen, Some(true));
+        assert!(
+            snapshot.rows.iter().any(|row| row.contains("box")),
+            "alt-screen text must be captured"
+        );
+        let styled = snapshot
+            .cells
+            .as_ref()
+            .expect("alt-screen styled cells")
+            .iter()
+            .find(|cell| cell.text == "b")
+            .expect("the 'b' cell");
+        assert!(
+            styled.foreground.is_some() && styled.background.is_some(),
+            "ANSI colors must resolve to RGB hex, got fg={:?} bg={:?}",
+            styled.foreground,
+            styled.background
+        );
+    }
+
+    #[test]
     fn snapshot_suppresses_scrollback_on_the_alternate_screen() {
         let mut state = make_state(80, 3);
         fill_past_viewport(&mut state);

@@ -36,6 +36,15 @@ export interface GhosttyVtRenderSnapshot {
   readonly rows: readonly string[]
   readonly cursor?: GhosttyVtRenderSnapshotCursor
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
+  // Count of scrollback rows the native terminal holds above the viewport (0 on
+  // the alt screen). Styled rows are fetched lazily via the driver's readScrollback.
+  readonly scrollbackRowCount?: number
+  readonly isAltScreen?: boolean
+}
+
+export interface GhosttyVtRenderScrollback {
+  readonly rows: readonly string[]
+  readonly cells: readonly GhosttyVtRenderSnapshotCell[]
 }
 
 interface SnapshotStyle {
@@ -398,5 +407,21 @@ export const createGhosttyVtRenderSnapshotOutput = (
         },
       ],
     },
+  }
+}
+
+// Encode styled scrollback rows into the same SGR-sentinel displayText the
+// viewport uses, so the surface can render it into its separate STATIC history
+// region. Scrollback is NOT trimmed (it is history, verbatim). The surface
+// derives visible text for selection from its own buffer, so we don't carry it.
+export const encodeScrollback = (
+  scrollback: GhosttyVtRenderScrollback
+): { displayText: string } => {
+  const cellsByRow = readCellsByRow(scrollback.cells)
+
+  return {
+    displayText: scrollback.rows
+      .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
+      .join('\n'),
   }
 }

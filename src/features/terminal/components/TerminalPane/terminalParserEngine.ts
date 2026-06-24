@@ -18,6 +18,13 @@ export interface TerminalParserEngineOutput {
   readonly visibleText: string
   readonly displayText?: string
   readonly displayDelta?: TerminalDisplayDelta
+  // Styled scrollback for the surface's separate, STATIC history region. The
+  // surface renders this once into its own buffer and leaves it alone, so the
+  // per-frame viewport render never rebuilds history. Tri-state:
+  //   undefined = unchanged (keep the current region)
+  //   object    = replace the region with this history
+  //   null      = clear the region (alt screen / no history)
+  readonly scrollback?: { readonly displayText: string } | null
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode
@@ -43,6 +50,15 @@ export interface TerminalParserEngine {
   ) => TerminalParserEngineOutput
   parseInput: (input: TerminalParserEngineInput) => TerminalParserEngineOutput
   parseOutput: (chunk: TerminalOutputChunk) => TerminalParserEngineOutput
+  /**
+   * Coalesced render flush. Engines that defer rendering (e.g. the native
+   * render-state byte path, which feeds bytes per chunk but reads the snapshot
+   * once per animation frame) return the latest pending render output here, or
+   * `null` when there is nothing new to paint. Engines that render
+   * synchronously from `parseOutput` return `null` (or omit this).
+   */
+  flushOutput?: () => TerminalParserEngineOutput | null
+  hasPendingOutput?: () => boolean
   reset?: () => void
   resize?: (size: TerminalSize) => void
   dispose?: () => void

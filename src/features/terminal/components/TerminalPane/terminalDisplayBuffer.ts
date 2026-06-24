@@ -48,6 +48,10 @@ export type TerminalDisplayDeltaOperation =
 export interface TerminalDisplayDelta {
   readonly operations: readonly TerminalDisplayDeltaOperation[]
   readonly cursorVisible?: boolean
+  // The buffer carries prepended scrollback above the viewport, so the live
+  // viewport/input sits at the bottom — follow it instead of the replace
+  // snapshot's "show the top of a tall screen" heuristic.
+  readonly pinToBottom?: boolean
 }
 
 interface DisplayState {
