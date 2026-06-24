@@ -106,6 +106,69 @@ pub struct PtyDataEvent {
     /// decoding can replace invalid bytes with U+FFFD (3 bytes when re-encoded)
     /// and shift the cursor away from the producer's offset stream.
     pub byte_len: u64,
+    /// Full visible render-state snapshot produced by Rust-owned libghostty-vt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub ghostty_snapshot: Option<GhosttyVtRenderSnapshot>,
+    /// Current-working-directory URI reported by Ghostty's OSC 7 handling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub ghostty_cwd_uri: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GhosttyVtRenderSnapshotCursor {
+    pub row_index: u16,
+    pub column_offset: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GhosttyVtRenderSnapshotCell {
+    pub row: u16,
+    pub col: u16,
+    pub text: String,
+    pub width: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bold: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub italic: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub underline: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub foreground: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub background: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub reverse: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GhosttyVtRenderSnapshot {
+    pub rows: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cursor: Option<GhosttyVtRenderSnapshotCursor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cells: Option<Vec<GhosttyVtRenderSnapshotCell>>,
 }
 
 /// PTY exit event payload (emitted when process exits)
@@ -157,6 +220,9 @@ pub enum SessionStatus {
         pid: u32,
         replay_data: String,
         replay_end_offset: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        ghostty_snapshot: Option<GhosttyVtRenderSnapshot>,
     },
     Exited {
         last_exit_code: Option<i32>,
@@ -333,6 +399,8 @@ mod tests {
             bytes_base64: Some("//4=".to_string()),
             offset_start: 0,
             byte_len: 2,
+            ghostty_snapshot: None,
+            ghostty_cwd_uri: None,
         })
         .expect("serialize event");
 
@@ -347,6 +415,8 @@ mod tests {
             bytes_base64: None,
             offset_start: 0,
             byte_len: 5,
+            ghostty_snapshot: None,
+            ghostty_cwd_uri: None,
         })
         .expect("serialize event");
 

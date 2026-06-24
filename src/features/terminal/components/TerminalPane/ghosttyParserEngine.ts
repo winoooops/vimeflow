@@ -11,6 +11,8 @@ import {
   type TerminalParserEngineInput,
   type TerminalParserEngineOutput,
 } from './terminalParserEngine'
+import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
+import type { TerminalOutputChunk } from '../../types'
 
 export const GHOSTTY_PARSER_ENGINE_ID = 'ghostty-control-sequence-spike'
 
@@ -38,6 +40,14 @@ export interface GhosttyParserEngineOptions {
 export interface GhosttyParserEngine extends TerminalParserEngine {
   readonly id: typeof GHOSTTY_PARSER_ENGINE_ID
 }
+
+const outputContextFromChunk = (
+  chunk: TerminalOutputChunk
+): TerminalParserOutputContext => ({
+  offsetStart: chunk.offsetStart,
+  byteLen: chunk.byteLen,
+  phase: chunk.phase,
+})
 
 class ControlSequenceGhosttyByteParserAdapter implements GhosttyByteParserAdapter {
   private readonly decoder = new TextDecoder()
@@ -128,6 +138,23 @@ export class GhosttyControlSequenceParserEngine
     this.byteParserAdapter.reset?.()
 
     return super.parseInput(input)
+  }
+
+  parseOutput(chunk: TerminalOutputChunk): TerminalParserEngineOutput {
+    if (chunk.ghosttySnapshot !== undefined) {
+      if (chunk.ghosttyCwdUri !== undefined) {
+        this.emitParserEvent({
+          type: 'cwd',
+          source: 'osc7',
+          uri: chunk.ghosttyCwdUri,
+          output: outputContextFromChunk(chunk),
+        })
+      }
+
+      return createGhosttyVtRenderSnapshotOutput(chunk.ghosttySnapshot)
+    }
+
+    return super.parseOutput(chunk)
   }
 
   reset(): void {

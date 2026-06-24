@@ -19,7 +19,6 @@ import { installCommandPaletteShortcutOverride } from './command-palette-shortcu
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
-import { setupGhosttyRenderStateIpc } from './ghostty-render-state-main'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
@@ -205,7 +204,6 @@ let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
-let disposeGhosttyRenderStateIpc: (() => void) | null = null
 let quitting = false
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
@@ -390,12 +388,6 @@ const setupApp = async (): Promise<void> => {
     ipcMain,
     writer: layoutWriter,
   })
-  disposeGhosttyRenderStateIpc?.()
-  disposeGhosttyRenderStateIpc = setupGhosttyRenderStateIpc({
-    ipcMain,
-    appRoot: app.getAppPath(),
-  })
-
   browserPaneController.setRestoreTabsProvider(
     (sessionId, paneId): PersistedTab[] | null =>
       workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null
@@ -485,8 +477,6 @@ app.on('before-quit', (event) => {
       browserPaneController = null
       workspaceLayoutController?.dispose()
       workspaceLayoutController = null
-      disposeGhosttyRenderStateIpc?.()
-      disposeGhosttyRenderStateIpc = null
 
       try {
         await currentSidecar.shutdown()

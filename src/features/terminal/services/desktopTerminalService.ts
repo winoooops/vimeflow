@@ -34,7 +34,9 @@ export class DesktopTerminalService implements ITerminalService {
     data: string,
     offsetStart: number,
     byteLen: number,
-    bytesBase64?: string
+    bytesBase64?: string,
+    ghosttySnapshot?: PtyDataEvent['ghosttySnapshot'],
+    ghosttyCwdUri?: string
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -89,8 +91,15 @@ export class DesktopTerminalService implements ITerminalService {
         const unlistenData = await listen<PtyDataEvent>(
           'pty-data',
           (payload) => {
-            const { sessionId, data, offsetStart, byteLen, bytesBase64 } =
-              payload
+            const {
+              sessionId,
+              data,
+              offsetStart,
+              byteLen,
+              bytesBase64,
+              ghosttySnapshot,
+              ghosttyCwdUri,
+            } = payload
 
             // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
             // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
@@ -101,13 +110,15 @@ export class DesktopTerminalService implements ITerminalService {
                 : offsetStart
             const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
             this.dataCallbacks.forEach((cb) => {
-              if (bytesBase64 === undefined) {
-                cb(sessionId, data, offset, len)
-
-                return
-              }
-
-              cb(sessionId, data, offset, len, bytesBase64)
+              cb(
+                sessionId,
+                data,
+                offset,
+                len,
+                bytesBase64,
+                ghosttySnapshot,
+                ghosttyCwdUri
+              )
             })
           }
         )
@@ -249,7 +260,9 @@ export class DesktopTerminalService implements ITerminalService {
       data: string,
       offsetStart: number,
       byteLen: number,
-      bytesBase64?: string
+      bytesBase64?: string,
+      ghosttySnapshot?: PtyDataEvent['ghosttySnapshot'],
+      ghosttyCwdUri?: string
     ) => void
   ): Promise<() => void> {
     // Push the callback BEFORE awaiting so that any callbacks already queued

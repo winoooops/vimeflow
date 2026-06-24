@@ -37,6 +37,9 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
             pid: info.status.pid,
             replayData: info.status.replay_data,
             replayEndOffset: Number(info.status.replay_end_offset),
+            ...(info.status.ghostty_snapshot === undefined
+              ? {}
+              : { ghosttySnapshot: info.status.ghostty_snapshot }),
             bufferedEvents: [],
           },
         }

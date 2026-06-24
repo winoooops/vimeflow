@@ -212,7 +212,15 @@ describe('DesktopTerminalService', () => {
         byteLen: 11,
       })
 
-      expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0, 11)
+      expect(callback).toHaveBeenCalledWith(
+        'sess-1',
+        'hello world',
+        0,
+        11,
+        undefined,
+        undefined,
+        undefined
+      )
     })
 
     test('onData forwards optional raw bytes payload', async () => {
@@ -228,7 +236,15 @@ describe('DesktopTerminalService', () => {
         byteLen: 2,
       })
 
-      expect(callback).toHaveBeenCalledWith('sess-1', '��', 0, 2, '//4=')
+      expect(callback).toHaveBeenCalledWith(
+        'sess-1',
+        '��',
+        0,
+        2,
+        '//4=',
+        undefined,
+        undefined
+      )
     })
 
     test('onExit delivers pty-exit events to callback', async () => {
@@ -307,8 +323,24 @@ describe('DesktopTerminalService', () => {
         byteLen: 9,
       })
 
-      expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
-      expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
+      expect(cb1).toHaveBeenCalledWith(
+        'sess-1',
+        'broadcast',
+        100,
+        9,
+        undefined,
+        undefined,
+        undefined
+      )
+      expect(cb2).toHaveBeenCalledWith(
+        'sess-1',
+        'broadcast',
+        100,
+        9,
+        undefined,
+        undefined,
+        undefined
+      )
     })
 
     test('cleans partial listeners and allows retry after init failure', async () => {

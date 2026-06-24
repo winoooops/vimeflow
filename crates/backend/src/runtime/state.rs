@@ -474,6 +474,7 @@ mod tests {
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
+            ghostty: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }

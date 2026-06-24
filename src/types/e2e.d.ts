@@ -17,7 +17,6 @@ declare global {
       getTerminalBufferForSession(sessionId: string): string
       getTerminalRendererConfig(): {
         readonly terminalRenderer: string | null
-        readonly ghosttyRenderStateDriverProvider: string | null
       }
       getVisibleTerminalSelection(): string
       getVisibleTerminalSize(): { readonly cols: number; readonly rows: number } | null

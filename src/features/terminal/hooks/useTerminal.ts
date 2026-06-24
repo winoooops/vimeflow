@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { ITerminalService } from '../services/terminalService'
 import type {
+  GhosttyVtRenderSnapshot,
   TerminalOutputChunk,
   TerminalOutputWriter,
   TerminalSession,
@@ -22,11 +23,14 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
+  ghosttySnapshot?: GhosttyVtRenderSnapshot
   bufferedEvents: {
     data: string
     offsetStart: number
     byteLen: number
     bytesBase64?: string
+    ghosttySnapshot?: GhosttyVtRenderSnapshot
+    ghosttyCwdUri?: string
   }[]
 }
 
@@ -43,7 +47,9 @@ export type NotifyPaneReady = (
     data: string,
     offsetStart: number,
     byteLen: number,
-    bytesBase64?: string
+    bytesBase64?: string,
+    ghosttySnapshot?: GhosttyVtRenderSnapshot,
+    ghosttyCwdUri?: string
   ) => void
 ) => () => void
 
@@ -364,10 +370,20 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         }
 
         const restoredOutputChunks: TerminalOutputChunk[] = [
-          ...(restore.replayData.length > 0
+          ...(restore.ghosttySnapshot !== undefined
             ? [
                 {
                   text: restore.replayData,
+                  ghosttySnapshot: restore.ghosttySnapshot,
+                  offsetStart: null,
+                  byteLen: null,
+                  phase: 'restore' as const,
+                },
+              ]
+            : restore.replayData.length > 0
+              ? [
+                  {
+                    text: restore.replayData,
                   offsetStart: null,
                   byteLen: null,
                   phase: 'restore' as const,
@@ -382,6 +398,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
                 ...(event.bytesBase64 === undefined
                   ? {}
                   : { bytesBase64: event.bytesBase64 }),
+                ...(event.ghosttySnapshot === undefined
+                  ? {}
+                  : { ghosttySnapshot: event.ghosttySnapshot }),
+                ...(event.ghosttyCwdUri === undefined
+                  ? {}
+                  : { ghosttyCwdUri: event.ghosttyCwdUri }),
                 offsetStart: event.offsetStart,
                 byteLen: event.byteLen,
                 phase: 'restore',
@@ -542,7 +564,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       data: string,
       offsetStart: number,
       byteLen: number,
-      bytesBase64?: string
+      bytesBase64?: string,
+      ghosttySnapshot?: GhosttyVtRenderSnapshot,
+      ghosttyCwdUri?: string
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         // Cursor dedupe: drop events whose offset predates what we've
@@ -551,6 +575,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           writeLiveTerminalOutput(output, {
             text: data,
             ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
+            ...(ghosttySnapshot === undefined ? {} : { ghosttySnapshot }),
+            ...(ghosttyCwdUri === undefined ? {} : { ghosttyCwdUri }),
             offsetStart,
             byteLen,
             phase: 'live',
@@ -575,9 +601,19 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       data: string,
       offsetStart: number,
       byteLen: number,
-      bytesBase64?: string
+      bytesBase64?: string,
+      ghosttySnapshot?: GhosttyVtRenderSnapshot,
+      ghosttyCwdUri?: string
     ): void => {
-      handleData(session.id, data, offsetStart, byteLen, bytesBase64)
+      handleData(
+        session.id,
+        data,
+        offsetStart,
+        byteLen,
+        bytesBase64,
+        ghosttySnapshot,
+        ghosttyCwdUri
+      )
     }
 
     const handleExit = (eventSessionId: string, code: number | null): void => {

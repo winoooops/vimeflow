@@ -1,11 +1,17 @@
 import { useCallback, useRef } from 'react'
-import type { NotifyPaneReadyResult, PaneEventHandler } from '../types'
+import type {
+  NotifyPaneReadyResult,
+  PaneEventHandler,
+  TerminalOutputChunk,
+} from '../types'
 
 interface BufferedEvent {
   data: string
   offsetStart: number
   byteLen: number
   bytesBase64?: string
+  ghosttySnapshot?: TerminalOutputChunk['ghosttySnapshot']
+  ghosttyCwdUri?: string
 }
 
 export interface PtyBufferDrain {
@@ -14,7 +20,9 @@ export interface PtyBufferDrain {
     data: string,
     offsetStart: number,
     byteLen: number,
-    bytesBase64?: string
+    bytesBase64?: string,
+    ghosttySnapshot?: TerminalOutputChunk['ghosttySnapshot'],
+    ghosttyCwdUri?: string
   ) => void
   notifyPaneReady: (
     ptyId: string,
@@ -41,7 +49,15 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
   const tombstonedPanesRef = useRef(new Set<string>())
 
   const bufferEvent = useCallback<PtyBufferDrain['bufferEvent']>(
-    (ptyId, data, offsetStart, byteLen, bytesBase64) => {
+    (
+      ptyId,
+      data,
+      offsetStart,
+      byteLen,
+      bytesBase64,
+      ghosttySnapshot,
+      ghosttyCwdUri
+    ) => {
       if (
         tombstonedPanesRef.current.has(ptyId) ||
         readyPanesRef.current.has(ptyId)
@@ -59,6 +75,8 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
         offsetStart,
         byteLen,
         ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
+        ...(ghosttySnapshot === undefined ? {} : { ghosttySnapshot }),
+        ...(ghosttyCwdUri === undefined ? {} : { ghosttyCwdUri }),
       })
     },
     []
@@ -79,17 +97,13 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
       const events = bufferedRef.current.get(ptyId)
       if (events && events.length > 0) {
         for (const event of events) {
-          if (event.bytesBase64 === undefined) {
-            handler(event.data, event.offsetStart, event.byteLen)
-
-            continue
-          }
-
           handler(
             event.data,
             event.offsetStart,
             event.byteLen,
-            event.bytesBase64
+            event.bytesBase64,
+            event.ghosttySnapshot,
+            event.ghosttyCwdUri
           )
         }
         bufferedRef.current.delete(ptyId)

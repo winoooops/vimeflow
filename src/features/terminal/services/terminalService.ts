@@ -1,4 +1,5 @@
 import type {
+  GhosttyVtRenderSnapshot,
   PTYSpawnParams,
   PTYSpawnResult,
   PTYWriteParams,
@@ -62,7 +63,9 @@ export interface ITerminalService {
       data: string,
       offsetStart: number,
       byteLen: number,
-      bytesBase64?: string
+      bytesBase64?: string,
+      ghosttySnapshot?: GhosttyVtRenderSnapshot,
+      ghosttyCwdUri?: string
     ) => void
   ): Promise<() => void>
 
@@ -154,7 +157,9 @@ export class MockTerminalService implements ITerminalService {
     data: string,
     offsetStart: number,
     byteLen: number,
-    bytesBase64?: string
+    bytesBase64?: string,
+    ghosttySnapshot?: GhosttyVtRenderSnapshot,
+    ghosttyCwdUri?: string
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -301,7 +306,10 @@ export class MockTerminalService implements ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      bytesBase64?: string,
+      ghosttySnapshot?: GhosttyVtRenderSnapshot,
+      ghosttyCwdUri?: string
     ) => void
   ): Promise<() => void> {
     this.dataCallbacks.push(callback)
@@ -369,18 +377,22 @@ export class MockTerminalService implements ITerminalService {
     data: string,
     offsetStart?: number,
     byteLen?: number,
-    bytesBase64?: string
+    bytesBase64?: string,
+    ghosttySnapshot?: GhosttyVtRenderSnapshot,
+    ghosttyCwdUri?: string
   ): void {
     const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
     const len = byteLen ?? new TextEncoder().encode(data).length
     this.dataCallbacks.forEach((cb) => {
-      if (bytesBase64 === undefined) {
-        cb(sessionId, data, offset, len)
-
-        return
-      }
-
-      cb(sessionId, data, offset, len, bytesBase64)
+      cb(
+        sessionId,
+        data,
+        offset,
+        len,
+        bytesBase64,
+        ghosttySnapshot,
+        ghosttyCwdUri
+      )
     })
     // Always advance the per-session cursor past this chunk so future
     // auto-assigned offsets stay monotonic, even when the caller passed
@@ -409,6 +421,8 @@ export class MockTerminalService implements ITerminalService {
       offsetStart?: number
       byteLen?: number
       bytesBase64?: string
+      ghosttySnapshot?: GhosttyVtRenderSnapshot
+      ghosttyCwdUri?: string
       code?: number | null
       message?: string
     }
@@ -419,7 +433,9 @@ export class MockTerminalService implements ITerminalService {
         payload.data,
         payload.offsetStart,
         payload.byteLen,
-        payload.bytesBase64
+        payload.bytesBase64,
+        payload.ghosttySnapshot,
+        payload.ghosttyCwdUri
       )
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)

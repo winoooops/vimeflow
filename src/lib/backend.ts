@@ -13,29 +13,6 @@ import type {
  */
 export type UnlistenFn = () => void
 
-export interface GhosttyRenderStateBridgeEffects {
-  onCwdChange: (uri: string) => void
-}
-
-export interface GhosttyRenderStateBridgeSize {
-  cols: number
-  rows: number
-}
-
-export interface GhosttyRenderStateBridgeDriver {
-  writeBytes: (bytes: Uint8Array) => void
-  readSnapshot: () => unknown
-  reset?: () => void
-  resize?: (size: GhosttyRenderStateBridgeSize) => void
-  dispose?: () => void
-}
-
-export interface GhosttyRenderStateBridge {
-  createDriver: (
-    effects: GhosttyRenderStateBridgeEffects
-  ) => GhosttyRenderStateBridgeDriver
-}
-
 export interface BackendApi {
   invoke: <T>(method: string, args?: Record<string, unknown>) => Promise<T>
 
@@ -45,10 +22,6 @@ export interface BackendApi {
   ) => Promise<UnlistenFn>
 
   onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
-
-  ghosttyRenderState?: GhosttyRenderStateBridge
-
-  ghosttyRenderStateLoadError?: string
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

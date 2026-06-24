@@ -10,6 +10,7 @@ use crate::runtime::EventSink;
 
 use super::bytes::{encode_base64, should_emit_bytes_base64};
 use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
+use super::ghostty::{GhosttySessionHandle, GhosttySessionReader};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
@@ -365,6 +366,12 @@ pub(crate) async fn spawn_pty_inner(
     let generation = state.next_generation();
     let ring = Arc::new(Mutex::new(RingBuffer::new(65536)));
     let read_ring = Arc::clone(&ring);
+    let (ghostty, read_ghostty) = if should_emit_bytes_base64() {
+        let (handle, reader) = GhosttySessionHandle::new();
+        (Some(handle), Some(reader))
+    } else {
+        (None, None)
+    };
     let cancelled = Arc::new(AtomicBool::new(false));
     let read_cancelled = Arc::clone(&cancelled);
     let session = ManagedSession {
@@ -377,6 +384,7 @@ pub(crate) async fn spawn_pty_inner(
             .map(|f| f.shim_dir_path.to_string_lossy().to_string()),
         generation,
         ring,
+        ghostty,
         cancelled,
         started_at: std::time::SystemTime::now(),
     };
@@ -466,6 +474,7 @@ pub(crate) async fn spawn_pty_inner(
             session_id,
             generation,
             read_ring,
+            read_ghostty,
             read_cancelled,
         )) {
             log::error!("PTY output reader error: {}", e);
@@ -504,6 +513,9 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
 
     state
         .resize(&request.session_id, request.rows, request.cols)
+        .map_err(|e| e.to_string())?;
+    state
+        .resize_ghostty(&request.session_id, request.rows, request.cols)
         .map_err(|e| e.to_string())
 }
 
@@ -763,19 +775,22 @@ pub(crate) fn list_sessions_inner(
                 sessions_lock.get(id).map(|session| {
                     let pid = session.child.process_id().unwrap_or(0);
                     let ring = Arc::clone(&session.ring);
-                    (pid, ring)
+                    let ghostty = session.ghostty.clone();
+                    (pid, ring, ghostty)
                 })
             };
 
-            if let Some((pid, ring)) = live_session {
+            if let Some((pid, ring, ghostty)) = live_session {
                 let ring_guard = ring.lock().expect("ring poisoned");
                 let bytes = ring_guard.bytes_snapshot();
                 let end_offset = ring_guard.end_offset();
                 let replay_data = String::from_utf8_lossy(&bytes).to_string();
+                let ghostty_snapshot = ghostty.and_then(|ghostty| ghostty.latest_snapshot());
                 SessionStatus::Alive {
                     pid,
                     replay_data,
                     replay_end_offset: end_offset,
+                    ghostty_snapshot,
                 }
             } else {
                 // Lazy reconciliation: cache says alive but PtyState
@@ -1108,6 +1123,7 @@ async fn read_pty_output(
     session_id: SessionId,
     generation: u64,
     ring: Arc<Mutex<RingBuffer>>,
+    ghostty: Option<GhosttySessionReader>,
     cancelled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
@@ -1117,6 +1133,16 @@ async fn read_pty_output(
     // with "session not found" if we removed the session temporarily
     let mut reader = state.clone_reader(&session_id)?;
     let emit_bytes_base64 = should_emit_bytes_base64();
+    let mut ghostty = match ghostty {
+        Some(ghostty) => match ghostty.create_state(80, 24) {
+            Ok(ghostty) => Some(ghostty),
+            Err(error) => {
+                log::warn!("Ghostty VT initialization failed for session {session_id}: {error}");
+                None
+            }
+        },
+        None => None,
+    };
 
     // Read loop
     let mut buf = [0u8; 8192];
@@ -1172,6 +1198,15 @@ async fn read_pty_output(
                     ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                let ghostty_write = ghostty.as_mut().and_then(|ghostty| {
+                    ghostty
+                        .write(&buf[..n])
+                        .map_err(|error| {
+                            log::warn!("Ghostty VT update failed for session {session_id}: {error}");
+                            error
+                        })
+                        .ok()
+                });
                 emit_pty_data(
                     events.as_ref(),
                     &PtyDataEvent {
@@ -1185,6 +1220,8 @@ async fn read_pty_output(
                         // length of `data` (lossy UTF-8 inflates invalid
                         // bytes to U+FFFD, which is 3 bytes when re-encoded).
                         byte_len: n as u64,
+                        ghostty_snapshot: ghostty_write.as_ref().map(|write| write.snapshot.clone()),
+                        ghostty_cwd_uri: ghostty_write.and_then(|write| write.cwd_uri),
                     },
                 )
                 .ok();
@@ -2029,6 +2066,7 @@ mod tests {
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
+            ghostty: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: std::time::SystemTime::now(),
         }

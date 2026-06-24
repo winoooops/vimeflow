@@ -336,6 +336,7 @@ pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
         shim_dir: None,
         generation: 0,
         ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
+        ghostty: None,
         cancelled: Arc::new(AtomicBool::new(false)),
         started_at: std::time::SystemTime::UNIX_EPOCH,
     }

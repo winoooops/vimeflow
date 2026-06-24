@@ -343,13 +343,23 @@ export const useSessionRestore = ({
     void (async (): Promise<void> => {
       try {
         stopBuffering = await service.onData(
-          (sessionId, data, offsetStart, byteLen, bytesBase64) => {
+          (
+            sessionId,
+            data,
+            offsetStart,
+            byteLen,
+            bytesBase64,
+            ghosttySnapshot,
+            ghosttyCwdUri
+          ) => {
             bufferRef.current.bufferEvent(
               sessionId,
               data,
               offsetStart,
               byteLen,
-              bytesBase64
+              bytesBase64,
+              ghosttySnapshot,
+              ghosttyCwdUri
             )
           }
         )

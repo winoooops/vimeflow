@@ -9,6 +9,7 @@ pub mod cache;
 pub mod commands;
 pub(crate) mod events;
 pub(crate) mod foreground;
+pub(crate) mod ghostty;
 pub mod state;
 pub mod workspace_layout;
 #[cfg(feature = "e2e-test")]

@@ -63,7 +63,10 @@ describe('MockTerminalService', () => {
         sessionId,
         '$ ',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
     })
   })
@@ -88,21 +91,30 @@ describe('MockTerminalService', () => {
         sessionId,
         'h',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
 
       expect(onData).toHaveBeenCalledWith(
         sessionId,
         'e',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
 
       expect(onData).toHaveBeenCalledWith(
         sessionId,
         'o',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
       expect(onData).toHaveBeenCalledTimes(5)
     })
@@ -128,7 +140,10 @@ describe('MockTerminalService', () => {
         sessionId,
         'hello\r\n$ ',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
     })
 
@@ -152,7 +167,10 @@ describe('MockTerminalService', () => {
         sessionId,
         '/home/user\r\n$ ',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
     })
 
@@ -176,7 +194,10 @@ describe('MockTerminalService', () => {
         sessionId,
         '\b \b',
         expect.any(Number),
-        expect.any(Number)
+        expect.any(Number),
+        undefined,
+        undefined,
+        undefined
       )
     })
 
@@ -311,7 +332,15 @@ describe('MockTerminalService', () => {
 
       service.emitData(sessionId, 'test data')
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 'test data', 0, 9)
+      expect(callback).toHaveBeenCalledWith(
+        sessionId,
+        'test data',
+        0,
+        9,
+        undefined,
+        undefined,
+        undefined
+      )
 
       unsubscribe()
     })

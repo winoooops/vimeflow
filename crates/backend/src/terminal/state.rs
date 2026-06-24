@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use super::ghostty::GhosttySessionHandle;
 use super::types::SessionId;
 
 /// Global generation counter — monotonically increasing across all sessions
@@ -82,6 +83,8 @@ pub struct ManagedSession {
     pub generation: u64,
     /// Ring buffer for recent output + monotonic offset (replay protocol)
     pub ring: Arc<Mutex<RingBuffer>>,
+    /// Optional Rust-owned Ghostty VT/render state for the Ghostty renderer.
+    pub ghostty: Option<GhosttySessionHandle>,
     /// Cancellation flag observed by the read loop. Set by `kill_pty` so the
     /// background reader can break out even if the child ignores SIGTERM —
     /// without it, a long-lived process would keep the read thread alive
@@ -416,6 +419,28 @@ impl PtyState {
         Ok(())
     }
 
+    pub fn resize_ghostty(
+        &self,
+        session_id: &SessionId,
+        rows: u16,
+        cols: u16,
+    ) -> anyhow::Result<()> {
+        let ghostty = {
+            let sessions = self.sessions.lock().expect("failed to lock sessions");
+            sessions
+                .get(session_id)
+                .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?
+                .ghostty
+                .clone()
+        };
+
+        if let Some(ghostty) = ghostty {
+            ghostty.resize(cols, rows).map_err(|error| anyhow::anyhow!(error))?;
+        }
+
+        Ok(())
+    }
+
     /// Kill a PTY session (send SIGTERM).
     ///
     /// Round 9, Finding 1 (codex P1): returns a typed `KillError` so callers
@@ -643,6 +668,7 @@ mod tests {
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
+            ghostty: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }
@@ -716,6 +742,7 @@ mod tests {
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
+            ghostty: None,
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }

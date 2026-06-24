@@ -2,6 +2,10 @@
  * Terminal feature domain types
  */
 
+import type { GhosttyVtRenderSnapshot } from '../../../bindings'
+
+export type { GhosttyVtRenderSnapshot } from '../../../bindings'
+
 /**
  * Terminal session status
  */
@@ -191,11 +195,14 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
+  ghosttySnapshot?: GhosttyVtRenderSnapshot
   bufferedEvents: {
     data: string
     offsetStart: number
     byteLen: number
     bytesBase64?: string
+    ghosttySnapshot?: GhosttyVtRenderSnapshot
+    ghosttyCwdUri?: string
   }[]
 }
 
@@ -204,7 +211,9 @@ export type PaneEventHandler = (
   data: string,
   offsetStart: number,
   byteLen: number,
-  bytesBase64?: string
+  bytesBase64?: string,
+  ghosttySnapshot?: GhosttyVtRenderSnapshot,
+  ghosttyCwdUri?: string
 ) => void
 
 /** Cleanup callback returned by `notifyPaneReady` — call on pane unmount. */
@@ -233,6 +242,10 @@ export interface TerminalOutputChunk {
   readonly text: string
   /** Optional raw byte payload for future byte-preserving renderer adapters. */
   readonly bytesBase64?: string
+  /** Optional Rust-owned Ghostty VT render-state snapshot. */
+  readonly ghosttySnapshot?: GhosttyVtRenderSnapshot
+  /** Optional OSC 7 cwd URI reported by Rust-owned Ghostty VT state. */
+  readonly ghosttyCwdUri?: string
   /** Producer byte offset for this chunk, if known. */
   readonly offsetStart: number | null
   /** Producer byte length for this chunk, if known. */

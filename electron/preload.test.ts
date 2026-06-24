@@ -40,25 +40,9 @@ const electronMock = vi.hoisted(() => {
   }
 })
 
-const ghosttyRenderStateMock = vi.hoisted(() => {
-  const bridge = {
-    createDriver: vi.fn(),
-  }
-
-  return {
-    bridge,
-    loadOptionalGhosttyRenderStateBridge: vi.fn(() => ({ bridge })),
-  }
-})
-
 vi.mock('electron', () => ({
   contextBridge: electronMock.contextBridge,
   ipcRenderer: electronMock.ipcRenderer,
-}))
-
-vi.mock('./ghostty-render-state-preload', () => ({
-  loadOptionalGhosttyRenderStateBridge:
-    ghosttyRenderStateMock.loadOptionalGhosttyRenderStateBridge,
 }))
 
 await import('./preload')
@@ -90,12 +74,6 @@ describe('preload browserPane wiring', () => {
 
   test('raises the shared ipcRenderer listener cap during preload startup', () => {
     expect(preloadSetMaxListenersCalls).toEqual([[64]])
-  })
-
-  test('exposes the preload-owned Ghostty render-state bridge when loaded', () => {
-    expect(electronMock.exposed?.ghosttyRenderState).toBe(
-      ghosttyRenderStateMock.bridge
-    )
   })
 
   test.each([

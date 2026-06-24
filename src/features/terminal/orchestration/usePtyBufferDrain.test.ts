@@ -38,8 +38,24 @@ describe('usePtyBufferDrain', () => {
     result.current.notifyPaneReady('pty-1', handler)
 
     expect(handler).toHaveBeenCalledTimes(2)
-    expect(handler).toHaveBeenNthCalledWith(1, 'first', 0, 5)
-    expect(handler).toHaveBeenNthCalledWith(2, 'second', 5, 6)
+    expect(handler).toHaveBeenNthCalledWith(
+      1,
+      'first',
+      0,
+      5,
+      undefined,
+      undefined,
+      undefined
+    )
+    expect(handler).toHaveBeenNthCalledWith(
+      2,
+      'second',
+      5,
+      6,
+      undefined,
+      undefined,
+      undefined
+    )
   })
 
   test('preserves raw bytes payload while buffering and draining events', () => {
@@ -55,7 +71,14 @@ describe('usePtyBufferDrain', () => {
 
     result.current.notifyPaneReady('pty-1', handler)
 
-    expect(handler).toHaveBeenCalledWith('��', 0, 2, '//4=')
+    expect(handler).toHaveBeenCalledWith(
+      '��',
+      0,
+      2,
+      '//4=',
+      undefined,
+      undefined
+    )
   })
 
   test('notifyPaneReady cleanup re-arms pending state on remount', () => {

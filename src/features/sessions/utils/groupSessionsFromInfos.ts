@@ -101,6 +101,9 @@ const buildPane = (
       pid: info.status.pid,
       replayData: info.status.replay_data,
       replayEndOffset: Number(info.status.replay_end_offset),
+      ...(info.status.ghostty_snapshot === undefined
+        ? {}
+        : { ghosttySnapshot: info.status.ghostty_snapshot }),
       bufferedEvents: [],
     },
   }

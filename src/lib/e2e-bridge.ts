@@ -201,11 +201,8 @@ export const getVisibleTerminalSize = (): {
 
 export const getTerminalRendererConfig = (): {
   readonly terminalRenderer: string | null
-  readonly ghosttyRenderStateDriverProvider: string | null
 } => ({
   terminalRenderer: import.meta.env.VITE_TERMINAL_RENDERER ?? null,
-  ghosttyRenderStateDriverProvider:
-    import.meta.env.VITE_GHOSTTY_RENDER_STATE_DRIVER_PROVIDER ?? null,
 })
 
 export const writeOutputToVisibleTerminal = (data: string): boolean => {
