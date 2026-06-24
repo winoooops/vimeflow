@@ -89,6 +89,27 @@ export const createGhosttyVtRenderStateParserDriverFactory =
     let emptyScrollbackRetryRowCount = -1
     let emptyScrollbackRetryCount = 0
 
+    const noteMissingScrollback = (
+      count: number,
+      viewport: TerminalParserEngineOutput
+    ): TerminalParserEngineOutput => {
+      emptyScrollbackRetryCount =
+        count === emptyScrollbackRetryRowCount
+          ? emptyScrollbackRetryCount + 1
+          : 1
+      emptyScrollbackRetryRowCount = count
+
+      if (emptyScrollbackRetryCount > MAX_EMPTY_SCROLLBACK_RETRIES) {
+        cachedScrollbackRowCount = count
+        emptyScrollbackRetryRowCount = -1
+        emptyScrollbackRetryCount = 0
+
+        return { ...viewport, scrollback: null }
+      }
+
+      return viewport
+    }
+
     const attachScrollback = (
       snapshot: GhosttyVtRenderSnapshot,
       output: TerminalParserEngineOutput
@@ -120,25 +141,11 @@ export const createGhosttyVtRenderStateParserDriverFactory =
       try {
         scrollback = renderStateDriver.readScrollback()
       } catch {
-        return viewport
+        return noteMissingScrollback(count, viewport)
       }
 
       if (scrollback.rows.length === 0) {
-        emptyScrollbackRetryCount =
-          count === emptyScrollbackRetryRowCount
-            ? emptyScrollbackRetryCount + 1
-            : 1
-        emptyScrollbackRetryRowCount = count
-
-        if (emptyScrollbackRetryCount > MAX_EMPTY_SCROLLBACK_RETRIES) {
-          cachedScrollbackRowCount = count
-          emptyScrollbackRetryRowCount = -1
-          emptyScrollbackRetryCount = 0
-
-          return { ...viewport, scrollback: null }
-        }
-
-        return viewport
+        return noteMissingScrollback(count, viewport)
       }
 
       cachedScrollbackRowCount = count

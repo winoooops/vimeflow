@@ -389,3 +389,12 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** `attachScrollback()` called the native-backed `readScrollback()` path without a recovery boundary. Preload converts structured IPC failures into thrown errors, so a transient native scrollback read or formatter failure could throw through `flushOutput()` and stop the Ghostty pane's render updates instead of preserving the live viewport.
 - **Fix:** Wrap the lazy `readScrollback()` call in `try/catch` and return the viewport output with no `scrollback` field on failure. This preserves the existing static history region and does not advance the cached row count, so a later dirty frame can retry. Regression coverage asserts viewport rendering continues and recovered scrollback is attached on the next successful read.
 - **Commit:** same commit as this entry
+
+### 41. Exception retry paths need the same termination guard as empty results
+
+- **Source:** github-claude | PR #615 round 7 | 2026-06-24
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts`
+- **Finding:** The lazy scrollback exception path returned live viewport output without advancing or bounding the scrollback cache. A persistent native `readScrollback()` failure for a positive row count therefore retried the synchronous IPC read on every dirty output flush, even though the empty-result path already had a same-count give-up guard.
+- **Fix:** Route caught scrollback read failures through the same per-row-count retry helper used by empty scrollback responses. After the retry budget is exhausted, the adapter clears stale static scrollback, caches the current count, and suppresses further same-count reads until reset, resize, or row-count growth.
+- **Commit:** same commit as this entry
