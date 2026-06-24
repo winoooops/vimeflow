@@ -60,6 +60,13 @@ jobs:
         with:
           workspaces: .
 
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Install npm dependencies
         run: npm ci
 
@@ -106,6 +113,13 @@ jobs:
           # entries from non-e2e CI jobs don't mask recompiles triggered
           # by this job.
           shared-key: e2e-test
+
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install system dependencies
         # xvfb is required by xvfb-run for headless Electron runs.

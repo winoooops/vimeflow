@@ -89,6 +89,13 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Run Rust tests
         run: cargo test
 
@@ -122,6 +129,13 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
+
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install npm dependencies
         run: npm ci
