@@ -230,4 +230,37 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThan(0) // down → positive
     expect(preventDefault).toHaveBeenCalled()
   })
+
+  test('snaps the viewport to the bottom on a keystroke after scrolling up', () => {
+    const { surface, root, input } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+    surface.writeParsedOutput({
+      visibleText: '',
+      wheelForwardMode: { mouseTracking: false, sgrMouse: false },
+    })
+
+    dispatchWheelAt(root, { deltaY: -50 }) // scroll up into history
+    scrollSender.mockClear()
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+    )
+
+    expect(scrollSender).toHaveBeenCalledTimes(1)
+    // A large positive delta clamps the engine viewport to the live tail.
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
+  })
+
+  test('does not scroll on a keystroke when already at the bottom', () => {
+    const { surface, input } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+    )
+
+    expect(scrollSender).not.toHaveBeenCalled()
+  })
 })

@@ -28,6 +28,9 @@ const MEASURED_CHAR_SAMPLE_LENGTH = 80
 // Fallback row height (px) for converting a pixel wheel delta into a row count
 // when the surface's measured line height isn't resolvable yet.
 const DEFAULT_WHEEL_LINE_HEIGHT_PX = 16
+// Row delta large enough to clamp the engine viewport to the live tail, used to
+// snap back to the bottom when the user types after scrolling up into history.
+const SCROLL_TO_BOTTOM_DELTA = 1_000_000
 // SGR/X10 mouse button codes for wheel-up / wheel-down (mouse-tracking apps).
 const WHEEL_UP_BUTTON = 64
 const WHEEL_DOWN_BUTTON = 65
@@ -397,6 +400,10 @@ export class TerminalTextSurface implements TerminalSurface {
   // signed row delta to the PTY, which scrolls the libghostty viewport and
   // emits the scrolled snapshot. Negative scrolls up into history.
   private scrollSender?: (delta: number) => void
+  // Whether the user has wheeled up into history since the last snap-to-bottom.
+  // When true, the next keystroke/paste jumps the viewport back to the live tail
+  // so the user sees what they type (matching native terminal behavior).
+  private scrolledUp = false
   // Active wheel-forwarding modes (VIM-223), refreshed from each render snapshot.
   // Defaults to all-false so a plain shell drives an engine scroll on the wheel.
   private wheelForwardMode: WheelForwardMode = {
@@ -776,8 +783,23 @@ export class TerminalTextSurface implements TerminalSurface {
     }
     if (rows !== 0) {
       this.scrollSender?.(rows)
+      // Remember an upward scroll into history so the next keystroke snaps back.
+      if (rows < 0) {
+        this.scrolledUp = true
+      }
     }
     event.preventDefault()
+  }
+
+  // When the user types after scrolling up into history, jump the engine
+  // viewport back to the live tail so their input is visible. No-op (and no
+  // IPC) when already following the bottom.
+  private snapToBottomForInput(): void {
+    if (!this.scrolledUp) {
+      return
+    }
+    this.scrolledUp = false
+    this.scrollSender?.(SCROLL_TO_BOTTOM_DELTA)
   }
 
   // Encode a single wheel tick as a mouse-event byte sequence at the pointer's
@@ -876,6 +898,7 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     event.preventDefault()
+    this.snapToBottomForInput()
     this.emitData(data)
   }
 
@@ -887,6 +910,7 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     event.preventDefault()
+    this.snapToBottomForInput()
     this.emitData(text)
   }
 
