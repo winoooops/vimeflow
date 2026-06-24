@@ -220,6 +220,7 @@ describe('ghosttyVtRenderStateDriver', () => {
 
   test('retries empty scrollback fetches again when the row count changes', () => {
     let scrollbackRowCount = 1
+
     const readScrollback = vi
       .fn()
       .mockReturnValueOnce({ rows: [], cells: [] })
