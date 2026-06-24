@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import type {
   PTYSpawnParams,
@@ -13,6 +14,7 @@ import type {
   PtyExitEvent,
   PtyErrorEvent,
   BurnerForegroundEvent,
+  GhosttyVtScrollback,
   SessionList,
   SetActiveSessionRequest,
   ReorderSessionsRequest,
@@ -243,6 +245,18 @@ export class DesktopTerminalService implements ITerminalService {
         rows: params.rows,
         cols: params.cols,
       },
+    })
+  }
+
+  async readScrollback(
+    sessionId: string,
+    start: number,
+    count: number
+  ): Promise<GhosttyVtScrollback> {
+    return invoke<GhosttyVtScrollback>('read_scrollback', {
+      sessionId,
+      start,
+      count,
     })
   }
 

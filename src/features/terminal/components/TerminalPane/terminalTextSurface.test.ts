@@ -283,122 +283,173 @@ describe('TerminalTextSurface static scrollback region', () => {
   })
 })
 
-describe('TerminalTextSurface eager-delta scrollback updates', () => {
+describe('TerminalTextSurface lazy scrollback loading', () => {
   const readScrollback = (root: HTMLElement): HTMLElement =>
     root.querySelector<HTMLElement>('[data-terminal-scrollback="true"]')!
 
-  test('accumulates appended rows across frames', () => {
+  // Resolve all pending microtasks so an awaited scrollbackFetch settles and its
+  // prepend/scrollTop bookkeeping runs before the assertions read the DOM.
+  const flushMicrotasks = async (): Promise<void> => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  const feedScrollbackUpdate = (
+    surface: TerminalTextSurface,
+    update: {
+      isAltScreen: boolean
+      rowCount: number
+    }
+  ): void => {
+    surface.writeParsedOutput({
+      visibleText: '',
+      scrollbackUpdate: update,
+    })
+  }
+
+  test('does not fetch history until the user scrolls up', () => {
     const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'old row' }))
+    surface.setScrollbackFetcher(fetch)
 
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 1,
-        appendDisplayText: 'old line 1',
-      },
-    })
-
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 2,
-        appendDisplayText: 'old line 2',
-      },
-    })
+    // A snapshot reports 200 history rows, but nothing is loaded eagerly.
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
 
     const scrollback = readScrollback(root)
-    expect(scrollback.style.display).toBe('block')
-    expect(scrollback.textContent).toContain('old line 1')
-    expect(scrollback.textContent).toContain('old line 2')
-  })
-
-  test('hides on alt screen and re-shows on return without refetching', () => {
-    const { surface, root } = mountSurface()
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 1,
-        appendDisplayText: 'persisted history',
-      },
-    })
-    const scrollback = readScrollback(root)
-    expect(scrollback.style.display).toBe('block')
-
-    // Enter alt screen — region hidden but content retained.
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: { isAltScreen: true, rowCount: 0 },
-    })
-    expect(scrollback.style.display).toBe('none')
-    expect(scrollback.textContent).toContain('persisted history')
-
-    // Return from alt screen with no new rows — region re-shown from the cache.
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: { isAltScreen: false, rowCount: 1 },
-    })
-    expect(scrollback.style.display).toBe('block')
-    expect(scrollback.textContent).toContain('persisted history')
-  })
-
-  test('clears the region when rowCount drops to zero', () => {
-    const { surface, root } = mountSurface()
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 1,
-        appendDisplayText: 'about to clear',
-      },
-    })
-
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
-    })
-
-    const scrollback = readScrollback(root)
+    expect(fetch).not.toHaveBeenCalled()
     expect(scrollback.style.display).toBe('none')
     expect(scrollback.textContent).toBe('')
   })
 
-  test('resets and re-accumulates when the count drops below what was rendered', () => {
+  test('fetches and prepends the previous batch on scroll-to-top', async () => {
     const { surface, root } = mountSurface()
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 1,
-        appendDisplayText: 'stale one',
-      },
-    })
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'old row' }))
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
 
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 2,
-        appendDisplayText: 'stale two',
-      },
-    })
-
-    // A clear/reset happened upstream: rowCount fell to 1 with fresh content.
-    surface.writeParsedOutput({
-      visibleText: '',
-      scrollbackUpdate: {
-        isAltScreen: false,
-        rowCount: 1,
-        appendDisplayText: 'fresh',
-      },
-    })
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
 
     const scrollback = readScrollback(root)
-    expect(scrollback.textContent).toContain('fresh')
-    expect(scrollback.textContent).not.toContain('stale one')
-    expect(scrollback.textContent).not.toContain('stale two')
+    // end = 200 (nothing loaded), start = max(0, 200 - 100) = 100 → window (100, 100).
+    expect(fetch).toHaveBeenCalledWith(100, 100)
+    expect(scrollback.textContent).toContain('old row')
+    expect(scrollback.style.display).toBe('block')
+  })
+
+  test('holds the reading position by bumping scrollTop by the prepended height', async () => {
+    const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'old row' }))
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
+
+    // scrollHeight grows by 300px (1000 → 1300) the instant the prepend lands DOM
+    // rows in the scrollback region — keyed off the region's real child count so
+    // the stub is robust to however many times the getter is read. The reader sat
+    // at the top (0); after the prepend scrollTop must move down by the delta so
+    // the same rows stay under the eye instead of jumping to the new top.
+    const scrollback = readScrollback(root)
+    Object.defineProperty(root, 'scrollHeight', {
+      configurable: true,
+      get: () => (scrollback.childNodes.length > 0 ? 1300 : 1000),
+    })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+
+    expect(root.scrollTop).toBe(300) // 0 + (1300 - 1000), not left at 0
+  })
+
+  test('does not double-fetch while a fetch is in flight', () => {
+    const { surface, root } = mountSurface()
+    // A never-resolving fetch keeps isFetchingScrollback latched, so the second
+    // scroll-to-top must be ignored while the first request is still pending.
+    const pending = new Promise<{ displayText: string }>(() => undefined)
+    const fetch = vi.fn(() => pending)
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    root.dispatchEvent(new Event('scroll')) // second event while still fetching
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('stops fetching once the oldest row reaches the top of history', async () => {
+    const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'old row' }))
+    surface.setScrollbackFetcher(fetch)
+    // Only 80 rows total — a single batch of 100 loads all of them (start = 0).
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 80 })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith(0, 80)
+
+    // loadedOldestRow is now 0: further scroll-to-top must not refetch.
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('clears the region when an update reports fewer rows than loaded', async () => {
+    const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'loaded' }))
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+    const scrollback = readScrollback(root)
+    expect(scrollback.textContent).toContain('loaded')
+
+    // A reset upstream drops the total below scrollbackTotal → clear the region.
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 5 })
+
+    expect(scrollback.style.display).toBe('none')
+    expect(scrollback.textContent).toBe('')
+  })
+
+  test('hides the region on the alt screen', async () => {
+    const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'history' }))
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+    const scrollback = readScrollback(root)
+    expect(scrollback.style.display).toBe('block')
+
+    feedScrollbackUpdate(surface, { isAltScreen: true, rowCount: 0 })
+
+    expect(scrollback.style.display).toBe('none')
+  })
+
+  test('clears the region when rowCount drops to zero', async () => {
+    const { surface, root } = mountSurface()
+    const fetch = vi.fn(() => Promise.resolve({ displayText: 'to clear' }))
+    surface.setScrollbackFetcher(fetch)
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 200 })
+
+    root.scrollTop = 0
+    root.dispatchEvent(new Event('scroll'))
+    await flushMicrotasks()
+
+    feedScrollbackUpdate(surface, { isAltScreen: false, rowCount: 0 })
+
+    const scrollback = readScrollback(root)
+    expect(scrollback.style.display).toBe('none')
+    expect(scrollback.textContent).toBe('')
   })
 
   test('does not freeze auto-follow on a no-op wheel-up without overflow', () => {

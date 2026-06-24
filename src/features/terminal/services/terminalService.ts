@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import type {
   GhosttyVtRenderSnapshot,
   PTYSpawnParams,
@@ -7,6 +8,7 @@ import type {
   PTYKillParams,
 } from '../types'
 import type {
+  GhosttyVtScrollback,
   SessionList,
   SetSessionActivityPanelCollapsedRequest,
   SetWorkspaceSessionsRequest,
@@ -32,6 +34,18 @@ export interface ITerminalService {
    * Resize the PTY
    */
   resize(params: PTYResizeParams): Promise<void>
+
+  /**
+   * Read a window of scrollback (history) rows for lazy load-on-scroll. `start`
+   * and `count` are a 0-based row index + row count; the returned cells are
+   * reindexed so row 0 is the first returned row. Drives the surface's
+   * load-more-on-scroll-to-top behavior.
+   */
+  readScrollback(
+    sessionId: string,
+    start: number,
+    count: number
+  ): Promise<GhosttyVtScrollback>
 
   /**
    * Kill a PTY process
@@ -286,6 +300,18 @@ export class MockTerminalService implements ITerminalService {
 
     // Mock resize - no-op
     return Promise.resolve()
+  }
+
+  readScrollback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _sessionId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _start: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _count: number
+  ): Promise<GhosttyVtScrollback> {
+    // Mock has no history store — the in-memory terminal never scrolls back.
+    return Promise.resolve({ rows: [], cells: [] })
   }
 
   kill(params: PTYKillParams): Promise<void> {

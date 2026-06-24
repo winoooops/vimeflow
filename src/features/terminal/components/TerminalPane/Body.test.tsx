@@ -59,6 +59,7 @@ const createDefaultMockService = (): ITerminalService =>
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
+    readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }) as ITerminalService
 
@@ -2010,6 +2011,7 @@ describe('Body', () => {
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
         setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+        readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
         setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -2073,6 +2075,7 @@ describe('Body', () => {
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
         setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+        readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
         setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -2166,6 +2169,7 @@ describe('Body', () => {
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
         setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+        readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
         setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function

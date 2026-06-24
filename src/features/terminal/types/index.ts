@@ -1,8 +1,12 @@
+// cspell:ignore ghostty
 /**
  * Terminal feature domain types
  */
 
-import type { GhosttyVtRenderSnapshot } from '../../../bindings'
+import type {
+  GhosttyVtRenderSnapshot,
+  GhosttyVtScrollback,
+} from '../../../bindings'
 
 export type { GhosttyVtRenderSnapshot } from '../../../bindings'
 
@@ -371,6 +375,15 @@ export interface TerminalInstance {
   viewportReader: TerminalViewportReader
   fitController: TerminalFitController
   attachRenderer: () => TerminalRendererHandle
+  /**
+   * Inject the raw scrollback (history) fetcher used for lazy load-on-scroll.
+   * Optional because only the Rust VT (Ghostty) path renders styled history;
+   * the plainText/xterm paths don't implement it. The renderer encodes the
+   * fetched rows before handing them to its surface.
+   */
+  setScrollbackFetcher?: (
+    fetch: (start: number, count: number) => Promise<GhosttyVtScrollback>
+  ) => void
 }
 
 /** Adapter that creates complete terminal renderer instances. */

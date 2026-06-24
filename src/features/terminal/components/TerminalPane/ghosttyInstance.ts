@@ -1,4 +1,5 @@
 // cspell:ignore ghostty
+import type { GhosttyVtScrollback } from '../../../../bindings'
 import type {
   TerminalFitController,
   TerminalInstance,
@@ -11,6 +12,7 @@ import type {
 } from '../../types'
 import { GHOSTTY_TERMINAL_RENDERER_ID } from './ghosttyRendererMetadata'
 import { createGhosttyParserEngine } from './ghosttyParserEngine'
+import { encodeScrollback } from './ghosttyVtRenderSnapshot'
 import type { TerminalParserEngine } from './terminalParserEngine'
 import { GHOSTTY_TERMINAL_CAPABILITIES } from './terminalRendererCapabilities'
 import {
@@ -127,6 +129,27 @@ class GhosttyTerminalModel {
     },
   }
 
+  // Bridge the raw scrollback fetcher into the surface, encoding each fetched
+  // window (cells → SGR-sentinel displayText) so the surface stays agnostic of
+  // the snapshot cell shape. Returns null when the backend has no rows, which
+  // the surface treats as "nothing to prepend".
+  setScrollbackFetcher(
+    rawFetch: (start: number, count: number) => Promise<GhosttyVtScrollback>
+  ): void {
+    this.terminal.setScrollbackFetcher(async (start, count) => {
+      const scrollback = await rawFetch(start, count)
+
+      return scrollback.rows.length > 0
+        ? {
+            displayText: encodeScrollback({
+              rows: scrollback.rows,
+              cells: scrollback.cells,
+            }).displayText,
+          }
+        : null
+    })
+  }
+
   createInstance(): TerminalInstance {
     return {
       terminal: this.terminal,
@@ -135,6 +158,9 @@ class GhosttyTerminalModel {
       viewportReader: this.viewportReader,
       fitController: this.fitController,
       attachRenderer: (): TerminalRendererHandle => this.rendererHandle,
+      setScrollbackFetcher: (
+        fetch: (start: number, count: number) => Promise<GhosttyVtScrollback>
+      ): void => this.setScrollbackFetcher(fetch),
     }
   }
 

@@ -210,6 +210,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
 
+  // Stable handle to the (singleton) terminal service for use inside the
+  // terminal-lifecycle effect, which intentionally depends only on `sessionId`.
+  const serviceRef = useRef(service)
+  serviceRef.current = service
+
   const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
     'idle'
   )
@@ -622,6 +627,17 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           newTerminal.open(node)
 
           rendererHandle = created.attachRenderer()
+
+          // Inject the lazy scrollback fetcher (native VT path only; optional
+          // chain no-ops for plainText/xterm). The surface pulls history windows
+          // on demand as the reader scrolls toward the top.
+          created.setScrollbackFetcher?.((start, count) =>
+            serviceRef.current.readScrollback(
+              sessionIdRef.current,
+              start,
+              count
+            )
+          )
 
           // Fit terminal to container — guard against hidden (display:none) containers
           didInitialFit = fitInitialWhenReady(fitController)

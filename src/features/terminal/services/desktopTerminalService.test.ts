@@ -199,6 +199,20 @@ describe('DesktopTerminalService', () => {
     })
   })
 
+  describe('readScrollback', () => {
+    test('invokes read_scrollback with sessionId, start and count', async () => {
+      mockInvokeOnce({ rows: ['old line'], cells: [] })
+      const result = await service.readScrollback('sess-1', 100, 100)
+
+      expect(invoke).toHaveBeenCalledWith('read_scrollback', {
+        sessionId: 'sess-1',
+        start: 100,
+        count: 100,
+      })
+      expect(result).toEqual({ rows: ['old line'], cells: [] })
+    })
+  })
+
   describe('event subscriptions', () => {
     test('onData delivers pty-data events to callback', async () => {
       const callback = vi.fn()
@@ -332,6 +346,7 @@ describe('DesktopTerminalService', () => {
         undefined,
         undefined
       )
+
       expect(cb2).toHaveBeenCalledWith(
         'sess-1',
         'broadcast',

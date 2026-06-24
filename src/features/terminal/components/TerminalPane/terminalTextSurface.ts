@@ -29,8 +29,22 @@ const MEASURED_CHAR_SAMPLE_LENGTH = 80
 // epsilon absorbs fractional-pixel line heights so auto-scroll doesn't get
 // stuck one sub-pixel short of the end.
 const SCROLL_BOTTOM_THRESHOLD_PX = 8
+// Within this many px of the top, a scroll/wheel-up triggers a lazy fetch of the
+// previous batch of history rows (load-more-on-scroll-to-top).
+const SCROLLBACK_FETCH_THRESHOLD_PX = 64
+// How many history rows to pull per lazy fetch.
+const SCROLLBACK_FETCH_BATCH = 100
 const BLOCK_ELEMENT_PATTERN = /[\u2580-\u2590\u2594-\u259f]/
 const BLOCK_ONE_EIGHTH = 12.5
+
+// Encoded scrollback fetcher: returns a styled displayText window for [start,
+// start+count) history rows, or null when the backend has nothing to return.
+// Encoding (cells \u2192 SGR-sentinel displayText) happens in the renderer adapter,
+// so the surface stays agnostic of the snapshot cell shape.
+export type ScrollbackFetch = (
+  start: number,
+  count: number
+) => Promise<{ displayText: string } | null>
 
 interface BlockGlyphRect {
   readonly heightPercent: number
@@ -399,10 +413,17 @@ export class TerminalTextSurface implements TerminalSurface {
     columns: DEFAULT_COLS,
   })
   private container: HTMLElement | null = null
-  // Eager-delta history accounting: how many scrollback rows the static region
-  // currently holds. Lets the next GhosttyScrollbackUpdate detect a clear/reset
-  // (count dropped) versus a normal grow (append the delta).
-  private renderedScrollbackRows = 0
+  // Lazy-scrollback accounting (load-more-on-scroll-to-top). Instead of eagerly
+  // appending every evicted row, the surface keeps the live total and fetches
+  // history windows on demand as the reader nears the top.
+  // Total history rows the backend holds above the viewport (from the update).
+  private scrollbackTotal = 0
+  // Oldest history row index currently rendered; null = nothing loaded yet.
+  private loadedOldestRow: number | null = null
+  // Guards against overlapping fetches firing on rapid scroll events.
+  private isFetchingScrollback = false
+  // Raw encoded fetcher injected by the renderer adapter.
+  private scrollbackFetch?: ScrollbackFetch
   // Sticky-bottom scroll state: while true the user has scrolled up to read
   // history, so renders must NOT yank the view back to the bottom.
   private userScrolledUp = false
@@ -790,12 +811,19 @@ export class TerminalTextSurface implements TerminalSurface {
     ) {
       this.userScrolledUp = true
     }
+
+    // A wheel-up that reaches the top loads the next batch of history. Additive
+    // to the freeze gate above — the fetch never moves the live/sticky state.
+    if (event.deltaY < 0) {
+      void this.maybeFetchOlderScrollback()
+    }
   }
 
   // Source of truth for the sticky state: re-derive it from the scroll position
   // after any scroll (user drag, wheel, or our own programmatic snap).
   private readonly handleScroll = (): void => {
     this.userScrolledUp = !this.isScrolledToBottom()
+    void this.maybeFetchOlderScrollback()
   }
 
   private isScrolledToBottom(): boolean {
@@ -1337,15 +1365,19 @@ export class TerminalTextSurface implements TerminalSurface {
     this.scrollbackOutput.style.display = 'block'
   }
 
-  // Eager-delta history update (Rust snapshot path). Distinct from the dead
-  // JS-driver `renderScrollback` replace path above: here the backend hands us
-  // only the rows newly evicted above the viewport and we APPEND them, so the
-  // history DOM grows by the delta instead of being rebuilt every frame.
+  // Inject the encoded history fetcher (renderer adapter → surface). Wired by
+  // the Ghostty path only; absent on plainText/xterm, so lazy fetch is a no-op.
+  setScrollbackFetcher(fetch: ScrollbackFetch): void {
+    this.scrollbackFetch = fetch
+  }
+
+  // Lazy history update (Rust snapshot path). The surface no longer appends
+  // evicted rows eagerly; it only tracks the live total here. Actual history is
+  // pulled on demand by maybeFetchOlderScrollback when the reader nears the top.
   private handleScrollbackUpdate(update: GhosttyScrollbackUpdate): void {
     if (update.isAltScreen) {
-      // Full-screen app owns the viewport: hide the region but keep the buffer
-      // and the rendered-row count so returning from alt re-shows it untouched,
-      // with no refetch of history the backend already evicted.
+      // Full-screen app owns the viewport: hide the region but keep whatever was
+      // loaded so returning from alt re-shows it untouched, with no refetch.
       this.scrollbackOutput.style.display = 'none'
 
       return
@@ -1357,49 +1389,96 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    if (update.rowCount < this.renderedScrollbackRows) {
+    if (update.rowCount < this.scrollbackTotal) {
       // The total fell below what we hold: a clear/reset happened upstream. Drop
-      // the stale region and fall through to re-accumulate from this frame.
+      // the stale region; the next scroll-to-top re-fetches against the new total.
       this.clearScrollback()
     }
 
-    if (update.appendDisplayText !== undefined) {
-      this.appendScrollbackRows(update.appendDisplayText)
-      this.renderedScrollbackRows = update.rowCount
-    } else if (this.renderedScrollbackRows > 0) {
-      // Returning from alt screen with history already built: re-show the cache.
-      this.scrollbackOutput.style.display = 'block'
+    // Record the live total only. Do NOT fetch here — fetching happens on scroll.
+    this.scrollbackTotal = update.rowCount
+  }
+
+  // Load-more-on-scroll-to-top: when the reader nears the top and there is older
+  // history left, fetch the previous batch and PREPEND it, holding the reading
+  // position by the prepended height. Additive to the sticky-bottom machine.
+  private async maybeFetchOlderScrollback(): Promise<void> {
+    if (!this.scrollbackFetch || this.isFetchingScrollback) {
+      return
+    }
+
+    // `loadedOldestRow ?? scrollbackTotal` is the oldest boundary loaded so far
+    // (full total when nothing is loaded yet). Nothing older remains at 0.
+    const end = this.loadedOldestRow ?? this.scrollbackTotal
+
+    if (end <= 0) {
+      return
+    }
+
+    if (this.root.scrollTop >= SCROLLBACK_FETCH_THRESHOLD_PX) {
+      return
+    }
+
+    const start = Math.max(0, end - SCROLLBACK_FETCH_BATCH)
+
+    if (start >= end) {
+      return
+    }
+
+    this.isFetchingScrollback = true
+
+    try {
+      const scrollHeightBefore = this.root.scrollHeight
+      const payload = await this.scrollbackFetch(start, end - start)
+
+      // The surface may have been disposed while the fetch was in flight.
+      if (this.disposed) {
+        return
+      }
+
+      if (payload) {
+        this.prependScrollbackRows(payload.displayText, scrollHeightBefore)
+        this.loadedOldestRow = start
+      }
+    } finally {
+      this.isFetchingScrollback = false
     }
   }
 
-  private appendScrollbackRows(displayText: string): void {
-    // Accumulate into the selection buffer (joined by newlines), so select-all
-    // across the history region still yields the full text. ponytail: the
-    // scrollbackBuffer enforces a line cap, so selection of extremely old
-    // history may truncate while the appended DOM does not — bounded overall by
-    // the backend's 10k scrollback cap, so not worth a separate unbounded store.
-    const prefix = this.renderedScrollbackRows > 0 ? '\n' : ''
-    this.scrollbackBuffer.write(prefix + displayText)
-
-    // Render ONLY the new rows and append them — O(delta), never rebuilding the
-    // whole region (which would be O(n²) as history accrues). A throwaway buffer
-    // styles just this delta into fragments we tack onto the existing region.
-    const delta = new TerminalDisplayBuffer({ columns: this.colsValue })
-    delta.applyDelta({
+  private prependScrollbackRows(
+    displayText: string,
+    scrollHeightBefore: number
+  ): void {
+    // Render the fetched window into a throwaway buffer, then PREPEND its
+    // fragments so older rows sit above the already-loaded ones (oldest-first).
+    const buffer = new TerminalDisplayBuffer({ columns: this.colsValue })
+    buffer.applyDelta({
       operations: [{ type: 'replace', text: displayText, cursorOffset: 0 }],
     })
 
-    this.scrollbackOutput.append(
-      ...this.createOutputFragments(delta.readStyledRuns(), 0, false)
+    this.scrollbackOutput.prepend(
+      ...this.createOutputFragments(buffer.readStyledRuns(), 0, false)
     )
     this.scrollbackOutput.style.display = 'block'
+
+    // Also write into the selection buffer so select-all reaches the new rows.
+    // ponytail: the scrollbackBuffer line cap may truncate very old history for
+    // selection while the prepended DOM keeps it — bounded by the backend cap.
+    this.scrollbackBuffer.write(displayText + '\n')
+
+    // Hold the reading position: the content above the reader just grew by the
+    // prepended height, so push scrollTop down by the same delta to keep the
+    // same rows under the eye (otherwise the view jumps to the new top).
+    const scrollHeightAfter = this.root.scrollHeight
+    this.root.scrollTop += scrollHeightAfter - scrollHeightBefore
   }
 
   private clearScrollback(): void {
     this.scrollbackBuffer.clear()
     this.scrollbackOutput.replaceChildren()
     this.scrollbackOutput.style.display = 'none'
-    this.renderedScrollbackRows = 0
+    this.loadedOldestRow = null
+    this.scrollbackTotal = 0
   }
 
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {

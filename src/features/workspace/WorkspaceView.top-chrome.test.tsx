@@ -272,6 +272,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       onError: vi.fn().mockReturnValue(vi.fn()),
       onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       killEphemeralPtys: vi.fn(),
+      readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,

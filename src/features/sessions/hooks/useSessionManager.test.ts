@@ -91,6 +91,7 @@ const createMockService = (): ITerminalService => ({
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
   setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   killEphemeralPtys: vi.fn(),
+  readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 })
 

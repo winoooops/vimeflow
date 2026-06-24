@@ -276,6 +276,15 @@ describe('MockTerminalService', () => {
     })
   })
 
+  describe('readScrollback', () => {
+    test('returns an empty scrollback window', async () => {
+      await expect(service.readScrollback('sess-1', 0, 100)).resolves.toEqual({
+        rows: [],
+        cells: [],
+      })
+    })
+  })
+
   describe('kill', () => {
     test('kills PTY session', async () => {
       const { sessionId } = await service.spawn({
