@@ -2,7 +2,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
 use libghostty_vt::render::{CellIterator, RenderState, RowIterator};
-use libghostty_vt::screen::CellWide;
+use libghostty_vt::screen::{CellWide, Screen};
 use libghostty_vt::style::{RgbColor, Underline};
 use libghostty_vt::{Terminal, TerminalOptions};
 
@@ -146,6 +146,24 @@ impl GhosttyTerminalState {
     }
 
     pub fn snapshot(&mut self) -> Result<GhosttyVtRenderSnapshot, String> {
+        let is_alt_screen = matches!(
+            self.terminal
+                .active_screen()
+                .map_err(|error| error.to_string())?,
+            Screen::Alternate
+        );
+        // Scrollback is meaningless on the alt screen (full-screen TUIs own their
+        // own scrolling), so suppress the count there — matching the JS bridge.
+        let scrollback_row_count = if is_alt_screen {
+            None
+        } else {
+            let count = self
+                .terminal
+                .scrollback_rows()
+                .map_err(|error| error.to_string())? as u32;
+            (count > 0).then_some(count)
+        };
+
         let snapshot = self
             .render_state
             .update(&self.terminal)
@@ -238,6 +256,8 @@ impl GhosttyTerminalState {
             rows,
             cursor,
             cells: (!cells.is_empty()).then_some(cells),
+            scrollback_row_count,
+            is_alt_screen: is_alt_screen.then_some(true),
         })
     }
 
@@ -282,4 +302,53 @@ fn trim_trailing_spaces(value: &mut String) {
 
 fn format_color(color: RgbColor) -> String {
     format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state(cols: u16, rows: u16) -> GhosttyTerminalState {
+        let (_handle, reader) = GhosttySessionHandle::new();
+        reader
+            .create_state(cols, rows)
+            .expect("create ghostty terminal state")
+    }
+
+    fn fill_past_viewport(state: &mut GhosttyTerminalState) {
+        for index in 0..12 {
+            state
+                .write(format!("line {index}\r\n").as_bytes())
+                .expect("write line");
+        }
+    }
+
+    #[test]
+    fn snapshot_reports_scrollback_row_count_on_the_primary_screen() {
+        let mut state = make_state(80, 3);
+        fill_past_viewport(&mut state);
+
+        let snapshot = state.snapshot().expect("snapshot");
+
+        assert!(
+            snapshot.scrollback_row_count.unwrap_or(0) > 0,
+            "rows scrolled past a 3-row viewport must report scrollback"
+        );
+        assert_eq!(snapshot.is_alt_screen, None, "primary screen is not alt");
+    }
+
+    #[test]
+    fn snapshot_suppresses_scrollback_on_the_alternate_screen() {
+        let mut state = make_state(80, 3);
+        fill_past_viewport(&mut state);
+        state.write(b"\x1b[?1049h").expect("enter alt screen");
+
+        let snapshot = state.snapshot().expect("snapshot");
+
+        assert_eq!(snapshot.is_alt_screen, Some(true), "alt screen is active");
+        assert_eq!(
+            snapshot.scrollback_row_count, None,
+            "scrollback is meaningless on the alt screen"
+        );
+    }
 }

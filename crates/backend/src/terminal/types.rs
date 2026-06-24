@@ -169,6 +169,17 @@ pub struct GhosttyVtRenderSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub cells: Option<Vec<GhosttyVtRenderSnapshotCell>>,
+    /// Count of scrollback rows above the viewport. Present only when > 0, and
+    /// suppressed (None) on the alt screen (full-screen TUIs own their own
+    /// scrolling). The renderer uses this to gate its static history region.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scrollback_row_count: Option<u32>,
+    /// True while the alternate screen is active (DECSET 1049). Present only
+    /// when true, so the renderer can suppress history for full-screen apps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub is_alt_screen: Option<bool>,
 }
 
 /// PTY exit event payload (emitted when process exits)
