@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-24
-ref_count: 15
+ref_count: 16
 ---
 
 # Terminal Render-State Driver Contract
@@ -379,4 +379,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts`
 - **Finding:** The empty-scrollback give-up branch cached a positive native row count but returned viewport output without a `scrollback` field. In the terminal surface contract, an omitted field means "preserve the current static region," so stale history could remain visible after the driver had decided that same count could not be delivered.
 - **Fix:** Return `scrollback: null` when the positive-count empty-retry budget is exhausted, clearing any stale static history region while still caching the count to suppress same-count retries. Updated the regression to assert retry frames preserve scrollback, the give-up frame clears it, and later same-count frames stop re-fetching.
+- **Commit:** same commit as this entry
+
+### 40. Lazy scrollback read failures must not escape the render flush
+
+- **Source:** github-codex-connector | PR #615 round 6 | 2026-06-24
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts`
+- **Finding:** `attachScrollback()` called the native-backed `readScrollback()` path without a recovery boundary. Preload converts structured IPC failures into thrown errors, so a transient native scrollback read or formatter failure could throw through `flushOutput()` and stop the Ghostty pane's render updates instead of preserving the live viewport.
+- **Fix:** Wrap the lazy `readScrollback()` call in `try/catch` and return the viewport output with no `scrollback` field on failure. This preserves the existing static history region and does not advance the cached row count, so a later dirty frame can retry. Regression coverage asserts viewport rendering continues and recovered scrollback is attached on the next successful read.
 - **Commit:** same commit as this entry

@@ -116,7 +116,13 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         return { ...viewport, scrollback: null }
       }
 
-      const scrollback = renderStateDriver.readScrollback()
+      let scrollback: GhosttyVtRenderScrollback
+      try {
+        scrollback = renderStateDriver.readScrollback()
+      } catch {
+        return viewport
+      }
+
       if (scrollback.rows.length === 0) {
         emptyScrollbackRetryCount =
           count === emptyScrollbackRetryRowCount

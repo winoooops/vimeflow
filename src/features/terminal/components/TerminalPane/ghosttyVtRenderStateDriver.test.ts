@@ -165,6 +165,40 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(readScrollback).toHaveBeenCalledTimes(2) // count grew → re-fetch
   })
 
+  test('keeps viewport rendering when scrollback fetch fails', () => {
+    const readScrollback = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('native read failed')
+      })
+      .mockReturnValueOnce({ rows: ['recovered history'], cells: [] })
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount: 1,
+        }),
+        readScrollback,
+      })
+    )
+
+    adapter.parseBytes(createInput(new Uint8Array([0x61])))
+    const failedOutput = adapter.flushOutput?.()
+
+    expect(failedOutput?.visibleText).toBe('p')
+    expect(failedOutput?.scrollback).toBeUndefined()
+    expect(failedOutput?.displayDelta?.pinToBottom).toBe(true)
+
+    adapter.parseBytes(createInput(new Uint8Array([0x62])))
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({
+      displayText: 'recovered history',
+    })
+    expect(readScrollback).toHaveBeenCalledTimes(2)
+  })
+
   test('retries empty positive-count scrollback fetches without clearing', () => {
     const readScrollback = vi
       .fn()
