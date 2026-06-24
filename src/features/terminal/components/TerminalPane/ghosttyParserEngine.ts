@@ -1,5 +1,6 @@
 // cspell:ignore ghostty
 import type {
+  TerminalOutputChunk,
   TerminalParserEvent,
   TerminalParserOutputContext,
   TerminalSize,
@@ -12,7 +13,6 @@ import {
   type TerminalParserEngineOutput,
 } from './terminalParserEngine'
 import { createGhosttyVtRenderSnapshotOutput } from './ghosttyVtRenderSnapshot'
-import type { TerminalOutputChunk } from '../../types'
 
 export const GHOSTTY_PARSER_ENGINE_ID = 'ghostty-control-sequence-spike'
 

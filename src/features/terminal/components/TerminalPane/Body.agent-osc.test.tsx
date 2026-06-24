@@ -232,7 +232,7 @@ const createService = (): ControlledTerminalService => {
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn().mockResolvedValue([]),
-    readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
+    scrollPty: vi.fn().mockResolvedValue(undefined),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     emitData(sessionId: string, data: string, offsetStart?: number): void {
       const offset = offsetStart ?? nextOffsets.get(sessionId) ?? 0

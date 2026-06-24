@@ -1,6 +1,6 @@
-// cspell:ignore ghostty
+// cspell:ignore ghostty DECSET
 import { themeService } from '../../../../theme'
-import type { GhosttyScrollbackUpdate } from './terminalParserEngine'
+import type { WheelForwardMode } from './terminalParserEngine'
 import type {
   TerminalDisposable,
   TerminalKeyEventHandler,
@@ -25,26 +25,14 @@ const MIN_ROWS = 1
 const APPROXIMATE_CHAR_WIDTH = 8
 const APPROXIMATE_LINE_HEIGHT = 18
 const MEASURED_CHAR_SAMPLE_LENGTH = 80
-// Within this many px of the bottom counts as "stuck to bottom" (live). The
-// epsilon absorbs fractional-pixel line heights so auto-scroll doesn't get
-// stuck one sub-pixel short of the end.
-const SCROLL_BOTTOM_THRESHOLD_PX = 8
-// Within this many px of the top, a scroll/wheel-up triggers a lazy fetch of the
-// previous batch of history rows (load-more-on-scroll-to-top).
-const SCROLLBACK_FETCH_THRESHOLD_PX = 64
-// How many history rows to pull per lazy fetch.
-const SCROLLBACK_FETCH_BATCH = 100
+// Fallback row height (px) for converting a pixel wheel delta into a row count
+// when the surface's measured line height isn't resolvable yet.
+const DEFAULT_WHEEL_LINE_HEIGHT_PX = 16
+// SGR/X10 mouse button codes for wheel-up / wheel-down (mouse-tracking apps).
+const WHEEL_UP_BUTTON = 64
+const WHEEL_DOWN_BUTTON = 65
 const BLOCK_ELEMENT_PATTERN = /[\u2580-\u2590\u2594-\u259f]/
 const BLOCK_ONE_EIGHTH = 12.5
-
-// Encoded scrollback fetcher: returns a styled displayText window for [start,
-// start+count) history rows, or null when the backend has nothing to return.
-// Encoding (cells \u2192 SGR-sentinel displayText) happens in the renderer adapter,
-// so the surface stays agnostic of the snapshot cell shape.
-export type ScrollbackFetch = (
-  start: number,
-  count: number
-) => Promise<{ displayText: string } | null>
 
 interface BlockGlyphRect {
   readonly heightPercent: number
@@ -86,9 +74,9 @@ export interface TerminalTextSurfaceOutput {
   // Styled history for the separate static region. undefined = unchanged,
   // object = replace, null = clear. See TerminalParserEngineOutput.scrollback.
   readonly scrollback?: { readonly displayText: string } | null
-  // Eager-delta history update (Rust snapshot path): rows newly evicted above
-  // the viewport are APPENDED to the static region. See GhosttyScrollbackUpdate.
-  readonly scrollbackUpdate?: GhosttyScrollbackUpdate
+  // Active mouse/cursor input modes for wheel forwarding (VIM-223). The surface
+  // caches the latest value and consults it on each wheel event.
+  readonly wheelForwardMode?: WheelForwardMode
 }
 
 type RenderScrollMode = 'bottom' | 'cursor' | 'top'
@@ -395,11 +383,6 @@ const getKeyboardData = (event: KeyboardEvent): string | null => {
 
 export class TerminalTextSurface implements TerminalSurface {
   private readonly root = document.createElement('div')
-  // Static history region: rendered once when scrollback changes, then left
-  // alone. The viewport (this.output) re-renders per frame; history does not. A
-  // <div> (not <pre>) so `querySelector('pre')` still resolves the viewport; the
-  // row spans inside carry the monospace/pre layout regardless of the wrapper.
-  private readonly scrollbackOutput = document.createElement('div')
   private readonly output = document.createElement('pre')
   private readonly input = document.createElement('textarea')
   private readonly dataHandlers = new Set<(data: string) => void>()
@@ -409,24 +392,17 @@ export class TerminalTextSurface implements TerminalSurface {
   private readonly outputBuffer = new TerminalDisplayBuffer({
     columns: DEFAULT_COLS,
   })
-  private readonly scrollbackBuffer = new TerminalDisplayBuffer({
-    columns: DEFAULT_COLS,
-  })
   private container: HTMLElement | null = null
-  // Lazy-scrollback accounting (load-more-on-scroll-to-top). Instead of eagerly
-  // appending every evicted row, the surface keeps the live total and fetches
-  // history windows on demand as the reader nears the top.
-  // Total history rows the backend holds above the viewport (from the update).
-  private scrollbackTotal = 0
-  // Oldest history row index currently rendered; null = nothing loaded yet.
-  private loadedOldestRow: number | null = null
-  // Guards against overlapping fetches firing on rapid scroll events.
-  private isFetchingScrollback = false
-  // Raw encoded fetcher injected by the renderer adapter.
-  private scrollbackFetch?: ScrollbackFetch
-  // Sticky-bottom scroll state: while true the user has scrolled up to read
-  // history, so renders must NOT yank the view back to the bottom.
-  private userScrolledUp = false
+  // Engine-driven scroll sender injected by the renderer adapter: forwards a
+  // signed row delta to the PTY, which scrolls the libghostty viewport and
+  // emits the scrolled snapshot. Negative scrolls up into history.
+  private scrollSender?: (delta: number) => void
+  // Active wheel-forwarding modes (VIM-223), refreshed from each render snapshot.
+  // Defaults to all-false so a plain shell drives an engine scroll on the wheel.
+  private wheelForwardMode: WheelForwardMode = {
+    mouseTracking: false,
+    sgrMouse: false,
+  }
   private colsValue = DEFAULT_COLS
   private rowsValue = DEFAULT_ROWS
   private cachedCharacterWidth: number | null = null
@@ -437,7 +413,7 @@ export class TerminalTextSurface implements TerminalSurface {
   constructor(private readonly options: TerminalTextSurfaceOptions) {
     this.root.dataset.terminalRenderer = options.rendererId
     this.root.tabIndex = -1
-    this.root.append(this.scrollbackOutput, this.output, this.input)
+    this.root.append(this.output, this.input)
 
     Object.assign(this.root.style, {
       height: '100%',
@@ -465,25 +441,6 @@ export class TerminalTextSurface implements TerminalSurface {
       wordBreak: 'normal',
     })
 
-    // History region: same type metrics as the viewport, but its NATURAL height
-    // (no min-height fill) and no bottom padding so it abuts the viewport. Hidden
-    // until it holds history, so a fresh session has no extra top gap.
-    this.scrollbackOutput.dataset.terminalScrollback = 'true'
-    Object.assign(this.scrollbackOutput.style, {
-      boxSizing: 'border-box',
-      display: 'none',
-      fontFamily: TERMINAL_FONT_FAMILY,
-      fontSize: `${TERMINAL_FONT_SIZE}px`,
-      lineHeight: 'var(--terminal-line-height)',
-      margin: '0',
-      maxWidth: '100%',
-      overflowX: 'hidden',
-      padding: '8px 8px 0',
-      whiteSpace: 'normal',
-      width: '100%',
-      wordBreak: 'normal',
-    })
-
     Object.assign(this.input.style, {
       height: '1px',
       left: '0',
@@ -497,8 +454,11 @@ export class TerminalTextSurface implements TerminalSurface {
     this.input.setAttribute('aria-label', 'Terminal input')
     this.syncPtyViewportGeometry()
     this.root.addEventListener('mousedown', this.handlePointerDown)
-    this.root.addEventListener('wheel', this.handleWheel, { passive: true })
-    this.root.addEventListener('scroll', this.handleScroll, { passive: true })
+    // NOT passive: the mouse-tracking wheel path calls preventDefault() to
+    // suppress the container's local scroll while forwarding the wheel to the
+    // PTY (VIM-223); the engine-scroll path does the same to drive the
+    // backend scroll instead of the browser's native scroll.
+    this.root.addEventListener('wheel', this.handleWheel)
     document.addEventListener('selectionchange', this.handleSelectionChange)
     this.input.addEventListener('keydown', this.handleKeyDown)
     this.input.addEventListener('paste', this.handlePaste)
@@ -544,7 +504,6 @@ export class TerminalTextSurface implements TerminalSurface {
     this.disposed = true
     this.root.removeEventListener('mousedown', this.handlePointerDown)
     this.root.removeEventListener('wheel', this.handleWheel)
-    this.root.removeEventListener('scroll', this.handleScroll)
     document.removeEventListener('selectionchange', this.handleSelectionChange)
     this.input.removeEventListener('keydown', this.handleKeyDown)
     this.input.removeEventListener('paste', this.handlePaste)
@@ -561,9 +520,6 @@ export class TerminalTextSurface implements TerminalSurface {
 
   clear(): void {
     this.outputBuffer.clear()
-    this.scrollbackBuffer.clear()
-    this.scrollbackOutput.replaceChildren()
-    this.scrollbackOutput.style.display = 'none'
     this.renderOutput()
   }
 
@@ -591,17 +547,9 @@ export class TerminalTextSurface implements TerminalSurface {
       return
     }
 
-    // Update the static history region first (only when it changed) so the
-    // viewport render's scroll math below sees the combined height.
-    if (output.scrollback !== undefined) {
-      this.renderScrollback(output.scrollback)
-    }
-
-    // Eager-delta history (Rust snapshot path): append newly-evicted rows. Run
-    // before the viewport render so the bottom-pin below accounts for the new
-    // history height. Parallel to the scrollback replace path above.
-    if (output.scrollbackUpdate !== undefined) {
-      this.handleScrollbackUpdate(output.scrollbackUpdate)
+    // Cache the active wheel-forwarding modes for the next wheel event (VIM-223).
+    if (output.wheelForwardMode !== undefined) {
+      this.wheelForwardMode = output.wheelForwardMode
     }
 
     if (output.displayDelta) {
@@ -784,7 +732,6 @@ export class TerminalTextSurface implements TerminalSurface {
     this.colsValue = nextCols
     this.rowsValue = nextRows
     this.outputBuffer.setColumns(nextCols)
-    this.scrollbackBuffer.setColumns(nextCols)
     this.syncPtyViewportGeometry()
     this.notifyResize()
   }
@@ -798,40 +745,72 @@ export class TerminalTextSurface implements TerminalSurface {
     this.focus()
   }
 
-  // Freeze auto-scroll the instant the user wheels up, before the resulting
-  // 'scroll' event/layout settles — otherwise the next render snaps to bottom.
-  // Only freeze when there is actually room to scroll up: a no-op wheel-up on a
-  // short terminal (no overflow) fires no 'scroll' event to reset the freeze, so
-  // an unconditional freeze would permanently strand auto-follow.
+  // Wheel handling. Two paths:
+  //   1. Mouse-tracking apps (alt-screen TUIs like Claude Code / OpenCode):
+  //      encode the wheel as a mouse-event byte sequence and forward it; the app
+  //      scrolls its own content. Suppresses local scroll.
+  //   2. Everything else (the shell + inline primary-screen TUIs like codex /
+  //      kimi): engine-driven scroll — forward a signed row delta to the PTY,
+  //      which moves the libghostty viewport and emits the scrolled snapshot as
+  //      a normal frame. The surface is a dumb renderer; there is no client-side
+  //      scrollback, so codex/kimi repaints and shell history all scroll
+  //      authoritatively through the engine (no leaks, no reversal).
   private readonly handleWheel = (event: WheelEvent): void => {
-    if (
-      event.deltaY < 0 &&
-      this.root.scrollHeight - this.root.clientHeight >
-        SCROLL_BOTTOM_THRESHOLD_PX
-    ) {
-      this.userScrolledUp = true
+    if (this.wheelForwardMode.mouseTracking) {
+      this.emitData(this.encodeWheelMouseEvent(event))
+      event.preventDefault()
+
+      return
     }
 
-    // A wheel-up that reaches the top loads the next batch of history. Additive
-    // to the freeze gate above — the fetch never moves the live/sticky state.
-    if (event.deltaY < 0) {
-      void this.maybeFetchOlderScrollback()
+    // Map the wheel delta to a signed row count (negative = up into history).
+    // Guarantee at least one row per non-zero tick so slow trackpad deltas
+    // still scroll instead of rounding to a no-op.
+    const unit =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 1
+        : this.readLineHeight() || DEFAULT_WHEEL_LINE_HEIGHT_PX
+    let rows = Math.trunc(event.deltaY / unit)
+    if (rows === 0 && event.deltaY !== 0) {
+      rows = event.deltaY > 0 ? 1 : -1
     }
+    if (rows !== 0) {
+      this.scrollSender?.(rows)
+    }
+    event.preventDefault()
   }
 
-  // Source of truth for the sticky state: re-derive it from the scroll position
-  // after any scroll (user drag, wheel, or our own programmatic snap).
-  private readonly handleScroll = (): void => {
-    this.userScrolledUp = !this.isScrolledToBottom()
-    void this.maybeFetchOlderScrollback()
-  }
+  // Encode a single wheel tick as a mouse-event byte sequence at the pointer's
+  // 1-based terminal cell (VIM-223 tier 1). SGR (DECSET 1006) framing when the
+  // app selected it, else the legacy X10 framing. Cell geometry comes from the
+  // surface's measured monospace cell width and line height; when those aren't
+  // resolvable yet, the position falls back to the top-left cell (wheel scroll
+  // is position-independent in these apps).
+  private encodeWheelMouseEvent(event: WheelEvent): string {
+    const button = event.deltaY < 0 ? WHEEL_UP_BUTTON : WHEEL_DOWN_BUTTON
+    const cellWidthPx = this.measureCharacterWidth()
+    const cellHeightPx = this.readLineHeight()
+    const rect = this.root.getBoundingClientRect()
 
-  private isScrolledToBottom(): boolean {
+    const col =
+      cellWidthPx > 0
+        ? Math.max(1, Math.floor((event.clientX - rect.left) / cellWidthPx) + 1)
+        : 1
+
+    const row =
+      cellHeightPx > 0
+        ? Math.max(1, Math.floor((event.clientY - rect.top) / cellHeightPx) + 1)
+        : 1
+
+    if (this.wheelForwardMode.sgrMouse) {
+      return `\x1b[<${button};${col};${row}M`
+    }
+
     return (
-      this.root.scrollTop >=
-      this.root.scrollHeight -
-        this.root.clientHeight -
-        SCROLL_BOTTOM_THRESHOLD_PX
+      '\x1b[M' +
+      String.fromCharCode(32 + button) +
+      String.fromCharCode(Math.min(255, 32 + col)) +
+      String.fromCharCode(Math.min(255, 32 + row))
     )
   }
 
@@ -864,24 +843,20 @@ export class TerminalTextSurface implements TerminalSurface {
     return this.selectAllSelectionText ?? ''
   }
 
-  // The selectable content spans the history region (if present) then the
-  // viewport, so selection + select-all reach across both <pre> elements.
+  // The selectable content is the viewport; the engine renders any scrolled
+  // history into the viewport itself, so there is no separate history region.
   private readContentBoundaries(): {
     start: Node | null
     end: Node | null
   } {
     return {
-      start: this.scrollbackOutput.firstChild ?? this.output.firstChild,
-      end: this.output.lastChild ?? this.scrollbackOutput.lastChild,
+      start: this.output.firstChild,
+      end: this.output.lastChild,
     }
   }
 
   private readCombinedVisibleText(): string {
-    const viewport = this.outputBuffer.readVisibleText()
-
-    return this.scrollbackOutput.firstChild
-      ? `${this.scrollbackBuffer.readVisibleText()}\n${viewport}`
-      : viewport
+    return this.outputBuffer.readVisibleText()
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -901,9 +876,6 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     event.preventDefault()
-    // Typing returns to the live prompt: drop the sticky-scroll freeze so the
-    // next render follows output to the bottom again.
-    this.userScrolledUp = false
     this.emitData(data)
   }
 
@@ -1338,147 +1310,11 @@ export class TerminalTextSurface implements TerminalSurface {
     return rows
   }
 
-  private renderScrollback(payload: { displayText: string } | null): void {
-    if (payload === null) {
-      this.scrollbackBuffer.clear()
-      this.scrollbackOutput.replaceChildren()
-      this.scrollbackOutput.style.display = 'none'
-
-      return
-    }
-
-    this.scrollbackBuffer.applyDelta({
-      operations: [
-        { type: 'replace', text: payload.displayText, cursorOffset: 0 },
-      ],
-    })
-
-    // History has no cursor: render the styled runs only. This is the ONLY place
-    // the history DOM is built — never in the per-frame viewport render.
-    this.scrollbackOutput.replaceChildren(
-      ...this.createOutputFragments(
-        this.scrollbackBuffer.readStyledRuns(),
-        0,
-        false
-      )
-    )
-    this.scrollbackOutput.style.display = 'block'
-  }
-
-  // Inject the encoded history fetcher (renderer adapter → surface). Wired by
-  // the Ghostty path only; absent on plainText/xterm, so lazy fetch is a no-op.
-  setScrollbackFetcher(fetch: ScrollbackFetch): void {
-    this.scrollbackFetch = fetch
-  }
-
-  // Lazy history update (Rust snapshot path). The surface no longer appends
-  // evicted rows eagerly; it only tracks the live total here. Actual history is
-  // pulled on demand by maybeFetchOlderScrollback when the reader nears the top.
-  private handleScrollbackUpdate(update: GhosttyScrollbackUpdate): void {
-    if (update.isAltScreen) {
-      // Full-screen app owns the viewport: hide the region but keep whatever was
-      // loaded so returning from alt re-shows it untouched, with no refetch.
-      this.scrollbackOutput.style.display = 'none'
-
-      return
-    }
-
-    if (update.rowCount === 0) {
-      this.clearScrollback()
-
-      return
-    }
-
-    if (update.rowCount < this.scrollbackTotal) {
-      // The total fell below what we hold: a clear/reset happened upstream. Drop
-      // the stale region; the next scroll-to-top re-fetches against the new total.
-      this.clearScrollback()
-    }
-
-    // Record the live total only. Do NOT fetch here — fetching happens on scroll.
-    this.scrollbackTotal = update.rowCount
-  }
-
-  // Load-more-on-scroll-to-top: when the reader nears the top and there is older
-  // history left, fetch the previous batch and PREPEND it, holding the reading
-  // position by the prepended height. Additive to the sticky-bottom machine.
-  private async maybeFetchOlderScrollback(): Promise<void> {
-    if (!this.scrollbackFetch || this.isFetchingScrollback) {
-      return
-    }
-
-    // `loadedOldestRow ?? scrollbackTotal` is the oldest boundary loaded so far
-    // (full total when nothing is loaded yet). Nothing older remains at 0.
-    const end = this.loadedOldestRow ?? this.scrollbackTotal
-
-    if (end <= 0) {
-      return
-    }
-
-    if (this.root.scrollTop >= SCROLLBACK_FETCH_THRESHOLD_PX) {
-      return
-    }
-
-    const start = Math.max(0, end - SCROLLBACK_FETCH_BATCH)
-
-    if (start >= end) {
-      return
-    }
-
-    this.isFetchingScrollback = true
-
-    try {
-      const scrollHeightBefore = this.root.scrollHeight
-      const payload = await this.scrollbackFetch(start, end - start)
-
-      // The surface may have been disposed while the fetch was in flight.
-      if (this.disposed) {
-        return
-      }
-
-      if (payload) {
-        this.prependScrollbackRows(payload.displayText, scrollHeightBefore)
-        this.loadedOldestRow = start
-      }
-    } finally {
-      this.isFetchingScrollback = false
-    }
-  }
-
-  private prependScrollbackRows(
-    displayText: string,
-    scrollHeightBefore: number
-  ): void {
-    // Render the fetched window into a throwaway buffer, then PREPEND its
-    // fragments so older rows sit above the already-loaded ones (oldest-first).
-    const buffer = new TerminalDisplayBuffer({ columns: this.colsValue })
-    buffer.applyDelta({
-      operations: [{ type: 'replace', text: displayText, cursorOffset: 0 }],
-    })
-
-    this.scrollbackOutput.prepend(
-      ...this.createOutputFragments(buffer.readStyledRuns(), 0, false)
-    )
-    this.scrollbackOutput.style.display = 'block'
-
-    // Also write into the selection buffer so select-all reaches the new rows.
-    // ponytail: the scrollbackBuffer line cap may truncate very old history for
-    // selection while the prepended DOM keeps it — bounded by the backend cap.
-    this.scrollbackBuffer.write(displayText + '\n')
-
-    // Hold the reading position: the content above the reader just grew by the
-    // prepended height, so push scrollTop down by the same delta to keep the
-    // same rows under the eye (otherwise the view jumps to the new top).
-    const scrollHeightAfter = this.root.scrollHeight
-    this.root.scrollTop += scrollHeightAfter - scrollHeightBefore
-  }
-
-  private clearScrollback(): void {
-    this.scrollbackBuffer.clear()
-    this.scrollbackOutput.replaceChildren()
-    this.scrollbackOutput.style.display = 'none'
-    this.loadedOldestRow = null
-    this.scrollbackTotal = 0
+  // Inject the engine-driven scroll sender (renderer adapter → surface). Wired
+  // by the Ghostty path only; absent on plainText/xterm, where the wheel falls
+  // back to no-op forwarding.
+  setScrollSender(send: (delta: number) => void): void {
+    this.scrollSender = send
   }
 
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
@@ -1500,13 +1336,9 @@ export class TerminalTextSurface implements TerminalSurface {
 
     this.output.replaceChildren(...fragments)
 
-    // While the user is reading history we never reposition (applyScrollMode
-    // early-returns). Crucially we do NOT re-anchor scrollTop here: terminal
-    // history grows at the BOTTOM of scrollback (just above the viewport, below
-    // the reader), so a height-delta anchor would creep the reading position
-    // downward, fire a programmatic 'scroll', and let handleScroll flip the
-    // freeze off — snapping back to the bottom. Leaving scrollTop alone keeps
-    // the reading position put because the rows above it are unchanged.
+    // Position the freshly-rendered snapshot within the scroll container. The
+    // engine owns scroll position now (scrolling moves the libghostty viewport
+    // and re-renders), so the surface only keeps the rendered frame in view.
     this.applyScrollMode(options.scrollMode ?? 'bottom', cursorRowIndex)
   }
 
@@ -1514,11 +1346,6 @@ export class TerminalTextSurface implements TerminalSurface {
     scrollMode: RenderScrollMode,
     cursorRowIndex: number
   ): void {
-    // While the user is reading history, never reposition the viewport.
-    if (this.userScrolledUp) {
-      return
-    }
-
     if (scrollMode === 'bottom') {
       this.root.scrollTop = this.root.scrollHeight
 

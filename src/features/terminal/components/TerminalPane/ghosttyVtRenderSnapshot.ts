@@ -12,8 +12,8 @@ import {
 import { findTextOffsetForCellColumn } from './terminalDisplayBuffer'
 import { getSgrStyleSentinel } from './terminalControlParser'
 import type {
-  GhosttyScrollbackUpdate,
   TerminalParserEngineOutput,
+  WheelForwardMode,
 } from './terminalParserEngine'
 
 export interface GhosttyVtRenderSnapshotCursor {
@@ -39,22 +39,11 @@ export interface GhosttyVtRenderSnapshot {
   readonly rows: readonly string[]
   readonly cursor?: GhosttyVtRenderSnapshotCursor
   readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
-  // Count of scrollback rows the native terminal holds above the viewport (0 on
-  // the alt screen). The surface appends history eagerly via scrollbackDelta.
-  readonly scrollbackRowCount?: number
   readonly isAltScreen?: boolean
-  // Rows newly evicted above the viewport this frame (eager-delta, path A). The
-  // surface APPENDS these styled rows to its static history region. `cells` is
-  // omitted on the wire when the delta is entirely unstyled.
-  readonly scrollbackDelta?: {
-    readonly rows: readonly string[]
-    readonly cells?: readonly GhosttyVtRenderSnapshotCell[]
-  }
-}
-
-export interface GhosttyVtRenderScrollback {
-  readonly rows: readonly string[]
-  readonly cells: readonly GhosttyVtRenderSnapshotCell[]
+  // Active mouse/cursor input modes (VIM-223 wheel forwarding). Present only when
+  // true on the wire; the surface uses them to encode the wheel as PTY input.
+  readonly isMouseTracking?: boolean
+  readonly isSgrMouse?: boolean
 }
 
 interface SnapshotStyle {
@@ -405,21 +394,11 @@ export const createGhosttyVtRenderSnapshotOutput = (
       ? false
       : undefined)
 
-  // Scrollback uses the ORIGINAL snapshot (history is independent of the
-  // viewport's leading-empty-row trimming).
-  const delta = snapshot.scrollbackDelta
-
-  const scrollbackUpdate: GhosttyScrollbackUpdate = {
-    isAltScreen: snapshot.isAltScreen === true,
-    rowCount: snapshot.scrollbackRowCount ?? 0,
-    ...(delta && delta.rows.length > 0
-      ? {
-          appendDisplayText: encodeScrollback({
-            rows: delta.rows,
-            cells: delta.cells ?? [],
-          }).displayText,
-        }
-      : {}),
+  // Mirror the snapshot's wheel-forwarding modes (present-only-when-true on the
+  // wire) into an always-present mode object the surface can branch on.
+  const wheelForwardMode: WheelForwardMode = {
+    mouseTracking: snapshot.isMouseTracking === true,
+    sgrMouse: snapshot.isSgrMouse === true,
   }
 
   return {
@@ -434,22 +413,6 @@ export const createGhosttyVtRenderSnapshotOutput = (
         },
       ],
     },
-    scrollbackUpdate,
-  }
-}
-
-// Encode styled scrollback rows into the same SGR-sentinel displayText the
-// viewport uses, so the surface can render it into its separate STATIC history
-// region. Scrollback is NOT trimmed (it is history, verbatim). The surface
-// derives visible text for selection from its own buffer, so we don't carry it.
-export const encodeScrollback = (
-  scrollback: GhosttyVtRenderScrollback
-): { displayText: string } => {
-  const cellsByRow = readCellsByRow(scrollback.cells)
-
-  return {
-    displayText: scrollback.rows
-      .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
-      .join('\n'),
+    wheelForwardMode,
   }
 }

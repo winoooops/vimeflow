@@ -47,6 +47,7 @@ describe('usePtyBufferDrain', () => {
       undefined,
       undefined
     )
+
     expect(handler).toHaveBeenNthCalledWith(
       2,
       'second',

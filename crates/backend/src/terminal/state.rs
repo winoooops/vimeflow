@@ -2,6 +2,7 @@
 
 use portable_pty::{Child, MasterPty};
 use std::collections::{HashMap, HashSet, VecDeque};
+use tokio::sync::mpsc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -105,6 +106,12 @@ pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
     /// Ids of ephemeral (burner) PTYs — reaped by kill_ephemeral_ptys.
     ephemeral_ptys: Arc<Mutex<HashSet<SessionId>>>,
+    /// Per-session sender that delivers engine-driven scroll requests to the
+    /// PTY read loop (which owns the `!Send` libghostty terminal). Keyed by
+    /// session id with the owning generation so a stale read loop's sender is
+    /// not used after ID reuse. Separate from `sessions` because the channel is
+    /// created when the read loop starts, after the `ManagedSession` exists.
+    scroll_senders: Arc<Mutex<HashMap<SessionId, (u64, mpsc::Sender<i32>)>>>,
 }
 
 /// Reason why `PtyState::try_insert` rejected a new session — returned to
@@ -172,6 +179,7 @@ impl PtyState {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             ephemeral_ptys: Arc::new(Mutex::new(HashSet::new())),
+            scroll_senders: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -265,6 +273,18 @@ impl PtyState {
             .get(session_id)
             .is_some_and(|s| s.generation == expected_gen);
         if matches {
+            // Drop the scroll sender too, but only if it belongs to this
+            // generation — a newer read loop may have already re-registered.
+            let mut senders = self
+                .scroll_senders
+                .lock()
+                .expect("failed to lock scroll_senders");
+            if senders
+                .get(session_id)
+                .is_some_and(|(generation, _)| *generation == expected_gen)
+            {
+                senders.remove(session_id);
+            }
             sessions.remove(session_id)
         } else {
             None
@@ -441,32 +461,40 @@ impl PtyState {
         Ok(())
     }
 
-    /// Read a window `[start, start + count)` of a session's accumulated
-    /// Ghostty scrollback from its `Send` store. Clones the session's
-    /// `GhosttySessionHandle` under the sessions lock, then reads the store
-    /// AFTER releasing it — the read never touches the `!Send` terminal, so it
-    /// is safe while the session is parked on a blocking PTY read. Returns an
-    /// empty scrollback when the session is missing or has no Ghostty state.
-    pub fn fetch_scrollback(
+    /// Register the read loop's scroll sender for `session_id`. Called by the
+    /// read loop once it has created its scroll channel. The generation guards
+    /// against ID reuse — a newer session's registration replaces an older one.
+    pub fn register_scroll_sender(
         &self,
         session_id: &SessionId,
-        start: u32,
-        count: u32,
-    ) -> super::types::GhosttyVtScrollback {
-        let ghostty = {
-            let sessions = self.sessions.lock().expect("failed to lock sessions");
-            sessions
-                .get(session_id)
-                .and_then(|session| session.ghostty.clone())
-        };
+        generation: u64,
+        sender: mpsc::Sender<i32>,
+    ) {
+        self.scroll_senders
+            .lock()
+            .expect("failed to lock scroll_senders")
+            .insert(session_id.clone(), (generation, sender));
+    }
 
-        match ghostty {
-            Some(ghostty) => ghostty.fetch_scrollback(start, count),
-            None => super::types::GhosttyVtScrollback {
-                rows: Vec::new(),
-                cells: Vec::new(),
-            },
+    /// Deliver an engine-driven scroll request to a session's read loop, which
+    /// owns the `!Send` terminal and renders the scrolled snapshot. A no-op
+    /// (Ok) when the session is unknown or its read loop hasn't registered yet;
+    /// `try_send` drops the request if the bounded channel is full, which is
+    /// fine because wheel deltas coalesce — the next tick re-issues.
+    pub fn scroll_pty(&self, session_id: &SessionId, delta: i32) -> Result<(), String> {
+        let sender = {
+            let senders = self
+                .scroll_senders
+                .lock()
+                .expect("failed to lock scroll_senders");
+            senders
+                .get(session_id)
+                .map(|(_generation, sender)| sender.clone())
+        };
+        if let Some(sender) = sender {
+            let _ = sender.try_send(delta);
         }
+        Ok(())
     }
 
     /// Kill a PTY session (send SIGTERM).

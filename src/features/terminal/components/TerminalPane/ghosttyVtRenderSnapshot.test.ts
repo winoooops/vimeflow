@@ -30,7 +30,35 @@ describe('ghosttyVtRenderSnapshot', () => {
           },
         ],
       },
-      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
+      wheelForwardMode: {
+        mouseTracking: false,
+        sgrMouse: false,
+      },
+    })
+  })
+
+  test('mirrors the snapshot mouse-tracking modes into wheelForwardMode', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['prompt'],
+      isAltScreen: true,
+      isMouseTracking: true,
+      isSgrMouse: true,
+    })
+
+    expect(output.wheelForwardMode).toEqual({
+      mouseTracking: true,
+      sgrMouse: true,
+    })
+  })
+
+  test('defaults wheelForwardMode to all-false when no mouse modes are set', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['prompt'],
+    })
+
+    expect(output.wheelForwardMode).toEqual({
+      mouseTracking: false,
+      sgrMouse: false,
     })
   })
 

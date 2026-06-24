@@ -384,12 +384,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
               ? [
                   {
                     text: restore.replayData,
-                  offsetStart: null,
-                  byteLen: null,
-                  phase: 'restore' as const,
-                },
-              ]
-            : []),
+                    offsetStart: null,
+                    byteLen: null,
+                    phase: 'restore' as const,
+                  },
+                ]
+              : []),
           ...restoredBufferedEvents
             .filter((event) => event.data.length > 0)
             .map(

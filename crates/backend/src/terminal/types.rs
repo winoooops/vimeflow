@@ -73,21 +73,19 @@ pub struct ResizePtyRequest {
     pub cols: u16,
 }
 
-/// Request payload for reading a window of a session's accumulated SCROLLBACK
-/// (history) from the Rust-owned Ghostty store. The store is filled lazily by
-/// the read thread; this command reads it on-demand without touching the
-/// `!Send` terminal, so it is safe even while the session is idle.
+/// Request payload for an engine-driven scroll of a PTY session's viewport.
+/// `delta` is a signed row count: negative scrolls up into history, positive
+/// scrolls back toward the live tail (a large positive delta resumes
+/// auto-follow, since the engine clamps at the bottom).
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
-pub struct ReadScrollbackRequest {
+pub struct ScrollPtyRequest {
     /// Session ID
     pub session_id: SessionId,
-    /// 0-based index of the first scrollback row to read.
-    pub start: u32,
-    /// Number of scrollback rows to read from `start` (clamped to what exists).
-    pub count: u32,
+    /// Signed row delta; negative scrolls up into history.
+    pub delta: i32,
 }
 
 /// Request payload for killing a PTY session
@@ -186,40 +184,22 @@ pub struct GhosttyVtRenderSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub cells: Option<Vec<GhosttyVtRenderSnapshotCell>>,
-    /// Count of scrollback rows above the viewport. Present only when > 0, and
-    /// suppressed (None) on the alt screen (full-screen TUIs own their own
-    /// scrolling). The renderer uses this to gate its static history region.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub scrollback_row_count: Option<u32>,
     /// True while the alternate screen is active (DECSET 1049). Present only
     /// when true, so the renderer can suppress history for full-screen apps.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub is_alt_screen: Option<bool>,
-    /// Scrollback rows newly evicted above the viewport since the previous
-    /// frame — styled and ready to APPEND to the renderer's static history
-    /// region. Present only when the scrollback grew this frame; suppressed on
-    /// the alt screen (the renderer hides history via `is_alt_screen`). A reset
-    /// (the count dropping) is detected renderer-side from `scrollback_row_count`.
+    /// True when the app enabled mouse tracking (DECSET 1000/1002/1003). The
+    /// renderer forwards the wheel as encoded mouse events instead of scrolling
+    /// its own region (VIM-223 wheel-forwarding). Present only when true.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
-    pub scrollback_delta: Option<GhosttyVtScrollback>,
-}
-
-/// A window of terminal SCROLLBACK (history) rows, shaped like a render
-/// snapshot so the frontend can render scroll-up history on the Rust VT path.
-/// `rows[i]` is the column-aligned plain text of returned row `i`, and each
-/// `cells[]` entry's `row` is the 0-based index WITHIN the returned window
-/// (row 0 = the first returned history row), reusing the snapshot cell shape.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct GhosttyVtScrollback {
-    pub rows: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub cells: Vec<GhosttyVtRenderSnapshotCell>,
+    pub is_mouse_tracking: Option<bool>,
+    /// True when the app selected SGR mouse encoding (DECSET 1006). Selects the
+    /// `ESC[<b;col;rowM` wheel framing over legacy X10. Present only when true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub is_sgr_mouse: Option<bool>,
 }
 
 /// PTY exit event payload (emitted when process exits)

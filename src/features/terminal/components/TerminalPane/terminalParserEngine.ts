@@ -15,19 +15,13 @@ import {
 } from './terminalOutputPayload'
 import type { TerminalDisplayDelta } from './terminalDisplayBuffer'
 
-// Eager-delta history update for the Rust snapshot path (VIM-224 "path A").
-// The backend pushes only the rows newly evicted above the viewport; the
-// surface APPENDS them to its static history region. Distinct from the
-// `scrollback` replace/clear tri-state below (the now-dead JS driver path).
-export interface GhosttyScrollbackUpdate {
-  // Alt screen active — hide the region (full-screen apps own the viewport),
-  // but keep what was built so returning to the normal screen needs no refetch.
-  readonly isAltScreen: boolean
-  // Total scrollback rows. 0 = clear the region; a value below what the surface
-  // has already appended signals a clear/reset (then deltas re-accumulate).
-  readonly rowCount: number
-  // Encoded rows newly evicted this frame, to append. Absent when nothing grew.
-  readonly appendDisplayText?: string
+// Active terminal input modes that decide how a mouse wheel tick is forwarded
+// to the PTY (VIM-223). Rides the render snapshot — no extra IPC. When the app
+// tracks the mouse the surface forwards the wheel as encoded mouse-event bytes
+// (SGR or X10); otherwise the wheel drives an engine-driven scroll.
+export interface WheelForwardMode {
+  readonly mouseTracking: boolean
+  readonly sgrMouse: boolean
 }
 
 export interface TerminalParserEngineOutput {
@@ -41,8 +35,9 @@ export interface TerminalParserEngineOutput {
   //   object    = replace the region with this history
   //   null      = clear the region (alt screen / no history)
   readonly scrollback?: { readonly displayText: string } | null
-  // Eager-delta history update (Rust snapshot path). See GhosttyScrollbackUpdate.
-  readonly scrollbackUpdate?: GhosttyScrollbackUpdate
+  // Active mouse/cursor input modes for wheel forwarding (VIM-223). The surface
+  // caches this and consults it on every wheel event. See WheelForwardMode.
+  readonly wheelForwardMode?: WheelForwardMode
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode

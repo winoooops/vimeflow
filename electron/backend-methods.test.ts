@@ -8,6 +8,7 @@ describe('isAllowedBackendMethod', () => {
     'write_pty',
     'rename_agent_session',
     'resize_pty',
+    'scroll_pty',
     'kill_pty',
     'list_sessions',
     'set_active_session',
