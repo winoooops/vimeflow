@@ -193,7 +193,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(readScrollback).toHaveBeenCalledTimes(2)
   })
 
-  test('stops retrying persistent empty positive-count scrollback fetches', () => {
+  test('clears scrollback when persistent empty positive-count fetches give up', () => {
     const readScrollback = vi.fn(() => ({ rows: [], cells: [] }))
 
     const adapter = createGhosttyVtRenderStateByteParserAdapter(
@@ -208,10 +208,13 @@ describe('ghosttyVtRenderStateDriver', () => {
       })
     )
 
-    for (const byte of [0x61, 0x62, 0x63]) {
+    for (const byte of [0x61, 0x62]) {
       adapter.parseBytes(createInput(new Uint8Array([byte])))
       expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
     }
+
+    adapter.parseBytes(createInput(new Uint8Array([0x63])))
+    expect(adapter.flushOutput?.()?.scrollback).toBeNull()
 
     adapter.parseBytes(createInput(new Uint8Array([0x64])))
     expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
@@ -241,10 +244,13 @@ describe('ghosttyVtRenderStateDriver', () => {
       })
     )
 
-    for (const byte of [0x61, 0x62, 0x63]) {
+    for (const byte of [0x61, 0x62]) {
       adapter.parseBytes(createInput(new Uint8Array([byte])))
       expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
     }
+
+    adapter.parseBytes(createInput(new Uint8Array([0x63])))
+    expect(adapter.flushOutput?.()?.scrollback).toBeNull()
 
     scrollbackRowCount = 2
     adapter.parseBytes(createInput(new Uint8Array([0x64])))

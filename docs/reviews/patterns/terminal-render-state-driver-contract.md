@@ -371,3 +371,12 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **Finding:** After fixing empty positive-count scrollback fetches to omit the payload and leave `cachedScrollbackRowCount` unchanged, persistent empty results for the same positive count retried `readScrollback()` on every dirty flush. That kept synchronous renderer/main-process IPC and scrollback parsing in the render path with no termination condition.
 - **Fix:** Track consecutive empty results per row count and, after a small same-count retry budget, mark that count as delivered-empty so later frames stop re-fetching until the count changes, resize invalidates the cache, or reset clears the adapter state. Regression coverage verifies persistent empty results stop retrying and a changed row count gets fresh retry attempts.
 - **Commit:** same commit as this entry
+
+### 39. Retry give-up paths must respect tri-state render payload semantics
+
+- **Source:** github-claude | PR #615 round 5 | 2026-06-24
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts`
+- **Finding:** The empty-scrollback give-up branch cached a positive native row count but returned viewport output without a `scrollback` field. In the terminal surface contract, an omitted field means "preserve the current static region," so stale history could remain visible after the driver had decided that same count could not be delivered.
+- **Fix:** Return `scrollback: null` when the positive-count empty-retry budget is exhausted, clearing any stale static history region while still caching the count to suppress same-count retries. Updated the regression to assert retry frames preserve scrollback, the give-up frame clears it, and later same-count frames stop re-fetching.
+- **Commit:** same commit as this entry

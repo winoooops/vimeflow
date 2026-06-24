@@ -128,6 +128,8 @@ export const createGhosttyVtRenderStateParserDriverFactory =
           cachedScrollbackRowCount = count
           emptyScrollbackRetryRowCount = -1
           emptyScrollbackRetryCount = 0
+
+          return { ...viewport, scrollback: null }
         }
 
         return viewport
