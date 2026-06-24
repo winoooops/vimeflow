@@ -112,3 +112,18 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **Finding:** The surface set `userScrolledUp` on wheel-up before confirming that the pane was actually scrollable, and `clear()` wiped the output/scrollback DOM without resetting the same sticky-scroll flag. Fresh panes could stop following new output after a no-op wheel, and a user who cleared while reading history could remain locked away from the live bottom.
 - **Fix:** Gate wheel-up freeze on real vertical scrollability, clear stale freeze state when the pane is no longer scrollable or is already at bottom, and reset `userScrolledUp` before rendering after `clear()`. Added regressions for no-op wheel-up and scroll-up-to-clear.
 - **Commit:** same commit as this entry
+
+### 12. Null scrollback clears must reset sticky scroll state
+
+- **Source:** github-claude | PR #615 round 2 | 2026-06-24
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** `renderScrollback(null)` cleared the static history DOM for
+  alt-screen entry but left `userScrolledUp` set after a user had been
+  reading history. The next live render could then skip repositioning and
+  leave the active TUI frame below the visible area.
+- **Fix:** Reset `userScrolledUp` in the null scrollback branch before the
+  viewport render applies bottom-following. Added a regression that scrolls
+  up, sends a null scrollback payload, and verifies the viewport returns to
+  the bottom.
+- **Commit:** same commit as this entry

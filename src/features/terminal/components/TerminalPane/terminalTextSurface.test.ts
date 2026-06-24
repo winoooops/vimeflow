@@ -293,6 +293,19 @@ describe('TerminalTextSurface static scrollback region', () => {
     expect(scrollback.textContent).toBe('')
   })
 
+  test('null scrollback resumes bottom-following after reading history', () => {
+    const { surface, root } = mountSurface()
+    writeWithScrollback(surface, {
+      displayText: 'history',
+    })
+    dispatchWheel(root, -50)
+    root.scrollTop = 400
+
+    writeWithScrollback(surface, null, 'vim')
+
+    expect(root.scrollTop).toBe(root.scrollHeight)
+  })
+
   test('select-all spans the history region and the viewport', () => {
     const { surface } = mountSurface()
     writeWithScrollback(surface, { displayText: 'history line' }, 'live prompt')

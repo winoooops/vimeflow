@@ -1297,6 +1297,7 @@ export class TerminalTextSurface implements TerminalSurface {
       this.scrollbackBuffer.clear()
       this.scrollbackOutput.replaceChildren()
       this.scrollbackOutput.style.display = 'none'
+      this.userScrolledUp = false
 
       return
     }

@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 34   | 2026-06-20   |
 | [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 29       | 11   | 2026-06-23   |
-| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 11       | 7    | 2026-06-24   |
+| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 12       | 7    | 2026-06-24   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 36       | 13   | 2026-06-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 88       | 27   | 2026-06-22   |
