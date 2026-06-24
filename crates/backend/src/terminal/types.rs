@@ -73,6 +73,23 @@ pub struct ResizePtyRequest {
     pub cols: u16,
 }
 
+/// Request payload for reading a window of a session's accumulated SCROLLBACK
+/// (history) from the Rust-owned Ghostty store. The store is filled lazily by
+/// the read thread; this command reads it on-demand without touching the
+/// `!Send` terminal, so it is safe even while the session is idle.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReadScrollbackRequest {
+    /// Session ID
+    pub session_id: SessionId,
+    /// 0-based index of the first scrollback row to read.
+    pub start: u32,
+    /// Number of scrollback rows to read from `start` (clamped to what exists).
+    pub count: u32,
+}
+
 /// Request payload for killing a PTY session
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

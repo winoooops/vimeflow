@@ -441,6 +441,34 @@ impl PtyState {
         Ok(())
     }
 
+    /// Read a window `[start, start + count)` of a session's accumulated
+    /// Ghostty scrollback from its `Send` store. Clones the session's
+    /// `GhosttySessionHandle` under the sessions lock, then reads the store
+    /// AFTER releasing it — the read never touches the `!Send` terminal, so it
+    /// is safe while the session is parked on a blocking PTY read. Returns an
+    /// empty scrollback when the session is missing or has no Ghostty state.
+    pub fn fetch_scrollback(
+        &self,
+        session_id: &SessionId,
+        start: u32,
+        count: u32,
+    ) -> super::types::GhosttyVtScrollback {
+        let ghostty = {
+            let sessions = self.sessions.lock().expect("failed to lock sessions");
+            sessions
+                .get(session_id)
+                .and_then(|session| session.ghostty.clone())
+        };
+
+        match ghostty {
+            Some(ghostty) => ghostty.fetch_scrollback(start, count),
+            None => super::types::GhosttyVtScrollback {
+                rows: Vec::new(),
+                cells: Vec::new(),
+            },
+        }
+    }
+
     /// Kill a PTY session (send SIGTERM).
     ///
     /// Round 9, Finding 1 (codex P1): returns a typed `KillError` so callers

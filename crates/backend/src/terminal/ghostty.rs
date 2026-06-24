@@ -16,6 +16,95 @@ const DEFAULT_MAX_SCROLLBACK: usize = 10_000;
 const CELL_WIDTH_PX: u32 = 8;
 const CELL_HEIGHT_PX: u32 = 16;
 
+/// Compile-time `Send` assertion used by [`_scrollback_store_is_send`].
+fn _assert_send<T: Send>() {}
+
+/// Compile-time guard: the scrollback store — and the handle that carries it —
+/// must hold only `Send` data. The lazy-fetch design depends on a command
+/// handler reading the store on-demand WITHOUT touching the `!Send` libghostty
+/// `Terminal` (parked on a blocking PTY read on its own thread). If this fails
+/// to compile, the store grew a non-`Send` field and the design is broken.
+#[allow(dead_code)]
+fn _scrollback_store_is_send() {
+    _assert_send::<ScrollbackStore>();
+    _assert_send::<GhosttySessionHandle>();
+}
+
+/// One stored scrollback row: its column-aligned plain text plus the styled
+/// cells belonging to that row. Plain owned data (`String` + `Vec` of `Clone`
+/// cells) so the whole store is `Send`.
+#[derive(Clone, Debug)]
+struct StoredScrollbackRow {
+    text: String,
+    cells: Vec<GhosttyVtRenderSnapshotCell>,
+}
+
+/// The `Send` history buffer the read thread fills (via `write`'s evicted-row
+/// delta) and a command handler drains on scroll-up. Replaces the eager
+/// per-frame snapshot delta with a lazy windowed fetch: history accumulates
+/// here, capped at [`DEFAULT_MAX_SCROLLBACK`] rows (front-evicted), and the
+/// frontend pulls `[start, start + count)` slices on demand.
+#[derive(Default, Debug)]
+pub(crate) struct ScrollbackStore {
+    rows: std::collections::VecDeque<StoredScrollbackRow>,
+}
+
+impl ScrollbackStore {
+    /// Append one frame's worth of newly-evicted scrollback. The incoming
+    /// `cells` are grouped by their `row` field (the 0-based index WITHIN the
+    /// delta) onto the matching `rows[i]`, producing one [`StoredScrollbackRow`]
+    /// per delta row. Once the buffer exceeds the cap, the oldest rows are
+    /// evicted from the FRONT so the store tracks the most-recent history.
+    fn append(&mut self, scrollback: GhosttyVtScrollback) {
+        let mut per_row: Vec<Vec<GhosttyVtRenderSnapshotCell>> =
+            vec![Vec::new(); scrollback.rows.len()];
+        for cell in scrollback.cells {
+            if let Some(bucket) = per_row.get_mut(usize::from(cell.row)) {
+                bucket.push(cell);
+            }
+        }
+
+        for (text, cells) in scrollback.rows.into_iter().zip(per_row) {
+            self.rows.push_back(StoredScrollbackRow { text, cells });
+        }
+
+        while self.rows.len() > DEFAULT_MAX_SCROLLBACK {
+            self.rows.pop_front();
+        }
+    }
+
+    /// Read the window `[start, start + count)`, clamped to the stored rows.
+    /// Each returned cell's `row` is REINDEXED to its 0-based position WITHIN
+    /// the returned window (row 0 = the first returned row) so the frontend can
+    /// render the slice positionally, matching `read_scrollback`'s contract.
+    fn fetch(&self, start: usize, count: usize) -> GhosttyVtScrollback {
+        let end = start.saturating_add(count).min(self.rows.len());
+        let mut rows = Vec::new();
+        let mut cells = Vec::new();
+
+        for (window_index, source_index) in (start..end).enumerate() {
+            let Some(row) = self.rows.get(source_index) else {
+                break;
+            };
+            let window_row = window_index as u16;
+            rows.push(row.text.clone());
+            cells.extend(row.cells.iter().map(|cell| GhosttyVtRenderSnapshotCell {
+                row: window_row,
+                ..cell.clone()
+            }));
+        }
+
+        GhosttyVtScrollback { rows, cells }
+    }
+
+    /// Number of rows currently held. Used by the store's tests and reserved
+    /// for callers that need to bound a fetch window against what exists.
+    #[allow(dead_code)]
+    fn len(&self) -> usize {
+        self.rows.len()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct GhosttyWriteResult {
     pub snapshot: GhosttyVtRenderSnapshot,
@@ -25,6 +114,10 @@ pub(crate) struct GhosttyWriteResult {
 #[derive(Debug)]
 pub(crate) struct GhosttySessionHandle {
     latest_snapshot: Arc<Mutex<Option<GhosttyVtRenderSnapshot>>>,
+    /// Shared `Send` history buffer. Filled by the read thread (via the state's
+    /// `write`) and read here by command handlers WITHOUT touching the `!Send`
+    /// terminal — this is what makes the lazy fetch idle-safe.
+    scrollback_store: Arc<Mutex<ScrollbackStore>>,
     resize_tx: Sender<GhosttyResize>,
 }
 
@@ -32,6 +125,7 @@ impl Clone for GhosttySessionHandle {
     fn clone(&self) -> Self {
         Self {
             latest_snapshot: Arc::clone(&self.latest_snapshot),
+            scrollback_store: Arc::clone(&self.scrollback_store),
             resize_tx: self.resize_tx.clone(),
         }
     }
@@ -40,15 +134,18 @@ impl Clone for GhosttySessionHandle {
 impl GhosttySessionHandle {
     pub fn new() -> (Self, GhosttySessionReader) {
         let latest_snapshot = Arc::new(Mutex::new(None));
+        let scrollback_store = Arc::new(Mutex::new(ScrollbackStore::default()));
         let (resize_tx, resize_rx) = channel();
 
         (
             Self {
                 latest_snapshot: Arc::clone(&latest_snapshot),
+                scrollback_store: Arc::clone(&scrollback_store),
                 resize_tx,
             },
             GhosttySessionReader {
                 latest_snapshot,
+                scrollback_store,
                 resize_rx,
             },
         )
@@ -66,11 +163,26 @@ impl GhosttySessionHandle {
             .ok()
             .and_then(|snapshot| snapshot.clone())
     }
+
+    /// Read a window `[start, start + count)` of accumulated scrollback from
+    /// the shared store. Reads the `Send` store, NOT the terminal — safe to
+    /// call from a command handler while the read thread is parked on a
+    /// blocking PTY read. A poisoned lock degrades to an empty window.
+    pub fn fetch_scrollback(&self, start: u32, count: u32) -> GhosttyVtScrollback {
+        match self.scrollback_store.lock() {
+            Ok(store) => store.fetch(start as usize, count as usize),
+            Err(_) => GhosttyVtScrollback {
+                rows: Vec::new(),
+                cells: Vec::new(),
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct GhosttySessionReader {
     latest_snapshot: Arc<Mutex<Option<GhosttyVtRenderSnapshot>>>,
+    scrollback_store: Arc<Mutex<ScrollbackStore>>,
     resize_rx: Receiver<GhosttyResize>,
 }
 
@@ -94,6 +206,10 @@ pub(crate) struct GhosttyTerminalState {
     cell_iterator: CellIterator<'static>,
     latest_cwd_uri: Arc<Mutex<Option<String>>>,
     latest_snapshot: Arc<Mutex<Option<GhosttyVtRenderSnapshot>>>,
+    /// Shared `Send` history buffer this state appends each frame's evicted-row
+    /// delta to. A command handler reads it through `GhosttySessionHandle`
+    /// without touching this `!Send` state.
+    scrollback_store: Arc<Mutex<ScrollbackStore>>,
     resize_rx: Receiver<GhosttyResize>,
     /// Scrollback row count emitted on the previous frame, so `write` can read
     /// just the newly-evicted rows (the delta) instead of the whole buffer.
@@ -128,6 +244,7 @@ impl GhosttyTerminalState {
             cell_iterator: CellIterator::new().map_err(|error| error.to_string())?,
             latest_cwd_uri,
             latest_snapshot: reader.latest_snapshot,
+            scrollback_store: reader.scrollback_store,
             resize_rx: reader.resize_rx,
             last_scrollback_count: 0,
         })
@@ -148,10 +265,13 @@ impl GhosttyTerminalState {
         })
     }
 
-    /// Read the scrollback rows newly evicted above the viewport since the
-    /// previous frame, advancing the tracked count so the renderer can APPEND
-    /// them to its static history region. Returns `None` on the alt screen
-    /// (history is suppressed there) and when nothing grew; a shrink
+    /// Append the scrollback rows newly evicted above the viewport since the
+    /// previous frame into the shared `Send` store, advancing the tracked
+    /// count. The store is what the lazy fetch (`fetch_scrollback`) reads, so
+    /// the renderer pulls history windows on scroll-up instead of receiving an
+    /// eager per-frame delta. Always returns `Ok(None)` so `write` attaches no
+    /// `scrollback_delta` to the snapshot. Skips the alt screen (history is
+    /// suppressed there) and any frame where nothing grew; a shrink
     /// (clear/reset) just rewinds the count — the renderer detects the reset
     /// from `scrollback_row_count` dropping below what it has rendered.
     fn take_scrollback_delta(
@@ -180,7 +300,17 @@ impl GhosttyTerminalState {
         let delta = self.read_scrollback(last, added)?;
         self.last_scrollback_count = new_count;
 
-        Ok((!delta.rows.is_empty()).then_some(delta))
+        // Route the delta into the shared store instead of the snapshot. A
+        // poisoned lock drops this frame's history rather than panicking the
+        // read thread; the count still advances, so the next frame's window
+        // simply starts after the lost rows.
+        if !delta.rows.is_empty() {
+            if let Ok(mut store) = self.scrollback_store.lock() {
+                store.append(delta);
+            }
+        }
+
+        Ok(None)
     }
 
     fn resize(&mut self, cols: u16, rows: u16) -> Result<(), String> {
@@ -569,6 +699,124 @@ mod tests {
         }
     }
 
+    /// A styled cell at `(row, col)` carrying the given text — the minimal
+    /// shape the store groups by `row` and reindexes on `fetch`.
+    fn cell(row: u16, col: u16, text: &str) -> GhosttyVtRenderSnapshotCell {
+        GhosttyVtRenderSnapshotCell {
+            row,
+            col,
+            text: text.to_string(),
+            width: 1,
+            bold: None,
+            italic: None,
+            underline: None,
+            foreground: None,
+            background: None,
+            reverse: None,
+        }
+    }
+
+    #[test]
+    fn scrollback_store_is_send() {
+        // Compile-time proof the store (and the handle that carries it) hold
+        // only Send data — the whole point of the lazy model is that a command
+        // handler can read the store while the terminal is parked on a blocking
+        // read on another thread.
+        _assert_send::<ScrollbackStore>();
+        _assert_send::<GhosttySessionHandle>();
+    }
+
+    #[test]
+    fn fetch_scrollback_surfaces_rows_evicted_into_the_store() {
+        // The read thread fills the store via `write`'s delta; a command
+        // handler later reads it through the handle WITHOUT touching the
+        // terminal. `create_state` consumes the reader, so clone the handle
+        // first to keep a store-reading view for the assertion.
+        let (handle, reader) = GhosttySessionHandle::new();
+        let handle = handle.clone();
+        let mut state = reader
+            .create_state(80, 3)
+            .expect("create ghostty terminal state");
+        fill_past_viewport(&mut state);
+
+        let scrollback = handle.fetch_scrollback(0, 10);
+
+        assert!(
+            scrollback.rows.iter().any(|row| row.contains("line 0")),
+            "the store must hold the earliest evicted row, got {:?}",
+            scrollback.rows
+        );
+    }
+
+    #[test]
+    fn scrollback_store_caps_at_default_max_keeping_the_most_recent_row() {
+        let mut store = ScrollbackStore::default();
+        let overflow = DEFAULT_MAX_SCROLLBACK + 5;
+        for index in 0..overflow {
+            store.append(GhosttyVtScrollback {
+                rows: vec![format!("line {index}")],
+                cells: vec![cell(0, 0, "l")],
+            });
+        }
+
+        assert_eq!(
+            store.len(),
+            DEFAULT_MAX_SCROLLBACK,
+            "the store must evict from the front so it never exceeds the cap"
+        );
+        let last = store.fetch(store.len() - 1, 1);
+        assert_eq!(
+            last.rows,
+            vec![format!("line {}", overflow - 1)],
+            "the most-recent appended row must survive the front eviction"
+        );
+    }
+
+    #[test]
+    fn scrollback_store_fetch_reindexes_cell_rows_to_window_position() {
+        // Two 2-row deltas land in the store with per-delta `row` indices
+        // (0,1 each). A fetch across both must renumber every cell's `row` to
+        // its 0-based position WITHIN the returned window (0,1,2,3), not the
+        // original delta indices — the frontend renders rows by that offset.
+        let mut store = ScrollbackStore::default();
+        store.append(GhosttyVtScrollback {
+            rows: vec!["a0".to_string(), "a1".to_string()],
+            cells: vec![cell(0, 0, "a"), cell(1, 0, "a")],
+        });
+        store.append(GhosttyVtScrollback {
+            rows: vec!["b0".to_string(), "b1".to_string()],
+            cells: vec![cell(0, 0, "b"), cell(1, 0, "b")],
+        });
+
+        let window = store.fetch(0, 4);
+
+        assert_eq!(window.rows.len(), 4);
+        let rows: Vec<u16> = window.cells.iter().map(|cell| cell.row).collect();
+        assert_eq!(
+            rows,
+            vec![0, 1, 2, 3],
+            "cell rows must be reindexed to their window position, got {rows:?}"
+        );
+    }
+
+    #[test]
+    fn scrollback_store_fetch_clamps_past_the_end() {
+        let mut store = ScrollbackStore::default();
+        store.append(GhosttyVtScrollback {
+            rows: vec!["only".to_string()],
+            cells: vec![],
+        });
+
+        let window = store.fetch(0, 10);
+        assert_eq!(window.rows, vec!["only".to_string()]);
+
+        let past_end = store.fetch(5, 3);
+        assert!(
+            past_end.rows.is_empty() && past_end.cells.is_empty(),
+            "a window entirely past the end must be empty"
+        );
+    }
+
     #[test]
     fn snapshot_reports_scrollback_row_count_on_the_primary_screen() {
         let mut state = make_state(80, 3);
@@ -660,58 +908,86 @@ mod tests {
     }
 
     #[test]
-    fn write_emits_scrollback_delta_for_newly_evicted_rows() {
-        let mut state = make_state(80, 3);
-        let mut delta_rows: Vec<String> = Vec::new();
+    fn write_routes_newly_evicted_rows_into_the_store() {
+        // The per-frame delta no longer rides the snapshot (it always carries
+        // `scrollback_delta: None` now); `write` appends each delta into the
+        // Send store instead, where the lazy fetch reads it. Keep a cloned
+        // handle for the store view since `create_state` consumes the reader.
+        let (handle, reader) = GhosttySessionHandle::new();
+        let handle = handle.clone();
+        let mut state = reader
+            .create_state(80, 3)
+            .expect("create ghostty terminal state");
         for index in 0..8 {
             let result = state
                 .write(format!("line {index}\r\n").as_bytes())
                 .expect("write");
-            if let Some(delta) = result.snapshot.scrollback_delta {
-                delta_rows.extend(delta.rows);
-            }
+            assert!(
+                result.snapshot.scrollback_delta.is_none(),
+                "the delta is routed to the store, never attached to the snapshot"
+            );
         }
+
+        let stored = handle.fetch_scrollback(0, 100);
         assert!(
-            delta_rows.iter().any(|row| row.contains("line 0")),
-            "rows evicted past the 3-row viewport must arrive as a delta, got {delta_rows:?}"
+            stored.rows.iter().any(|row| row.contains("line 0")),
+            "rows evicted past the 3-row viewport must land in the store, got {:?}",
+            stored.rows
         );
     }
 
     #[test]
-    fn scrollback_deltas_tile_every_evicted_row_exactly_once() {
-        let mut state = make_state(80, 3);
-        let mut delta_total = 0u32;
+    fn store_tiles_every_evicted_row_exactly_once() {
+        // The store APPENDs each frame's delta, so the stored row count must
+        // exactly equal the terminal's scrollback count — no duplicates, no
+        // gaps. (Previously asserted against the summed snapshot deltas.)
+        let (handle, reader) = GhosttySessionHandle::new();
+        let handle = handle.clone();
+        let mut state = reader
+            .create_state(80, 3)
+            .expect("create ghostty terminal state");
         for index in 0..10 {
-            let result = state
+            state
                 .write(format!("line {index}\r\n").as_bytes())
                 .expect("write");
-            if let Some(delta) = result.snapshot.scrollback_delta {
-                delta_total += delta.rows.len() as u32;
-            }
         }
         let final_count = state
             .snapshot()
             .expect("snapshot")
             .scrollback_row_count
             .unwrap_or(0);
-        // The renderer APPENDS each delta, so the deltas must cover the whole
-        // scrollback with no duplicates and no gaps.
+
+        let stored_len = handle.fetch_scrollback(0, u32::MAX).rows.len() as u32;
         assert_eq!(
-            delta_total, final_count,
-            "sum of delta rows must equal total scrollback count"
+            stored_len, final_count,
+            "stored row count must equal total scrollback count"
         );
     }
 
     #[test]
-    fn write_suppresses_scrollback_delta_on_the_alternate_screen() {
-        let mut state = make_state(80, 3);
+    fn write_does_not_grow_the_store_on_the_alternate_screen() {
+        // History is suppressed on the alt screen: the snapshot still carries
+        // no delta, and the store must not grow while alt is active.
+        let (handle, reader) = GhosttySessionHandle::new();
+        let handle = handle.clone();
+        let mut state = reader
+            .create_state(80, 3)
+            .expect("create ghostty terminal state");
         fill_past_viewport(&mut state);
+        let before = handle.fetch_scrollback(0, u32::MAX).rows.len();
+
         let result = state
             .write(b"\x1b[?1049h\x1b[1mfullscreen\x1b[0m")
             .expect("write alt");
+
         assert!(
             result.snapshot.scrollback_delta.is_none(),
             "history is suppressed on the alt screen"
+        );
+        assert_eq!(
+            handle.fetch_scrollback(0, u32::MAX).rows.len(),
+            before,
+            "the store must not grow while the alt screen is active"
         );
     }
 

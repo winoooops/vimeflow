@@ -519,6 +519,26 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
         .map_err(|e| e.to_string())
 }
 
+/// Read a window of a session's accumulated Ghostty scrollback (history).
+///
+/// Reads the session's `Send` scrollback STORE via its `GhosttySessionHandle`,
+/// never the `!Send` terminal — so this resolves on-demand even while the
+/// session's read thread is parked on a blocking PTY read. A session with no
+/// Ghostty state (the `bytes_base64` renderer path is off, or the session is
+/// unknown) yields an empty scrollback rather than an error.
+// Tests call the command name directly with plain args.
+#[cfg(test)]
+pub fn read_scrollback(state: &PtyState, request: ReadScrollbackRequest) -> GhosttyVtScrollback {
+    read_scrollback_inner(state, request)
+}
+
+pub(crate) fn read_scrollback_inner(
+    state: &PtyState,
+    request: ReadScrollbackRequest,
+) -> GhosttyVtScrollback {
+    state.fetch_scrollback(&request.session_id, request.start, request.count)
+}
+
 /// Kill a PTY session.
 ///
 /// Idempotent on the missing-session axis: if the id isn't in `PtyState`
@@ -4064,5 +4084,103 @@ mod tests {
 
         // Cleanup
         let _ = state.remove(&"pty-shared".to_string());
+    }
+
+    /// Build a `ManagedSession` carrying a real `GhosttySessionHandle`,
+    /// returning the live `GhosttyTerminalState` alongside it so the test can
+    /// drive `write` (which fills the handle's shared `Send` store) before
+    /// inserting the session. Reuses a real PTY pair only to source the
+    /// `master`/`writer`/`child` trait objects the session requires.
+    fn make_ghostty_session(
+        cols: u16,
+        rows: u16,
+    ) -> (
+        ManagedSession,
+        crate::terminal::ghostty::GhosttyTerminalState,
+    ) {
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let cmd = CommandBuilder::new(test_true_path());
+        let child = pty_pair.slave.spawn_command(cmd).expect("spawn");
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+
+        let (handle, reader) = GhosttySessionHandle::new();
+        let state = reader
+            .create_state(cols, rows)
+            .expect("create ghostty terminal state");
+
+        let session = ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child,
+            cwd: "/tmp".into(),
+            shim_dir: None,
+            generation: 0,
+            ring: Arc::new(Mutex::new(RingBuffer::new(64))),
+            ghostty: Some(handle),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: std::time::SystemTime::now(),
+        };
+        (session, state)
+    }
+
+    #[test]
+    fn read_scrollback_command_returns_history_from_the_store() {
+        // The read thread fills the session's Send store via the terminal
+        // state's `write`; the `read_scrollback` command then reads that store
+        // through the session's handle WITHOUT touching the terminal. A 3-row
+        // viewport pushes the early `line {i}` writes into the store.
+        let state = PtyState::new();
+        let (session, mut ghostty_state) = make_ghostty_session(80, 3);
+        for index in 0..12 {
+            ghostty_state
+                .write(format!("line {index}\r\n").as_bytes())
+                .expect("write line");
+        }
+        state.insert("scroll-session".into(), session);
+
+        let scrollback = read_scrollback(
+            &state,
+            ReadScrollbackRequest {
+                session_id: "scroll-session".into(),
+                start: 0,
+                count: 100,
+            },
+        );
+
+        assert!(
+            scrollback.rows.iter().any(|row| row.contains("line 0")),
+            "the command must surface the earliest evicted row from the store, got {:?}",
+            scrollback.rows
+        );
+
+        let _ = state.remove(&"scroll-session".to_string());
+    }
+
+    #[test]
+    fn read_scrollback_command_returns_empty_for_unknown_session() {
+        let state = PtyState::new();
+
+        let scrollback = read_scrollback(
+            &state,
+            ReadScrollbackRequest {
+                session_id: "ghost".into(),
+                start: 0,
+                count: 10,
+            },
+        );
+
+        assert!(
+            scrollback.rows.is_empty() && scrollback.cells.is_empty(),
+            "an unknown session must yield an empty scrollback, not an error"
+        );
     }
 }

@@ -197,6 +197,16 @@ impl BackendState {
         crate::terminal::commands::resize_pty_inner(&self.pty, request)
     }
 
+    /// Read a window of a session's accumulated Ghostty scrollback (history)
+    /// from its `Send` store. Infallible at this boundary — a missing session
+    /// or one without Ghostty state yields an empty scrollback.
+    pub fn read_scrollback(
+        &self,
+        request: crate::terminal::types::ReadScrollbackRequest,
+    ) -> crate::terminal::types::GhosttyVtScrollback {
+        crate::terminal::commands::read_scrollback_inner(&self.pty, request)
+    }
+
     pub fn kill_pty(&self, request: crate::terminal::types::KillPtyRequest) -> Result<(), String> {
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
     }

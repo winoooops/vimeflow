@@ -447,6 +447,17 @@ mod router {
                 state.resize_pty(p.request)?;
                 Ok(Value::Null)
             }
+            "read_scrollback" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::terminal::types::ReadScrollbackRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let res = state.read_scrollback(p.request);
+                encode_result(res)
+            }
             "kill_pty" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
