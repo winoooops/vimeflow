@@ -105,6 +105,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
               },
             ],
           }),
+          readScrollback: (): unknown => ({ rows: [], cells: [] }),
           reset,
           resize,
           dispose,
@@ -165,6 +166,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
     installBridge({
       createDriver: () => ({
         writeBytes: vi.fn(),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         readSnapshot: (): unknown => ({
           rows: ['native prompt'],
           cursor: {
@@ -188,6 +190,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
     installBridge({
       createDriver: () => ({
         writeBytes: vi.fn(),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         readSnapshot: (): unknown => ({
           rows: ['native prompt'],
           cursor: {
@@ -211,6 +214,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
     installBridge({
       createDriver: () => ({
         writeBytes: vi.fn(),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         readSnapshot: (): unknown => ({
           rows: ['', 'abc'],
           cursor: {
@@ -294,25 +298,11 @@ describe('ghosttyNativeRenderStateBridge', () => {
     })
   })
 
-  test('readScrollback returns empty when the bridge driver omits it', () => {
-    installBridge({
-      createDriver: () => ({
-        writeBytes: vi.fn(),
-        readSnapshot: (): unknown => ({ rows: [] }),
-      }),
-    })
-
-    const driver = createGhosttyNativeRenderStateDriver({
-      onCwdChange: vi.fn(),
-    })
-
-    expect(driver.readScrollback?.()).toEqual({ rows: [], cells: [] })
-  })
-
   test('does not pad a wide-glyph row that already reaches the cursor column', () => {
     installBridge({
       createDriver: () => ({
         writeBytes: vi.fn(),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         readSnapshot: (): unknown => ({
           rows: ['界'],
           cursor: {
@@ -340,6 +330,7 @@ describe('ghosttyNativeRenderStateBridge', () => {
     installBridge({
       createDriver: () => ({
         writeBytes: vi.fn(),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         readSnapshot: (): unknown => ({
           rows: ['native prompt'],
           cells: [

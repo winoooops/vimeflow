@@ -103,18 +103,23 @@ export const createGhosttyVtRenderStateParserDriverFactory =
       if (count === cachedScrollbackRowCount) {
         return viewport
       }
-      cachedScrollbackRowCount = count
 
       if (count <= 0) {
+        cachedScrollbackRowCount = count
+
         return { ...viewport, scrollback: null }
       }
 
       const scrollback = renderStateDriver.readScrollback()
+      if (scrollback.rows.length === 0) {
+        return viewport
+      }
+
+      cachedScrollbackRowCount = count
 
       return {
         ...viewport,
-        scrollback:
-          scrollback.rows.length > 0 ? encodeScrollback(scrollback) : null,
+        scrollback: encodeScrollback(scrollback),
       }
     }
 

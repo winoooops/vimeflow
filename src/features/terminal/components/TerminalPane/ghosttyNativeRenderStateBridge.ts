@@ -227,9 +227,7 @@ export const createGhosttyNativeRenderStateDriver: GhosttyVtRenderStateDriverFac
       readSnapshot: (): GhosttyVtRenderSnapshot =>
         normalizeNativeSnapshot(driver.readSnapshot()),
       readScrollback: (): GhosttyVtRenderScrollback =>
-        driver.readScrollback
-          ? normalizeNativeScrollback(driver.readScrollback())
-          : { rows: [], cells: [] },
+        normalizeNativeScrollback(driver.readScrollback()),
       reset: (): void => {
         driver.reset?.()
       },

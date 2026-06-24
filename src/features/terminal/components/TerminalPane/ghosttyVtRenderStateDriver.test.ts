@@ -165,6 +165,34 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(readScrollback).toHaveBeenCalledTimes(2) // count grew → re-fetch
   })
 
+  test('retries empty positive-count scrollback fetches without clearing', () => {
+    const readScrollback = vi
+      .fn()
+      .mockReturnValueOnce({ rows: [], cells: [] })
+      .mockReturnValueOnce({ rows: ['history'], cells: [] })
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount: 1,
+        }),
+        readScrollback,
+      })
+    )
+
+    adapter.parseBytes(createInput(new Uint8Array([0x61])))
+    expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+
+    adapter.parseBytes(createInput(new Uint8Array([0x62])))
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({
+      displayText: 'history',
+    })
+    expect(readScrollback).toHaveBeenCalledTimes(2)
+  })
+
   test('re-attaches scrollback after resize even when the row count is unchanged', () => {
     const readScrollback = vi
       .fn()

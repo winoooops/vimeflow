@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-24
-ref_count: 13
+ref_count: 14
 ---
 
 # Terminal Render-State Driver Contract
@@ -352,4 +352,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L104
 - **Finding:** The VT render-state adapter cached the static scrollback payload only by row count. A terminal resize can reflow the same history into different line breaks without changing the native scrollback row count, leaving the surface's static history region rendered at stale geometry.
 - **Fix:** Invalidate the cached scrollback row count on every render-state driver resize so the next flushed frame re-fetches and re-attaches the static scrollback payload. Added a regression that keeps row count unchanged across resize and verifies the payload is fetched again.
+- **Commit:** same commit as this entry
+
+### 37. Static scrollback cache commits must follow successful payload delivery
+
+- **Source:** github-claude | PR #615 round 3 | 2026-06-24
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L106-L117
+- **Finding:** The VT render-state adapter wrote `cachedScrollbackRowCount = count` before verifying that `readScrollback()` returned a non-empty payload. A transient empty result with a positive native row count therefore emitted destructive `scrollback: null`, recorded the count as delivered, and caused later frames to omit the scrollback field forever until resize/reset.
+- **Fix:** Treat empty rows with `count > 0` as indeterminate: leave the output's scrollback field omitted and do not advance the cache. The cache now commits only for explicit clears (`count <= 0`) and successful non-empty payloads. The native renderer bridge contract now requires `readScrollback`, removing the silent empty fallback, and regression coverage verifies the retry path.
 - **Commit:** same commit as this entry

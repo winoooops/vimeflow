@@ -366,6 +366,7 @@ describe('terminalRendererRegistry', () => {
             columnOffset: 6,
           },
         }),
+        readScrollback: (): unknown => ({ rows: [], cells: [] }),
         reset: nativeReset,
         resize: nativeResize,
         dispose: nativeDispose,
