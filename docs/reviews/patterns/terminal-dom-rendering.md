@@ -2,8 +2,8 @@
 id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
-last_updated: 2026-06-21
-ref_count: 6
+last_updated: 2026-06-24
+ref_count: 7
 ---
 
 # Terminal DOM Rendering
@@ -102,4 +102,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L481-L485
 - **Finding:** Pinning every replace-operation delta to `scrollTop = 0` preserved full-screen TUI frames but could hide the active shell cursor when the cursor row still fit within the pane's visible row capacity.
 - **Fix:** Replace snapshots now derive the cursor row from the incoming replace operation and use cursor tracking when that row fits in the visible row capacity; snapshots whose cursor is below the pane remain top-pinned for TUI layouts. Added a Ghostty instance regression that proves a visible shell cursor scrolls into view while the TUI top-pin case stays unchanged.
+- **Commit:** same commit as this entry
+
+### 11. Sticky scroll state must be reset when content can no longer scroll
+
+- **Source:** github-claude + github-codex-connector | PR #615 round 1 | 2026-06-24
+- **Severity:** HIGH / P2
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** The surface set `userScrolledUp` on wheel-up before confirming that the pane was actually scrollable, and `clear()` wiped the output/scrollback DOM without resetting the same sticky-scroll flag. Fresh panes could stop following new output after a no-op wheel, and a user who cleared while reading history could remain locked away from the live bottom.
+- **Fix:** Gate wheel-up freeze on real vertical scrollability, clear stale freeze state when the pane is no longer scrollable or is already at bottom, and reset `userScrolledUp` before rendering after `clear()`. Added regressions for no-op wheel-up and scroll-up-to-clear.
 - **Commit:** same commit as this entry

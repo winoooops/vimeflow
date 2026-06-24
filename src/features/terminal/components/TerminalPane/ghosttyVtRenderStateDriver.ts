@@ -161,6 +161,7 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         renderStateDriver.reset?.()
       },
       resize: (size): void => {
+        cachedScrollbackRowCount = -1
         renderStateDriver.resize?.(size)
       },
       dispose: (): void => {

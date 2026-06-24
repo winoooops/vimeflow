@@ -23,6 +23,7 @@ import {
 interface TestNativeTerminal {
   feed: ReturnType<typeof vi.fn<(bytes: Uint8Array) => void>>
   resize: ReturnType<typeof vi.fn<(cols: number, rows: number) => void>>
+  scrollbackRowCount?: ReturnType<typeof vi.fn<() => number>>
   snapshot: ReturnType<
     typeof vi.fn<
       () => {
@@ -304,6 +305,40 @@ describe('ghostty render-state main bridge', () => {
 
     expect(snapshot.scrollbackRowCount).toBe(3)
     expect(snapshot.isAltScreen).toBeUndefined()
+  })
+
+  test('uses the native scrollback row count without fetching line bodies', () => {
+    const terminalSnapshot = vi.fn(() => ({
+      rows: 4,
+      cursorRow: 0,
+      cursorCol: 0,
+      isAltScreen: false,
+      visibleLines: [{ row: 0, text: 'prompt' }],
+    }))
+    const scrollbackRowCount = vi.fn(() => 3)
+
+    const bindings: GhosttyNativeBindings = {
+      createTerminal: () => ({
+        feed: vi.fn(),
+        resize: vi.fn(),
+        scrollbackRowCount,
+        snapshot: terminalSnapshot,
+        dispose: vi.fn(),
+      }),
+    }
+    const bridge = new GhosttyRenderStateMainBridge('/app', bindings)
+    const event = createEvent()
+    const createResult = requireResult(bridge.createDriver(event))
+
+    const snapshot = requireResult(
+      bridge.readSnapshot(event.sender.id, { driverId: createResult.driverId })
+    )
+
+    expect(snapshot.scrollbackRowCount).toBe(3)
+    expect(scrollbackRowCount).toHaveBeenCalledOnce()
+    expect(terminalSnapshot).toHaveBeenCalledWith({
+      includeCells: true,
+    })
   })
 
   test('suppresses scrollback on the alt screen (full-screen TUIs own scrolling)', () => {

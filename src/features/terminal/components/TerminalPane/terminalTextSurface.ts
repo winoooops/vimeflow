@@ -534,6 +534,7 @@ export class TerminalTextSurface implements TerminalSurface {
     this.scrollbackBuffer.clear()
     this.scrollbackOutput.replaceChildren()
     this.scrollbackOutput.style.display = 'none'
+    this.userScrolledUp = false
     this.renderOutput()
   }
 
@@ -764,7 +765,7 @@ export class TerminalTextSurface implements TerminalSurface {
   // Freeze auto-scroll the instant the user wheels up, before the resulting
   // 'scroll' event/layout settles — otherwise the next render snaps to bottom.
   private readonly handleWheel = (event: WheelEvent): void => {
-    if (event.deltaY < 0) {
+    if (event.deltaY < 0 && this.canScrollVertically()) {
       this.userScrolledUp = true
     }
   }
@@ -782,6 +783,10 @@ export class TerminalTextSurface implements TerminalSurface {
         this.root.clientHeight -
         SCROLL_BOTTOM_THRESHOLD_PX
     )
+  }
+
+  private canScrollVertically(): boolean {
+    return this.root.scrollHeight > this.root.clientHeight
   }
 
   private readonly handleSelectionChange = (): void => {
@@ -1349,7 +1354,11 @@ export class TerminalTextSurface implements TerminalSurface {
   ): void {
     // While the user is reading history, never reposition the viewport.
     if (this.userScrolledUp) {
-      return
+      if (!this.canScrollVertically() || this.isScrolledToBottom()) {
+        this.userScrolledUp = false
+      } else {
+        return
+      }
     }
 
     if (scrollMode === 'bottom') {

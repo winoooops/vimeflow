@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-20
-ref_count: 6
+last_updated: 2026-06-24
+ref_count: 7
 ---
 
 # Derived State Consistency
@@ -139,4 +139,13 @@ base data is technically "correct."
 - **File:** `electron/ghostty-render-state-main.ts` L565
 - **Finding:** `resize()` updated the driver's cached `record.size` before calling the native terminal resize callback. If the native resize threw, a later reset recreated the terminal at the failed requested size rather than the still-active terminal size.
 - **Fix:** Moved the cached size assignment after `record.terminal.resize()` succeeds and added a regression test that verifies reset falls back to the previous dimensions after a resize failure.
+- **Commit:** same commit as this entry
+
+### 11. Derived scrollback counts should not require full line payloads
+
+- **Source:** github-claude | PR #615 round 1 | 2026-06-24
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-render-state-main.ts` L1639-L1642
+- **Finding:** `readSnapshot()` requested full scrollback line bodies only to derive `scrollbackRowCount` from their array length. On large histories this made every frame pay synchronous IPC allocation and transfer cost for data the renderer did not need.
+- **Fix:** Added an optional native `scrollbackRowCount()` hook and used it in the bridge when present, so per-frame snapshots request only viewport cells and carry the scalar count separately. Existing bindings without the hook keep the old full-snapshot fallback until their native package exposes the count API. Added a bridge regression for the count-only path.
 - **Commit:** same commit as this entry

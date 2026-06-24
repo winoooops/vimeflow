@@ -2,8 +2,8 @@
 id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
-last_updated: 2026-06-23
-ref_count: 12
+last_updated: 2026-06-24
+ref_count: 13
 ---
 
 # Terminal Render-State Driver Contract
@@ -343,4 +343,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `electron/ghostty-render-state-main.ts` L1170
 - **Finding:** When a native viewport was fully blank, reverse-video range alignment still used a `rowShift` of `0`. Old styled rows from `formatHtml()` scrollback whose original rows fit inside the viewport could be synthesized into a blank snapshot during clear/redraw gaps.
 - **Fix:** Added an explicit alignment guard so formatter ranges are shifted and filtered only when the formatter has content rows and the native snapshot has a visible content anchor. Added a regression for a blank native viewport with stale highlighted formatter scrollback.
+- **Commit:** same commit as this entry
+
+### 36. Static scrollback caches must include terminal geometry invalidation
+
+- **Source:** github-codex-connector | PR #615 round 1 | 2026-06-24
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L104
+- **Finding:** The VT render-state adapter cached the static scrollback payload only by row count. A terminal resize can reflow the same history into different line breaks without changing the native scrollback row count, leaving the surface's static history region rendered at stale geometry.
+- **Fix:** Invalidate the cached scrollback row count on every render-state driver resize so the next flushed frame re-fetches and re-attaches the static scrollback payload. Added a regression that keeps row count unchanged across resize and verifies the payload is fetched again.
 - **Commit:** same commit as this entry

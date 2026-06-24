@@ -118,6 +118,7 @@ interface GhosttyNativeTerminalSnapshot {
 interface GhosttyNativeTerminal {
   feed: (bytes: Uint8Array) => void
   resize: (cols: number, rows: number) => void
+  scrollbackRowCount?: () => number
   snapshot: (options?: {
     includeCells?: boolean
     includeScrollback?: boolean
@@ -1461,7 +1462,8 @@ const normalizeScrollback = (
 const normalizeSnapshot = (
   snapshot: GhosttyNativeTerminalSnapshot,
   cursorVisible: boolean,
-  reverseVideo: ReverseVideoRangesResult
+  reverseVideo: ReverseVideoRangesResult,
+  scrollbackRowCountOverride?: number
 ): GhosttyRenderStateBridgeSnapshot => {
   const rows = readSnapshotRows(snapshot)
 
@@ -1511,7 +1513,7 @@ const normalizeSnapshot = (
 
   const scrollbackRowCount = isAltScreen
     ? 0
-    : (snapshot.scrollbackLines?.length ?? 0)
+    : (scrollbackRowCountOverride ?? snapshot.scrollbackLines?.length ?? 0)
 
   return {
     rows,
@@ -1633,18 +1635,25 @@ export class GhosttyRenderStateMainBridge {
   }
 
   readSnapshot(ownerWebContentsId: number, payload: unknown): SnapshotResult {
-    return this.withDriver(ownerWebContentsId, payload, (record) =>
-      ok(
+    return this.withDriver(ownerWebContentsId, payload, (record) => {
+      const scrollbackRowCount = record.terminal.scrollbackRowCount?.()
+
+      const snapshot = record.terminal.snapshot({
+        includeCells: true,
+        ...(scrollbackRowCount === undefined
+          ? { includeScrollback: true }
+          : {}),
+      })
+
+      return ok(
         normalizeSnapshot(
-          record.terminal.snapshot({
-            includeCells: true,
-            includeScrollback: true,
-          }),
+          snapshot,
           record.cursorVisibilityScanner.readVisible(),
-          readTerminalReverseVideoRanges(record.terminal)
+          readTerminalReverseVideoRanges(record.terminal),
+          scrollbackRowCount
         )
       )
-    )
+    })
   }
 
   readScrollback(

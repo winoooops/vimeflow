@@ -148,6 +148,28 @@ describe('TerminalTextSurface sticky-bottom scrolling', () => {
     expect(root.scrollTop).toBe(root.scrollHeight)
   })
 
+  test('does not freeze auto-scroll when wheel-up cannot move content', () => {
+    const { surface, root } = mountSurface({
+      clientHeight: 100,
+      scrollHeight: 100,
+    })
+
+    dispatchWheel(root, -50)
+    surface.write('first overflow\n')
+
+    expect(root.scrollTop).toBe(root.scrollHeight)
+  })
+
+  test('clear resumes bottom-following after the user was reading history', () => {
+    const { surface, root } = mountSurface()
+    dispatchWheel(root, -50)
+    root.scrollTop = 400
+
+    surface.clear()
+
+    expect(root.scrollTop).toBe(root.scrollHeight)
+  })
+
   test('pins to the bottom on a scrollback render even when the cursor row is deep', () => {
     const { surface, root } = mountSurface()
 
