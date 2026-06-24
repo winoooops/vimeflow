@@ -1343,9 +1343,7 @@ describe('ghosttyInstance', () => {
     expect(blankRun?.style.backgroundColor).toBe(TRUE_COLOR_BASE)
     expect(blankRun?.style.display).toBe('inline-block')
     expect(blankRun?.style.height).toBe('var(--terminal-line-height)')
-    expect(blankRun?.style.minWidth).toBe(
-      'calc(var(--terminal-cell-width) * 1)'
-    )
+    expect(blankRun?.style.width).toBe('calc(var(--terminal-cell-width) * 1)')
     expect(blankRun?.style.overflow).toBe('visible')
   })
 
@@ -1403,7 +1401,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(backgroundRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(backgroundRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])
@@ -1465,7 +1463,7 @@ describe('ghosttyInstance', () => {
       '> Explain this codebase   '
     )
 
-    expect(reverseRuns.map((run) => run.style.minWidth)).toEqual([
+    expect(reverseRuns.map((run) => run.style.width)).toEqual([
       'calc(var(--terminal-cell-width) * 1)',
       'calc(var(--terminal-cell-width) * 24)',
     ])
