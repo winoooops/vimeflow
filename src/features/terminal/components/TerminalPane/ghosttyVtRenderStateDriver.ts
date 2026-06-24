@@ -31,6 +31,8 @@ const EMPTY_RENDER_OUTPUT: TerminalParserEngineOutput = { visibleText: '' }
 // flushes, so a missed close marker can never freeze the surface.
 const MAX_HELD_FLUSHES = 8
 
+const MAX_EMPTY_SCROLLBACK_RETRIES = 2
+
 // The live viewport sits below the history region, so follow the bottom on each
 // frame (the surface's sticky-scroll freeze still wins while the user reads up).
 const pinViewportToBottom = (
@@ -84,6 +86,8 @@ export const createGhosttyVtRenderStateParserDriverFactory =
     // changes. This keeps the per-frame work viewport-sized; the heavy history
     // DOM is not re-parsed or re-rendered while the agent redraws the viewport.
     let cachedScrollbackRowCount = -1
+    let emptyScrollbackRetryRowCount = -1
+    let emptyScrollbackRetryCount = 0
 
     const attachScrollback = (
       snapshot: GhosttyVtRenderSnapshot,
@@ -106,16 +110,32 @@ export const createGhosttyVtRenderStateParserDriverFactory =
 
       if (count <= 0) {
         cachedScrollbackRowCount = count
+        emptyScrollbackRetryRowCount = -1
+        emptyScrollbackRetryCount = 0
 
         return { ...viewport, scrollback: null }
       }
 
       const scrollback = renderStateDriver.readScrollback()
       if (scrollback.rows.length === 0) {
+        emptyScrollbackRetryCount =
+          count === emptyScrollbackRetryRowCount
+            ? emptyScrollbackRetryCount + 1
+            : 1
+        emptyScrollbackRetryRowCount = count
+
+        if (emptyScrollbackRetryCount > MAX_EMPTY_SCROLLBACK_RETRIES) {
+          cachedScrollbackRowCount = count
+          emptyScrollbackRetryRowCount = -1
+          emptyScrollbackRetryCount = 0
+        }
+
         return viewport
       }
 
       cachedScrollbackRowCount = count
+      emptyScrollbackRetryRowCount = -1
+      emptyScrollbackRetryCount = 0
 
       return {
         ...viewport,
@@ -163,10 +183,14 @@ export const createGhosttyVtRenderStateParserDriverFactory =
         heldFlushes = 0
         dirty = false
         cachedScrollbackRowCount = -1
+        emptyScrollbackRetryRowCount = -1
+        emptyScrollbackRetryCount = 0
         renderStateDriver.reset?.()
       },
       resize: (size): void => {
         cachedScrollbackRowCount = -1
+        emptyScrollbackRetryRowCount = -1
+        emptyScrollbackRetryCount = 0
         renderStateDriver.resize?.(size)
       },
       dispose: (): void => {

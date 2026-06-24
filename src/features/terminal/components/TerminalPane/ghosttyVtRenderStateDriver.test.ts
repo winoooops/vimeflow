@@ -193,6 +193,69 @@ describe('ghosttyVtRenderStateDriver', () => {
     expect(readScrollback).toHaveBeenCalledTimes(2)
   })
 
+  test('stops retrying persistent empty positive-count scrollback fetches', () => {
+    const readScrollback = vi.fn(() => ({ rows: [], cells: [] }))
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount: 1,
+        }),
+        readScrollback,
+      })
+    )
+
+    for (const byte of [0x61, 0x62, 0x63]) {
+      adapter.parseBytes(createInput(new Uint8Array([byte])))
+      expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+    }
+
+    adapter.parseBytes(createInput(new Uint8Array([0x64])))
+    expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+    expect(readScrollback).toHaveBeenCalledTimes(3)
+  })
+
+  test('retries empty scrollback fetches again when the row count changes', () => {
+    let scrollbackRowCount = 1
+    const readScrollback = vi
+      .fn()
+      .mockReturnValueOnce({ rows: [], cells: [] })
+      .mockReturnValueOnce({ rows: [], cells: [] })
+      .mockReturnValueOnce({ rows: [], cells: [] })
+      .mockReturnValueOnce({ rows: [], cells: [] })
+      .mockReturnValueOnce({ rows: ['history'], cells: [] })
+
+    const adapter = createGhosttyVtRenderStateByteParserAdapter(
+      (): GhosttyVtRenderStateDriver => ({
+        writeBytes: vi.fn(),
+        readSnapshot: (): GhosttyVtRenderSnapshot => ({
+          rows: ['p'],
+          cursor: { rowIndex: 0, columnOffset: 0 },
+          scrollbackRowCount,
+        }),
+        readScrollback,
+      })
+    )
+
+    for (const byte of [0x61, 0x62, 0x63]) {
+      adapter.parseBytes(createInput(new Uint8Array([byte])))
+      expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+    }
+
+    scrollbackRowCount = 2
+    adapter.parseBytes(createInput(new Uint8Array([0x64])))
+    expect(adapter.flushOutput?.()?.scrollback).toBeUndefined()
+
+    adapter.parseBytes(createInput(new Uint8Array([0x65])))
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({
+      displayText: 'history',
+    })
+    expect(readScrollback).toHaveBeenCalledTimes(5)
+  })
+
   test('re-attaches scrollback after resize even when the row count is unchanged', () => {
     const readScrollback = vi
       .fn()

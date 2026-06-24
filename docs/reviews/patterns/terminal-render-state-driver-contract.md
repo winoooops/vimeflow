@@ -3,7 +3,7 @@ id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
 last_updated: 2026-06-24
-ref_count: 14
+ref_count: 15
 ---
 
 # Terminal Render-State Driver Contract
@@ -361,4 +361,13 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L106-L117
 - **Finding:** The VT render-state adapter wrote `cachedScrollbackRowCount = count` before verifying that `readScrollback()` returned a non-empty payload. A transient empty result with a positive native row count therefore emitted destructive `scrollback: null`, recorded the count as delivered, and caused later frames to omit the scrollback field forever until resize/reset.
 - **Fix:** Treat empty rows with `count > 0` as indeterminate: leave the output's scrollback field omitted and do not advance the cache. The cache now commits only for explicit clears (`count <= 0`) and successful non-empty payloads. The native renderer bridge contract now requires `readScrollback`, removing the silent empty fallback, and regression coverage verifies the retry path.
+- **Commit:** same commit as this entry
+
+### 38. Indeterminate scrollback retries need a same-count termination guard
+
+- **Source:** github-claude | PR #615 round 4 | 2026-06-24
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderStateDriver.ts` L99-L127
+- **Finding:** After fixing empty positive-count scrollback fetches to omit the payload and leave `cachedScrollbackRowCount` unchanged, persistent empty results for the same positive count retried `readScrollback()` on every dirty flush. That kept synchronous renderer/main-process IPC and scrollback parsing in the render path with no termination condition.
+- **Fix:** Track consecutive empty results per row count and, after a small same-count retry budget, mark that count as delivered-empty so later frames stop re-fetching until the count changes, resize invalidates the cache, or reset clears the adapter state. Regression coverage verifies persistent empty results stop retrying and a changed row count gets fresh retry attempts.
 - **Commit:** same commit as this entry
