@@ -410,22 +410,18 @@ export const createGhosttyVtRenderSnapshotOutput = (
   }
 }
 
-// Encode styled scrollback rows into the same SGR-sentinel displayText + plain
-// visibleText the viewport uses, so the surface can render it into its separate
-// STATIC history region. Scrollback is NOT trimmed (it is history, verbatim).
+// Encode styled scrollback rows into the same SGR-sentinel displayText the
+// viewport uses, so the surface can render it into its separate STATIC history
+// region. Scrollback is NOT trimmed (it is history, verbatim). The surface
+// derives visible text for selection from its own buffer, so we don't carry it.
 export const encodeScrollback = (
   scrollback: GhosttyVtRenderScrollback
-): { displayText: string; visibleText: string } => {
+): { displayText: string } => {
   const cellsByRow = readCellsByRow(scrollback.cells)
 
   return {
     displayText: scrollback.rows
       .map((row, rowIndex) => readStyledRowText(row, cellsByRow.get(rowIndex)))
-      .join('\n'),
-    visibleText: scrollback.rows
-      .map((row, rowIndex) =>
-        readCellRowVisibleText(row, cellsByRow.get(rowIndex))
-      )
       .join('\n'),
   }
 }

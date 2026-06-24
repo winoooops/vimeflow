@@ -207,7 +207,7 @@ describe('TerminalTextSurface static scrollback region', () => {
 
   const writeWithScrollback = (
     surface: TerminalTextSurface,
-    scrollback: { displayText: string; visibleText: string } | null | undefined,
+    scrollback: { displayText: string } | null | undefined,
     viewportText = 'prompt>'
   ): void => {
     surface.writeParsedOutput({
@@ -231,7 +231,6 @@ describe('TerminalTextSurface static scrollback region', () => {
 
     writeWithScrollback(surface, {
       displayText: 'history one\nhistory two',
-      visibleText: 'history one\nhistory two',
     })
 
     const { scrollback, viewport } = readRegions(root)
@@ -247,7 +246,6 @@ describe('TerminalTextSurface static scrollback region', () => {
     const { surface, root } = mountSurface()
     writeWithScrollback(surface, {
       displayText: 'kept history',
-      visibleText: 'kept history',
     })
     const { scrollback } = readRegions(root)
     const firstRow = scrollback.firstChild
@@ -263,7 +261,6 @@ describe('TerminalTextSurface static scrollback region', () => {
     const { surface, root } = mountSurface()
     writeWithScrollback(surface, {
       displayText: 'history',
-      visibleText: 'history',
     })
     const { scrollback } = readRegions(root)
     expect(scrollback.style.display).toBe('block')
@@ -276,11 +273,7 @@ describe('TerminalTextSurface static scrollback region', () => {
 
   test('select-all spans the history region and the viewport', () => {
     const { surface } = mountSurface()
-    writeWithScrollback(
-      surface,
-      { displayText: 'history line', visibleText: 'history line' },
-      'live prompt'
-    )
+    writeWithScrollback(surface, { displayText: 'history line' }, 'live prompt')
 
     surface.selectAll()
 

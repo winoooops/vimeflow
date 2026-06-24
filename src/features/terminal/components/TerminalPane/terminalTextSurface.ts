@@ -69,10 +69,7 @@ export interface TerminalTextSurfaceOutput {
   readonly displayDelta?: TerminalDisplayDelta
   // Styled history for the separate static region. undefined = unchanged,
   // object = replace, null = clear. See TerminalParserEngineOutput.scrollback.
-  readonly scrollback?: {
-    readonly displayText: string
-    readonly visibleText: string
-  } | null
+  readonly scrollback?: { readonly displayText: string } | null
 }
 
 type RenderScrollMode = 'bottom' | 'cursor' | 'top'
@@ -1290,9 +1287,7 @@ export class TerminalTextSurface implements TerminalSurface {
     return rows
   }
 
-  private renderScrollback(
-    payload: { displayText: string; visibleText: string } | null
-  ): void {
+  private renderScrollback(payload: { displayText: string } | null): void {
     if (payload === null) {
       this.scrollbackBuffer.clear()
       this.scrollbackOutput.replaceChildren()

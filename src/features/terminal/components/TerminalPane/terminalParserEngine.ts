@@ -24,10 +24,7 @@ export interface TerminalParserEngineOutput {
   //   undefined = unchanged (keep the current region)
   //   object    = replace the region with this history
   //   null      = clear the region (alt screen / no history)
-  readonly scrollback?: {
-    readonly displayText: string
-    readonly visibleText: string
-  } | null
+  readonly scrollback?: { readonly displayText: string } | null
 }
 
 export type TerminalParserEngineInputMode = TerminalOutputInputMode

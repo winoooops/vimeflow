@@ -131,10 +131,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     // The viewport follows the bottom while history sits above it.
     expect(output?.displayDelta?.pinToBottom).toBe(true)
     // History travels as a separate static payload for the surface's region.
-    expect(output?.scrollback).toEqual({
-      displayText: 'history line',
-      visibleText: 'history line',
-    })
+    expect(output?.scrollback).toEqual({ displayText: 'history line' })
     expect(readScrollback).toHaveBeenCalledOnce()
   })
 
@@ -155,10 +152,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     )
 
     adapter.parseBytes(createInput(new Uint8Array([0x61])))
-    expect(adapter.flushOutput?.()?.scrollback).toEqual({
-      displayText: 'h',
-      visibleText: 'h',
-    })
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({ displayText: 'h' })
 
     adapter.parseBytes(createInput(new Uint8Array([0x62])))
     // Count unchanged → no payload; the surface keeps its static region.
@@ -167,10 +161,7 @@ describe('ghosttyVtRenderStateDriver', () => {
 
     scrollbackRowCount = 2
     adapter.parseBytes(createInput(new Uint8Array([0x63])))
-    expect(adapter.flushOutput?.()?.scrollback).toEqual({
-      displayText: 'h',
-      visibleText: 'h',
-    })
+    expect(adapter.flushOutput?.()?.scrollback).toEqual({ displayText: 'h' })
     expect(readScrollback).toHaveBeenCalledTimes(2) // count grew → re-fetch
   })
 
@@ -225,10 +216,7 @@ describe('ghosttyVtRenderStateDriver', () => {
 
     const main1 = flush(0x61) // main screen: history attached
     expect(main1?.visibleText).toBe('p')
-    expect(main1?.scrollback).toEqual({
-      displayText: 'h1\nh2',
-      visibleText: 'h1\nh2',
-    })
+    expect(main1?.scrollback).toEqual({ displayText: 'h1\nh2' })
 
     isAltScreen = true
     const alt = flush(0x62) // alt screen: history cleared (null)
@@ -238,10 +226,7 @@ describe('ghosttyVtRenderStateDriver', () => {
     isAltScreen = false
     const main2 = flush(0x63) // back to main: history re-attached
     expect(main2?.visibleText).toBe('p')
-    expect(main2?.scrollback).toEqual({
-      displayText: 'h1\nh2',
-      visibleText: 'h1\nh2',
-    })
+    expect(main2?.scrollback).toEqual({ displayText: 'h1\nh2' })
 
     expect(readScrollback).toHaveBeenCalledTimes(2) // re-fetched on return
   })

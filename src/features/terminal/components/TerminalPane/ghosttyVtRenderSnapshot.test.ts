@@ -683,14 +683,12 @@ describe('scrollback composition', () => {
   test('encodeScrollback renders plain rows verbatim and styled runs distinctly', () => {
     expect(encodeScrollback({ rows: ['ab', 'cd'], cells: [] })).toEqual({
       displayText: 'ab\ncd',
-      visibleText: 'ab\ncd',
     })
 
     const styled = encodeScrollback({
       rows: ['x'],
       cells: [{ row: 0, col: 0, text: 'x', width: 1, bold: true }],
     })
-    expect(styled.visibleText).toBe('x')
     // a styled run wraps the glyph in an SGR sentinel, so displayText differs
     expect(styled.displayText).not.toBe('x')
     expect(styled.displayText).toContain('x')
