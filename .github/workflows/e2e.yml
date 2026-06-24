@@ -55,10 +55,17 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: CPU cache key
+        # libghostty-vt-sys builds ghostty with native CPU optimization; key the
+        # Rust cache on the runner CPU so a binary built on one runner is never
+        # restored on a different CPU (which SIGILLs on unsupported instructions).
+        run: echo "CPU_CACHE_KEY=$(grep -m1 'model name' /proc/cpuinfo | sha1sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          key: ${{ env.CPU_CACHE_KEY }}
 
       - name: Setup Zig
         # libghostty-vt-sys builds ghostty from source with `zig build`; the
@@ -105,6 +112,12 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: CPU cache key
+        # libghostty-vt-sys builds ghostty with native CPU optimization; key the
+        # Rust cache on the runner CPU so a binary built on one runner is never
+        # restored on a different CPU (which SIGILLs on unsupported instructions).
+        run: echo "CPU_CACHE_KEY=$(grep -m1 'model name' /proc/cpuinfo | sha1sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -113,6 +126,8 @@ jobs:
           # entries from non-e2e CI jobs don't mask recompiles triggered
           # by this job.
           shared-key: e2e-test
+          # ...and against the runner CPU (native ghostty build, see above).
+          key: ${{ env.CPU_CACHE_KEY }}
 
       - name: Setup Zig
         # libghostty-vt-sys builds ghostty from source with `zig build`; the
