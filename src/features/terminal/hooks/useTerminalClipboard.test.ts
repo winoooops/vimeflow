@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { IDisposable, Terminal } from '@xterm/xterm'
 import { expect, test, vi } from 'vitest'
 import { useTerminalClipboard } from './useTerminalClipboard'
@@ -62,6 +62,12 @@ const installClipboardMock = (
   overrides: {
     writeText?: () => Promise<void>
     readText?: () => Promise<string>
+    read?: () => Promise<
+      {
+        types: readonly string[]
+        getType: (type: string) => Promise<Blob>
+      }[]
+    >
   } = {}
 ): ClipboardMockControls => {
   const writeTextMock = vi.fn(
@@ -71,10 +77,18 @@ const installClipboardMock = (
   const readTextMock = vi.fn(
     overrides.readText ?? ((): Promise<string> => Promise.resolve(''))
   )
+
+  const readMock =
+    overrides.read === undefined ? undefined : vi.fn(overrides.read)
+
   const original = window.navigator.clipboard
 
   Object.defineProperty(window.navigator, 'clipboard', {
-    value: { writeText: writeTextMock, readText: readTextMock },
+    value: {
+      writeText: writeTextMock,
+      readText: readTextMock,
+      ...(readMock === undefined ? {} : { read: readMock }),
+    },
     configurable: true,
     writable: true,
   })
@@ -483,6 +497,92 @@ test('right-click on terminal.element sets isOpen=true, openAt={x,y}, and calls 
   expect(result.current.isOpen).toBe(true)
   expect(result.current.openAt).toEqual({ x: 100, y: 200 })
   expect(preventDefaultSpy).toHaveBeenCalledOnce()
+})
+
+test('right-click enables image paste only when the top clipboard item is an image', async () => {
+  const mock = createMockTerminal()
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['image/png'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(new Blob(['png'], { type: 'image/png' })),
+        },
+      ]),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+      })
+    )
+
+    await act(async () => {
+      mock.element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 200,
+        })
+      )
+      await flushMicrotasks()
+    })
+
+    await waitFor(() => {
+      expect(result.current.canPasteImage).toBe(true)
+    })
+  } finally {
+    clipboard.restore()
+  }
+})
+
+test('right-click does not enable image paste for copied image-path text', async () => {
+  const mock = createMockTerminal()
+
+  const clipboard = installClipboardMock({
+    read: () =>
+      Promise.resolve([
+        {
+          types: ['text/plain'],
+          getType: (): Promise<Blob> =>
+            Promise.resolve(
+              new Blob(['/tmp/codex-clipboard-image.png'], {
+                type: 'text/plain',
+              })
+            ),
+        },
+      ]),
+  })
+
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        enableImagePaste: true,
+      })
+    )
+
+    await act(async () => {
+      mock.element.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 200,
+        })
+      )
+      await flushMicrotasks()
+    })
+
+    expect(result.current.canPasteImage).toBe(false)
+  } finally {
+    clipboard.restore()
+  }
 })
 
 test('close() resets isOpen and openAt and is idempotent', () => {

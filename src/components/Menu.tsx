@@ -67,6 +67,11 @@ const useMenuContext = (): MenuContextValue => {
 
 const MENU_BODY_CLASSES = 'py-1 min-w-52 max-h-[28rem] overflow-auto'
 
+const CONTEXT_MENU_SURFACE_CLASSES =
+  'z-50 overflow-hidden rounded-md border border-outline-variant/30 bg-surface-container-high shadow-lg outline-none focus:outline-none focus-visible:outline-none'
+
+const CONTEXT_MENU_BODY_CLASSES = 'min-w-0 max-h-[28rem] overflow-auto'
+
 const SECTION_HEADER_CLASSES =
   'text-[0.65rem] font-bold uppercase tracking-wider text-on-surface-variant px-2.5 pt-2 pb-1'
 
@@ -127,6 +132,8 @@ interface MenuBodyProps {
   listRef: MutableRefObject<(HTMLElement | null)[]>
   labelsRef: MutableRefObject<(string | null)[]>
   width?: number
+  surfaceClassName?: string
+  bodyClassName?: string
   ariaLabel?: string
   focus?: false | { modal?: boolean }
   contextValue: MenuContextValue
@@ -146,6 +153,8 @@ const MenuBody = ({
   listRef,
   labelsRef,
   width = undefined,
+  surfaceClassName = undefined,
+  bodyClassName = MENU_BODY_CLASSES,
   ariaLabel = undefined,
   focus = false,
   contextValue,
@@ -157,10 +166,11 @@ const MenuBody = ({
     context={context}
     width={width}
     focus={focus}
+    className={surfaceClassName}
     aria-label={ariaLabel}
     {...floatingProps}
   >
-    <div className={MENU_BODY_CLASSES}>
+    <div className={bodyClassName}>
       <MenuContext.Provider value={contextValue}>
         <FloatingList elementsRef={listRef} labelsRef={labelsRef}>
           {children}
@@ -911,6 +921,8 @@ const MenuContextMenu = ({
       labelsRef={labelsRef}
       ariaLabel={ariaLabel}
       focus={{ modal: false }}
+      surfaceClassName={CONTEXT_MENU_SURFACE_CLASSES}
+      bodyClassName={CONTEXT_MENU_BODY_CLASSES}
       contextValue={contextValue}
     >
       {children}

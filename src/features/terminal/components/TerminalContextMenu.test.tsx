@@ -7,7 +7,10 @@ const baseProps = {
   onClose: vi.fn(),
   onCopy: vi.fn(),
   onPaste: vi.fn(),
+  onPasteImage: vi.fn(),
   canCopy: true,
+  canPasteImage: false,
+  showPasteImage: true,
 }
 
 const closed = false
@@ -21,6 +24,21 @@ test('renders null when isOpen is false', () => {
   expect(container).toBeEmptyDOMElement()
 })
 
+test('hides Paste Image outside coding agent sessions', () => {
+  render(
+    <TerminalContextMenu
+      {...baseProps}
+      {...{ showPasteImage: false }}
+      isOpen
+      position={{ x: 50, y: 60 }}
+    />
+  )
+
+  expect(
+    screen.queryByRole('menuitem', { name: 'Paste Image' })
+  ).not.toBeInTheDocument()
+})
+
 test('renders a menu with Copy and Paste items when isOpen and canCopy', () => {
   render(
     <TerminalContextMenu {...baseProps} isOpen position={{ x: 50, y: 60 }} />
@@ -31,6 +49,11 @@ test('renders a menu with Copy and Paste items when isOpen and canCopy', () => {
   ).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
+
+  expect(
+    screen.getByRole('menuitem', { name: 'Paste Image' })
+  ).toBeInTheDocument()
+
   expect(
     screen.queryByRole('menuitem', { name: 'Select All' })
   ).not.toBeInTheDocument()
@@ -40,6 +63,45 @@ test('renders a menu with Copy and Paste items when isOpen and canCopy', () => {
   ).not.toBeInTheDocument()
 })
 
+test('Paste Image item is disabled when the top clipboard item is not an image', () => {
+  render(
+    <TerminalContextMenu {...baseProps} isOpen position={{ x: 50, y: 60 }} />
+  )
+
+  expect(screen.getByRole('menuitem', { name: 'Paste Image' })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
+})
+
+test('clicking Paste Image when enabled fires onPasteImage then onClose', async () => {
+  const user = userEvent.setup()
+  const order: string[] = []
+
+  const onPasteImage = vi.fn(() => {
+    order.push('paste-image')
+  })
+
+  const onClose = vi.fn(() => {
+    order.push('close')
+  })
+
+  render(
+    <TerminalContextMenu
+      {...baseProps}
+      onPasteImage={onPasteImage}
+      onClose={onClose}
+      canPasteImage
+      isOpen
+      position={{ x: 0, y: 0 }}
+    />
+  )
+
+  await user.click(screen.getByRole('menuitem', { name: 'Paste Image' }))
+
+  expect(order).toEqual(['paste-image', 'close'])
+})
+
 test('renders shortcut chips beside Copy and Paste', () => {
   render(
     <TerminalContextMenu {...baseProps} isOpen position={{ x: 50, y: 60 }} />
@@ -47,6 +109,7 @@ test('renders shortcut chips beside Copy and Paste', () => {
 
   expect(screen.getByText('Ctrl+Shift+C')).toBeInTheDocument()
   expect(screen.getByText('Ctrl+Shift+V')).toBeInTheDocument()
+  expect(screen.getByText('Ctrl+V')).toBeInTheDocument()
 })
 
 test('Copy item has aria-disabled="true" when canCopy is false', () => {
