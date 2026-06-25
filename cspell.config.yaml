@@ -2,6 +2,13 @@ version: '0.2'
 language: en
 
 words:
+  # Ghostty VT engine (the Rust terminal renderer) — core project term
+  - ghostty
+  - libghostty
+  # Supported coding-agent CLIs + input-device terms
+  - kimi
+  - opencode
+  - trackpad
   # Claude Code tool names (also used uppercased in UI labels)
   - webfetch
   - websearch

@@ -628,16 +628,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
           rendererHandle = created.attachRenderer()
 
-          // Inject the lazy scrollback fetcher (native VT path only; optional
-          // chain no-ops for plainText/xterm). The surface pulls history windows
-          // on demand as the reader scrolls toward the top.
-          created.setScrollbackFetcher?.((start, count) =>
-            serviceRef.current.readScrollback(
-              sessionIdRef.current,
-              start,
-              count
-            )
-          )
+          // Inject the engine-driven scroll sender (native VT path only). The
+          // surface forwards wheel row-deltas to the PTY, which scrolls the
+          // libghostty viewport and emits the scrolled snapshot as a frame.
+          created.setScrollSender?.((delta) => {
+            void serviceRef.current.scrollPty(sessionIdRef.current, delta)
+          })
 
           // Fit terminal to container — guard against hidden (display:none) containers
           didInitialFit = fitInitialWhenReady(fitController)

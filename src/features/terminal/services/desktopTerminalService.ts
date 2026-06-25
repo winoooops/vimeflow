@@ -14,7 +14,6 @@ import type {
   PtyExitEvent,
   PtyErrorEvent,
   BurnerForegroundEvent,
-  GhosttyVtScrollback,
   SessionList,
   SetActiveSessionRequest,
   ReorderSessionsRequest,
@@ -248,15 +247,9 @@ export class DesktopTerminalService implements ITerminalService {
     })
   }
 
-  async readScrollback(
-    sessionId: string,
-    start: number,
-    count: number
-  ): Promise<GhosttyVtScrollback> {
-    return invoke<GhosttyVtScrollback>('read_scrollback', {
-      sessionId,
-      start,
-      count,
+  async scrollPty(sessionId: string, delta: number): Promise<void> {
+    await invoke('scroll_pty', {
+      request: { sessionId, delta },
     })
   }
 

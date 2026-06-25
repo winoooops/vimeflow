@@ -8,7 +8,7 @@
 
 ## 0. TL;DR
 
-The Rust approach is **architecturally cleaner and already renders shell/codex through the same `TerminalTextSurface`** — so most of the JS bridge isn't *ported*, it's **deleted**. But the Rust render-state is **viewport-only**: it has **no scrollback, no alt-screen flag**, so **none of the VIM-216 capability exists on the Rust path yet**. The VIM-216 *DOM* pieces (static region, scroll machine, selection) are engine-agnostic and stay; the *work* is on the **Rust side** — expose scrollback + alt-screen + lazy scrollback fetch — plus re-homing the `attachScrollback` delta protocol off the (now-deleted) driver seam.
+The Rust approach is **architecturally cleaner and already renders shell/codex through the same `TerminalTextSurface`** — so most of the JS bridge isn't _ported_, it's **deleted**. But the Rust render-state is **viewport-only**: it has **no scrollback, no alt-screen flag**, so **none of the VIM-216 capability exists on the Rust path yet**. The VIM-216 _DOM_ pieces (static region, scroll machine, selection) are engine-agnostic and stay; the _work_ is on the **Rust side** — expose scrollback + alt-screen + lazy scrollback fetch — plus re-homing the `attachScrollback` delta protocol off the (now-deleted) driver seam.
 
 **Shape of the migration:** ~60% of the JS code **deletes**, the DOM renderer **stays**, and the real new build is **Rust-side render-state extensions**.
 
@@ -16,14 +16,14 @@ The Rust approach is **architecturally cleaner and already renders shell/codex t
 
 ## 1. Two parallel implementations (both branched from `5b65cd1f`)
 
-| | **JS path** (`ghostty-verify`, VIM-216, committed) | **Rust path** (`official-vt`, 43-file uncommitted WIP) |
-|---|---|---|
-| VT engine | `@coder/libghostty-vt-node` in **Electron main** | official **`libghostty-vt 0.2.0` Rust crate** in the sidecar (`crates/backend/src/terminal/ghostty.rs`) |
-| Terminal-state owner | Electron-main JS process (a 2nd VT) | **the Rust sidecar** (already the PTY owner — the doc's explicit requirement) |
-| Render-state transport | **dedicated sync-IPC bridge** (`ghostty-render-state-*`, `ipcRenderer.sendSync`) | **piggybacks the existing async `pty-data` event** (`PtyDataEvent.ghosttySnapshot`, stdout JSON-RPC) |
-| Color/style source | `terminal.formatHtml()` → HTML walked + parsed in main | **structured cells with `#rrggbb` resolved by libghostty** |
-| The JS bridge | home of all VIM-216 work | **deleted** (`-channels/-main/-preload`, `ghosttyNativeRenderStateBridge` all `D`) |
-| Renderer | `TerminalTextSurface` (custom DOM) | **same `TerminalTextSurface`** |
+|                        | **JS path** (`ghostty-verify`, VIM-216, committed)                               | **Rust path** (`official-vt`, 43-file uncommitted WIP)                                                  |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| VT engine              | `@coder/libghostty-vt-node` in **Electron main**                                 | official **`libghostty-vt 0.2.0` Rust crate** in the sidecar (`crates/backend/src/terminal/ghostty.rs`) |
+| Terminal-state owner   | Electron-main JS process (a 2nd VT)                                              | **the Rust sidecar** (already the PTY owner — the doc's explicit requirement)                           |
+| Render-state transport | **dedicated sync-IPC bridge** (`ghostty-render-state-*`, `ipcRenderer.sendSync`) | **piggybacks the existing async `pty-data` event** (`PtyDataEvent.ghosttySnapshot`, stdout JSON-RPC)    |
+| Color/style source     | `terminal.formatHtml()` → HTML walked + parsed in main                           | **structured cells with `#rrggbb` resolved by libghostty**                                              |
+| The JS bridge          | home of all VIM-216 work                                                         | **deleted** (`-channels/-main/-preload`, `ghosttyNativeRenderStateBridge` all `D`)                      |
+| Renderer               | `TerminalTextSurface` (custom DOM)                                               | **same `TerminalTextSurface`**                                                                          |
 
 The Rust WIP deletes the exact bridge VIM-216 sits on, so VIM-216 capability does **not** carry over for free.
 
@@ -55,14 +55,14 @@ Source inventory: the VIM-216 frontend capability list (A = Electron-main bridge
 
 ### 3a. DELETE — JS bridge workarounds the Rust engine makes unnecessary
 
-| JS capability | Why it dies on Rust |
-|---|---|
-| A.1 native `.node` binding load | Rust crate; no `.node` |
-| A.3 sync-IPC dispatch (8 channels) + A.14 channel registry | render-state rides the async `pty-data` event |
-| A.4 OSC7 scanner, A.5 cursor-visibility scanner | libghostty resolves both natively (OSC7 callback + `cursor_visible()`) |
-| **A.6 `formatHtml` bg/reverse synthesis** | structured cells carry fg/bg directly — the whole HTML walk is gone |
-| **A.7 `computeRowShift`, A.8 cell-merge, A.11 `readStyledCellsFromHtml`, A.12 palette-from-HTML** | all exist only to reconstruct cells from `formatHtml`; obsolete |
-| B.1 preload bridge, B.2 `ghosttyNativeRenderStateBridge` | the sync-IPC surface is gone |
+| JS capability                                                                                     | Why it dies on Rust                                                    |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| A.1 native `.node` binding load                                                                   | Rust crate; no `.node`                                                 |
+| A.3 sync-IPC dispatch (8 channels) + A.14 channel registry                                        | render-state rides the async `pty-data` event                          |
+| A.4 OSC7 scanner, A.5 cursor-visibility scanner                                                   | libghostty resolves both natively (OSC7 callback + `cursor_visible()`) |
+| **A.6 `formatHtml` bg/reverse synthesis**                                                         | structured cells carry fg/bg directly — the whole HTML walk is gone    |
+| **A.7 `computeRowShift`, A.8 cell-merge, A.11 `readStyledCellsFromHtml`, A.12 palette-from-HTML** | all exist only to reconstruct cells from `formatHtml`; obsolete        |
+| B.1 preload bridge, B.2 `ghosttyNativeRenderStateBridge`                                          | the sync-IPC surface is gone                                           |
 
 ~All of section A + the sync-IPC plumbing. This is the bulk of the line-count savings.
 
@@ -83,7 +83,7 @@ These don't care where the snapshot came from. **VIM-216's static region + scrol
 
 The DOM consumers (3b) are present, but the Rust snapshot is **viewport-only**. To light up VIM-216 on Rust, the **Rust engine must grow**, in order:
 
-1. **`scrollbackRowCount` + `isAltScreen`** on the snapshot (cheap — libghostty has both). Unblocks the static region's show/clear gating and VIM-216 alt-screen suppression. *This alone makes the region appear/disappear correctly.*
+1. **`scrollbackRowCount` + `isAltScreen`** on the snapshot (cheap — libghostty has both). Unblocks the static region's show/clear gating and VIM-216 alt-screen suppression. _This alone makes the region appear/disappear correctly._
 2. **A scrollback fetch** returning styled rows (same cell shape as viewport). Two options:
    - **Inline** in every snapshot — simplest, but pays the full-history cost per chunk (the VIM-224 anti-pattern).
    - **Lazy command** — a `read_scrollback(session, range)` sidecar command, gated on actual scroll-up. **Recommended** — it's exactly VIM-224's "gate scrollback work on scroll-up," and it mirrors the JS `READ_SCROLLBACK` contract that `attachScrollback` already speaks (minimal TS change).
@@ -95,13 +95,13 @@ Net: VIM-216's **DOM side is a no-op port**; the **engine side is new Rust work*
 
 ## 5. Other gaps to close (so everything truly lands)
 
-| Gap | Impact | Action |
-|---|---|---|
-| **alt-screen flag** | VIM-216 suppression + **VIM-223** (claude is alt-screen) | surface `screen.mode` on the snapshot |
-| **256-color fallback** | indexed colors silently drop if libghostty returns `None` | verify libghostty resolves indexed→RGB; else port `palette256ToRgb` Rust-side |
-| **cursor visibility / parked-cursor heuristic** | JS `shouldHideImplicitParkedCursor` is a hack | resolve authoritatively in Rust where possible |
-| **mouse / key encoding** | **VIM-223** claude scroll; future input fidelity | libghostty-vt ships encoders — wire them instead of raw `write_pty` |
-| **per-chunk full snapshot, no dirty regions** | perf — a snapshot per PTY chunk, whole-viewport replace | rAF coalescing (B.16) already dedupes on TS side; consider Rust-side coalescing or a dirty-row hint later |
+| Gap                                             | Impact                                                    | Action                                                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **alt-screen flag**                             | VIM-216 suppression + **VIM-223** (claude is alt-screen)  | surface `screen.mode` on the snapshot                                                                     |
+| **256-color fallback**                          | indexed colors silently drop if libghostty returns `None` | verify libghostty resolves indexed→RGB; else port `palette256ToRgb` Rust-side                             |
+| **cursor visibility / parked-cursor heuristic** | JS `shouldHideImplicitParkedCursor` is a hack             | resolve authoritatively in Rust where possible                                                            |
+| **mouse / key encoding**                        | **VIM-223** claude scroll; future input fidelity          | libghostty-vt ships encoders — wire them instead of raw `write_pty`                                       |
+| **per-chunk full snapshot, no dirty regions**   | perf — a snapshot per PTY chunk, whole-viewport replace   | rAF coalescing (B.16) already dedupes on TS side; consider Rust-side coalescing or a dirty-row hint later |
 
 ---
 

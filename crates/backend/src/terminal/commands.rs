@@ -14,6 +14,8 @@ use super::ghostty::{GhosttySessionHandle, GhosttySessionReader};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
+const MAX_PTY_DRAIN_CHUNKS_PER_TICK: usize = 256;
+
 fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     if let Some(dir) = dir {
         let _ = std::fs::remove_dir_all(dir);
@@ -517,26 +519,6 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
     state
         .resize_ghostty(&request.session_id, request.rows, request.cols)
         .map_err(|e| e.to_string())
-}
-
-/// Read a window of a session's accumulated Ghostty scrollback (history).
-///
-/// Reads the session's `Send` scrollback STORE via its `GhosttySessionHandle`,
-/// never the `!Send` terminal — so this resolves on-demand even while the
-/// session's read thread is parked on a blocking PTY read. A session with no
-/// Ghostty state (the `bytes_base64` renderer path is off, or the session is
-/// unknown) yields an empty scrollback rather than an error.
-// Tests call the command name directly with plain args.
-#[cfg(test)]
-pub fn read_scrollback(state: &PtyState, request: ReadScrollbackRequest) -> GhosttyVtScrollback {
-    read_scrollback_inner(state, request)
-}
-
-pub(crate) fn read_scrollback_inner(
-    state: &PtyState,
-    request: ReadScrollbackRequest,
-) -> GhosttyVtScrollback {
-    state.fetch_scrollback(&request.session_id, request.start, request.count)
 }
 
 /// Kill a PTY session.
@@ -1135,7 +1117,20 @@ pub(crate) fn set_workspace_sessions_inner(
 /// Sentinel exit code for a PTY read error (no real OS exit status exists).
 const PTY_READ_ERROR_EXIT_CODE: i32 = -1;
 
+/// Message from the dumb byte-reader thread to the PTY processor loop. The
+/// reader does the blocking `read()` so the processor (which owns the `!Send`
+/// terminal) can `select!` between incoming bytes and scroll requests, waking
+/// to scroll even when the PTY is idle.
+enum ByteEvent {
+    Data(Vec<u8>),
+    Eof,
+    Error(String),
+}
+
 /// Background task to read PTY output and emit events
+// `flush_batch!` resets `dirty`/`batch_start` after emitting; on the paths that
+// flush immediately before `break` those resets are intentionally unread.
+#[allow(unused_assignments)]
 async fn read_pty_output(
     events: Arc<dyn EventSink>,
     state: PtyState,
@@ -1151,7 +1146,7 @@ async fn read_pty_output(
     // Clone the reader while keeping the session available in state
     // This prevents race conditions where concurrent writes/resizes would fail
     // with "session not found" if we removed the session temporarily
-    let mut reader = state.clone_reader(&session_id)?;
+    let reader = state.clone_reader(&session_id)?;
     let emit_bytes_base64 = should_emit_bytes_base64();
     let mut ghostty = match ghostty {
         Some(ghostty) => match ghostty.create_state(80, 24) {
@@ -1164,113 +1159,255 @@ async fn read_pty_output(
         None => None,
     };
 
-    // Read loop
-    let mut buf = [0u8; 8192];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => {
-                // EOF - process exited
-                log::info!("PTY session {} exited (EOF)", session_id);
-                // EOF can precede the child's reaped status under load; retry briefly so a non-zero code is not lost as None.
-                let mut exit_code = state.try_wait_exit_code(&session_id, generation);
-                let mut tries = 0;
-                while exit_code.is_none() && tries < 20 {
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                    exit_code = state.try_wait_exit_code(&session_id, generation);
-                    tries += 1;
-                }
-                let _ = cache.mutate(|d| {
-                    if let Some(s) = d.sessions.get_mut(&session_id) {
-                        s.exited = true;
-                        s.last_exit_code = exit_code;
-                    }
-                    Ok(())
-                });
-                emit_pty_exit(
-                    events.as_ref(),
-                    &PtyExitEvent {
-                        session_id: session_id.clone(),
-                        code: exit_code,
-                    },
-                )
-                .ok();
-                break;
-            }
-            Ok(n) => {
-                // Honor a `kill_pty`-driven cancellation BEFORE appending
-                // or emitting. Checking after emit would let the first
-                // post-kill chunk leak to the UI; checking here drops it
-                // along with any further data so the contract "no
-                // pty-data after kill_pty completes" holds. Ignore-SIGTERM
-                // children would otherwise keep the read thread alive
-                // indefinitely.
-                if cancelled.load(Ordering::Relaxed) {
-                    log::info!(
-                        "PTY session {} read loop exiting (cancelled by kill_pty)",
-                        session_id
-                    );
+    // Dumb byte-reader thread: the only thing that does the blocking PTY
+    // `read()`. It forwards chunks over a channel so the processor below (which
+    // owns the `!Send` libghostty terminal) can `select!` between incoming bytes
+    // and scroll requests — and thus service a scroll even while the PTY is idle
+    // (e.g. scrolling codex history while it waits). Honors the kill_pty cancel
+    // at the source so no post-kill chunk is forwarded.
+    let (byte_tx, mut byte_rx) = tokio::sync::mpsc::channel::<ByteEvent>(256);
+    let reader_cancelled = Arc::clone(&cancelled);
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => {
+                    let _ = byte_tx.blocking_send(ByteEvent::Eof);
                     break;
                 }
+                Ok(n) => {
+                    if reader_cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    if byte_tx
+                        .blocking_send(ByteEvent::Data(buf[..n].to_vec()))
+                        .is_err()
+                    {
+                        break; // processor gone
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    let _ = byte_tx.blocking_send(ByteEvent::Error(e.to_string()));
+                    break;
+                }
+            }
+        }
+    });
 
-                // Atomically: append to ring buffer, get chunk_start, drop the lock
-                let chunk_start = {
-                    let mut ring = ring.lock().expect("ring poisoned");
-                    ring.append(&buf[..n])
+    // Scroll channel: the `scroll_pty` IPC delivers engine-driven scroll
+    // requests here. Registered per-session so the command side can reach this
+    // (terminal-owning) thread indirectly.
+    let (scroll_tx, mut scroll_rx) = tokio::sync::mpsc::channel::<i32>(64);
+    state.register_scroll_sender(&session_id, generation, scroll_tx);
+
+    // Processor loop. VT processing is decoupled from rendering (the Ghostty
+    // model): incoming chunks are FED to the terminal immediately (cheap), but a
+    // burst is COALESCED into a single rendered snapshot. On each wake we drain
+    // every chunk already queued (bounded by the 256-deep channel + reader
+    // backpressure) and emit one frame — so codex/kimi re-rendering their whole
+    // transcript on resume as thousands of tiny chunks becomes a few dozen frames
+    // instead of a per-chunk storm (the >10s load + flicker). Coalescing is
+    // event-driven (no timer), so it needs no runtime time-driver. Scroll
+    // requests render immediately for responsiveness.
+    let mut dirty = false;
+    let mut batch: Vec<u8> = Vec::new();
+    let mut batch_start: Option<u64> = None;
+
+    // Emit the buffered byte batch as ONE frame: the terminal is already current
+    // (chunks were fed as they arrived), so render a single snapshot and ship the
+    // coalesced bytes (needed for the cursor protocol + bytes_base64 renderers).
+    macro_rules! flush_batch {
+        () => {{
+            if dirty {
+                let rendered = match ghostty.as_mut() {
+                    Some(ghostty) => match ghostty.render() {
+                        Ok(rendered) => Some(rendered),
+                        Err(error) => {
+                            log::warn!("Ghostty render failed for session {session_id}: {error}");
+                            None
+                        }
+                    },
+                    None => None,
                 };
-                let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                let ghostty_write = ghostty.as_mut().and_then(|ghostty| {
-                    ghostty
-                        .write(&buf[..n])
-                        .map_err(|error| {
-                            log::warn!("Ghostty VT update failed for session {session_id}: {error}");
-                            error
-                        })
-                        .ok()
-                });
+                let offset_start = batch_start
+                    .unwrap_or_else(|| ring.lock().expect("ring poisoned").end_offset());
                 emit_pty_data(
                     events.as_ref(),
                     &PtyDataEvent {
                         session_id: session_id.clone(),
-                        data,
-                        bytes_base64: emit_bytes_base64.then(|| encode_base64(&buf[..n])),
-                        offset_start: chunk_start,
+                        data: String::from_utf8_lossy(&batch).to_string(),
+                        bytes_base64: emit_bytes_base64.then(|| encode_base64(&batch)),
+                        offset_start,
                         // Raw byte count — the unit the producer's offset
-                        // arithmetic (RingBuffer::append) used. Subscribers
-                        // MUST advance their cursor with this, NOT with the
-                        // length of `data` (lossy UTF-8 inflates invalid
-                        // bytes to U+FFFD, which is 3 bytes when re-encoded).
-                        byte_len: n as u64,
-                        ghostty_snapshot: ghostty_write.as_ref().map(|write| write.snapshot.clone()),
-                        ghostty_cwd_uri: ghostty_write.and_then(|write| write.cwd_uri),
+                        // arithmetic (RingBuffer::append) used. Subscribers MUST
+                        // advance their cursor with this, NOT `data.len()` (lossy
+                        // UTF-8 inflates invalid bytes to U+FFFD = 3 bytes).
+                        byte_len: batch.len() as u64,
+                        ghostty_snapshot: rendered.as_ref().map(|(snapshot, _)| snapshot.clone()),
+                        ghostty_cwd_uri: rendered.and_then(|(_, cwd_uri)| cwd_uri),
                     },
                 )
                 .ok();
+                batch.clear();
+                batch_start = None;
+                dirty = false;
             }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                // Interrupted - retry
-                continue;
+        }};
+    }
+
+    // Feed one chunk into the terminal + ring + batch (no render). Used by the
+    // coalescing drain below.
+    macro_rules! feed_chunk {
+        ($chunk:expr) => {{
+            let chunk = $chunk;
+            let chunk_start = {
+                let mut ring = ring.lock().expect("ring poisoned");
+                ring.append(&chunk)
+            };
+            if batch_start.is_none() {
+                batch_start = Some(chunk_start);
             }
-            Err(e) => {
-                // Error - emit error event and exit
-                log::error!("PTY read error for session {}: {}", session_id, e);
-                // A read error is a failure, not a clean exit: mark the cache
-                // errored with a sentinel so hydration reads errored too.
-                let _ = cache.mutate(|d| {
-                    if let Some(s) = d.sessions.get_mut(&session_id) {
-                        s.exited = true;
-                        s.last_exit_code = Some(PTY_READ_ERROR_EXIT_CODE);
+            batch.extend_from_slice(&chunk);
+            if let Some(ghostty) = ghostty.as_mut() {
+                if let Err(error) = ghostty.feed(&chunk) {
+                    log::warn!("Ghostty VT update failed for session {session_id}: {error}");
+                }
+            }
+            dirty = true;
+        }};
+    }
+
+    loop {
+        tokio::select! {
+            Some(scroll) = scroll_rx.recv() => {
+                // Engine-driven scroll: flush any pending bytes first so the
+                // scroll renders on top of the latest content, then mutate the
+                // `!Send` terminal and emit the scrolled view as a zero-byte frame
+                // (no new PTY bytes, so subscribers must not advance their cursor).
+                flush_batch!();
+                if cancelled.load(Ordering::Relaxed) {
+                    continue;
+                }
+                if let Some(ghostty) = ghostty.as_mut() {
+                    match ghostty.scroll(scroll) {
+                        Ok(snapshot) => {
+                            let offset_start =
+                                ring.lock().expect("ring poisoned").end_offset();
+                            emit_pty_data(
+                                events.as_ref(),
+                                &PtyDataEvent {
+                                    session_id: session_id.clone(),
+                                    data: String::new(),
+                                    bytes_base64: None,
+                                    offset_start,
+                                    byte_len: 0,
+                                    ghostty_snapshot: Some(snapshot),
+                                    ghostty_cwd_uri: None,
+                                },
+                            )
+                            .ok();
+                        }
+                        Err(error) => {
+                            log::warn!("Ghostty scroll failed for session {session_id}: {error}");
+                        }
                     }
-                    Ok(())
-                });
-                emit_pty_error(
-                    events.as_ref(),
-                    &PtyErrorEvent {
-                        session_id: session_id.clone(),
-                        message: e.to_string(),
-                    },
-                )
-                .ok();
-                break;
+                }
+            }
+            maybe_event = byte_rx.recv() => {
+                // A terminal event (Eof/Error) that may have been coalesced behind
+                // a Data burst during the drain below.
+                let mut terminal_event = None;
+                match maybe_event {
+                    Some(ByteEvent::Data(bytes)) => {
+                        // Honor a `kill_pty`-driven cancellation BEFORE buffering
+                        // so no post-kill chunk leaks to the UI.
+                        if cancelled.load(Ordering::Relaxed) {
+                            log::info!(
+                                "PTY session {} read loop exiting (cancelled by kill_pty)",
+                                session_id
+                            );
+                            break;
+                        }
+                        feed_chunk!(bytes);
+                        // Drain a bounded burst so continuous producers cannot
+                        // starve flushing, scrolling, or terminal exit events.
+                        for _ in 0..MAX_PTY_DRAIN_CHUNKS_PER_TICK {
+                            match byte_rx.try_recv() {
+                                Ok(ByteEvent::Data(more)) => feed_chunk!(more),
+                                Ok(other) => {
+                                    terminal_event = Some(other);
+                                    break;
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                        flush_batch!();
+                    }
+                    Some(other) => terminal_event = Some(other),
+                    // Reader thread ended without a sentinel (channel dropped).
+                    None => {
+                        flush_batch!();
+                        break;
+                    }
+                }
+
+                match terminal_event {
+                    Some(ByteEvent::Eof) => {
+                        // EOF - process exited
+                        log::info!("PTY session {} exited (EOF)", session_id);
+                        // EOF can precede the child's reaped status under load; retry briefly so a non-zero code is not lost as None.
+                        let mut exit_code = state.try_wait_exit_code(&session_id, generation);
+                        let mut tries = 0;
+                        while exit_code.is_none() && tries < 20 {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                            exit_code = state.try_wait_exit_code(&session_id, generation);
+                            tries += 1;
+                        }
+                        let _ = cache.mutate(|d| {
+                            if let Some(s) = d.sessions.get_mut(&session_id) {
+                                s.exited = true;
+                                s.last_exit_code = exit_code;
+                            }
+                            Ok(())
+                        });
+                        emit_pty_exit(
+                            events.as_ref(),
+                            &PtyExitEvent {
+                                session_id: session_id.clone(),
+                                code: exit_code,
+                            },
+                        )
+                        .ok();
+                        break;
+                    }
+                    Some(ByteEvent::Error(message)) => {
+                        // Error - emit error event and exit
+                        log::error!("PTY read error for session {}: {}", session_id, message);
+                        // A read error is a failure, not a clean exit: mark the cache
+                        // errored with a sentinel so hydration reads errored too.
+                        let _ = cache.mutate(|d| {
+                            if let Some(s) = d.sessions.get_mut(&session_id) {
+                                s.exited = true;
+                                s.last_exit_code = Some(PTY_READ_ERROR_EXIT_CODE);
+                            }
+                            Ok(())
+                        });
+                        emit_pty_error(
+                            events.as_ref(),
+                            &PtyErrorEvent {
+                                session_id: session_id.clone(),
+                                message,
+                            },
+                        )
+                        .ok();
+                        break;
+                    }
+                    // No coalesced terminal event (pure Data, or a Data variant
+                    // which `feed_chunk!` already handled).
+                    _ => {}
+                }
             }
         }
     }
@@ -4086,101 +4223,4 @@ mod tests {
         let _ = state.remove(&"pty-shared".to_string());
     }
 
-    /// Build a `ManagedSession` carrying a real `GhosttySessionHandle`,
-    /// returning the live `GhosttyTerminalState` alongside it so the test can
-    /// drive `write` (which fills the handle's shared `Send` store) before
-    /// inserting the session. Reuses a real PTY pair only to source the
-    /// `master`/`writer`/`child` trait objects the session requires.
-    fn make_ghostty_session(
-        cols: u16,
-        rows: u16,
-    ) -> (
-        ManagedSession,
-        crate::terminal::ghostty::GhosttyTerminalState,
-    ) {
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-        let pty_system = native_pty_system();
-        let pty_pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-        let cmd = CommandBuilder::new(test_true_path());
-        let child = pty_pair.slave.spawn_command(cmd).expect("spawn");
-        let writer = pty_pair.master.take_writer().expect("take_writer");
-
-        let (handle, reader) = GhosttySessionHandle::new();
-        let state = reader
-            .create_state(cols, rows)
-            .expect("create ghostty terminal state");
-
-        let session = ManagedSession {
-            master: pty_pair.master,
-            writer,
-            child,
-            cwd: "/tmp".into(),
-            shim_dir: None,
-            generation: 0,
-            ring: Arc::new(Mutex::new(RingBuffer::new(64))),
-            ghostty: Some(handle),
-            cancelled: Arc::new(AtomicBool::new(false)),
-            started_at: std::time::SystemTime::now(),
-        };
-        (session, state)
-    }
-
-    #[test]
-    fn read_scrollback_command_returns_history_from_the_store() {
-        // The read thread fills the session's Send store via the terminal
-        // state's `write`; the `read_scrollback` command then reads that store
-        // through the session's handle WITHOUT touching the terminal. A 3-row
-        // viewport pushes the early `line {i}` writes into the store.
-        let state = PtyState::new();
-        let (session, mut ghostty_state) = make_ghostty_session(80, 3);
-        for index in 0..12 {
-            ghostty_state
-                .write(format!("line {index}\r\n").as_bytes())
-                .expect("write line");
-        }
-        state.insert("scroll-session".into(), session);
-
-        let scrollback = read_scrollback(
-            &state,
-            ReadScrollbackRequest {
-                session_id: "scroll-session".into(),
-                start: 0,
-                count: 100,
-            },
-        );
-
-        assert!(
-            scrollback.rows.iter().any(|row| row.contains("line 0")),
-            "the command must surface the earliest evicted row from the store, got {:?}",
-            scrollback.rows
-        );
-
-        let _ = state.remove(&"scroll-session".to_string());
-    }
-
-    #[test]
-    fn read_scrollback_command_returns_empty_for_unknown_session() {
-        let state = PtyState::new();
-
-        let scrollback = read_scrollback(
-            &state,
-            ReadScrollbackRequest {
-                session_id: "ghost".into(),
-                start: 0,
-                count: 10,
-            },
-        );
-
-        assert!(
-            scrollback.rows.is_empty() && scrollback.cells.is_empty(),
-            "an unknown session must yield an empty scrollback, not an error"
-        );
-    }
 }

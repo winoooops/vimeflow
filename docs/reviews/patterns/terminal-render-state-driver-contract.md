@@ -2,7 +2,7 @@
 id: terminal-render-state-driver-contract
 category: terminal
 created: 2026-06-19
-last_updated: 2026-06-21
+last_updated: 2026-06-25
 ref_count: 10
 ---
 
@@ -316,4 +316,31 @@ documented explicitly: effect callbacks must be invoked synchronously inside the
 - **File:** `src/features/terminal/components/TerminalPane/ghosttyVtRenderSnapshot.ts`
 - **Finding:** The VT snapshot renderer treated a missing `cursor.visible` field as an implicit stale-cursor signal and hid any cursor on a blank row with later content. Ghostty omits `visible` for normal visible cursors, so legitimate editor/TUI cursors on blank lines above status or menu rows disappeared.
 - **Fix:** Missing `cursor.visible` now preserves the default visible cursor unless the snapshot matches a known parked-cursor shape: an agent prompt follower or a styled blank native cursor artifact above later content. Regression coverage pins both the preserved `rows: ['', 'menu']` case and the styled parked-cursor case.
+- **Commit:** same commit as this entry
+
+### 33. Engine scroll snapshots must update the reattach cache
+
+- **Source:** github-codex-connector | PR #617 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/ghostty.rs`
+- **Finding:** The Ghostty scroll path returned a fresh scrolled snapshot to the live pane but did not publish that snapshot to the session's latest-snapshot cache. A renderer reattach after scrolling could therefore restore the stale pre-scroll viewport until later PTY output arrived.
+- **Fix:** `GhosttyTerminalState::scroll` now publishes the scrolled snapshot before returning it. A regression test asserts the latest snapshot cache matches the scroll result.
+- **Commit:** same commit as this entry
+
+### 34. Engine scroll must drain queued resizes before rendering
+
+- **Source:** github-codex-connector | PR #617 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/ghostty.rs`
+- **Finding:** Queued Ghostty resizes were applied by `feed()`, but an idle terminal can receive a scroll request before new PTY bytes arrive. That first scroll rendered a snapshot with stale rows and columns.
+- **Fix:** `GhosttyTerminalState::scroll` now applies pending resizes before moving the viewport and rendering. A regression test queues a resize through the reader handle and verifies the scroll snapshot uses the resized row count.
+- **Commit:** same commit as this entry
+
+### 35. Continuous PTY output must not monopolize the coalescing drain
+
+- **Source:** github-codex-connector | PR #617 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The PTY read loop drained `try_recv()` until the byte channel became empty. A continuous producer could keep adding data while the loop was draining, delaying frame flushes and starving scroll requests.
+- **Fix:** The drain loop now consumes a bounded number of queued chunks per tick, then flushes the batch so rendering and scroll handling get regular opportunities under sustained output.
 - **Commit:** same commit as this entry

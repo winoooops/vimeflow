@@ -8,7 +8,6 @@ import type {
   PTYKillParams,
 } from '../types'
 import type {
-  GhosttyVtScrollback,
   SessionList,
   SetSessionActivityPanelCollapsedRequest,
   SetWorkspaceSessionsRequest,
@@ -36,16 +35,12 @@ export interface ITerminalService {
   resize(params: PTYResizeParams): Promise<void>
 
   /**
-   * Read a window of scrollback (history) rows for lazy load-on-scroll. `start`
-   * and `count` are a 0-based row index + row count; the returned cells are
-   * reindexed so row 0 is the first returned row. Drives the surface's
-   * load-more-on-scroll-to-top behavior.
+   * Engine-driven scroll: move the session's viewport by `delta` rows (negative
+   * scrolls up into history, positive toward the live tail). The backend
+   * renders the scrolled viewport as a normal snapshot frame, so the surface
+   * stays a dumb renderer — no client-side scrollback reconstruction.
    */
-  readScrollback(
-    sessionId: string,
-    start: number,
-    count: number
-  ): Promise<GhosttyVtScrollback>
+  scrollPty(sessionId: string, delta: number): Promise<void>
 
   /**
    * Kill a PTY process
@@ -302,16 +297,14 @@ export class MockTerminalService implements ITerminalService {
     return Promise.resolve()
   }
 
-  readScrollback(
+  scrollPty(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _sessionId: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _start: number,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _count: number
-  ): Promise<GhosttyVtScrollback> {
-    // Mock has no history store — the in-memory terminal never scrolls back.
-    return Promise.resolve({ rows: [], cells: [] })
+    _delta: number
+  ): Promise<void> {
+    // Mock has no engine-driven scroll — the in-memory terminal never scrolls.
+    return Promise.resolve()
   }
 
   kill(params: PTYKillParams): Promise<void> {

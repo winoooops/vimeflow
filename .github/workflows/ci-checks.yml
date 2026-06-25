@@ -74,10 +74,17 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: CPU cache key
+        # libghostty-vt-sys builds ghostty with native CPU optimization; key the
+        # Rust cache on the runner CPU so a binary built on one runner is never
+        # restored on a different CPU (which SIGILLs on unsupported instructions).
+        run: echo "CPU_CACHE_KEY=$(grep -m1 'model name' /proc/cpuinfo | sha1sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          key: ${{ env.CPU_CACHE_KEY }}
 
       - name: Install system dependencies
         run: |
@@ -88,6 +95,13 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
+
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Run Rust tests
         run: cargo test
@@ -108,10 +122,17 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: CPU cache key
+        # libghostty-vt-sys builds ghostty with native CPU optimization; key the
+        # Rust cache on the runner CPU so a binary built on one runner is never
+        # restored on a different CPU (which SIGILLs on unsupported instructions).
+        run: echo "CPU_CACHE_KEY=$(grep -m1 'model name' /proc/cpuinfo | sha1sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          key: ${{ env.CPU_CACHE_KEY }}
 
       - name: Install system dependencies
         run: |
@@ -122,6 +143,13 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
+
+      - name: Setup Zig
+        # libghostty-vt-sys builds ghostty from source with `zig build`; the
+        # pinned ghostty requires zig 0.15.2 (build.zig.zon minimum_zig_version).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Install npm dependencies
         run: npm ci

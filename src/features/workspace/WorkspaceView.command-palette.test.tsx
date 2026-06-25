@@ -295,7 +295,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
       setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
       killEphemeralPtys: vi.fn(),
-      readScrollback: vi.fn().mockResolvedValue({ rows: [], cells: [] }),
+      scrollPty: vi.fn().mockResolvedValue(undefined),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })
 

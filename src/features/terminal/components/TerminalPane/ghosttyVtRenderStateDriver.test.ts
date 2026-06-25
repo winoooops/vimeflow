@@ -53,7 +53,10 @@ describe('ghosttyVtRenderStateDriver', () => {
           },
         ],
       },
-      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
+      wheelForwardMode: {
+        mouseTracking: false,
+        sgrMouse: false,
+      },
     })
     expect(writeBytes).toHaveBeenCalledWith(bytes)
     expect(readSnapshot).toHaveBeenCalledOnce()
@@ -96,7 +99,10 @@ describe('ghosttyVtRenderStateDriver', () => {
           },
         ],
       },
-      scrollbackUpdate: { isAltScreen: false, rowCount: 0 },
+      wheelForwardMode: {
+        mouseTracking: false,
+        sgrMouse: false,
+      },
     })
     expect(writeBytes).toHaveBeenCalledWith(bytes)
   })

@@ -388,6 +388,7 @@ const setupApp = async (): Promise<void> => {
     ipcMain,
     writer: layoutWriter,
   })
+
   browserPaneController.setRestoreTabsProvider(
     (sessionId, paneId): PersistedTab[] | null =>
       workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null

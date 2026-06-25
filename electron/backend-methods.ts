@@ -4,6 +4,7 @@ const backendMethods = new Set([
   'write_pty',
   'rename_agent_session',
   'resize_pty',
+  'scroll_pty',
   'kill_pty',
   'kill_ephemeral_ptys',
   'list_sessions',
