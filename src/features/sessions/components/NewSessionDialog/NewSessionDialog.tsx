@@ -169,6 +169,7 @@ export const NewSessionDialog = ({
                 visibleLayoutIds={layoutRegistry.layouts.map(
                   (entry) => entry.id
                 )}
+                vertical
               />
             </div>
           </div>
