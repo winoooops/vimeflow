@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest'
 import {
   formatTerminalColorResponse,
   hexToOscColor,
+  retainTerminalColorQueryRetryCarry,
   scanTerminalColorQueries,
   scanTerminalColorQueriesWithCarry,
 } from './terminalColorQuery'
@@ -41,6 +42,14 @@ describe('scanTerminalColorQueries', () => {
     expect(second.targets).toEqual(['background'])
   })
 
+  test('carries a query split inside the ST terminator', () => {
+    const first = scanTerminalColorQueriesWithCarry('\x1b]10;?\x1b', '')
+    expect(first.targets).toEqual([])
+
+    const second = scanTerminalColorQueriesWithCarry('\\', first.carry)
+    expect(second.targets).toEqual(['foreground'])
+  })
+
   test('detects a query split before the BEL terminator', () => {
     const first = scanTerminalColorQueriesWithCarry('\x1b]10;?', '')
     expect(first.targets).toEqual([])
@@ -58,6 +67,14 @@ describe('scanTerminalColorQueries', () => {
       first.carry
     )
     expect(second.targets).toEqual([])
+  })
+
+  test('keeps a complete query available for retry', () => {
+    const carry = retainTerminalColorQueryRetryCarry('\x1b]10;?\x1b\\', '')
+
+    expect(scanTerminalColorQueriesWithCarry('', carry).targets).toEqual([
+      'foreground',
+    ])
   })
 })
 

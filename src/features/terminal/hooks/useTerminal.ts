@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import {
   formatTerminalColorResponse,
+  retainTerminalColorQueryRetryCarry,
   scanTerminalColorQueriesWithCarry,
 } from '../terminalColorQuery'
 
@@ -299,21 +300,27 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
   const respondToColorQueries = useCallback(
     (sessionId: string, data: string): void => {
+      const element = terminal?.element
+
+      if (!element) {
+        return
+      }
+
       const result = scanTerminalColorQueriesWithCarry(
         data,
         colorQueryCarryRef.current
       )
       const targets = result.targets
-      colorQueryCarryRef.current = result.carry
-      const element = terminal?.element
 
-      if (targets.length === 0 || !element) {
+      if (targets.length === 0) {
+        colorQueryCarryRef.current = result.carry
+
         return
       }
 
       const styles = window.getComputedStyle(element)
 
-      for (const target of targets) {
+      const responses = targets.map((target) => {
         const hex = styles
           .getPropertyValue(
             target === 'foreground'
@@ -321,8 +328,22 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
               : '--terminal-background'
           )
           .trim()
-        const response = hex ? formatTerminalColorResponse(target, hex) : null
 
+        return hex ? formatTerminalColorResponse(target, hex) : null
+      })
+
+      if (responses.some((response) => response === null)) {
+        colorQueryCarryRef.current = retainTerminalColorQueryRetryCarry(
+          data,
+          colorQueryCarryRef.current
+        )
+
+        return
+      }
+
+      colorQueryCarryRef.current = result.carry
+
+      for (const response of responses) {
         if (response) {
           const writeResponse = async (): Promise<void> => {
             try {

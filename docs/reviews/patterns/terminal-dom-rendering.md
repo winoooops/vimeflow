@@ -2,7 +2,7 @@
 id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
-last_updated: 2026-06-21
+last_updated: 2026-06-25
 ref_count: 6
 ---
 
@@ -102,4 +102,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L481-L485
 - **Finding:** Pinning every replace-operation delta to `scrollTop = 0` preserved full-screen TUI frames but could hide the active shell cursor when the cursor row still fit within the pane's visible row capacity.
 - **Fix:** Replace snapshots now derive the cursor row from the incoming replace operation and use cursor tracking when that row fits in the visible row capacity; snapshots whose cursor is below the pane remain top-pinned for TUI layouts. Added a Ghostty instance regression that proves a visible shell cursor scrolls into view while the TUI top-pin case stays unchanged.
+- **Commit:** same commit as this entry
+
+### 11. Deferred selection renders must preserve explicit scroll intent
+
+- **Source:** github-claude | PR #622 round 3 | 2026-06-25
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L1409-L1413
+- **Finding:** While a user held a terminal text selection, each deferred `renderOutput` call replaced the pending render options wholesale. A replace snapshot that explicitly requested top/cursor positioning could be followed by live output with default options, causing the flush after selection clear to jump to the bottom.
+- **Fix:** Split deferred render state into a pending-render flag plus a separately retained `pendingScrollMode`. Later renders only overwrite the pending scroll mode when they carry an explicit mode, so live output can coalesce content without discarding the user's history-positioning intent. Added a regression that holds a selection across a top-pinned replace snapshot and later live output.
 - **Commit:** same commit as this entry

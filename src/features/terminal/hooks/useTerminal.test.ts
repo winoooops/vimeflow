@@ -8,6 +8,7 @@ import type {
   TerminalOutputWriter,
   TerminalSurface,
 } from '../types'
+import { formatTerminalColorResponse } from '../terminalColorQuery'
 
 // Mock terminal surface with test helpers
 interface MockTerminal extends TerminalSurface {
@@ -997,7 +998,15 @@ describe('useTerminal', () => {
       const surface = mockTerminal as unknown as { element: HTMLElement }
       surface.element = document.createElement('div')
       const foregroundHex = ['#', 'cdd6f4'].join('')
-      const foregroundResponse = '\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\'
+
+      const foregroundResponse = formatTerminalColorResponse(
+        'foreground',
+        foregroundHex
+      )
+
+      if (foregroundResponse === null) {
+        throw new Error('expected valid foreground response')
+      }
 
       const getComputedStyleSpy = vi
         .spyOn(window, 'getComputedStyle')
@@ -1058,6 +1067,97 @@ describe('useTerminal', () => {
         drainHandler?.(query, 100, 7)
 
         expect(mockService.write).toHaveBeenCalledTimes(1)
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
+    })
+
+    test('retries restored OSC color queries when terminal CSS vars appear later', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+      const backgroundHex = ['#', '1e1e2e'].join('')
+
+      const foregroundResponse = formatTerminalColorResponse(
+        'foreground',
+        foregroundHex
+      )
+
+      if (foregroundResponse === null) {
+        throw new Error('expected valid foreground response')
+      }
+
+      let stylesReady = false
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) => {
+            if (!stylesReady) {
+              return ''
+            }
+
+            if (property === '--terminal-foreground') {
+              return foregroundHex
+            }
+
+            return property === '--terminal-background' ? backgroundHex : ''
+          },
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const query = '\x1b]10;?\x1b\\'
+        let drainHandler:
+          | ((
+              data: string,
+              offsetStart: number,
+              byteLen: number
+            ) => void)
+          | null = null
+
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            onPaneReady: (_ptyId, handler) => {
+              drainHandler = handler
+
+              return vi.fn()
+            },
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: query,
+                  offsetStart: 100,
+                  byteLen: 8,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+          expect(drainHandler).not.toBeNull()
+        })
+
+        expect(mockService.write).not.toHaveBeenCalled()
+
+        stylesReady = true
+        drainHandler?.('', 108, 0)
+
+        await waitFor(() => {
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: foregroundResponse,
+          })
+        })
       } finally {
         getComputedStyleSpy.mockRestore()
       }

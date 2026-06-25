@@ -271,3 +271,12 @@ all required state through pure display-state helpers.
 - **Finding:** The restore path scanned buffered `OSC 10/11` color-query chunks before writing them, but the live/drain handler scanned the same replayed bytes before checking the cursor dedupe boundary. A restored query could therefore be answered once during restore and again when `notifyPaneReady` replayed the overlapping buffered range.
 - **Fix:** Moved the live/drain color-query scan inside the existing `offsetStart >= cursorRef.current` guard so replayed chunks are dropped before generating protocol responses, while preserving the restore-loop scan for restored chunks. Added a regression that replays the restored query through `onPaneReady` and asserts only one PTY response is sent.
 - **Commit:** same commit as this entry
+
+### 29. OSC query carry must survive temporarily unavailable response data
+
+- **Source:** github-claude | PR #622 round 3 | 2026-06-25
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/useTerminal.ts`
+- **Finding:** The Ghostty color-query responder advanced its scan carry before confirming that terminal CSS custom properties were available and a response could be formatted. If a complete `OSC 10/11` query arrived before the CSS vars resolved, the query was consumed with no PTY reply and no later retry path.
+- **Fix:** The hook now verifies the terminal color CSS vars before consuming the scanner result; when the vars are absent it retains a retry carry long enough to include a complete longest query. The carry size is derived from the known query code and terminator sets, and regressions cover retrying a complete ST-terminated query plus carrying a split ST terminator.
+- **Commit:** same commit as this entry

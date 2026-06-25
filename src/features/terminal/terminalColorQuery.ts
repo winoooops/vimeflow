@@ -18,9 +18,20 @@ export interface TerminalColorQueryScanResult {
   carry: string
 }
 
+const COLOR_QUERY_CODES = ['10', '11'] as const
+const COLOR_QUERY_TERMINATORS = ['\x07', '\x1b\\'] as const
+
+const MAX_COLOR_QUERY_SEQUENCE_LENGTH = Math.max(
+  ...COLOR_QUERY_CODES.flatMap((code) =>
+    COLOR_QUERY_TERMINATORS.map(
+      (terminator) => `\x1b]${code};?${terminator}`.length
+    )
+  )
+)
+
 // OSC 10;? (fg) or OSC 11;? (bg), terminated by BEL (\x07) or ST (\x1b\\).
 const COLOR_QUERY_PATTERN = /\x1b\]1([01]);\?(?:\x07|\x1b\\)/g
-const MAX_COLOR_QUERY_CARRY_LENGTH = '\x1b]10;?\x1b\\'.length - 1
+const MAX_COLOR_QUERY_CARRY_LENGTH = MAX_COLOR_QUERY_SEQUENCE_LENGTH - 1
 
 const HEX_COLOR_PATTERN = /^#?([0-9a-fA-F]{6})$/
 
@@ -57,6 +68,16 @@ export const scanTerminalColorQueriesWithCarry = (
     carry: unconsumed.slice(-MAX_COLOR_QUERY_CARRY_LENGTH),
   }
 }
+
+/**
+ * Preserve enough trailing data to retry a complete query when the responder
+ * cannot send yet, for example before terminal CSS variables are available.
+ */
+export const retainTerminalColorQueryRetryCarry = (
+  data: string,
+  previousCarry: string
+): string =>
+  `${previousCarry}${data}`.slice(-MAX_COLOR_QUERY_SEQUENCE_LENGTH)
 
 /** Convert `#1e1e2e` to the xterm OSC color form `rgb:1e1e/1e1e/2e2e`. */
 export const hexToOscColor = (hex: string): string | null => {

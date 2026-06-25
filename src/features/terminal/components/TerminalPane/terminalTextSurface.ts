@@ -417,9 +417,8 @@ export class TerminalTextSurface implements TerminalSurface {
   private cachedCharacterWidth: number | null = null
   private lastSelectionText = ''
   private selectAllSelectionText: string | null = null
-  // Set when a repaint is deferred because the user holds a selection (a
-  // replaceChildren would drop it). Flushed when the selection clears.
-  private pendingRenderOptions: { scrollMode?: RenderScrollMode } | null = null
+  private hasPendingRender = false
+  private pendingScrollMode: RenderScrollMode | null = null
   private disposed = false
 
   constructor(private readonly options: TerminalTextSurfaceOptions) {
@@ -899,10 +898,11 @@ export class TerminalTextSurface implements TerminalSurface {
     this.lastSelectionText = selectionText
 
     // Selection cleared → flush the repaint we deferred while it was held.
-    if (selectionText.length === 0 && this.pendingRenderOptions !== null) {
-      const options = this.pendingRenderOptions
-      this.pendingRenderOptions = null
-      this.renderOutput(options)
+    if (selectionText.length === 0 && this.hasPendingRender) {
+      const scrollMode = this.pendingScrollMode
+      this.hasPendingRender = false
+      this.pendingScrollMode = null
+      this.renderOutput(scrollMode === null ? {} : { scrollMode })
     }
 
     this.notifySelectionChange()
@@ -1407,7 +1407,10 @@ export class TerminalTextSurface implements TerminalSurface {
     // defer the repaint (the outputBuffer keeps the latest state) and flush it
     // once the selection clears — see handleSelectionChange.
     if (this.hasSelection()) {
-      this.pendingRenderOptions = options
+      this.hasPendingRender = true
+      if (options.scrollMode !== undefined) {
+        this.pendingScrollMode = options.scrollMode
+      }
 
       return
     }
