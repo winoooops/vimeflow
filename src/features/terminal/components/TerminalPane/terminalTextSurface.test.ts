@@ -447,3 +447,26 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(scrollSender).not.toHaveBeenCalled()
   })
 })
+
+describe('TerminalTextSurface selection preservation', () => {
+  test('defers repaints while a selection is held, then flushes when it clears', () => {
+    const { surface, root } = mountSurface()
+
+    surface.write('first output\n')
+    expect(root.textContent).toContain('first output')
+
+    // Hold a selection: a repaint now would replaceChildren and drop it.
+    surface.selectAll()
+    surface.write('second output\n')
+
+    // The repaint is deferred — the DOM still shows the selected content.
+    expect(root.textContent).toContain('first output')
+    expect(root.textContent).not.toContain('second output')
+
+    // Selection clears → the deferred frame flushes the latest content.
+    window.getSelection()?.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
+
+    expect(root.textContent).toContain('second output')
+  })
+})
