@@ -13,11 +13,6 @@ interface PopoverProps {
   focus?: 'dialog' | 'none'
   // e.g. { ancestorScroll: false } for a plain-dismiss confirm dialog
   middleware?: { ancestorScroll?: boolean }
-  // Outside-press predicate: return false to keep the popover open for that
-  // press. Use it when the popover hosts its own portalled floating children
-  // (e.g. a Menu) so interacting with them does not dismiss the popover —
-  // the repo has no FloatingTree, so nested surfaces read as outside presses.
-  dismissWhen?: (event: MouseEvent) => boolean
   'aria-label': string
   children: ReactNode
 }
@@ -34,7 +29,6 @@ export const Popover = ({
   pointerEvents = undefined,
   focus = 'dialog',
   middleware = undefined,
-  dismissWhen = undefined,
   'aria-label': ariaLabel,
   children,
 }: PopoverProps): ReactElement | null => {
@@ -46,7 +40,6 @@ export const Popover = ({
       placement,
       role: 'dialog',
       middleware,
-      dismissWhen,
     })
 
   if (!open) {
