@@ -20,6 +20,7 @@ import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import { setupDialogIpc } from './dialog-ipc'
 import {
   setupWorkspaceLayoutController,
   type WorkspaceLayoutController,
@@ -371,6 +372,7 @@ const setupApp = async (): Promise<void> => {
   browserPaneController?.dispose()
   browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
+  setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
     sidecar: spawnedSidecar,
