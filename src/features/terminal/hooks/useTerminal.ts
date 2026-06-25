@@ -297,6 +297,47 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     []
   )
 
+  const respondToColorQueries = useCallback(
+    (sessionId: string, data: string): void => {
+      const result = scanTerminalColorQueriesWithCarry(
+        data,
+        colorQueryCarryRef.current
+      )
+      const targets = result.targets
+      colorQueryCarryRef.current = result.carry
+      const element = terminal?.element
+
+      if (targets.length === 0 || !element) {
+        return
+      }
+
+      const styles = window.getComputedStyle(element)
+
+      for (const target of targets) {
+        const hex = styles
+          .getPropertyValue(
+            target === 'foreground'
+              ? '--terminal-foreground'
+              : '--terminal-background'
+          )
+          .trim()
+        const response = hex ? formatTerminalColorResponse(target, hex) : null
+
+        if (response) {
+          const writeResponse = async (): Promise<void> => {
+            try {
+              await service.write({ sessionId, data: response })
+            } catch {
+              // Session may have exited between the query and our reply.
+            }
+          }
+          void writeResponse()
+        }
+      }
+    },
+    [service, terminal]
+  )
+
   // Store restoredFrom in a ref to prevent effect dependency cycles
   const restoredFromRef = useRef(restoredFrom)
 
@@ -443,6 +484,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         if (restoredOutputChunks.length > 0) {
           restoredOutputChunks.forEach((chunk, index) => {
+            respondToColorQueries(restore.sessionId, chunk.text)
+
             const isLastChunk = index === restoredOutputChunks.length - 1
             if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
               output.writeOutput(chunk, finishRestore)
@@ -577,6 +620,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       ghosttyCwdUri?: string
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
+        respondToColorQueries(session.id, data)
+
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
@@ -598,8 +643,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           if (writtenEnd > cursorRef.current) {
             cursorRef.current = writtenEnd
           }
-
-          respondToColorQueries(data)
         }
       }
     }
@@ -609,44 +652,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // color lives in the `--terminal-*` CSS vars set by that surface; the xterm
     // renderer never sets them, so an empty read self-gates this off there.
     // cspell:ignore ghostty
-    const respondToColorQueries = (data: string): void => {
-      const result = scanTerminalColorQueriesWithCarry(
-        data,
-        colorQueryCarryRef.current
-      )
-      const targets = result.targets
-      colorQueryCarryRef.current = result.carry
-      const element = terminal.element
-
-      if (targets.length === 0 || !element) {
-        return
-      }
-
-      const styles = window.getComputedStyle(element)
-
-      for (const target of targets) {
-        const hex = styles
-          .getPropertyValue(
-            target === 'foreground'
-              ? '--terminal-foreground'
-              : '--terminal-background'
-          )
-          .trim()
-        const response = hex ? formatTerminalColorResponse(target, hex) : null
-
-        if (response) {
-          const writeResponse = async (): Promise<void> => {
-            try {
-              await service.write({ sessionId: session.id, data: response })
-            } catch {
-              // Session may have exited between the query and our reply.
-            }
-          }
-          void writeResponse()
-        }
-      }
-    }
-
     // Drain-tolerant variant for orchestrator buffer flush. Same as handleData
     // but doesn't filter by sessionId since the orchestrator always passes
     // events for the session we registered for.
@@ -765,7 +770,14 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       unsubscribeExit?.()
       unsubscribeError?.()
     }
-  }, [terminal, output, session, service, writeLiveTerminalOutput])
+  }, [
+    terminal,
+    output,
+    session,
+    service,
+    writeLiveTerminalOutput,
+    respondToColorQueries,
+  ])
 
   // Handle keyboard input from the terminal renderer
   useEffect(() => {

@@ -2,7 +2,7 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-21
+last_updated: 2026-06-25
 ref_count: 9
 ---
 
@@ -252,4 +252,13 @@ all required state through pure display-state helpers.
 - **File:** `electron/ghostty-render-state-main.ts` L420
 - **Finding:** `CursorVisibilityScanner` kept an unterminated private CSI sequence from `ESC[?` onward with no size limit. A process could stream arbitrary parameter bytes without a final byte and grow the Electron main-process buffer indefinitely.
 - **Fix:** Added a private-CSI pending-buffer limit matching the OSC limit and discard overlong pending sequences before they can accumulate. Added a regression that writes an over-limit unterminated private CSI sequence, then verifies a later suffix cannot complete it into a cursor visibility toggle.
+- **Commit:** same commit as this entry
+
+### 27. Restored buffered OSC queries must be answered before cursor dedupe
+
+- **Source:** github-codex-connector | PR #622 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L602
+- **Finding:** The Ghostty color-query responder only ran after a live PTY event passed the cursor-dedupe guard. When a restored pane wrote buffered `OSC 10/11` queries before the live subscription attached, those bytes advanced `cursorRef`; the later `notifyPaneReady` drain then dropped the same chunk as already written, so Codex never received the foreground/background color response.
+- **Fix:** Lifted color-query handling into a shared callback that accepts the target session id, scans restored chunks before writing them, and scans live/drain chunks before cursor dedupe. Added a regression test for a restored buffered `OSC 10` query.
 - **Commit:** same commit as this entry

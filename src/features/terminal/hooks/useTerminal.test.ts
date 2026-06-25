@@ -942,6 +942,56 @@ describe('useTerminal', () => {
       expect(writes).toContain('ABOVE')
     })
 
+    test('answers restored buffered OSC color queries before drain dedupe can drop them', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) =>
+            property === '--terminal-foreground' ? foregroundHex : '',
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: '\x1b]10;?\x07',
+                  offsetStart: 100,
+                  byteLen: 7,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+        })
+
+        await waitFor(() => {
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: '\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\',
+          })
+        })
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
+    })
+
     test('does not kill session on unmount when restored', async () => {
       const { unmount } = renderHook(() =>
         useTerminal({
