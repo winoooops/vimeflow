@@ -1133,10 +1133,6 @@ export class TerminalTextSurface implements TerminalSurface {
       element.style.fontWeight = '700'
     }
 
-    if (style.dim) {
-      element.style.opacity = '0.72'
-    }
-
     if (style.foreground) {
       element.style.color = style.foreground
     }
@@ -1149,6 +1145,17 @@ export class TerminalTextSurface implements TerminalSurface {
       element.style.backgroundColor =
         style.foreground ?? 'var(--terminal-foreground)'
       element.style.color = style.background ?? 'var(--terminal-background)'
+    }
+
+    if (style.dim) {
+      // Faint (SGR 2): fade the foreground only. A whole-element opacity would
+      // also darken the cell background (e.g. the grey codex composer box behind
+      // dim placeholder text), so blend the foreground toward transparent and
+      // leave the background intact.
+      const dimForeground = style.reverse
+        ? (style.background ?? 'var(--terminal-background)')
+        : (style.foreground ?? 'var(--terminal-foreground)')
+      element.style.color = `color-mix(in srgb, ${dimForeground} 72%, transparent)`
     }
 
     if (style.underline) {

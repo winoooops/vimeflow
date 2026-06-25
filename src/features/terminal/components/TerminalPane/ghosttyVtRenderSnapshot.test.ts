@@ -289,6 +289,37 @@ describe('ghosttyVtRenderSnapshot', () => {
     ])
   })
 
+  test('emits SGR 2 for a faint/dim native cell so it renders dimmed', () => {
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['hint'],
+      cursor: {
+        rowIndex: 0,
+        columnOffset: 4,
+      },
+      cells: [
+        {
+          row: 0,
+          col: 0,
+          text: 'hint',
+          width: 4,
+          dim: true,
+        },
+      ],
+    })
+    const operation = output.displayDelta?.operations[0]
+    const buffer = new TerminalDisplayBuffer()
+
+    if (operation?.type !== 'replace') {
+      throw new Error('Expected replace operation')
+    }
+
+    buffer.applyDelta({ operations: [operation] })
+
+    expect(buffer.readStyledRuns()).toEqual([
+      { text: 'hint', style: { dim: true } },
+    ])
+  })
+
   test('preserves fallback gaps before sparse styled cells', () => {
     const output = createGhosttyVtRenderSnapshotOutput({
       rows: ['plain red'],

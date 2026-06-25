@@ -277,6 +277,7 @@ impl GhosttyTerminalState {
 
                     if !text.is_empty()
                         || style.bold
+                        || style.faint
                         || style.italic
                         || style.underline != Underline::None
                         || style.inverse
@@ -289,6 +290,7 @@ impl GhosttyTerminalState {
                             text,
                             width: cell_width,
                             bold: style.bold.then_some(true),
+                            dim: style.faint.then_some(true),
                             italic: style.italic.then_some(true),
                             underline: (style.underline != Underline::None).then_some(true),
                             foreground,
@@ -463,6 +465,32 @@ mod tests {
             "ANSI colors must resolve to RGB hex, got fg={:?} bg={:?}",
             styled.foreground,
             styled.background
+        );
+    }
+
+    #[test]
+    fn snapshot_captures_faint_cells_as_dim() {
+        // codex/ratatui draw placeholder & hint text with SGR 2 (faint). The
+        // snapshot must carry it as `dim` so the frontend renders it dimmed
+        // instead of at full brightness, where it reads like real input (VIM-230).
+        let mut state = make_state(80, 24);
+        state
+            .write(b"\x1b[2mhint\x1b[0m")
+            .expect("write faint text");
+        let snapshot = state.snapshot().expect("snapshot");
+
+        let cell = snapshot
+            .cells
+            .as_ref()
+            .expect("styled cells")
+            .iter()
+            .find(|cell| cell.text == "h")
+            .expect("the 'h' cell");
+        assert_eq!(
+            cell.dim,
+            Some(true),
+            "faint (SGR 2) must surface as dim, got {:?}",
+            cell
         );
     }
 

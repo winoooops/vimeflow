@@ -4,6 +4,7 @@ import {
   TerminalTextSurface,
   type TerminalTextSurfaceOutput,
 } from './terminalTextSurface'
+import { getSgrStyleSentinel } from './terminalControlParser'
 
 // jsdom has no layout engine: scrollTop/scrollHeight/clientHeight are 0 and the
 // scroll geometry must be stubbed. These helpers give the surface root a
@@ -497,5 +498,33 @@ describe('TerminalTextSurface selection preservation', () => {
 
     expect(root.textContent).toContain('live output')
     expect(root.scrollTop).toBe(0)
+  })
+})
+
+describe('TerminalTextSurface dim rendering', () => {
+  test('dims faint text via foreground alpha, preserving the cell background', () => {
+    const { surface, root } = mountSurface()
+
+    // A faint cell that also has a background (e.g. codex's grey composer box
+    // behind dim placeholder text): dim must fade the text only, never darken
+    // the cell background via a whole-element opacity.
+    const styledText =
+      getSgrStyleSentinel([0, 2, 48, 2, 24, 24, 37]) +
+      'hint' +
+      getSgrStyleSentinel([0])
+    surface.writeParsedOutput({
+      visibleText: 'hint',
+      displayDelta: {
+        operations: [{ type: 'replace', text: styledText, cursorOffset: 4 }],
+      },
+    })
+
+    const span = root.querySelector<HTMLElement>(
+      '[data-terminal-style-run="true"]'
+    )!
+
+    expect(span.style.backgroundColor).not.toBe('') // background preserved
+    expect(span.style.opacity).toBe('') // not via whole-element opacity
+    expect(span.style.color).toContain('color-mix') // foreground dimmed instead
   })
 })

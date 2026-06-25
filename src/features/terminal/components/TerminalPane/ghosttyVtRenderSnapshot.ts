@@ -28,6 +28,7 @@ export interface GhosttyVtRenderSnapshotCell extends GhosttyCellTraversalCell {
   readonly text: string
   readonly width: number
   readonly bold?: boolean
+  readonly dim?: boolean
   readonly italic?: boolean
   readonly underline?: boolean
   readonly foreground?: string
@@ -48,6 +49,7 @@ export interface GhosttyVtRenderSnapshot {
 
 interface SnapshotStyle {
   readonly bold?: boolean
+  readonly dim?: boolean
   readonly italic?: boolean
   readonly underline?: boolean
   readonly foreground?: string
@@ -84,6 +86,7 @@ const readSgrColorParameters = (
 
 const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
   ...(cell.bold === true ? { bold: true } : {}),
+  ...(cell.dim === true ? { dim: true } : {}),
   ...(cell.italic === true ? { italic: true } : {}),
   ...(cell.underline === true ? { underline: true } : {}),
   ...(cell.foreground ? { foreground: cell.foreground } : {}),
@@ -94,6 +97,7 @@ const readCellStyle = (cell: GhosttyVtRenderSnapshotCell): SnapshotStyle => ({
 const readStyleKey = (style: SnapshotStyle): string =>
   [
     style.bold === true ? '1' : '',
+    style.dim === true ? '2' : '',
     style.italic === true ? '3' : '',
     style.underline === true ? '4' : '',
     style.foreground ?? '',
@@ -106,6 +110,7 @@ const EMPTY_STYLE_KEY = readStyleKey({})
 const readStyleParameters = (style: SnapshotStyle): readonly number[] => [
   0,
   ...(style.bold === true ? [1] : []),
+  ...(style.dim === true ? [2] : []),
   ...(style.italic === true ? [3] : []),
   ...(style.underline === true ? [4] : []),
   ...(style.reverse === true ? [7] : []),
@@ -319,6 +324,7 @@ const PROMPT_MARKER_PATTERN = /^\s*>/
 
 const hasCellStyle = (cell: GhosttyVtRenderSnapshotCell): boolean =>
   cell.bold === true ||
+  cell.dim === true ||
   cell.italic === true ||
   cell.underline === true ||
   cell.foreground !== undefined ||
