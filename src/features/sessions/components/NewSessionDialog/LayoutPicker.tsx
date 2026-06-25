@@ -1,17 +1,17 @@
 import { type ReactElement } from 'react'
 import { Menu } from '@/components/Menu'
 import { LAYOUTS } from '../../../terminal/layout-registry'
-import type { PaneLayoutId } from '../../types'
+import type { LayoutId } from '../../types'
 import { LayoutGlyph } from './LayoutGlyph'
 
-const QUICK_LAYOUTS: PaneLayoutId[] = ['single', 'vsplit', 'hsplit']
-const ALL_LAYOUTS: PaneLayoutId[] = ['single', 'vsplit', 'hsplit', 'threeRight', 'quad']
+const QUICK_LAYOUTS: LayoutId[] = ['single', 'vsplit', 'hsplit']
+const ALL_LAYOUTS: LayoutId[] = ['single', 'vsplit', 'hsplit', 'threeRight', 'quad']
 
 interface LayoutPickerProps {
-  layoutId: PaneLayoutId
-  pinnedLayout: PaneLayoutId | null
-  onSelect: (id: PaneLayoutId) => void
-  onPin: (id: PaneLayoutId) => void
+  layoutId: LayoutId
+  pinnedLayout: LayoutId | null
+  onSelect: (id: LayoutId) => void
+  onPin: (id: LayoutId) => void
 }
 
 export const LayoutPicker = ({
@@ -29,6 +29,7 @@ export const LayoutPicker = ({
     <div className="flex w-[158px] shrink-0 flex-col gap-1.5">
       {visible.map((id) => {
         const selected = id === layoutId
+
         return (
           <button
             key={id}

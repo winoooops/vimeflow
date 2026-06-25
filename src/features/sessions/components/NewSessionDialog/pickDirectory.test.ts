@@ -12,6 +12,7 @@ describe('pickDirectory', () => {
     }
     await expect(pickDirectory()).resolves.toBe('/Users/x/proj')
   })
+
   test('returns null when the bridge is absent (browser dev)', async () => {
     await expect(pickDirectory()).resolves.toBeNull()
   })

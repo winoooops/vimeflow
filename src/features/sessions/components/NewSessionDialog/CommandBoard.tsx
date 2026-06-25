@@ -1,11 +1,11 @@
 import { type ReactElement } from 'react'
 import { Menu } from '@/components/Menu'
 import { LAYOUTS } from '../../../terminal/layout-registry'
-import type { CommandId, PaneLayoutId } from '../../types'
+import type { CommandId, LayoutId } from '../../types'
 import { COMMANDS, COMMAND_ORDER } from './commands'
 
 interface CommandBoardProps {
-  layoutId: PaneLayoutId
+  layoutId: LayoutId
   assign: CommandId[]
   onAssign: (index: number, command: CommandId) => void
 }

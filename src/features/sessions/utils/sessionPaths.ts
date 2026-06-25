@@ -10,9 +10,17 @@ const BARE_ROOT = new Set(['~', '/'])
 // dialog prefill and createSession both call this, so they always agree.
 export const deriveSessionName = (cwd: string): string => {
   const parts = pathParts(cwd)
+
+  if (parts.length === 0) {
+    return 'session'
+  }
+
   const last = parts[parts.length - 1]
-  if (last === undefined) return 'session'
+
   // A bare home/root or a Windows drive root (e.g. 'C:') is not a folder name.
-  if (BARE_ROOT.has(last) || /^[A-Za-z]:$/.test(last)) return 'session'
+  if (BARE_ROOT.has(last) || /^[A-Za-z]:$/.test(last)) {
+    return 'session'
+  }
+
   return last
 }

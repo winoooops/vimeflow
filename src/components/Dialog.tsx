@@ -239,7 +239,7 @@ const DialogRoot = ({
   'aria-describedby': ariaDescribedBy = undefined,
   testId = undefined,
   backdropTestId = undefined,
-  panelClassName,
+  panelClassName = undefined,
   children,
 }: DialogProps): ReactElement | null => {
   const dialogRef = useRef<HTMLDivElement | null>(null)

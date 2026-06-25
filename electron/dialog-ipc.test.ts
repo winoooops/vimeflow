@@ -3,6 +3,7 @@ import { setupDialogIpc } from './dialog-ipc'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 
 const dialog = vi.hoisted(() => ({ showOpenDialog: vi.fn() }))
+
 const browserWindow = vi.hoisted(() => ({
   fromWebContents: vi.fn(() => null),
   getFocusedWindow: vi.fn(() => null),
@@ -15,6 +16,7 @@ describe('setupDialogIpc', () => {
 
   const register = (): ((e: unknown) => Promise<string | null>) => {
     const handlers = new Map<string, (e: unknown) => Promise<string | null>>()
+
     const ipcMain = {
       handle: vi.fn((channel: string, fn: (e: unknown) => Promise<string | null>) => {
         handlers.set(channel, fn)
@@ -22,7 +24,8 @@ describe('setupDialogIpc', () => {
     }
     setupDialogIpc(ipcMain as never)
     const handler = handlers.get(DIALOG_PICK_DIRECTORY)
-    if (!handler) throw new Error('handler not registered')
+    if (!handler) {throw new Error('handler not registered')}
+
     return handler
   }
 

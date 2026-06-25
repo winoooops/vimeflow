@@ -3,7 +3,7 @@ import type { PaneLayoutId } from '../../types'
 
 interface LayoutGlyphProps {
   id: PaneLayoutId
-  active: boolean
+  active?: boolean
 }
 
 const W = 16
@@ -12,7 +12,7 @@ const SW = 1.4
 
 // Inline-SVG miniature of each layout shape. Color comes from `currentColor`,
 // so the caller controls active/inactive hue via text color.
-export const LayoutGlyph = ({ id, active }: LayoutGlyphProps): ReactElement => {
+export const LayoutGlyph = ({ id, active = false }: LayoutGlyphProps): ReactElement => {
   const lines: Partial<Record<PaneLayoutId, ReactElement>> = {
     vsplit: <line x1={W / 2} y1="1" x2={W / 2} y2={H - 1} stroke="currentColor" strokeWidth={SW} />,
     hsplit: <line x1="1" y1={H / 2} x2={W - 1} y2={H / 2} stroke="currentColor" strokeWidth={SW} />,
@@ -29,6 +29,7 @@ export const LayoutGlyph = ({ id, active }: LayoutGlyphProps): ReactElement => {
       </>
     ),
   }
+
   return (
     <svg
       width={W}

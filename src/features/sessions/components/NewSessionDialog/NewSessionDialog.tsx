@@ -3,7 +3,7 @@ import { Dialog } from '@/components/Dialog'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
 import { LAYOUTS } from '../../../terminal/layout-registry'
-import type { CommandId, CreateSessionOptions, PaneLayoutId } from '../../types'
+import type { CommandId, CreateSessionOptions, LayoutId } from '../../types'
 import { deriveSessionName } from '../../utils/sessionPaths'
 import { LayoutPicker } from './LayoutPicker'
 import { CommandBoard } from './CommandBoard'
@@ -28,14 +28,17 @@ export const NewSessionDialog = ({
   const [path, setPath] = useState(defaultCwd)
   const [name, setName] = useState(() => deriveSessionName(defaultCwd))
   const [nameEdited, setNameEdited] = useState(false)
-  const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
-  const [pinnedLayout, setPinnedLayout] = useState<PaneLayoutId | null>(null)
+  const [layoutId, setLayoutId] = useState<LayoutId>('single')
+  const [pinnedLayout, setPinnedLayout] = useState<LayoutId | null>(null)
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
 
   // The dialog stays mounted across open/close (Dialog drives visibility via its
   // `open` prop), so re-initialize from the latest snapshot each time it opens.
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      return
+    }
+
     setPath(defaultCwd)
     setName(deriveSessionName(defaultCwd))
     setNameEdited(false)
@@ -49,7 +52,10 @@ export const NewSessionDialog = ({
 
   const applyPath = (next: string): void => {
     setPath(next)
-    if (!nameEdited) setName(deriveSessionName(next))
+
+    if (!nameEdited) {
+      setName(deriveSessionName(next))
+    }
   }
 
   const handleCreate = (): void => {
@@ -76,13 +82,14 @@ export const NewSessionDialog = ({
       </div>
 
       {/* scroll body */}
-      <div className="vfscroll h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-5">
+      <div className="h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-5">
         <label className={LABEL} htmlFor="new-session-name">Session name</label>
         <div className="mt-2 flex items-center gap-2.5 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
           <span className="material-symbols-outlined text-[15px] text-on-surface-muted" aria-hidden="true">edit</span>
           <input
             id="new-session-name"
             aria-label="Session name"
+            // eslint-disable-next-line react/jsx-boolean-value -- false is a meaningful DOM attribute value here, not a prop to omit
             spellCheck={false}
             value={name}
             onChange={(e) => {
@@ -139,6 +146,7 @@ export const NewSessionDialog = ({
                   setAssign((prev) => {
                     const next = [...prev]
                     next[i] = command
+
                     return next
                   })
                 }

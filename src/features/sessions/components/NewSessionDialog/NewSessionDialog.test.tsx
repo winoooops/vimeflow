@@ -3,14 +3,19 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { NewSessionDialog } from './NewSessionDialog'
 
-const setup = (overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}) => {
+const setup = (overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}): { onCreate: ReturnType<typeof vi.fn>; onOpenChange: ReturnType<typeof vi.fn> } => {
   const onCreate = vi.fn()
   const onOpenChange = vi.fn()
+
   render(
     <NewSessionDialog open onOpenChange={onOpenChange} onCreate={onCreate} defaultCwd="~/code/vimeflow-core" {...overrides} />
   )
+
   return { onCreate, onOpenChange }
 }
+
+const renderWithOpen = (open: boolean, cwd: string): ReturnType<typeof render> =>
+  render(<NewSessionDialog open={open} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd={cwd} />)
 
 describe('NewSessionDialog', () => {
   test('name prefills from the default folder basename', () => {
@@ -19,10 +24,11 @@ describe('NewSessionDialog', () => {
   })
 
   test('reopening with a new defaultCwd refreshes path + name', () => {
-    const { rerender } = render(
-      <NewSessionDialog open={false} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/alpha" />
-    )
-    rerender(<NewSessionDialog open onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/beta" />)
+    const closed = false
+    const opened = true
+    const { rerender } = renderWithOpen(closed, '~/code/alpha')
+
+    rerender(<NewSessionDialog open={opened} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/beta" />)
     expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('beta')
   })
 

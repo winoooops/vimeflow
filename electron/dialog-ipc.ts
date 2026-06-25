@@ -10,10 +10,12 @@ export const setupDialogIpc = (ipcMain: IpcMain): void => {
         BrowserWindow.fromWebContents(event.sender) ??
         BrowserWindow.getFocusedWindow() ??
         undefined
+
       const result = await dialog.showOpenDialog(win, {
         properties: ['openDirectory', 'createDirectory'],
         title: 'Choose working directory',
       })
+
       return result.canceled || result.filePaths.length === 0
         ? null
         : result.filePaths[0]

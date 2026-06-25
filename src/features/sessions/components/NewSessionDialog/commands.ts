@@ -1,4 +1,5 @@
-import { AGENTS, type AgentIcon } from '../../../../agents/registry'
+import { AGENTS } from '../../../../agents/registry'
+import type { AgentIcon } from '../../../../agents/brandIcons'
 import { BROWSER_IDENTITY } from '../../../browser/browserIdentity'
 import type { CommandId } from '../../types'
 
