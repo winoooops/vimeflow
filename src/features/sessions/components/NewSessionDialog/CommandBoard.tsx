@@ -1,6 +1,9 @@
 import { type ReactElement } from 'react'
 import { Menu } from '@/components/Menu'
-import type { LayoutShape } from '../../../terminal/layout-registry'
+import {
+  gridAreaNameForSlotId,
+  type LayoutShape,
+} from '../../../terminal/layout-registry'
 import type { CommandId } from '../../types'
 import { COMMANDS, COMMAND_ORDER } from './commands'
 
@@ -16,6 +19,10 @@ export const CommandBoard = ({
   onAssign,
 }: CommandBoardProps): ReactElement => {
   const areas = layout.areas.map((row) => `"${row.join(' ')}"`).join(' ')
+  // Cell grid-areas come from the same slot→name mapping that built `areas`,
+  // so custom layouts (whose slots are sanitized `slot-*` names, not `pN`) map
+  // correctly instead of pointing at non-existent `pN` areas.
+  const slotAreaNames = layout.definition.addOrder.map(gridAreaNameForSlotId)
 
   return (
     <div
@@ -26,12 +33,16 @@ export const CommandBoard = ({
         gridTemplateAreas: areas,
       }}
     >
-      {Array.from({ length: layout.capacity }).map((_, i) => {
+      {slotAreaNames.map((areaName, i) => {
         const command = COMMANDS[assign[i] ?? 'shell']
         const Icon = command.Icon
 
         return (
-          <div key={i} style={{ gridArea: `p${i}` }} className="min-w-0">
+          <div
+            key={areaName}
+            style={{ gridArea: areaName }}
+            className="min-w-0"
+          >
             <Menu
               aria-label={`Command for pane ${i + 1}`}
               trigger={
