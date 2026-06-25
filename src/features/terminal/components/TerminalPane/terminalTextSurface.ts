@@ -53,6 +53,9 @@ interface BlockGlyphColors {
   readonly foreground: string
 }
 
+const dimTerminalForeground = (foreground: string): string =>
+  `color-mix(in srgb, ${foreground} 72%, transparent)`
+
 const KEYBOARD_SEQUENCES = new Map<string, string>([
   ['ArrowUp', '\x1b[A'],
   ['ArrowDown', '\x1b[B'],
@@ -92,15 +95,19 @@ const readBlockGlyphColors = (
   style: TerminalDisplayStyle
 ): BlockGlyphColors => {
   if (style.reverse) {
+    const foreground = style.background ?? 'var(--terminal-background)'
+
     return {
       background: style.foreground ?? 'var(--terminal-foreground)',
-      foreground: style.background ?? 'var(--terminal-background)',
+      foreground: style.dim ? dimTerminalForeground(foreground) : foreground,
     }
   }
 
+  const foreground = style.foreground ?? 'var(--terminal-foreground)'
+
   return {
     background: style.background ?? 'transparent',
-    foreground: style.foreground ?? 'var(--terminal-foreground)',
+    foreground: style.dim ? dimTerminalForeground(foreground) : foreground,
   }
 }
 
@@ -1155,7 +1162,7 @@ export class TerminalTextSurface implements TerminalSurface {
       const dimForeground = style.reverse
         ? (style.background ?? 'var(--terminal-background)')
         : (style.foreground ?? 'var(--terminal-foreground)')
-      element.style.color = `color-mix(in srgb, ${dimForeground} 72%, transparent)`
+      element.style.color = dimTerminalForeground(dimForeground)
     }
 
     if (style.underline) {

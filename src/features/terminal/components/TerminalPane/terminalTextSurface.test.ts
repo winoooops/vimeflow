@@ -527,4 +527,56 @@ describe('TerminalTextSurface dim rendering', () => {
     expect(span.style.opacity).toBe('') // not via whole-element opacity
     expect(span.style.color).toContain('color-mix') // foreground dimmed instead
   })
+
+  test('dims reverse-video text from the swapped foreground source', () => {
+    const { surface, root } = mountSurface()
+
+    const styledText =
+      getSgrStyleSentinel([0, 7, 2]) + 'hint' + getSgrStyleSentinel([0])
+    surface.writeParsedOutput({
+      visibleText: 'hint',
+      displayDelta: {
+        operations: [{ type: 'replace', text: styledText, cursorOffset: 4 }],
+      },
+    })
+
+    const span = root.querySelector<HTMLElement>(
+      '[data-terminal-style-run="true"]'
+    )!
+
+    expect(span.style.backgroundColor).toBe('var(--terminal-foreground)')
+    expect(span.style.opacity).toBe('')
+    expect(span.style.color).toBe(
+      'color-mix(in srgb, var(--terminal-background) 72%, transparent)'
+    )
+  })
+
+  test('dims custom block glyph fills without fading the cell background', () => {
+    const { surface, root } = mountSurface()
+
+    const styledText =
+      getSgrStyleSentinel([0, 2, 38, 2, 243, 139, 168, 48, 2, 24, 24, 37]) +
+      '█' +
+      getSgrStyleSentinel([0])
+    surface.writeParsedOutput({
+      visibleText: '█',
+      displayDelta: {
+        operations: [{ type: 'replace', text: styledText, cursorOffset: 1 }],
+      },
+    })
+
+    const glyph = root.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph="block"]'
+    )!
+
+    const rect = glyph.querySelector<HTMLElement>(
+      '[data-terminal-custom-glyph-rect="true"]'
+    )!
+
+    expect(glyph.style.backgroundColor).not.toBe('')
+    expect(glyph.style.opacity).toBe('')
+    expect(rect.style.backgroundColor).toContain('color-mix')
+    expect(rect.style.backgroundColor).toContain('243, 139, 168')
+    expect(rect.style.backgroundColor).toContain('72%')
+  })
 })

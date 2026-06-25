@@ -3,7 +3,7 @@ id: terminal-dom-rendering
 category: terminal
 created: 2026-06-18
 last_updated: 2026-06-25
-ref_count: 6
+ref_count: 7
 ---
 
 # Terminal DOM Rendering
@@ -111,4 +111,13 @@ The terminal renderer translates a buffered text/runs model into DOM rows for di
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L1409-L1413
 - **Finding:** While a user held a terminal text selection, each deferred `renderOutput` call replaced the pending render options wholesale. A replace snapshot that explicitly requested top/cursor positioning could be followed by live output with default options, causing the flush after selection clear to jump to the bottom.
 - **Fix:** Split deferred render state into a pending-render flag plus a separately retained `pendingScrollMode`. Later renders only overwrite the pending scroll mode when they carry an explicit mode, so live output can coalesce content without discarding the user's history-positioning intent. Added a regression that holds a selection across a top-pinned replace snapshot and later live output.
+- **Commit:** same commit as this entry
+
+### 12. Custom block glyph foreground transforms must reach rect fills
+
+- **Source:** github-codex-connector | PR #623 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L1158
+- **Finding:** The SGR 2 dim path changed only `element.style.color`, but custom block glyphs paint their visible foreground through child rectangle `backgroundColor` values and then set the wrapper text color to `transparent`. Dimmed block glyphs therefore stayed full brightness after replacing whole-element opacity with foreground-only mixing.
+- **Fix:** Centralized the dim color expression and applied it inside `readBlockGlyphColors` so block-glyph rect fills receive the same foreground dimming as normal text. Added a regression that asserts dimmed block glyph fill color uses `color-mix` while the cell background remains unfaded.
 - **Commit:** same commit as this entry

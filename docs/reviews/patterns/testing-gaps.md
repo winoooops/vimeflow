@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-06-25
-ref_count: 35
+ref_count: 36
 ---
 
 # Testing Gaps
@@ -674,4 +674,13 @@ filesystem scope restrictions).
 - **File:** `src/features/terminal/hooks/useTerminal.test.ts` L945-989
 - **Finding:** The Ghostty OSC color-query work covered the formatter/scanner layer and background hook path, but the hook-level foreground path depends on the string literal `--terminal-foreground`. A token-name drift would silently skip the `OSC 10` response without a hook integration failure.
 - **Fix:** Kept the restored-buffered `OSC 10` hook test that mocks `--terminal-foreground` and expects the foreground color response, then made its exact RGB assertion CSpell-clean so the Code Quality lint gate passes.
+- **Commit:** same commit as this entry
+
+### 68. Added style branches need direct branch coverage
+
+- **Source:** github-claude | PR #623 round 1 | 2026-06-25
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts` L1150-L1159
+- **Finding:** The new SGR 2 dim rendering branch selected a different foreground source when `style.reverse` was true, but the added tests only covered the non-reverse foreground path. A future edit could swap the reverse/non-reverse arms and leave reverse+dim cells with the wrong color while tests stayed green.
+- **Fix:** Added a focused `TerminalTextSurface` regression using `getSgrStyleSentinel([0, 7, 2])` that asserts reverse+dim text mixes from `var(--terminal-background)`, the swapped foreground source.
 - **Commit:** same commit as this entry
