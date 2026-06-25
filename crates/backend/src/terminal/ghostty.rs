@@ -579,19 +579,21 @@ mod tests {
 
     #[test]
     fn scroll_method_publishes_latest_snapshot_for_reattach() {
-        let mut state = make_state(80, 3);
+        let (handle, reader) = GhosttySessionHandle::new();
+        let mut state = reader.create_state(80, 3).expect("create state");
         fill_past_viewport(&mut state);
 
         let scrolled = state.scroll(-1000).expect("scroll up");
-        let latest = state.latest_snapshot().expect("published snapshot");
+        let latest = handle.latest_snapshot().expect("published snapshot");
 
         assert_eq!(latest.rows, scrolled.rows);
     }
 
     #[test]
     fn scroll_applies_pending_resize_before_snapshot() {
-        let (reader, mut state) = GhosttySessionHandle::new(80, 3);
-        reader.resize(80, 5).expect("queue resize");
+        let (handle, reader) = GhosttySessionHandle::new();
+        let mut state = reader.create_state(80, 3).expect("create state");
+        handle.resize(80, 5).expect("queue resize");
 
         let snapshot = state.scroll(0).expect("scroll after queued resize");
 
