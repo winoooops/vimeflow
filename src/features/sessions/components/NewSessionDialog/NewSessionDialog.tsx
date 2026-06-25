@@ -93,124 +93,128 @@ export const NewSessionDialog = ({
       dismissWhen={dismissOutsideMenu}
       aria-label="New session"
     >
-      {/* header */}
-      <div className="flex items-center gap-2.5 border-b border-outline-variant/25 px-5 py-4">
-        <span
-          className="material-symbols-outlined text-base text-primary-container"
-          aria-hidden="true"
-        >
-          bolt
-        </span>
-        <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
-          New session
-        </span>
-        <IconButton
-          icon="close"
-          label="Close"
-          onClick={() => onOpenChange(false)}
-        />
-      </div>
-
-      {/* scroll body */}
-      <div className="h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-5">
-        <label className={LABEL} htmlFor="new-session-name">
-          Session name
-        </label>
-        <div className="mt-2 flex items-center gap-2.5 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
+      {/* Bound the panel to the viewport so the footer (Create session) is
+          always visible on short viewports; the body scrolls within. */}
+      <div className="flex h-[600px] max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden">
+        {/* header */}
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-outline-variant/25 px-5 py-4">
           <span
-            className="material-symbols-outlined text-[15px] text-on-surface-muted"
+            className="material-symbols-outlined text-base text-primary-container"
             aria-hidden="true"
           >
-            edit
+            bolt
           </span>
-          <input
-            id="new-session-name"
-            aria-label="Session name"
-            // eslint-disable-next-line react/jsx-boolean-value -- false is a meaningful DOM attribute value here, not a prop to omit
-            spellCheck={false}
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setNameEdited(true)
-            }}
-            className="flex-1 bg-transparent text-[13px] font-medium text-on-surface outline-none"
+          <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
+            New session
+          </span>
+          <IconButton
+            icon="close"
+            label="Close"
+            onClick={() => onOpenChange(false)}
           />
-          {nameEdited ? (
-            <button
-              type="button"
-              onClick={() => {
-                setNameEdited(false)
-                setName(deriveSessionName(path))
-              }}
-              className="rounded-full border border-primary-container/40 px-2 py-0.5 font-mono text-[9.5px] text-primary-container"
+        </div>
+
+        {/* scroll body */}
+        <div className="min-h-0 flex-1 overflow-auto px-5 pb-6 pt-5">
+          <label className={LABEL} htmlFor="new-session-name">
+            Session name
+          </label>
+          <div className="mt-2 flex items-center gap-2.5 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
+            <span
+              className="material-symbols-outlined text-[15px] text-on-surface-muted"
+              aria-hidden="true"
             >
-              reset
-            </button>
-          ) : (
-            <span className="rounded-full border border-outline-variant/50 px-2 py-0.5 font-mono text-[9.5px] text-on-surface-muted">
-              folder name
+              edit
             </span>
-          )}
-        </div>
+            <input
+              id="new-session-name"
+              aria-label="Session name"
+              // eslint-disable-next-line react/jsx-boolean-value -- false is a meaningful DOM attribute value here, not a prop to omit
+              spellCheck={false}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setNameEdited(true)
+              }}
+              className="flex-1 bg-transparent text-[13px] font-medium text-on-surface outline-none"
+            />
+            {nameEdited ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setNameEdited(false)
+                  setName(deriveSessionName(path))
+                }}
+                className="rounded-full border border-primary-container/40 px-2 py-0.5 font-mono text-[9.5px] text-primary-container"
+              >
+                reset
+              </button>
+            ) : (
+              <span className="rounded-full border border-outline-variant/50 px-2 py-0.5 font-mono text-[9.5px] text-on-surface-muted">
+                folder name
+              </span>
+            )}
+          </div>
 
-        <label className={`${LABEL} mt-4 block`}>Working directory</label>
-        <div className="mt-2">
-          <WorkingDirectoryField path={path} onChange={applyPath} />
-        </div>
+          <label className={`${LABEL} mt-4 block`}>Working directory</label>
+          <div className="mt-2">
+            <WorkingDirectoryField path={path} onChange={applyPath} />
+          </div>
 
-        <div className="mt-4 flex min-h-[232px] items-start gap-4">
-          <div className="w-[158px] shrink-0">
-            <label className={LABEL}>Layout</label>
-            <div className="mt-2">
-              <LayoutSwitcher
-                activeLayoutId={layoutId}
-                onPick={setLayoutId}
-                layouts={layoutRegistry.layouts}
-                visibleLayoutIds={layoutRegistry.layouts.map(
-                  (entry) => entry.id
-                )}
-                vertical
-              />
+          <div className="mt-4 flex min-h-[232px] items-start gap-4">
+            <div className="w-[158px] shrink-0">
+              <label className={LABEL}>Layout</label>
+              <div className="mt-2">
+                <LayoutSwitcher
+                  activeLayoutId={layoutId}
+                  onPick={setLayoutId}
+                  layouts={layoutRegistry.layouts}
+                  visibleLayoutIds={layoutRegistry.layouts.map(
+                    (entry) => entry.id
+                  )}
+                  vertical
+                />
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <label className={LABEL}>Starting command</label>
+              <div className="mt-0.5 text-[11px] text-on-surface-muted">
+                click a panel to choose what it opens with
+              </div>
+              <div className="mt-2.5">
+                <CommandBoard
+                  layout={layout}
+                  assign={assign}
+                  onAssign={(i, command) =>
+                    setAssign((prev) => {
+                      const next = [...prev]
+                      next[i] = command
+
+                      return next
+                    })
+                  }
+                />
+              </div>
             </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <label className={LABEL}>Starting command</label>
-            <div className="mt-0.5 text-[11px] text-on-surface-muted">
-              click a panel to choose what it opens with
-            </div>
-            <div className="mt-2.5">
-              <CommandBoard
-                layout={layout}
-                assign={assign}
-                onAssign={(i, command) =>
-                  setAssign((prev) => {
-                    const next = [...prev]
-                    next[i] = command
-
-                    return next
-                  })
-                }
-              />
-            </div>
-          </div>
         </div>
-      </div>
 
-      {/* footer */}
-      <div className="flex items-center gap-2.5 border-t border-outline-variant/20 bg-surface-container-lowest/40 px-5 py-3.5">
-        <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
-          {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} · {folder}
-        </span>
-        <Button variant="default" onClick={() => onOpenChange(false)}>
-          Cancel
-        </Button>
-        <Button
-          variant="flat-primary"
-          leadingIcon="bolt"
-          onClick={handleCreate}
-        >
-          Create session
-        </Button>
+        {/* footer */}
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-outline-variant/20 bg-surface-container-lowest/40 px-5 py-3.5">
+          <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
+            {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} · {folder}
+          </span>
+          <Button variant="default" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="flat-primary"
+            leadingIcon="bolt"
+            onClick={handleCreate}
+          >
+            Create session
+          </Button>
+        </div>
       </div>
     </Popover>
   )
