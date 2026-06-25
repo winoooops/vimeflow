@@ -11,12 +11,15 @@ interface CommandBoardProps {
   layout: LayoutShape
   assign: CommandId[]
   onAssign: (index: number, command: CommandId) => void
+  /** Reports each pane menu's open/close so the dialog can defer dismiss to it. */
+  onMenuOpenChange?: (open: boolean) => void
 }
 
 export const CommandBoard = ({
   layout,
   assign,
   onAssign,
+  onMenuOpenChange = undefined,
 }: CommandBoardProps): ReactElement => {
   const areas = layout.areas.map((row) => `"${row.join(' ')}"`).join(' ')
   // Cell grid-areas come from the same slot→name mapping that built `areas`,
@@ -46,6 +49,7 @@ export const CommandBoard = ({
             >
               <Menu
                 aria-label={`Command for pane ${i + 1}`}
+                onOpenChange={onMenuOpenChange}
                 trigger={
                   <button
                     type="button"

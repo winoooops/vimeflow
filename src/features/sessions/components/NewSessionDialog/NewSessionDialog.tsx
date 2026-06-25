@@ -1,4 +1,11 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/Button'
@@ -27,12 +34,10 @@ const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
 const LABEL =
   'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
 
-// A per-pane command Menu portals as a sibling at the same stacking level. While
-// one is open, a backdrop/Esc dismiss would otherwise also close the dialog — so
-// we let the Menu consume the event and only dismiss the dialog when no menu is
-// open (Menu sets role="menu" via useFloatingSurface/useRole).
-const isCommandMenuOpen = (): boolean =>
-  document.querySelector('[role="menu"]') !== null
+const TITLE_ID = 'new-session-dialog-title'
+
+const FOCUSABLE_SELECTOR =
+  'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 export const NewSessionDialog = ({
   open,
@@ -48,12 +53,28 @@ export const NewSessionDialog = ({
   const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
 
+  const panelRef = useRef<HTMLDivElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  // Number of open per-pane command menus. Each menu portals as a sibling of
+  // the dialog, so while one is open a backdrop/Esc dismiss must defer to it
+  // (the menu consumes the event) rather than closing the dialog. Tracked here
+  // — scoped to this dialog's own menus — instead of a global role=menu query.
+  const openMenuCountRef = useRef(0)
+
+  const handleCommandMenuOpenChange = useCallback((menuOpen: boolean): void => {
+    openMenuCountRef.current = Math.max(
+      0,
+      openMenuCountRef.current + (menuOpen ? 1 : -1)
+    )
+  }, [])
+
   // Re-initialize from the latest snapshot each time the dialog opens.
   useEffect(() => {
     if (!open) {
       return
     }
 
+    openMenuCountRef.current = 0
     setPath(defaultCwd)
     setName(deriveSessionName(defaultCwd))
     setNameEdited(false)
@@ -76,8 +97,8 @@ export const NewSessionDialog = ({
       return
     }
 
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !isCommandMenuOpen()) {
+    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape' && openMenuCountRef.current === 0) {
         onOpenChange(false)
       }
     }
@@ -88,6 +109,22 @@ export const NewSessionDialog = ({
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [open, onOpenChange])
+
+  // Focus management (a11y): move focus to the name field on open and restore
+  // it to the trigger on close.
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const frame = requestAnimationFrame(() => nameInputRef.current?.focus())
+
+    return (): void => {
+      cancelAnimationFrame(frame)
+      previouslyFocused?.focus()
+    }
+  }, [open])
 
   const layout = layoutRegistry.getFallbackLayout(layoutId)
 
@@ -109,11 +146,37 @@ export const NewSessionDialog = ({
   }
 
   const handleBackdropClick = (): void => {
-    if (isCommandMenuOpen()) {
+    if (openMenuCountRef.current > 0) {
       return
     }
 
     onOpenChange(false)
+  }
+
+  // Keep Tab focus within the panel (a11y focus trap). Focus inside an open
+  // command menu lives in a portalled sibling, so this handler never fires
+  // there and won't fight the menu's own navigation.
+  const handlePanelKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Tab' || !panelRef.current) {
+      return
+    }
+
+    const focusTargets =
+      panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+    if (focusTargets.length === 0) {
+      return
+    }
+
+    const first = focusTargets[0]
+    const last = focusTargets[focusTargets.length - 1]
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
   }
 
   // Entrance origin: offset of the New Session button from the viewport centre,
@@ -140,8 +203,11 @@ export const NewSessionDialog = ({
           />
           <div className="pointer-events-none absolute inset-0 grid place-items-center p-4">
             <motion.div
+              ref={panelRef}
               role="dialog"
-              aria-label="New session"
+              aria-modal="true"
+              aria-labelledby={TITLE_ID}
+              onKeyDown={handlePanelKeyDown}
               className="pointer-events-auto flex w-[min(560px,100%)] flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 shadow-2xl backdrop-blur-md backdrop-saturate-150"
               initial={{ opacity: 0, scale: 0.6, x: origin.x, y: origin.y }}
               animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
@@ -156,7 +222,10 @@ export const NewSessionDialog = ({
                 >
                   bolt
                 </span>
-                <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
+                <span
+                  id={TITLE_ID}
+                  className="flex-1 text-[14.5px] font-semibold text-on-surface"
+                >
                   New session
                 </span>
                 <IconButton
@@ -179,6 +248,7 @@ export const NewSessionDialog = ({
                     edit
                   </span>
                   <input
+                    ref={nameInputRef}
                     id="new-session-name"
                     aria-label="Session name"
                     // eslint-disable-next-line react/jsx-boolean-value -- false is a meaningful DOM attribute value here, not a prop to omit
@@ -239,6 +309,7 @@ export const NewSessionDialog = ({
                       <CommandBoard
                         layout={layout}
                         assign={assign}
+                        onMenuOpenChange={handleCommandMenuOpenChange}
                         onAssign={(i, command) =>
                           setAssign((prev) => {
                             const next = [...prev]
