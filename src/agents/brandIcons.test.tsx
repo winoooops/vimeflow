@@ -9,16 +9,30 @@ const BRAND_ICONS: readonly (readonly [string, AgentIcon])[] = [
   ['OpenCode', OpenCode],
 ]
 
-test.each(BRAND_ICONS)(
-  '%s renders a mono currentColor svg sized from the size prop',
+const SQUARE_BRAND_ICONS: readonly (readonly [string, AgentIcon])[] = [
+  ['Codex', Codex],
+  ['Kimi', Kimi],
+  ['OpenCode', OpenCode],
+]
+
+test.each(BRAND_ICONS)('%s renders a mono currentColor svg', (_name, Icon) => {
+  const { container } = render(<Icon size={16} />)
+  // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying vendored SVG shape
+  const svg = container.querySelector('svg')
+
+  expect(svg).toBeInTheDocument()
+  expect(svg?.getAttribute('fill')).toBe('currentColor')
+})
+
+test.each(SQUARE_BRAND_ICONS)(
+  '%s renders a mono currentColor svg with height sized by the size prop',
   (_name, Icon) => {
     const { container } = render(<Icon size={16} />)
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying vendored SVG shape
     const svg = container.querySelector('svg')
 
     expect(svg).toBeInTheDocument()
-    expect(svg?.getAttribute('fill')).toBe('currentColor')
-    expect(Number(svg?.getAttribute('height'))).toBeGreaterThan(0)
+    expect(svg?.getAttribute('height')).toBe('16')
   }
 )
 
@@ -35,7 +49,7 @@ test('ClaudeCode squishes the original mark into a custom box via non-uniform sc
   // Exact width/height ratio is intentionally not pinned — it's a visual dial.
   expect(svg?.getAttribute('viewBox')).toBe('0 5 24 15')
   expect(svg?.getAttribute('preserveAspectRatio')).toBe('none')
-  expect(Number(svg?.getAttribute('width'))).toBeGreaterThan(0)
-  expect(Number(svg?.getAttribute('height'))).toBeGreaterThan(0)
+  expect(Number(svg?.getAttribute('width'))).toBeGreaterThan(16)
+  expect(Number(svg?.getAttribute('height'))).toBeLessThan(16)
   expect(path?.getAttribute('clip-rule')).toBe('evenodd')
 })

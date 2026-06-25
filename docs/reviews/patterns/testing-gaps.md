@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-22
-ref_count: 37
+last_updated: 2026-06-25
+ref_count: 38
 ---
 
 # Testing Gaps
@@ -816,4 +816,13 @@ filesystem scope restrictions).
 - **File:** `src/features/workspace/WorkspaceView.integration.test.tsx`
 - **Finding:** The activity-panel expand/collapse control moved out of the rail/header subcomponents and into `WorkspaceView` as the root-owned `activity-toggle-fixed` control, but the deleted lower-level callback tests were not re-expressed at the new owner boundary. A wrong boolean update or stale handler wiring regression could leave the user-facing activity panel toggle broken while the suite stayed green.
 - **Fix:** Updated the WorkspaceView integration coverage to click `activity-toggle-fixed` directly and assert both transitions: expanded panel header to collapsed rail, then collapsed rail back to expanded panel header.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 84. Shared icon test weakened unaffected sizing contracts
+
+- **Source:** github-codex-connector | PR #619 round 1 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.test.tsx`
+- **Finding:** The ClaudeCode icon needed custom rendered dimensions, but the shared `BRAND_ICONS` table changed from exact `height === size` coverage to a positive-height assertion for every icon. That let Codex, Kimi, and OpenCode regress to an incorrect rendered height without failing the only shared sizing guard.
+- **Fix:** Split the exact-height assertion into a square-icon table for Codex, Kimi, and OpenCode, and kept ClaudeCode covered by its dedicated custom-dimension test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
