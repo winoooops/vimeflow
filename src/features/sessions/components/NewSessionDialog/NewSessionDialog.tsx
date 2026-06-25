@@ -9,6 +9,7 @@ import type { CommandId, CreateSessionOptions, PaneLayoutId } from '../../types'
 import { deriveSessionName } from '../../utils/sessionPaths'
 import { CommandBoard } from './CommandBoard'
 import { WorkingDirectoryField } from './WorkingDirectoryField'
+import { getLastLayout, setLastLayout } from './lastLayoutStore'
 
 interface NewSessionDialogProps {
   open: boolean
@@ -56,9 +57,18 @@ export const NewSessionDialog = ({
     setPath(defaultCwd)
     setName(deriveSessionName(defaultCwd))
     setNameEdited(false)
-    setLayoutId('single')
+    // Default to the layout the user last created with (if it still exists),
+    // so they don't re-pick their preferred layout every time.
+    // localStorage holds an arbitrary string; getLayout returns null for an
+    // unknown/removed id, so the cast is validated before we trust it.
+    const savedLayout = getLastLayout() as PaneLayoutId | null
+    setLayoutId(
+      savedLayout && layoutRegistry.getLayout(savedLayout)
+        ? savedLayout
+        : 'single'
+    )
     setAssign(DEFAULT_ASSIGN)
-  }, [open, defaultCwd])
+  }, [open, defaultCwd, layoutRegistry])
 
   // Esc closes the dialog — unless a command menu is open (it consumes Esc).
   useEffect(() => {
@@ -80,7 +90,6 @@ export const NewSessionDialog = ({
   }, [open, onOpenChange])
 
   const layout = layoutRegistry.getFallbackLayout(layoutId)
-  const folder = deriveSessionName(path)
 
   const applyPath = (next: string): void => {
     setPath(next)
@@ -95,6 +104,7 @@ export const NewSessionDialog = ({
       command: assign[i] ?? 'shell',
     }))
     onCreate({ name, cwd: path, layout: layoutId, panes })
+    setLastLayout(layoutId)
     onOpenChange(false)
   }
 
@@ -244,11 +254,7 @@ export const NewSessionDialog = ({
               </div>
 
               {/* footer */}
-              <div className="flex items-center gap-2.5 bg-surface-container-lowest/40 px-5 py-3.5">
-                <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
-                  {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} ·{' '}
-                  {folder}
-                </span>
+              <div className="flex items-center justify-end gap-2.5 bg-surface-container-lowest/40 px-5 py-3.5">
                 <Button variant="default" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
