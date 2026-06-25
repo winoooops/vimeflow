@@ -468,7 +468,12 @@ describe('Dialog', () => {
 
   test('appends panelClassName to the panel element', () => {
     render(
-      <Dialog open onOpenChange={vi.fn()} panelClassName="w-[min(560px,100%)] max-w-none" aria-label="New session">
+      <Dialog
+        open
+        onOpenChange={vi.fn()}
+        panelClassName="w-[min(560px,100%)] max-w-none"
+        aria-label="New session"
+      >
         <span>Body</span>
       </Dialog>
     )

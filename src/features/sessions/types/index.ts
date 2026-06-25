@@ -216,7 +216,13 @@ export interface UsageMetrics {
   }
 }
 
-export type CommandId = 'claude' | 'codex' | 'kimi' | 'opencode' | 'browser' | 'shell'
+export type CommandId =
+  | 'claude'
+  | 'codex'
+  | 'kimi'
+  | 'opencode'
+  | 'browser'
+  | 'shell'
 
 export interface NewPaneSpec {
   command: CommandId

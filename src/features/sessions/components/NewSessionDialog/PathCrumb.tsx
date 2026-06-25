@@ -19,7 +19,11 @@ export const PathCrumb = ({ path }: PathCrumbProps): ReactElement => {
         return (
           <Fragment key={`${part}-${i}`}>
             {i > 0 && <span className="text-on-surface-muted">/</span>}
-            <span className={last ? 'font-semibold text-primary' : 'text-on-surface-muted'}>
+            <span
+              className={
+                last ? 'font-semibold text-primary' : 'text-on-surface-muted'
+              }
+            >
               {part}
             </span>
           </Fragment>

@@ -11,7 +11,13 @@ describe('commandToPane', () => {
   })
 
   test('agent commands map to a labeled shell pane', () => {
-    expect(commandToPane('claude')).toEqual({ kind: 'shell', userLabel: 'Claude Code' })
-    expect(commandToPane('codex')).toEqual({ kind: 'shell', userLabel: 'Codex CLI' })
+    expect(commandToPane('claude')).toEqual({
+      kind: 'shell',
+      userLabel: 'Claude Code',
+    })
+    expect(commandToPane('codex')).toEqual({
+      kind: 'shell',
+      userLabel: 'Codex CLI',
+    })
   })
 })

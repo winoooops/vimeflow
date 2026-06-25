@@ -5,7 +5,13 @@ import type { LayoutId } from '../../types'
 import { LayoutGlyph } from './LayoutGlyph'
 
 const QUICK_LAYOUTS: LayoutId[] = ['single', 'vsplit', 'hsplit']
-const ALL_LAYOUTS: LayoutId[] = ['single', 'vsplit', 'hsplit', 'threeRight', 'quad']
+const ALL_LAYOUTS: LayoutId[] = [
+  'single',
+  'vsplit',
+  'hsplit',
+  'threeRight',
+  'quad',
+]
 
 interface LayoutPickerProps {
   layoutId: LayoutId
@@ -43,8 +49,12 @@ export const LayoutPicker = ({
             }`}
           >
             <LayoutGlyph id={id} active={selected} />
-            <span className="flex-1 text-xs font-medium">{LAYOUTS[id].name}</span>
-            <span className="font-mono text-[10px] text-on-surface-muted">{LAYOUTS[id].capacity}</span>
+            <span className="flex-1 text-xs font-medium">
+              {LAYOUTS[id].name}
+            </span>
+            <span className="font-mono text-[10px] text-on-surface-muted">
+              {LAYOUTS[id].capacity}
+            </span>
           </button>
         )
       })}
@@ -56,7 +66,12 @@ export const LayoutPicker = ({
             aria-label="More layouts"
             className="flex w-full items-center gap-2 rounded-[9px] border border-dashed border-outline-variant/50 px-2.5 py-2 text-left text-xs text-on-surface-muted"
           >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">more_horiz</span>
+            <span
+              className="material-symbols-outlined text-base"
+              aria-hidden="true"
+            >
+              more_horiz
+            </span>
             <span className="flex-1">More layouts</span>
           </button>
         }

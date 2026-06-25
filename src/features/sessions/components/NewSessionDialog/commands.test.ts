@@ -3,7 +3,14 @@ import { COMMANDS, COMMAND_ORDER } from './commands'
 
 describe('COMMANDS', () => {
   test('orders claude, codex, kimi, opencode, browser, shell', () => {
-    expect(COMMAND_ORDER).toEqual(['claude', 'codex', 'kimi', 'opencode', 'browser', 'shell'])
+    expect(COMMAND_ORDER).toEqual([
+      'claude',
+      'codex',
+      'kimi',
+      'opencode',
+      'browser',
+      'shell',
+    ])
   })
 
   test('browser is a browser-kind entry with its own accent', () => {

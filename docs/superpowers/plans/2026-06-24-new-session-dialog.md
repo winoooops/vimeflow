@@ -19,6 +19,7 @@
 ## File Structure
 
 **Create**
+
 - `src/features/sessions/utils/sessionPaths.ts` — `pathParts(path)`, `deriveSessionName(cwd)` (shared by dialog + hook).
 - `src/features/sessions/utils/sessionPaths.test.ts`
 - `src/features/sessions/utils/commandToPane.ts` — `commandToPane(id)` → `{kind, userLabel?}` (used by `createSession`).
@@ -36,6 +37,7 @@
 - `electron/dialog-ipc.ts` — `setupDialogIpc(ipcMain)` registrar + `.test.ts`
 
 **Modify**
+
 - `src/components/Dialog.tsx` — add `panelClassName?: string`.
 - `src/components/Dialog.test.tsx` — cover `panelClassName`.
 - `electron/ipc-channels.ts` — add `DIALOG_PICK_DIRECTORY`.
@@ -56,6 +58,7 @@
 ## Task 1: `Dialog` gains an optional `panelClassName`
 
 **Files:**
+
 - Modify: `src/components/Dialog.tsx` (props interface ~lines 15-31; panel className ~line 354)
 - Test: `src/components/Dialog.test.tsx`
 
@@ -64,7 +67,12 @@
 ```tsx
 test('appends panelClassName to the panel element', () => {
   render(
-    <Dialog open onOpenChange={vi.fn()} panelClassName="w-[min(560px,100%)] max-w-none" aria-label="New session">
+    <Dialog
+      open
+      onOpenChange={vi.fn()}
+      panelClassName="w-[min(560px,100%)] max-w-none"
+      aria-label="New session"
+    >
       <span>Body</span>
     </Dialog>
   )
@@ -118,6 +126,7 @@ git commit -m "feat(dialog): add optional panelClassName"
 The handler logic lives in a small testable `electron/dialog-ipc.ts` (mirrors `setupBrowserPaneIpc`), called from `main.ts`. Preload exposes `window.vimeflow.dialog.pickDirectory()`.
 
 **Files:**
+
 - Modify: `electron/ipc-channels.ts`
 - Create: `electron/dialog-ipc.ts`, `electron/dialog-ipc.test.ts`
 - Modify: `electron/main.ts`, `electron/preload.ts`, `electron/preload.test.ts`, `src/lib/backend.ts`
@@ -149,9 +158,11 @@ describe('setupDialogIpc', () => {
   const register = (): ((e: unknown) => Promise<string | null>) => {
     const handlers = new Map<string, (e: unknown) => Promise<string | null>>()
     const ipcMain = {
-      handle: vi.fn((channel: string, fn: (e: unknown) => Promise<string | null>) => {
-        handlers.set(channel, fn)
-      }),
+      handle: vi.fn(
+        (channel: string, fn: (e: unknown) => Promise<string | null>) => {
+          handlers.set(channel, fn)
+        }
+      ),
     }
     setupDialogIpc(ipcMain as never)
     const handler = handlers.get(DIALOG_PICK_DIRECTORY)
@@ -160,7 +171,10 @@ describe('setupDialogIpc', () => {
   }
 
   test('returns the chosen directory path', async () => {
-    dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/Users/x/proj'] })
+    dialog.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/Users/x/proj'],
+    })
     const handler = register()
     await expect(handler({ sender: {} })).resolves.toBe('/Users/x/proj')
     expect(dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {
@@ -182,7 +196,12 @@ describe('setupDialogIpc', () => {
 - [ ] **Step 4: Implement** `electron/dialog-ipc.ts`:
 
 ```ts
-import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import {
+  BrowserWindow,
+  dialog,
+  type IpcMain,
+  type IpcMainInvokeEvent,
+} from 'electron'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 
 // Native OS directory picker. Returns the absolute path, or null on cancel.
@@ -217,7 +236,7 @@ import { setupDialogIpc } from './dialog-ipc'
 and call it once during IPC setup (alongside the existing `ipcMain.handle(BACKEND_INVOKE, …)` registration, before `app` is ready is fine — it only registers a handler):
 
 ```ts
-  setupDialogIpc(ipcMain)
+setupDialogIpc(ipcMain)
 ```
 
 Verify the wiring is actually present (a missed call compiles + passes unit tests but leaves the picker dead at runtime):
@@ -244,9 +263,13 @@ In `electron/preload.test.ts`, add:
 
 ```ts
 test('exposes dialog.pickDirectory bound to the channel', async () => {
-  const api = electronMock.exposed as { dialog: { pickDirectory: () => Promise<unknown> } }
+  const api = electronMock.exposed as {
+    dialog: { pickDirectory: () => Promise<unknown> }
+  }
   await api.dialog.pickDirectory()
-  expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(DIALOG_PICK_DIRECTORY)
+  expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+    DIALOG_PICK_DIRECTORY
+  )
 })
 ```
 
@@ -274,6 +297,7 @@ git commit -m "feat(electron): native directory picker IPC"
 ## Task 3: Shared types + path/name helpers + commandToPane
 
 **Files:**
+
 - Modify: `src/features/sessions/types/index.ts`
 - Create: `src/features/sessions/utils/sessionPaths.ts` + `.test.ts`
 - Create: `src/features/sessions/utils/commandToPane.ts` + `.test.ts`
@@ -281,7 +305,13 @@ git commit -m "feat(electron): native directory picker IPC"
 - [ ] **Step 1: Add types.** In `src/features/sessions/types/index.ts` append:
 
 ```ts
-export type CommandId = 'claude' | 'codex' | 'kimi' | 'opencode' | 'browser' | 'shell'
+export type CommandId =
+  | 'claude'
+  | 'codex'
+  | 'kimi'
+  | 'opencode'
+  | 'browser'
+  | 'shell'
 
 export interface NewPaneSpec {
   command: CommandId
@@ -369,8 +399,14 @@ describe('commandToPane', () => {
     expect(commandToPane('shell')).toEqual({ kind: 'shell' })
   })
   test('agent commands map to a labeled shell pane', () => {
-    expect(commandToPane('claude')).toEqual({ kind: 'shell', userLabel: 'Claude Code' })
-    expect(commandToPane('codex')).toEqual({ kind: 'shell', userLabel: 'Codex CLI' })
+    expect(commandToPane('claude')).toEqual({
+      kind: 'shell',
+      userLabel: 'Claude Code',
+    })
+    expect(commandToPane('codex')).toEqual({
+      kind: 'shell',
+      userLabel: 'Codex CLI',
+    })
   })
 })
 ```
@@ -412,11 +448,12 @@ git commit -m "feat(sessions): new-session option types + path/command helpers"
 ## Task 4: Extend `createSession` to assemble a multi-pane session
 
 **Files:**
+
 - Modify: `src/features/sessions/hooks/useSessionManager.ts` (interface ~line 81; `createSession` ~823-906; deps array)
 - Test: `src/features/sessions/hooks/useSessionManager.test.ts`
 
 - [ ] **Step 1: Update the interface.** Change the `SessionManager` member (line ~81) from
-`createSession: () => void` to:
+      `createSession: () => void` to:
 
 ```ts
   createSession: (opts?: CreateSessionOptions) => void
@@ -434,11 +471,18 @@ import { deriveSessionName } from '../utils/sessionPaths'
 ```ts
 test('createSession(opts) builds a multi-pane session honoring layout + cwd', async () => {
   const service = createMockService()
-  service.listSessions = vi.fn().mockResolvedValue({ activeSessionId: null, sessions: [] })
+  service.listSessions = vi
+    .fn()
+    .mockResolvedValue({ activeSessionId: null, sessions: [] })
   service.spawn = vi.fn().mockResolvedValue({
-    sessionId: 'pty', pid: 1, cwd: '/Users/x/proj', shell: '/bin/zsh',
+    sessionId: 'pty',
+    pid: 1,
+    cwd: '/Users/x/proj',
+    shell: '/bin/zsh',
   })
-  const { result } = renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+  const { result } = renderHook(() =>
+    useSessionManager(service, { autoCreateOnEmpty: false })
+  )
   await waitFor(() => expect(result.current.loading).toBe(false))
 
   act(() => {
@@ -460,14 +504,27 @@ test('createSession(opts) builds a multi-pane session honoring layout + cwd', as
   expect(session.panes[0].active).toBe(true)
   // every shell pane spawned with the chosen cwd (fixed baseline)
   expect(service.spawn).toHaveBeenCalledTimes(2)
-  expect(service.spawn).toHaveBeenNthCalledWith(1, { cwd: '/Users/x/proj', env: {}, enableAgentBridge: true })
+  expect(service.spawn).toHaveBeenNthCalledWith(1, {
+    cwd: '/Users/x/proj',
+    env: {},
+    enableAgentBridge: true,
+  })
 })
 
 test('createSession() with no args is unchanged (single shell pane)', async () => {
   const service = createMockService()
-  service.listSessions = vi.fn().mockResolvedValue({ activeSessionId: null, sessions: [] })
-  service.spawn = vi.fn().mockResolvedValue({ sessionId: 'pty', pid: 1, cwd: '/home/u', shell: '/bin/zsh' })
-  const { result } = renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+  service.listSessions = vi
+    .fn()
+    .mockResolvedValue({ activeSessionId: null, sessions: [] })
+  service.spawn = vi.fn().mockResolvedValue({
+    sessionId: 'pty',
+    pid: 1,
+    cwd: '/home/u',
+    shell: '/bin/zsh',
+  })
+  const { result } = renderHook(() =>
+    useSessionManager(service, { autoCreateOnEmpty: false })
+  )
   await waitFor(() => expect(result.current.loading).toBe(false))
 
   act(() => result.current.createSession())
@@ -478,16 +535,29 @@ test('createSession() with no args is unchanged (single shell pane)', async () =
 
 test('createSession skips a failed pane but still creates the session', async () => {
   const service = createMockService()
-  service.listSessions = vi.fn().mockResolvedValue({ activeSessionId: null, sessions: [] })
+  service.listSessions = vi
+    .fn()
+    .mockResolvedValue({ activeSessionId: null, sessions: [] })
   service.spawn = vi
     .fn()
-    .mockResolvedValueOnce({ sessionId: 'pty0', pid: 1, cwd: '/p', shell: '/bin/zsh' })
+    .mockResolvedValueOnce({
+      sessionId: 'pty0',
+      pid: 1,
+      cwd: '/p',
+      shell: '/bin/zsh',
+    })
     .mockRejectedValueOnce(new Error('boom'))
-  const { result } = renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+  const { result } = renderHook(() =>
+    useSessionManager(service, { autoCreateOnEmpty: false })
+  )
   await waitFor(() => expect(result.current.loading).toBe(false))
 
   act(() => {
-    result.current.createSession({ cwd: '/p', layout: 'vsplit', panes: [{ command: 'shell' }, { command: 'shell' }] })
+    result.current.createSession({
+      cwd: '/p',
+      layout: 'vsplit',
+      panes: [{ command: 'shell' }, { command: 'shell' }],
+    })
   })
   await waitFor(() => expect(result.current.sessions).toHaveLength(1))
   expect(result.current.sessions[0].panes).toHaveLength(1)
@@ -501,162 +571,166 @@ test('createSession skips a failed pane but still creates the session', async ()
 - [ ] **Step 4: Implement.** Replace the `createSession` `useCallback` body (lines ~823-906) with:
 
 ```ts
-  const createSession = useCallback(
-    (opts?: CreateSessionOptions): void => {
-      const layout: PaneLayoutId = opts?.layout ?? 'single'
-      const capacity = layoutRegistry.capacityFor(layout)
-      const requestedCwd = opts?.cwd ?? '~'
-      // Exactly `capacity` slots: explicit picks override; missing slots = shell.
-      const specs: NewPaneSpec[] = Array.from(
-        { length: capacity },
-        (_, i) => opts?.panes?.[i] ?? { command: 'shell' }
-      )
+const createSession = useCallback(
+  (opts?: CreateSessionOptions): void => {
+    const layout: PaneLayoutId = opts?.layout ?? 'single'
+    const capacity = layoutRegistry.capacityFor(layout)
+    const requestedCwd = opts?.cwd ?? '~'
+    // Exactly `capacity` slots: explicit picks override; missing slots = shell.
+    const specs: NewPaneSpec[] = Array.from(
+      { length: capacity },
+      (_, i) => opts?.panes?.[i] ?? { command: 'shell' }
+    )
 
-      setPendingSpawns((c) => c + 1)
-      void (async (): Promise<void> => {
-        try {
-          // Spawn shell/agent PTYs concurrently + independently (one failure
-          // must not reject the rest). Browser slots need no PTY.
-          const spawned = await Promise.allSettled(
-            specs.map((spec) =>
-              commandToPane(spec.command).kind === 'browser'
-                ? Promise.resolve(null)
-                : service.spawn({ cwd: requestedCwd, env: {}, enableAgentBridge: true })
-            )
+    setPendingSpawns((c) => c + 1)
+    void (async (): Promise<void> => {
+      try {
+        // Spawn shell/agent PTYs concurrently + independently (one failure
+        // must not reject the rest). Browser slots need no PTY.
+        const spawned = await Promise.allSettled(
+          specs.map((spec) =>
+            commandToPane(spec.command).kind === 'browser'
+              ? Promise.resolve(null)
+              : service.spawn({
+                  cwd: requestedCwd,
+                  env: {},
+                  enableAgentBridge: true,
+                })
           )
+        )
 
-          const now = new Date().toISOString()
-          const newSessionId = crypto.randomUUID()
+        const now = new Date().toISOString()
+        const newSessionId = crypto.randomUUID()
 
-          // Resolved baseline cwd: the path Rust echoes back for the chosen dir.
-          // Falls back to the requested cwd for an all-browser session.
-          const firstResolved = spawned.find(
-            (s): s is PromiseFulfilledResult<PTYSpawnResult> =>
-              s.status === 'fulfilled' && s.value !== null
-          )
-          const workingDirectory = firstResolved
-            ? firstResolved.value.cwd
-            : requestedCwd
+        // Resolved baseline cwd: the path Rust echoes back for the chosen dir.
+        // Falls back to the requested cwd for an all-browser session.
+        const firstResolved = spawned.find(
+          (s): s is PromiseFulfilledResult<PTYSpawnResult> =>
+            s.status === 'fulfilled' && s.value !== null
+        )
+        const workingDirectory = firstResolved
+          ? firstResolved.value.cwd
+          : requestedCwd
 
-          const panes: Pane[] = []
-          const browserPaneIds: string[] = []
+        const panes: Pane[] = []
+        const browserPaneIds: string[] = []
 
-          specs.forEach((spec, i) => {
-            const mapped = commandToPane(spec.command)
-            const paneId = `p${panes.length}`
+        specs.forEach((spec, i) => {
+          const mapped = commandToPane(spec.command)
+          const paneId = `p${panes.length}`
 
-            if (mapped.kind === 'browser') {
-              panes.push({
-                kind: 'browser',
-                id: paneId,
-                ptyId: `browser:${crypto.randomUUID()}`,
-                cwd: workingDirectory,
-                agentType: 'generic',
-                status: 'idle',
-                active: false,
-                browserUrl: DEFAULT_BROWSER_URL,
-                ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
-              })
-              browserPaneIds.push(paneId)
-              return
-            }
-
-            const settled = spawned[i]
-            if (settled.status !== 'fulfilled' || settled.value === null) {
-              log.warn(
-                'createSession: pane spawn failed',
-                settled.status === 'rejected' ? settled.reason : undefined
-              )
-              return
-            }
-            const result = settled.value
-            const restoreData: RestoreData = {
-              sessionId: result.sessionId,
-              cwd: result.cwd,
-              pid: result.pid,
-              replayData: '',
-              replayEndOffset: 0,
-              bufferedEvents: [],
-            }
-            registerPending(result.sessionId)
-            registerPtySession(result.sessionId, result.sessionId, result.cwd)
+          if (mapped.kind === 'browser') {
             panes.push({
-              kind: 'shell',
+              kind: 'browser',
               id: paneId,
-              ptyId: result.sessionId,
-              cwd: result.cwd,
-              shell: result.shell,
+              ptyId: `browser:${crypto.randomUUID()}`,
+              cwd: workingDirectory,
               agentType: 'generic',
-              status: 'running',
+              status: 'idle',
               active: false,
-              pid: result.pid,
-              restoreData,
+              browserUrl: DEFAULT_BROWSER_URL,
               ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
             })
-          })
-
-          if (panes.length === 0) {
-            log.warn('createSession: no panes spawned; session not created')
+            browserPaneIds.push(paneId)
             return
           }
-          panes[0] = { ...panes[0], active: true }
 
-          // Mirror the single-pane path's public restoreData contract.
-          const firstRestore = panes.find((p) => p.restoreData)?.restoreData
-          if (firstRestore) {
-            restoreDataRef.current.set(newSessionId, firstRestore)
+          const settled = spawned[i]
+          if (settled.status !== 'fulfilled' || settled.value === null) {
+            log.warn(
+              'createSession: pane spawn failed',
+              settled.status === 'rejected' ? settled.reason : undefined
+            )
+            return
           }
-
-          const hasShell = panes.some((p) => p.kind !== 'browser')
-          const name = opts?.name ?? deriveSessionName(workingDirectory)
-
-          flushSync(() => {
-            setSessions((prev) => {
-              const newSession: Session = {
-                id: newSessionId,
-                projectId: 'proj-1',
-                name,
-                status: hasShell ? 'running' : 'idle',
-                workingDirectory,
-                agentType: 'generic',
-                layout,
-                activityPanelCollapsed: false,
-                panes,
-                createdAt: now,
-                lastActivityAt: now,
-                activity: { ...emptyActivity },
-              }
-              return [...prev, newSession]
-            })
+          const result = settled.value
+          const restoreData: RestoreData = {
+            sessionId: result.sessionId,
+            cwd: result.cwd,
+            pid: result.pid,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          }
+          registerPending(result.sessionId)
+          registerPtySession(result.sessionId, result.sessionId, result.cwd)
+          panes.push({
+            kind: 'shell',
+            id: paneId,
+            ptyId: result.sessionId,
+            cwd: result.cwd,
+            shell: result.shell,
+            agentType: 'generic',
+            status: 'running',
+            active: false,
+            pid: result.pid,
+            restoreData,
+            ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
           })
+        })
 
-          setActiveSessionId(newSessionId)
-
-          // Browser panes: create the WebContents after state is committed
-          // (guarded — a startup/shutdown rejection must not surface).
-          for (const paneId of browserPaneIds) {
-            void (async (): Promise<void> => {
-              try {
-                await createBrowserPane({
-                  sessionId: newSessionId,
-                  paneId,
-                  workspaceId: 'proj-1',
-                  initialUrl: DEFAULT_BROWSER_URL,
-                })
-              } catch (err) {
-                log.warn('createSession: createBrowserPane failed', err)
-              }
-            })()
-          }
-        } catch (err) {
-          log.warn('createSession failed', err)
-        } finally {
-          setPendingSpawns((c) => c - 1)
+        if (panes.length === 0) {
+          log.warn('createSession: no panes spawned; session not created')
+          return
         }
-      })()
-    },
-    [layoutRegistry, registerPending, service, setActiveSessionId]
-  )
+        panes[0] = { ...panes[0], active: true }
+
+        // Mirror the single-pane path's public restoreData contract.
+        const firstRestore = panes.find((p) => p.restoreData)?.restoreData
+        if (firstRestore) {
+          restoreDataRef.current.set(newSessionId, firstRestore)
+        }
+
+        const hasShell = panes.some((p) => p.kind !== 'browser')
+        const name = opts?.name ?? deriveSessionName(workingDirectory)
+
+        flushSync(() => {
+          setSessions((prev) => {
+            const newSession: Session = {
+              id: newSessionId,
+              projectId: 'proj-1',
+              name,
+              status: hasShell ? 'running' : 'idle',
+              workingDirectory,
+              agentType: 'generic',
+              layout,
+              activityPanelCollapsed: false,
+              panes,
+              createdAt: now,
+              lastActivityAt: now,
+              activity: { ...emptyActivity },
+            }
+            return [...prev, newSession]
+          })
+        })
+
+        setActiveSessionId(newSessionId)
+
+        // Browser panes: create the WebContents after state is committed
+        // (guarded — a startup/shutdown rejection must not surface).
+        for (const paneId of browserPaneIds) {
+          void (async (): Promise<void> => {
+            try {
+              await createBrowserPane({
+                sessionId: newSessionId,
+                paneId,
+                workspaceId: 'proj-1',
+                initialUrl: DEFAULT_BROWSER_URL,
+              })
+            } catch (err) {
+              log.warn('createSession: createBrowserPane failed', err)
+            }
+          })()
+        }
+      } catch (err) {
+        log.warn('createSession failed', err)
+      } finally {
+        setPendingSpawns((c) => c - 1)
+      }
+    })()
+  },
+  [layoutRegistry, registerPending, service, setActiveSessionId]
+)
 ```
 
 Add `PTYSpawnResult` to the terminal type imports if not already imported. Ensure `Pane`, `PaneLayoutId`, `Session`, `RestoreData`, `CreateSessionOptions`, `NewPaneSpec` are imported.
@@ -675,6 +749,7 @@ git commit -m "feat(sessions): createSession assembles multi-pane sessions"
 ## Task 5: `commands.ts` — dialog command registry
 
 **Files:**
+
 - Create: `src/features/sessions/components/NewSessionDialog/commands.ts` + `.test.ts`
 
 - [ ] **Step 1: Write failing test** — `commands.test.ts`:
@@ -685,7 +760,14 @@ import { COMMANDS, COMMAND_ORDER } from './commands'
 
 describe('COMMANDS', () => {
   test('orders claude, codex, kimi, opencode, browser, shell', () => {
-    expect(COMMAND_ORDER).toEqual(['claude', 'codex', 'kimi', 'opencode', 'browser', 'shell'])
+    expect(COMMAND_ORDER).toEqual([
+      'claude',
+      'codex',
+      'kimi',
+      'opencode',
+      'browser',
+      'shell',
+    ])
   })
   test('browser is a browser-kind entry with its own accent', () => {
     expect(COMMANDS.browser.kind).toBe('browser')
@@ -775,7 +857,9 @@ import { LayoutGlyph } from './LayoutGlyph'
 
 describe('LayoutGlyph', () => {
   test('renders an svg for each layout id', () => {
-    const { container, rerender } = render(<LayoutGlyph id="single" active={false} />)
+    const { container, rerender } = render(
+      <LayoutGlyph id="single" active={false} />
+    )
     expect(container.querySelector('svg')).not.toBeNull()
     rerender(<LayoutGlyph id="quad" active />)
     // quad draws a vertical + horizontal divider line
@@ -805,18 +889,64 @@ const SW = 1.4
 // so the caller controls active/inactive hue via text color.
 export const LayoutGlyph = ({ id, active }: LayoutGlyphProps): ReactElement => {
   const lines: Partial<Record<PaneLayoutId, ReactElement>> = {
-    vsplit: <line x1={W / 2} y1="1" x2={W / 2} y2={H - 1} stroke="currentColor" strokeWidth={SW} />,
-    hsplit: <line x1="1" y1={H / 2} x2={W - 1} y2={H / 2} stroke="currentColor" strokeWidth={SW} />,
+    vsplit: (
+      <line
+        x1={W / 2}
+        y1="1"
+        x2={W / 2}
+        y2={H - 1}
+        stroke="currentColor"
+        strokeWidth={SW}
+      />
+    ),
+    hsplit: (
+      <line
+        x1="1"
+        y1={H / 2}
+        x2={W - 1}
+        y2={H / 2}
+        stroke="currentColor"
+        strokeWidth={SW}
+      />
+    ),
     threeRight: (
       <>
-        <line x1="9.4" y1="1" x2="9.4" y2={H - 1} stroke="currentColor" strokeWidth={SW} />
-        <line x1="9.4" y1={H / 2} x2={W - 1} y2={H / 2} stroke="currentColor" strokeWidth={SW} />
+        <line
+          x1="9.4"
+          y1="1"
+          x2="9.4"
+          y2={H - 1}
+          stroke="currentColor"
+          strokeWidth={SW}
+        />
+        <line
+          x1="9.4"
+          y1={H / 2}
+          x2={W - 1}
+          y2={H / 2}
+          stroke="currentColor"
+          strokeWidth={SW}
+        />
       </>
     ),
     quad: (
       <>
-        <line x1={W / 2} y1="1" x2={W / 2} y2={H - 1} stroke="currentColor" strokeWidth={SW} />
-        <line x1="1" y1={H / 2} x2={W - 1} y2={H / 2} stroke="currentColor" strokeWidth={SW} />
+        <line
+          x1={W / 2}
+          y1="1"
+          x2={W / 2}
+          y2={H - 1}
+          stroke="currentColor"
+          strokeWidth={SW}
+        />
+        <line
+          x1="1"
+          y1={H / 2}
+          x2={W - 1}
+          y2={H / 2}
+          stroke="currentColor"
+          strokeWidth={SW}
+        />
       </>
     ),
   }
@@ -828,7 +958,16 @@ export const LayoutGlyph = ({ id, active }: LayoutGlyphProps): ReactElement => {
       className={active ? 'text-primary' : 'text-on-surface-muted'}
       aria-hidden="true"
     >
-      <rect x="1" y="1" width={W - 2} height={H - 2} rx="1.4" fill="none" stroke="currentColor" strokeWidth={SW} />
+      <rect
+        x="1"
+        y="1"
+        width={W - 2}
+        height={H - 2}
+        rx="1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={SW}
+      />
       {lines[id]}
     </svg>
   )
@@ -889,7 +1028,11 @@ export const PathCrumb = ({ path }: PathCrumbProps): ReactElement => {
         return (
           <Fragment key={`${part}-${i}`}>
             {i > 0 && <span className="text-on-surface-muted">/</span>}
-            <span className={last ? 'font-semibold text-primary' : 'text-on-surface-muted'}>
+            <span
+              className={
+                last ? 'font-semibold text-primary' : 'text-on-surface-muted'
+              }
+            >
               {part}
             </span>
           </Fragment>
@@ -1003,7 +1146,10 @@ export const WorkingDirectoryField = ({
   return (
     <div className="flex gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
-        <span className="material-symbols-outlined text-base text-primary-container" aria-hidden="true">
+        <span
+          className="material-symbols-outlined text-base text-primary-container"
+          aria-hidden="true"
+        >
           folder_open
         </span>
         <PathCrumb path={path} />
@@ -1049,7 +1195,14 @@ describe('LayoutPicker', () => {
   test('selecting a quick layout reports it', async () => {
     const onSelect = vi.fn()
     const user = userEvent.setup()
-    render(<LayoutPicker layoutId="single" pinnedLayout={null} onSelect={onSelect} onPin={vi.fn()} />)
+    render(
+      <LayoutPicker
+        layoutId="single"
+        pinnedLayout={null}
+        onSelect={onSelect}
+        onPin={vi.fn()}
+      />
+    )
     await user.click(screen.getByRole('button', { name: /vertical/i }))
     expect(onSelect).toHaveBeenCalledWith('vsplit')
   })
@@ -1058,7 +1211,14 @@ describe('LayoutPicker', () => {
     const onSelect = vi.fn()
     const onPin = vi.fn()
     const user = userEvent.setup()
-    render(<LayoutPicker layoutId="single" pinnedLayout={null} onSelect={onSelect} onPin={onPin} />)
+    render(
+      <LayoutPicker
+        layoutId="single"
+        pinnedLayout={null}
+        onSelect={onSelect}
+        onPin={onPin}
+      />
+    )
     await user.click(screen.getByRole('button', { name: /more layouts/i }))
     await user.click(screen.getByRole('menuitem', { name: /quad/i }))
     expect(onPin).toHaveBeenCalledWith('quad')
@@ -1077,7 +1237,13 @@ import type { PaneLayoutId } from '../../types'
 import { LayoutGlyph } from './LayoutGlyph'
 
 const QUICK_LAYOUTS: PaneLayoutId[] = ['single', 'vsplit', 'hsplit']
-const ALL_LAYOUTS: PaneLayoutId[] = ['single', 'vsplit', 'hsplit', 'threeRight', 'quad']
+const ALL_LAYOUTS: PaneLayoutId[] = [
+  'single',
+  'vsplit',
+  'hsplit',
+  'threeRight',
+  'quad',
+]
 
 interface LayoutPickerProps {
   layoutId: PaneLayoutId
@@ -1114,8 +1280,12 @@ export const LayoutPicker = ({
             }`}
           >
             <LayoutGlyph id={id} active={selected} />
-            <span className="flex-1 text-xs font-medium">{LAYOUTS[id].name}</span>
-            <span className="font-mono text-[10px] text-on-surface-muted">{LAYOUTS[id].capacity}</span>
+            <span className="flex-1 text-xs font-medium">
+              {LAYOUTS[id].name}
+            </span>
+            <span className="font-mono text-[10px] text-on-surface-muted">
+              {LAYOUTS[id].capacity}
+            </span>
           </button>
         )
       })}
@@ -1127,7 +1297,12 @@ export const LayoutPicker = ({
             aria-label="More layouts"
             className="flex w-full items-center gap-2 rounded-[9px] border border-dashed border-outline-variant/50 px-2.5 py-2 text-left text-xs text-on-surface-muted"
           >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">more_horiz</span>
+            <span
+              className="material-symbols-outlined text-base"
+              aria-hidden="true"
+            >
+              more_horiz
+            </span>
             <span className="flex-1">More layouts</span>
           </button>
         }
@@ -1176,15 +1351,31 @@ import { CommandBoard } from './CommandBoard'
 
 describe('CommandBoard', () => {
   test('renders one pane button per layout slot', () => {
-    render(<CommandBoard layoutId="vsplit" assign={['claude', 'shell']} onAssign={vi.fn()} />)
-    expect(screen.getAllByRole('button', { name: /choose command for pane/i })).toHaveLength(2)
+    render(
+      <CommandBoard
+        layoutId="vsplit"
+        assign={['claude', 'shell']}
+        onAssign={vi.fn()}
+      />
+    )
+    expect(
+      screen.getAllByRole('button', { name: /choose command for pane/i })
+    ).toHaveLength(2)
   })
 
   test('selecting a command assigns it to the pane index', async () => {
     const onAssign = vi.fn()
     const user = userEvent.setup()
-    render(<CommandBoard layoutId="vsplit" assign={['claude', 'shell']} onAssign={onAssign} />)
-    const paneButtons = screen.getAllByRole('button', { name: /choose command for pane/i })
+    render(
+      <CommandBoard
+        layoutId="vsplit"
+        assign={['claude', 'shell']}
+        onAssign={onAssign}
+      />
+    )
+    const paneButtons = screen.getAllByRole('button', {
+      name: /choose command for pane/i,
+    })
     await user.click(paneButtons[1])
     await user.click(screen.getByRole('menuitem', { name: /codex cli/i }))
     expect(onAssign).toHaveBeenCalledWith(1, 'codex')
@@ -1290,11 +1481,19 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { NewSessionDialog } from './NewSessionDialog'
 
-const setup = (overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}) => {
+const setup = (
+  overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}
+) => {
   const onCreate = vi.fn()
   const onOpenChange = vi.fn()
   render(
-    <NewSessionDialog open onOpenChange={onOpenChange} onCreate={onCreate} defaultCwd="~/code/vimeflow-core" {...overrides} />
+    <NewSessionDialog
+      open
+      onOpenChange={onOpenChange}
+      onCreate={onCreate}
+      defaultCwd="~/code/vimeflow-core"
+      {...overrides}
+    />
   )
   return { onCreate, onOpenChange }
 }
@@ -1302,15 +1501,31 @@ const setup = (overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}) 
 describe('NewSessionDialog', () => {
   test('name prefills from the default folder basename', () => {
     setup()
-    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('vimeflow-core')
+    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
+      'vimeflow-core'
+    )
   })
 
   test('reopening with a new defaultCwd refreshes path + name', () => {
     const { rerender } = render(
-      <NewSessionDialog open={false} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/alpha" />
+      <NewSessionDialog
+        open={false}
+        onOpenChange={vi.fn()}
+        onCreate={vi.fn()}
+        defaultCwd="~/code/alpha"
+      />
     )
-    rerender(<NewSessionDialog open onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/beta" />)
-    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('beta')
+    rerender(
+      <NewSessionDialog
+        open
+        onOpenChange={vi.fn()}
+        onCreate={vi.fn()}
+        defaultCwd="~/code/beta"
+      />
+    )
+    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
+      'beta'
+    )
   })
 
   test('Create emits onCreate with name, cwd, layout and panes', async () => {
@@ -1367,7 +1582,8 @@ interface NewSessionDialogProps {
 }
 
 const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
-const LABEL = 'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
+const LABEL =
+  'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
 
 export const NewSessionDialog = ({
   open,
@@ -1420,16 +1636,34 @@ export const NewSessionDialog = ({
     >
       {/* header */}
       <div className="flex items-center gap-2.5 border-b border-outline-variant/25 px-5 py-4">
-        <span className="material-symbols-outlined text-base text-primary-container" aria-hidden="true">bolt</span>
-        <span className="flex-1 text-[14.5px] font-semibold text-on-surface">New session</span>
-        <IconButton icon="close" label="Close" onClick={() => onOpenChange(false)} />
+        <span
+          className="material-symbols-outlined text-base text-primary-container"
+          aria-hidden="true"
+        >
+          bolt
+        </span>
+        <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
+          New session
+        </span>
+        <IconButton
+          icon="close"
+          label="Close"
+          onClick={() => onOpenChange(false)}
+        />
       </div>
 
       {/* scroll body */}
       <div className="vfscroll h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-4.5">
-        <label className={LABEL} htmlFor="new-session-name">Session name</label>
+        <label className={LABEL} htmlFor="new-session-name">
+          Session name
+        </label>
         <div className="mt-2 flex items-center gap-2.5 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
-          <span className="material-symbols-outlined text-[15px] text-on-surface-muted" aria-hidden="true">edit</span>
+          <span
+            className="material-symbols-outlined text-[15px] text-on-surface-muted"
+            aria-hidden="true"
+          >
+            edit
+          </span>
           <input
             id="new-session-name"
             aria-label="Session name"
@@ -1503,8 +1737,16 @@ export const NewSessionDialog = ({
         <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
           {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} · {folder}
         </span>
-        <Button variant="default" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button variant="flat-primary" leadingIcon="bolt" onClick={handleCreate}>Create session</Button>
+        <Button variant="default" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="flat-primary"
+          leadingIcon="bolt"
+          onClick={handleCreate}
+        >
+          Create session
+        </Button>
       </div>
     </Dialog>
   )
@@ -1597,6 +1839,7 @@ git commit -m "feat(workspace): new-session dialog open-state hook"
 ## Task 13: Wire into `WorkspaceView` + overlay registration
 
 **Files:**
+
 - Modify: `src/features/workspace/WorkspaceView.tsx`
 - Modify: `src/features/workspace/overlays/WorkspaceOverlayRegistrations.tsx` + `.test.tsx`
 
@@ -1608,12 +1851,12 @@ git commit -m "feat(workspace): new-session dialog open-state hook"
   - add (next to the `unsaved-changes-dialog` call):
 
 ```tsx
-  useOverlayRegistration({
-    id: 'new-session-dialog',
-    plane: 'dialog',
-    isOpen: newSessionDialogOpen,
-    nativeOcclusion: 'global',
-  })
+useOverlayRegistration({
+  id: 'new-session-dialog',
+  plane: 'dialog',
+  isOpen: newSessionDialogOpen,
+  nativeOcclusion: 'global',
+})
 ```
 
 - [ ] **Step 3: Run — expect PASS.** `npx vitest run src/features/workspace/overlays/WorkspaceOverlayRegistrations.test.tsx`
@@ -1626,51 +1869,54 @@ import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 ```
 
-  - Instantiate the hook (near other dialog state, ~line 1016):
+- Instantiate the hook (near other dialog state, ~line 1016):
 
 ```tsx
-  const newSessionDialog = useNewSessionDialog()
+const newSessionDialog = useNewSessionDialog()
 ```
 
-  - Add an open handler that snapshots the active session's cwd (near `handleCreateSession`, ~line 1464):
+- Add an open handler that snapshots the active session's cwd (near `handleCreateSession`, ~line 1464):
 
 ```tsx
-  const handleOpenNewSession = useCallback((): void => {
-    const activeCwd = sessions.find((s) => s.id === activeSessionId)?.workingDirectory
-    newSessionDialog.openWith(activeCwd)
-  }, [activeSessionId, newSessionDialog, sessions])
+const handleOpenNewSession = useCallback((): void => {
+  const activeCwd = sessions.find(
+    (s) => s.id === activeSessionId
+  )?.workingDirectory
+  newSessionDialog.openWith(activeCwd)
+}, [activeSessionId, newSessionDialog, sessions])
 ```
 
-  - Point the button (`~line 2551`) and the shortcut (`~line 1635`) at the opener instead of `handleCreateSession`:
+- Point the button (`~line 2551`) and the shortcut (`~line 1635`) at the opener instead of `handleCreateSession`:
 
 ```tsx
-                      onClick={handleOpenNewSession}
+onClick = { handleOpenNewSession }
 ```
+
 ```tsx
     onNewSession: handleOpenNewSession,
 ```
 
-  - Pass the flag to the overlay registrations (in the `<WorkspaceOverlayRegistrations …>` props, ~line 2405):
+- Pass the flag to the overlay registrations (in the `<WorkspaceOverlayRegistrations …>` props, ~line 2405):
 
 ```tsx
         newSessionDialogOpen={newSessionDialog.open}
 ```
 
-  - Render the dialog (near the `<UnsavedChangesDialog … />` render, ~line 2841):
+- Render the dialog (near the `<UnsavedChangesDialog … />` render, ~line 2841):
 
 ```tsx
-      <NewSessionDialog
-        open={newSessionDialog.open}
-        onOpenChange={newSessionDialog.setOpen}
-        defaultCwd={newSessionDialog.defaultCwd}
-        onCreate={(opts) => {
-          createSession(opts)
-          claimTerminal()
-        }}
-      />
+<NewSessionDialog
+  open={newSessionDialog.open}
+  onOpenChange={newSessionDialog.setOpen}
+  defaultCwd={newSessionDialog.defaultCwd}
+  onCreate={(opts) => {
+    createSession(opts)
+    claimTerminal()
+  }}
+/>
 ```
 
-  - Leave `handleCreateSession` in place — it still backs the command-palette command and auto-create (no change needed there).
+- Leave `handleCreateSession` in place — it still backs the command-palette command and auto-create (no change needed there).
 
 - [ ] **Step 5: Add wiring tests** to `WorkspaceView`'s test suite (or the nearest existing WorkspaceView test file), mirroring the existing WorkspaceView test setup. Two cases:
   - **Button:** clicking `sidebar-new-session` opens the dialog (assert `role="dialog"` with name "New session" appears) and does NOT instant-create (`createSession` mock not called on click).

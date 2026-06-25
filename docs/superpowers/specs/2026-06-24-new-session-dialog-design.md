@@ -63,7 +63,7 @@ component primitives and theme tokens.
 ### Non-goals (v1) — deliberate simplifications
 
 - **No agent-CLI auto-launch.** The per-pane command picker records a selection;
-  in v1 its only *executed* effects are the pane's `kind` and its label — no CLI
+  in v1 its only _executed_ effects are the pane's `kind` and its label — no CLI
   is spawned. Picking Claude / Codex / Kimi / opencode creates a plain
   `kind: 'shell'` pane (`agentType: 'generic'`; the existing reactive agent
   detection is unchanged) with `userLabel` set to the command's display name so
@@ -87,15 +87,15 @@ component primitives and theme tokens.
 All under `src/features/sessions/components/NewSessionDialog/`, each with a
 co-located `.test.tsx`:
 
-| File | Responsibility |
-|------|----------------|
-| `NewSessionDialog.tsx` | The modal: `Dialog` (behavior + house panel) wrapping **custom** header / scroll-body / footer regions — not the `Dialog.Header/Body/Footer` helpers (see §3.1); owns dialog-local state; emits `onCreate(opts)` / `onOpenChange`. |
-| `LayoutPicker.tsx` | Left column: quick-layout list + "More layouts" `Menu`. |
-| `LayoutGlyph.tsx` | Inline-SVG glyph per layout (ported from the handoff, theme-colored). |
-| `CommandBoard.tsx` | CSS-grid miniature of the chosen layout; each cell is a pane button opening a per-pane command `Menu`. |
-| `WorkingDirectoryField.tsx` | Path crumb + Browse… button (calls the folder-picker wrapper). |
-| `PathCrumb.tsx` | Renders a path as colored segments split on a separator-agnostic boundary (`/[/\\]+/`) so native POSIX, Windows-drive, and UNC paths all segment. |
-| `commands.ts` | The dialog's command list (claude / codex / kimi / opencode / browser / shell), derived from `src/agents/registry.ts` plus a local `browser` entry; maps each command → `{ id, label, kind: 'shell' \| 'browser', accentVar, glyph, Icon? }`. No pane `agentType` field — v1 panes are always `agentType: 'generic'` (see §4); the command only determines `kind` and, for agent picks, the pane `userLabel`. |
+| File                        | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NewSessionDialog.tsx`      | The modal: `Dialog` (behavior + house panel) wrapping **custom** header / scroll-body / footer regions — not the `Dialog.Header/Body/Footer` helpers (see §3.1); owns dialog-local state; emits `onCreate(opts)` / `onOpenChange`.                                                                                                                                                                            |
+| `LayoutPicker.tsx`          | Left column: quick-layout list + "More layouts" `Menu`.                                                                                                                                                                                                                                                                                                                                                       |
+| `LayoutGlyph.tsx`           | Inline-SVG glyph per layout (ported from the handoff, theme-colored).                                                                                                                                                                                                                                                                                                                                         |
+| `CommandBoard.tsx`          | CSS-grid miniature of the chosen layout; each cell is a pane button opening a per-pane command `Menu`.                                                                                                                                                                                                                                                                                                        |
+| `WorkingDirectoryField.tsx` | Path crumb + Browse… button (calls the folder-picker wrapper).                                                                                                                                                                                                                                                                                                                                                |
+| `PathCrumb.tsx`             | Renders a path as colored segments split on a separator-agnostic boundary (`/[/\\]+/`) so native POSIX, Windows-drive, and UNC paths all segment.                                                                                                                                                                                                                                                             |
+| `commands.ts`               | The dialog's command list (claude / codex / kimi / opencode / browser / shell), derived from `src/agents/registry.ts` plus a local `browser` entry; maps each command → `{ id, label, kind: 'shell' \| 'browser', accentVar, glyph, Icon? }`. No pane `agentType` field — v1 panes are always `agentType: 'generic'` (see §4); the command only determines `kind` and, for agent picks, the pane `userLabel`. |
 
 ### 2.2 Dialog-local state
 
@@ -136,7 +136,7 @@ Derived: `layout` (registry `LayoutShape`), `visibleLayouts`, footer summary.
   pane index. `assign` is a stable array indexed by pane slot whose entries
   persist across layout changes (so toggling layouts never loses a pick); a slot
   that has never been assigned defaults to `shell`. Layout capacity only changes
-  which slots are *visible* — on **Create**, only `assign[0..capacity-1]` are
+  which slots are _visible_ — on **Create**, only `assign[0..capacity-1]` are
   consumed.
 - **Create session** builds `panes` from `assign[0..capacity-1]`, calls
   `onCreate({ name, cwd: path, layout: layoutId, panes })`, then closes.
@@ -215,14 +215,14 @@ and the dimmest text), but this dialog does not use status colors — and where 
 token differs, the semantic token wins (theme-consistency outranks matching the
 prototype's literal hue). Mapping for the tokens the dialog actually uses:
 
-| Handoff token | Real token / Tailwind utility |
-|---|---|
-| `surface-0` / `-1` / `-2` / `-3` | `surface-container-lowest` / `surface-container-low` / `surface-container` / `surface-container-high` |
-| `bg` | `surface` |
-| `text` / `text-1` / `text-2` / `text-3` | `on-surface` / `on-surface-variant` / `on-surface-muted` / dimmest muted token (matched by Catppuccin hue in `obsidian-lens.ts`) |
-| `accent` / `accent-bright` | `primary-container` (#cba6f7) / `primary` (#e2c7ff) |
-| `outline` | `outline-variant` |
-| `agent-claude` / `codex` / `kimi` / `opencode` / **`vbrowser` → `browser`** / `shell` | `--color-agent-{id}-accent` (+ `-dim` / `-soft` / `-on-accent`) |
+| Handoff token                                                                         | Real token / Tailwind utility                                                                                                    |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `surface-0` / `-1` / `-2` / `-3`                                                      | `surface-container-lowest` / `surface-container-low` / `surface-container` / `surface-container-high`                            |
+| `bg`                                                                                  | `surface`                                                                                                                        |
+| `text` / `text-1` / `text-2` / `text-3`                                               | `on-surface` / `on-surface-variant` / `on-surface-muted` / dimmest muted token (matched by Catppuccin hue in `obsidian-lens.ts`) |
+| `accent` / `accent-bright`                                                            | `primary-container` (#cba6f7) / `primary` (#e2c7ff)                                                                              |
+| `outline`                                                                             | `outline-variant`                                                                                                                |
+| `agent-claude` / `codex` / `kimi` / `opencode` / **`vbrowser` → `browser`** / `shell` | `--color-agent-{id}-accent` (+ `-dim` / `-soft` / `-on-accent`)                                                                  |
 
 The handoff's `vbrowser` maps to the real agent id `browser` (there is no
 `vbrowser` token). Tokens are role-based: if the active theme changes, semantics
@@ -243,7 +243,7 @@ alpha by hand. The dialog ships zero color literals.
   `font-mono` (JetBrains Mono). Both are already loaded.
 - Icons = Material Symbols spans (existing system):
   `bolt, close, edit, folder_open, drive_folder_upload, more_horiz,
-  expand_more, expand_less, check`.
+expand_more, expand_less, check`.
 - Command chips render `AgentDef.Icon` (brand SVG) when present, else the
   registry `glyph`. The `browser` command (no brand icon) uses a Material Symbol
   (`language`) tinted with the browser accent.
@@ -262,9 +262,9 @@ interface CommandDef {
   id: CommandId
   label: string
   kind: 'shell' | 'browser'
-  accentVar: string   // e.g. '--color-agent-claude-accent'
+  accentVar: string // e.g. '--color-agent-claude-accent'
   glyph: string
-  Icon?: AgentIcon    // brand SVG when present
+  Icon?: AgentIcon // brand SVG when present
 }
 ```
 
@@ -307,7 +307,7 @@ createSession(opts?: CreateSessionOptions): void
     shell pane because `single` has capacity 1.)
   - Each spec resolves via `commandToPane`: **shell / agent** → the same
     `service.spawn({ cwd, env: {}, enableAgentBridge: true })` call the current
-    single-pane path uses — `env: {}` supplies no *extra* variables; the backend
+    single-pane path uses — `env: {}` supplies no _extra_ variables; the backend
     inherits the parent process environment (PATH / HOME / locale), so shells
     launch normally (`agentType: 'generic'`; `userLabel` set for agent picks);
     **browser** → a browser pane via the existing `createBrowserSession` /
@@ -319,7 +319,7 @@ createSession(opts?: CreateSessionOptions): void
     `name = opts.name ?? deriveSessionName(cwd)` (the shared rule in §2.6 — the
     folder basename, falling back to `'session N'` for an empty basename or a
     bare root/home token like `/`, a drive root, or `~`), `workingDirectory =
-    cwd`, `layout`,
+cwd`, `layout`,
     `panes[]` in slot order (first pane active), `placements` omitted (implicit,
     via `panes[]` order + the layout's `addOrder`, matching restore and the
     current single-pane path). One atomic `setSessions` append (`flushSync` as
@@ -339,7 +339,9 @@ createSession(opts?: CreateSessionOptions): void
 - `electron/main.ts` — register:
   ```ts
   ipcMain.handle(DIALOG_PICK_DIRECTORY, async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
+    const win =
+      BrowserWindow.fromWebContents(e.sender) ??
+      BrowserWindow.getFocusedWindow()
     const r = await dialog.showOpenDialog(win ?? undefined, {
       properties: ['openDirectory', 'createDirectory'],
       title: 'Choose working directory',

@@ -1,4 +1,9 @@
-import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import {
+  BrowserWindow,
+  dialog,
+  type IpcMain,
+  type IpcMainInvokeEvent,
+} from 'electron'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 
 // Native OS directory picker. Returns the absolute path, or null on cancel.

@@ -18,19 +18,26 @@ describe('setupDialogIpc', () => {
     const handlers = new Map<string, (e: unknown) => Promise<string | null>>()
 
     const ipcMain = {
-      handle: vi.fn((channel: string, fn: (e: unknown) => Promise<string | null>) => {
-        handlers.set(channel, fn)
-      }),
+      handle: vi.fn(
+        (channel: string, fn: (e: unknown) => Promise<string | null>) => {
+          handlers.set(channel, fn)
+        }
+      ),
     }
     setupDialogIpc(ipcMain as never)
     const handler = handlers.get(DIALOG_PICK_DIRECTORY)
-    if (!handler) {throw new Error('handler not registered')}
+    if (!handler) {
+      throw new Error('handler not registered')
+    }
 
     return handler
   }
 
   test('returns the chosen directory path', async () => {
-    dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/Users/x/proj'] })
+    dialog.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/Users/x/proj'],
+    })
     const handler = register()
     await expect(handler({ sender: {} })).resolves.toBe('/Users/x/proj')
     expect(dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {

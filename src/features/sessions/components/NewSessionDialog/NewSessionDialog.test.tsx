@@ -3,24 +3,47 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { NewSessionDialog } from './NewSessionDialog'
 
-const setup = (overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}): { onCreate: ReturnType<typeof vi.fn>; onOpenChange: ReturnType<typeof vi.fn> } => {
+const setup = (
+  overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}
+): {
+  onCreate: ReturnType<typeof vi.fn>
+  onOpenChange: ReturnType<typeof vi.fn>
+} => {
   const onCreate = vi.fn()
   const onOpenChange = vi.fn()
 
   render(
-    <NewSessionDialog open onOpenChange={onOpenChange} onCreate={onCreate} defaultCwd="~/code/vimeflow-core" {...overrides} />
+    <NewSessionDialog
+      open
+      onOpenChange={onOpenChange}
+      onCreate={onCreate}
+      defaultCwd="~/code/vimeflow-core"
+      {...overrides}
+    />
   )
 
   return { onCreate, onOpenChange }
 }
 
-const renderWithOpen = (open: boolean, cwd: string): ReturnType<typeof render> =>
-  render(<NewSessionDialog open={open} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd={cwd} />)
+const renderWithOpen = (
+  open: boolean,
+  cwd: string
+): ReturnType<typeof render> =>
+  render(
+    <NewSessionDialog
+      open={open}
+      onOpenChange={vi.fn()}
+      onCreate={vi.fn()}
+      defaultCwd={cwd}
+    />
+  )
 
 describe('NewSessionDialog', () => {
   test('name prefills from the default folder basename', () => {
     setup()
-    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('vimeflow-core')
+    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
+      'vimeflow-core'
+    )
   })
 
   test('reopening with a new defaultCwd refreshes path + name', () => {
@@ -28,8 +51,17 @@ describe('NewSessionDialog', () => {
     const opened = true
     const { rerender } = renderWithOpen(closed, '~/code/alpha')
 
-    rerender(<NewSessionDialog open={opened} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/beta" />)
-    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('beta')
+    rerender(
+      <NewSessionDialog
+        open={opened}
+        onOpenChange={vi.fn()}
+        onCreate={vi.fn()}
+        defaultCwd="~/code/beta"
+      />
+    )
+    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
+      'beta'
+    )
   })
 
   test('Create emits onCreate with name, cwd, layout and panes', async () => {

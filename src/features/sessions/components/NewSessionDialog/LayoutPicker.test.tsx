@@ -7,7 +7,14 @@ describe('LayoutPicker', () => {
   test('selecting a quick layout reports it', async () => {
     const onSelect = vi.fn()
     const user = userEvent.setup()
-    render(<LayoutPicker layoutId="single" pinnedLayout={null} onSelect={onSelect} onPin={vi.fn()} />)
+    render(
+      <LayoutPicker
+        layoutId="single"
+        pinnedLayout={null}
+        onSelect={onSelect}
+        onPin={vi.fn()}
+      />
+    )
     await user.click(screen.getByRole('button', { name: /vertical/i }))
     expect(onSelect).toHaveBeenCalledWith('vsplit')
   })
@@ -16,7 +23,14 @@ describe('LayoutPicker', () => {
     const onSelect = vi.fn()
     const onPin = vi.fn()
     const user = userEvent.setup()
-    render(<LayoutPicker layoutId="single" pinnedLayout={null} onSelect={onSelect} onPin={onPin} />)
+    render(
+      <LayoutPicker
+        layoutId="single"
+        pinnedLayout={null}
+        onSelect={onSelect}
+        onPin={onPin}
+      />
+    )
     await user.click(screen.getByRole('button', { name: /more layouts/i }))
     await user.click(screen.getByRole('menuitem', { name: /quad/i }))
     expect(onPin).toHaveBeenCalledWith('quad')

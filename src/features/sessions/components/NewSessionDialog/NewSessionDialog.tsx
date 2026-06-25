@@ -17,7 +17,8 @@ interface NewSessionDialogProps {
 }
 
 const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
-const LABEL = 'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
+const LABEL =
+  'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
 
 export const NewSessionDialog = ({
   open,
@@ -76,16 +77,34 @@ export const NewSessionDialog = ({
     >
       {/* header */}
       <div className="flex items-center gap-2.5 border-b border-outline-variant/25 px-5 py-4">
-        <span className="material-symbols-outlined text-base text-primary-container" aria-hidden="true">bolt</span>
-        <span className="flex-1 text-[14.5px] font-semibold text-on-surface">New session</span>
-        <IconButton icon="close" label="Close" onClick={() => onOpenChange(false)} />
+        <span
+          className="material-symbols-outlined text-base text-primary-container"
+          aria-hidden="true"
+        >
+          bolt
+        </span>
+        <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
+          New session
+        </span>
+        <IconButton
+          icon="close"
+          label="Close"
+          onClick={() => onOpenChange(false)}
+        />
       </div>
 
       {/* scroll body */}
       <div className="h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-5">
-        <label className={LABEL} htmlFor="new-session-name">Session name</label>
+        <label className={LABEL} htmlFor="new-session-name">
+          Session name
+        </label>
         <div className="mt-2 flex items-center gap-2.5 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
-          <span className="material-symbols-outlined text-[15px] text-on-surface-muted" aria-hidden="true">edit</span>
+          <span
+            className="material-symbols-outlined text-[15px] text-on-surface-muted"
+            aria-hidden="true"
+          >
+            edit
+          </span>
           <input
             id="new-session-name"
             aria-label="Session name"
@@ -161,8 +180,16 @@ export const NewSessionDialog = ({
         <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
           {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} · {folder}
         </span>
-        <Button variant="default" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button variant="flat-primary" leadingIcon="bolt" onClick={handleCreate}>Create session</Button>
+        <Button variant="default" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button
+          variant="flat-primary"
+          leadingIcon="bolt"
+          onClick={handleCreate}
+        >
+          Create session
+        </Button>
       </div>
     </Dialog>
   )
