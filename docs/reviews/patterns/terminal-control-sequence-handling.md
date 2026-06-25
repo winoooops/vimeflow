@@ -2,8 +2,8 @@
 id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
-last_updated: 2026-06-21
-ref_count: 9
+last_updated: 2026-06-25
+ref_count: 12
 ---
 
 # Terminal Control Sequence Handling
@@ -252,4 +252,40 @@ all required state through pure display-state helpers.
 - **File:** `electron/ghostty-render-state-main.ts` L420
 - **Finding:** `CursorVisibilityScanner` kept an unterminated private CSI sequence from `ESC[?` onward with no size limit. A process could stream arbitrary parameter bytes without a final byte and grow the Electron main-process buffer indefinitely.
 - **Fix:** Added a private-CSI pending-buffer limit matching the OSC limit and discard overlong pending sequences before they can accumulate. Added a regression that writes an over-limit unterminated private CSI sequence, then verifies a later suffix cannot complete it into a cursor visibility toggle.
+- **Commit:** same commit as this entry
+
+### 27. Restored buffered OSC queries must be answered before cursor dedupe
+
+- **Source:** github-codex-connector | PR #622 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L602
+- **Finding:** The Ghostty color-query responder only ran after a live PTY event passed the cursor-dedupe guard. When a restored pane wrote buffered `OSC 10/11` queries before the live subscription attached, those bytes advanced `cursorRef`; the later `notifyPaneReady` drain then dropped the same chunk as already written, so Codex never received the foreground/background color response.
+- **Fix:** Lifted color-query handling into a shared callback that accepts the target session id, scans restored chunks before writing them, and scans live/drain chunks before cursor dedupe. Added a regression test for a restored buffered `OSC 10` query.
+- **Commit:** same commit as this entry
+
+### 28. Restored buffered OSC query drain replay must not answer twice
+
+- **Source:** github-codex-connector | PR #622 round 2 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L631
+- **Finding:** The restore path scanned buffered `OSC 10/11` color-query chunks before writing them, but the live/drain handler scanned the same replayed bytes before checking the cursor dedupe boundary. A restored query could therefore be answered once during restore and again when `notifyPaneReady` replayed the overlapping buffered range.
+- **Fix:** Moved the live/drain color-query scan inside the existing `offsetStart >= cursorRef.current` guard so replayed chunks are dropped before generating protocol responses, while preserving the restore-loop scan for restored chunks. Added a regression that replays the restored query through `onPaneReady` and asserts only one PTY response is sent.
+- **Commit:** same commit as this entry
+
+### 29. OSC query carry must survive temporarily unavailable response data
+
+- **Source:** github-claude | PR #622 round 3 | 2026-06-25
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/useTerminal.ts`
+- **Finding:** The Ghostty color-query responder advanced its scan carry before confirming that terminal CSS custom properties were available and a response could be formatted. If a complete `OSC 10/11` query arrived before the CSS vars resolved, the query was consumed with no PTY reply and no later retry path.
+- **Fix:** The hook now verifies the terminal color CSS vars before consuming the scanner result; when the vars are absent it retains a retry carry long enough to include a complete longest query. The carry size is derived from the known query code and terminator sets, and regressions cover retrying a complete ST-terminated query plus carrying a split ST terminator.
+- **Commit:** same commit as this entry
+
+### 30. Retry carry must preserve complete OSC query matches, not chunk tails
+
+- **Source:** github-claude | PR #622 round 4 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L335-341
+- **Finding:** When terminal CSS variables were temporarily unavailable, `retainTerminalColorQueryRetryCarry` kept only the tail of `previousCarry + data`. If an `OSC 10/11` query appeared at the start of a PTY chunk followed by startup banner text, the retained tail contained only non-query output, so the retry scan found nothing and Codex never received the color response.
+- **Fix:** Preserve the matched OSC query sequences themselves when a retry is needed, while also appending the normal trailing carry so a complete query followed by a split query is not lost. Added utility coverage for query-plus-trailing-output and complete-plus-incomplete query chunks, and widened the hook restore retry test to include trailing banner text. Also documented that the module-level global regex must remain paired with `matchAll` to avoid leaking `lastIndex` across scans.
 - **Commit:** same commit as this entry

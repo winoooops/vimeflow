@@ -578,6 +578,39 @@ mod tests {
     }
 
     #[test]
+    fn scrolling_into_history_hides_the_cursor() {
+        // When the viewport scrolls up into history, the live cursor sits below
+        // the visible rows. It must NOT render as a stray block (regression: a
+        // phantom cursor appeared bottom-right when scrolled up in codex/kimi).
+        // libghostty's cursor_viewport reports the cursor only while it is inside
+        // the viewport, so the snapshot cursor must be None once scrolled off the
+        // tail, and return when scrolled back to the bottom.
+        let mut state = make_state(80, 3);
+        fill_past_viewport(&mut state);
+
+        let at_bottom = state.snapshot().expect("snapshot at bottom");
+        assert!(
+            at_bottom.cursor.is_some(),
+            "cursor is in view at the live tail, got {:?}",
+            at_bottom.cursor
+        );
+
+        let scrolled = state.scroll(-8).expect("scroll up into history");
+        assert!(
+            scrolled.cursor.is_none(),
+            "cursor must be hidden when scrolled off the live tail, got {:?}",
+            scrolled.cursor
+        );
+
+        let back = state.scroll(1000).expect("scroll back to the tail");
+        assert!(
+            back.cursor.is_some(),
+            "cursor returns when scrolled back to the live tail, got {:?}",
+            back.cursor
+        );
+    }
+
+    #[test]
     fn scroll_method_publishes_latest_snapshot_for_reattach() {
         let (handle, reader) = GhosttySessionHandle::new();
         let mut state = reader.create_state(80, 3).expect("create state");

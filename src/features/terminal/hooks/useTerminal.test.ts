@@ -8,6 +8,15 @@ import type {
   TerminalOutputWriter,
   TerminalSurface,
 } from '../types'
+import { formatTerminalColorResponse } from '../terminalColorQuery'
+
+type DrainHandler = (data: string, offsetStart: number, byteLen: number) => void
+
+function expectDrainHandler(
+  handler: DrainHandler | null
+): asserts handler is DrainHandler {
+  expect(handler).not.toBeNull()
+}
 
 // Mock terminal surface with test helpers
 interface MockTerminal extends TerminalSurface {
@@ -160,6 +169,54 @@ describe('useTerminal', () => {
       phase: 'live',
     })
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
+  })
+
+  test('answers Codex OSC 11 background color queries from the surface theme', async () => {
+    // Codex queries the terminal background (\x1b]11;?) to tint its input
+    // composer. libghostty never replies, so the Ghostty surface must answer
+    // from its --terminal-background theme var or Codex renders a bar-less
+    // composer. (xterm replies on its own; an empty var read self-gates here.)
+    // cspell:ignore ghostty
+    const surface = mockTerminal as unknown as { element: HTMLElement }
+    surface.element = document.createElement('div')
+    // Built without a literal to satisfy vimeflow/no-hardcoded-colors.
+    const backgroundHex = ['#', '181825'].join('')
+
+    const getComputedStyleSpy = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockReturnValue({
+        getPropertyValue: (property: string) =>
+          property === '--terminal-background' ? backgroundHex : '',
+      } as unknown as CSSStyleDeclaration)
+
+    try {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          output: mockOutput,
+          service: mockService,
+          cwd: '/home/user',
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      mockService.emit('data', {
+        sessionId: result.current.session!.id,
+        data: '\x1b]11;?\x07',
+      })
+
+      await waitFor(() => {
+        expect(mockService.write).toHaveBeenCalledWith({
+          sessionId: result.current.session!.id,
+          data: '\x1b]11;rgb:1818/1818/2525\x1b\\',
+        })
+      })
+    } finally {
+      getComputedStyleSpy.mockRestore()
+    }
   })
 
   test('writes PTY raw bytes payload to terminal output chunks', async () => {
@@ -892,6 +949,225 @@ describe('useTerminal', () => {
       // Should write non-overlapping events at/above cursor
       expect(writes).toContain('AT')
       expect(writes).toContain('ABOVE')
+    })
+
+    test('answers restored buffered OSC color queries before drain dedupe can drop them', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+      const foregroundResponseRgb = ['cd', 'cd', '/d6d6/f4f4'].join('')
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) =>
+            property === '--terminal-foreground' ? foregroundHex : '',
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: '\x1b]10;?\x07',
+                  offsetStart: 100,
+                  byteLen: 7,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+        })
+
+        await waitFor(() => {
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: `\x1b]10;rgb:${foregroundResponseRgb}\x1b\\`,
+          })
+        })
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
+    })
+
+    test('does not answer restored OSC color queries again during drain replay', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+
+      const foregroundResponse = formatTerminalColorResponse(
+        'foreground',
+        foregroundHex
+      )
+
+      if (foregroundResponse === null) {
+        throw new Error('expected valid foreground response')
+      }
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) =>
+            property === '--terminal-foreground' ? foregroundHex : '',
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const query = '\x1b]10;?\x07'
+
+        const drainHandlerRef: { current: DrainHandler | null } = {
+          current: null,
+        }
+
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            onPaneReady: (_ptyId, handler) => {
+              drainHandlerRef.current = handler
+
+              return vi.fn()
+            },
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: query,
+                  offsetStart: 100,
+                  byteLen: 7,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+        })
+
+        await waitFor(() => {
+          expect(drainHandlerRef.current).not.toBeNull()
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: foregroundResponse,
+          })
+        })
+
+        const drainHandler = drainHandlerRef.current
+        expectDrainHandler(drainHandler)
+        drainHandler(query, 100, 7)
+
+        expect(mockService.write).toHaveBeenCalledTimes(1)
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
+    })
+
+    test('retries restored OSC color queries when terminal CSS vars appear later', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+      const backgroundHex = ['#', '1e1e2e'].join('')
+
+      const foregroundResponse = formatTerminalColorResponse(
+        'foreground',
+        foregroundHex
+      )
+
+      if (foregroundResponse === null) {
+        throw new Error('expected valid foreground response')
+      }
+
+      let stylesReady = false
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) => {
+            if (!stylesReady) {
+              return ''
+            }
+
+            if (property === '--terminal-foreground') {
+              return foregroundHex
+            }
+
+            return property === '--terminal-background' ? backgroundHex : ''
+          },
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const query = '\x1b]10;?\x1b\\'
+        const bufferedData = `${query}welcome banner`
+
+        const drainHandlerRef: { current: DrainHandler | null } = {
+          current: null,
+        }
+
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            onPaneReady: (_ptyId, handler) => {
+              drainHandlerRef.current = handler
+
+              return vi.fn()
+            },
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: bufferedData,
+                  offsetStart: 100,
+                  byteLen: bufferedData.length,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+          expect(drainHandlerRef.current).not.toBeNull()
+        })
+
+        expect(mockService.write).not.toHaveBeenCalled()
+
+        stylesReady = true
+        const drainHandler = drainHandlerRef.current
+        expectDrainHandler(drainHandler)
+        drainHandler('', 100 + bufferedData.length, 0)
+
+        await waitFor(() => {
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: foregroundResponse,
+          })
+        })
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
     })
 
     test('does not kill session on unmount when restored', async () => {

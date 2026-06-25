@@ -7,6 +7,11 @@ import type {
   TerminalSession,
   TerminalSurface,
 } from '../types'
+import {
+  formatTerminalColorResponse,
+  retainTerminalColorQueryRetryCarry,
+  scanTerminalColorQueriesWithCarry,
+} from '../terminalColorQuery'
 
 /**
  * Data required to restore a terminal session from snapshot + live events.
@@ -241,6 +246,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // so a buffered drain that overlaps a live event is filtered (no doubled bytes).
   const cursorRef = useRef<number>(restoredFrom?.replayEndOffset ?? 0)
 
+  // Carries an incomplete OSC 10/11 color query across PTY event boundaries so a
+  // query split between two chunks is still detected and answered exactly once.
+  const colorQueryCarryRef = useRef('')
+
   // Latest onPaneReady, kept in a ref so the data-subscribe effect can call
   // it without depending on the function identity (which would re-run the
   // effect and re-subscribe).
@@ -287,6 +296,67 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       })
     },
     []
+  )
+
+  const respondToColorQueries = useCallback(
+    (sessionId: string, data: string): void => {
+      const element = terminal?.element
+
+      if (!element) {
+        return
+      }
+
+      const result = scanTerminalColorQueriesWithCarry(
+        data,
+        colorQueryCarryRef.current
+      )
+      const targets = result.targets
+
+      if (targets.length === 0) {
+        colorQueryCarryRef.current = result.carry
+
+        return
+      }
+
+      const styles = window.getComputedStyle(element)
+
+      const responses = targets.map((target) => {
+        const hex = styles
+          .getPropertyValue(
+            target === 'foreground'
+              ? '--terminal-foreground'
+              : '--terminal-background'
+          )
+          .trim()
+
+        return hex ? formatTerminalColorResponse(target, hex) : null
+      })
+
+      if (responses.some((response) => response === null)) {
+        colorQueryCarryRef.current = retainTerminalColorQueryRetryCarry(
+          data,
+          colorQueryCarryRef.current
+        )
+
+        return
+      }
+
+      colorQueryCarryRef.current = result.carry
+
+      for (const response of responses) {
+        if (response) {
+          const writeResponse = async (): Promise<void> => {
+            try {
+              await service.write({ sessionId, data: response })
+            } catch {
+              // Session may have exited between the query and our reply.
+            }
+          }
+          void writeResponse()
+        }
+      }
+    },
+    [service, terminal]
   )
 
   // Store restoredFrom in a ref to prevent effect dependency cycles
@@ -435,6 +505,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         if (restoredOutputChunks.length > 0) {
           restoredOutputChunks.forEach((chunk, index) => {
+            respondToColorQueries(restore.sessionId, chunk.text)
+
             const isLastChunk = index === restoredOutputChunks.length - 1
             if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
               output.writeOutput(chunk, finishRestore)
@@ -551,7 +623,15 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
     // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
     // Including it would cause infinite loops as object identity changes.
-  }, [terminal, output, service, shell, env, writeLiveTerminalOutput])
+  }, [
+    terminal,
+    output,
+    service,
+    shell,
+    env,
+    writeLiveTerminalOutput,
+    respondToColorQueries,
+  ])
 
   // Listen to PTY data events
   useEffect(() => {
@@ -572,6 +652,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
+          respondToColorQueries(session.id, data)
+
           writeLiveTerminalOutput(output, {
             text: data,
             ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
@@ -594,6 +676,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
     }
 
+    // Answer OSC 10/11 color queries for the native render surface, which
+    // (unlike the xterm renderer) never replies on its own. The active theme
+    // color lives in the `--terminal-*` CSS vars set by that surface; the xterm
+    // renderer never sets them, so an empty read self-gates this off there.
+    // cspell:ignore ghostty
     // Drain-tolerant variant for orchestrator buffer flush. Same as handleData
     // but doesn't filter by sessionId since the orchestrator always passes
     // events for the session we registered for.
@@ -712,7 +799,14 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       unsubscribeExit?.()
       unsubscribeError?.()
     }
-  }, [terminal, output, session, service, writeLiveTerminalOutput])
+  }, [
+    terminal,
+    output,
+    session,
+    service,
+    writeLiveTerminalOutput,
+    respondToColorQueries,
+  ])
 
   // Handle keyboard input from the terminal renderer
   useEffect(() => {

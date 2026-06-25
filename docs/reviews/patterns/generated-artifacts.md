@@ -2,7 +2,7 @@
 id: generated-artifacts
 category: code-quality
 created: 2026-04-14
-last_updated: 2026-06-12
+last_updated: 2026-06-25
 ref_count: 6
 ---
 
@@ -111,6 +111,18 @@ checks or leave a regeneration diff.
 - **Finding:** The `generate:bindings` npm script was rewritten to skip the previous `npm run clean:bindings` pre-step. CI still cleaned before regeneration, but the canonical local command no longer deleted stale `.ts` files in `src/bindings/`. If a Rust type was renamed or removed, the old binding persisted alongside the new one, making local type-checks and imports appear valid until `git status` or the `bindings-check` CI job caught the stale file.
 - **Fix:** Restored the `clean:bindings` script (`mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete`) and re-added `npm run clean:bindings &&` to the start of `generate:bindings`, preserving the committed `src/bindings/index.ts` re-export. (Note: `main` landed the equivalent `clean:bindings` pre-step independently via the #441 bindings-infra work; this PR's merge takes that version, so the fix is preserved either way.)
 - **Verification:** `npx prettier --check package.json`; codex verify on the staged diff (findings: [], `overall_correctness`: "patch is correct").
+- **Commit:** same commit as this entry
+
+---
+
+### 10. Binding generation should not compile native renderer dependencies
+
+- **Source:** local-codex | PR #622 round 1 | 2026-06-25
+- **Severity:** HIGH
+- **Files:** `package.json`, `crates/backend/Cargo.toml`, `crates/backend/src/terminal/mod.rs`
+- **Finding:** The `Generate TypeScript Bindings` CI job ran `cargo test export_bindings`, which compiled the default backend dependency graph. After adding the Rust-owned Ghostty VT path, that pulled in `libghostty-vt-sys`; its build script runs a Zig/Ghostty dependency fetch that can fail even though binding export only needs serializable Rust types.
+- **Fix:** Made `libghostty-vt` an optional default feature, added no-default-feature stubs for the Ghostty session types used by the backend module graph, and changed `npm run generate:bindings` to run `cargo test --no-default-features export_bindings`. Normal backend builds still enable Ghostty VT by default, while binding export avoids the native renderer build path.
+- **Verification:** `PATH=/root/.cargo/bin:$PATH npm run generate:bindings`; codex verify on the staged diff.
 - **Commit:** same commit as this entry
 
 ---

@@ -51,12 +51,12 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 10       | 6    | 2026-06-20   |
-| [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
+| [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 10       | 6    | 2026-06-25   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 34   | 2026-06-20   |
-| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 26       | 9    | 2026-06-21   |
-| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 10       | 6    | 2026-06-21   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 67       | 35   | 2026-06-25   |
+| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 30       | 12   | 2026-06-25   |
+| [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 11       | 6    | 2026-06-25   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 12       | 3    | 2026-06-25   |
 | [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 35       | 10   | 2026-06-25   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |

@@ -389,10 +389,15 @@ export const createGhosttyVtRenderSnapshotOutput = (
   const cursorOffset = readSnapshotCursorOffset(normalizedSnapshot, cellsByRow)
 
   const cursorVisible =
-    normalizedSnapshot.cursor?.visible ??
-    (shouldHideImplicitParkedCursor(normalizedSnapshot, cellsByRow)
-      ? false
-      : undefined)
+    normalizedSnapshot.cursor === undefined
+      ? // libghostty reports a cursor only while it is inside the viewport, so it
+        // omits the cursor once scrolled up into history. Hide it rather than
+        // stranding a phantom block at the visible text end.
+        false
+      : (normalizedSnapshot.cursor.visible ??
+        (shouldHideImplicitParkedCursor(normalizedSnapshot, cellsByRow)
+          ? false
+          : undefined))
 
   // Mirror the snapshot's wheel-forwarding modes (present-only-when-true on the
   // wire) into an always-present mode object the surface can branch on.

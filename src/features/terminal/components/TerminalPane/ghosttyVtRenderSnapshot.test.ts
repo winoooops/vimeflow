@@ -153,6 +153,17 @@ describe('ghosttyVtRenderSnapshot', () => {
     })
   })
 
+  test('hides the cursor when the snapshot omits it (scrolled into history)', () => {
+    // libghostty reports a cursor only while it is inside the viewport, so it
+    // omits the cursor once scrolled up into history. The builder must mark the
+    // cursor hidden instead of stranding a phantom block at the visible text end.
+    const output = createGhosttyVtRenderSnapshotOutput({
+      rows: ['the update work.', '', ''],
+    })
+
+    expect(output.displayDelta?.cursorVisible).toBe(false)
+  })
+
   test('propagates snapshot cursor visibility into the display delta', () => {
     expect(
       createGhosttyVtRenderSnapshotOutput({

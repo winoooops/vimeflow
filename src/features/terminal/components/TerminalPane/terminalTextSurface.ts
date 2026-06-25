@@ -417,6 +417,8 @@ export class TerminalTextSurface implements TerminalSurface {
   private cachedCharacterWidth: number | null = null
   private lastSelectionText = ''
   private selectAllSelectionText: string | null = null
+  private hasPendingRender = false
+  private pendingScrollMode: RenderScrollMode | null = null
   private disposed = false
 
   constructor(private readonly options: TerminalTextSurfaceOptions) {
@@ -894,6 +896,15 @@ export class TerminalTextSurface implements TerminalSurface {
     }
 
     this.lastSelectionText = selectionText
+
+    // Selection cleared → flush the repaint we deferred while it was held.
+    if (selectionText.length === 0 && this.hasPendingRender) {
+      const scrollMode = this.pendingScrollMode
+      this.hasPendingRender = false
+      this.pendingScrollMode = null
+      this.renderOutput(scrollMode === null ? {} : { scrollMode })
+    }
+
     this.notifySelectionChange()
   }
 
@@ -1391,6 +1402,19 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   private renderOutput(options: { scrollMode?: RenderScrollMode } = {}): void {
+    // A repaint replaces every row node, dropping any active text selection
+    // anchored to them. While the user holds a selection within the surface,
+    // defer the repaint (the outputBuffer keeps the latest state) and flush it
+    // once the selection clears — see handleSelectionChange.
+    if (this.hasSelection()) {
+      this.hasPendingRender = true
+      if (options.scrollMode !== undefined) {
+        this.pendingScrollMode = options.scrollMode
+      }
+
+      return
+    }
+
     const text = this.outputBuffer.readText()
     const runs = this.outputBuffer.readStyledRuns()
 
