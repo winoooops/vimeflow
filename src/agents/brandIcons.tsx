@@ -10,11 +10,7 @@ export type AgentIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
 export type AgentIcon = (props: AgentIconProps) => ReactElement
 
 const DEFAULT_SIZE = 14
-// The Claude Code mark is natively wide (content bbox 24×15). We squish it into a custom
-// box so it reads right in the agent pill. Rendered box is (size·WIDTH) × (size·HEIGHT).
-// ponytail: preserveAspectRatio="none" = intentional non-uniform scale (PR #572's review
-// removed it for aspect purity; the owner wants the squish). Live-tune the two ratios:
-// wider = raise WIDTH, shorter = lower HEIGHT.
+// NOTE: preserveAspectRatio="none" is intentional for the Claude Code mark's non-uniform squish.
 const CLAUDE_CODE_WIDTH_RATIO = 1.2
 const CLAUDE_CODE_HEIGHT_RATIO = 0.9
 
