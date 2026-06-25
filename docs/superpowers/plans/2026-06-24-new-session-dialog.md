@@ -220,6 +220,11 @@ and call it once during IPC setup (alongside the existing `ipcMain.handle(BACKEN
   setupDialogIpc(ipcMain)
 ```
 
+Verify the wiring is actually present (a missed call compiles + passes unit tests but leaves the picker dead at runtime):
+
+Run: `grep -n "setupDialogIpc(ipcMain)" electron/main.ts`
+Expected: one match. (If `electron/main.test.ts` exists, add an assertion there instead of relying on grep.)
+
 - [ ] **Step 7: Expose in preload + assert.** In `electron/preload.ts` import the channel:
 
 ```ts
@@ -1300,6 +1305,14 @@ describe('NewSessionDialog', () => {
     expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('vimeflow-core')
   })
 
+  test('reopening with a new defaultCwd refreshes path + name', () => {
+    const { rerender } = render(
+      <NewSessionDialog open={false} onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/alpha" />
+    )
+    rerender(<NewSessionDialog open onOpenChange={vi.fn()} onCreate={vi.fn()} defaultCwd="~/code/beta" />)
+    expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue('beta')
+  })
+
   test('Create emits onCreate with name, cwd, layout and panes', async () => {
     const { onCreate } = setup()
     const user = userEvent.setup()
@@ -1335,7 +1348,7 @@ describe('NewSessionDialog', () => {
 - [ ] **Step 2: Run — expect FAIL.** Implement `NewSessionDialog.tsx`:
 
 ```tsx
-import { useState, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { Dialog } from '@/components/Dialog'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
@@ -1368,6 +1381,18 @@ export const NewSessionDialog = ({
   const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
   const [pinnedLayout, setPinnedLayout] = useState<PaneLayoutId | null>(null)
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
+
+  // The dialog stays mounted across open/close (Dialog drives visibility via its
+  // `open` prop), so re-initialize from the latest snapshot each time it opens.
+  useEffect(() => {
+    if (!open) return
+    setPath(defaultCwd)
+    setName(deriveSessionName(defaultCwd))
+    setNameEdited(false)
+    setLayoutId('single')
+    setPinnedLayout(null)
+    setAssign(DEFAULT_ASSIGN)
+  }, [open, defaultCwd])
 
   const layout = LAYOUTS[layoutId]
   const folder = deriveSessionName(path)
@@ -1647,7 +1672,11 @@ import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 
   - Leave `handleCreateSession` in place — it still backs the command-palette command and auto-create (no change needed there).
 
-- [ ] **Step 5: Add a wiring test** to `WorkspaceView`'s test suite (or the nearest existing WorkspaceView test file): clicking `sidebar-new-session` opens the dialog (assert the dialog's "New session" heading / `role=dialog` appears), and the instant `createSession` is NOT called on button click. Mirror the existing WorkspaceView test setup. Run — expect PASS.
+- [ ] **Step 5: Add wiring tests** to `WorkspaceView`'s test suite (or the nearest existing WorkspaceView test file), mirroring the existing WorkspaceView test setup. Two cases:
+  - **Button:** clicking `sidebar-new-session` opens the dialog (assert `role="dialog"` with name "New session" appears) and does NOT instant-create (`createSession` mock not called on click).
+  - **⌘N shortcut:** dispatching the new-session chord (`await user.keyboard('{Meta>}n{/Meta}')` on macOS modifier, or `{Control>}{Shift>}n{/Shift}{/Control}` otherwise — match `preferModifier` in the test harness) opens the same dialog and likewise does not instant-create. This is the explicit ⌘N coverage.
+
+  Run — expect PASS.
 
 - [ ] **Step 6: Commit.**
 
