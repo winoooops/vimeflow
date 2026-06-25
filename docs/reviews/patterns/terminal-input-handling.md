@@ -115,3 +115,12 @@ double execution, and paste failures.
 - **Finding:** The wheel handler sent one `scroll_pty` request per browser wheel event while also suppressing native browser scroll. Fast momentum gestures could overflow the backend's bounded scroll channel and strand the viewport at an intermediate history position.
 - **Fix:** Engine-scroll wheel deltas now accumulate and flush once per animation frame, reducing backend queue pressure while preserving a single authoritative engine scroll. Disposal cancels any pending frame, and a regression test asserts burst coalescing.
 - **Commit:** same commit as this entry
+
+### 12. Input snap must cancel pending coalesced wheel scroll
+
+- **Source:** github-claude | PR #617 round 3 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** `snapToBottomForInput()` sent the large snap-to-bottom delta immediately but left a pending coalesced wheel rAF intact. A scroll-up queued in the same frame could flush after the snap and move the engine viewport back into history while input was being sent.
+- **Fix:** The input snap path now cancels any pending engine-scroll frame before clearing `scrolledUp` and sending the snap delta. Regression tests cover keydown and paste arriving before the queued rAF flushes.
+- **Commit:** same commit as this entry

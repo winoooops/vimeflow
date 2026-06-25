@@ -338,6 +338,30 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
   })
 
+  test('drops a pending wheel scroll before snapping on a keystroke', () => {
+    const { surface, root, input } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+    surface.writeParsedOutput({
+      visibleText: '',
+      wheelForwardMode: { mouseTracking: false, sgrMouse: false },
+    })
+
+    dispatchWheelAt(root, { deltaY: -50 }) // scroll up into history
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+    flushAnimationFrames()
+
+    expect(scrollSender).toHaveBeenCalledTimes(1)
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
+  })
+
   test('keeps snap armed after a partial wheel-down from history', () => {
     const { surface, root, input } = mountSurface()
     const scrollSender = vi.fn()
@@ -382,6 +406,27 @@ describe('TerminalTextSurface engine-driven scroll', () => {
 
     surface.paste('echo hi')
 
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
+    expect(onData).toHaveBeenCalledWith('echo hi')
+  })
+
+  test('drops a pending wheel scroll before snapping on paste', () => {
+    const { surface, root } = mountSurface()
+    const scrollSender = vi.fn()
+    const onData = vi.fn()
+    surface.setScrollSender(scrollSender)
+    surface.onData(onData)
+    surface.writeParsedOutput({
+      visibleText: '',
+      wheelForwardMode: { mouseTracking: false, sgrMouse: false },
+    })
+
+    dispatchWheelAt(root, { deltaY: -50 })
+
+    surface.paste('echo hi')
+    flushAnimationFrames()
+
+    expect(scrollSender).toHaveBeenCalledTimes(1)
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
     expect(onData).toHaveBeenCalledWith('echo hi')
   })

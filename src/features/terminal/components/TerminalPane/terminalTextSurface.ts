@@ -846,6 +846,7 @@ export class TerminalTextSurface implements TerminalSurface {
     if (!this.scrolledUp) {
       return
     }
+    this.cancelPendingEngineScroll()
     this.scrolledUp = false
     this.scrollSender?.(SCROLL_TO_BOTTOM_DELTA)
   }
