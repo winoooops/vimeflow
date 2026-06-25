@@ -1,7 +1,7 @@
 # New Session Dialog — Design Spec
 
 **Date:** 2026-06-24
-**Status:** Draft (codex review in progress)
+**Status:** Codex-reviewed
 **Topic:** Configurable multi-pane session creation via a modal dialog
 
 ---
@@ -124,9 +124,9 @@ Derived: `layout` (registry `LayoutShape`), `visibleLayouts`, footer summary.
 
 ### 2.4 Interactions
 
-- **Name** auto-tracks the folder basename until the user types; once edited, a
-  "reset" pill restores the basename and clears the edited flag. Changing the
-  folder updates the name only while untouched.
+- **Name** auto-tracks `deriveSessionName(path)` (§2.6) until the user types;
+  once edited, a "reset" pill restores the derived name and clears the edited
+  flag. Changing the folder updates the name only while untouched.
 - **Browse…** → native folder picker (Section 4); on success sets `path` (and
   `name` if untouched). Cancel is a no-op.
 - **Layout select** updates `CommandBoard` + the footer count. **More layouts**
@@ -161,7 +161,11 @@ segment — for a UNC path that is the share name (`share` for `\\server\share`)
 which is the meaningful folder label (preserving full `server/share` semantics is
 out of scope). When there is genuinely no segment (a bare root such as POSIX `/`
 or a drive root `C:\`), `basename` falls back to a root label (`/` or the drive
-`C:`), and the auto-tracked session name uses that label — never an empty string.
+`C:`) for the **crumb display**. A shared `deriveSessionName(cwd)` derives the
+auto-tracked session **name**: the basename, falling back to `'session N'` for an
+empty basename or a bare root/home token (`/`, a drive root, or `~`). Both the
+dialog's name prefill (§2.4) and `createSession` (§4.2) use this one rule, so the
+prefilled name and the created session's name always match.
 The home-directory collapse and the
 `~` display token are POSIX-only and skipped for Windows/UNC paths. The default
 path keeps the existing `'~'` convention the backend already resolves, and the
@@ -301,15 +305,21 @@ createSession(opts?: CreateSessionOptions): void
     shell default. (The dialog always supplies exactly `capacity` specs, so the
     padding only guards programmatic callers; the no-arg path still yields one
     shell pane because `single` has capacity 1.)
-  - Each spec resolves via `commandToPane`: **shell / agent** →
-    `service.spawn({ cwd, env: {}, enableAgentBridge: true })`
-    (`agentType: 'generic'`; `userLabel` set for agent picks); **browser** → a
-    browser pane via the existing `createBrowserSession` / `createBrowserPane`
-    pattern (ptyId `browser:<uuid>`, default URL). Shell PTYs are spawned
-    **concurrently** (`Promise.all`) so the session appears atomically.
+  - Each spec resolves via `commandToPane`: **shell / agent** → the same
+    `service.spawn({ cwd, env: {}, enableAgentBridge: true })` call the current
+    single-pane path uses — `env: {}` supplies no *extra* variables; the backend
+    inherits the parent process environment (PATH / HOME / locale), so shells
+    launch normally (`agentType: 'generic'`; `userLabel` set for agent picks);
+    **browser** → a browser pane via the existing `createBrowserSession` /
+    `createBrowserPane` pattern (ptyId `browser:<uuid>`, default URL). Shell PTYs
+    are spawned **concurrently and independently** (`Promise.allSettled`, per-pane
+    resolution) so one slot's failure does not reject the others; the session is
+    assembled after all settle, so it still appears atomically.
   - Assemble one `Session`: `id = crypto.randomUUID()`,
-    `name = opts.name ?? basename(cwd)` (falling back to `'session N'` when the
-    basename is empty or the bare `~`), `workingDirectory = cwd`, `layout`,
+    `name = opts.name ?? deriveSessionName(cwd)` (the shared rule in §2.6 — the
+    folder basename, falling back to `'session N'` for an empty basename or a
+    bare root/home token like `/`, a drive root, or `~`), `workingDirectory =
+    cwd`, `layout`,
     `panes[]` in slot order (first pane active), `placements` omitted (implicit,
     via `panes[]` order + the layout's `addOrder`, matching restore and the
     current single-pane path). One atomic `setSessions` append (`flushSync` as
