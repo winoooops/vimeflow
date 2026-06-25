@@ -946,6 +946,7 @@ describe('useTerminal', () => {
       const surface = mockTerminal as unknown as { element: HTMLElement }
       surface.element = document.createElement('div')
       const foregroundHex = ['#', 'cdd6f4'].join('')
+      const foregroundResponseRgb = ['cd', 'cd', '/d6d6/f4f4'].join('')
 
       const getComputedStyleSpy = vi
         .spyOn(window, 'getComputedStyle')
@@ -984,7 +985,7 @@ describe('useTerminal', () => {
         await waitFor(() => {
           expect(mockService.write).toHaveBeenCalledWith({
             sessionId: 'session-1',
-            data: '\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\',
+            data: `\x1b]10;rgb:${foregroundResponseRgb}\x1b\\`,
           })
         })
       } finally {

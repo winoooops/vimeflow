@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 34
+last_updated: 2026-06-25
+ref_count: 35
 ---
 
 # Testing Gaps
@@ -665,4 +665,13 @@ filesystem scope restrictions).
 - **File:** `crates/backend/src/terminal/commands.rs`
 - **Finding:** The new PTY output regression test waited for the first `pty-data` event and then immediately inspected recorded events for the command marker. Shell startup prompts can emit PTY data before the `printf` output arrives, making the test intermittently fail in CI.
 - **Fix:** Added a predicate-based wait helper to the recording event sink and updated the test to wait until a `pty-data` payload contains the marker itself.
+- **Commit:** same commit as this entry
+
+### 67. Hook-level OSC foreground wiring needs an exact integration guard
+
+- **Source:** github-claude | PR #622 round 1 | 2026-06-25
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/useTerminal.test.ts` L945-989
+- **Finding:** The Ghostty OSC color-query work covered the formatter/scanner layer and background hook path, but the hook-level foreground path depends on the string literal `--terminal-foreground`. A token-name drift would silently skip the `OSC 10` response without a hook integration failure.
+- **Fix:** Kept the restored-buffered `OSC 10` hook test that mocks `--terminal-foreground` and expects the foreground color response, then made its exact RGB assertion CSpell-clean so the Code Quality lint gate passes.
 - **Commit:** same commit as this entry

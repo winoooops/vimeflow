@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-25
-ref_count: 9
+ref_count: 10
 ---
 
 # Terminal Control Sequence Handling

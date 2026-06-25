@@ -602,7 +602,15 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
     // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
     // Including it would cause infinite loops as object identity changes.
-  }, [terminal, output, service, shell, env, writeLiveTerminalOutput])
+  }, [
+    terminal,
+    output,
+    service,
+    shell,
+    env,
+    writeLiveTerminalOutput,
+    respondToColorQueries,
+  ])
 
   // Listen to PTY data events
   useEffect(() => {
