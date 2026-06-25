@@ -4,6 +4,7 @@ import { useOverlayRegistration } from './useOverlayRegistration'
 export interface WorkspaceOverlayRegistrationsProps {
   commandPaletteOpen: boolean
   unsavedChangesDialogOpen: boolean
+  newSessionDialogOpen: boolean
   burnerTerminalOpen: boolean
   paneRenameOpen: boolean
   layoutCreatorOpen?: boolean
@@ -29,6 +30,7 @@ const bannerStackRect = (): DOMRectReadOnly | null =>
 export const WorkspaceOverlayRegistrations = ({
   commandPaletteOpen,
   unsavedChangesDialogOpen,
+  newSessionDialogOpen,
   burnerTerminalOpen,
   paneRenameOpen,
   layoutCreatorOpen = false,
@@ -47,6 +49,13 @@ export const WorkspaceOverlayRegistrations = ({
     id: 'unsaved-changes-dialog',
     plane: 'dialog',
     isOpen: unsavedChangesDialogOpen,
+    nativeOcclusion: 'global',
+  })
+
+  useOverlayRegistration({
+    id: 'new-session-dialog',
+    plane: 'dialog',
+    isOpen: newSessionDialogOpen,
     nativeOcclusion: 'global',
   })
 
