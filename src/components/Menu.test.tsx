@@ -678,6 +678,23 @@ describe('Menu.Context', () => {
     expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
   })
 
+  test('renders above z-100 overlays like the burner terminal popup', () => {
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Paste</Menu.Item>
+      </Menu.Context>
+    )
+
+    expect(
+      screen.getByRole('menu', { name: 'Terminal actions' }).className
+    ).toContain('z-[110]')
+  })
+
   test('requests close via onOpenChange on Escape', async () => {
     const user = userEvent.setup()
     const onOpenChange = vi.fn<(open: boolean) => void>()
