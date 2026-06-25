@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-25
 ref_count: 3
 ---
 
@@ -96,4 +96,13 @@ below preserve their original Tauri-era file paths for auditability.
 - **File:** `crates/backend/src/terminal/commands.rs`
 - **Finding:** Both `kill_pty_inner` and `read_pty_output` recomputed the shim directory path by calling `dirs::cache_dir()` at cleanup time rather than reading a stored path from `ManagedSession`. `dirs::cache_dir()` resolves `$HOME` / `$XDG_CACHE_HOME` at call time. If either env var is mutated between spawn and cleanup, cleanup silently targets the wrong directory and the actual shim dir leaks — invisibly, because both callers discard the `Result` with `let _ = ...`. Even without env mutation, the computation was duplicated across three call sites (spawn, kill, read-loop), all of which must stay in sync.
 - **Fix:** Added `shim_dir: Option<String>` to `ManagedSession`, populated from `BridgeFiles.shim_dir_path` at spawn time. Both cleanup callers now read `session.shim_dir.as_deref()` directly instead of recomputing via `dirs::cache_dir()`. Updated all test-session constructors to include `shim_dir: None`.
+- **Commit:** same commit as this entry
+
+### 10. Direct session removal must drop sidecar channel state
+
+- **Source:** github-codex-connector | PR #617 round 1 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/state.rs`
+- **Finding:** Generation-guarded read-loop removal dropped Ghostty scroll senders, but direct user-initiated `remove()` did not. Closing PTYs manually left stale scroll sender entries alive for the backend process lifetime.
+- **Fix:** `PtyState::remove` now removes the matching scroll sender alongside the session and ephemeral marker. A regression test registers a sender, removes the session, and asserts the sender map is pruned.
 - **Commit:** same commit as this entry

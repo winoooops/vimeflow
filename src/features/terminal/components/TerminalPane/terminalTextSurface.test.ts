@@ -41,12 +41,14 @@ const dispatchWheelAt = (
   root: HTMLElement,
   {
     deltaY,
+    deltaMode = WheelEvent.DOM_DELTA_PIXEL,
     clientX = 0,
     clientY = 0,
-  }: { deltaY: number; clientX?: number; clientY?: number }
+  }: { deltaY: number; deltaMode?: number; clientX?: number; clientY?: number }
 ): { preventDefault: ReturnType<typeof vi.fn> } => {
   const event = new Event('wheel')
   Object.defineProperty(event, 'deltaY', { value: deltaY })
+  Object.defineProperty(event, 'deltaMode', { value: deltaMode })
   Object.defineProperty(event, 'clientX', { value: clientX })
   Object.defineProperty(event, 'clientY', { value: clientY })
   const preventDefault = vi.fn()
@@ -199,6 +201,21 @@ describe('TerminalTextSurface wheel forwarding', () => {
     expect(data.charCodeAt('\x1b[M'.length)).toBe(96)
     expect(preventDefault).toHaveBeenCalled()
   })
+
+  test('tier 1: ignores horizontal-only wheel events in mouse tracking mode', () => {
+    const { surface, root } = mountSurface()
+    const onData = vi.fn()
+    surface.onData(onData)
+    feedWheelMode(surface, {
+      mouseTracking: true,
+      sgrMouse: true,
+    })
+
+    const { preventDefault } = dispatchWheelAt(root, { deltaY: 0 })
+
+    expect(onData).not.toHaveBeenCalled()
+    expect(preventDefault).toHaveBeenCalled()
+  })
 })
 
 describe('TerminalTextSurface engine-driven scroll', () => {
@@ -231,6 +248,27 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(preventDefault).toHaveBeenCalled()
   })
 
+  test('leaves native wheel scrolling alone when no scroll sender is registered', () => {
+    const { root } = mountSurface()
+
+    const { preventDefault } = dispatchWheelAt(root, { deltaY: 50 })
+
+    expect(preventDefault).not.toHaveBeenCalled()
+  })
+
+  test('maps DOM page wheel events to one viewport of rows', () => {
+    const { surface, root } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+
+    dispatchWheelAt(root, {
+      deltaY: 1,
+      deltaMode: WheelEvent.DOM_DELTA_PAGE,
+    })
+
+    expect(scrollSender).toHaveBeenCalledWith(24)
+  })
+
   test('snaps the viewport to the bottom on a keystroke after scrolling up', () => {
     const { surface, root, input } = mountSurface()
     const scrollSender = vi.fn()
@@ -254,6 +292,50 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(scrollSender).toHaveBeenCalledTimes(1)
     // A large positive delta clamps the engine viewport to the live tail.
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
+  })
+
+  test('does not snap on input after wheel-down returns to the bottom', () => {
+    const { surface, root, input } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+    surface.writeParsedOutput({
+      visibleText: '',
+      wheelForwardMode: { mouseTracking: false, sgrMouse: false },
+    })
+
+    dispatchWheelAt(root, { deltaY: -50 })
+    dispatchWheelAt(root, { deltaY: 50 })
+    scrollSender.mockClear()
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(scrollSender).not.toHaveBeenCalled()
+  })
+
+  test('snaps the viewport to the bottom before programmatic paste', () => {
+    const { surface, root } = mountSurface()
+    const scrollSender = vi.fn()
+    const onData = vi.fn()
+    surface.setScrollSender(scrollSender)
+    surface.onData(onData)
+    surface.writeParsedOutput({
+      visibleText: '',
+      wheelForwardMode: { mouseTracking: false, sgrMouse: false },
+    })
+
+    dispatchWheelAt(root, { deltaY: -50 })
+    scrollSender.mockClear()
+
+    surface.paste('echo hi')
+
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
+    expect(onData).toHaveBeenCalledWith('echo hi')
   })
 
   test('does not scroll on a keystroke when already at the bottom', () => {

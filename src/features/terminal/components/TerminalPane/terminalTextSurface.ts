@@ -621,6 +621,7 @@ export class TerminalTextSurface implements TerminalSurface {
   }
 
   paste(text: string): void {
+    this.snapToBottomForInput()
     this.emitData(text)
   }
 
@@ -764,28 +765,42 @@ export class TerminalTextSurface implements TerminalSurface {
   //      authoritatively through the engine (no leaks, no reversal).
   private readonly handleWheel = (event: WheelEvent): void => {
     if (this.wheelForwardMode.mouseTracking) {
+      if (event.deltaY === 0) {
+        event.preventDefault()
+
+        return
+      }
       this.emitData(this.encodeWheelMouseEvent(event))
       event.preventDefault()
 
       return
     }
 
+    if (!this.scrollSender) {
+      return
+    }
+
     // Map the wheel delta to a signed row count (negative = up into history).
     // Guarantee at least one row per non-zero tick so slow trackpad deltas
     // still scroll instead of rounding to a no-op.
+    const rowsPerDelta =
+      event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.rowsValue : 1
     const unit =
-      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE ||
+      event.deltaMode === WheelEvent.DOM_DELTA_PAGE
         ? 1
         : this.readLineHeight() || DEFAULT_WHEEL_LINE_HEIGHT_PX
-    let rows = Math.trunc(event.deltaY / unit)
+    let rows = Math.trunc((event.deltaY * rowsPerDelta) / unit)
     if (rows === 0 && event.deltaY !== 0) {
       rows = event.deltaY > 0 ? 1 : -1
     }
     if (rows !== 0) {
-      this.scrollSender?.(rows)
+      this.scrollSender(rows)
       // Remember an upward scroll into history so the next keystroke snaps back.
       if (rows < 0) {
         this.scrolledUp = true
+      } else {
+        this.scrolledUp = false
       }
     }
     event.preventDefault()

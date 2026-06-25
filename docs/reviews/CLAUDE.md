@@ -57,8 +57,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 66       | 34   | 2026-06-20   |
 | [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 26       | 9    | 2026-06-21   |
 | [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 10       | 6    | 2026-06-21   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
-| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 33       | 10   | 2026-06-21   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 9        | 2    | 2026-06-25   |
+| [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 35       | 10   | 2026-06-25   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 24   | 2026-06-18   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
@@ -70,7 +70,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 4        | 1    | 2026-06-19   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
-| [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 9        | 3    | 2026-06-13   |
+| [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 10       | 3    | 2026-06-25   |
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 19       | 4    | 2026-06-06   |
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 40       | 13   | 2026-06-13   |

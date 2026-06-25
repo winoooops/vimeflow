@@ -14,6 +14,8 @@ use super::ghostty::{GhosttySessionHandle, GhosttySessionReader};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
+const MAX_PTY_DRAIN_CHUNKS_PER_TICK: usize = 256;
+
 fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     if let Some(dir) = dir {
         let _ = std::fs::remove_dir_all(dir);
@@ -1329,9 +1331,9 @@ async fn read_pty_output(
                             break;
                         }
                         feed_chunk!(bytes);
-                        // Drain every chunk already queued so a burst coalesces
-                        // into a single rendered frame.
-                        loop {
+                        // Drain a bounded burst so continuous producers cannot
+                        // starve flushing, scrolling, or terminal exit events.
+                        for _ in 0..MAX_PTY_DRAIN_CHUNKS_PER_TICK {
                             match byte_rx.try_recv() {
                                 Ok(ByteEvent::Data(more)) => feed_chunk!(more),
                                 Ok(other) => {

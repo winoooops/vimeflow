@@ -257,6 +257,10 @@ impl PtyState {
             .lock()
             .expect("failed to lock ephemeral_ptys")
             .remove(session_id);
+        self.scroll_senders
+            .lock()
+            .expect("failed to lock scroll_senders")
+            .remove(session_id);
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.remove(session_id)
     }
@@ -693,6 +697,25 @@ mod tests {
         let ids: Vec<&str> = snapshot.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, vec!["live"]); // dead id excluded from the snapshot
         assert_eq!(state.drain_ephemeral(), vec!["live"]); // and pruned from the set
+    }
+
+    #[test]
+    fn remove_drops_registered_scroll_sender() {
+        let state = PtyState::new();
+        let session_id = "scroll-session".to_string();
+        let (sender, _receiver) = mpsc::channel(1);
+        state.insert(session_id.clone(), make_test_session());
+        state.register_scroll_sender(&session_id, 0, sender);
+
+        state.remove(&session_id);
+
+        assert!(
+            !state
+                .scroll_senders
+                .lock()
+                .expect("failed to lock scroll_senders")
+                .contains_key(&session_id)
+        );
     }
 
     /// Build a real but ephemeral `ManagedSession` for tests that need
