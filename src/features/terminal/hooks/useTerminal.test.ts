@@ -993,6 +993,76 @@ describe('useTerminal', () => {
       }
     })
 
+    test('does not answer restored OSC color queries again during drain replay', async () => {
+      const surface = mockTerminal as unknown as { element: HTMLElement }
+      surface.element = document.createElement('div')
+      const foregroundHex = ['#', 'cdd6f4'].join('')
+      const foregroundResponse = '\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\'
+
+      const getComputedStyleSpy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockReturnValue({
+          getPropertyValue: (property: string) =>
+            property === '--terminal-foreground' ? foregroundHex : '',
+        } as unknown as CSSStyleDeclaration)
+
+      try {
+        const query = '\x1b]10;?\x07'
+        let drainHandler:
+          | ((
+              data: string,
+              offsetStart: number,
+              byteLen: number
+            ) => void)
+          | null = null
+
+        const { result } = renderHook(() =>
+          useTerminal({
+            terminal: mockTerminal,
+            output: mockOutput,
+            service: mockService,
+            onPaneReady: (_ptyId, handler) => {
+              drainHandler = handler
+
+              return vi.fn()
+            },
+            restoredFrom: {
+              sessionId: 'session-1',
+              cwd: '/tmp',
+              pid: 1234,
+              replayData: '',
+              replayEndOffset: 100,
+              bufferedEvents: [
+                {
+                  data: query,
+                  offsetStart: 100,
+                  byteLen: 7,
+                },
+              ],
+            },
+          })
+        )
+
+        await waitFor(() => {
+          expect(result.current.status).toBe('running')
+        })
+
+        await waitFor(() => {
+          expect(drainHandler).not.toBeNull()
+          expect(mockService.write).toHaveBeenCalledWith({
+            sessionId: 'session-1',
+            data: foregroundResponse,
+          })
+        })
+
+        drainHandler?.(query, 100, 7)
+
+        expect(mockService.write).toHaveBeenCalledTimes(1)
+      } finally {
+        getComputedStyleSpy.mockRestore()
+      }
+    })
+
     test('does not kill session on unmount when restored', async () => {
       const { unmount } = renderHook(() =>
         useTerminal({

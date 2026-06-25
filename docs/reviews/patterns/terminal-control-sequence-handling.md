@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-25
-ref_count: 10
+ref_count: 11
 ---
 
 # Terminal Control Sequence Handling
@@ -261,4 +261,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/hooks/useTerminal.ts` L602
 - **Finding:** The Ghostty color-query responder only ran after a live PTY event passed the cursor-dedupe guard. When a restored pane wrote buffered `OSC 10/11` queries before the live subscription attached, those bytes advanced `cursorRef`; the later `notifyPaneReady` drain then dropped the same chunk as already written, so Codex never received the foreground/background color response.
 - **Fix:** Lifted color-query handling into a shared callback that accepts the target session id, scans restored chunks before writing them, and scans live/drain chunks before cursor dedupe. Added a regression test for a restored buffered `OSC 10` query.
+- **Commit:** same commit as this entry
+
+### 28. Restored buffered OSC query drain replay must not answer twice
+
+- **Source:** github-codex-connector | PR #622 round 2 | 2026-06-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L631
+- **Finding:** The restore path scanned buffered `OSC 10/11` color-query chunks before writing them, but the live/drain handler scanned the same replayed bytes before checking the cursor dedupe boundary. A restored query could therefore be answered once during restore and again when `notifyPaneReady` replayed the overlapping buffered range.
+- **Fix:** Moved the live/drain color-query scan inside the existing `offsetStart >= cursorRef.current` guard so replayed chunks are dropped before generating protocol responses, while preserving the restore-loop scan for restored chunks. Added a regression that replays the restored query through `onPaneReady` and asserts only one PTY response is sent.
 - **Commit:** same commit as this entry

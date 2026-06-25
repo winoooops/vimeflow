@@ -628,11 +628,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       ghosttyCwdUri?: string
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
-        respondToColorQueries(session.id, data)
-
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
+          respondToColorQueries(session.id, data)
+
           writeLiveTerminalOutput(output, {
             text: data,
             ...(bytesBase64 === undefined ? {} : { bytesBase64 }),
