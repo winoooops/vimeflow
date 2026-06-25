@@ -452,3 +452,5 @@ code before PR (`/lifeline:review` → `/lifeline:request-pr`).
 
 Agent-CLI auto-launch; recent folders; `grid3x2` + custom layouts in the dialog;
 an editable path text input; the command palette opening the dialog.
+
+<!-- codex-reviewed: 2026-06-25T04:45:36Z -->
