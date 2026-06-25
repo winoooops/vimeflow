@@ -1,6 +1,5 @@
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentIcon } from '../../../../agents/brandIcons'
-import { BROWSER_IDENTITY } from '../../../browser/browserIdentity'
 import type { CommandId } from '../../types'
 
 export interface CommandDef {
@@ -8,7 +7,9 @@ export interface CommandDef {
   label: string
   kind: 'shell' | 'browser'
   accentVar: string
-  glyph: string
+  // Mono fallback glyph (shell). Agents render their brand `Icon`, browser its
+  // `materialIcon`, so those entries omit it.
+  glyph?: string
   Icon?: AgentIcon
   materialIcon?: string
 }
@@ -33,7 +34,6 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     label: 'Browser pane',
     kind: 'browser',
     accentVar: '--color-agent-browser-accent',
-    glyph: BROWSER_IDENTITY.glyph,
     materialIcon: 'language',
   },
 }
