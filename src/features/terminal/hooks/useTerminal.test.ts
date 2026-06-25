@@ -10,11 +10,7 @@ import type {
 } from '../types'
 import { formatTerminalColorResponse } from '../terminalColorQuery'
 
-type DrainHandler = (
-  data: string,
-  offsetStart: number,
-  byteLen: number
-) => void
+type DrainHandler = (data: string, offsetStart: number, byteLen: number) => void
 
 function expectDrainHandler(
   handler: DrainHandler | null
