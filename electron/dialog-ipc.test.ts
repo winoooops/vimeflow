@@ -40,7 +40,8 @@ describe('setupDialogIpc', () => {
     })
     const handler = register()
     await expect(handler({ sender: {} })).resolves.toBe('/Users/x/proj')
-    expect(dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {
+    // No focused window in this test → the single-arg overload is used.
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith({
       properties: ['openDirectory', 'createDirectory'],
       title: 'Choose working directory',
     })

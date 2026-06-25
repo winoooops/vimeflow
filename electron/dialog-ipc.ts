@@ -3,6 +3,7 @@ import {
   dialog,
   type IpcMain,
   type IpcMainInvokeEvent,
+  type OpenDialogOptions,
 } from 'electron'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 
@@ -13,13 +14,16 @@ export const setupDialogIpc = (ipcMain: IpcMain): void => {
     async (event: IpcMainInvokeEvent): Promise<string | null> => {
       const win =
         BrowserWindow.fromWebContents(event.sender) ??
-        BrowserWindow.getFocusedWindow() ??
-        undefined
+        BrowserWindow.getFocusedWindow()
 
-      const result = await dialog.showOpenDialog(win, {
+      const options: OpenDialogOptions = {
         properties: ['openDirectory', 'createDirectory'],
         title: 'Choose working directory',
-      })
+      }
+
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options)
 
       return result.canceled || result.filePaths.length === 0
         ? null
