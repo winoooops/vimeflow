@@ -27,6 +27,8 @@ interface DialogProps {
   'aria-describedby'?: string
   testId?: string
   backdropTestId?: string
+  /** Extra classes appended to the panel (e.g. a custom width). Last-wins over the size class. */
+  panelClassName?: string
   children: ReactNode
 }
 
@@ -237,6 +239,7 @@ const DialogRoot = ({
   'aria-describedby': ariaDescribedBy = undefined,
   testId = undefined,
   backdropTestId = undefined,
+  panelClassName,
   children,
 }: DialogProps): ReactElement | null => {
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -351,7 +354,9 @@ const DialogRoot = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: -8 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}`}
+            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}${
+              panelClassName !== undefined ? ` ${panelClassName}` : ''
+            }`}
           >
             {children}
           </motion.div>

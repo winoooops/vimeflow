@@ -466,6 +466,18 @@ describe('Dialog', () => {
     }
   })
 
+  test('appends panelClassName to the panel element', () => {
+    render(
+      <Dialog open onOpenChange={vi.fn()} panelClassName="w-[min(560px,100%)] max-w-none" aria-label="New session">
+        <span>Body</span>
+      </Dialog>
+    )
+    // eslint-disable-next-line testing-library/no-node-access -- asserting panel chrome class
+    const panel = screen.getByText('Body').closest('.max-w-none')
+    expect(panel).not.toBeNull()
+    expect(panel).toHaveClass('w-[min(560px,100%)]')
+  })
+
   test('applies placement, sizing, and section chrome', () => {
     render(
       <Dialog
