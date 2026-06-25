@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Dialog } from '@/components/Dialog'
+import { Popover } from '@/components/Popover'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
-import { LAYOUTS } from '../../../terminal/layout-registry'
-import type { CommandId, CreateSessionOptions, LayoutId } from '../../types'
+import { LayoutSwitcher } from '@/features/terminal/components/LayoutSwitcher'
+import type { PaneLayoutRegistry } from '../../../terminal/layout-registry'
+import type { CommandId, CreateSessionOptions, PaneLayoutId } from '../../types'
 import { deriveSessionName } from '../../utils/sessionPaths'
-import { LayoutPicker } from './LayoutPicker'
 import { CommandBoard } from './CommandBoard'
 import { WorkingDirectoryField } from './WorkingDirectoryField'
 
@@ -14,6 +14,10 @@ interface NewSessionDialogProps {
   onOpenChange: (open: boolean) => void
   onCreate: (opts: CreateSessionOptions) => void
   defaultCwd: string
+  /** The New Session button the popover anchors to. */
+  anchorEl: HTMLElement | null
+  /** Builtin + saved custom layouts available for switching. */
+  layoutRegistry: PaneLayoutRegistry
 }
 
 const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
@@ -21,21 +25,32 @@ const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
 const LABEL =
   'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
 
+// Keep the popover open while a pane's command Menu is being used: the Menu
+// surface portals as a sibling of this dialog, so a press inside it reads as
+// "outside" the popover. Dismiss only when the press lands outside any open
+// `role="menu"` surface (Menu sets role="menu" via useFloatingSurface/useRole).
+const dismissOutsideMenu = (event: MouseEvent): boolean => {
+  const target = event.target as Element | null
+
+  return !target?.closest('[role="menu"]')
+}
+
 export const NewSessionDialog = ({
   open,
   onOpenChange,
   onCreate,
   defaultCwd,
+  anchorEl,
+  layoutRegistry,
 }: NewSessionDialogProps): ReactElement => {
   const [path, setPath] = useState(defaultCwd)
   const [name, setName] = useState(() => deriveSessionName(defaultCwd))
   const [nameEdited, setNameEdited] = useState(false)
-  const [layoutId, setLayoutId] = useState<LayoutId>('single')
-  const [pinnedLayout, setPinnedLayout] = useState<LayoutId | null>(null)
+  const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
 
-  // The dialog stays mounted across open/close (Dialog drives visibility via its
-  // `open` prop), so re-initialize from the latest snapshot each time it opens.
+  // The popover content can stay mounted across open/close, so re-initialize
+  // from the latest snapshot each time it opens.
   useEffect(() => {
     if (!open) {
       return
@@ -45,11 +60,10 @@ export const NewSessionDialog = ({
     setName(deriveSessionName(defaultCwd))
     setNameEdited(false)
     setLayoutId('single')
-    setPinnedLayout(null)
     setAssign(DEFAULT_ASSIGN)
   }, [open, defaultCwd])
 
-  const layout = LAYOUTS[layoutId]
+  const layout = layoutRegistry.getFallbackLayout(layoutId)
   const folder = deriveSessionName(path)
 
   const applyPath = (next: string): void => {
@@ -69,11 +83,14 @@ export const NewSessionDialog = ({
   }
 
   return (
-    <Dialog
+    <Popover
       open={open}
       onOpenChange={onOpenChange}
-      placement="center"
-      panelClassName="w-[min(560px,100%)] max-w-none"
+      anchor={anchorEl}
+      placement="bottom-start"
+      width={560}
+      focus="none"
+      dismissWhen={dismissOutsideMenu}
       aria-label="New session"
     >
       {/* header */}
@@ -145,11 +162,13 @@ export const NewSessionDialog = ({
           <div className="w-[158px] shrink-0">
             <label className={LABEL}>Layout</label>
             <div className="mt-2">
-              <LayoutPicker
-                layoutId={layoutId}
-                pinnedLayout={pinnedLayout}
-                onSelect={setLayoutId}
-                onPin={setPinnedLayout}
+              <LayoutSwitcher
+                activeLayoutId={layoutId}
+                onPick={setLayoutId}
+                layouts={layoutRegistry.layouts}
+                visibleLayoutIds={layoutRegistry.layouts.map(
+                  (entry) => entry.id
+                )}
               />
             </div>
           </div>
@@ -160,7 +179,7 @@ export const NewSessionDialog = ({
             </div>
             <div className="mt-2.5">
               <CommandBoard
-                layoutId={layoutId}
+                layout={layout}
                 assign={assign}
                 onAssign={(i, command) =>
                   setAssign((prev) => {
@@ -192,6 +211,6 @@ export const NewSessionDialog = ({
           Create session
         </Button>
       </div>
-    </Dialog>
+    </Popover>
   )
 }

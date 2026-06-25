@@ -1,7 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../../terminal/layout-registry'
 import { NewSessionDialog } from './NewSessionDialog'
+
+const anchorEl = document.createElement('button')
 
 const setup = (
   overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}
@@ -18,6 +21,8 @@ const setup = (
       onOpenChange={onOpenChange}
       onCreate={onCreate}
       defaultCwd="~/code/vimeflow-core"
+      anchorEl={anchorEl}
+      layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
       {...overrides}
     />
   )
@@ -35,10 +40,19 @@ const renderWithOpen = (
       onOpenChange={vi.fn()}
       onCreate={vi.fn()}
       defaultCwd={cwd}
+      anchorEl={anchorEl}
+      layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
     />
   )
 
 describe('NewSessionDialog', () => {
+  test('opens as a dialog named "New session"', () => {
+    setup()
+    expect(
+      screen.getByRole('dialog', { name: /new session/i })
+    ).toBeInTheDocument()
+  })
+
   test('name prefills from the default folder basename', () => {
     setup()
     expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
@@ -57,6 +71,8 @@ describe('NewSessionDialog', () => {
         onOpenChange={vi.fn()}
         onCreate={vi.fn()}
         defaultCwd="~/code/beta"
+        anchorEl={anchorEl}
+        layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
       />
     )
 
@@ -93,5 +109,30 @@ describe('NewSessionDialog', () => {
     await user.type(input, 'custom')
     await user.click(screen.getByRole('button', { name: /reset/i }))
     expect(input).toHaveValue('vimeflow-core')
+  })
+
+  // Regression guard for the z-index bug: a pane's command Menu must be
+  // reachable from inside the popover. Open the dialog, pick a command for a
+  // pane, and confirm the assignment lands in the created session. (jsdom does
+  // not evaluate z-index, but this proves the click wiring is intact.)
+  test('a pane command is selectable end-to-end', async () => {
+    const { onCreate } = setup()
+    const user = userEvent.setup()
+
+    const paneButton = screen.getByRole('button', {
+      name: /choose command for pane 1/i,
+    })
+    await user.click(paneButton)
+    await user.click(screen.getByRole('menuitem', { name: /codex cli/i }))
+
+    // The chosen command is reflected on the pane button label.
+    expect(within(paneButton).getByText(/codex cli/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /create session/i }))
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        panes: [{ command: 'codex' }],
+      })
+    )
   })
 })

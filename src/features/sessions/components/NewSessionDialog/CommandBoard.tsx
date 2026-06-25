@@ -1,21 +1,20 @@
 import { type ReactElement } from 'react'
 import { Menu } from '@/components/Menu'
-import { LAYOUTS } from '../../../terminal/layout-registry'
-import type { CommandId, LayoutId } from '../../types'
+import type { LayoutShape } from '../../../terminal/layout-registry'
+import type { CommandId } from '../../types'
 import { COMMANDS, COMMAND_ORDER } from './commands'
 
 interface CommandBoardProps {
-  layoutId: LayoutId
+  layout: LayoutShape
   assign: CommandId[]
   onAssign: (index: number, command: CommandId) => void
 }
 
 export const CommandBoard = ({
-  layoutId,
+  layout,
   assign,
   onAssign,
 }: CommandBoardProps): ReactElement => {
-  const layout = LAYOUTS[layoutId]
   const areas = layout.areas.map((row) => `"${row.join(' ')}"`).join(' ')
 
   return (

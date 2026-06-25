@@ -1018,6 +1018,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const newSessionDialog = useNewSessionDialog()
+  const newSessionButtonRef = useRef<HTMLButtonElement>(null)
 
   const [pendingSessionRemovalId, setPendingSessionRemovalId] = useState<
     string | null
@@ -2554,6 +2555,7 @@ const WorkspaceViewContent = (): ReactElement => {
                       onChange={setActiveTab}
                     />
                     <NewSessionButton
+                      ref={newSessionButtonRef}
                       onClick={handleOpenNewSession}
                       shortcutHint={newSessionShortcutHint}
                       ariaKeyshortcuts={newSessionAriaKeyshortcuts}
@@ -2865,6 +2867,8 @@ const WorkspaceViewContent = (): ReactElement => {
         open={newSessionDialog.open}
         onOpenChange={newSessionDialog.setOpen}
         defaultCwd={newSessionDialog.defaultCwd}
+        anchorEl={newSessionButtonRef.current}
+        layoutRegistry={layoutRegistry}
         onCreate={(opts) => {
           createSession(opts)
           claimTerminal()
