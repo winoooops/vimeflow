@@ -11,11 +11,15 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
 import { LayoutSwitcher } from '@/features/terminal/components/LayoutSwitcher'
-import type { PaneLayoutRegistry } from '../../../terminal/layout-registry'
+import {
+  isCustomPaneLayoutId,
+  type PaneLayoutRegistry,
+} from '../../../terminal/layout-registry'
 import type { CommandId, CreateSessionOptions, PaneLayoutId } from '../../types'
 import { deriveSessionName } from '../../utils/sessionPaths'
 import { CommandBoard } from './CommandBoard'
 import { WorkingDirectoryField } from './WorkingDirectoryField'
+import { OthersLayoutMenu } from './OthersLayoutMenu'
 import { getLastLayout, setLastLayout } from './lastLayoutStore'
 
 interface NewSessionDialogProps {
@@ -127,6 +131,18 @@ export const NewSessionDialog = ({
   }, [open])
 
   const layout = layoutRegistry.getFallbackLayout(layoutId)
+
+  // Keep the builtins inline; tuck saved custom presets behind an "Others" menu
+  // so the layout column doesn't bloat when a user has many presets.
+  const allLayouts = layoutRegistry.layouts
+
+  const builtinLayoutIds = allLayouts
+    .filter((entry) => !isCustomPaneLayoutId(entry.id))
+    .map((entry) => entry.id)
+
+  const otherLayouts = allLayouts.filter(
+    (entry) => isCustomPaneLayoutId(entry.id) && entry.id !== layoutId
+  )
 
   const applyPath = (next: string): void => {
     setPath(next)
@@ -290,13 +306,19 @@ export const NewSessionDialog = ({
                     <label className={LABEL}>Layout</label>
                     <div className="mt-2">
                       <LayoutSwitcher
+                        vertical
                         activeLayoutId={layoutId}
                         onPick={setLayoutId}
-                        layouts={layoutRegistry.layouts}
-                        visibleLayoutIds={layoutRegistry.layouts.map(
-                          (entry) => entry.id
-                        )}
-                        vertical
+                        layouts={allLayouts}
+                        visibleLayoutIds={builtinLayoutIds}
+                        trailing={
+                          otherLayouts.length > 0 ? (
+                            <OthersLayoutMenu
+                              layouts={otherLayouts}
+                              onPick={setLayoutId}
+                            />
+                          ) : undefined
+                        }
                       />
                     </div>
                   </div>

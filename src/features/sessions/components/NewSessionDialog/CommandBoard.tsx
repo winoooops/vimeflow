@@ -72,7 +72,7 @@ export const CommandBoard = ({
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest/60 p-2 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--color-on-surface)_8%,transparent)]">
       <div
-        className="grid h-[150px] gap-2"
+        className="grid h-[210px] gap-2"
         style={{
           gridTemplateColumns: layout.cols,
           gridTemplateRows: layout.rows,
