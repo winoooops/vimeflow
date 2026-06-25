@@ -15,6 +15,7 @@ describe('commandToPane', () => {
       kind: 'shell',
       userLabel: 'Claude Code',
     })
+
     expect(commandToPane('codex')).toEqual({
       kind: 'shell',
       userLabel: 'Codex CLI',

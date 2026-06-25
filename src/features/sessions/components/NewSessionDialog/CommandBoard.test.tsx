@@ -12,6 +12,7 @@ describe('CommandBoard', () => {
         onAssign={vi.fn()}
       />
     )
+
     expect(
       screen.getAllByRole('button', { name: /choose command for pane/i })
     ).toHaveLength(2)
@@ -27,6 +28,7 @@ describe('CommandBoard', () => {
         onAssign={onAssign}
       />
     )
+
     const paneButtons = screen.getAllByRole('button', {
       name: /choose command for pane/i,
     })

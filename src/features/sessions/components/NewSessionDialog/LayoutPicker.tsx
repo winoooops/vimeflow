@@ -5,6 +5,7 @@ import type { LayoutId } from '../../types'
 import { LayoutGlyph } from './LayoutGlyph'
 
 const QUICK_LAYOUTS: LayoutId[] = ['single', 'vsplit', 'hsplit']
+
 const ALL_LAYOUTS: LayoutId[] = [
   'single',
   'vsplit',

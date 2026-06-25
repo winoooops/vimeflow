@@ -17,6 +17,7 @@ interface NewSessionDialogProps {
 }
 
 const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
+
 const LABEL =
   'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
 

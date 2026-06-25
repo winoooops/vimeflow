@@ -59,6 +59,7 @@ describe('NewSessionDialog', () => {
         defaultCwd="~/code/beta"
       />
     )
+
     expect(screen.getByRole('textbox', { name: /session name/i })).toHaveValue(
       'beta'
     )
