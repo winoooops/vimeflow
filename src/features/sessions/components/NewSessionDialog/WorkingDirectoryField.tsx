@@ -21,7 +21,7 @@ export const WorkingDirectoryField = ({
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex items-stretch gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] bg-surface-container-lowest px-3 py-2.5">
         <span
           className="material-symbols-outlined text-base text-primary-container"

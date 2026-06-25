@@ -139,7 +139,7 @@ export const NewSessionDialog = ({
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
             >
               {/* header */}
-              <div className="flex items-center gap-2.5 border-b border-outline-variant/25 px-5 py-4">
+              <div className="flex items-center gap-2.5 px-5 pb-1 pt-3.5">
                 <span
                   className="material-symbols-outlined text-base text-primary-container"
                   aria-hidden="true"
@@ -156,8 +156,8 @@ export const NewSessionDialog = ({
                 />
               </div>
 
-              {/* scroll body */}
-              <div className="h-[min(600px,70vh)] overflow-auto px-5 pb-6 pt-5">
+              {/* scroll body — fits content, caps + scrolls when tall */}
+              <div className="max-h-[min(600px,70vh)] overflow-auto px-5 pb-5 pt-2">
                 <label className={LABEL} htmlFor="new-session-name">
                   Session name
                 </label>
@@ -244,7 +244,7 @@ export const NewSessionDialog = ({
               </div>
 
               {/* footer */}
-              <div className="flex items-center gap-2.5 border-t border-outline-variant/20 bg-surface-container-lowest/40 px-5 py-3.5">
+              <div className="flex items-center gap-2.5 bg-surface-container-lowest/40 px-5 py-3.5">
                 <span className="flex-1 font-mono text-[11px] text-on-surface-muted">
                   {layout.capacity} pane{layout.capacity > 1 ? 's' : ''} ·{' '}
                   {folder}
