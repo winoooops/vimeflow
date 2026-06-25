@@ -1713,3 +1713,5 @@ git commit -m "chore(sessions): lint/format/type fixups for new-session dialog"
 - **Spec coverage:** §1 goals → Tasks 4 (multi-pane + fixed cwd), 13 (button+⌘N open dialog), 2 (folder picker). §2 components → Tasks 5-12. §2.6 path parsing → Task 3. §3.1 modal shell → Task 1 (`panelClassName`) + Task 11. §3.2-3.4 tokens/icons → Tasks 6-11 (semantic tokens, Material Symbols, `font-mono`). §4 API → Tasks 3-4. §4.3 IPC → Task 2. §5 wiring + overlay → Task 13. Tests per file → every task. Gates → Task 14.
 - **Placeholder scan:** no TBD/TODO; every code step has full code. Two explicit "verify during impl" notes (Tailwind spacing steps, `BROWSER_IDENTITY` export name) are guardrails, not deferrals.
 - **Type consistency:** `CommandId`/`CreateSessionOptions`/`NewPaneSpec` defined in Task 3, consumed in Tasks 4-11; `commandToPane` shape `{kind,userLabel?}` consistent across Tasks 3-4; `panelClassName` defined in Task 1, used in Task 11; `pickDirectory` defined Task 8, mocked in Task 8 field test; `deriveSessionName` defined Task 3, used Tasks 4 + 11.
+
+<!-- codex-reviewed: 2026-06-25T05:07:06Z -->
