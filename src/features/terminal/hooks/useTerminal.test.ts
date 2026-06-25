@@ -1018,11 +1018,7 @@ describe('useTerminal', () => {
       try {
         const query = '\x1b]10;?\x07'
         let drainHandler:
-          | ((
-              data: string,
-              offsetStart: number,
-              byteLen: number
-            ) => void)
+          | ((data: string, offsetStart: number, byteLen: number) => void)
           | null = null
 
         const { result } = renderHook(() =>
@@ -1108,11 +1104,7 @@ describe('useTerminal', () => {
       try {
         const query = '\x1b]10;?\x1b\\'
         let drainHandler:
-          | ((
-              data: string,
-              offsetStart: number,
-              byteLen: number
-            ) => void)
+          | ((data: string, offsetStart: number, byteLen: number) => void)
           | null = null
 
         const { result } = renderHook(() =>

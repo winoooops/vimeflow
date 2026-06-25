@@ -76,8 +76,7 @@ export const scanTerminalColorQueriesWithCarry = (
 export const retainTerminalColorQueryRetryCarry = (
   data: string,
   previousCarry: string
-): string =>
-  `${previousCarry}${data}`.slice(-MAX_COLOR_QUERY_SEQUENCE_LENGTH)
+): string => `${previousCarry}${data}`.slice(-MAX_COLOR_QUERY_SEQUENCE_LENGTH)
 
 /** Convert `#1e1e2e` to the xterm OSC color form `rgb:1e1e/1e1e/2e2e`. */
 export const hexToOscColor = (hex: string): string | null => {
