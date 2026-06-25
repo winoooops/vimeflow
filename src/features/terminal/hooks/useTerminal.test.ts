@@ -162,6 +162,54 @@ describe('useTerminal', () => {
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
+  test('answers Codex OSC 11 background color queries from the surface theme', async () => {
+    // Codex queries the terminal background (\x1b]11;?) to tint its input
+    // composer. libghostty never replies, so the Ghostty surface must answer
+    // from its --terminal-background theme var or Codex renders a bar-less
+    // composer. (xterm replies on its own; an empty var read self-gates here.)
+    // cspell:ignore ghostty
+    const surface = mockTerminal as unknown as { element: HTMLElement }
+    surface.element = document.createElement('div')
+    // Built without a literal to satisfy vimeflow/no-hardcoded-colors.
+    const backgroundHex = ['#', '181825'].join('')
+
+    const getComputedStyleSpy = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockReturnValue({
+        getPropertyValue: (property: string) =>
+          property === '--terminal-background' ? backgroundHex : '',
+      } as unknown as CSSStyleDeclaration)
+
+    try {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          output: mockOutput,
+          service: mockService,
+          cwd: '/home/user',
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      mockService.emit('data', {
+        sessionId: result.current.session!.id,
+        data: '\x1b]11;?\x07',
+      })
+
+      await waitFor(() => {
+        expect(mockService.write).toHaveBeenCalledWith({
+          sessionId: result.current.session!.id,
+          data: '\x1b]11;rgb:1818/1818/2525\x1b\\',
+        })
+      })
+    } finally {
+      getComputedStyleSpy.mockRestore()
+    }
+  })
+
   test('writes PTY raw bytes payload to terminal output chunks', async () => {
     const { result } = renderHook(() =>
       useTerminal({

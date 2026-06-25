@@ -7,6 +7,10 @@ import type {
   TerminalSession,
   TerminalSurface,
 } from '../types'
+import {
+  formatTerminalColorResponse,
+  scanTerminalColorQueriesWithCarry,
+} from '../terminalColorQuery'
 
 /**
  * Data required to restore a terminal session from snapshot + live events.
@@ -240,6 +244,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Events with offsetStart < cursor are dropped. Advances on every write
   // so a buffered drain that overlaps a live event is filtered (no doubled bytes).
   const cursorRef = useRef<number>(restoredFrom?.replayEndOffset ?? 0)
+
+  // Carries an incomplete OSC 10/11 color query across PTY event boundaries so a
+  // query split between two chunks is still detected and answered exactly once.
+  const colorQueryCarryRef = useRef('')
 
   // Latest onPaneReady, kept in a ref so the data-subscribe effect can call
   // it without depending on the function identity (which would re-run the
@@ -590,6 +598,51 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           if (writtenEnd > cursorRef.current) {
             cursorRef.current = writtenEnd
           }
+
+          respondToColorQueries(data)
+        }
+      }
+    }
+
+    // Answer OSC 10/11 color queries for the native render surface, which
+    // (unlike the xterm renderer) never replies on its own. The active theme
+    // color lives in the `--terminal-*` CSS vars set by that surface; the xterm
+    // renderer never sets them, so an empty read self-gates this off there.
+    // cspell:ignore ghostty
+    const respondToColorQueries = (data: string): void => {
+      const result = scanTerminalColorQueriesWithCarry(
+        data,
+        colorQueryCarryRef.current
+      )
+      const targets = result.targets
+      colorQueryCarryRef.current = result.carry
+      const element = terminal.element
+
+      if (targets.length === 0 || !element) {
+        return
+      }
+
+      const styles = window.getComputedStyle(element)
+
+      for (const target of targets) {
+        const hex = styles
+          .getPropertyValue(
+            target === 'foreground'
+              ? '--terminal-foreground'
+              : '--terminal-background'
+          )
+          .trim()
+        const response = hex ? formatTerminalColorResponse(target, hex) : null
+
+        if (response) {
+          const writeResponse = async (): Promise<void> => {
+            try {
+              await service.write({ sessionId: session.id, data: response })
+            } catch {
+              // Session may have exited between the query and our reply.
+            }
+          }
+          void writeResponse()
         }
       }
     }
