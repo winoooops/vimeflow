@@ -9,6 +9,7 @@ export interface CommandDef {
   accentVar: string
   glyph: string
   Icon?: AgentIcon
+  materialIcon?: string
 }
 
 const fromAgent = (id: Exclude<CommandId, 'browser'>): CommandDef => ({
@@ -32,6 +33,7 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
     kind: 'browser',
     accentVar: '--color-agent-browser-accent',
     glyph: BROWSER_IDENTITY.glyph,
+    materialIcon: 'language',
   },
 }
 

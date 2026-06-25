@@ -14,4 +14,13 @@ describe('COMMANDS', () => {
     expect(COMMANDS.claude.kind).toBe('shell')
     expect(COMMANDS.shell.kind).toBe('shell')
   })
+
+  test('browser command has materialIcon language', () => {
+    expect(COMMANDS.browser.materialIcon).toBe('language')
+  })
+
+  test('claude command has Icon defined (brand SVG component)', () => {
+    expect(COMMANDS.claude.Icon).toBeDefined()
+    expect(typeof COMMANDS.claude.Icon).toBe('function')
+  })
 })

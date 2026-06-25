@@ -29,6 +29,8 @@ export const CommandBoard = ({
     >
       {Array.from({ length: layout.capacity }).map((_, i) => {
         const command = COMMANDS[assign[i] ?? 'shell']
+        const Icon = command.Icon
+
         return (
           <div key={i} style={{ gridArea: `p${i}` }} className="min-w-0">
             <Menu
@@ -46,7 +48,18 @@ export const CommandBoard = ({
                       background: `color-mix(in srgb, var(${command.accentVar}) 16%, transparent)`,
                     }}
                   >
-                    {command.glyph}
+                    {Icon ? (
+                      <Icon width={16} height={16} aria-hidden />
+                    ) : command.materialIcon ? (
+                      <span
+                        className="material-symbols-outlined text-base"
+                        aria-hidden="true"
+                      >
+                        {command.materialIcon}
+                      </span>
+                    ) : (
+                      command.glyph
+                    )}
                   </span>
                   <span className="truncate text-xs font-semibold text-on-surface-variant">
                     {command.label}

@@ -10,4 +10,11 @@ describe('PathCrumb', () => {
     const last = screen.getByText('vimeflow-core')
     expect(last).toHaveClass('text-primary')
   })
+
+  test('renders a / fallback segment for bare root path', () => {
+    render(<PathCrumb path="/" />)
+    const segment = screen.getByText('/')
+    expect(segment).toBeInTheDocument()
+    expect(segment).toHaveClass('text-primary')
+  })
 })
