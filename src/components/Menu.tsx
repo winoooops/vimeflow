@@ -273,6 +273,9 @@ interface MenuProps {
   trigger: ReactElement
   placement?: Placement
   width?: number
+  // 'compact' adopts the tighter solid surface used by the right-click context
+  // menu (PR #618) instead of the default glass + min-w-52 dropdown.
+  variant?: 'default' | 'compact'
   // Opt out of scroll-dismiss where a consumer's behavior differs (spec §5.3).
   middleware?: { ancestorScroll?: boolean }
   'aria-label'?: string
@@ -295,6 +298,7 @@ const MenuRoot = ({
   trigger,
   placement = 'bottom-start',
   width = undefined,
+  variant = 'default',
   middleware = undefined,
   'aria-label': ariaLabel = undefined,
   onOpenChange = undefined,
@@ -446,6 +450,12 @@ const MenuRoot = ({
           listRef={listRef}
           labelsRef={labelsRef}
           width={width}
+          surfaceClassName={
+            variant === 'compact' ? CONTEXT_MENU_SURFACE_CLASSES : undefined
+          }
+          bodyClassName={
+            variant === 'compact' ? CONTEXT_MENU_BODY_CLASSES : undefined
+          }
           ariaLabel={ariaLabel}
           contextValue={contextValue}
         >
@@ -570,6 +580,8 @@ const MenuRow = ({
 
 interface MenuItemProps {
   icon?: string
+  /** Rich leading visual (brand SVG / accent chip) for when a material-symbol `icon` isn't enough. */
+  leadingIcon?: ReactNode
   shortcut?: ShortcutInput
   disabled?: boolean
   onSelect: () => void
@@ -578,6 +590,7 @@ interface MenuItemProps {
 
 const MenuItem = ({
   icon = undefined,
+  leadingIcon = undefined,
   shortcut = undefined,
   disabled = false,
   onSelect,
@@ -607,6 +620,7 @@ const MenuItem = ({
       })}
     >
       <span className="flex items-center gap-2.5">
+        {leadingIcon}
         {icon !== undefined ? (
           <span aria-hidden="true" className={ITEM_ICON_CLASSES}>
             {icon}

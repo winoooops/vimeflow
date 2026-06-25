@@ -5,7 +5,49 @@ import {
   type LayoutShape,
 } from '../../../terminal/layout-registry'
 import type { CommandId } from '../../types'
-import { COMMANDS, COMMAND_ORDER } from './commands'
+import { COMMANDS, COMMAND_ORDER, type CommandDef } from './commands'
+
+interface CommandGlyphProps {
+  command: CommandDef
+  className: string
+  iconSize: number
+}
+
+// The accent-tinted icon chip for a command — the brand SVG when present, else
+// a material symbol, else the mono glyph. Shared by the pane preview and the
+// command-menu rows so they read as the same thing.
+const CommandGlyph = ({
+  command,
+  className,
+  iconSize,
+}: CommandGlyphProps): ReactElement => {
+  const Icon = command.Icon
+
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-lg font-mono ${className}`}
+      style={{
+        color: `var(${command.accentVar})`,
+        background: `color-mix(in srgb, var(${command.accentVar}) 16%, transparent)`,
+        fontSize: iconSize,
+      }}
+    >
+      {Icon ? (
+        <Icon width={iconSize} height={iconSize} aria-hidden />
+      ) : command.materialIcon ? (
+        <span
+          className="material-symbols-outlined leading-none"
+          style={{ fontSize: iconSize }}
+          aria-hidden="true"
+        >
+          {command.materialIcon}
+        </span>
+      ) : (
+        command.glyph
+      )}
+    </span>
+  )
+}
 
 interface CommandBoardProps {
   layout: LayoutShape
@@ -39,7 +81,6 @@ export const CommandBoard = ({
       >
         {slotAreaNames.map((areaName, i) => {
           const command = COMMANDS[assign[i] ?? 'shell']
-          const Icon = command.Icon
 
           return (
             <div
@@ -49,6 +90,7 @@ export const CommandBoard = ({
             >
               <Menu
                 aria-label={`Command for pane ${i + 1}`}
+                variant="compact"
                 onOpenChange={onMenuOpenChange}
                 trigger={
                   <button
@@ -56,26 +98,11 @@ export const CommandBoard = ({
                     aria-label={`Choose command for pane ${i + 1}`}
                     className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-outline-variant/50 bg-surface-container/40 p-2 text-center transition-colors hover:bg-surface-container/70"
                   >
-                    <span
-                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg font-mono text-base"
-                      style={{
-                        color: `var(${command.accentVar})`,
-                        background: `color-mix(in srgb, var(${command.accentVar}) 16%, transparent)`,
-                      }}
-                    >
-                      {Icon ? (
-                        <Icon width={16} height={16} aria-hidden />
-                      ) : command.materialIcon ? (
-                        <span
-                          className="material-symbols-outlined text-base"
-                          aria-hidden="true"
-                        >
-                          {command.materialIcon}
-                        </span>
-                      ) : (
-                        command.glyph
-                      )}
-                    </span>
+                    <CommandGlyph
+                      command={command}
+                      className="h-[30px] w-[30px]"
+                      iconSize={16}
+                    />
                     <span className="truncate text-xs font-semibold text-on-surface-variant">
                       {command.label}
                     </span>
@@ -83,7 +110,17 @@ export const CommandBoard = ({
                 }
               >
                 {COMMAND_ORDER.map((id) => (
-                  <Menu.Item key={id} onSelect={() => onAssign(i, id)}>
+                  <Menu.Item
+                    key={id}
+                    leadingIcon={
+                      <CommandGlyph
+                        command={COMMANDS[id]}
+                        className="h-[22px] w-[22px]"
+                        iconSize={13}
+                      />
+                    }
+                    onSelect={() => onAssign(i, id)}
+                  >
                     {COMMANDS[id].label}
                   </Menu.Item>
                 ))}
