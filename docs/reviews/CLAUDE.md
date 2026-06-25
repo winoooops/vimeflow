@@ -55,7 +55,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 67       | 35   | 2026-06-25   |
-| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 29       | 11   | 2026-06-25   |
+| [Terminal Control Sequence Handling](patterns/terminal-control-sequence-handling.md)                 | terminal           | 30       | 12   | 2026-06-25   |
 | [Terminal DOM Rendering](patterns/terminal-dom-rendering.md)                                         | terminal           | 11       | 6    | 2026-06-25   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 12       | 3    | 2026-06-25   |
 | [Terminal Render-State Driver Contract](patterns/terminal-render-state-driver-contract.md)           | terminal           | 35       | 10   | 2026-06-25   |

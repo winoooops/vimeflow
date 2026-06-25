@@ -30,6 +30,8 @@ const MAX_COLOR_QUERY_SEQUENCE_LENGTH = Math.max(
 )
 
 // OSC 10;? (fg) or OSC 11;? (bg), terminated by BEL (\x07) or ST (\x1b\\).
+// Keep this paired with matchAll; a global exec loop would leak lastIndex
+// across calls and miss boundary-spanning queries.
 const COLOR_QUERY_PATTERN = /\x1b\]1([01]);\?(?:\x07|\x1b\\)/g
 const MAX_COLOR_QUERY_CARRY_LENGTH = MAX_COLOR_QUERY_SEQUENCE_LENGTH - 1
 
@@ -76,7 +78,23 @@ export const scanTerminalColorQueriesWithCarry = (
 export const retainTerminalColorQueryRetryCarry = (
   data: string,
   previousCarry: string
-): string => `${previousCarry}${data}`.slice(-MAX_COLOR_QUERY_SEQUENCE_LENGTH)
+): string => {
+  const scannedData = `${previousCarry}${data}`
+  const matches = [...scannedData.matchAll(COLOR_QUERY_PATTERN)]
+  const completedQueries = matches.map((match) => match[0])
+
+  if (completedQueries.length > 0) {
+    const lastMatch = matches[matches.length - 1]
+
+    const trailingCarry = scannedData
+      .slice(lastMatch.index + lastMatch[0].length)
+      .slice(-MAX_COLOR_QUERY_CARRY_LENGTH)
+
+    return `${completedQueries.join('')}${trailingCarry}`
+  }
+
+  return scannedData.slice(-MAX_COLOR_QUERY_SEQUENCE_LENGTH)
+}
 
 /** Convert `#1e1e2e` to the xterm OSC color form `rgb:1e1e/1e1e/2e2e`. */
 export const hexToOscColor = (hex: string): string | null => {

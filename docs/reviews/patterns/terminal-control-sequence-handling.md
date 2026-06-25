@@ -3,7 +3,7 @@ id: terminal-control-sequence-handling
 category: terminal
 created: 2026-06-17
 last_updated: 2026-06-25
-ref_count: 11
+ref_count: 12
 ---
 
 # Terminal Control Sequence Handling
@@ -279,4 +279,13 @@ all required state through pure display-state helpers.
 - **File:** `src/features/terminal/hooks/useTerminal.ts`
 - **Finding:** The Ghostty color-query responder advanced its scan carry before confirming that terminal CSS custom properties were available and a response could be formatted. If a complete `OSC 10/11` query arrived before the CSS vars resolved, the query was consumed with no PTY reply and no later retry path.
 - **Fix:** The hook now verifies the terminal color CSS vars before consuming the scanner result; when the vars are absent it retains a retry carry long enough to include a complete longest query. The carry size is derived from the known query code and terminator sets, and regressions cover retrying a complete ST-terminated query plus carrying a split ST terminator.
+- **Commit:** same commit as this entry
+
+### 30. Retry carry must preserve complete OSC query matches, not chunk tails
+
+- **Source:** github-claude | PR #622 round 4 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useTerminal.ts` L335-341
+- **Finding:** When terminal CSS variables were temporarily unavailable, `retainTerminalColorQueryRetryCarry` kept only the tail of `previousCarry + data`. If an `OSC 10/11` query appeared at the start of a PTY chunk followed by startup banner text, the retained tail contained only non-query output, so the retry scan found nothing and Codex never received the color response.
+- **Fix:** Preserve the matched OSC query sequences themselves when a retry is needed, while also appending the normal trailing carry so a complete query followed by a split query is not lost. Added utility coverage for query-plus-trailing-output and complete-plus-incomplete query chunks, and widened the hook restore retry test to include trailing banner text. Also documented that the module-level global regex must remain paired with `matchAll` to avoid leaking `lastIndex` across scans.
 - **Commit:** same commit as this entry

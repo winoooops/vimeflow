@@ -76,6 +76,28 @@ describe('scanTerminalColorQueries', () => {
       'foreground',
     ])
   })
+
+  test('keeps a complete query available for retry when followed by output', () => {
+    const carry = retainTerminalColorQueryRetryCarry(
+      '\x1b]11;?\x1b\\welcome banner',
+      ''
+    )
+
+    expect(scanTerminalColorQueriesWithCarry('', carry).targets).toEqual([
+      'background',
+    ])
+  })
+
+  test('keeps a trailing incomplete query after a complete retry query', () => {
+    const carry = retainTerminalColorQueryRetryCarry(
+      '\x1b]10;?\x1b\\\x1b]11;?',
+      ''
+    )
+
+    const result = scanTerminalColorQueriesWithCarry('\x1b\\', carry)
+
+    expect(result.targets).toEqual(['foreground', 'background'])
+  })
 })
 
 describe('hexToOscColor', () => {

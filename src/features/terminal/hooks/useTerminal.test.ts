@@ -10,6 +10,18 @@ import type {
 } from '../types'
 import { formatTerminalColorResponse } from '../terminalColorQuery'
 
+type DrainHandler = (
+  data: string,
+  offsetStart: number,
+  byteLen: number
+) => void
+
+function expectDrainHandler(
+  handler: DrainHandler | null
+): asserts handler is DrainHandler {
+  expect(handler).not.toBeNull()
+}
+
 // Mock terminal surface with test helpers
 interface MockTerminal extends TerminalSurface {
   _mockTriggerData: (data: string) => void
@@ -1017,9 +1029,10 @@ describe('useTerminal', () => {
 
       try {
         const query = '\x1b]10;?\x07'
-        let drainHandler:
-          | ((data: string, offsetStart: number, byteLen: number) => void)
-          | null = null
+
+        const drainHandlerRef: { current: DrainHandler | null } = {
+          current: null,
+        }
 
         const { result } = renderHook(() =>
           useTerminal({
@@ -1027,7 +1040,7 @@ describe('useTerminal', () => {
             output: mockOutput,
             service: mockService,
             onPaneReady: (_ptyId, handler) => {
-              drainHandler = handler
+              drainHandlerRef.current = handler
 
               return vi.fn()
             },
@@ -1053,14 +1066,16 @@ describe('useTerminal', () => {
         })
 
         await waitFor(() => {
-          expect(drainHandler).not.toBeNull()
+          expect(drainHandlerRef.current).not.toBeNull()
           expect(mockService.write).toHaveBeenCalledWith({
             sessionId: 'session-1',
             data: foregroundResponse,
           })
         })
 
-        drainHandler?.(query, 100, 7)
+        const drainHandler = drainHandlerRef.current
+        expectDrainHandler(drainHandler)
+        drainHandler(query, 100, 7)
 
         expect(mockService.write).toHaveBeenCalledTimes(1)
       } finally {
@@ -1103,9 +1118,11 @@ describe('useTerminal', () => {
 
       try {
         const query = '\x1b]10;?\x1b\\'
-        let drainHandler:
-          | ((data: string, offsetStart: number, byteLen: number) => void)
-          | null = null
+        const bufferedData = `${query}welcome banner`
+
+        const drainHandlerRef: { current: DrainHandler | null } = {
+          current: null,
+        }
 
         const { result } = renderHook(() =>
           useTerminal({
@@ -1113,7 +1130,7 @@ describe('useTerminal', () => {
             output: mockOutput,
             service: mockService,
             onPaneReady: (_ptyId, handler) => {
-              drainHandler = handler
+              drainHandlerRef.current = handler
 
               return vi.fn()
             },
@@ -1125,9 +1142,9 @@ describe('useTerminal', () => {
               replayEndOffset: 100,
               bufferedEvents: [
                 {
-                  data: query,
+                  data: bufferedData,
                   offsetStart: 100,
-                  byteLen: 8,
+                  byteLen: bufferedData.length,
                 },
               ],
             },
@@ -1136,13 +1153,15 @@ describe('useTerminal', () => {
 
         await waitFor(() => {
           expect(result.current.status).toBe('running')
-          expect(drainHandler).not.toBeNull()
+          expect(drainHandlerRef.current).not.toBeNull()
         })
 
         expect(mockService.write).not.toHaveBeenCalled()
 
         stylesReady = true
-        drainHandler?.('', 108, 0)
+        const drainHandler = drainHandlerRef.current
+        expectDrainHandler(drainHandler)
+        drainHandler('', 100 + bufferedData.length, 0)
 
         await waitFor(() => {
           expect(mockService.write).toHaveBeenCalledWith({
