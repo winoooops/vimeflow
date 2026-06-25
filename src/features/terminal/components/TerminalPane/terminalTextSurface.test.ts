@@ -1,5 +1,5 @@
 // cspell:ignore ghostty
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   TerminalTextSurface,
   type TerminalTextSurfaceOutput,
@@ -59,6 +59,8 @@ const dispatchWheelAt = (
 }
 
 const surfaces: TerminalTextSurface[] = []
+const animationFrameCallbacks = new Map<number, FrameRequestCallback>()
+let nextAnimationFrameId = 0
 
 const mountSurface = (
   geometry = { clientHeight: 100, scrollHeight: 1000 }
@@ -87,7 +89,29 @@ const mountSurface = (
 afterEach(() => {
   surfaces.splice(0).forEach((surface) => surface.dispose())
   document.body.replaceChildren()
+  vi.restoreAllMocks()
 })
+
+beforeEach(() => {
+  animationFrameCallbacks.clear()
+  nextAnimationFrameId = 0
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    nextAnimationFrameId += 1
+    animationFrameCallbacks.set(nextAnimationFrameId, callback)
+
+    return nextAnimationFrameId
+  })
+
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+    animationFrameCallbacks.delete(id)
+  })
+})
+
+const flushAnimationFrames = (): void => {
+  const callbacks = Array.from(animationFrameCallbacks.entries())
+  animationFrameCallbacks.clear()
+  callbacks.forEach(([, callback]) => callback(0))
+}
 
 describe('TerminalTextSurface render positioning', () => {
   test('follows live output to the bottom by default', () => {
@@ -230,6 +254,7 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     })
 
     const { preventDefault } = dispatchWheelAt(root, { deltaY: -50 })
+    flushAnimationFrames()
 
     expect(scrollSender).toHaveBeenCalledTimes(1)
     expect(scrollSender.mock.calls[0][0]).toBeLessThan(0) // up → negative
@@ -242,6 +267,7 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     surface.setScrollSender(scrollSender)
 
     const { preventDefault } = dispatchWheelAt(root, { deltaY: 50 })
+    flushAnimationFrames()
 
     expect(scrollSender).toHaveBeenCalledTimes(1)
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThan(0) // down → positive
@@ -265,8 +291,25 @@ describe('TerminalTextSurface engine-driven scroll', () => {
       deltaY: 1,
       deltaMode: WheelEvent.DOM_DELTA_PAGE,
     })
+    flushAnimationFrames()
 
     expect(scrollSender).toHaveBeenCalledWith(24)
+  })
+
+  test('coalesces wheel deltas into one engine scroll per frame', () => {
+    const { surface, root } = mountSurface()
+    const scrollSender = vi.fn()
+    surface.setScrollSender(scrollSender)
+
+    dispatchWheelAt(root, { deltaY: 50 })
+    dispatchWheelAt(root, { deltaY: 50 })
+
+    expect(scrollSender).not.toHaveBeenCalled()
+
+    flushAnimationFrames()
+
+    expect(scrollSender).toHaveBeenCalledTimes(1)
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThan(1)
   })
 
   test('snaps the viewport to the bottom on a keystroke after scrolling up', () => {
@@ -279,6 +322,7 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     })
 
     dispatchWheelAt(root, { deltaY: -50 }) // scroll up into history
+    flushAnimationFrames()
     scrollSender.mockClear()
 
     input.dispatchEvent(
@@ -294,7 +338,7 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
   })
 
-  test('does not snap on input after wheel-down returns to the bottom', () => {
+  test('keeps snap armed after a partial wheel-down from history', () => {
     const { surface, root, input } = mountSurface()
     const scrollSender = vi.fn()
     surface.setScrollSender(scrollSender)
@@ -304,7 +348,9 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     })
 
     dispatchWheelAt(root, { deltaY: -50 })
+    flushAnimationFrames()
     dispatchWheelAt(root, { deltaY: 50 })
+    flushAnimationFrames()
     scrollSender.mockClear()
 
     input.dispatchEvent(
@@ -315,7 +361,8 @@ describe('TerminalTextSurface engine-driven scroll', () => {
       })
     )
 
-    expect(scrollSender).not.toHaveBeenCalled()
+    expect(scrollSender).toHaveBeenCalledTimes(1)
+    expect(scrollSender.mock.calls[0][0]).toBeGreaterThanOrEqual(1_000_000)
   })
 
   test('snaps the viewport to the bottom before programmatic paste', () => {
@@ -330,6 +377,7 @@ describe('TerminalTextSurface engine-driven scroll', () => {
     })
 
     dispatchWheelAt(root, { deltaY: -50 })
+    flushAnimationFrames()
     scrollSender.mockClear()
 
     surface.paste('echo hi')

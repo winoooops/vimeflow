@@ -404,6 +404,8 @@ export class TerminalTextSurface implements TerminalSurface {
   // When true, the next keystroke/paste jumps the viewport back to the live tail
   // so the user sees what they type (matching native terminal behavior).
   private scrolledUp = false
+  private pendingScrollRows = 0
+  private pendingScrollFrame: number | null = null
   // Active wheel-forwarding modes (VIM-223), refreshed from each render snapshot.
   // Defaults to all-false so a plain shell drives an engine scroll on the wheel.
   private wheelForwardMode: WheelForwardMode = {
@@ -509,6 +511,7 @@ export class TerminalTextSurface implements TerminalSurface {
 
   dispose(): void {
     this.disposed = true
+    this.cancelPendingEngineScroll()
     this.root.removeEventListener('mousedown', this.handlePointerDown)
     this.root.removeEventListener('wheel', this.handleWheel)
     document.removeEventListener('selectionchange', this.handleSelectionChange)
@@ -785,25 +788,55 @@ export class TerminalTextSurface implements TerminalSurface {
     // still scroll instead of rounding to a no-op.
     const rowsPerDelta =
       event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.rowsValue : 1
+
     const unit =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE ||
       event.deltaMode === WheelEvent.DOM_DELTA_PAGE
         ? 1
         : this.readLineHeight() || DEFAULT_WHEEL_LINE_HEIGHT_PX
+
     let rows = Math.trunc((event.deltaY * rowsPerDelta) / unit)
+
     if (rows === 0 && event.deltaY !== 0) {
       rows = event.deltaY > 0 ? 1 : -1
     }
+
     if (rows !== 0) {
-      this.scrollSender(rows)
+      this.queueEngineScroll(rows)
       // Remember an upward scroll into history so the next keystroke snaps back.
       if (rows < 0) {
         this.scrolledUp = true
-      } else {
-        this.scrolledUp = false
       }
     }
     event.preventDefault()
+  }
+
+  private queueEngineScroll(rows: number): void {
+    this.pendingScrollRows += rows
+
+    if (this.pendingScrollFrame !== null) {
+      return
+    }
+
+    this.pendingScrollFrame = window.requestAnimationFrame(() => {
+      this.pendingScrollFrame = null
+      const pendingRows = this.pendingScrollRows
+      this.pendingScrollRows = 0
+
+      if (pendingRows !== 0) {
+        this.scrollSender?.(pendingRows)
+      }
+    })
+  }
+
+  private cancelPendingEngineScroll(): void {
+    if (this.pendingScrollFrame === null) {
+      return
+    }
+
+    window.cancelAnimationFrame(this.pendingScrollFrame)
+    this.pendingScrollFrame = null
+    this.pendingScrollRows = 0
   }
 
   // When the user types after scrolling up into history, jump the engine

@@ -3,7 +3,7 @@ id: terminal-input-handling
 category: terminal
 created: 2026-04-09
 last_updated: 2026-06-25
-ref_count: 2
+ref_count: 3
 ---
 
 # Terminal Input Handling
@@ -96,4 +96,22 @@ double execution, and paste failures.
 - **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
 - **Finding:** Mouse-tracking mode encoded every wheel event, so horizontal-only trackpad gestures with `deltaY === 0` became spurious wheel-down events for TUIs.
 - **Fix:** The mouse-tracking branch now suppresses zero-vertical-delta wheel events without emitting mouse bytes. A regression test asserts no data is sent for that case.
+- **Commit:** same commit as this entry
+
+### 10. Downward wheel deltas do not prove the terminal is back at the live tail
+
+- **Source:** github-claude | PR #617 round 2 | 2026-06-25
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** Clearing `scrolledUp` on any positive wheel delta treated a partial downward scroll as if the viewport had returned to the live tail. A subsequent keypress could then skip the snap-to-bottom request, leaving typed input hidden behind history.
+- **Fix:** The wheel handler now only sets `scrolledUp` on upward movement and leaves clearing to the input snap path. A regression test covers the partial wheel-down case and verifies keyboard input still snaps to the live tail.
+- **Commit:** same commit as this entry
+
+### 11. Engine-scroll wheel bursts must be coalesced before backend dispatch
+
+- **Source:** github-claude | PR #617 round 2 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/terminalTextSurface.ts`
+- **Finding:** The wheel handler sent one `scroll_pty` request per browser wheel event while also suppressing native browser scroll. Fast momentum gestures could overflow the backend's bounded scroll channel and strand the viewport at an intermediate history position.
+- **Fix:** Engine-scroll wheel deltas now accumulate and flush once per animation frame, reducing backend queue pressure while preserving a single authoritative engine scroll. Disposal cancels any pending frame, and a regression test asserts burst coalescing.
 - **Commit:** same commit as this entry
