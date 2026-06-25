@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-22
+last_updated: 2026-06-25
 ref_count: 90
 ---
 
@@ -863,4 +863,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `docs/opencode/opencode-adapter-technical-note.zh.html`
 - **Finding:** The PR added two OpenCode technical notes as standalone HTML artifacts even though the reviewer wanted the source form to live as Markdown for easier maintenance and Linear references. Keeping only generated HTML makes future edits and issue-link reuse more expensive than necessary.
 - **Fix:** Replaced both OpenCode HTML notes with Markdown equivalents, updated the OpenCode adapter design spec to reference the `.md` paths, and kept the documentation content in repo-native Markdown form.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Claude Code icon comment used nonstandard jargon and over-documented the invariant
+
+- **Source:** github-claude | PR #619 round 2 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.tsx`
+- **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
+- **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -10,8 +10,9 @@ export type AgentIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
 export type AgentIcon = (props: AgentIconProps) => ReactElement
 
 const DEFAULT_SIZE = 14
-const CLAUDE_CODE_VIEW_BOX_WIDTH = 24
-const CLAUDE_CODE_VIEW_BOX_HEIGHT = 17
+// NOTE: preserveAspectRatio="none" is intentional for the Claude Code mark's non-uniform squish.
+const CLAUDE_CODE_WIDTH_RATIO = 1.2
+const CLAUDE_CODE_HEIGHT_RATIO = 0.9
 
 interface BrandSvgProps extends AgentIconProps {
   children: ReactNode
@@ -41,9 +42,10 @@ export const ClaudeCode = ({
 }: AgentIconProps): ReactElement => (
   <BrandSvg
     size={size}
-    viewBox="0 4 24 17"
-    width={(size * CLAUDE_CODE_VIEW_BOX_WIDTH) / CLAUDE_CODE_VIEW_BOX_HEIGHT}
-    height={size}
+    viewBox="0 5 24 15"
+    width={size * CLAUDE_CODE_WIDTH_RATIO}
+    height={size * CLAUDE_CODE_HEIGHT_RATIO}
+    preserveAspectRatio="none"
     {...props}
   >
     <path
