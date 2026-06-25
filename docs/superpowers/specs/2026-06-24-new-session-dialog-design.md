@@ -24,8 +24,8 @@ component primitives and theme tokens.
    in `~`) with a deliberate, configurable creation flow that faithfully
    reproduces the handoff's inner content, spacing, and interactions using the
    existing theme tokens. Fidelity governs the dialog's content; the house
-   `Dialog` style governs the outer panel surface where the two differ (see
-   §3.1).
+   anchored `Popover` shell governs the outer panel surface where the two differ
+   (see §3.1).
 2. Let the user pick any of the layouts the dialog offers (see scope) and
    select a starting command per pane before the session opens. "Select" is
    deliberate: v1 records the choice and applies it as pane kind + label; it
@@ -40,12 +40,12 @@ component primitives and theme tokens.
 
 ### In scope (v1)
 
-- The dialog UI built on the real `Dialog` primitive plus the public `Menu`
-  primitive for the floating sub-popups (the "More layouts" list and the
-  per-pane command picker). Feature code composes `Menu` — it must **not** import
-  the `useFloatingSurface` substrate directly (the repo's floating-surface
-  boundary confines that to `src/components/base/floating/**`; see
-  `eslint.config.js:333`).
+- The dialog UI built on the real `Popover` shell (anchored to the New Session
+  button; see §3.1) plus the public `Menu` primitive for the per-pane command
+  picker, and the real `LayoutSwitcher` for layout switching. Feature code
+  composes `Menu` / `Popover` — it must **not** import the `useFloatingSurface`
+  substrate directly (the repo's floating-surface boundary confines that to
+  `src/components/base/floating/**`; see `eslint.config.js:333`).
 - Native Electron `dialog.showOpenDialog({ properties: ['openDirectory'] })`
   exposed via a new IPC channel + preload bridge + a thin frontend wrapper.
 - `createSession({ name?, cwd?, layout?, panes? })` — assembles a multi-pane
@@ -74,9 +74,13 @@ component primitives and theme tokens.
   (native picker) only; the field shows a read-only path crumb (not a text
   input), pre-filled with a default path = the active session's
   `workingDirectory`, else `~`.
-- **Layouts limited to the 5 in the handoff:** `single` / `vsplit` / `hsplit`
-  (quick), with `threeRight` / `quad` behind "More layouts". `grid3x2` and
-  custom layouts are omitted from this dialog.
+- **Layout switching, not creation.** The dialog embeds the workspace's real
+  `LayoutSwitcher`, so it exposes **all** layouts the registry knows — every
+  builtin (`single` / `vsplit` / `hsplit` / `threeRight` / `quad` / `grid3x2`)
+  plus any saved custom layout. It only _switches_ the starting layout; creating
+  a new custom layout stays in the workspace (`LayoutCreatorModal`). (Earlier
+  drafts shipped a bespoke `LayoutPicker` limited to a 5-layout quick list with a
+  "More layouts" menu; that was replaced — see §2.1 / §3.1.)
 
 ---
 
@@ -89,10 +93,8 @@ co-located `.test.tsx`:
 
 | File                        | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NewSessionDialog.tsx`      | The modal: `Dialog` (behavior + house panel) wrapping **custom** header / scroll-body / footer regions — not the `Dialog.Header/Body/Footer` helpers (see §3.1); owns dialog-local state; emits `onCreate(opts)` / `onOpenChange`.                                                                                                                                                                            |
-| `LayoutPicker.tsx`          | Left column: quick-layout list + "More layouts" `Menu`.                                                                                                                                                                                                                                                                                                                                                       |
-| `LayoutGlyph.tsx`           | Inline-SVG glyph per layout (ported from the handoff, theme-colored).                                                                                                                                                                                                                                                                                                                                         |
-| `CommandBoard.tsx`          | CSS-grid miniature of the chosen layout; each cell is a pane button opening a per-pane command `Menu`.                                                                                                                                                                                                                                                                                                        |
+| `NewSessionDialog.tsx`      | The shell: an anchored `Popover` (anchored to the New Session button) wrapping **custom** header / scroll-body / footer regions (see §3.1); owns dialog-local state; takes `anchorEl` + `layoutRegistry`; emits `onCreate(opts)` / `onOpenChange`. The left layout column embeds the workspace's real `LayoutSwitcher`.                                                                                       |
+| `CommandBoard.tsx`          | CSS-grid miniature of the chosen layout; each cell is a pane button opening a per-pane command `Menu`. Takes the resolved `layout: LayoutShape` (from `layoutRegistry.getFallbackLayout(layoutId)`) directly, so any builtin or custom layout renders.                                                                                                                                                        |
 | `WorkingDirectoryField.tsx` | Path crumb + Browse… button (calls the folder-picker wrapper).                                                                                                                                                                                                                                                                                                                                                |
 | `PathCrumb.tsx`             | Renders a path as colored segments split on a separator-agnostic boundary (`/[/\\]+/`) so native POSIX, Windows-drive, and UNC paths all segment.                                                                                                                                                                                                                                                             |
 | `commands.ts`               | The dialog's command list (claude / codex / kimi / opencode / browser / shell), derived from `src/agents/registry.ts` plus a local `browser` entry; maps each command → `{ id, label, kind: 'shell' \| 'browser', accentVar, glyph, Icon? }`. No pane `agentType` field — v1 panes are always `agentType: 'generic'` (see §4); the command only determines `kind` and, for agent picks, the pane `userLabel`. |
@@ -104,20 +106,22 @@ Held in `NewSessionDialog`:
 - `path: string` — current working directory.
 - `name: string` / `nameEdited: boolean` — session name and whether the user
   typed a custom value.
-- `layoutId: PaneLayoutId` — selected layout.
-- `pinnedLayout: PaneLayoutId | null` — a non-quick layout the user pinned into
-  the visible list via "More layouts".
+- `layoutId: PaneLayoutId` — selected layout (any builtin or saved custom id).
 - `assign: CommandId[]` — command per pane index (default
   `['claude', 'shell', 'shell', …]`).
 
-Derived: `layout` (registry `LayoutShape`), `visibleLayouts`, footer summary.
+Derived: `layout` (= `layoutRegistry.getFallbackLayout(layoutId)`, a
+`LayoutShape`), footer summary. The visible layout set comes from the
+`layoutRegistry` (passed to `LayoutSwitcher`), not from dialog-local state.
 
 ### 2.3 Regions (matching the handoff)
 
 - **Header** — bolt icon + "New session" title + close button.
 - **Body** — fixed height `min(600px, 70vh)` with internal scroll (this is what
   keeps the dialog steady). Contents in order: Session name field, Working
-  directory field + crumb, then a side-by-side **Layout** (left, fixed width) +
+  directory field + crumb, then a side-by-side **Layout** (left, fixed width —
+  the workspace's real `LayoutSwitcher` with `visibleLayoutIds` = every layout
+  the registry knows, so it switches across all builtin + saved custom layouts) +
   **Starting command** (right, `CommandBoard`) row carrying a reserved
   `min-height` so it never reflows.
 - **Footer** — muted `"<N> panes · <folder>"` summary + Cancel + Create session.
@@ -129,9 +133,9 @@ Derived: `layout` (registry `LayoutShape`), `visibleLayouts`, footer summary.
   flag. Changing the folder updates the name only while untouched.
 - **Browse…** → native folder picker (Section 4); on success sets `path` (and
   `name` if untouched). Cancel is a no-op.
-- **Layout select** updates `CommandBoard` + the footer count. **More layouts**
-  opens a `Menu` of all 5 layouts; picking a non-quick one pins it into the
-  visible list and selects it.
+- **Layout switch** via the embedded `LayoutSwitcher` (all builtin + saved
+  custom layouts) updates `CommandBoard` + the footer count. Switching is the
+  only layout action here; creating a custom layout stays in the workspace.
 - **Pane click** opens a command `Menu`; selecting assigns that command to the
   pane index. `assign` is a stable array indexed by pane slot whose entries
   persist across layout changes (so toggling layouts never loses a pick); a slot
@@ -140,16 +144,18 @@ Derived: `layout` (registry `LayoutShape`), `visibleLayouts`, footer summary.
   consumed.
 - **Create session** builds `panes` from `assign[0..capacity-1]`, calls
   `onCreate({ name, cwd: path, layout: layoutId, panes })`, then closes.
-- **Cancel / close / Esc / backdrop** → `onOpenChange(false)` with no side
-  effects.
+- **Cancel / close / Esc / outside-press** → `onOpenChange(false)` with no side
+  effects. An outside-press inside an open command `Menu` does **not** dismiss
+  (the `dismissWhen` predicate, §3.1).
 
 ### 2.5 Steady height / popups
 
-Both popups are `Menu` instances that portal to `document.body`, so they escape
-the dialog's scroll container and never change its height — this replaces the
-handoff's hand-rolled fixed-position `FloatingMenu` (flip / clamp / dismiss /
-focus now come from `Menu`'s substrate). The `min-height` on the
-layout+command row reserves space for the tallest state (a pinned extra layout).
+The per-pane command picker is a `Menu` instance that portals to
+`document.body`, so it escapes the popover's scroll container and never changes
+its height — this replaces the handoff's hand-rolled fixed-position
+`FloatingMenu` (flip / clamp / dismiss / focus now come from `Menu`'s
+substrate). The `min-height` on the layout+command row reserves space for the
+tallest state.
 
 ### 2.6 Path parsing (cross-platform)
 
@@ -173,37 +179,64 @@ crumb renders `~` as an ordinary first segment (no doubled leading slash).
 
 ---
 
-## 3. Modal Shell, Theme Tokens & Styling
+## 3. Shell, Theme Tokens & Styling
 
-### 3.1 Modal shell — decision
+### 3.1 Shell — anchored `Popover`
 
-The handoff specifies a 560px panel, 14px radius, an accent-tinted border, a
-custom shadow, and a fixed-height scrolling body. The house `Dialog` primitive
-imposes its own panel chrome and has no 560px size. Options considered:
+The dialog is an **anchored `Popover`** that pops from the New Session button —
+not a centered modal `Dialog`. (The first cut used `Dialog` + a `panelClassName`
+width override and a dimmed full-screen backdrop; user feedback was that it
+should read as a popover off its trigger, so the shell was reworked.) `Popover`
+(`@/components/Popover`) is the house floating-card primitive: `role="dialog"`,
+portalled glass surface, positioned by the floating substrate.
 
-- **A) Pure `Dialog`** — house chrome, zero new code, but the panel is ~672px
-  (`lg`) or 448px (`md`) with no internal-scroll body. Rejected: breaks the
-  design's width and steady-height behavior.
-- **B) Bespoke modal** (in the style of `LayoutCreatorModal`) — exact handoff
-  pixels, but re-implements portal / focus-trap / Esc / backdrop / overlay
-  registration. Rejected: duplicates a solved primitive.
-- **C) `Dialog` + minimal extension (chosen).** Reuse `Dialog` for behavior and
-  accessibility; add an optional `panelClassName?: string` prop appended to the
-  panel classes (backwards-compatible — existing callers omit it). This consumer
-  pins the width via `panelClassName="w-[min(560px,100%)] max-w-none"`, where
-  `max-w-none` neutralizes the size class (Tailwind precedence verified during
-  implementation; if `max-w-none` ordering proves unreliable, fall back to a
-  dedicated `size` token). Render **custom** header / scroll-body / footer
-  `<div>`s as `Dialog` children (not the `Dialog.Header/Body/Footer` helpers, so
-  the handoff paddings and the fixed-height `min(600px,70vh)` internal-scroll
-  body apply). The panel keeps the **house** surface (`glass-panel`,
-  `bg-surface-container`, `rounded-2xl`, `border-outline-variant/30`,
-  `shadow-2xl`) instead of the handoff's prototype-specific rgba border/shadow —
-  honoring the house "no visible borders / glassmorphism" rule. The residual
-  difference is a faint border hue and ~2px of radius, invisible in practice.
+Props this consumer passes:
 
-`Dialog` already handles portal, backdrop, focus trap, Tab cycling, Esc, and
-focus restore, so none of that is re-implemented.
+- `anchor={anchorEl}` — the New Session button element (forwarded as a ref from
+  `NewSessionButton` → `Button`, captured in `WorkspaceView` and passed down).
+- `placement="bottom-start"`, `width={560}` — drops the 560px card below the
+  button.
+- `focus="none"` — **not** `'dialog'`. The modal focus-trap fights the per-pane
+  command `Menu` (which portals its own surface and manages its own focus), so
+  the popover does not engage the trap.
+- `dismissWhen` — see below.
+
+There is **no** dimmed full-screen backdrop now (that was the whole point — it is
+a popover, not a modal). The header / scroll-body (`min(600px,70vh)`
+internal-scroll) / footer regions render as `Popover` children, keeping the
+handoff paddings and steady-height behavior. The panel keeps the **house** glass
+surface, honoring the "no visible borders / glassmorphism" rule.
+
+**`dismissWhen` — keeping the popover open while picking a pane command.** The
+repo has no `FloatingTree`, so a per-pane command `Menu` portals as a sibling of
+the popover; a press inside it reads as an _outside_ press and would dismiss the
+popover before the `onSelect` fires. `Popover` forwards an optional
+`dismissWhen?: (event: MouseEvent) => boolean` to its floating dismiss
+(outside-press) predicate. This consumer passes:
+
+```ts
+const dismissOutsideMenu = (event: MouseEvent): boolean => {
+  const target = event.target as Element | null
+  return !target?.closest('[role="menu"]')
+}
+```
+
+i.e. dismiss only when the press lands **outside** any open `role="menu"`
+surface. The command `Menu` carries `role="menu"` (set by
+`useFloatingSurface` → `useRole({ role: 'menu' })`), so a click on a menu row is
+recognized as "inside a menu" and the popover stays open.
+
+**Z-index / pane-selection fix.** In the first cut the per-pane command menus
+rendered _behind_ the dialog, so panes were not selectable. Reworking the shell
+to the anchored `Popover` (whose portalled glass surface stacks above the
+floating layer, with the `Menu` portalled as a sibling rather than trapped under
+a modal overlay) and pairing it with `focus="none"` + `dismissWhen` makes the
+menus land above the popover and the pane buttons fully interactive. (jsdom does
+not evaluate z-index, so the regression test guards the click _wiring_, not the
+visual stack — real-browser verification still recommended; see §5.4.)
+
+`Popover` (via the floating substrate) handles portal, positioning, dismiss
+(Esc + outside-press), so none of that is re-implemented.
 
 ### 3.2 Token map
 
@@ -407,7 +440,10 @@ useOverlayRegistration({
 })
 ```
 
-This makes the modal occlude native browser panes (which paint above the DOM).
+This makes the popover occlude native browser panes (which paint above the
+DOM). The registration stays `plane: 'dialog'` / `nativeOcclusion: 'global'`
+even though the shell is now an anchored popover — the occlusion behavior is
+still what we want.
 
 ### 5.3 Testing
 
@@ -415,9 +451,10 @@ Co-located `.test.tsx` for every new file. Coverage:
 
 - **Dialog interactions:** name auto-track + reset pill; Browse… (mock
   `pickDirectory`) updates path + the untouched name; layout select updates the
-  board + footer count; More-layouts pins a non-quick layout; pane command
-  assign; Create calls `onCreate` with `{ name, cwd, layout, panes }`; Cancel /
-  Esc / backdrop produce no side effects.
+  board + footer count via the `LayoutSwitcher`; pane command assign (the
+  regression guard that a pane command is selectable end-to-end through the
+  popover); Create calls `onCreate` with `{ name, cwd, layout, panes }`; Cancel /
+  Esc produce no side effects. (No backdrop — it is a popover, not a modal.)
 - **`createSession` options** (in the `useSessionManager` test, mocked service):
   pane count = `capacity`, kinds / cwd / layout / `userLabel` correct, the
   back-compat no-arg path, the partial-failure path.
@@ -432,8 +469,12 @@ Co-located `.test.tsx` for every new file. Coverage:
 
 ### 5.4 Risks
 
-- **R1** `panelClassName` Tailwind precedence (`max-w-none` vs the size class) —
-  verify during implementation; fallback is a dedicated `size` token on `Dialog`.
+- **R1** Floating-popover behavior is not fully exercisable in jsdom: the
+  anchored placement, the no-backdrop dismiss-on-outside-press, and the z-index
+  stack of the per-pane command `Menu` above the popover all need a real-browser
+  check. The `dismissWhen` predicate and the pane-command-selection wiring are
+  unit-tested, but z-index ordering and visual anchoring are not — verify in the
+  running app.
 - **R2** Multi-pane bookkeeping (`registerPending` / `registerPtySession` /
   `restoreData` per pane) — generalize carefully from the single-pane path;
   covered by tests.
