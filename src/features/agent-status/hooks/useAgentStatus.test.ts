@@ -1012,6 +1012,79 @@ describe('useAgentStatus', () => {
     expect(result.current.recentToolCalls[1]?.durationMs).toBe(40)
   })
 
+  test('counts a live completion for an active replay-summary tool call', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(
+        eventListeners.get('agent-replay-summary')?.length
+      ).toBeGreaterThanOrEqual(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-replay-summary', {
+        sessionId: 'pty-session-1',
+        numTurns: 7,
+        cwd: '/home/will/projects/vimeflow',
+        toolCallTotal: 12,
+        toolCallByType: { Read: 8, Edit: 3, Bash: 1 },
+        activeToolCall: {
+          sessionId: 'pty-session-1',
+          toolUseId: 'toolu_active',
+          tool: 'Bash',
+          args: '{"command":"npm test"}',
+          timestamp: '2026-04-28T12:00:03Z',
+        },
+        recentToolCalls: [
+          {
+            sessionId: 'pty-session-1',
+            toolUseId: 'toolu_recent',
+            tool: 'Edit',
+            args: 'src/foo.test.ts',
+            status: 'done',
+            timestamp: '2026-04-28T12:00:02Z',
+            durationMs: 250n,
+            isTestFile: true,
+          },
+        ],
+      })
+    })
+
+    expect(result.current.toolCalls.total).toBe(12)
+    expect(result.current.toolCalls.active?.toolUseId).toBe('toolu_active')
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_active',
+        tool: 'Bash',
+        args: '{"command":"npm test"}',
+        status: 'done',
+        timestamp: '2026-04-28T12:00:08Z',
+        durationMs: 5000n,
+        isTestFile: false,
+      })
+    })
+
+    expect(result.current.toolCalls.total).toBe(13)
+    expect(result.current.toolCalls.byType).toEqual({
+      Read: 8,
+      Edit: 3,
+      Bash: 2,
+    })
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.recentToolCalls[0]).toEqual({
+      id: 'toolu_active',
+      tool: 'Bash',
+      args: '{"command":"npm test"}',
+      status: 'done',
+      durationMs: 5000,
+      timestamp: '2026-04-28T12:00:08Z',
+      isTestFile: false,
+    })
+  })
+
   test('ignores agent-replay-summary events for other sessions', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-26
-ref_count: 7
+ref_count: 8
 ---
 
 # Agent-State Guards
@@ -111,4 +111,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `crates/backend/src/agent/events.rs`, `crates/backend/src/agent/adapter/codex/transcript.rs`, `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** The replay summary path preserved completed tool-call counts but dropped running tool calls at the replay boundary, failed to reset accumulated activity on Codex `session_meta` id changes, and replaced the frontend dedup set with only the recent summary window.
 - **Fix:** Added `activeToolCall` to replay summaries, reset `ReplayActivity` on Codex session changes, and made the frontend merge summary ids into the existing dedup set instead of replacing stored history. Regression tests cover active replay calls, completion clearing, and session-reset activity clearing.
+- **Commit:** same commit as this entry
+
+### 12. Active replay summary tool call was marked completed before live completion
+
+- **Source:** github-codex-connector | PR #626 round 2 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The replay summary handler merged `activeToolCall.toolUseId` into the frontend's completed-call dedup set. When the live `done` or `failed` event later arrived for that in-flight call, the hook treated it as already counted, cleared active state, and skipped the total and recent-feed update.
+- **Fix:** Kept replay-summary dedup seeding limited to completed `recentToolCalls`, leaving active calls unmarked until their live completion event is processed. Added a regression test covering an active replay call followed by its matching live completion.
 - **Commit:** same commit as this entry

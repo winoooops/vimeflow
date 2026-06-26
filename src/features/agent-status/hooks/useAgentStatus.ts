@@ -859,9 +859,6 @@ export const useAgentStatus = (
           seenToolUseIdsRef.current = new Set([
             ...seenToolUseIdsRef.current,
             ...payload.recentToolCalls.map((event) => event.toolUseId),
-            ...(payload.activeToolCall
-              ? [payload.activeToolCall.toolUseId]
-              : []),
           ])
           writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
 
