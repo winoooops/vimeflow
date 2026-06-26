@@ -259,7 +259,7 @@ export const buildWorkspaceCommands = (
         id: 'toggle-dock',
         label: ':toggle-dock',
         description: 'Open or collapse the editor/diff dock',
-        icon: 'dock_to_bottom',
+        icon: 'horizontal_split',
         // ⌘0 / Ctrl+0 — useDockToggleShortcut.
         shortcut: isMac ? ['⌘', '0'] : ['Ctrl', '0'],
         execute: (): void => {
