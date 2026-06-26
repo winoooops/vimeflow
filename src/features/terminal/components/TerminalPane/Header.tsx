@@ -114,7 +114,13 @@ export const Header = ({
         <span className="text-[12px]" aria-hidden="true">
           <AgentGlyph agent={agent} size={12} />
         </span>
-        <span>{agent.short}</span>
+        {/* Label sheds to glyph-only on a narrow pane so the title keeps room. */}
+        <span
+          data-testid="agent-glyph-label"
+          className="@max-[280px]/pane:hidden"
+        >
+          {agent.short}
+        </span>
       </Chip>
 
       {/* Flexible title truncates so the fixed action zone never clips. */}

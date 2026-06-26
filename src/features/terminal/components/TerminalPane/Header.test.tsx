@@ -62,6 +62,21 @@ describe('Header', () => {
     expect(brandMark).toBeInTheDocument()
   })
 
+  test('agent chip sheds its label to glyph-only on a narrow pane', () => {
+    render(<Header {...baseProps} />)
+
+    // The short-name label hides via a container query below the narrow-pane
+    // threshold (same 280px breakpoint the status bar uses to go compact)...
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass(
+      '@max-[280px]/pane:hidden'
+    )
+
+    // ...while the glyph itself always renders, so the chip never goes empty.
+    const glyphChip = screen.getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- the glyph is an svg brand mark
+    expect(glyphChip.querySelector('svg')).toBeInTheDocument()
+  })
+
   test('renders pane title from session.name', () => {
     render(<Header {...baseProps} />)
 
