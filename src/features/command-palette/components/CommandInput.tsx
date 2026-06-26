@@ -24,9 +24,9 @@ export const CommandInput = ({
 
   return (
     <div className="px-5 py-4 flex items-center gap-3">
-      {/* Search icon */}
+      {/* Terminal glyph in accent */}
       <span className="material-symbols-outlined text-primary-container text-xl">
-        search
+        terminal
       </span>
 
       {/* Input field */}

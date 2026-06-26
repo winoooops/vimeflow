@@ -2921,6 +2921,7 @@ const WorkspaceViewContent = (): ReactElement => {
         close={commandPalette.close}
         setQuery={commandPalette.setQuery}
         selectIndex={commandPalette.selectIndex}
+        executeAt={commandPalette.executeAt}
       />
     </div>
   )

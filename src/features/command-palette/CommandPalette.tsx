@@ -12,6 +12,7 @@ export interface CommandPaletteProps {
   close: () => void
   setQuery: (query: string) => void
   selectIndex: (index: number) => void
+  executeAt: (index: number) => void
 }
 
 // Guards the indexed lookup so a mismatched (clampedSelectedIndex, filteredResults) pair degrades to "no active descendant" instead of crashing — see docs/reviews/patterns/react-lifecycle.md §19.
@@ -36,6 +37,7 @@ export const CommandPalette = ({
   close,
   setQuery,
   selectIndex,
+  executeAt,
 }: CommandPaletteProps): ReactElement | null => (
   <Dialog
     open={state.isOpen}
@@ -65,6 +67,7 @@ export const CommandPalette = ({
       filteredResults={filteredResults}
       selectedIndex={clampedSelectedIndex}
       onSelect={selectIndex}
+      onExecute={executeAt}
     />
 
     <div className="h-px bg-surface-container-low/30" />

@@ -27,6 +27,7 @@ export interface UseCommandPaletteReturn {
   setQuery: (query: string) => void
   selectIndex: (index: number) => void
   executeSelected: () => void
+  executeAt: (index: number) => void
   navigateUp: () => void
   navigateDown: () => void
 }

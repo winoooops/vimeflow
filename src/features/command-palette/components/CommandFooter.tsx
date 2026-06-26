@@ -17,18 +17,13 @@ export const CommandFooter = (): ReactElement => (
         <span className="text-sm text-on-surface/60">Navigate</span>
       </div>
 
-      {/* Select hint */}
+      {/* Run hint */}
       <div className="flex items-center gap-2">
         <span className="material-symbols-outlined text-sm text-on-surface/60">
           keyboard_return
         </span>
-        <span className="text-sm text-on-surface/60">Select</span>
+        <span className="text-sm text-on-surface/60">Run</span>
       </div>
-    </div>
-
-    {/* Help text */}
-    <div className="text-sm text-primary-container/60">
-      Type &apos;?&apos; for help
     </div>
   </div>
 )

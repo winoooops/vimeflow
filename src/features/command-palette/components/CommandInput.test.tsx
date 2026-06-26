@@ -4,12 +4,12 @@ import { describe, test, expect, vi } from 'vitest'
 import { CommandInput } from './CommandInput'
 
 describe('CommandInput', () => {
-  test('renders search icon', () => {
+  test('renders terminal icon', () => {
     const mockOnChange = vi.fn()
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const icon = screen.getByText('search')
+    const icon = screen.getByText('terminal')
     expect(icon).toBeInTheDocument()
     expect(icon).toHaveClass('material-symbols-outlined')
     expect(icon).toHaveClass('text-primary-container')

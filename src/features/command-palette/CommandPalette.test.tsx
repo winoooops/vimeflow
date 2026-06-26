@@ -64,25 +64,25 @@ describe('CommandPalette', () => {
     expect(option).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('calls selectIndex when a result is clicked', async () => {
+  test('calls executeAt when a result is clicked', async () => {
     const user = userEvent.setup()
 
-    const { selectIndex } = renderPalette({
+    const { executeAt } = renderPalette({
       filteredResults: [sampleCommand],
       clampedSelectedIndex: 0,
     })
 
     await user.click(screen.getByRole('option', { name: /:help/i }))
 
-    expect(selectIndex).toHaveBeenCalledWith(0)
+    expect(executeAt).toHaveBeenCalledWith(0)
   })
 
   test('renders the footer and overlay z-index', () => {
     renderPalette()
 
     expect(screen.getByText('Navigate')).toBeInTheDocument()
-    expect(screen.getByText('Select')).toBeInTheDocument()
-    expect(screen.getByText("Type '?' for help")).toBeInTheDocument()
+    expect(screen.getByText('Run')).toBeInTheDocument()
+    expect(screen.queryByText("Type '?' for help")).toBeNull()
     expect(screen.getByRole('dialog')).toHaveClass('z-[100]')
   })
 
