@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-26
-ref_count: 10
+ref_count: 11
 ---
 
 # Agent-State Guards
@@ -138,4 +138,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `crates/backend/src/agent/adapter/claude_code/transcript.rs`, `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** The replay boundary emitted `agent-replay-summary` only when completed tool calls, turns, or cwd were present. A resume whose only replay activity was an in-flight tool call built a summary with `activeToolCall` but dropped it as empty, leaving the frontend falsely idle after resume.
 - **Fix:** Included `active_tool_call` in the summary emission guard for Claude and Codex transcript decoders. Added active-only replay-boundary regression tests for both decoders.
+- **Commit:** same commit as this entry
+
+### 15. Replay summary active call used event order instead of remaining in-flight state
+
+- **Source:** github-codex-connector | PR #626 round 6 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/events.rs`
+- **Finding:** `ReplayActivity` stored only one active tool call and overwrote it on each replayed `running` event. In a parallel replay where call A started, call B started, and B completed before catch-up, B's completion cleared the single active slot even though A was still in flight, so the replay summary could report no active tool call after resume.
+- **Fix:** Tracked replay in-flight tool calls by `tool_use_id` plus running arrival order, removed only the matching call on completion, and selected the newest remaining in-flight call when building the summary. Added a regression test for the A-running/B-running/B-completed sequence.
 - **Commit:** same commit as this entry

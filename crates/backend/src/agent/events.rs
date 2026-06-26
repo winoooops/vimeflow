@@ -98,7 +98,10 @@ pub(crate) fn emit_agent_replay_summary(
 pub(crate) struct ReplayActivity {
     total: u32,
     by_type: HashMap<String, u32>,
-    active: Option<AgentToolCallEvent>,
+    in_flight: HashMap<String, AgentToolCallEvent>,
+    /// Running tool-call ids in arrival order. `into_summary` walks this
+    /// newest-first and picks the latest id that is still in flight.
+    in_flight_order: VecDeque<String>,
     /// Completed tool calls in arrival (oldest-first) order, capped at the
     /// limit; `into_summary` reverses it to newest-first.
     recent: VecDeque<AgentToolCallEvent>,
@@ -109,13 +112,7 @@ impl ReplayActivity {
     fn record_completed(&mut self, event: AgentToolCallEvent) {
         self.total = self.total.saturating_add(1);
         *self.by_type.entry(event.tool.clone()).or_default() += 1;
-        if self
-            .active
-            .as_ref()
-            .is_some_and(|active| active.tool_use_id == event.tool_use_id)
-        {
-            self.active = None;
-        }
+        self.in_flight.remove(&event.tool_use_id);
         self.recent.push_back(event);
         if self.recent.len() > RECENT_TOOL_CALLS_LIMIT {
             self.recent.pop_front();
@@ -123,7 +120,10 @@ impl ReplayActivity {
     }
 
     fn record_running(&mut self, event: AgentToolCallEvent) {
-        self.active = Some(event);
+        if !self.in_flight.contains_key(&event.tool_use_id) {
+            self.in_flight_order.push_back(event.tool_use_id.clone());
+        }
+        self.in_flight.insert(event.tool_use_id.clone(), event);
     }
 
     /// Build the one-shot summary event, reversing `recent` to newest-first.
@@ -133,13 +133,19 @@ impl ReplayActivity {
         num_turns: u32,
         cwd: Option<String>,
     ) -> AgentReplaySummaryEvent {
+        let active_tool_call = self
+            .in_flight_order
+            .into_iter()
+            .rev()
+            .find_map(|tool_use_id| self.in_flight.get(&tool_use_id).cloned());
+
         AgentReplaySummaryEvent {
             session_id,
             num_turns,
             cwd,
             tool_call_total: self.total,
             tool_call_by_type: self.by_type,
-            active_tool_call: self.active,
+            active_tool_call,
             recent_tool_calls: self.recent.into_iter().rev().collect(),
         }
     }
@@ -294,6 +300,41 @@ mod tests {
 
         let summary = activity.into_summary("sid".into(), 0, None);
         assert!(summary.active_tool_call.is_none());
+        assert_eq!(summary.tool_call_total, 1);
+    }
+
+    #[test]
+    fn replay_activity_preserves_older_parallel_call_when_newer_call_completes() {
+        let mut activity = ReplayActivity::default();
+        let sink: Arc<dyn crate::runtime::EventSink> = Arc::new(FakeEventSink::new());
+
+        record_tool_call(
+            &sink,
+            tool_call("older", "Read", ToolCallStatus::Running),
+            &mut activity,
+            false,
+        );
+        record_tool_call(
+            &sink,
+            tool_call("newer", "Bash", ToolCallStatus::Running),
+            &mut activity,
+            false,
+        );
+        record_tool_call(
+            &sink,
+            tool_call("newer", "Bash", ToolCallStatus::Done),
+            &mut activity,
+            false,
+        );
+
+        let summary = activity.into_summary("sid".into(), 0, None);
+        assert_eq!(
+            summary
+                .active_tool_call
+                .as_ref()
+                .map(|event| event.tool_use_id.as_str()),
+            Some("older")
+        );
         assert_eq!(summary.tool_call_total, 1);
     }
 
