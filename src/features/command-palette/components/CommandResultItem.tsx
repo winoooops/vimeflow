@@ -21,6 +21,8 @@ export const CommandResultItem = ({
     role="option"
     aria-selected={isSelected}
     onMouseEnter={onSelect}
+    // Keep input focus on click so namespace drilling stays typeable.
+    onMouseDown={(event) => event.preventDefault()}
     onClick={onExecute}
     className={`
         group px-3 py-2.5 rounded-xl flex items-center gap-3 cursor-pointer transition-all border-l-2

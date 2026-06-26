@@ -1595,8 +1595,13 @@ const WorkspaceViewContent = (): ReactElement => {
         toggleSidebar: handleToggleSidebar,
         toggleBurner: toggleBurnerCommand,
         restartSession,
-        openEditor: (): void => openDock('editor'),
-        openDiff: (): void => openDock('diff'),
+        // Defer past Dialog's close-time focus restore so the dock wins.
+        openEditor: (): void => {
+          setTimeout(() => openDock('editor'), 0)
+        },
+        openDiff: (): void => {
+          setTimeout(() => openDock('diff'), 0)
+        },
         toggleDock: handleToggleDock,
         pickLayout: (id: string): boolean =>
           handlePickLayout(id as PaneLayoutId),

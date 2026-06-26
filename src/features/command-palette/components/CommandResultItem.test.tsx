@@ -1,5 +1,5 @@
 /* eslint-disable react/jsx-boolean-value */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi } from 'vitest'
 import type { Command } from '../types'
@@ -293,6 +293,22 @@ describe('CommandResultItem', () => {
     await user.click(screen.getByRole('option'))
 
     expect(onExecute).toHaveBeenCalledTimes(1)
+  })
+
+  test('prevents default on mousedown to keep input focus', () => {
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={mockCommand}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    const notCancelled = fireEvent.mouseDown(screen.getByRole('option'))
+
+    expect(notCancelled).toBe(false)
   })
 
   test('has cursor-pointer class', () => {
