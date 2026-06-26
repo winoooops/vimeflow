@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-25
-ref_count: 90
+last_updated: 2026-06-26
+ref_count: 91
 ---
 
 # Documentation Accuracy
@@ -872,4 +872,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/agents/brandIcons.tsx`
 - **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
 - **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Replay flood constants and WTerm dependency bounds lacked review context
+
+- **Source:** github-human | PR #626 round 1 | 2026-06-26
+- **Severity:** HUMAN
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`, `package.json`
+- **Finding:** Human review asked for the frontend replay summary comment to name the Rust `ReplayActivity` / `AgentReplaySummaryEvent` contract, for the flood threshold to document the 60 Hz frame assumption, and for WTerm packages to be hard-capped to the current 0.3 line.
+- **Fix:** Updated the replay-boundary and flood-threshold comments to document the cross-layer contract and frame-budget assumption. Pinned `@wterm/dom` and `@wterm/ghostty` to `0.3.0` in `package.json` and `package-lock.json`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

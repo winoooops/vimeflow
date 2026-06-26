@@ -63,6 +63,7 @@ export class DesktopTerminalService implements ITerminalService {
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
   private listenerInitGeneration = 0
+  private rawDataConsumerIds = new Set<string>()
 
   private reportListenerInitFailure(error: unknown): void {
     // eslint-disable-next-line no-console
@@ -116,7 +117,11 @@ export class DesktopTerminalService implements ITerminalService {
                 ? Number(offsetStart)
                 : offsetStart
             const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
-            const rawData = decodeBase64Bytes(dataBytesBase64)
+
+            const rawData = this.rawDataConsumerIds.has(sessionId)
+              ? decodeBase64Bytes(dataBytesBase64)
+              : undefined
+
             this.dataCallbacks.forEach((cb) => {
               if (rawData) {
                 cb(sessionId, data, offset, len, rawData)
@@ -177,6 +182,16 @@ export class DesktopTerminalService implements ITerminalService {
     })()
 
     return this.initPromise
+  }
+
+  setRawDataConsumer(sessionId: string, enabled: boolean): void {
+    if (enabled) {
+      this.rawDataConsumerIds.add(sessionId)
+
+      return
+    }
+
+    this.rawDataConsumerIds.delete(sessionId)
   }
 
   private removeExitCallback(

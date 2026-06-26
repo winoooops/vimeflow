@@ -645,14 +645,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   }, [terminal, resize, status])
 
   useEffect(() => {
-    if (rendererMode) {
-      setActiveRendererMode(rendererMode)
-    }
+    setActiveRendererMode(rendererMode ?? resolveDefaultTerminalRendererMode())
   }, [rendererMode])
 
   useEffect(() => {
     osc7CwdExtractorRef.current.reset()
   }, [activeRendererMode, sessionId])
+
+  useEffect(() => {
+    service.setRawDataConsumer?.(sessionId, activeRendererMode === 'ghostty-wasm')
+
+    return (): void => {
+      service.setRawDataConsumer?.(sessionId, false)
+    }
+  }, [activeRendererMode, service, sessionId])
 
   // P2 Fix: Terminal instance management with caching.
   // Terminals persist when switching sessions to avoid killing PTY processes.
@@ -664,6 +670,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
     if (activeRendererMode === 'ghostty-wasm') {
       let disposed = false
+      let lastAutoResize: { cols: number; rows: number } | null = null
 
       const handleFocusIn = (): void => {
         onFocusChangeRef.current?.(true)
@@ -684,6 +691,18 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
             rows: 24,
             theme: themeService.current().terminal,
             onResize: (cols, rows): void => {
+              if (node.offsetWidth <= 0 || node.offsetHeight <= 0) {
+                return
+              }
+
+              if (
+                lastAutoResize?.cols === cols &&
+                lastAutoResize.rows === rows
+              ) {
+                return
+              }
+
+              lastAutoResize = { cols, rows }
               resizeRef.current(cols, rows)
             },
           })

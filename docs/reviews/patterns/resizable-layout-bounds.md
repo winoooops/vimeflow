@@ -2,8 +2,8 @@
 id: resizable-layout-bounds
 category: correctness
 created: 2026-06-18
-last_updated: 2026-06-18
-ref_count: 1
+last_updated: 2026-06-26
+ref_count: 2
 ---
 
 # Resizable Layout Bounds
@@ -59,4 +59,13 @@ model and the rendered grid stay consistent and no pane becomes inaccessible.
   `useElasticContainer`, and made `useElasticContainer` recompute its pixel
   bounds when the configured percent limits change. The controller now clamps
   to the same range that `updateTrackBoundaryRatio` enforces.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Hidden Ghostty panes forwarded zero-width auto-resizes
+
+- **Source:** github-codex-connector | PR #626 round 1 | 2026-06-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** Ghostty WASM forwarded every WTerm auto-resize to the backend PTY, including callbacks fired while the pane was hidden and measured near zero width. Inactive mounted panes could therefore shrink the PTY and rewrap scrollback.
+- **Fix:** Guarded Ghostty auto-resize callbacks on visible container dimensions and deduped repeated cols/rows before calling the PTY resize path. Added a regression test covering hidden suppression and visible dedupe.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

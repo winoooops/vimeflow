@@ -30,6 +30,8 @@ const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
 const EXIT_HOLD_MS = 5000
 
+// One 60 Hz frame is 16.67 ms. When replayed transcript activity exceeds one
+// frame's budget, spread tool-call updates across requestAnimationFrame ticks.
 const TOOL_CALL_FLOOD_THRESHOLD = 16
 
 const applyToolCallEvents = (
@@ -840,11 +842,11 @@ export const useAgentStatus = (
 
       addUnlisten(unlistenTestRun)
 
-      // Replay summary — one coalesced event at the replay→live boundary that
-      // replaces the thousands of per-line agent-tool-call / agent-turn /
-      // agent-cwd events the backend suppresses during a resume's transcript
-      // replay (those would flood the IPC queue and freeze the renderer). Apply
-      // its aggregated state in one update; live per-line events resume after.
+      // Replay summary — one coalesced AgentReplaySummaryEvent at the
+      // replay→live boundary. Rust builds it from ReplayActivity and uses it
+      // instead of emitting the thousands of per-line agent-tool-call /
+      // agent-turn / agent-cwd events seen during transcript resume. Apply its
+      // aggregated state in one update; live per-line events resume after.
       const unlistenReplaySummary = await listen<AgentReplaySummaryEvent>(
         'agent-replay-summary',
         (payload) => {

@@ -2,8 +2,8 @@
 id: bridge-payload-minimization
 category: security
 created: 2026-06-20
-last_updated: 2026-06-21
-ref_count: 2
+last_updated: 2026-06-26
+ref_count: 3
 ---
 
 # Bridge Payload Minimization
@@ -48,4 +48,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
 - **Finding:** The opencode bridge redacted exact normalized credential-key names but did not match namespaced custom-tool args such as `apiSecretKey`, `myAccessKey`, or `awsSecretAccessKey`. Those scalar credential values could still be persisted in local bridge JSONL.
 - **Fix:** Added targeted compound suffix matching for access, secret, signing, and encryption key field names, and extended the bridge JSONL regression test with prefixed variants while preserving a benign key label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Xterm sessions decoded Ghostty-only raw PTY bytes
+
+- **Source:** github-claude | PR #626 round 1 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** The Electron terminal bridge decoded `dataBytesBase64` for every PTY chunk, so default xterm sessions paid per-chunk base64 decode and allocation overhead even though only Ghostty WASM consumes raw bytes.
+- **Fix:** Added per-session raw-byte consumer registration and decode only when the emitted session is registered by a Ghostty renderer. The xterm path now receives string data without decoding the optional base64 payload.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

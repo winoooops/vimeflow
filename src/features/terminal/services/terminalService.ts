@@ -65,6 +65,13 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
+   * Register whether a session needs raw PTY bytes. The default xterm path uses
+   * string output; Ghostty WASM opts in so base64 decode cost stays scoped to
+   * sessions that consume byte chunks.
+   */
+  setRawDataConsumer?(sessionId: string, enabled: boolean): void
+
+  /**
    * Subscribe to PTY exit events. Resolves after the underlying transport
    * listener is attached and rejects if listener setup fails.
    */

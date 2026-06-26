@@ -2,8 +2,8 @@
 id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-22
-ref_count: 6
+last_updated: 2026-06-26
+ref_count: 7
 ---
 
 # React Prop Contracts
@@ -84,4 +84,13 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **File:** `src/features/agent-status/components/QuotaUnavailableNotice.tsx` L30-34
 - **Finding:** The quota notice component hardcoded a tooltip string containing `sst/opencode#16017` while the URL lived in the agent registry. Updating the upstream issue link later could leave the tooltip stale even though the link opened the new destination.
 - **Fix:** Added `tooltipLabel` to `QuotaNotice`, populated it beside `trackUrl` in the registry, and made `QuotaUnavailableNotice` render that prop. Updated component and card tests to provide the co-located label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Optional rendererMode prop could not return to default semantics
+
+- **Source:** github-claude | PR #626 round 1 | 2026-06-26
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** `rendererMode` was applied only when truthy, so a caller that removed the prop after forcing Ghostty left the pane stuck in the prior mode instead of returning to the system default.
+- **Fix:** Recomputed the active renderer mode from `rendererMode ?? resolveDefaultTerminalRendererMode()` whenever the prop changes and added a regression test for the forced-mode-to-default transition.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -215,6 +215,67 @@ describe('DesktopTerminalService', () => {
       expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0, 11)
     })
 
+    test('onData skips base64 decode unless the session consumes raw bytes', async () => {
+      const callback = vi.fn()
+      const atobSpy = vi.spyOn(globalThis, 'atob')
+      await service.onData(callback)
+      await mockSpawnAndInit(service)
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: 'hello',
+        dataBytesBase64: 'not valid base64',
+        offsetStart: 0,
+        byteLen: 5,
+      })
+
+      expect(atobSpy).not.toHaveBeenCalled()
+      expect(callback).toHaveBeenCalledWith('sess-1', 'hello', 0, 5)
+
+      atobSpy.mockRestore()
+    })
+
+    test('onData decodes raw bytes only for registered sessions', async () => {
+      const callback = vi.fn()
+      await service.onData(callback)
+      await mockSpawnAndInit(service)
+
+      service.setRawDataConsumer('raw-session', true)
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'xterm-session',
+        data: 'plain',
+        dataBytesBase64: btoa('plain'),
+        offsetStart: 0,
+        byteLen: 5,
+      })
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'raw-session',
+        data: 'raw',
+        dataBytesBase64: btoa('raw'),
+        offsetStart: 5,
+        byteLen: 3,
+      })
+
+      expect(callback).toHaveBeenNthCalledWith(
+        1,
+        'xterm-session',
+        'plain',
+        0,
+        5
+      )
+
+      expect(callback).toHaveBeenNthCalledWith(
+        2,
+        'raw-session',
+        'raw',
+        5,
+        3,
+        new Uint8Array([114, 97, 119])
+      )
+    })
+
     test('onExit delivers pty-exit events to callback', async () => {
       const callback = vi.fn()
       await service.onExit(callback)
@@ -683,6 +744,7 @@ describe('DesktopTerminalService', () => {
       )
 
       await mockSpawnAndInit(testService)
+      testService.setRawDataConsumer('sess-1', true)
 
       emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',

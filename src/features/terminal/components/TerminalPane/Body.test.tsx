@@ -59,6 +59,7 @@ const createDefaultMockService = (): ITerminalService =>
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+    setRawDataConsumer: vi.fn(),
   }) as ITerminalService
 
 // Mock xterm modules
@@ -980,6 +981,141 @@ describe('Body', () => {
     await waitFor(() => {
       expect(mockTerminal.open).toHaveBeenCalled()
     })
+  })
+
+  test('registers raw byte consumption only while Ghostty WASM is active', async () => {
+    const destroy = vi.fn()
+    vi.mocked(createWtermGhosttyTerminal).mockResolvedValueOnce({
+      clear: vi.fn(),
+      cols: 80,
+      destroy,
+      focus: vi.fn(),
+      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      rows: 24,
+      write: vi.fn(),
+    } as never)
+
+    const { unmount } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        rendererMode="ghostty-wasm"
+      />
+    )
+
+    await waitFor(() => {
+      expect(defaultMockService.setRawDataConsumer).toHaveBeenCalledWith(
+        'test-session',
+        true
+      )
+    })
+
+    unmount()
+
+    expect(defaultMockService.setRawDataConsumer).toHaveBeenCalledWith(
+      'test-session',
+      false
+    )
+  })
+
+  test('guards Ghostty auto-resize callbacks while hidden and dedupes repeats', async () => {
+    let onResize: ((cols: number, rows: number) => void) | null = null
+    vi.mocked(createWtermGhosttyTerminal).mockImplementationOnce(
+      (options) => {
+        onResize = options.onResize
+
+        return Promise.resolve({
+          clear: vi.fn(),
+          cols: 80,
+          destroy: vi.fn(),
+          focus: vi.fn(),
+          onData: vi.fn(() => ({ dispose: vi.fn() })),
+          rows: 24,
+          write: vi.fn(),
+        } as never)
+      }
+    )
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(0)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(0)
+
+    try {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          rendererMode="ghostty-wasm"
+        />
+      )
+
+      await waitFor(() => {
+        expect(onResize).not.toBeNull()
+      })
+
+      vi.mocked(mockUseTerminal.resize).mockClear()
+      onResize?.(1, 24)
+      expect(mockUseTerminal.resize).not.toHaveBeenCalled()
+
+      offsetWidthSpy.mockReturnValue(800)
+      offsetHeightSpy.mockReturnValue(600)
+
+      onResize?.(80, 24)
+      onResize?.(80, 24)
+      onResize?.(81, 24)
+
+      expect(mockUseTerminal.resize).toHaveBeenCalledTimes(2)
+      expect(mockUseTerminal.resize).toHaveBeenNthCalledWith(1, 80, 24)
+      expect(mockUseTerminal.resize).toHaveBeenNthCalledWith(2, 81, 24)
+    } finally {
+      offsetHeightSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+    }
+  })
+
+  test('reverts rendererMode to the system default when prop becomes undefined', async () => {
+    const destroy = vi.fn()
+    vi.mocked(createWtermGhosttyTerminal).mockResolvedValueOnce({
+      clear: vi.fn(),
+      cols: 80,
+      destroy,
+      focus: vi.fn(),
+      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      rows: 24,
+      write: vi.fn(),
+    } as never)
+
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        rendererMode="ghostty-wasm"
+      />
+    )
+
+    await waitFor(() => {
+      expect(createWtermGhosttyTerminal).toHaveBeenCalled()
+    })
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+    expect(destroy).toHaveBeenCalled()
   })
 
   test('reattaches Canvas2D when WebGL context is lost at runtime', async () => {
