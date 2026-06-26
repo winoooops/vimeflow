@@ -922,6 +922,45 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active).toBeNull()
   })
 
+  test('keeps active tool call when another tool completes', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_bash_active',
+        tool: 'Bash',
+        args: '{"command":"npm test"}',
+        status: 'running',
+        timestamp: '2026-04-12T00:00:00Z',
+        durationMs: null,
+      })
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_read_done',
+        tool: 'Read',
+        args: '{"file_path":"README.md"}',
+        status: 'done',
+        timestamp: '2026-04-12T00:00:01Z',
+        durationMs: 100,
+      })
+    })
+
+    expect(result.current.toolCalls.active).toEqual({
+      tool: 'Bash',
+      args: '{"command":"npm test"}',
+      startedAt: '2026-04-12T00:00:00Z',
+      toolUseId: 'toolu_bash_active',
+    })
+  })
+
   test('propagates isTestFile from agent-tool-call event to recentToolCalls', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

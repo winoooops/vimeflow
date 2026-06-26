@@ -207,6 +207,7 @@ describe('DesktopTerminalService', () => {
       expect(invoke).toHaveBeenNthCalledWith(1, 'set_raw_pty_bytes', {
         request: { sessionId: 'raw-session', enabled: true },
       })
+
       expect(invoke).toHaveBeenNthCalledWith(2, 'set_raw_pty_bytes', {
         request: { sessionId: 'raw-session', enabled: false },
       })

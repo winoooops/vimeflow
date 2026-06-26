@@ -73,7 +73,10 @@ const applyToolCallEvents = (
       toolCalls = {
         total: toolCalls.total + 1,
         byType,
-        active: null,
+        active:
+          toolCalls.active?.toolUseId === event.toolUseId
+            ? null
+            : toolCalls.active,
       }
     }
   }

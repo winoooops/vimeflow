@@ -191,14 +191,22 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
+  bufferedEvents: BufferedEvent[]
+}
+
+export interface BufferedEvent {
+  data: string
+  offsetStart: number
+  byteLen: number
+  rawData?: Uint8Array
 }
 
 /** Handler that receives a buffered PTY event during pane drain. */
 export type PaneEventHandler = (
   data: string,
   offsetStart: number,
-  byteLen: number
+  byteLen: number,
+  rawData?: Uint8Array
 ) => void
 
 /** Cleanup callback returned by `notifyPaneReady` — call on pane unmount. */

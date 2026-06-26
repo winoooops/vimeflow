@@ -564,10 +564,36 @@ const MenuRow = ({
     select()
   }
 
-  const itemProps = menu.getItemProps({
+  const { onKeyDown: composedOnKeyDown, ...itemProps } = menu.getItemProps({
     onClick: handleClick,
     onKeyDown: handleKeyDown,
   })
+
+  const handleMergedKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
+    const target = event.target instanceof Element ? event.target : null
+
+    const nestedControl = target?.closest(
+      'button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"])'
+    )
+
+    const nestedButton =
+      nestedControl instanceof HTMLButtonElement ? nestedControl : null
+
+    const composedHandler = composedOnKeyDown as
+      | KeyboardEventHandler<HTMLDivElement>
+      | undefined
+
+    if (nestedControl !== null && nestedControl !== event.currentTarget) {
+      if (nestedButton && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        nestedButton.click()
+      }
+
+      return
+    }
+
+    composedHandler?.(event)
+  }
 
   return (
     <div
@@ -578,7 +604,7 @@ const MenuRow = ({
       aria-label={label}
       className={className}
       {...itemProps}
-      onKeyDown={handleKeyDown}
+      onKeyDown={handleMergedKeyDown}
     >
       {children}
     </div>

@@ -549,7 +549,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onRestoreStart: handleRestoreStart,
     onRestoreEnd: handleRestoreEnd,
     onInput: handleTerminalInput,
-    consumeRawData: activeRendererMode === 'ghostty-wasm',
+    consumeRawData: activeRendererMode === 'ghostty-wasm' && terminal !== null,
     mode,
   })
   terminalStatusRef.current = status

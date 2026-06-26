@@ -1004,7 +1004,9 @@ describe('Body', () => {
       />
     )
 
-    expect(latestUseTerminalOptions().consumeRawData).toBe(true)
+    await waitFor(() => {
+      expect(latestUseTerminalOptions().consumeRawData).toBe(true)
+    })
 
     unmount()
 

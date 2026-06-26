@@ -1,18 +1,17 @@
 import { useCallback, useRef } from 'react'
-import type { NotifyPaneReadyResult, PaneEventHandler } from '../types'
-
-interface BufferedEvent {
-  data: string
-  offsetStart: number
-  byteLen: number
-}
+import type {
+  BufferedEvent,
+  NotifyPaneReadyResult,
+  PaneEventHandler,
+} from '../types'
 
 export interface PtyBufferDrain {
   bufferEvent: (
     ptyId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    rawData?: Uint8Array
   ) => void
   notifyPaneReady: (
     ptyId: string,
@@ -39,7 +38,7 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
   const tombstonedPanesRef = useRef(new Set<string>())
 
   const bufferEvent = useCallback<PtyBufferDrain['bufferEvent']>(
-    (ptyId, data, offsetStart, byteLen) => {
+    (ptyId, data, offsetStart, byteLen, rawData) => {
       if (
         tombstonedPanesRef.current.has(ptyId) ||
         readyPanesRef.current.has(ptyId)
@@ -52,7 +51,13 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
         queue = []
         bufferedRef.current.set(ptyId, queue)
       }
-      queue.push({ data, offsetStart, byteLen })
+      if (rawData === undefined) {
+        queue.push({ data, offsetStart, byteLen })
+
+        return
+      }
+
+      queue.push({ data, offsetStart, byteLen, rawData })
     },
     []
   )
@@ -72,7 +77,13 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
       const events = bufferedRef.current.get(ptyId)
       if (events && events.length > 0) {
         for (const event of events) {
-          handler(event.data, event.offsetStart, event.byteLen)
+          if (event.rawData === undefined) {
+            handler(event.data, event.offsetStart, event.byteLen)
+
+            continue
+          }
+
+          handler(event.data, event.offsetStart, event.byteLen, event.rawData)
         }
         bufferedRef.current.delete(ptyId)
       }

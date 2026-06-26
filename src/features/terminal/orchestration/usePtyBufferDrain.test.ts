@@ -30,16 +30,17 @@ describe('usePtyBufferDrain', () => {
   test('notifyPaneReady drains buffered events to handler', () => {
     const { result } = renderHook(() => usePtyBufferDrain())
     const handler = vi.fn()
+    const rawData = new Uint8Array([0xff, 0xfe])
 
     result.current.registerPending('pty-1')
     result.current.bufferEvent('pty-1', 'first', 0, 5)
-    result.current.bufferEvent('pty-1', 'second', 5, 6)
+    result.current.bufferEvent('pty-1', 'second', 5, 2, rawData)
 
     result.current.notifyPaneReady('pty-1', handler)
 
     expect(handler).toHaveBeenCalledTimes(2)
     expect(handler).toHaveBeenNthCalledWith(1, 'first', 0, 5)
-    expect(handler).toHaveBeenNthCalledWith(2, 'second', 5, 6)
+    expect(handler).toHaveBeenNthCalledWith(2, 'second', 5, 2, rawData)
   })
 
   test('notifyPaneReady cleanup re-arms pending state on remount', () => {

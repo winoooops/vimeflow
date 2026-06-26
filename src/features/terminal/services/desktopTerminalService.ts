@@ -198,12 +198,15 @@ export class DesktopTerminalService implements ITerminalService {
       this.rawDataConsumerIds.delete(sessionId)
     }
 
-    const request: SetRawPtyBytesRequest = { sessionId, enabled }
-    void Promise.resolve(invoke('set_raw_pty_bytes', { request })).catch(
-      (error: unknown) => {
-        this.reportListenerInitFailure(error)
-      }
-    )
+    void this.setRawPtyBytes({ sessionId, enabled })
+  }
+
+  private async setRawPtyBytes(request: SetRawPtyBytesRequest): Promise<void> {
+    try {
+      await invoke('set_raw_pty_bytes', { request })
+    } catch (error) {
+      this.reportListenerInitFailure(error)
+    }
   }
 
   private removeExitCallback(

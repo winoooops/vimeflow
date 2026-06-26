@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-06-26
-ref_count: 4
+ref_count: 5
 ---
 
 # Bridge Payload Minimization
@@ -75,4 +75,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/terminal/commands.rs`
 - **Finding:** The backend always base64-encoded every PTY chunk into `data_bytes_base64`, so default xterm sessions paid per-chunk allocation, encode cost, and larger IPC payloads for a Ghostty WASM renderer that was not active.
 - **Fix:** Added a per-session raw-byte capability toggled by the active renderer. The PTY read loop now leaves `data_bytes_base64` absent unless the session has an active Ghostty WASM raw-byte consumer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Restored drain events dropped Ghostty raw bytes
+
+- **Source:** github-claude | PR #626 round 4 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/useTerminal.ts`
+- **Finding:** The pane-ready buffer drain threaded only lossy string data through restored PTY events, so Ghostty WASM sessions lost raw-byte fidelity for output buffered between snapshot capture and live subscription readiness.
+- **Fix:** Widened buffered event and drain-handler contracts to carry optional `rawData`, forwarded it through session restore, and wrote restored chunks with raw bytes when present.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

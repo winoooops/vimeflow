@@ -219,6 +219,29 @@ describe('useTerminal', () => {
     expect(mockTerminal.write).toHaveBeenCalledWith(rawData)
   })
 
+  test('prefers raw PTY bytes from restored buffer drain events', async () => {
+    const rawData = new Uint8Array([0xff, 0xfe])
+
+    renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        restoredFrom: {
+          sessionId: 'session-1',
+          cwd: '/tmp',
+          pid: 1234,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [{ data: '��', offsetStart: 0, byteLen: 2, rawData }],
+        },
+      })
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.write).toHaveBeenCalledWith(rawData)
+    })
+  })
+
   test('reports accepted PTY output chunks', async () => {
     const onOutput = vi.fn()
 

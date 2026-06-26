@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-26
-ref_count: 8
+ref_count: 9
 ---
 
 # Agent-State Guards
@@ -120,4 +120,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** The replay summary handler merged `activeToolCall.toolUseId` into the frontend's completed-call dedup set. When the live `done` or `failed` event later arrived for that in-flight call, the hook treated it as already counted, cleared active state, and skipped the total and recent-feed update.
 - **Fix:** Kept replay-summary dedup seeding limited to completed `recentToolCalls`, leaving active calls unmarked until their live completion event is processed. Added a regression test covering an active replay call followed by its matching live completion.
+- **Commit:** same commit as this entry
+
+### 13. Unrelated completion event cleared the active tool call
+
+- **Source:** github-claude | PR #626 round 4 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `applyToolCallEvents` cleared `toolCalls.active` for any `done` or `failed` event, so a completion for tool A could make the UI appear idle even while a different tool B was still running in the same replay batch.
+- **Fix:** Guarded the active-clear by `toolUseId` so only the matching completion clears the active call. Added regression coverage for an unrelated completed tool preserving the running active call.
 - **Commit:** same commit as this entry

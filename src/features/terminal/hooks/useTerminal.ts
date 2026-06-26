@@ -29,7 +29,12 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
+  bufferedEvents: {
+    data: string
+    offsetStart: number
+    byteLen: number
+    rawData?: Uint8Array
+  }[]
 }
 
 /**
@@ -41,7 +46,12 @@ export interface RestoreData {
  */
 export type NotifyPaneReady = (
   ptyId: string,
-  handler: (data: string, offsetStart: number, byteLen: number) => void
+  handler: (
+    data: string,
+    offsetStart: number,
+    byteLen: number,
+    rawData?: Uint8Array
+  ) => void
 ) => () => void
 
 /**
@@ -379,15 +389,23 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           }
         }
 
-        const restoredOutputParts = [
-          restore.replayData,
-          ...restoredBufferedEvents.map((event) => event.data),
-        ]
+        const restoredOutputParts = restoredBufferedEvents.map(
+          ({ data, rawData }) => ({ data, rawData })
+        )
 
-        const restoredOutput = restoredOutputParts.join('')
+        if (restore.replayData.length > 0) {
+          restoredOutputParts.unshift({
+            data: restore.replayData,
+            rawData: undefined,
+          })
+        }
+
+        const restoredOutput = restoredOutputParts
+          .map((chunk) => chunk.data)
+          .join('')
 
         const restoredOutputChunks = restoredOutputParts.filter(
-          (data) => data.length > 0
+          (chunk) => chunk.data.length > 0
         )
 
         const restoreStart = onRestoreStartRef.current
@@ -409,15 +427,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         }
 
         if (restoredOutputChunks.length > 0) {
-          restoredOutputChunks.forEach((data, index) => {
+          restoredOutputChunks.forEach((chunk, index) => {
             const isLastChunk = index === restoredOutputChunks.length - 1
+            const output = chunk.rawData ?? chunk.data
             if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
-              terminal.write(data, finishRestore)
+              terminal.write(output, finishRestore)
 
               return
             }
 
-            terminal.write(data)
+            terminal.write(output)
           })
         } else {
           finishRestore()
@@ -565,9 +584,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const handleDataForDrain = (
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      rawData?: Uint8Array
     ): void => {
-      handleData(session.id, data, offsetStart, byteLen)
+      handleData(session.id, data, offsetStart, byteLen, rawData)
     }
 
     const handleExit = (eventSessionId: string, code: number | null): void => {
