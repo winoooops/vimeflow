@@ -66,10 +66,23 @@ describe('useAgentStatus', () => {
     )
     vi.mocked(getPtySessionId).mockImplementation(defaultGetPtySessionIdImpl)
     vi.useFakeTimers()
+    // The tool-call flush coalesces via requestAnimationFrame; fire it
+    // synchronously so per-event assertions observe each update without a frame
+    // advance (the active-mode drip degrades to one-per-event here). stubGlobal
+    // (not spyOn) because fake timers leave cancelAnimationFrame undefined, and
+    // spyOn cannot create an absent global. The hook's boolean scheduling guard
+    // keeps a synchronous rAF re-arm-safe.
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+
+      return 0
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   test('returns default inactive status when sessionId is null', () => {
@@ -699,6 +712,72 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.byType).toEqual({ Read: 2, Edit: 1 })
   })
 
+  test('coalesces a replay flood into one render but drips active calls per frame', async () => {
+    // Replace the synchronous rAF (beforeEach) with a store-and-flush controller
+    // so we can observe flood-batch (default mode) vs active-drip directly.
+    let frameCallback: FrameRequestCallback | null = null
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameCallback = callback
+
+      return 1
+    })
+
+    const advanceFrame = (): void => {
+      const callback = frameCallback
+      frameCallback = null
+      if (callback) {
+        act(() => callback(0))
+      }
+    }
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    // Replay flood: 40 completed calls in one frame (> TOOL_CALL_FLOOD_THRESHOLD).
+    act(() => {
+      for (let i = 0; i < 40; i += 1) {
+        emit('agent-tool-call', {
+          sessionId: 'pty-session-1',
+          toolUseId: `replay_${i}`,
+          tool: 'Read',
+          args: '{}',
+          status: 'done',
+          timestamp: `2026-04-12T00:00:${i}Z`,
+          durationMs: 1,
+        })
+      }
+    })
+
+    // Deferred until the frame, then applied as ONE batch (no per-event render).
+    expect(result.current.toolCalls.total).toBe(0)
+    advanceFrame()
+    expect(result.current.toolCalls.total).toBe(40)
+
+    // Active mode: three live calls drip in one-per-frame so the JAR stacks each.
+    act(() => {
+      for (let i = 0; i < 3; i += 1) {
+        emit('agent-tool-call', {
+          sessionId: 'pty-session-1',
+          toolUseId: `live_${i}`,
+          tool: 'Grep',
+          args: '{}',
+          status: 'done',
+          timestamp: `2026-04-12T00:01:${i}Z`,
+          durationMs: 1,
+        })
+      }
+    })
+
+    advanceFrame()
+    expect(result.current.toolCalls.total).toBe(41)
+    advanceFrame()
+    expect(result.current.toolCalls.total).toBe(42)
+    advanceFrame()
+    expect(result.current.toolCalls.total).toBe(43)
+  })
+
   test('manages recentToolCalls as a sliding window capped at 50', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
@@ -864,6 +943,97 @@ describe('useAgentStatus', () => {
     })
 
     expect(result.current.recentToolCalls[0]?.isTestFile).toBe(true)
+  })
+
+  test('applies an agent-replay-summary in one update', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(
+        eventListeners.get('agent-replay-summary')?.length
+      ).toBeGreaterThanOrEqual(1)
+    })
+
+    act(() => {
+      emit('agent-replay-summary', {
+        sessionId: 'pty-session-1',
+        numTurns: 7,
+        cwd: '/home/will/projects/vimeflow/.claude/worktrees/dummy',
+        toolCallTotal: 12,
+        toolCallByType: { Read: 8, Edit: 3, Bash: 1 },
+        recentToolCalls: [
+          {
+            sessionId: 'pty-session-1',
+            toolUseId: 'toolu_recent',
+            tool: 'Edit',
+            args: 'src/foo.test.ts',
+            status: 'done',
+            timestamp: '2026-04-28T12:00:02Z',
+            durationMs: 250n,
+            isTestFile: true,
+          },
+          {
+            sessionId: 'pty-session-1',
+            toolUseId: 'toolu_older',
+            tool: 'Read',
+            args: 'src/bar.ts',
+            status: 'done',
+            timestamp: '2026-04-28T12:00:01Z',
+            durationMs: 40n,
+            isTestFile: false,
+          },
+        ],
+      })
+    })
+
+    expect(result.current.numTurns).toBe(7)
+    expect(result.current.cwd).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/dummy'
+    )
+    expect(result.current.toolCalls.total).toBe(12)
+    expect(result.current.toolCalls.byType).toEqual({
+      Read: 8,
+      Edit: 3,
+      Bash: 1,
+    })
+    expect(result.current.toolCalls.active).toBeNull()
+    // Newest-first, mapped from the wire shape (durationMs coerced from bigint).
+    expect(result.current.recentToolCalls).toHaveLength(2)
+    expect(result.current.recentToolCalls[0]).toEqual({
+      id: 'toolu_recent',
+      tool: 'Edit',
+      args: 'src/foo.test.ts',
+      status: 'done',
+      durationMs: 250,
+      timestamp: '2026-04-28T12:00:02Z',
+      isTestFile: true,
+    })
+    expect(result.current.recentToolCalls[1]?.id).toBe('toolu_older')
+    expect(result.current.recentToolCalls[1]?.durationMs).toBe(40)
+  })
+
+  test('ignores agent-replay-summary events for other sessions', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(
+        eventListeners.get('agent-replay-summary')?.length
+      ).toBeGreaterThanOrEqual(1)
+    })
+
+    act(() => {
+      emit('agent-replay-summary', {
+        sessionId: 'pty-other-session',
+        numTurns: 99,
+        cwd: '/elsewhere',
+        toolCallTotal: 5,
+        toolCallByType: { Read: 5 },
+        recentToolCalls: [],
+      })
+    })
+
+    expect(result.current.numTurns).toBe(0)
+    expect(result.current.toolCalls.total).toBe(0)
   })
 
   test('maps a 0 ms completed tool call to durationMs 0 (not null)', async () => {
@@ -1067,6 +1237,20 @@ describe('useAgentStatus', () => {
       'agent-turn',
       'agent-cwd',
       'test-run',
+    ])
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    expect(listenEvents).toEqual([
+      'agent-status',
+      'agent-tool-call',
+      'agent-turn',
+      'agent-cwd',
+      'test-run',
+      'agent-replay-summary',
     ])
 
     await act(async () => {

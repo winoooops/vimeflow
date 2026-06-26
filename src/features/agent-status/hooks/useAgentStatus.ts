@@ -14,6 +14,7 @@ import {
 import type {
   AgentCwdEvent,
   AgentDetectedEvent,
+  AgentReplaySummaryEvent,
   AgentStatus,
   AgentStatusEvent,
   AgentToolCallEvent,
@@ -28,6 +29,55 @@ import type {
 const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
 const EXIT_HOLD_MS = 5000
+
+const TOOL_CALL_FLOOD_THRESHOLD = 16
+
+const applyToolCallEvents = (
+  prev: AgentStatus,
+  events: readonly AgentToolCallEvent[]
+): AgentStatus => {
+  let toolCalls = prev.toolCalls
+  let recentToolCalls = prev.recentToolCalls
+
+  for (const event of events) {
+    if (event.status === 'running') {
+      toolCalls = {
+        ...toolCalls,
+        active: {
+          tool: event.tool,
+          args: event.args,
+          startedAt: event.timestamp,
+          toolUseId: event.toolUseId,
+        },
+      }
+    } else {
+      const byType = { ...toolCalls.byType }
+      byType[event.tool] = (byType[event.tool] ?? 0) + 1
+
+      const recentCall: RecentToolCall = {
+        id: event.toolUseId,
+        tool: event.tool,
+        args: event.args,
+        status: event.status,
+        durationMs: Number(event.durationMs),
+        timestamp: event.timestamp,
+        isTestFile: event.isTestFile,
+      }
+      recentToolCalls = [recentCall, ...recentToolCalls].slice(
+        0,
+        RECENT_TOOL_CALLS_LIMIT
+      )
+
+      toolCalls = {
+        total: toolCalls.total + 1,
+        byType,
+        active: null,
+      }
+    }
+  }
+
+  return { ...prev, toolCalls, recentToolCalls }
+}
 
 const createStatusForSession = (sessionId: string | null): AgentStatus => {
   if (sessionId === null) {
@@ -478,6 +528,39 @@ export const useAgentStatus = (
       }
     }
 
+    // Coalesce agent-tool-call events into one render per animation frame. A
+    // resume replays the whole transcript as thousands of tool-call events; one
+    // setState each freezes the renderer. We buffer and flush the latest batch
+    // per frame instead. `toolCallFlushScheduled` (a boolean, not the rAF id)
+    // gates scheduling so a synchronous rAF (tests/jsdom) still re-arms cleanly.
+    let pendingToolCalls: AgentToolCallEvent[] = []
+    let toolCallFlushScheduled = false
+    let toolCallFrame: number | null = null
+
+    const flushToolCalls = (): void => {
+      toolCallFlushScheduled = false
+      toolCallFrame = null
+      if (pendingToolCalls.length === 0) {
+        return
+      }
+      if (pendingToolCalls.length > TOOL_CALL_FLOOD_THRESHOLD) {
+        // Default mode (replay flood): drain the whole backlog in one render so
+        // a resume's thousands of historical tool calls don't re-render per event.
+        const batch = pendingToolCalls
+        pendingToolCalls = []
+        setStatus((prev) => applyToolCallEvents(prev, batch))
+      } else {
+        // Active mode (live agent): release ONE per frame so the JAR stacks each
+        // tool call individually as the agent runs.
+        const next = pendingToolCalls.shift()!
+        setStatus((prev) => applyToolCallEvents(prev, [next]))
+      }
+      if (pendingToolCalls.length > 0) {
+        toolCallFlushScheduled = true
+        toolCallFrame = requestAnimationFrame(flushToolCalls)
+      }
+    }
+
     const subscribe = async (): Promise<void> => {
       const resolvePtyId = (): string | undefined => getPtySessionId(sessionId)
 
@@ -644,44 +727,13 @@ export const useAgentStatus = (
 
           const p = payload
 
-          if (p.status === 'running') {
-            setStatus((prev) => ({
-              ...prev,
-              toolCalls: {
-                ...prev.toolCalls,
-                active: {
-                  tool: p.tool,
-                  args: p.args,
-                  startedAt: p.timestamp,
-                  toolUseId: p.toolUseId,
-                },
-              },
-            }))
-          } else {
-            // done or failed
-            //
-            // Use the Anthropic tool_use id as the React key.
-            // `${p.tool}-${p.timestamp}` collides when parallel tool calls
-            // share a user-message timestamp (common with parallel Read/Grep);
-            // React silently drops the duplicate rows from the feed.
-            const recentCall: RecentToolCall = {
-              id: p.toolUseId,
-              tool: p.tool,
-              args: p.args,
-              status: p.status,
-              // durationMs is a non-null bigint on the wire; `|| null` would coerce a
-              // legitimate 0 ms duration to null and drop the "0s" chip. Map directly.
-              durationMs: Number(p.durationMs),
-              timestamp: p.timestamp,
-              isTestFile: p.isTestFile,
-            }
-
+          if (p.status !== 'running') {
             const duplicate = seenToolUseIdsRef.current.has(p.toolUseId)
             seenToolUseIdsRef.current.add(p.toolUseId)
             writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
 
-            setStatus((prev) => {
-              if (duplicate) {
+            if (duplicate) {
+              setStatus((prev) => {
                 const active =
                   prev.toolCalls.active?.toolUseId === p.toolUseId
                     ? null
@@ -698,26 +750,15 @@ export const useAgentStatus = (
                     active,
                   },
                 }
-              }
+              })
+              return
+            }
+          }
 
-              const newByType = { ...prev.toolCalls.byType }
-              newByType[p.tool] = (newByType[p.tool] ?? 0) + 1
-
-              const newRecent = [recentCall, ...prev.recentToolCalls].slice(
-                0,
-                RECENT_TOOL_CALLS_LIMIT
-              )
-
-              return {
-                ...prev,
-                toolCalls: {
-                  total: prev.toolCalls.total + 1,
-                  byType: newByType,
-                  active: null,
-                },
-                recentToolCalls: newRecent,
-              }
-            })
+          pendingToolCalls.push(payload)
+          if (!toolCallFlushScheduled) {
+            toolCallFlushScheduled = true
+            toolCallFrame = requestAnimationFrame(flushToolCalls)
           }
         }
       )
@@ -763,6 +804,10 @@ export const useAgentStatus = (
             return
           }
 
+          if (locallyResetRunScopedEventsRef.current) {
+            return
+          }
+
           setStatus((prev) =>
             prev.cwd === payload.cwd ? prev : { ...prev, cwd: payload.cwd }
           )
@@ -793,6 +838,59 @@ export const useAgentStatus = (
       )
 
       addUnlisten(unlistenTestRun)
+
+      // Replay summary — one coalesced event at the replay→live boundary that
+      // replaces the thousands of per-line agent-tool-call / agent-turn /
+      // agent-cwd events the backend suppresses during a resume's transcript
+      // replay (those would flood the IPC queue and freeze the renderer). Apply
+      // its aggregated state in one update; live per-line events resume after.
+      const unlistenReplaySummary = await listen<AgentReplaySummaryEvent>(
+        'agent-replay-summary',
+        (payload) => {
+          if (payload.sessionId !== resolvePtyId()) {
+            return
+          }
+
+          if (locallyResetRunScopedEventsRef.current) {
+            return
+          }
+
+          seenToolUseIdsRef.current = new Set(
+            payload.recentToolCalls.map((event) => event.toolUseId)
+          )
+          writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
+
+          setStatus((prev) => ({
+            ...prev,
+            numTurns: payload.numTurns,
+            cwd: payload.cwd ?? prev.cwd,
+            toolCalls: {
+              total: payload.toolCallTotal,
+              // ts-rs types a Rust HashMap<String, u32> as { [k: string]?: number }
+              // (optional values); the wire shape never carries undefined values,
+              // so coerce to the non-optional Record the state expects.
+              byType: payload.toolCallByType as Record<string, number>,
+              active: null,
+            },
+            recentToolCalls: payload.recentToolCalls
+              .slice(0, RECENT_TOOL_CALLS_LIMIT)
+              .map((e) => ({
+                id: e.toolUseId,
+                tool: e.tool,
+                args: e.args,
+                // The backend only folds completed (done/failed) calls into a
+                // replay summary's recentToolCalls — never `running` — so this
+                // narrowing is sound at runtime (see ReplayActivity::record_completed).
+                status: e.status as 'done' | 'failed',
+                durationMs: Number(e.durationMs),
+                timestamp: e.timestamp,
+                isTestFile: e.isTestFile,
+              })),
+          }))
+        }
+      )
+
+      addUnlisten(unlistenReplaySummary)
     }
 
     // After all listeners are active, trigger a detection poll to sync
@@ -811,6 +909,11 @@ export const useAgentStatus = (
     return (): void => {
       cancelled = true
       listenersReadyRef.current = false
+
+      if (toolCallFrame !== null) {
+        cancelAnimationFrame(toolCallFrame)
+        toolCallFrame = null
+      }
 
       for (const unlisten of unlistenFns) {
         unlisten()
