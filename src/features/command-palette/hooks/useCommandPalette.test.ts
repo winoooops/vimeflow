@@ -1582,6 +1582,34 @@ describe('useCommandPalette', () => {
       expect(result.current.state.query).toBe(':rename-session')
     })
 
+    test('completes a single fuzzy-only candidate fully', () => {
+      const focusCommands: Command[] = [
+        {
+          id: 'focus-terminal',
+          label: ':focus-terminal',
+          icon: 'terminal',
+          execute: vi.fn(),
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(focusCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':ft')
+      })
+
+      expect(result.current.filteredResults.map((cmd) => cmd.id)).toEqual([
+        'focus-terminal',
+      ])
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':focus-terminal')
+    })
+
     test('is a no-op when already at the common prefix', () => {
       const { result } = renderHook(() => useCommandPalette(renameCommands))
 

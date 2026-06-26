@@ -359,11 +359,22 @@ export const useCommandPalette = (
               .startsWith(cleanVerb.toLowerCase())
           )
 
-    if (candidates.length === 0) {
+    let completionCandidates = candidates
+    if (
+      completionCandidates.length === 0 &&
+      filteredResults.length === 1 &&
+      parsedQuery.args.length === 0
+    ) {
+      completionCandidates = filteredResults
+    }
+
+    if (completionCandidates.length === 0) {
       return
     }
 
-    const labels = candidates.map((cmd) => labelWithoutColon(cmd.label))
+    const labels = completionCandidates.map((cmd) =>
+      labelWithoutColon(cmd.label)
+    )
 
     // Case is taken from the first candidate; comparison is case-insensitive.
     let lcp = labels[0]

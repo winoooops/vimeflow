@@ -2,7 +2,7 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-06-20
+last_updated: 2026-06-26
 ref_count: 2
 ---
 
@@ -74,4 +74,19 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   after metadata cleanup so delayed terminal part updates stay suppressed. Added
   regression tests for completed part updates before and after non-zero
   `tool.after`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Tab completion ignored the only visible fuzzy result
+
+- **Source:** github-claude | PR #629 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
+- **Finding:** The command palette showed fuzzy matches, but Tab completion
+  re-filtered those results by strict prefix before computing a completion.
+  A query such as `:ft` could show `:focus-terminal` as the only actionable
+  result while Tab silently did nothing.
+- **Fix:** Kept prefix completion as the primary path, then fell back to the
+  sole visible fuzzy result when no prefix candidates exist and the user is not
+  typing args. Added a regression test for `:ft` completing to
+  `:focus-terminal`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
