@@ -384,7 +384,20 @@ const MenuRoot = ({
       return
     }
 
-    listRef.current[activeIndex]?.focus()
+    const activeItem = listRef.current[activeIndex]
+    if (activeItem == null) {
+      return
+    }
+
+    const activeElement = document.activeElement
+    if (
+      activeElement instanceof Element &&
+      activeItem.contains(activeElement)
+    ) {
+      return
+    }
+
+    activeItem.focus()
   }, [activeIndex, open])
 
   const setOpenSubmenu = useCallback((id: string | null): void => {
@@ -527,12 +540,16 @@ const MenuRow = ({
   ) => {
     if (
       event.currentTarget === event.target ||
-      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
+      (event.key !== 'ArrowUp' &&
+        event.key !== 'ArrowDown' &&
+        event.key !== 'Enter' &&
+        event.key !== ' ')
     ) {
       return
     }
 
     event.stopPropagation()
+    event.nativeEvent.stopImmediatePropagation()
   }
 
   const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
@@ -549,6 +566,11 @@ const MenuRow = ({
     select()
   }
 
+  const itemProps = menu.getItemProps({
+    onClick: handleClick,
+    onKeyDown: handleKeyDown,
+  })
+
   return (
     <div
       role="menuitem"
@@ -557,11 +579,8 @@ const MenuRow = ({
       aria-disabled={disabled ? true : undefined}
       aria-label={label}
       className={className}
-      {...menu.getItemProps({
-        onClick: handleClick,
-        onKeyDown: handleKeyDown,
-        onKeyDownCapture: handleKeyDownCapture,
-      })}
+      {...itemProps}
+      onKeyDownCapture={handleKeyDownCapture}
     >
       {children}
     </div>
