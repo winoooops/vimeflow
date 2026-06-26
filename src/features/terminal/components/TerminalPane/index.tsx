@@ -304,7 +304,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
             cwd={pane.cwd}
             added={added}
             removed={removed}
-            session={session}
+            lastActivityAt={session.lastActivityAt}
           />
         )}
 

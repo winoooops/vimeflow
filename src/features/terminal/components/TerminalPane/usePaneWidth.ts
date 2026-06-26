@@ -26,7 +26,7 @@ export const usePaneWidth = <T extends Element>(
       }
     }
 
-    record(element.getBoundingClientRect().width)
+    record(element.clientWidth)
 
     const observer = new ResizeObserver((entries) => {
       // ResizeObserver always reports an entry for the single observed element.

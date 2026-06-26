@@ -1157,42 +1157,6 @@ describe('Body', () => {
     expect(container).toHaveClass('h-full')
   })
 
-  test('emits onPtyStatusChange when PTY status changes', async () => {
-    const onPtyStatusChange = vi.fn()
-
-    const { rerender } = render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onPtyStatusChange={onPtyStatusChange}
-      />
-    )
-
-    await waitFor(() => {
-      expect(onPtyStatusChange).toHaveBeenCalledWith('running')
-    })
-
-    vi.mocked(onPtyStatusChange).mockClear()
-    vi.mocked(useTerminal).mockReturnValue({
-      ...mockUseTerminal,
-      status: 'error',
-    })
-
-    rerender(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onPtyStatusChange={onPtyStatusChange}
-      />
-    )
-
-    await waitFor(() => {
-      expect(onPtyStatusChange).toHaveBeenCalledWith('error')
-    })
-  })
-
   test('useImperativeHandle exposes focusTerminal that focuses cached xterm', async () => {
     const ref = createRef<BodyHandle>()
 

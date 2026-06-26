@@ -59,6 +59,17 @@ test('reports the observed content width', () => {
   expect(result.current).toBe(240)
 })
 
+test('uses clientWidth for the initial content-box snapshot', () => {
+  const element = document.createElement('div')
+  Object.defineProperty(element, 'clientWidth', { value: 218 })
+
+  const { result } = renderHook(() =>
+    usePaneWidth(useRef<HTMLDivElement | null>(element))
+  )
+
+  expect(result.current).toBe(218)
+})
+
 test('ignores zero-width (unmeasured / hidden) readings', () => {
   const { result } = renderHook(() =>
     usePaneWidth(useRef<HTMLDivElement | null>(document.createElement('div')))

@@ -185,11 +185,6 @@ export interface BodyProps {
   mode?: BodyMode
 
   /**
-   * Called whenever the underlying PTY hook reports a status transition.
-   */
-  onPtyStatusChange?: (status: 'idle' | 'running' | 'exited' | 'error') => void
-
-  /**
    * Called when xterm gains or loses focus.
    */
   onFocusChange?: (focused: boolean) => void
@@ -222,7 +217,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onPaneReady = undefined,
     onCommandSubmit = undefined,
     mode = 'spawn',
-    onPtyStatusChange = undefined,
     onFocusChange = undefined,
     deferFit = false,
     enableImagePaste = false,
@@ -486,20 +480,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     resizeRef.current = resize
   }, [resize])
 
-  const onPtyStatusChangeRef = useRef(onPtyStatusChange)
   const onFocusChangeRef = useRef(onFocusChange)
-
-  useEffect(() => {
-    onPtyStatusChangeRef.current = onPtyStatusChange
-  }, [onPtyStatusChange])
 
   useEffect(() => {
     onFocusChangeRef.current = onFocusChange
   }, [onFocusChange])
-
-  useEffect(() => {
-    onPtyStatusChangeRef.current?.(status)
-  }, [status])
 
   useEffect(() => {
     if (status !== 'exited' && status !== 'error') {

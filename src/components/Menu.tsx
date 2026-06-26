@@ -384,7 +384,12 @@ const MenuRoot = ({
       return
     }
 
-    listRef.current[activeIndex]?.focus()
+    const activeItem = listRef.current[activeIndex]
+    if (activeItem?.contains(document.activeElement)) {
+      return
+    }
+
+    activeItem?.focus()
   }, [activeIndex, open])
 
   const setOpenSubmenu = useCallback((id: string | null): void => {

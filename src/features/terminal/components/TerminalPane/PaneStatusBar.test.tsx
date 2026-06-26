@@ -1,45 +1,10 @@
 // cspell:ignore worktree
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { Session } from '../../../sessions/types'
 import { PaneStatusBar } from './PaneStatusBar'
 
 const fixedNow = new Date('2026-05-08T12:00:00Z')
-
-const session: Session = {
-  id: 's1',
-  projectId: 'p1',
-  name: 'auth refactor',
-  status: 'running',
-  workingDirectory: '/home/user/repo',
-  agentType: 'claude-code',
-  layout: 'single',
-  activityPanelCollapsed: false,
-  panes: [
-    {
-      id: 'p0',
-      ptyId: 's1',
-      cwd: '/home/user/repo',
-      agentType: 'claude-code',
-      status: 'running',
-      active: true,
-    },
-  ],
-  createdAt: '2026-05-08T10:00:00Z',
-  lastActivityAt: '2026-05-08T11:55:00Z',
-  activity: {
-    fileChanges: [],
-    toolCalls: [],
-    testResults: [],
-    contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
-    usage: {
-      sessionDuration: 0,
-      turnCount: 0,
-      messages: { sent: 0, limit: 200 },
-      tokens: { input: 0, output: 0, total: 0 },
-    },
-  },
-}
+const lastActivityAt = '2026-05-08T11:55:00Z'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -58,7 +23,7 @@ describe('PaneStatusBar', () => {
         branch="feat/jose-auth"
         added={48}
         removed={12}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -80,7 +45,7 @@ describe('PaneStatusBar', () => {
         branch={null}
         added={48}
         removed={12}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -97,7 +62,7 @@ describe('PaneStatusBar', () => {
         branch="main"
         added={0}
         removed={0}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -113,7 +78,7 @@ describe('PaneStatusBar', () => {
         branch="fix/agent-sidebar"
         added={0}
         removed={0}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -134,7 +99,7 @@ describe('PaneStatusBar', () => {
         branch={null}
         added={0}
         removed={0}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -148,7 +113,7 @@ describe('PaneStatusBar', () => {
         branch="feat/a-very-long-branch-that-would-otherwise-collide"
         added={89}
         removed={493}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 
@@ -172,7 +137,7 @@ describe('PaneStatusBar', () => {
         branch="main"
         added={89}
         removed={493}
-        session={session}
+        lastActivityAt={lastActivityAt}
       />
     )
 

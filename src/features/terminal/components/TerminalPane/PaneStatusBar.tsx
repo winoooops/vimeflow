@@ -1,7 +1,6 @@
 // cspell:ignore worktree
 import type { ReactElement } from 'react'
 import { formatRelativeTime } from '../../../agent-status/utils/relativeTime'
-import type { Session } from '../../../sessions/types'
 import { GitRefChip } from './GitRefChip'
 
 export interface PaneStatusBarProps {
@@ -10,7 +9,7 @@ export interface PaneStatusBarProps {
   cwd?: string
   added: number
   removed: number
-  session: Session
+  lastActivityAt: string
 }
 
 /**
@@ -33,7 +32,7 @@ export const PaneStatusBar = ({
   cwd = undefined,
   added,
   removed,
-  session,
+  lastActivityAt,
 }: PaneStatusBarProps): ReactElement => {
   const hasDeltas = added > 0 || removed > 0
 
@@ -72,7 +71,7 @@ export const PaneStatusBar = ({
           </span>
         )}
         <span className="whitespace-nowrap @max-[384px]:hidden">
-          {formatRelativeTime(session.lastActivityAt)}
+          {formatRelativeTime(lastActivityAt)}
         </span>
       </div>
     </div>
