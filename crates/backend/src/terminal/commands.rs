@@ -5,6 +5,8 @@ use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use base64::Engine;
+
 use crate::debug::debug_log;
 use crate::runtime::EventSink;
 
@@ -1177,11 +1179,14 @@ async fn read_pty_output(
                     ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                let data_bytes_base64 =
+                    base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
                 emit_pty_data(
                     events.as_ref(),
                     &PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
+                        data_bytes_base64: Some(data_bytes_base64),
                         offset_start: chunk_start,
                         // Raw byte count — the unit the producer's offset
                         // arithmetic (RingBuffer::append) used. Subscribers

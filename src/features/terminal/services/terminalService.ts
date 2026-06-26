@@ -59,7 +59,8 @@ export interface ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      rawData?: Uint8Array
     ) => void
   ): Promise<() => void>
 
@@ -150,7 +151,8 @@ export class MockTerminalService implements ITerminalService {
     sessionId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    rawData?: Uint8Array
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -297,7 +299,8 @@ export class MockTerminalService implements ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      rawData?: Uint8Array
     ) => void
   ): Promise<() => void> {
     this.dataCallbacks.push(callback)
@@ -363,11 +366,20 @@ export class MockTerminalService implements ITerminalService {
     sessionId: string,
     data: string,
     offsetStart?: number,
-    byteLen?: number
+    byteLen?: number,
+    rawData?: Uint8Array
   ): void {
     const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
     const len = byteLen ?? new TextEncoder().encode(data).length
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+    this.dataCallbacks.forEach((cb) => {
+      if (rawData) {
+        cb(sessionId, data, offset, len, rawData)
+
+        return
+      }
+
+      cb(sessionId, data, offset, len)
+    })
     // Always advance the per-session cursor past this chunk so future
     // auto-assigned offsets stay monotonic, even when the caller passed
     // an explicit offset.
@@ -394,6 +406,7 @@ export class MockTerminalService implements ITerminalService {
       data?: string
       offsetStart?: number
       byteLen?: number
+      rawData?: Uint8Array
       code?: number | null
       message?: string
     }
@@ -403,7 +416,8 @@ export class MockTerminalService implements ITerminalService {
         payload.sessionId,
         payload.data,
         payload.offsetStart,
-        payload.byteLen
+        payload.byteLen,
+        payload.rawData
       )
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)

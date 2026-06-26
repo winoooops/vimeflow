@@ -153,6 +153,7 @@ describe('Terminal Types', () => {
       const event: PTYDataEvent = {
         sessionId: 'session-1',
         data: 'hello world\n',
+        dataBytesBase64: null,
         offsetStart: 0n,
         byteLen: 12n,
       }

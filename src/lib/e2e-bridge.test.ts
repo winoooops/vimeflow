@@ -114,6 +114,29 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(wrapper)).toBe('solo-buf')
   })
 
+  test('reads WTerm DOM rows before xterm fallbacks', () => {
+    const wrapper = buildSessionWrapper([''], 0)
+
+    const body = wrapper.querySelector<HTMLElement>(
+      '[data-testid="terminal-pane"][data-pty-id]'
+    )
+    expect(body).not.toBeNull()
+
+    const wterm = document.createElement('div')
+    wterm.className = 'wterm'
+
+    const first = document.createElement('div')
+    first.className = 'term-row'
+    first.textContent = '$ pwd'
+    const second = document.createElement('div')
+    second.className = 'term-row'
+    second.textContent = '/repo'
+    wterm.append(first, second)
+    body!.appendChild(wterm)
+
+    expect(readPaneBuffer(wrapper)).toBe('$ pwd\n/repo')
+  })
+
   test('falls back to first .xterm-rows when no pane carries data-focused', () => {
     // Defensive case — invariant violation (5a guarantees exactly-one
     // active per session). The function must still return SOMETHING

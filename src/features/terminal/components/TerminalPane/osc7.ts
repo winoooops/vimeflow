@@ -5,6 +5,11 @@ export interface ParseOsc7CwdOptions {
   preserveFileUrlHost?: boolean
 }
 
+const OSC7_CWD_SEQUENCE_PATTERN = /\x1b\]7;([^\x07]*?)(?:\x07|\x1b\\)/g
+
+export const extractOsc7CwdValues = (data: string): string[] =>
+  [...data.matchAll(OSC7_CWD_SEQUENCE_PATTERN)].map((match) => match[1])
+
 export const normalizePosixPath = (path: string): string => {
   const parts: string[] = []
 

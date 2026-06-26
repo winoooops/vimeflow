@@ -15,12 +15,14 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 // WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
+import '@wterm/dom/css'
 import { themeService } from '../../../../theme'
 import { toXtermTheme } from '../../theme/toXtermTheme'
 import {
   useTerminal,
   type RestoreData,
   type NotifyPaneReady,
+  type TerminalIo,
 } from '../../hooks/useTerminal'
 import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
@@ -34,12 +36,20 @@ import {
   toComparablePath,
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
-import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import { extractOsc7CwdValues, parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
   loadTerminalFonts,
 } from './terminalFont'
+import {
+  resolveDefaultTerminalRendererMode,
+  type TerminalRendererMode,
+} from './terminalRendererMode'
+import {
+  createWtermGhosttyTerminal,
+  type WtermGhosttyTerminal,
+} from './wtermGhosttyTerminal'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
@@ -95,12 +105,19 @@ export const terminalCache = new Map<
   { terminal: Terminal; fitAddon: FitAddon }
 >()
 
+export const wtermTerminalCache = new Map<
+  string,
+  { terminal: WtermGhosttyTerminal }
+>()
+
 /**
  * Clear terminal cache (for testing only)
  */
 export const clearTerminalCache = (): void => {
   terminalCache.forEach(({ terminal }) => terminal.dispose())
   terminalCache.clear()
+  wtermTerminalCache.forEach(({ terminal }) => terminal.destroy())
+  wtermTerminalCache.clear()
 }
 
 /**
@@ -112,6 +129,11 @@ export const disposeTerminalSession = (sessionId: string): void => {
   if (cached) {
     cached.terminal.dispose()
     terminalCache.delete(sessionId)
+  }
+  const cachedWterm = wtermTerminalCache.get(sessionId)
+  if (cachedWterm) {
+    cachedWterm.terminal.destroy()
+    wtermTerminalCache.delete(sessionId)
   }
 }
 
@@ -204,6 +226,11 @@ export interface BodyProps {
    * Enables coding-agent-only clipboard image paste controls.
    */
   enableImagePaste?: boolean
+
+  /**
+   * Renderer selection override, mainly for tests and emergency fallback.
+   */
+  rendererMode?: TerminalRendererMode
 }
 
 export interface BodyHandle {
@@ -226,11 +253,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onFocusChange = undefined,
     deferFit = false,
     enableImagePaste = false,
+    rendererMode = undefined,
   },
   ref
 ): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [terminal, setTerminal] = useState<Terminal | null>(null)
+
+  const initialRendererModeRef = useRef<TerminalRendererMode>(
+    rendererMode ?? resolveDefaultTerminalRendererMode()
+  )
+
+  const [activeRendererMode, setActiveRendererMode] =
+    useState<TerminalRendererMode>(initialRendererModeRef.current)
+  const [terminal, setTerminal] = useState<TerminalIo | null>(null)
+  const [xtermTerminal, setXtermTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
@@ -345,8 +381,52 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     applyAgentCwdHint(`${pendingOutput}\r\n`)
   }, [applyAgentCwdHint])
 
+  const applyOsc7Cwd = useCallback((raw: string): void => {
+    const previousCwd = agentCwdRef.current
+
+    const path = parseOsc7Cwd(raw, {
+      preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
+    })
+
+    const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
+
+    const shouldIgnore =
+      path !== null &&
+      !shouldSuppressRestoreOsc7 &&
+      shouldIgnoreStaleOsc7Cwd(
+        agentCwdRef.current,
+        path,
+        agentCwdSourceRef.current
+      )
+
+    logAgentCwdDebug('osc7', {
+      sessionId: sessionIdRef.current,
+      raw,
+      previousCwd,
+      nextCwd: path,
+      changed: path !== null && path !== previousCwd,
+      ignored: shouldIgnore || shouldSuppressRestoreOsc7,
+    })
+
+    if (shouldSuppressRestoreOsc7) {
+      return
+    }
+
+    if (path && path === agentCwdRef.current) {
+      agentCwdSourceRef.current = 'osc7'
+    } else if (path && !shouldIgnore) {
+      agentCwdOutputBufferRef.current = ''
+      agentCwdHintContextRef.current = ''
+      agentCwdRef.current = path
+      agentCwdSourceRef.current = 'osc7'
+      onCwdChangeRef.current?.(path)
+    }
+  }, [])
+
   const handleTerminalOutput = useCallback(
     (data: string): void => {
+      extractOsc7CwdValues(data).forEach(applyOsc7Cwd)
+
       const output = `${agentCwdOutputBufferRef.current}${data}`
 
       const lastLineBreakIndex = output.lastIndexOf('\n')
@@ -379,7 +459,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         flushAgentCwdOutputBuffer()
       }
     },
-    [applyAgentCwdHint, flushAgentCwdOutputBuffer]
+    [applyAgentCwdHint, applyOsc7Cwd, flushAgentCwdOutputBuffer]
   )
 
   const handleTerminalInput = useCallback(
@@ -530,7 +610,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     () => ({
       focusTerminal: (): void => {
         const cached = terminalCache.get(sessionId)
-        cached?.terminal.focus()
+        if (cached) {
+          cached.terminal.focus()
+
+          return
+        }
+
+        wtermTerminalCache.get(sessionId)?.terminal.focus()
       },
     }),
     [sessionId]
@@ -546,12 +632,72 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     }
   }, [terminal, resize, status])
 
+  useEffect(() => {
+    if (rendererMode) {
+      setActiveRendererMode(rendererMode)
+    }
+  }, [rendererMode])
+
   // P2 Fix: Terminal instance management with caching.
   // Terminals persist when switching sessions to avoid killing PTY processes.
   useEffect(() => {
     const node = containerRef.current
     if (!node) {
       return
+    }
+
+    if (activeRendererMode === 'ghostty-wasm') {
+      let disposed = false
+
+      const handleFocusIn = (): void => {
+        onFocusChangeRef.current?.(true)
+      }
+
+      const handleFocusOut = (): void => {
+        onFocusChangeRef.current?.(false)
+      }
+
+      node.addEventListener('focusin', handleFocusIn)
+      node.addEventListener('focusout', handleFocusOut)
+
+      const initializeWasmTerminal = async (): Promise<void> => {
+        try {
+          const newTerminal = await createWtermGhosttyTerminal({
+            element: node,
+            cols: 80,
+            rows: 24,
+            theme: themeService.current().terminal,
+            onResize: (cols, rows): void => {
+              resizeRef.current(cols, rows)
+            },
+          })
+
+          if (disposed) {
+            newTerminal.destroy()
+
+            return
+          }
+
+          wtermTerminalCache.set(sessionId, { terminal: newTerminal })
+          setXtermTerminal(null)
+          setTerminal(newTerminal)
+        } catch {
+          if (!disposed) {
+            setActiveRendererMode('xterm')
+          }
+        }
+      }
+
+      void initializeWasmTerminal()
+
+      return (): void => {
+        disposed = true
+        node.removeEventListener('focusin', handleFocusIn)
+        node.removeEventListener('focusout', handleFocusOut)
+        wtermTerminalCache.get(sessionId)?.terminal.destroy()
+        wtermTerminalCache.delete(sessionId)
+        setTerminal(null)
+      }
     }
 
     // Check if we already have a terminal for this session
@@ -722,45 +868,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
       // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
-        const previousCwd = agentCwdRef.current
-
-        const path = parseOsc7Cwd(data, {
-          preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
-        })
-
-        const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
-
-        const shouldIgnore =
-          path !== null &&
-          !shouldSuppressRestoreOsc7 &&
-          shouldIgnoreStaleOsc7Cwd(
-            agentCwdRef.current,
-            path,
-            agentCwdSourceRef.current
-          )
-
-        logAgentCwdDebug('osc7', {
-          sessionId,
-          raw: data,
-          previousCwd,
-          nextCwd: path,
-          changed: path !== null && path !== previousCwd,
-          ignored: shouldIgnore || shouldSuppressRestoreOsc7,
-        })
-
-        if (shouldSuppressRestoreOsc7) {
-          return true
-        }
-
-        if (path && path === agentCwdRef.current) {
-          agentCwdSourceRef.current = 'osc7'
-        } else if (path && !shouldIgnore) {
-          agentCwdOutputBufferRef.current = ''
-          agentCwdHintContextRef.current = ''
-          agentCwdRef.current = path
-          agentCwdSourceRef.current = 'osc7'
-          onCwdChangeRef.current?.(path)
-        }
+        applyOsc7Cwd(data)
 
         return true
       })
@@ -940,6 +1048,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
     // Store terminal in state to trigger useTerminal hook
     setTerminal(newTerminal)
+    setXtermTerminal(newTerminal)
 
     // Cleanup: disconnect observers and dispose terminal from cache
     // When Body unmounts, the session is closed — free resources
@@ -975,12 +1084,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         terminalCache.delete(sessionId)
       }
       setTerminal(null)
+      setXtermTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId])
+  }, [activeRendererMode, applyOsc7Cwd, sessionId])
 
   const clipboard = useTerminalClipboard({
-    terminal,
+    terminal: xtermTerminal,
     enableImagePaste,
     // TODO: surface clipboard failures via a visible status/error channel.
     onCopyError: (): void => undefined,

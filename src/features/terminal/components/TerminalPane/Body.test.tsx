@@ -11,6 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
+import { createWtermGhosttyTerminal } from './wtermGhosttyTerminal'
 import { TERMINAL_FONT_FAMILY } from './terminalFont'
 import {
   useTerminal,
@@ -84,6 +85,10 @@ vi.mock('@xterm/addon-canvas', () => ({
 // Mock useTerminal hook
 vi.mock('../../hooks/useTerminal', () => ({
   useTerminal: vi.fn(),
+}))
+
+vi.mock('./wtermGhosttyTerminal', () => ({
+  createWtermGhosttyTerminal: vi.fn(),
 }))
 
 let latestUseTerminalOptionsValue: UseTerminalOptions | null = null
@@ -952,6 +957,29 @@ describe('Body', () => {
     expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1)
     expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
     expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
+  })
+
+  test('falls back to xterm when renderer-side Ghostty WASM initialization fails', async () => {
+    vi.mocked(createWtermGhosttyTerminal).mockRejectedValueOnce(
+      new Error('WASM failed')
+    )
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        rendererMode="ghostty-wasm"
+      />
+    )
+
+    await waitFor(() => {
+      expect(createWtermGhosttyTerminal).toHaveBeenCalled()
+    })
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
   })
 
   test('reattaches Canvas2D when WebGL context is lost at runtime', async () => {

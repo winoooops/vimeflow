@@ -138,6 +138,12 @@ words:
   - Ioskeley
   - Iosevka
   - backgrounding
+  - Ghostty
+  - ghostty
+  - GHOSTTY
+  - WTerm
+  - Wterm
+  - wterm
 
   # Git apply flag — `--whitespace=nowarn` suppresses whitespace warnings
   - nowarn

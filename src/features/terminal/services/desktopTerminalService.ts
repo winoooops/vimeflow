@@ -22,6 +22,22 @@ import type {
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
+const decodeBase64Bytes = (
+  value: string | null | undefined
+): Uint8Array | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return bytes
+}
+
 /**
  * Desktop terminal service — bridges ITerminalService to backend IPC commands and events.
  *
@@ -33,7 +49,8 @@ export class DesktopTerminalService implements ITerminalService {
     sessionId: string,
     data: string,
     offsetStart: number,
-    byteLen: number
+    byteLen: number,
+    rawData?: Uint8Array
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -88,7 +105,8 @@ export class DesktopTerminalService implements ITerminalService {
         const unlistenData = await listen<PtyDataEvent>(
           'pty-data',
           (payload) => {
-            const { sessionId, data, offsetStart, byteLen } = payload
+            const { sessionId, data, dataBytesBase64, offsetStart, byteLen } =
+              payload
 
             // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
             // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
@@ -98,7 +116,16 @@ export class DesktopTerminalService implements ITerminalService {
                 ? Number(offsetStart)
                 : offsetStart
             const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
-            this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+            const rawData = decodeBase64Bytes(dataBytesBase64)
+            this.dataCallbacks.forEach((cb) => {
+              if (rawData) {
+                cb(sessionId, data, offset, len, rawData)
+
+                return
+              }
+
+              cb(sessionId, data, offset, len)
+            })
           }
         )
         pendingUnlistenFns.push(unlistenData)
@@ -238,7 +265,8 @@ export class DesktopTerminalService implements ITerminalService {
       sessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      rawData?: Uint8Array
     ) => void
   ): Promise<() => void> {
     // Push the callback BEFORE awaiting so that any callbacks already queued

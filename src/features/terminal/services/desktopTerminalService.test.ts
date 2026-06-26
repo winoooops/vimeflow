@@ -673,6 +673,32 @@ describe('DesktopTerminalService', () => {
       expect(new TextEncoder().encode(captured[0].data).length).toBe(6)
     })
 
+    test('onData decodes optional raw PTY bytes for renderer-side VT', async () => {
+      const captured: { data: string; rawData?: Uint8Array }[] = []
+      const testService = new DesktopTerminalService()
+      await testService.onData(
+        (_sessionId, data, _offsetStart, _byteLen, rawData) => {
+          captured.push({ data, rawData })
+        }
+      )
+
+      await mockSpawnAndInit(testService)
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: '\u0000A',
+        dataBytesBase64: 'AEE=',
+        offsetStart: BigInt(0),
+        byteLen: BigInt(2),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0].data).toBe('\u0000A')
+      expect(captured[0].rawData).toEqual(new Uint8Array([0, 65]))
+    })
+
     // F1 regression: onData must NOT resolve until the underlying tauri.listen
     // is fully attached. Otherwise, the orchestrator's "listen before snapshot"
     // step lets PTY events fire into the void during the listen() roundtrip.

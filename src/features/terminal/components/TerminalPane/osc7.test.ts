@@ -1,6 +1,6 @@
 // cspell:ignore hostless worktree
 import { describe, expect, test } from 'vitest'
-import { parseOsc7Cwd } from './osc7'
+import { extractOsc7CwdValues, parseOsc7Cwd } from './osc7'
 
 describe('parseOsc7Cwd', () => {
   test('parses a POSIX file URL emitted by OSC 7', () => {
@@ -72,5 +72,13 @@ describe('parseOsc7Cwd', () => {
   test('rejects non-file URLs and relative paths', () => {
     expect(parseOsc7Cwd('https://example.com/home/user')).toBeNull()
     expect(parseOsc7Cwd('relative/path')).toBeNull()
+  })
+
+  test('extracts BEL and ST terminated OSC 7 cwd payloads from raw output', () => {
+    expect(
+      extractOsc7CwdValues(
+        'a\x1b]7;file:///tmp/one\x07b\x1b]7;file:///tmp/two\x1b\\c'
+      )
+    ).toEqual(['file:///tmp/one', 'file:///tmp/two'])
   })
 })

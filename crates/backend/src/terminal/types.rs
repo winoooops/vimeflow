@@ -93,6 +93,10 @@ pub struct PtyDataEvent {
     pub session_id: SessionId,
     /// Output data from PTY stdout (lossy UTF-8 — invalid bytes become U+FFFD)
     pub data: String,
+    /// Raw PTY bytes, base64 encoded for JSON IPC. Renderer-side VT cores
+    /// should prefer this over `data`; xterm fallback keeps using `data`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bytes_base64: Option<String>,
     /// Starting byte offset of this chunk in the session's lifetime stream
     pub offset_start: u64,
     /// Raw byte count of this chunk from the PTY read (matches the producer's

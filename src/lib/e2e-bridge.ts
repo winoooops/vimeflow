@@ -43,6 +43,20 @@ const resolveCacheKey = (container: HTMLElement): string | null => {
   return container.dataset.ptyId ?? null
 }
 
+const readWtermRows = (container: HTMLElement): string => {
+  const rows = Array.from(
+    container.querySelectorAll<HTMLElement>('.wterm .term-row')
+  )
+  if (rows.length === 0) {
+    return ''
+  }
+
+  return rows
+    .map((row) => row.textContent)
+    .join('\n')
+    .replace(/\n+$/, '')
+}
+
 const findActivePane = (): HTMLElement | null => {
   const panes = document.querySelectorAll<HTMLElement>(
     '[data-testid="terminal-pane"][data-session-id]'
@@ -77,6 +91,11 @@ export const readPaneBuffer = (container: HTMLElement): string => {
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )
   const scope = focusedWrapper ?? container
+
+  const wtermText = readWtermRows(scope)
+  if (wtermText.trim().length > 0) {
+    return wtermText
+  }
 
   const rows = scope.querySelector<HTMLElement>('.xterm-rows')
   const domText = rows?.textContent ?? ''

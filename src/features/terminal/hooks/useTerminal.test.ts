@@ -134,6 +134,30 @@ describe('useTerminal', () => {
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
+  test('prefers raw PTY bytes when the transport provides them', async () => {
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const rawData = new Uint8Array([0xff, 0xfe])
+    mockService.emit('data', {
+      sessionId: result.current.session!.id,
+      data: '��',
+      byteLen: 2,
+      rawData,
+    })
+
+    expect(mockTerminal.write).toHaveBeenCalledWith(rawData)
+  })
+
   test('reports accepted PTY output chunks', async () => {
     const onOutput = vi.fn()
 

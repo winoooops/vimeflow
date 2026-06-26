@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { Terminal } from '@xterm/xterm'
 import type { ITerminalService } from '../services/terminalService'
 import type { TerminalSession } from '../types'
+
+export interface TerminalIo {
+  cols: number
+  rows: number
+  clear: () => void
+  write: (data: string | Uint8Array, callback?: () => void) => void
+  onData: (callback: (data: string) => void) => { dispose: () => void }
+}
 
 /**
  * Data required to restore a terminal session from snapshot + live events.
@@ -50,9 +57,10 @@ export type UseTerminalMode = 'attach' | 'spawn' | 'awaiting-restart'
 
 interface UseTerminalBaseOptions {
   /**
-   * xterm.js Terminal instance
+   * Renderer terminal instance. xterm.js and the renderer-side Ghostty WASM
+   * path both adapt to this small I/O surface.
    */
-  terminal: Terminal | null
+  terminal: TerminalIo | null
 
   /**
    * Terminal service (MockTerminalService or DesktopTerminalService)
@@ -249,14 +257,20 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   }, [onInput])
 
   const writeTerminalOutput = useCallback(
-    (targetTerminal: Terminal, data: string): void => {
+    (
+      targetTerminal: TerminalIo,
+      data: string,
+      rawData: Uint8Array | undefined
+    ): void => {
+      const output = rawData ?? data
+
       if (!onOutputRef.current) {
-        targetTerminal.write(data)
+        targetTerminal.write(output)
 
         return
       }
 
-      targetTerminal.write(data, () => {
+      targetTerminal.write(output, () => {
         onOutputRef.current?.(data)
       })
     },
@@ -502,13 +516,14 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       eventSessionId: string,
       data: string,
       offsetStart: number,
-      byteLen: number
+      byteLen: number,
+      rawData?: Uint8Array
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
-          writeTerminalOutput(terminal, data)
+          writeTerminalOutput(terminal, data, rawData)
           // Advance the cursor by the producer's raw byte count, not by the
           // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
           // U+FFFD = 3 bytes when re-encoded) would otherwise drift the
