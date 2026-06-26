@@ -3,6 +3,8 @@ export interface Command {
   label: string
   description?: string
   icon: string
+  // Key glyphs for a real single-combo global accelerator, e.g. ['⌘','N'].
+  shortcut?: string[]
   children?: Command[]
   execute?: (args: string) => void
   preview?: () => void

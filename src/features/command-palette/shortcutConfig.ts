@@ -1,5 +1,9 @@
 import { isMacPlatform, type ShortcutKey } from '../../lib/formatShortcut'
 
+// Re-export so the workspace command builder reads platform detection through
+// the command-palette surface rather than the lib directly.
+export { isMacPlatform } from '../../lib/formatShortcut'
+
 export type CommandPaletteShortcutModifier = 'ctrl' | 'meta'
 
 export const COMMAND_PALETTE_SHORTCUT_KEYS = [

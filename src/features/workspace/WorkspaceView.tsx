@@ -1554,6 +1554,27 @@ const WorkspaceViewContent = (): ReactElement => {
     ]
   )
 
+  // Open a file directly (no unsaved-changes guard). Errors were previously
+  // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
+  // stale content and no feedback on Tauri IPC failures.
+  const openFileSafely = useCallback(
+    async (filePath: string): Promise<void> => {
+      // Opening a file shows it in the editor. The dock now defaults to the
+      // Diff tab, so surface the editor (and open the dock if collapsed) when
+      // a file is opened — otherwise the file would load behind the diff view.
+      setDockTab('editor')
+      setIsDockOpen(true)
+      try {
+        await editorBuffer.openFile(filePath)
+        setFileError(null)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        setFileError(`Failed to open ${filePath}: ${message}`)
+      }
+    },
+    [editorBuffer]
+  )
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -1573,6 +1594,28 @@ const WorkspaceViewContent = (): ReactElement => {
         notifyInfo,
         toggleSidebar: handleToggleSidebar,
         toggleBurner: toggleBurnerCommand,
+        restartSession,
+        openEditor: (): void => openDock('editor'),
+        openDiff: (): void => openDock('diff'),
+        toggleDock: handleToggleDock,
+        pickLayout: (id: string): boolean =>
+          handlePickLayout(id as PaneLayoutId),
+        availableLayouts: layoutRegistry.layouts.map((layout) => ({
+          id: layout.id,
+          title: layout.name,
+        })),
+        setDockPosition,
+        dockPosition,
+        toggleActivityPanel: (): void =>
+          handleActivityPanelCollapsed(!activityPanelCollapsed),
+        showSidebarTab: (tab: SidebarTab): void => {
+          setActiveTab(tab)
+          setSidebarCollapsed(false)
+        },
+        focusTerminal: claimTerminal,
+        openFile: (path: string): void => {
+          void openFileSafely(path)
+        },
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -1595,6 +1638,19 @@ const WorkspaceViewContent = (): ReactElement => {
       notifyInfo,
       handleToggleSidebar,
       toggleBurnerCommand,
+      restartSession,
+      openDock,
+      handleToggleDock,
+      handlePickLayout,
+      layoutRegistry,
+      setDockPosition,
+      dockPosition,
+      handleActivityPanelCollapsed,
+      activityPanelCollapsed,
+      setActiveTab,
+      setSidebarCollapsed,
+      claimTerminal,
+      openFileSafely,
     ]
   )
 
@@ -1888,27 +1944,6 @@ const WorkspaceViewContent = (): ReactElement => {
           agentStatus.rateLimits?.sevenDay !== undefined
       )
     : rateLimitPercentage(agentStatus.rateLimits?.sevenDay)
-
-  // Open a file directly (no unsaved-changes guard). Errors were previously
-  // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
-  // stale content and no feedback on Tauri IPC failures.
-  const openFileSafely = useCallback(
-    async (filePath: string): Promise<void> => {
-      // Opening a file shows it in the editor. The dock now defaults to the
-      // Diff tab, so surface the editor (and open the dock if collapsed) when
-      // a file is opened — otherwise the file would load behind the diff view.
-      setDockTab('editor')
-      setIsDockOpen(true)
-      try {
-        await editorBuffer.openFile(filePath)
-        setFileError(null)
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error)
-        setFileError(`Failed to open ${filePath}: ${message}`)
-      }
-    },
-    [editorBuffer]
-  )
 
   // Save via vim :w or any direct editor save trigger. Same rationale as
   // openFileSafely — errors were previously swallowed and the user had no
