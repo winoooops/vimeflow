@@ -19,6 +19,7 @@ import type {
   UpdateSessionCwdRequest,
   SetSessionActivityPanelCollapsedRequest,
   SetWorkspaceSessionsRequest,
+  SetRawPtyBytesRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
@@ -193,11 +194,16 @@ export class DesktopTerminalService implements ITerminalService {
   setRawDataConsumer(sessionId: string, enabled: boolean): void {
     if (enabled) {
       this.rawDataConsumerIds.add(sessionId)
-
-      return
+    } else {
+      this.rawDataConsumerIds.delete(sessionId)
     }
 
-    this.rawDataConsumerIds.delete(sessionId)
+    const request: SetRawPtyBytesRequest = { sessionId, enabled }
+    void Promise.resolve(invoke('set_raw_pty_bytes', { request })).catch(
+      (error: unknown) => {
+        this.reportListenerInitFailure(error)
+      }
+    )
   }
 
   private removeExitCallback(

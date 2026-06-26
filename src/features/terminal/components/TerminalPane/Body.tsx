@@ -549,6 +549,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onRestoreStart: handleRestoreStart,
     onRestoreEnd: handleRestoreEnd,
     onInput: handleTerminalInput,
+    consumeRawData: activeRendererMode === 'ghostty-wasm',
     mode,
   })
   terminalStatusRef.current = status
@@ -651,17 +652,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     osc7CwdExtractorRef.current.reset()
   }, [activeRendererMode, sessionId])
-
-  useEffect(() => {
-    service.setRawDataConsumer?.(
-      sessionId,
-      activeRendererMode === 'ghostty-wasm'
-    )
-
-    return (): void => {
-      service.setRawDataConsumer?.(sessionId, false)
-    }
-  }, [activeRendererMode, service, sessionId])
 
   // P2 Fix: Terminal instance management with caching.
   // Terminals persist when switching sessions to avoid killing PTY processes.

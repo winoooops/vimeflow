@@ -983,7 +983,7 @@ describe('Body', () => {
     })
   })
 
-  test('registers raw byte consumption only while Ghostty WASM is active', async () => {
+  test('requests raw byte consumption only while Ghostty WASM is active', async () => {
     const destroy = vi.fn()
     vi.mocked(createWtermGhosttyTerminal).mockResolvedValueOnce({
       clear: vi.fn(),
@@ -1004,19 +1004,20 @@ describe('Body', () => {
       />
     )
 
-    await waitFor(() => {
-      expect(defaultMockService.setRawDataConsumer).toHaveBeenCalledWith(
-        'test-session',
-        true
-      )
-    })
+    expect(latestUseTerminalOptions().consumeRawData).toBe(true)
 
     unmount()
 
-    expect(defaultMockService.setRawDataConsumer).toHaveBeenCalledWith(
-      'test-session',
-      false
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        rendererMode="xterm"
+      />
     )
+
+    expect(latestUseTerminalOptions().consumeRawData).toBe(false)
   })
 
   test('guards Ghostty auto-resize callbacks while hidden and dedupes repeats', async () => {

@@ -217,6 +217,13 @@ impl BackendState {
         crate::terminal::commands::resize_pty_inner(&self.pty, request)
     }
 
+    pub fn set_raw_pty_bytes(
+        &self,
+        request: crate::terminal::types::SetRawPtyBytesRequest,
+    ) -> Result<(), String> {
+        crate::terminal::commands::set_raw_pty_bytes_inner(&self.pty, request)
+    }
+
     pub fn kill_pty(&self, request: crate::terminal::types::KillPtyRequest) -> Result<(), String> {
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
     }
@@ -552,8 +559,7 @@ impl BackendState {
 
         std::fs::create_dir_all(&sessions_dir)
             .map_err(|e| format!("create codex sessions dir: {e}"))?;
-        std::fs::write(&rollout_path, b"")
-            .map_err(|e| format!("create empty rollout: {e}"))?;
+        std::fs::write(&rollout_path, b"").map_err(|e| format!("create empty rollout: {e}"))?;
 
         let since_epoch = pty_start
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -662,9 +668,7 @@ impl BackendState {
             .map_err(|e| format!("create kimi wire dirs: {e}"))?;
         std::fs::write(
             &wire_path,
-            format!(
-                "{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"
-            ),
+            format!("{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"),
         )
         .map_err(|e| format!("create kimi wire: {e}"))?;
 
@@ -682,9 +686,7 @@ impl BackendState {
         )
         .map_err(|e| format!("create kimi index: {e}"))?;
 
-        let result = self
-            .start_agent_watcher(session_id, Some(home_dir))
-            .await;
+        let result = self.start_agent_watcher(session_id, Some(home_dir)).await;
         result?;
 
         Ok(wire_path)
@@ -819,6 +821,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            emit_raw_bytes: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }
     }

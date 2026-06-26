@@ -65,6 +65,7 @@ describe('useTerminal', () => {
     vi.spyOn(mockService, 'onData')
     vi.spyOn(mockService, 'onExit')
     vi.spyOn(mockService, 'onError')
+    mockService.setRawDataConsumer = vi.fn()
   })
 
   afterEach(() => {
@@ -90,6 +91,66 @@ describe('useTerminal', () => {
       expect(result.current.status).toBe('running')
       expect(result.current.session).toBeDefined()
     })
+  })
+
+  test('registers raw byte consumption against the spawned PTY id', async () => {
+    const { result, unmount } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+        consumeRawData: true,
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    expect(mockService.setRawDataConsumer).toHaveBeenCalledWith(
+      result.current.session!.id,
+      true
+    )
+
+    unmount()
+
+    expect(mockService.setRawDataConsumer).toHaveBeenCalledWith(
+      result.current.session!.id,
+      false
+    )
+  })
+
+  test('registers raw byte consumption against a restored PTY id', async () => {
+    const { unmount } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        restoredFrom: {
+          sessionId: 'restored-pty',
+          cwd: '/repo',
+          pid: 42,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+        mode: 'attach',
+        consumeRawData: true,
+      })
+    )
+
+    await waitFor(() => {
+      expect(mockService.setRawDataConsumer).toHaveBeenCalledWith(
+        'restored-pty',
+        true
+      )
+    })
+
+    unmount()
+
+    expect(mockService.setRawDataConsumer).toHaveBeenCalledWith(
+      'restored-pty',
+      false
+    )
   })
 
   // Reconnection feature removed - sessionId parameter no longer supported

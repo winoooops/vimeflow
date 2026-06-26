@@ -320,6 +320,11 @@ export class MockTerminalService implements ITerminalService {
     })
   }
 
+  setRawDataConsumer(sessionId: string, enabled: boolean): void {
+    void sessionId
+    void enabled
+  }
+
   onExit(
     callback: (sessionId: string, code: number | null) => void
   ): Promise<() => void> {

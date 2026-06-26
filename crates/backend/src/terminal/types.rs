@@ -83,6 +83,18 @@ pub struct KillPtyRequest {
     pub session_id: SessionId,
 }
 
+/// Request payload for toggling raw PTY byte emission for a session.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetRawPtyBytesRequest {
+    /// Session ID
+    pub session_id: SessionId,
+    /// Whether `pty-data` events should include base64 raw bytes.
+    pub enabled: bool,
+}
+
 /// PTY data event payload (emitted to frontend)
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

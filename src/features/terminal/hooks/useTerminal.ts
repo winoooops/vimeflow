@@ -119,6 +119,11 @@ interface UseTerminalBaseOptions {
   onInput?: (data: string) => void
 
   /**
+   * Whether this terminal instance needs lossless raw PTY bytes.
+   */
+  consumeRawData?: boolean
+
+  /**
    * Explicit lifecycle mode. When omitted, falls back to legacy inference
    * (`attach` if `restoredFrom` is set, else `spawn`) so existing call
    * sites that haven't migrated to the explicit prop continue to work.
@@ -196,6 +201,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onRestoreStart,
     onRestoreEnd,
     onInput,
+    consumeRawData = false,
     mode,
   } = options
 
@@ -297,6 +303,18 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     },
     []
   )
+
+  useEffect(() => {
+    if (!session) {
+      return
+    }
+
+    service.setRawDataConsumer?.(session.id, consumeRawData)
+
+    return (): void => {
+      service.setRawDataConsumer?.(session.id, false)
+    }
+  }, [consumeRawData, service, session])
 
   // Spawn PTY on mount (or restore from snapshot)
   useEffect(() => {

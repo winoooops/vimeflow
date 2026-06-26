@@ -368,6 +368,8 @@ pub(crate) async fn spawn_pty_inner(
     let read_ring = Arc::clone(&ring);
     let cancelled = Arc::new(AtomicBool::new(false));
     let read_cancelled = Arc::clone(&cancelled);
+    let emit_raw_bytes = Arc::new(AtomicBool::new(false));
+    let read_emit_raw_bytes = Arc::clone(&emit_raw_bytes);
     let session = ManagedSession {
         master: pty_pair.master,
         writer,
@@ -382,6 +384,7 @@ pub(crate) async fn spawn_pty_inner(
         generation,
         ring,
         cancelled,
+        emit_raw_bytes,
         started_at: std::time::SystemTime::now(),
     };
     if let Err((reason, mut rejected)) = state.try_insert(request.session_id.clone(), session, 64) {
@@ -471,6 +474,7 @@ pub(crate) async fn spawn_pty_inner(
             generation,
             read_ring,
             read_cancelled,
+            read_emit_raw_bytes,
         )) {
             log::error!("PTY output reader error: {}", e);
         }
@@ -509,6 +513,14 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
     state
         .resize(&request.session_id, request.rows, request.cols)
         .map_err(|e| e.to_string())
+}
+
+/// Toggle raw byte emission for a PTY session.
+pub(crate) fn set_raw_pty_bytes_inner(
+    state: &PtyState,
+    request: SetRawPtyBytesRequest,
+) -> Result<(), String> {
+    state.set_emit_raw_bytes(&request.session_id, request.enabled)
 }
 
 /// Kill a PTY session.
@@ -1117,6 +1129,7 @@ async fn read_pty_output(
     generation: u64,
     ring: Arc<Mutex<RingBuffer>>,
     cancelled: Arc<AtomicBool>,
+    emit_raw_bytes: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
 
@@ -1179,14 +1192,17 @@ async fn read_pty_output(
                     ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                let data_bytes_base64 =
-                    base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                let data_bytes_base64 = if emit_raw_bytes.load(Ordering::Relaxed) {
+                    Some(base64::engine::general_purpose::STANDARD.encode(&buf[..n]))
+                } else {
+                    None
+                };
                 emit_pty_data(
                     events.as_ref(),
                     &PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
-                        data_bytes_base64: Some(data_bytes_base64),
+                        data_bytes_base64,
                         offset_start: chunk_start,
                         // Raw byte count — the unit the producer's offset
                         // arithmetic (RingBuffer::append) used. Subscribers
@@ -2015,6 +2031,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            emit_raw_bytes: Arc::new(AtomicBool::new(false)),
             started_at: std::time::SystemTime::now(),
         }
     }

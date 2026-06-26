@@ -93,6 +93,10 @@ pub struct ManagedSession {
     /// The Arc is shared with the read thread; `kill_pty` flips the flag
     /// before the session entry is removed from `PtyState`.
     pub cancelled: Arc<AtomicBool>,
+    /// Whether pty-data events should include raw bytes for renderer-side VT
+    /// consumers. Disabled by default so xterm sessions avoid hot-path base64
+    /// encode and IPC payload expansion.
+    pub emit_raw_bytes: Arc<AtomicBool>,
     /// Wall-clock time the PTY session was created.
     pub started_at: SystemTime,
 }
@@ -260,10 +264,7 @@ impl PtyState {
     /// `kill_pty` is waiting for the child to exit. Capturing these paths
     /// before signalling the child lets `kill_pty` clean the bridge directory
     /// even if the reader wins that race and `remove` later returns `None`.
-    pub fn bridge_cleanup_paths(
-        &self,
-        session_id: &SessionId,
-    ) -> Option<(String, Option<String>)> {
+    pub fn bridge_cleanup_paths(&self, session_id: &SessionId) -> Option<(String, Option<String>)> {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         let session = sessions.get(session_id)?;
         session
@@ -346,6 +347,17 @@ impl PtyState {
     pub fn contains(&self, session_id: &SessionId) -> bool {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.contains_key(session_id)
+    }
+
+    /// Toggle raw-byte PTY data emission for an active session.
+    pub fn set_emit_raw_bytes(&self, session_id: &SessionId, enabled: bool) -> Result<(), String> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let Some(session) = sessions.get(session_id) else {
+            return Err(format!("session {} not found", session_id));
+        };
+
+        session.emit_raw_bytes.store(enabled, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Return the number of active sessions.
@@ -707,6 +719,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            emit_raw_bytes: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }
     }
@@ -781,6 +794,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            emit_raw_bytes: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
         }
     }

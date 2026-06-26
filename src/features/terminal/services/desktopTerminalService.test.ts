@@ -200,6 +200,18 @@ describe('DesktopTerminalService', () => {
   })
 
   describe('event subscriptions', () => {
+    test('setRawDataConsumer toggles backend raw byte emission', () => {
+      service.setRawDataConsumer('raw-session', true)
+      service.setRawDataConsumer('raw-session', false)
+
+      expect(invoke).toHaveBeenNthCalledWith(1, 'set_raw_pty_bytes', {
+        request: { sessionId: 'raw-session', enabled: true },
+      })
+      expect(invoke).toHaveBeenNthCalledWith(2, 'set_raw_pty_bytes', {
+        request: { sessionId: 'raw-session', enabled: false },
+      })
+    })
+
     test('onData delivers pty-data events to callback', async () => {
       const callback = vi.fn()
       await service.onData(callback)

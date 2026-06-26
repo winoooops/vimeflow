@@ -67,3 +67,12 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **Finding:** `decodeBase64Bytes` called `atob()` without guarding malformed `dataBytesBase64` payloads. A bad raw-byte field for a registered Ghostty session could throw inside the PTY event listener before callbacks received the fallback string data.
 - **Fix:** Wrapped the base64 decode in a try/catch that returns `undefined` on invalid payloads, preserving the existing string-data callback path for that chunk.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Xterm sessions received Ghostty-only raw PTY bytes
+
+- **Source:** github-codex-connector | PR #626 round 3 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The backend always base64-encoded every PTY chunk into `data_bytes_base64`, so default xterm sessions paid per-chunk allocation, encode cost, and larger IPC payloads for a Ghostty WASM renderer that was not active.
+- **Fix:** Added a per-session raw-byte capability toggled by the active renderer. The PTY read loop now leaves `data_bytes_base64` absent unless the session has an active Ghostty WASM raw-byte consumer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
