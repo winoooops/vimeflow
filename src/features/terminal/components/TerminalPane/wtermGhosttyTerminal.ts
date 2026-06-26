@@ -93,8 +93,12 @@ export const createWtermGhosttyTerminal = async ({
       terminal?.write('\x1b[2J\x1b[H')
     },
     write: (data, callback): void => {
-      terminal?.write(data)
-      callback?.()
+      if (!terminal) {
+        return
+      }
+
+      terminal.write(data)
+      queueMicrotask(() => callback?.())
     },
     onData: (callback): { dispose: () => void } => {
       inputCallbacks.add(callback)

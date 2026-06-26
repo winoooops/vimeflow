@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-22
+last_updated: 2026-06-26
 ref_count: 8
 ---
 
@@ -237,4 +237,13 @@ true` and drop the chunk.
 - **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
 - **Finding:** The hand-written YAML parser only supported `accepts: [browser, shell]`. A user-authored block list under `accepts:` was parsed as unrelated `- browser` slot-level lines, so the restriction was dropped without an error.
 - **Fix:** Added a narrow `accepts:` block-list state that accumulates following `- kind` scalars into the current slot restriction. The new test covers block-sequence YAML and verifies both values are preserved.
+- **Commit:** same commit as this entry
+
+### 15. Stateless OSC parser dropped sequences split across PTY chunks
+
+- **Source:** github-codex-connector | PR #626 round 1 | 2026-06-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`, `src/features/terminal/components/TerminalPane/osc7.ts`
+- **Finding:** The Ghostty WASM terminal path scanned each PTY chunk with a complete OSC 7 regex. Normal PTY reads can split `ESC]7;...BEL` across chunks, so a pane cwd update could be lost whenever the start, payload, or terminator crossed an event boundary.
+- **Fix:** Added a stateful OSC 7 cwd extractor that preserves partial sequence state across chunks and resets on renderer/session changes. The xterm path now keeps using xterm's parser instead of also running the regex scan on every chunk.
 - **Commit:** same commit as this entry

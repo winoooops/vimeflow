@@ -2,7 +2,7 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-22
+last_updated: 2026-06-26
 ref_count: 7
 ---
 
@@ -102,4 +102,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs` L88-110
 - **Finding:** OpenCode did not emit OSC 7, so the runtime passed the terminal spawn cwd into transcript tailing even when the locator had resolved a project directory from the bridge index. The initial `agent-cwd` event could therefore point the file explorer, git watcher, and test-run parser at `~` instead of the OpenCode project.
 - **Fix:** Added `resolved_directory` to `LocatedStatusSource`, populated it from OpenCode index rows and cache fallback, and made the watcher runtime prefer it over PTY cwd when starting transcript tailing.
+- **Commit:** same commit as this entry
+
+### 11. Replay summary discarded active and stored tool-call identity
+
+- **Source:** github-claude + github-codex-connector | PR #626 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/events.rs`, `crates/backend/src/agent/adapter/codex/transcript.rs`, `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The replay summary path preserved completed tool-call counts but dropped running tool calls at the replay boundary, failed to reset accumulated activity on Codex `session_meta` id changes, and replaced the frontend dedup set with only the recent summary window.
+- **Fix:** Added `activeToolCall` to replay summaries, reset `ReplayActivity` on Codex session changes, and made the frontend merge summary ids into the existing dedup set instead of replacing stored history. Regression tests cover active replay calls, completion clearing, and session-reset activity clearing.
 - **Commit:** same commit as this entry

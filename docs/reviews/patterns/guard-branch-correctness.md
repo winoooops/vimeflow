@@ -2,7 +2,7 @@
 id: guard-branch-correctness
 category: correctness
 created: 2026-06-11
-last_updated: 2026-06-19
+last_updated: 2026-06-26
 ref_count: 0
 ---
 
@@ -32,4 +32,13 @@ Review every branch whose two arms return the same expression. Either remove the
 - **File:** `src/features/terminal/layout-registry/layoutRegistry.ts` L77-82
 - **Finding:** `autoShrinkLayoutFor` returned the current custom layout for every `nextPaneCount <= current.capacity`, including `0`. The builtin `nextPaneCount <= 1 -> 'single'` guard ran only after the workspace early-return, so a caller relying on `autoShrinkLayoutFor(0, 'custom:X')` returning `'single'` would silently get the custom id instead.
 - **Fix:** Changed the workspace early-return condition to `nextPaneCount >= 1 && nextPaneCount <= current.capacity` so the zero-pane case falls through to `'single'` explicitly. Added a regression test for `autoShrinkLayoutFor(0, 'custom:grid-2x2')`.
+- **Commit:** same commit as this entry
+
+### 3. Experimental renderer flag defaulted to enabled instead of opt-in
+
+- **Source:** github-claude | PR #626 round 1 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/terminalRendererMode.ts`
+- **Finding:** `resolveDefaultTerminalRendererMode` treated unset or unexpected `VITE_RENDERER_GHOSTTY_WASM` values as `ghostty-wasm`, so production builds enabled the experimental renderer by default while the documented smoke-test flag was effectively an opt-out.
+- **Fix:** Made Ghostty WASM explicitly opt-in with only `1` or `true`, defaulting all unset, false, or unexpected values to `xterm`. Added tests for unset, disabled, enabled, and unexpected flag values.
 - **Commit:** same commit as this entry

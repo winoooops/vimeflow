@@ -4,8 +4,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent, AgentSessionTitleEvent,
-    AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent,
+    AgentSessionTitleEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::{serialize_event, EventSink};
 
@@ -98,6 +98,7 @@ pub(crate) fn emit_agent_replay_summary(
 pub(crate) struct ReplayActivity {
     total: u32,
     by_type: HashMap<String, u32>,
+    active: Option<AgentToolCallEvent>,
     /// Completed tool calls in arrival (oldest-first) order, capped at the
     /// limit; `into_summary` reverses it to newest-first.
     recent: VecDeque<AgentToolCallEvent>,
@@ -108,10 +109,21 @@ impl ReplayActivity {
     fn record_completed(&mut self, event: AgentToolCallEvent) {
         self.total = self.total.saturating_add(1);
         *self.by_type.entry(event.tool.clone()).or_default() += 1;
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.tool_use_id == event.tool_use_id)
+        {
+            self.active = None;
+        }
         self.recent.push_back(event);
         if self.recent.len() > RECENT_TOOL_CALLS_LIMIT {
             self.recent.pop_front();
         }
+    }
+
+    fn record_running(&mut self, event: AgentToolCallEvent) {
+        self.active = Some(event);
     }
 
     /// Build the one-shot summary event, reversing `recent` to newest-first.
@@ -127,6 +139,7 @@ impl ReplayActivity {
             cwd,
             tool_call_total: self.total,
             tool_call_by_type: self.by_type,
+            active_tool_call: self.active,
             recent_tool_calls: self.recent.into_iter().rev().collect(),
         }
     }
@@ -134,8 +147,7 @@ impl ReplayActivity {
 
 /// Route a tool-call event: emit live once replay is done, else fold the
 /// settled (done/failed) call into the replay accumulator for the one-shot
-/// boundary flush. A `running` event observed during replay is dropped — the
-/// summary reconstructs no active call (the agent is idle on resume).
+/// boundary flush, while preserving an in-flight replay call as summary state.
 pub(crate) fn record_tool_call(
     events: &Arc<dyn EventSink>,
     event: AgentToolCallEvent,
@@ -146,8 +158,11 @@ pub(crate) fn record_tool_call(
         if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
             log::warn!("Failed to emit agent-tool-call event: {}", e);
         }
-    } else if matches!(event.status, ToolCallStatus::Done | ToolCallStatus::Failed) {
-        replay.record_completed(event);
+    } else {
+        match event.status {
+            ToolCallStatus::Running => replay.record_running(event),
+            ToolCallStatus::Done | ToolCallStatus::Failed => replay.record_completed(event),
+        }
     }
 }
 
@@ -212,8 +227,6 @@ mod tests {
             &mut activity,
             false,
         );
-        // A `running` event observed during replay is dropped — the summary
-        // reconstructs no active call.
         record_tool_call(
             &(Arc::new(FakeEventSink::new()) as Arc<dyn crate::runtime::EventSink>),
             tool_call("c3", "Bash", ToolCallStatus::Running),
@@ -225,6 +238,13 @@ mod tests {
         assert_eq!(summary.tool_call_total, 2);
         assert_eq!(summary.tool_call_by_type.get("Read"), Some(&2));
         assert_eq!(summary.tool_call_by_type.get("Bash"), None);
+        assert_eq!(
+            summary
+                .active_tool_call
+                .as_ref()
+                .map(|event| event.tool_use_id.as_str()),
+            Some("c3")
+        );
         assert_eq!(summary.num_turns, 4);
         assert_eq!(summary.cwd.as_deref(), Some("/ws"));
         assert_eq!(summary.recent_tool_calls.len(), 2);
@@ -252,6 +272,29 @@ mod tests {
         // Newest-first: the last-recorded call (c59) leads; the oldest 10 dropped.
         assert_eq!(summary.recent_tool_calls[0].tool_use_id, "c59");
         assert_eq!(summary.recent_tool_calls[49].tool_use_id, "c10");
+    }
+
+    #[test]
+    fn replay_activity_clears_active_when_matching_call_completes() {
+        let mut activity = ReplayActivity::default();
+        let sink: Arc<dyn crate::runtime::EventSink> = Arc::new(FakeEventSink::new());
+
+        record_tool_call(
+            &sink,
+            tool_call("c1", "Read", ToolCallStatus::Running),
+            &mut activity,
+            false,
+        );
+        record_tool_call(
+            &sink,
+            tool_call("c1", "Read", ToolCallStatus::Done),
+            &mut activity,
+            false,
+        );
+
+        let summary = activity.into_summary("sid".into(), 0, None);
+        assert!(summary.active_tool_call.is_none());
+        assert_eq!(summary.tool_call_total, 1);
     }
 
     #[test]

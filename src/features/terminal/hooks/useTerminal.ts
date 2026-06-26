@@ -6,6 +6,10 @@ export interface TerminalIo {
   cols: number
   rows: number
   clear: () => void
+  /**
+   * Callback timing is renderer-defined. It signals that the adapter accepted
+   * the chunk, not that rendered cursor state is observable.
+   */
   write: (data: string | Uint8Array, callback?: () => void) => void
   onData: (callback: (data: string) => void) => { dispose: () => void }
 }

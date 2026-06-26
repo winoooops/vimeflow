@@ -6,9 +6,70 @@ export interface ParseOsc7CwdOptions {
 }
 
 const OSC7_CWD_SEQUENCE_PATTERN = /\x1b\]7;([^\x07]*?)(?:\x07|\x1b\\)/g
+const OSC7_CWD_SEQUENCE_START = '\x1b]7;'
+const OSC7_CWD_BUFFER_LIMIT = 8192
 
 export const extractOsc7CwdValues = (data: string): string[] =>
   [...data.matchAll(OSC7_CWD_SEQUENCE_PATTERN)].map((match) => match[1])
+
+export interface Osc7CwdExtractor {
+  push: (data: string) => string[]
+  reset: () => void
+}
+
+const trailingStartPrefix = (data: string): string => {
+  const maxLength = Math.min(data.length, OSC7_CWD_SEQUENCE_START.length - 1)
+
+  for (let length = maxLength; length > 0; length -= 1) {
+    const suffix = data.slice(-length)
+    if (OSC7_CWD_SEQUENCE_START.startsWith(suffix)) {
+      return suffix
+    }
+  }
+
+  return ''
+}
+
+export const createOsc7CwdExtractor = (): Osc7CwdExtractor => {
+  let pending = ''
+
+  return {
+    push: (data): string[] => {
+      const output: string[] = []
+      const input = `${pending}${data}`
+      let cursor = 0
+      pending = ''
+
+      while (cursor < input.length) {
+        const start = input.indexOf(OSC7_CWD_SEQUENCE_START, cursor)
+        if (start === -1) {
+          pending = trailingStartPrefix(input.slice(cursor))
+
+          break
+        }
+
+        const payloadStart = start + OSC7_CWD_SEQUENCE_START.length
+        const bel = input.indexOf('\x07', payloadStart)
+        const st = input.indexOf('\x1b\\', payloadStart)
+        const end = bel === -1 ? st : st === -1 ? bel : Math.min(bel, st)
+
+        if (end === -1) {
+          pending = input.slice(start).slice(-OSC7_CWD_BUFFER_LIMIT)
+
+          break
+        }
+
+        output.push(input.slice(payloadStart, end))
+        cursor = end + (end === st ? 2 : 1)
+      }
+
+      return output
+    },
+    reset: (): void => {
+      pending = ''
+    },
+  }
+}
 
 export const normalizePosixPath = (path: string): string => {
   const parts: string[] = []

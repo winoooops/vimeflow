@@ -856,9 +856,13 @@ export const useAgentStatus = (
             return
           }
 
-          seenToolUseIdsRef.current = new Set(
-            payload.recentToolCalls.map((event) => event.toolUseId)
-          )
+          seenToolUseIdsRef.current = new Set([
+            ...seenToolUseIdsRef.current,
+            ...payload.recentToolCalls.map((event) => event.toolUseId),
+            ...(payload.activeToolCall
+              ? [payload.activeToolCall.toolUseId]
+              : []),
+          ])
           writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
 
           setStatus((prev) => ({
@@ -871,7 +875,14 @@ export const useAgentStatus = (
               // (optional values); the wire shape never carries undefined values,
               // so coerce to the non-optional Record the state expects.
               byType: payload.toolCallByType as Record<string, number>,
-              active: null,
+              active: payload.activeToolCall
+                ? {
+                    tool: payload.activeToolCall.tool,
+                    args: payload.activeToolCall.args,
+                    startedAt: payload.activeToolCall.timestamp,
+                    toolUseId: payload.activeToolCall.toolUseId,
+                  }
+                : null,
             },
             recentToolCalls: payload.recentToolCalls
               .slice(0, RECENT_TOOL_CALLS_LIMIT)

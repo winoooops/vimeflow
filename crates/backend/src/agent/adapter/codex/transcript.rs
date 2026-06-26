@@ -341,6 +341,7 @@ fn process_line(
                 *last_cwd = None;
                 *last_phase = None;
                 *replay_phase = None;
+                *replay_activity = ReplayActivity::default();
                 emitter.clear_pending();
             }
             *codex_agent_session_id = id.to_string();
@@ -1104,6 +1105,9 @@ mod tests {
             r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#,
         );
         decoder.decode_line(
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c-running","arguments":"{\"cmd\":\"sleep 10\"}"}}"#,
+        );
+        decoder.decode_line(
             r#"{"type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":0}}"#,
         );
 
@@ -1122,6 +1126,7 @@ mod tests {
             .collect();
         assert_eq!(summaries[0].1["numTurns"], 1);
         assert_eq!(summaries[0].1["toolCallTotal"], 1);
+        assert_eq!(summaries[0].1["activeToolCall"]["toolUseId"], "c-running");
 
         // After catch-up, a live exec_command emits individual events again.
         decoder.decode_line(
@@ -1893,6 +1898,64 @@ mod tests {
             .map(|(_, payload)| payload["numTurns"].clone())
             .collect();
         assert_eq!(turns, vec![json!(1), json!(1)]);
+    }
+
+    #[test]
+    fn process_line_new_session_meta_resets_replay_activity() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+        let mut codex_agent_session_id = String::new();
+        let mut last_phase = None;
+        let mut replay_phase = None;
+        let mut replay_activity = ReplayActivity::default();
+
+        for line in [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"old-run","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"old-call","arguments":"{\"cmd\":\"npm run lint\"}"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"old-call","exit_code":0}}"#,
+        ] {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+                &mut codex_agent_session_id,
+                &mut last_phase,
+                &mut replay_phase,
+                &mut replay_activity,
+                false,
+            );
+        }
+
+        process_line(
+            r#"{"timestamp":"2026-05-22T10:00:03Z","type":"session_meta","payload":{"id":"new-run","cwd":"/workspace/B"}}"#,
+            "sid-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut codex_agent_session_id,
+            &mut last_phase,
+            &mut replay_phase,
+            &mut replay_activity,
+            false,
+        );
+
+        let summary = replay_activity.into_summary("sid-1".into(), num_turns, last_cwd);
+        assert_eq!(summary.tool_call_total, 0);
+        assert!(summary.recent_tool_calls.is_empty());
+        assert!(summary.active_tool_call.is_none());
+        assert_eq!(summary.cwd.as_deref(), Some("/workspace/B"));
     }
 
     // ---- DTO-migration regression tests (Task 1.6) ----

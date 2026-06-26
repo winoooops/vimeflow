@@ -36,7 +36,11 @@ import {
   toComparablePath,
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
-import { extractOsc7CwdValues, parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import {
+  createOsc7CwdExtractor,
+  parseOsc7Cwd,
+  WINDOWS_DRIVE_PATH,
+} from './osc7'
 import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
@@ -267,6 +271,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     useState<TerminalRendererMode>(initialRendererModeRef.current)
   const [terminal, setTerminal] = useState<TerminalIo | null>(null)
   const [xtermTerminal, setXtermTerminal] = useState<Terminal | null>(null)
+  const osc7CwdExtractorRef = useRef(createOsc7CwdExtractor())
   const fitAddonRef = useRef<FitAddon | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
@@ -425,7 +430,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   const handleTerminalOutput = useCallback(
     (data: string): void => {
-      extractOsc7CwdValues(data).forEach(applyOsc7Cwd)
+      if (activeRendererMode !== 'xterm') {
+        osc7CwdExtractorRef.current.push(data).forEach(applyOsc7Cwd)
+      }
 
       const output = `${agentCwdOutputBufferRef.current}${data}`
 
@@ -459,7 +466,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         flushAgentCwdOutputBuffer()
       }
     },
-    [applyAgentCwdHint, applyOsc7Cwd, flushAgentCwdOutputBuffer]
+    [
+      activeRendererMode,
+      applyAgentCwdHint,
+      applyOsc7Cwd,
+      flushAgentCwdOutputBuffer,
+    ]
   )
 
   const handleTerminalInput = useCallback(
@@ -637,6 +649,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       setActiveRendererMode(rendererMode)
     }
   }, [rendererMode])
+
+  useEffect(() => {
+    osc7CwdExtractorRef.current.reset()
+  }, [activeRendererMode, sessionId])
 
   // P2 Fix: Terminal instance management with caching.
   // Terminals persist when switching sessions to avoid killing PTY processes.

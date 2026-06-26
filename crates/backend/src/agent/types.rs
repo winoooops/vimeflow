@@ -391,6 +391,8 @@ pub struct AgentReplaySummaryEvent {
     pub cwd: Option<String>,
     pub tool_call_total: u32,
     pub tool_call_by_type: std::collections::HashMap<String, u32>,
+    /// Tool call that was running at the replay boundary, if any.
+    pub active_tool_call: Option<AgentToolCallEvent>,
     /// Completed tool calls accumulated during replay, newest-first, capped at 50.
     pub recent_tool_calls: Vec<AgentToolCallEvent>,
 }

@@ -1,6 +1,10 @@
 // cspell:ignore hostless worktree
 import { describe, expect, test } from 'vitest'
-import { extractOsc7CwdValues, parseOsc7Cwd } from './osc7'
+import {
+  createOsc7CwdExtractor,
+  extractOsc7CwdValues,
+  parseOsc7Cwd,
+} from './osc7'
 
 describe('parseOsc7Cwd', () => {
   test('parses a POSIX file URL emitted by OSC 7', () => {
@@ -80,5 +84,22 @@ describe('parseOsc7Cwd', () => {
         'a\x1b]7;file:///tmp/one\x07b\x1b]7;file:///tmp/two\x1b\\c'
       )
     ).toEqual(['file:///tmp/one', 'file:///tmp/two'])
+  })
+
+  test('extracts OSC 7 cwd payloads split across output chunks', () => {
+    const extractor = createOsc7CwdExtractor()
+
+    expect(extractor.push('a\x1b]')).toEqual([])
+    expect(extractor.push('7;file:///tmp/split')).toEqual([])
+    expect(extractor.push('\x07b')).toEqual(['file:///tmp/split'])
+  })
+
+  test('reset drops a partial OSC 7 cwd payload', () => {
+    const extractor = createOsc7CwdExtractor()
+
+    expect(extractor.push('\x1b]7;file:///tmp/stale')).toEqual([])
+    extractor.reset()
+
+    expect(extractor.push('\x07')).toEqual([])
   })
 })
