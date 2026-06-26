@@ -15,6 +15,9 @@ describe('isAllowedBackendMethod', () => {
     'update_session_cwd',
     'set_session_activity_panel_collapsed',
     'set_workspace_sessions',
+    'set_kimi_usage_consent',
+    'get_kimi_usage_consent',
+    'refresh_kimi_usage',
     'detect_agent_in_session',
     'start_agent_watcher',
     'stop_agent_watcher',
@@ -42,13 +45,21 @@ describe('isAllowedBackendMethod', () => {
 
   test('rejects e2e-only methods by default', () => {
     expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_agent_bridge_info')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_seed_live_agent')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_start_codex_watcher')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_start_kimi_watcher')).toBe(false)
+    expect(isAllowedBackendMethod('e2e_emit_agent_status')).toBe(false)
   })
 
-  test('allows e2e-only methods when explicitly enabled', () => {
-    expect(
-      isAllowedBackendMethod('list_active_pty_sessions', {
-        allowE2eMethods: true,
-      })
-    ).toBe(true)
+  test.each([
+    'list_active_pty_sessions',
+    'e2e_agent_bridge_info',
+    'e2e_seed_live_agent',
+    'e2e_start_codex_watcher',
+    'e2e_start_kimi_watcher',
+    'e2e_emit_agent_status',
+  ])('allows e2e-only method %s when explicitly enabled', (method) => {
+    expect(isAllowedBackendMethod(method, { allowE2eMethods: true })).toBe(true)
   })
 })

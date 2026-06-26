@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-22
-ref_count: 18
+ref_count: 61
 ---
 
 # React Lifecycle
@@ -312,74 +312,252 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 31. AnimatePresence condition placed before the wrapper, killing exit animations
+### 31. `useNativeSurface` returns a fresh `NativeSurfaceState` object on every render
 
-- **Source:** github-claude | PR #422 round 1 | 2026-06-11
-- **Severity:** HIGH
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** `SettingsDialog` returned `null` when `open` was false before reaching the `<AnimatePresence>` wrapper. When `open` flipped to false, React unmounted the entire `AnimatePresence>` tree immediately, so the backdrop and panel `exit` animations never ran and the dialog snapped closed.
-- **Fix:** Removed the early `if (!open) return null` guard and moved the condition inside `<AnimatePresence>` as `{open && (...)}`, matching the existing `CommandPalette` and `UnsavedChangesDialog` pattern.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 32. Unused `section` prop widens SettingsHeader public API surface
-
-- **Source:** github-claude | PR #422 round 1 | 2026-06-11
-- **Severity:** LOW
-- **File:** `src/features/settings/components/SettingsHeader.tsx`, `src/features/settings/types.ts`, `src/features/settings/SettingsDialog.tsx`
-- **Finding:** `SettingsHeaderProps` declared `section: SettingsSection | undefined` and `SettingsDialog` passed `section={activeSection}`, but `SettingsHeader` destructured only `{ scope, onScope }` — the prop was silently dropped. Callers were forced to provide a value for a field that had no consumer, and tests passed the prop without asserting on any section-related output.
-- **Fix:** Removed the `section` field from `SettingsHeaderProps`, removed `section={activeSection}` from the `SettingsDialog` call site, and cleaned up the co-located test props.
-- **Commit:** same commit as this entry
-
-### 33. Component state survives open/close cycles when the component is permanently mounted
-
-- **Source:** github-claude | PR #422 round 3 | 2026-06-11
-- **Severity:** LOW
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** `SettingsDialog` is permanently mounted in `WorkspaceView` (inside `AnimatePresence` with an `{open && ...}` guard rather than being conditionally rendered). The `query` state lived in the component body above the `open` guard, so it survived dialog close and was still active when the dialog reopened. A user who typed a search term, closed the dialog, and reopened it would see a filtered sidebar with no visible indication that a filter was active.
-- **Fix:** Added `useEffect(() => { if (!open) setQuery('') }, [open])` to reset the search query whenever the dialog closes. Added a co-located test asserting the query is cleared on close/reopen.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 34. `bridge.save()` side effect inside `setSettings` updater double-saves in Strict Mode
-
-- **Source:** github-claude | PR #430 round 1 | 2026-06-12
-- **Severity:** HIGH
-- **File:** `src/features/settings/SettingsProvider.tsx` L51-62
-- **Finding:** The `update()` callback computed the merged settings and called `bridge.save(merged)` from inside the functional `setSettings` updater. React Strict Mode double-invokes updaters in development, so every user-triggered settings change would emit two `save_app_settings` IPC requests and break the `toHaveBeenCalledTimes(1)` test assertion under StrictMode.
-- **Fix:** Moved the merged-state computation and persistence out of the updater. A `settingsRef` tracks the latest state, `update()` computes `next` synchronously, calls `setSettings(next)` with a pure value setter, then enqueues `bridge.save(next)` through an async queue so saves remain ordered and the updater stays pure.
-- **Commit:** same commit as this entry
-
-### 35. useEffect syncs to Electron on every keybinding change, not just palette changes
-
-- **Source:** github-claude | PR #523 round 2 | 2026-06-18
+- **Source:** github-claude | PR #467 round 1 | 2026-06-15
 - **Severity:** MEDIUM
-- **File:** `src/features/workspace/WorkspaceView.tsx` L1454-1468
-- **Finding:** `useEffect([paletteBinding, paletteLeaderBinding])` uses Chord object references as deps. `resolveBindings` (called inside `useMemo`) builds a new `Map` with freshly-constructed Chord instances on every invocation. Because `overrides` (the full `customKeybindings` record) is the memoization key, any
-- **Fix:** Hoisted `formatChord(paletteBinding)` and `formatChord(paletteLeaderBinding)` above the effect and used the resulting string tokens as dependencies, so the effect only re-runs when the actual binding values change.
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The hook synchronously called `getNativeSurfaceState` in render, and `nativeSurfaceStateFrom` always allocated a fresh object and `occludingOverlayIds` array. Consumers that used the returned state in `useEffect`, `useMemo`, or `useCallback` dependency arrays would re-run on every parent re-render, even when occlusion had not changed. A naive `useMemo` with `[getNativeSurfaceState, id, owner, belowPlane, getRect]` did not work in this codebase because the overlay stack uses a `latestDescriptorRef` pattern: overlay descriptors are stored once and read through refs on subsequent renders, so the `overlays` array reference (and therefore `getNativeSurfaceState`) does not change when an overlay's rect or other mutable content changes.
+- **Fix:** Compute the state every render so the latest ref-based overlay descriptor values are observed, but keep a `useRef` to the previous result and return the previous object when descriptor identity, occlusion flag, and `occludingOverlayIds` content are unchanged. This preserves referential stability for dependency arrays without breaking the ref-based content-update path.
+- **Commit:** _(PR #467 round 1)_
+
+### 32. `nativeSurfaceStates` snapshot freezes occlusion on geometry changes
+
+- **Source:** github-claude + github-codex-connector | PR #467 round 2 | 2026-06-15
+- **Severity:** MEDIUM / P2
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
+- **Finding:** Pre-aggregated `nativeSurfaceStates` was computed by a `useMemo` keyed on `[nativeSurfaces, overlays]`, which only update when descriptors are registered or unregistered. `useOverlayRegistration` stores a stable `getRect` callback that reads from `latestDescriptorRef`, so moving or resizing an already-open `intersects` overlay does not change the descriptor arrays. The snapshot therefore kept the occlusion values from the last registration moment and would silently expose stale `occluded`/`occludingOverlayIds` to any context consumer reading `nativeSurfaceStates`.
+- **Fix:** Removed `nativeSurfaceStates` from `OverlayStackSnapshot` and the context value, leaving `getNativeSurfaceState(descriptor)` as the only public occlusion API. It evaluates the live `getRect` callbacks during each consumer's render, so geometry changes are always reflected. Added JSDoc explaining the design choice and updated the provider test to read live state via `getNativeSurfaceState` instead of the removed snapshot field.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 36. Settings search model recomputes on every unrelated render
+### 33. `occludingOverlayIds` order depends on Map insertion order, breaking referential stability after re-registration
 
-- **Source:** github-claude | PR #544 round 1 | 2026-06-19
+- **Source:** github-codex-connector | PR #467 round 5 | 2026-06-15
 - **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx` L96-103
-- **Finding:** `SettingsDialog` called `searchSettings({ sections: SETTINGS_SECTIONS, targets: SETTINGS_TARGETS, query })` directly in the render body, so navigation, focus state, and selection updates reran the full scoring, sorting, and map construction even when `query` was unchanged.
-- **Fix:** Wrapped the `searchSettings` call in `useMemo` with `[query]` as its dependency so the search model is only recomputed when the query changes.
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx` and `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** `occludingOverlayIds` was derived by filtering `Array.from(overlayDescriptors.values())` and mapping to ids, preserving the underlying `Map` insertion order. `useOverlayRegistration` unregisters and re-registers an overlay whenever any of its logical descriptor fields change; a re-registered overlay moves to the tail of the `Map`, so a semantically identical set of occluders could produce a different positional array. `areOcclusionStatesEqual` compared ids positionally, so the reordering caused `useNativeSurface` to replace its cached `NativeSurfaceState` even though visibility had not changed, defeating the referential-stability contract.
+- **Fix:** Sorted the `occludingOverlayIds` array alphabetically in `nativeSurfaceStateFrom` before returning the state. Added a regression test that registers two occluding overlays, re-registers one by changing a non-occlusion prop, and asserts the id order remains deterministic.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 37. Settings toggle callback reads a ref declared later in the component body
+### 34. Registered overlay descriptor exposes stale `isOpen`/`nativeOcclusion` for one frame
 
-- **Source:** github-claude | PR #577 round 1 | 2026-06-20
+- **Source:** github-claude | PR #467 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
+- **Finding:** `latestDescriptorRef.current` was updated during render, but the descriptor stored in the provider captured `isOpen` and `nativeOcclusion` from the previous effect registration. Between render and the layout-effect re-registration, `getNativeSurfaceState` read stale logical fields, producing a one-frame native-surface visibility error during overlay open/close or `nativeOcclusion` policy transitions.
+- **Fix:** Changed the registered descriptor to read `isOpen`, `nativeOcclusion`, and `getRect` through `latestDescriptorRef.current` — `isOpen` and `nativeOcclusion` as getters and `getRect` as a callback — so the provider map always observes the latest render values before the effect re-registers.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. useNativeSurface: unconstrained useLayoutEffect causes layout reads every commit
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
 - **Severity:** LOW
-- **File:** `src/features/settings/hooks/useSettingsDialog.ts`
-- **Finding:** The `toggle` callback closed over `isOpenRef` before the `const isOpenRef = useRef(isOpen)` declaration appeared in the component body. Runtime behavior was safe because the callback is not invoked during render, but the forward reference creates a temporal-dead-zone footgun for future synchronous invocation changes.
-- **Fix:** Moved the `isOpenRef` declaration above the callbacks that read it so hook-local refs are declared before dependent closures.
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The dep-array-less `useLayoutEffect` (lines 78-92) runs after every React commit for every mounted `BrowserPane`. When an `'intersects'`-type overlay is open (pane-rename or workspace-banners), each commit calls `getBoundingClientRect()` on the overlay element (`document.querySelector(...)`) and on `contentRef.current`. During pane-rename, every keystroke is a commit, producing 2 forced layout reads per browser pane per keystroke. The `areOcclusionStatesEqual` guard correctly prevents render cascades, so only the reads accumulate. With multiple panes the reads are proportional. Fix: skip the re-check when no open `'intersects'` overlay is registered, reducing DOM reads to zero during the common `'global'`-only case.
+- **Fix:** Added an early return in the post-commit useLayoutEffect when no open intersecting overlay is registered, eliminating layout reads in the global-only case.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 38. Hidden terminal font changes only set deferred flags without forcing the later refit
+### 36. useNativeSurface: bare eslint-disable on unbounded effect lacks rationale
 
-- **Source:** github-codex-connector | PR #607 round 1 | 2026-06-22
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The second `useLayoutEffect` captures `overlays`, `getNativeSurfaceState`, `id`, `owner`, `belowPlane`, and `getRect` but lists no deps so it runs after every commit. The `// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses the warning without naming which variables are deliberately unlisted or why each is safe.
+- **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. `checkSelectedFile` existence probe re-runs on every git-watch poll
+
+- **Source:** github-claude | PR #510 round 5 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The `checkSelectedFile` effect in `WorkspaceView.tsx` listed `gitStatus.files` and `gitStatus.filesCwd` in its dependency array. With `watch: true`, `useGitStatus` emits a fresh `files` array reference on every poll, so the effect re-ran continuously even when nothing about the open file had changed. Each run reset `selectedEditorFileExists` to `null` and called `fileSystemService.readFile(editorBuffer.filePath)`, repeatedly transferring full file contents over IPC and transiently clearing the `DELETED` crumb state for deleted untracked buffers.
+- **Fix:** Introduced `buildSelectedFileGitKey` in `editorFileLifecycleStatus.ts` to derive a stable primitive key from the selected file's path, git cwd, repo root, and matching `ChangedFile` status/staging. The `checkSelectedFile` effect now depends on that key instead of the raw arrays, so the probe only runs when the selected file's relevant git state actually changes.
+
+### 38. Ref mutation + store write inside setStatus updater breaks React StrictMode
+
+- **Source:** github-claude | PR #456 round 1 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `seenToolUseIdsRef.current.has/add` and `writeStatusSeenToolUseIds` were called inside the functional `setStatus` updater. React 18 StrictMode double-invokes state updaters with the same `prev` in development, so the first invocation mutated the ref and the second invocation treated the legitimate tool call as a duplicate, returning `prev` unchanged.
+- **Fix:** Hoisted the ref mutation and store write out of the updater into the listener closure before `setStatus`, capturing the `duplicate` boolean so both StrictMode invocations see the same value. The updater now only computes the next state from `prev`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Move seen-tool ID writes out of the state updater
+
+- **Source:** github-codex-connector | PR #456 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
-- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
-- **Finding:** Changing the terminal font while a different session was inactive left that pane mounted but hidden. The font-change effect saw `offsetWidth <= 0` and only set pending deferred-fit flags; when the pane later became visible, the normal resize path could skip fitting because the container dimensions matched `lastFitSize`, leaving xterm with stale columns and rows until a manual resize.
-- **Fix:** Route hidden font changes into the existing forced deferred-fit path by calling the session-owned `flushFitRef` after marking the pending font refresh. The forced path retries while width is zero, bypasses the size-cache skip once visible, and refreshes the terminal after fit. Added a regression test that changes fonts while the container width is zero, then restores width and verifies a forced fit plus refresh happens without recreating xterm.
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The functional updater for tool-call completion state mutated `seenToolUseIdsRef` before computing the new state. Under React StrictMode the updater can run twice, so the second invocation saw the ID as already seen and dropped the completed tool call from counts and the recent-calls list.
+- **Fix:** Same change as entry 37: computed the duplicate decision and persisted the seen set outside the updater, keeping the updater pure and StrictMode-safe.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. Fragile newline separator in effect dependency signature
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** `plannedPtyIds.join('\n')` and `.split('\n')` assumed PTY IDs never contain newlines. A future backend ID containing `\n` would split into phantom tokens and refresh wrong panes.
+- **Fix:** Replaced the join/split signature with `JSON.stringify({ activePtyId, visiblePtyIds })` and parsed it inside the effect. JSON escapes any special characters, making the dependency string robust.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. Hook pre-plans then coordinator re-plans
+
+- **Source:** github-claude | PR #459 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentStatusHotLoading.ts`
+- **Finding:** The hook called `planVisibleStatusRefreshes` to build a stable effect dep, then passed the planned IDs to `refreshVisibleAgentStatusPanes`, which called the same planner again. The double-planning is idempotent today but creates silent coupling if the algorithm evolves.
+- **Fix:** Removed the hook's pre-planning; it now serializes the raw `{ activePtyId, visiblePtyIds }` request as the effect dep and lets the coordinator do all planning internally.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Hot-loading scope should match SplitView visibility
+
+- **Source:** github-codex-connector (P2) | PR #459 round 1 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `visibleAgentStatusPtyIds` was derived from every shell pane in the active session, so hidden panes still received prefetches and warm snapshots after shrinking to a lower-capacity layout. The background-work boundary diverged from the UI visibility boundary.
+- **Fix:** Replaced the all-panes filter with `selectVisiblePanes(session.panes, LAYOUTS[session.layout].capacity)` so hot-loading targets exactly the panes rendered by `SplitView`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 43. Scroll-anchor compensation inferred prepend from list length
+
+- **Source:** github-claude + github-codex-connector (P2) | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The prepend detector compared `feedEvents.length` to a stored count. When the capped activity feed replaced its oldest row (total length unchanged) or appended rows at the bottom, the detector produced false negatives/positives. The compensation amount also relied on total `scrollHeight` growth, which is zero when an equal-height row drops off the bottom.
+- **Fix:** Replaced the count heuristic with first-event identity (`feedEvents[0]?.id`). Measured the new first row's `offsetHeight` with `CSS.escape` and used it as the compensation delta, falling back to `scrollHeightDelta` when the row is not rendered.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 44. Batch prepends compensated by only the first inserted row height
+
+- **Source:** github-codex-connector (P2) | PR #464 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The round-1 fix computed `prependDelta = firstRowHeight > 0 ? firstRowHeight : scrollHeightDelta`. When hot-loading delivered multiple new activity rows in one snapshot, the viewport adjusted by one row instead of the total inserted height, causing visible content jump and undermining scroll-stability.
+- **Fix:** Prefer total positive `scrollHeightDelta` for growing prepends and fall back to the measured first-row height only when the container does not grow. Added a regression test that stubs `offsetHeight` to a single-row value while growing `scrollHeight` by several rows' worth, asserting the viewport compensates by the full delta.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. quad layout: two useSplitDivider instances for same boundary cause render loop
+
+- **Source:** github-claude | PR #526 round 1 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L69-94
+- **Finding:** `DIVIDER_SPECS.quad` registered `vdiv0` and `vdiv1` as separate specs with the same `{ trackAxis: 'cols', trackIndex: 0 }`. Each spec rendered its own `SplitDividerHandle`, so two independent `useSplitDivider` instances controlled the same boundary. `useElasticContainer` captures `initialPercent` at mount, so the non-dragged segment kept a stale 50/50 size; after a drag committed, the sibling's commit effect wrote the old ratio back, creating an oscillating `setState` loop.
+- **Fix:** Replaced the two per-segment specs with a single `vcol` spec whose `gridAreas: ['vdiv0', 'vdiv1']` renders both DOM segments from one shared `useSplitDivider` binding.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Share the quad column divider binding
+
+- **Source:** github-codex-connector (P2) | PR #526 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L92
+- **Finding:** The second vertical segment in the `quad` layout created another `useSplitDivider` for the same `cols` boundary instead of sharing the first segment's binding. Dragging one segment updated `initialRatios` while the sibling's committed `size` remained at the old 50/50 value, so its commit effect snapped the column split back.
+- **Fix:** Collapsed both vertical segments into one `DividerHandleSpec` with `gridAreas: ['vdiv0', 'vdiv1']` rendered from a single binding.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. Remount divider handles on layout changes
+
+- **Source:** github-codex-connector (P2) | PR #526 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx` L154
+- **Finding:** Handles reused the same `spec.id` key across layouts (e.g. `hdiv` in `hsplit`/`threeRight`/`quad`, `vdiv` in `vsplit`/`threeRight`). Because `useElasticContainer` captures `initialPercent` at mount, switching layouts reused the existing instance and its old pixel size, which the commit effect then stored into the new layout's ratio.
+- **Fix:** Scoped the `SplitDividerHandle` key to the current layout with `key={`${layout}-${spec.id}`}`, forcing a remount and fresh mount-time state on every layout change.
+
+### 48. Duplicate divider bindings write conflicting CSS vars for the same logical boundary
+
+- **Source:** github-codex-connector | PR #528 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitDividers.tsx`
+- **Finding:** In `quad` and `grid3x2` layouts, two visual divider segments represent the same logical column boundary (`trackAxis: 'cols'`, same `trackIndex`). Each segment created its own `useSplitDivider` instance, and each instance's commit-size effect wrote the same `--split-cols-*` CSS variables. Dragging one segment updated parent state, but the untouched segment's effect re-ran with its stale `size` and overwrote the live ratio, making the resize snap back or become inconsistent.
+- **Fix:** Group divider specs by `(trackAxis, trackIndex)` and create exactly one `useSplitDivider` binding per logical boundary. Render every visual segment in the group from that shared binding so all handles read the same live `size` and no two effects compete for the same CSS vars.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 49. Unstable `initialRatios` dependency recreates `writeRatio` and triggers sibling divider feedback loop
+
+- **Source:** github-claude | PR #528 round 2 | 2026-06-18
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/SplitView/useSplitDivider.ts` L58-78
+- **Finding:** `writeRatio` listed `initialRatios` in its `useCallback` deps. In `quad` and `grid3x2` layouts, sibling dividers on the same axis share the axis ratios; committing one divider created a new `ratios` array reference, which was passed as `initialRatios` to all sibling handles. Each sibling's `writeRatio` was recreated, firing its commit effect with a stale `size` from `useElasticContainer`, producing wrong track weights and an infinite state oscillation that ended in React's "Maximum update depth exceeded" crash.
+- **Fix:** Store `initialRatios` in a ref (`initialRatiosRef`) updated synchronously during render, and read `initialRatiosRef.current` inside `writeRatio`. Removed `initialRatios` from the `useCallback` deps so `writeRatio` stays stable across sibling commits.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 50. Conditional child unmount leaves parent state stale
+
+- **Source:** github-claude, github-codex-connector | PR #535 round 1 | 2026-06-18
+- **Severity:** LOW / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L2365-2379
+- **Finding:** `LayoutDisplayMenu` is rendered only when `activeSession` exists. If the active session closes while the menu is open, the menu unmounts without `MenuRoot` calling `onOpenChange(false)`, leaving `isLayoutDisplayMenuOpen` stuck `true`. On macOS this permanently removes `vf-app-drag-region` from the top chrome, making the title bar undraggable until the menu is mounted and closed again.
+- **Fix:** Added a `useEffect` in `WorkspaceView` that resets `isLayoutDisplayMenuOpen` to `false` whenever `activeSession` becomes `undefined`, restoring the drag region when the menu unmounts. Added a regression test that removes the active session while the menu is open and asserts the drag region returns.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Unstable `customPaneLayouts` default invalidates `useMemo` on every render
+
+- **Source:** github-claude | PR #542 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts` L124-134
+- **Finding:** The destructuring default `customPaneLayouts = []` created a new array every time callers omitted the option. Because `customPaneLayouts` was listed in the `useMemo` dependency array, the workspace shape and its structural JSON signature were recomputed on every render even when the semantic input had not changed.
+- **Fix:** Introduced a module-scope `EMPTY_CUSTOM_PANE_LAYOUTS: readonly PaneLayoutDefinition[] = []` constant and used it as the destructuring default. The array reference is now stable across renders, so omitted layouts no longer trigger `buildWorkspaceShape` and `structuralSignature` recomputation.
+- **Commit:** same commit as this entry
+
+### 52. LayoutSwitcher rebuilds layout lookup Map on every render
+
+- **Source:** github-claude | PR #546 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx` L33-37
+- **Finding:** `LayoutSwitcher` created `const layoutById = new Map(layouts.map(...))` and `const layoutIds = layouts.map(...)` on every render. Because the component re-renders on every active-session change, fresh Map and array references prevented any downstream `React.memo` or `useMemo` that depended on those identities from firing.
+- **Fix:** Wrapped both `layoutIds` and `layoutById` in `useMemo(() => ..., [layouts])` so the references stay stable across unrelated re-renders.
+- **Commit:** same commit as this entry
+
+### 53. Custom layout save/delete reads stale `customPaneLayouts` closure
+
+- **Source:** github-claude | PR #569 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1265-1295
+- **Finding:** `handleSaveCustomLayout` and `handleDeleteCustomLayout` called `setCustomPaneLayouts([...customPaneLayouts.filter(...), ...])`, reading `customPaneLayouts` from the `useCallback` closure. The deps array recreated the callback when the list changed, but concurrent or batched updates between renders could operate on a stale snapshot and silently drop an interleaved layout change.
+- **Fix:** Switched both callbacks to the functional updater form `setCustomPaneLayouts(previous => ...)`. Also updated `useSessionManager`'s `setCustomPaneLayouts` wrapper to accept functional updaters and evaluate them inside the underlying `setCustomPaneLayoutsState` updater so the latest previous value is always used.
+- **Commit:** same commit as this entry
+
+### 54. `setSessions` called as a side effect inside a state updater
+
+- **Source:** github-claude | PR #569 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts` L276-366
+- **Finding:** `setCustomPaneLayouts` computed the preserved layouts and migrated sessions inside the `setCustomPaneLayoutsState` functional updater, calling `setSessions` from within that updater. React functional updaters must be pure and may be invoked more than once in Strict Mode or replayed under concurrent rendering, which could queue duplicate session transformations.
+- **Fix:** Derived the next custom layout registry at top-level (using a `customPaneLayoutsRef` to read the current registry) and performed `setSessions` as a separate top-level functional update. The layout state still uses a direct `setCustomPaneLayoutsState(nextCustomLayouts)` call because the registry was already derived from the latest previous value.
+- **Commit:** same commit as this entry
+
+### 55. Open Dialog unmount leaves focus on document.body
+
+- **Source:** github-claude | PR #548 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/components/Dialog.tsx` L183-204
+- **Finding:** Focus restoration only ran when the controlled `open` prop transitioned from `true` to `false`. If a parent conditionally rendered `<Dialog open>` and removed the component while it was open, no cleanup restored the previously focused element, leaving keyboard focus on `document.body`.
+- **Fix:** Added a dedicated `useEffect` with an empty dependency array whose cleanup restores `previousFocusRef.current` when `wasOpenRef.current` is true and `restoreFocus` is enabled. Captured `restoreFocus` in a ref so the cleanup closure sees the latest value. Added a co-located test that unmounts an open Dialog and asserts focus returns to the prior element.
+- **Commit:** same commit as this entry
+
+### 56. Per-instance document keydown listeners allow stacked dialogs to all process Escape
+
+- **Source:** github-codex-connector | PR #548 round 2 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L220-250
+- **Finding:** Each open `Dialog` registered its own `document.addEventListener('keydown', ...)` listener. When two or more dialogs were open, every instance processed the same `Escape` press, so pressing Escape could close the wrong layer or multiple layers at once. The same per-instance listener pattern also meant Tab focus-trapping ran in every open dialog, not just the topmost.
+- **Fix:** Introduced a module-level LIFO `dialogStack` of open dialog layers. A single document listener reads the top layer on each `keydown`; Escape calls only the top layer's close handler and `stopImmediatePropagation()`, and Tab only traps focus inside the top layer's container. Each Dialog pushes its layer on open and removes it on close/unmount. Added regression tests covering (a) Escape closes only the topmost dialog, (b) Escape does not propagate to a lower dialog when the topmost is `dismissDisabled`, and (c) Escape does not propagate when the topmost has `closeOnEscape={false}`.
+- **Commit:** same commit as this entry
+
+### 57. Dialog layer registration reorders the stack on parent re-renders
+
+- **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx` L266-291
+- **Finding:** The layer-registration `useEffect` listed `requestClose` (which depends on `onOpenChange`) and `closeOnEscape` in its dependency array. Because parents often pass an inline `onOpenChange` callback, every parent re-render unregistered and re-registered an already-open lower dialog, pushing it to the top of the module-level `dialogStack`. In stacked modal use, Escape and Tab then targeted the background dialog instead of the visible top dialog.
+- **Fix:** Captured `requestClose` and `closeOnEscape` in refs that are updated synchronously each render, and keyed the registration effect only to `open`. The layer's close handler now reads the latest ref values, so prop changes are honored without re-registering the layer and corrupting stack order. Added a regression test that re-renders a parent with two open dialogs and asserts Escape still closes only the topmost.
+- **Commit:** same commit as this entry
+
+### 58. Tool jar auto-fit effect re-ran on every count tick
+
+- **Source:** github-claude | PR #576 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ToolCalls/ToolJarTile.tsx`
+- **Finding:** The tile auto-fit `useLayoutEffect` depended on `data.count`, so every increment disconnected and recreated observers plus delayed measurement timers. The measured content width only changes when the count gains or loses a digit, making same-digit ticks unnecessary layout work.
+- **Fix:** Derived `countDigits = String(data.count).length` and used that primitive in the dependency array. The effect still remeasures at digit boundaries and on tile size changes, but avoids churn for hot same-width count updates.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

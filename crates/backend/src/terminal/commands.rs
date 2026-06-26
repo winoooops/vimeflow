@@ -174,10 +174,10 @@ pub(crate) async fn spawn_pty_inner(
     // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
     let bridge_enabled = request.enable_agent_bridge && !request.ephemeral;
     let (bridge_files, bridge_cleanup_dir, shim_cleanup_dir) = if bridge_enabled {
-        let dir = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&request.session_id);
+        let app_data_dir = cache
+            .app_data_dir()
+            .ok_or_else(|| "session cache path has no app data parent".to_string())?;
+        let dir = super::bridge::session_bridge_dir(&app_data_dir, &cwd, &request.session_id);
         let cleanup_dir = (!dir.exists()).then_some(dir.clone());
         let shim_dir = dirs::cache_dir()
             .map(|c| c.join("vimeflow-shims"))
@@ -375,6 +375,9 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
+        bridge_dir: bridge_files
+            .as_ref()
+            .map(|f| f.agent_status_dir_path.to_string_lossy().to_string()),
         shim_dir: bridge_files
             .as_ref()
             .map(|f| f.shim_dir_path.to_string_lossy().to_string()),
@@ -532,6 +535,8 @@ pub(crate) fn kill_pty_inner(
 ) -> Result<(), String> {
     log::info!("Killing PTY session: {}", request.session_id);
 
+    let bridge_cleanup_paths = state.bridge_cleanup_paths(&request.session_id);
+
     match state.kill(&request.session_id) {
         // Either we just killed it, or it was already gone — both are
         // safe to follow with cache cleanup.
@@ -558,20 +563,23 @@ pub(crate) fn kill_pty_inner(
     // emitting `pty-data` for a removed session) until eventual EOF.
     state.set_cancelled(&request.session_id);
 
+    // Give the child a bounded window to actually exit after SIGTERM before
+    // we tear down its bridge directory. On slower CI runners the shell can
+    // still be alive when cleanup runs, causing `remove_dir_all` to fail and
+    // leaving the session directory behind. Best-effort: if the child ignores
+    // SIGTERM we still proceed with cleanup so the caller is not blocked.
+    let _ = state.wait_for_exit(&request.session_id, std::time::Duration::from_secs(5));
+
     // Remove from state (no-op if NotPresent, the safe path above).
     let removed = state.remove(&request.session_id);
 
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
-        let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&request.session_id);
-        let _ = super::bridge::cleanup_bridge_files(
-            &bridge_dir.to_string_lossy(),
-            session.shim_dir.as_deref(),
-        );
+        if let Some(bridge_dir) = session.bridge_dir.as_deref() {
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
+        }
+    } else if let Some((bridge_dir, shim_dir)) = bridge_cleanup_paths {
+        let _ = super::bridge::cleanup_bridge_files(&bridge_dir, shim_dir.as_deref());
     }
 
     // Clean up cache: remove from sessions map and session_order
@@ -649,7 +657,8 @@ pub(crate) fn kill_pty_inner(
                         Some("single") => count == 1,
                         Some("vsplit") | Some("hsplit") => count == 2,
                         Some("threeRight") => count == 3,
-                        Some("quad") => count >= 4,
+                        Some("quad") => count == 4,
+                        Some("grid3x2") => count == 5 || count == 6,
                         _ => false,
                     };
                     if compatible {
@@ -659,7 +668,8 @@ pub(crate) fn kill_pty_inner(
                             1 => Some("single".to_string()),
                             2 => Some("vsplit".to_string()),
                             3 => Some("threeRight".to_string()),
-                            _ => Some("quad".to_string()),
+                            4 => Some("quad".to_string()),
+                            _ => Some("grid3x2".to_string()),
                         }
                     }
                 };
@@ -1222,12 +1232,9 @@ async fn read_pty_output(
 
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
-        let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
-        let _ = super::bridge::cleanup_bridge_files(
-            &bridge_dir.to_string_lossy(),
-            session.shim_dir.as_deref(),
-        );
+        if let Some(bridge_dir) = session.bridge_dir.as_deref() {
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
+        }
     }
 
     Ok(())
@@ -1458,7 +1465,13 @@ mod tests {
         let cwd = temp_dir.path().join("burner-workspace");
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "burner-no-bridge".to_string();
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+        let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
+        let bridge_dir = crate::terminal::bridge::session_bridge_dir(
+            temp_dir.path(),
+            &canonical_cwd,
+            &session_id,
+        );
+        let workspace_bridge_dir = cwd.join(".vimeflow");
 
         let request = SpawnPtyRequest {
             session_id: session_id.clone(),
@@ -1482,6 +1495,10 @@ mod tests {
         assert!(
             !bridge_dir.exists(),
             "ephemeral PTY must not create a bridge dir even when enable_agent_bridge is true"
+        );
+        assert!(
+            !workspace_bridge_dir.exists(),
+            "ephemeral PTY must not create project-local .vimeflow"
         );
 
         let _ = state.remove(&session_id);
@@ -1561,11 +1578,12 @@ mod tests {
         let cwd = temp_dir.path().join("workspace with spaces and quote's");
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "bridge-live-test".to_string();
-        let status_path = cwd
-            .join(".vimeflow")
-            .join("sessions")
-            .join(&session_id)
-            .join("status.json");
+        let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
+        let status_path = crate::terminal::bridge::session_status_file(
+            temp_dir.path(),
+            &canonical_cwd,
+            &session_id,
+        );
 
         let request = SpawnPtyRequest {
             session_id: session_id.clone(),
@@ -1590,6 +1608,10 @@ mod tests {
         assert!(
             status_path.parent().expect("status parent").exists(),
             "spawn_pty should create the bridge session directory"
+        );
+        assert!(
+            !cwd.join(".vimeflow").exists(),
+            "spawn_pty should not create project-local .vimeflow"
         );
 
         write_pty_inner(
@@ -1621,6 +1643,10 @@ mod tests {
             },
         )
         .expect("kill bridge test session");
+        assert!(
+            !status_path.parent().expect("status parent").exists(),
+            "kill_pty should clean up the app-data bridge session directory"
+        );
     }
 
     #[tokio::test]
@@ -1942,7 +1968,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_pty_caps_at_64_active_sessions() {
-        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
 
         let cwd_temp_dir = TempDir::new().expect("failed to create cwd temp dir");
         let cwd = cwd_temp_dir.path().to_string_lossy().to_string();
@@ -1979,11 +2005,12 @@ mod tests {
             enable_agent_bridge: true,
             ephemeral: false,
         };
-        let rejected_bridge_dir = cwd_temp_dir
-            .path()
-            .join(".vimeflow")
-            .join("sessions")
-            .join("session-65");
+        let canonical_cwd = std::fs::canonicalize(cwd_temp_dir.path()).expect("canonical cwd");
+        let rejected_bridge_dir = crate::terminal::bridge::session_bridge_dir(
+            temp_dir.path(),
+            &canonical_cwd,
+            "session-65",
+        );
 
         let result = spawn_pty_inner(
             state.clone(),
@@ -2003,6 +2030,10 @@ mod tests {
         assert!(
             !rejected_bridge_dir.exists(),
             "failed spawn should remove generated bridge directory"
+        );
+        assert!(
+            !cwd_temp_dir.path().join(".vimeflow").exists(),
+            "failed spawn should not leave project-local .vimeflow"
         );
 
         // Cleanup: remove all 64 sessions
@@ -2081,6 +2112,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
@@ -2461,6 +2493,114 @@ mod tests {
         assert!(!d.active);
 
         for id in ["pty-a", "pty-b", "pty-d"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn kill_pty_keeps_grid3x2_layout_when_five_siblings_remain() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in ["pty-a", "pty-b", "pty-c", "pty-d", "pty-e", "pty-f"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-grid".into(),
+                    layout: "grid3x2".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-c".into(),
+                            pane_id: "p2".into(),
+                            pane_index: 2,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-d".into(),
+                            pane_id: "p3".into(),
+                            pane_index: 3,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-e".into(),
+                            pane_id: "p4".into(),
+                            pane_index: 4,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-f".into(),
+                            pane_id: "p5".into(),
+                            pane_index: 5,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-c".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        let survivors = ["pty-a", "pty-b", "pty-d", "pty-e", "pty-f"];
+
+        for (idx, id) in survivors.iter().enumerate() {
+            let grouping = snap.groupings.get(*id).expect("survivor grouping");
+            assert_eq!(grouping.layout, "grid3x2");
+            assert_eq!(grouping.workspace_session_id, "ws-grid");
+            assert_eq!(grouping.pane_index, idx as u32);
+            assert_eq!(grouping.pane_id, format!("p{}", idx));
+        }
+
+        for id in ["pty-a", "pty-b", "pty-d", "pty-e", "pty-f"] {
             let _ = state.remove(&id.to_string());
         }
     }

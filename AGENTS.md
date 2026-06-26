@@ -6,7 +6,7 @@ Project context for OpenAI Codex code review.
 
 Vimeflow is an Electron desktop application (Rust sidecar + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
+**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ src/
 │   ├── sessions/               # Session tabs, pane model, layout state, lifecycle orchestration
 │   ├── workspace/              # Workspace assembly, shell components, DockPanel, focus state
 │   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
-│   ├── agent-status/           # Live Claude Code / Codex observability panel
+│   ├── agent-status/           # Live agent observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
 │   ├── diff/                   # Git status/diff viewer
@@ -37,7 +37,7 @@ crates/backend/
 │   ├── terminal/               # PTY commands, cache, bridge, state
 │   ├── filesystem/             # List/read/write commands with scope validation
 │   ├── git/                    # Git status/diff/watch support
-│   └── agent/                  # Agent detector and Claude Code / Codex adapters
+│   └── agent/                  # Agent detector and adapters for supported coding agents
 └── tests/                      # Rust integration fixtures and transcript tests
 ```
 
@@ -72,6 +72,8 @@ Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components
 Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces.
 
 Floating surfaces are complete — the `@floating-ui/react` ratchet is CLOSED (0 feature consumers). The canonical public primitives are `Dropdown` (`@/components/Dropdown`; §5.7), `Menu` (`@/components/Menu`; §5.8; click-anchored or cursor-anchored via `Menu.Context`), and `Popover` (`@/components/Popover`; §5.9; arbitrary dialog card). Features compose these three; `@floating-ui/react` appears ONLY in `src/components/base/floating/**` (the package-private substrate) and the grandfathered `src/components/Tooltip.tsx`. This boundary is enforced by ESLint rings 1–2 in `eslint.config.js`; flag any new `@floating-ui/react` import outside those two paths as a CRITICAL finding. Native `title=` on DOM elements and hand-rolled floating surfaces are banned.
+
+Button and grouped-control primitives are unified — the `vimeflow/no-raw-icon-button` ratchet is now 0. VIM-124 migrated standalone icon-only buttons to `Button` / `IconButton` / `ToolbarButton` (`@/components`; contracts §5.10–5.12), and VIM-125 consumed the grouped-control floor with `SegmentedControl` / `Toggle` (§5.13) plus `IconButton` for embedded tab-strip icon actions. A raw icon-only `<button>` wrapping a `material-symbols-outlined` glyph is banned by the rule; flag new ones as a finding. The grep `docs/superpowers/plans/2026-06-14-button-primitives-inventory.md` remains the historical audit.
 
 **For complete design specifications**, read:
 

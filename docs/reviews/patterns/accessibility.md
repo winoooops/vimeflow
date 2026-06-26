@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-19
-ref_count: 27
+last_updated: 2026-06-22
+ref_count: 80
 ---
 
 # Accessibility
@@ -506,86 +506,6 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 47. SettingsDialog opens without focus management or Tab trap
-
-- **Source:** github-claude | PR #422 round 1 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** The dialog declared `role="dialog"` and `aria-modal="true"` but performed no focus management on open or close. The triggering button retained focus, `Tab` could escape into the workspace behind the modal, and focus was not restored when the dialog closed.
-- **Fix:** Captured `previousFocusRef` on open, focused the close button via `useEffect`, added a document `keydown` listener that traps `Tab`/`Shift+Tab` within the dialog's focusable elements, and restored the prior focus on close.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 48. SettingsDialog lacks initial focus and Tab trap for modal keyboard users
-
-- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** Opening the dialog from the sidebar footer left focus on the footer; there was no initial focus move, no Tab trap, and no inerting of the background workspace, so keyboard users could Tab into and activate underlying workspace controls while `aria-modal` advertised a modal dialog.
-- **Fix:** Same focus-management change as the previous entry: capture prior focus, focus the close button on open, trap Tab within the dialog, and restore focus on close.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 49. SettingsToggle button exposes only a label, not its on/off state
-
-- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/controls.tsx`
-- **Finding:** The settings toggles rendered as plain `<button>` elements with only an accessible label, so screen readers could not tell whether settings like "Use System Prompts" were currently on or off.
-- **Fix:** Added `role="switch"` and `aria-checked={on}` to the `Toggle` button so assistive technology exposes the current on/off state.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 50. Settings search input lacks a programmatic accessible name
-
-- **Source:** github-claude | PR #422 round 3 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx`
-- **Finding:** The sidebar search `<input>` carried only a `placeholder` attribute with no `aria-label`, `id`/`<label>` pair, or `aria-labelledby`. Placeholder text is not a reliable accessible name across screen reader and browser combinations, so a screen-reader user could encounter an unnamed primary search control inside the modal.
-- **Fix:** Added `aria-label="Search settings"` to the `<input>` and updated the co-located test to query by the accessible name (`getByRole('textbox', { name: 'Search settings' })`).
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 51. Settings scope switcher has no accessible selected state
-
-- **Source:** github-claude | PR #422 round 3 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsHeader.tsx`
-- **Finding:** The "User" / "vimeflow" scope controls were plain `<button>` elements whose active state was represented only by CSS classes. Screen-reader users could activate the controls but could not determine which scope was selected or receive a semantic state change.
-- **Fix:** Wrapped the scope controls in a `<div role="radiogroup" aria-label="Settings scope">` and gave each scope button `role="radio"` with `aria-checked={scope === s}`. Updated co-located tests to query by `radio` role and assert `aria-checked` values.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 52. Alias rows look disabled but remain interactive when alias management is off
-
-- **Source:** github-claude | PR #422 round 5 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
-- **Finding:** When the alias-management toggle was off, each alias row received only `opacity-45`; the descendant text inputs, selects, and remove button remained enabled and tabbable. This created a keyboard and assistive-technology mismatch because users encountered controls that were visually presented as inactive but announced and operated as active.
-- **Fix:** Wrapped the alias-row controls in a `<fieldset disabled={!shimOn} className="contents">` so that all descendant form controls and buttons are semantically disabled when alias management is off. Added a co-located test verifying the disabled fieldset state.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 53. Tab trap hasAttribute check misses fieldset-inherited disabled state
-
-- **Source:** github-claude | PR #422 round 6 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** The focusable-element filter in the Tab trap used `!el.hasAttribute('disabled')`, which only checks whether the DOM attribute is literally present on the element. Descendant controls inside a disabled `<fieldset>` inherit disabled state without the attribute, so they passed the filter and the trap tried to focus them, causing Tab to stall on alias-row controls when alias management is off.
-- **Fix:** Replaced `!el.hasAttribute('disabled')` with `!el.matches(':disabled')` so the filter respects the HTML spec's disabled-fieldset-descendant semantics.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 54. Active settings sidebar section button missing `aria-current` — invisible to AT
-
-- **Source:** github-claude | PR #422 round 7 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx`
-- **Finding:** The currently-active section button was distinguished only by CSS classes (`text-primary`, `bg-primary-container/10`). No accessible attribute communicated the selection state to assistive technology, so screen-reader users heard each item announced identically as a button with no indication of which section was shown in the pane.
-- **Fix:** Added `aria-current={isActive ? 'page' : undefined}` to the active section button and added a co-located test asserting the attribute on the active item and its absence on inactive items.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 55. AppearancePane scheme selector cards convey active state only via CSS, not ARIA
-
-- **Source:** github-claude | PR #422 round 7 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
-- **Finding:** Each color-scheme card was a `<button>` whose selected state was indicated only by border/background CSS classes and an `aria-hidden` checkmark icon. Screen readers received no ARIA attribute communicating which scheme was currently active, so every button was announced identically.
-- **Fix:** Added `aria-pressed={isActive}` to each scheme button and added a co-located test asserting the pressed state for the default active scheme and an inactive scheme.
-
 ### 47. Inert layout config button remains focusable and hover-styled
 
 - **Source:** github-claude | PR #433 round 1 | 2026-06-12
@@ -622,83 +542,215 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 56. Keymap capture cancellation dropped focus to document.body
+### 51. Meter reports unknown context usage as 0%
 
-- **Source:** github-claude | PR #507 round 1 | 2026-06-17
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
-- **Finding:** When the user cancelled keymap recording via Escape or the Cancel (X) button, the capture UI was removed from the DOM but focus was not restored. Keyboard-only users landed on `document.body` and had to re-tab through the entire settings dialog to return to their place in the keymap list.
-- **Fix:** Added `pendingCancelFocusRef` to remember the command id being edited, then used `useLayoutEffect` to focus the row's edit button synchronously after `editingId` becomes `null` and the capture UI unmounts. Added tests asserting the edit button regains focus after Escape and Cancel.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 57. Settings dialog Tab trap intercepted Tab while leaving keymap capture
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
+- **Source:** github-codex-connector | PR #462 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
-- **Finding:** Pressing Tab to cancel recording inside `SettingsDialog` was intercepted by the dialog's document-level Tab focus trap, which called `preventDefault`. Focus jumped back to the start of the dialog instead of moving to the next keymap control.
-- **Fix:** Added `event.stopPropagation()` in the capture button's `onKeyDown` Tab handler so the dialog trap never sees the event, and kept the deferred `pendingTabFocusRef` restoration via `useLayoutEffect` so focus moves to the next logical control after the capture UI unmounts.
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** When `usedPercentage` was `null` (context window not yet known), the card still derived `aria-valuenow` from `effectivePct` (`pct ?? 0`), exposing a 0% meter value while the visible UI and `aria-valuetext` announced the usage as unknown. Screen-reader users could confuse an initial/unknown state with a genuinely empty context window.
+- **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 58. Save success drops keyboard focus after persisting a keymap binding
+### 52. Disclosure button receives both `aria-pressed` and `aria-expanded`
 
-- **Source:** github-claude | PR #507 round 2 | 2026-06-17
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
-- **Finding:** After a successful binding save, `saveDraft` called `stopEditing()` without setting a focus-restoration ref. The `useLayoutEffect` that returns focus to the row edit button only runs when `pendingCancelFocusRef` or `pendingTabFocusRef` is set, so keyboard and assistive-technology users who activate the Save button landed on `document.body`.
-- **Fix:** Set `pendingCancelFocusRef.current = id` in the `result.ok` branch before calling `stopEditing()`, reusing the same focus-restoration path as Escape and Cancel. Added a co-located test asserting the edit button regains focus after Save.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **Source:** github-claude | PR #454 round 2 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** The overflow menu trigger passed `pressed={open}` to `IconButton` while also forwarding `aria-expanded={open}`. `BaseButton` emits `aria-pressed` from the `pressed` prop, so the button carried both ARIA states when open — screen readers announce a disclosure widget as a toggle button that is both pressed and expanded.
+- **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
+- **Commit:** same commit as this entry
 
-### 71. Programmatically focused settings target rows are excluded from the dialog focus trap
+### 53. SegmentedControl unmatched value is visually coerced to the first option
 
-- **Source:** github-codex-connector | PR #537 round 1 | 2026-06-18
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx` L174
-- **Finding:** When a keyboard user activated an option search result, the target row (marked `tabIndex={-1}`) received focus, but the dialog focus trap only indexed `[tabindex]:not([tabindex="-1"])`. The next Tab saw `currentIndex === -1` and jumped to the close button, so keyboard users could not continue from the search result they just opened.
-- **Fix:** Added `orderedFocusable(dialog)` to include the currently focused programmatic target row in the trap's ordering (sorted by DOM position), so Tab from a focused target moves to the next focusable control naturally. Added a co-located test asserting Tab from a focused search result lands on the setting control.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 72. Settings search arrow navigation lacks combobox active-descendant semantics
-
-- **Source:** github-claude | PR #540 round 1 | 2026-06-19
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx` L65-74
-- **Finding:** The PR added ArrowUp/ArrowDown handling that changes the selected sidebar result while keyboard focus remains on the search input, but the input stayed a plain textbox. Screen-reader users had no reliable announcement of the active sidebar option when navigating results, so the new keyboard workflow was effectively invisible to assistive technology.
-- **Fix:** Promoted the search input to `role="combobox"` with `aria-expanded`, `aria-autocomplete="list"`, `aria-controls`, and `aria-activedescendant` pointing at the active result. Gave every section and target result button a stable id so the active-descendant reference is valid. Added co-located tests asserting the combobox attributes and active-descendant targets.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 73. Combobox popup has role=navigation, not a valid ARIA popup role
-
-- **Source:** github-claude | PR #540 round 1 | 2026-06-19
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx` L115-117
-- **Finding:** The search input was promoted to `role="combobox"` with `aria-controls="settings-search-results"`, but the referenced element was a `<nav>` whose implicit ARIA role is `navigation`. ARIA 1.2 requires a combobox's controlled popup to have role `listbox`, `tree`, `grid`, or `dialog`; with `navigation` as the popup role, screen readers that validate the popup role may ignore `aria-activedescendant` updates and leave the keyboard navigation workflow invisible to assistive technology.
-- **Fix:** Added `role="listbox"` to the search results `<nav>` and `role="option"` with `aria-selected` to each navigable section and target `<button>`. Updated co-located tests to query the listbox and option roles and assert `aria-selected` state.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 74. Enter on empty settings search confirms the first result instead of doing nothing
-
-- **Source:** github-codex-connector | PR #540 round 2 | 2026-06-19
+- **Source:** github-codex-connector | PR #461 round 2 | 2026-06-15
 - **Severity:** LOW
-- **File:** `src/features/settings/SettingsDialog.tsx` L243-256
-- **Finding:** In `handleConfirmSearchResult`, when `activeSearchResultKey` is null the code always falls back to `searchResults[0]`. With an empty query, `searchResults` contains all settings sections, so pressing Enter while the empty search field is focused switches the user to General even when they were on another section. This is unexpected for keyboard users who merely press Enter in the empty search box.
-- **Fix:** Guarded the fallback so it only applies when `normalizedQuery` is non-empty; when the query is empty and no active search result exists, Enter is now a no-op. Added a co-located test asserting that pressing Enter in an empty search field preserves the current pane and focus.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `src/components/SegmentedControl.tsx`
+- **Finding:** `activeIndex` was computed with `Math.max(0, options.findIndex(...))` and used for both the sidebar active-thumb transform and roving `tabIndex`. When a controlled `value` did not match any option, the control showed the thumb under option 0 and made option 0 tabbable while all buttons exposed `aria-pressed=false`, producing a visual/assistive-state mismatch.
+- **Fix:** Preserved the raw `findIndex` result as `activeIndex`, added a separate `focusIndex = Math.max(0, activeIndex)` used only for keyboard entry (`tabIndex`), and guarded thumb rendering with `activeIndex >= 0` so no thumb appears when no option is semantically selected. Added a regression test verifying the thumb is absent, the first option remains tabbable, and both options report `aria-pressed="false"` for an unmatched value.
+- **Commit:** same commit as this entry
 
-### 75. Active descendant and Enter confirmation disagree for target-only section matches
+### 54. Reduced-motion media query leaves animated element visible at rest
 
-- **Source:** github-codex-connector | PR #544 round 2 | 2026-06-19
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/index.css`
+- **Finding:** The `prefers-reduced-motion: reduce` block set `animation: none` on `.vf-activity-refresh-comet` but left the 45%-wide gradient `div` mounted at `translateX(0)`. Because keyframe positions are not applied when animation is disabled, users who opted out of motion saw a static semi-transparent bar in the header divider.
+- **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 55. `aria-live` region announces completion on every refresh cycle
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The live region alternated between `Fetching latest agent status` and `Agent status updated`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
+- **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 56. Segmented ProgressBar exposes `role="progressbar"` without a value
+
+- **Source:** github-codex-connector | PR #509 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/components/ProgressBar.tsx`
+- **Finding:** When `segments` was supplied and `decorative` was omitted, the component rendered proportional distribution segments but exposed `role="progressbar"` without `aria-valuenow`, which assistive technology treats as an indeterminate loading indicator. The co-located test also asserted the unsafe role, encoding the mismatch as the component's contract.
+- **Fix:** Derived an effective decorative state whenever `segments` is present (`const isDecorative = decorative || segments !== undefined`) so segmented bars are always `aria-hidden` and never emit progressbar semantics. Added a `trackTestId` prop to let tests query the track directly, and rewrote the segmented-bar test to assert `aria-hidden="true"` and the absence of a `progressbar` role.
+- **Commit:** same commit as this entry
+
+### 57. Gruvbox Dark elevated surfaces fall below contrast threshold against text-on-surface
+
+- **Source:** github-codex-connector | PR #532 round 2 | 2026-06-18
 - **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx` L109-114
-- **Finding:** For contextual queries such as `appearance fonts`, the settings sidebar still renders the Appearance section as a clickable `role="option"` because it is in `filteredSections`, but the navigable `results` array contains only the matching target rows. With no explicit selection, `activeSearchResultKey` was `null`, so `SettingsSidebar` fell back to `aria-activedescendant` for the active Appearance section while `handleConfirmSearchResult` would confirm `searchResults[0]` (a target). Keyboard/screen-reader users were told one option was active but a different one was activated on Enter.
-- **Fix:** In `SettingsDialog`, default `activeSearchResultKey` to `searchResults[0].key` when the query is non-empty and no explicit selection exists, so the announced active descendant always matches the result that Enter confirms. Preserved the empty-query no-op behavior fixed in #74.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** `surface-container-highest` mapped to `dark.bg4` (#7c6f64) and `surface-bright` mapped to `dark.fg4` (#a89984). Combined with `on-surface` (#ebdbb2) these produced ~3.4:1 and ~1.8:1 contrast ratios, below WCAG AA. Existing components (chips, command badges, file-tree hover rows) use those exact surface/text pairs, making labels hard to read.
+- **Fix:** Moved both tokens down the darker `bg` ramp while preserving elevation order: `surface-container-highest` → `dark.bg2` (#504945, ~6.4:1) and `surface-bright` → `dark.bg3` (#665c54, ~4.75:1).
+- **Commit:** same commit as this entry
 
-### 76. Invalid aria-expanded on role="option" for expandable settings sections
+### 58. Gruvbox Dark `surface-container-highest` inverted elevation hierarchy
 
-- **Source:** github-codex-connector | PR #549 round 1 | 2026-06-19
+- **Source:** github-claude | PR #532 round 3 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** The round-2 contrast fix mapped `surface-container-highest` to `dark.bg2`, making it identical to `surface-container` and darker than `surface-container-high` (`dark.bg3`). In a dark theme, "highest" elevation must be the lightest step, so the elevation ramp was inverted for that tier and components relying on layered depth cues rendered with the wrong visual hierarchy.
+- **Fix:** Restored monotonic elevation order by mapping `surface-container-highest` → `dark.bg4` (#7c6f64). The `surface-bright` token already moved to `dark.bg3` in round 2, so the bg0 < bg1 < bg2 < bg3 < bg4 ramp is preserved across all surface tiers.
+- **Commit:** same commit as this entry
+
+### 59. Layout display trigger is missing the required shared Tooltip hover label
+
+- **Source:** github-codex-connector | PR #535 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The new `LayoutDisplayMenu` trigger was an icon-only button with an `aria-label` but no visible hover label. The prior stub in `WorkspaceView` had a `Tooltip` wrapper and the design system requires unified `Tooltip` usage for icon-only controls, so the new functional control was harder for sighted users to discover.
+- **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
+- **Commit:** same commit as this entry
+
+### 60. Layout creator modal lacks focus trap and focus restoration
+
+- **Source:** github-codex-connector (P2 / MEDIUM) | PR #569 round 1 | 2026-06-20
 - **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx` L212
-- **Finding:** The PR added `aria-expanded` to section buttons that also carry `role="option"`. `aria-expanded` is not a supported attribute on `option` elements, so assistive technology may ignore the expanded state and screen-reader users get no reliable expand/collapse signal for the new subsection navigation.
-- **Fix:** Removed the invalid `aria-expanded` attribute from the `role="option"` section button as the minimal localized fix. The visual chevron rotation still communicates state to sighted users; a fuller migration to valid `tree`/`treeitem` semantics is left for future refactor.
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L833-833
+- **Finding:** The layout creator dialog declared `aria-modal="true"` but only handled Escape and ⌘Enter. It did not trap Tab focus or restore the previously focused element, so keyboard users could tab into the workspace behind the overlay and trigger unrelated controls while the modal was active.
+- **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
+- **Commit:** same commit as this entry
+
+### 61. Programmatic menu close unmounts the focused row
+
+- **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L79-294
+- **Finding:** `LayoutDisplayMenu` closed custom-layout actions by changing the `Menu` key. The remount destroyed the focused row and trigger, so delete left focus on `document.body`, while create/edit opened the modal after the wrong focus restoration target had been captured.
+- **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
+- **Commit:** same commit as this entry
+
+### 62. Custom multi-action menu rows bypass roving keyboard navigation
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx` L196-280
+- **Finding:** Custom layout rows were rendered as raw `<div>` and `<button>` elements inside `Menu`, so they never registered with the floating-ui list navigation model. Arrow-key navigation reached only the built-in layout checkboxes and skipped the custom section.
+- **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
+- **Commit:** same commit as this entry
+
+### 63. Layout creator empty grid cells ignored keyboard activation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L466-479
+- **Finding:** Empty layout grid cells rendered as enabled buttons with aria labels and tab stops, but only handled pointerdown. Native keyboard activation dispatches click, so Enter/Space on the focused cell announced an actionable control that did nothing.
+- **Fix:** Added a keyboard/synthetic click path for paintable cells that commits the same 1x1 slot as pointer single-cell painting, while ignoring pointer-generated clicks to avoid double-adds after pointerup. Added regression coverage for Enter on an empty grid cell.
+- **Commit:** same commit as this entry
+
+### 64. Nested action button arrow keys leaked into Menu.Row navigation
+
+- **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx` L499-522
+- **Finding:** `Menu.Row` allowed ArrowUp/ArrowDown keydown events from focused descendant buttons to bubble into the menu's roving-focus handler, moving focus away from the nested action before the user completed that interaction.
+- **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
+- **Commit:** same commit as this entry
+
+### 65. Menu.Row intercepted nested button activation keys
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx` L502-518
+- **Finding:** `Menu.Row` handled Enter/Space on bubbled keydown events from descendant buttons, preventing native button activation and firing the row's layout-pick action instead. Keyboard users could not activate nested edit/delete/toggle controls without triggering the wrong menu action.
+- **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
+- **Commit:** same commit as this entry
+
+### 66. Tokyo Night muted text falls below contrast threshold
+
+- **Source:** github-codex-connector | PR #557 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/themes/tokyo-night.ts` L62
+- **Finding:** `on-surface-muted` was mapped to the raw comment color `#565f89`, yielding only ~2.76:1 contrast against the theme surface `#1a1b26` and even less on `surface-container` backgrounds. Status-bar and agent-panel labels using this token became hard to read.
+- **Fix:** Changed `on-surface-muted` to `#7f88b3`, raising contrast to ~4.94:1 on the theme surface while preserving the muted hierarchy below `on-surface-variant`.
+- **Commit:** same commit as this entry
+
+### 67. Dialog focus trap misses contenteditable elements
+
+- **Source:** github-claude | PR #548 round 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L59-66
+- **Finding:** `FOCUSABLE_SELECTOR` omitted `[contenteditable]:not([contenteditable="false"])`, so CodeMirror or rich-text surfaces inside a Dialog were skipped by the manual Tab trap and focus could escape the modal.
+- **Fix:** Added the contenteditable selector to `FOCUSABLE_SELECTOR` and updated `getFocusableElements` filter to treat contenteditable surfaces as focusable even when `tabIndex` is implicitly `-1`. Added a co-located test that tabs through a contenteditable element inside a Dialog and asserts focus stays trapped.
+- **Commit:** same commit as this entry
+
+### 68. Dialog focus collection includes CSS-hidden elements
+
+- **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L69-79
+- **Finding:** `getFocusableElements` filtered disabled, `aria-hidden`, and explicit `tabindex` state, but not `display: none`, `visibility: hidden`, or hidden ancestors. `focusInitialElement` also focused `initialFocusRef.current` without checking visibility. Conditionally hidden controls inside dialogs could receive invisible/no-op initial focus or be included in the Tab cycle, leaving keyboard users with no visible focus target or an apparent skipped focus step.
+- **Fix:** Added `isVisibleFocusableElement`, which walks from the element up through its ancestors and checks `window.getComputedStyle` for `display: none` and `visibility: hidden`. Applied the guard to both `getFocusableElements` and the `initialFocusRef` branch in `focusInitialElement`. Added co-located tests asserting that `display:none`, `visibility:hidden`, and hidden-ancestor elements are skipped when choosing initial focus.
+- **Commit:** same commit as this entry
+
+### 69. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
+
+- **Source:** github-codex-connector | PR #548 round 4 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `src/components/Dialog.tsx` L69-91
+- **Finding:** `isVisibleFocusableElement` walked ancestors and rejected any ancestor with `visibility: hidden`. CSS `visibility` is inherited but can be overridden by a descendant with `visibility: visible`, so an element's own computed visibility is the authoritative check for that property. In that valid CSS layout, a visibly focusable control would be skipped by initial focus and the Tab trap.
+- **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
+- **Commit:** same commit as this entry
+
+### 70. Interactive tooltip trigger rendered as a non-focusable chip
+
+- **Source:** github-codex-connector | PR #575 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** The git-ref copy popover used an interactive Tooltip around a
+  `Chip`, but the shared `Chip` primitive renders a non-focusable span. Hover
+  users could open the copy controls, while keyboard users could not focus the
+  trigger and therefore could not reach the popover buttons.
+- **Fix:** Added a stable accessible label and `tabIndex={0}` to the chip
+  trigger so the existing Tooltip focus interaction opens the dialog for
+  keyboard navigation. Added a regression test that tabs to the chip and
+  observes the copy buttons in the mounted dialog.
+- **Commit:** same commit as this entry
+
+### 71. Visual token count diverged from meter aria-valuetext
+
+- **Source:** github-claude | PR #603 round 3 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ContextReservoirCard.tsx`
+- **Finding:** The unknown-window OpenCode context card used `formatTokenCount` in `aria-valuetext` but rendered the visible token count with `formatTokens`. Screen readers could announce a different token count than the value sighted users saw.
+- **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 72. Draggable handle carried a label without an interactive role
+
+- **Source:** github-claude | PR #610 round 3 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle rendered as a plain draggable `<div>` with an `aria-label`, but without an interactive role or focus entry point. Assistive technologies could ignore the label, leaving the pane-move affordance undiscoverable.
+- **Fix:** Added `role="button"` and `tabIndex={0}` to make the labelled drag handle discoverable while keyboard-driven pane reorder remains a deferred follow-up.
+- **Commit:** same commit as this entry
+
+### 73. Draggable handle claimed button semantics without activation
+
+- **Source:** github-codex-connector | PR #610 round 4 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The browser-pane drag handle was promoted to `role="button"` and `tabIndex={0}`, but still only implemented pointer drag handlers. Keyboard and screen-reader users could focus a control announced as a button, then press Enter or Space with no activation path.
+- **Fix:** Removed the button role and tab stop from the browser-pane drag handle until keyboard-driven pane reorder exists. Added regression coverage that the handle remains draggable but is not exposed as a keyboard-focusable button.
+- **Commit:** same commit as this entry

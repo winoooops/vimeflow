@@ -8,4 +8,12 @@ export { obsidianLens } from './themes/obsidian-lens'
 
 export { flexoki } from './themes/flexoki'
 
+export { gruvboxDark } from './themes/gruvbox/gruvbox-dark'
+
+export { gruvboxLight } from './themes/gruvbox/gruvbox-light'
+
+export { tokyoNightTheme } from './themes/tokyo-night'
+
+export { dracula } from './themes/dracula'
+
 export type { AgentAccent, ThemeDefinition, ThemeId, ThemeKind } from './types'

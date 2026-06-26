@@ -2,7 +2,7 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-06-22
+last_updated: 2026-06-14
 ref_count: 2
 ---
 
@@ -39,11 +39,20 @@ original Tauri command wording.
 - **Fix:** Wrap the Windows `taskkill` subprocess in `tokio::task::spawn_blocking` and detach the handle, matching the existing fire-and-forget Unix kill semantics without blocking the async worker.
 - **Commit:** _(see git log for the PR #214 Windows timeout cleanup review-fix commit)_
 
-### 3. Font enumeration ran synchronous OS commands inside the IPC handler
+### 3. `session_created_at` reads the full `wire.jsonl` and runs even when the timestamp cannot be used
 
-- **Source:** github-claude | PR #607 round 2 | 2026-06-22
+- **Source:** github-claude | PR #447 round 2 | 2026-06-14
 - **Severity:** MEDIUM
-- **File:** `crates/backend/src/settings/system_fonts.rs`
-- **Finding:** `list_system_fonts` reached `std::process::Command::output()` from the async IPC router. Slow platform font commands such as macOS `system_profiler` or Windows PowerShell could pin a Tokio worker thread while terminal, git, or filesystem IPC work waited behind it.
-- **Fix:** Made system font listing async at the backend state and IPC boundary, switched the subprocess helper to `tokio::process::Command`, and wrapped both individual commands and the overall enumeration in two-second timeouts that fall back to an empty font list.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `try_resolve_from_index` called `session_created_at` for every cwd-matching index entry before knowing whether the value would be used. On macOS `process_start` is `None`, so the returned timestamp was discarded, yet the helper still used `std::fs::read_to_string` over the whole `wire.jsonl` even though the `metadata` record is expected at the start. For long-running projects with multiple same-cwd sessions, attach synchronously read multiple large transcript files before the watcher started.
+- **Fix:** Moved the `session_created_at` call behind a `process_start.is_some()` guard and rewrote the helper to open the wire file once and iterate with `BufReader::lines()`, returning as soon as the first `metadata` line is parsed. This makes the I/O O(metadata line size) instead of O(transcript size) and skips it entirely on platforms without `/proc`.
+- **Commit:** same commit as this entry
+
+### 4. `KimiLocator::locate` used `std::thread::sleep` inside the async watcher startup retry loop
+
+- **Source:** github-codex-connector | PR #447 round 1 | 2026-06-14
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `KimiLocator::locate()` retried proc-fd/index resolution up to five attempts and called `std::thread::sleep(100 ms)` between misses. The locator was invoked from the async session lifecycle / watcher startup path, so a fresh Kimi attach where the index row or proc-fd was not yet visible could park the async worker thread for up to ~400 ms, freezing unrelated IPC work on a single-thread runtime and reducing worker capacity on a multi-thread runtime.
+- **Fix:** Removed the retry loop and synchronous sleep from `KimiLocator::locate` so it performs a single locate attempt. Moved the retry loop into `SessionLifecycle::locate_async`, which dispatches each attempt via `tokio::task::spawn_blocking` and uses `tokio::time::sleep` between attempts so the async task yields instead of parking a thread. Added `Clone` to `AgentBindings` so the async retry wrapper can own the bindings across spawned attempts.
+- **Commit:** same commit as this entry

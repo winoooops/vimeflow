@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-14
-ref_count: 13
+last_updated: 2026-06-20
+ref_count: 44
 ---
 
 # Error Surfacing
@@ -370,32 +370,6 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Conditionally include `:new-browser` in the returned command array only when `createBrowserSession` is provided. Added a regression test asserting the command is absent when the handler is omitted. Keeps the dependency optional (backward-compatible for callers that don't need browser sessions) while eliminating the silent no-op surface.
 - **Commit:** same commit as this entry
 
-### 38. Silent `bridge.save()` rejection reverts user settings on next launch
-
-- **Source:** github-claude | PR #430 round 1 | 2026-06-12
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsProvider.tsx` L57-59
-- **Finding:** `update()` called `void bridge.save(merged)` and discarded all errors. If the Rust backend rejected the save (disk full, permission denied, version mismatch), the in-memory React state advanced but the on-disk snapshot did not, so the next app launch restored the old settings and silently reverted the user's change.
-- **Fix:** Added `saveError: Error | null` to `SettingsContextValue` and a `saveQueueRef`-backed save loop. Each save is `await`ed inside `try/catch`; rejections are captured in `saveError` so future panes can observe persistence failures without a breaking API change.
-- **Commit:** same commit as this entry
-
-### 39. `settings:open-file` IPC swallows `shell.openPath` failure string
-
-- **Source:** github-codex-connector | PR #430 round 2 | 2026-06-12
-- **Severity:** MEDIUM
-- **File:** `electron/main.ts`, `electron/preload.ts`, `src/features/settings/components/SettingsHeader.tsx`
-- **Finding:** The `settings:open-file` handler returned `shell.openPath(settingsPath)` directly. Electron resolves `openPath` with an empty string on success and a non-empty error string on failure, but the preload bridge typed the renderer surface as `Promise<void>` and `SettingsHeader` invoked it as `void bridge.openFile()`. A failure (no JSON file association, missing file handler, Linux `xdg-open` misconfiguration) therefore produced a silent no-op with zero user feedback.
-- **Fix:** Change the main-process handler to `await shell.openPath(...)` and `throw new Error(errorMessage)` when the result is non-empty. In `SettingsHeader`, catch the rejection and render an inline `role="alert"` error message next to the button. Add a regression test asserting the error text appears when `openFile` rejects.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 40. Alias save failures are silently swallowed after optimistic UI update
-
-- **Source:** github-codex-connector | PR #453 round 1 | 2026-06-14
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/AgentsPane.tsx` L46-72
-- **Finding:** `AgentsPane` updated local alias state before persistence and then caught and discarded all `bridge.save` errors. In real use, disk, permission, or sidecar failures left the UI showing aliases that were never written, so users lost configuration on restart without any signal. The serial save queue also swallowed prior save errors to keep moving, which is correct for queue continuity but removed the only natural recovery signal.
-- **Fix:** Added a `saveError: string | null` state to `AgentsPane`. The save queue still catches prior errors to keep serialization, but the terminal save result now calls `setSaveError(null)` on success and `setSaveError(message)` on failure. A compact inline `role="alert"` error is rendered near the alias controls so users see persistence failures immediately. Added regression tests for both the error surfacing and the clear-on-success behavior.
-
 ### 38. `void` clipboard write silently fails when `navigator.clipboard.writeText` is unavailable or rejects
 
 - **Source:** github-codex-connector | PR #428 round 1 | 2026-06-12
@@ -421,4 +395,40 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
 - **Finding:** `copy-path` extracted `clipboard?.writeText` into a local `writeText` variable and later called `writeText(fullPath)`. Native Chromium DOM methods validate their receiver, so the detached call can throw `TypeError: Illegal invocation` in Electron even though the Vitest mock passes (vi.fn() does not enforce `this`). The existing try/catch surfaced the error via `actionError`, but the action failed every time in the real renderer.
 - **Fix:** Removed the intermediate `writeText` variable. The guard now checks `typeof clipboard?.writeText !== 'function'` and the call site uses `await clipboard.writeText(fullPath)` directly so the Clipboard object remains the receiver. (Related but distinct from #38, which was about silently discarding missing-API/rejection cases; this finding is about preserving the method's `this` binding.)
+- **Commit:** same commit as this entry
+
+### 41. `readFile` existence probe treats every failure as deleted, locking the editor on transient errors
+
+- **Source:** github-claude | PR #510 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1408-1418
+- **Finding:** A `fileSystemService.readFile` call was used as an existence probe for the selected editor file. The bare `catch` set `selectedEditorFileExists(false)` for any rejection, so `resolveEditorFileLifecycleStatus` mapped permission errors, IPC failures, disk I/O errors, and remote-mount hiccups to `DELETED`. `DockPanel` makes clean `DELETED` buffers read-only, so a transient non-not-found failure could incorrectly lock editing of an existing file until a later successful check.
+- **Fix:** Added `isNotFoundError` helper that matches explicit not-found signals (`ENOENT`, `No such file or directory`, `os error 2`, Windows file-not-found text) on both string rejections and `Error` objects. The catch block now sets `selectedEditorFileExists(false)` only for not-found errors and preserves `null` (unknown) state for all other failures. Added regression tests for the helper classification and for `WorkspaceView` keeping the lifecycle status null on a permission-denied rejection.
+- **Commit:** see current commit
+
+### 42. Layout creator save path lets schema-validation throws escape
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L767-785
+- **Finding:** `handleSave` relied on draft validation before calling `definitionFromDraft`, but `definitionFromDraft` also runs schema validation and can throw if the validators diverge in a future change. An uncaught throw from the click handler would leave the modal open without user-facing feedback.
+- **Fix:** Wrapped `definitionFromDraft` and `onSave` in the same try/catch shape used by the code-import path and route the caught message to the modal's existing inline `codeError` surface.
+- **Commit:** same commit as this entry
+
+### 43. Layout creator save error routed to a hidden code-panel-only surface
+
+- **Source:** github-claude | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L777-789
+- **Finding:** The round-5 `handleSave` catch surfaced failures through `codeError`, but that message only rendered while the optional code panel was open. With the default closed panel, a save-time validation or `onSave` failure kept the modal open with no visible explanation.
+- **Fix:** Added a separate `saveError` state rendered unconditionally below the modal header, cleared it on successful save and draft/name edits, and covered the closed-code-panel failure path with a regression test.
+- **Commit:** same commit as this entry
+
+### 44. Code apply left stale save-error banner visible
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L875-884
+- **Finding:** After a failed save displayed the always-visible `saveError` banner, a successful code-panel Apply cleared only `codeError`. The draft updated correctly but the stale save banner stayed visible alongside valid layout state.
+- **Fix:** Clear `saveError` on the successful `applyCode` path alongside `codeError`, and add regression coverage that applying valid code removes a previously displayed save failure.
 - **Commit:** same commit as this entry

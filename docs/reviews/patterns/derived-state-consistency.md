@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-20
-ref_count: 9
+last_updated: 2026-06-21
+ref_count: 11
 ---
 
 # Derived State Consistency
@@ -123,38 +123,56 @@ base data is technically "correct."
 - **Verification:** Added regression test that restarts a persisted active shell without an `onActivePersisted` handler and asserts `onActiveResolved` is called with the workspace session id.
 - **Commit:** same commit as this entry
 
-### 9. Directional pane shortcut used raw pane index instead of visible-slot index
+### 9. Saved crumb timestamp not tied to buffer identity
 
-- **Source:** github-codex-connector | PR #460 round 1 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
-- **Finding:** When a session had more panes than the current layout capacity, `SplitView.selectVisiblePanes` rendered the active pane in the last visible slot, but the new directional shortcut passed the pane's original array index into `resolveDirectionalPane`. The grid only contains slots like `p0`/`p1`, so a pane beyond the prefix could not be found and the shortcut returned `null` even though the pane was clearly visible.
-- **Fix:** Moved `selectVisiblePanes` to a shared utility and computed the visible-pane mapping inside `usePaneShortcuts`. Directional resolution now uses the active pane's visible-slot index and maps the resulting visible-slot index back to the actual pane id via `visiblePanes[targetVisibleIndex].id`.
-- **Commit:** same commit as this entry
-
-### 10. Vim leader directional chords resolved against raw pane indices instead of visible slots
-
-- **Source:** github-claude | PR #460 round 2 | 2026-06-15
-- **Severity:** HIGH
-- **File:** `src/features/command-palette/hooks/useVimLeaderChords.ts`
-- **Finding:** `focusDirection` passed the active pane's raw `session.panes` index into `resolveDirectionalPane`, but the layout grid only contains slots up to `capacity - 1`. When the session had more panes than the layout capacity and the active pane was rescued into the last visible slot, the chord consumed the key and returned `true` with no movement because the raw slot did not exist in the grid.
-- **Fix:** Mirrored the `usePaneShortcuts` approach: compute `visiblePanes` via `selectVisiblePanes(session.panes, shape.capacity)`, resolve from `activeVisibleIndex`, and activate `visiblePanes[targetVisibleIndex].id`. Added an over-capacity regression test for Vim leader `h`/`j`/`k`/`l`.
-- **Commit:** same commit as this entry
-
-### 11. Vim leader `w` chord cycled through raw pane array instead of visible slots
-
-- **Source:** github-claude | PR #460 round 2 | 2026-06-15
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
 - **Severity:** MEDIUM
-- **File:** `src/features/command-palette/hooks/useVimLeaderChords.ts` L79-93
-- **Finding:** `cycleNextPane` advanced through `session.panes` directly. In an over-capacity layout (e.g. three panes in a two-slot `vsplit`), pressing the leader `w` chord could focus a hidden pane. `selectVisiblePanes` would then rescue that pane into the last visible slot, evicting the pane that was already there and causing a visible layout jump. This also made `w` inconsistent with the directional `h`/`j`/`k`/`l` chords, which already resolved against the visible-slot subset.
-- **Fix:** Derived the current layout shape from `LAYOUTS[session.layout]`, guarded the `undefined` case, computed `visiblePanes = selectVisiblePanes(session.panes, shape.capacity)`, and cycled within the visible array before activating `visiblePanes[next].id`. Added an over-capacity regression test verifying that `w` wraps within the visible subset rather than jumping to a hidden pane.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** The saved timestamp was inferred from a dirty→clean transition without verifying that the same buffer/session identity produced the transition. Switching sessions could show `SAVED · just now` for a buffer that had never been saved.
+- **Fix:** Lifted `editorSavedAt` into `WorkspaceView`, reset it on file-path or session-id changes, and passed it down as a `savedAt` prop so the timestamp is scoped to the current buffer identity.
+- **Commit:** see current commit
 
-### 12. Native settings window updates did not refresh workspace settings state
+### 10. Saved crumb timestamp driven by dirty→clean heuristic
 
-- **Source:** github-codex-connector | PR #577 round 1 | 2026-06-20
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** The crumb timestamp was set on every transition from dirty to clean, including undoing all edits back to the original content. No disk write occurred, yet the UI rendered `SAVED · just now`.
+- **Fix:** Replaced the heuristic with an explicit `savedAt` timestamp that `WorkspaceView` sets only after `editorBuffer.saveFile()` resolves successfully.
+- **Commit:** see current commit
+
+### 11. SplitView mapped pane index to `slots[N]` instead of persisted `addOrder[N]`
+
+- **Source:** github-codex-connector | PR #542 round 1 | 2026-06-19
 - **Severity:** P2 / MEDIUM
-- **File:** `src/App.tsx`
-- **Finding:** The workspace and native settings window each mounted their own `SettingsProvider`. Updates made in the native window saved to disk and changed that renderer's context, but the workspace provider kept its old in-memory settings until reload, leaving live keymap and command-palette behavior stale.
-- **Fix:** Added a `settings:changed` Electron broadcast from the existing settings snapshot sync path, exposed `settings.onDidChange` through preload, and subscribed `SettingsProvider` to apply remote snapshots without re-saving them. Added provider/preload coverage for the cross-renderer update path.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `gridAreaForSlotIndex` resolved the slot id from `definition.slots[slotIndex].id`. For custom layouts whose `addOrder` intentionally differs from the `slots` declaration order, pane index N would be placed in the wrong grid region even though the persisted definition specified a different insertion order.
+- **Fix:** Changed the helper to resolve the slot id from `definition.addOrder[slotIndex]` before converting it to a grid area, so restored and added panes follow the persisted insertion order.
+- **Commit:** same commit as this entry
+
+### 12. Prebuilt layout track units diverge numerically from `DEFAULT_RATIOS`
+
+- **Source:** github-claude | PR #542 round 2 | 2026-06-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/layout-registry/layoutDefinition.ts` L136-141 and `src/features/terminal/layout-registry/prebuiltLayouts.ts`
+- **Finding:** `getPaneLayoutRatios(definition)` returned raw prebuilt track units such as `[14, 10]` for `threeRight`, while `DEFAULT_RATIOS.threeRight.cols` used `[1.4, 1]`. The proportions were identical for CSS grid rendering, but the numeric scales differed, so an equality check like `equalTrackRatios(currentRatios, getPaneLayoutRatios(layout.definition))` would report a mismatch even when the layout was at its default state.
+- **Fix:** Normalized all prebuilt track units to the same scale as `DEFAULT_RATIOS` (e.g., `columns(1.4, 1)` for `threeRight`) and added a JSDoc note to `getPaneLayoutRatios` clarifying that it returns raw definition units and that callers needing canonical defaults should read `layout.defaultRatios`.
+- **Commit:** same commit as this entry
+
+### 13. Null context-window percentage normalized to known zero percent
+
+- **Source:** github-codex-connector | PR #590 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The agent-status hook normalized `contextWindow.usedPercentage: null` to `0`, so opencode sessions with known input tokens but unknown context-window size reached the UI as a known 0%-used state. The existing `ContextReservoirCard` unknown-window token display never activated.
+- **Fix:** Changed `ContextWindowState.usedPercentage` to `number | null`, preserved null during hook normalization, and added a regression test for an unknown-window opencode payload with input tokens.
+- **Commit:** same commit as this entry
+
+### 14. Tool args upgrade left test-file classification stale
+
+- **Source:** github-codex-connector | PR #590 round 2 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode live path refreshed an in-flight tool record when `tool.before` supplied authoritative args after an empty pending part, but only patched `tool` and `args`. The derived `is_test_file` flag stayed at the pending placeholder value, so the terminal `tool.after` event could report a test-file tool call as non-test-file.
+- **Fix:** Derive test-file status from authoritative `filePath` args and patch `entry.is_test_file` alongside the upgraded tool and args. Added a pending-empty -> `tool.before` test-file -> `tool.after` regression test that asserts the terminal event keeps `isTestFile: true`.
+- **Commit:** same commit as this entry

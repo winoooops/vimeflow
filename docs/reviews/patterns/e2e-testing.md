@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-06-15
-ref_count: 7
+last_updated: 2026-06-19
+ref_count: 10
 ---
 
 # E2E Testing
@@ -219,11 +219,47 @@ completely different root causes. The generic fast-failure modes:
 - **Fix:** Added `expect(filePaths.length).toBeGreaterThan(0)` immediately after computing `filePaths`, requiring the guard to scan at least one e2e TypeScript file before checking findings. This distinguishes "no violations found" from "no files scanned".
 - **Commit:** _(this cycle)_
 
-### 20. E2E helper targeted `button[title="close"]` after Tooltip replaced `title` with `aria-label`
+### 20. Per-test Mocha timeout shorter than the sum of nested helper waits
 
-- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
+- **Source:** github-codex-connector | PR #472 round 2 | 2026-06-15
 - **Severity:** P2 / MEDIUM
-- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts` L135-140
-- **Finding:** `closeSettings` used `clickBySelector('[role="dialog"] button[title="close"]')`. After `SettingsDialog` wrapped the close control in the shared `Tooltip` component, the button no longer had a native `title` attribute; it exposed `aria-label="Close"` instead. The spec failed on the first `closeSettings` call before exercising any Vim-mode behavior.
-- **Fix:** Updated the selector to `button[aria-label="Close"]` so it matches the accessible label rendered by the Tooltip-wrapped control.
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts` L302
+- **Finding:** The core WDIO config keeps Mocha's per-test timeout at 30s, but the browser overlay spec can legitimately spend more than that across sequential helper waits: 20s for the terminal, 10s for the split slot, 15s for the browser pane, 15s for CDP registration, plus the command-palette and bounds-capture waits. On a cold CI run Mocha aborted the test with a generic timeout even though the helper-specific budgets were still in progress, hiding the real bottleneck.
+- **Fix:** Chained `.timeout(60_000)` on the `it(…)` call — the Mocha `Runnable.prototype.timeout()` API — in the browser overlay spec, giving the sequential waits enough headroom while leaving the project-wide 30s default in place for faster specs. This keeps the timeout local to the one spec that needs it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Codex/Kimi E2E status tests bypassed the real watcher pipeline
+
+- **Source:** github-claude + local-codex verify | PR #563 cycle 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts` L225-240 (original), plus new backend E2E helpers
+- **Finding:** The Claude status test wrote a real `status.json`, started the real file watcher, and waited for the sidebar to update. The Codex/Kimi equivalent injected `agent-status`/`agent-turn` events directly through the renderer E2E bridge, testing React rendering but not the Rust-to-frontend event pipeline or the agent-specific filesystem/watcher paths.
+- **Fix:** Added backend E2E helpers `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` that seed a hermetic agent home (`~/.codex` or `KIMI_CODE_HOME`), create the locator-recognizable session directories and metadata, start the real agent watcher, restore the original env, and return the fixture path for the test to write. The spec now exercises real watcher ingestion for both Codex and Kimi before emitting agent-turn events.
+- **Commit:** same commit as this entry
+
+### 22. e2e_start_codex/kimi_watcher missing from Electron preload allowlist
+
+- **Source:** github-claude | PR #563 round 2 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `electron/backend-methods.ts`, `electron/backend-methods.test.ts`
+- **Finding:** The Rust IPC router adds `e2e_start_codex_watcher` and `e2e_start_kimi_watcher`, and `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts` calls both via `window.__VIMEFLOW_E2E__.invokeBackend`. `electron/backend-methods.ts` only allows `list_active_pty_sessions`, `e2e_agent_bridge_info`, and `e2e_seed_live_agent` when `allowE2eMethods` is enabled, so the preload gate rejects both calls.
+- **Fix:** Added `e2e_start_codex_watcher` and `e2e_start_kimi_watcher` to `e2eBackendMethods` in `electron/backend-methods.ts` and covered them in `electron/backend-methods.test.ts` for default denial and explicit E2E enablement.
+- **Commit:** same commit as this entry
+
+### 23. e2e_emit_agent_status missing from Electron preload allowlist
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** HIGH
+- **File:** `electron/backend-methods.ts`, `electron/backend-methods.test.ts`
+- **Finding:** The Rust IPC router added `e2e_emit_agent_status` behind `#[cfg(feature = "e2e-test")]`, and the new E2E spec defined a helper that called `invokeBackend('e2e_emit_agent_status', ...)`. The PR extended `e2eBackendMethods` for four other new E2E probe methods but omitted `e2e_emit_agent_status`, so the Electron main process would reject the call with "Method not allowed" before it reached Rust.
+- **Fix:** Added `e2e_emit_agent_status` to `e2eBackendMethods` and covered it in both the default-denial test and the `allowE2eMethods` `test.each` block in `electron/backend-methods.test.ts`.
+- **Commit:** same commit as this entry
+
+### 24. Watcher E2E test assumes ambient PTY has agent bridge enabled
+
+- **Source:** github-claude | PR #563 round 3 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The "ingests app-data status files" scenario called `waitForVisiblePtyId()` to reuse the app's initial terminal PTY, then asserted `info.statusFile` was populated. `statusFile` is only non-null when the PTY was spawned with `enable_agent_bridge: true`. The assertion therefore depended on the E2E launch configuration rather than the test itself, and a violation would fail with a confusing "statusFile should be populated" message.
+- **Fix:** Replaced the ambient-PTY reuse with a frontend-driven new session (`button[aria-label="New session"]`), waited for the visible PTY to change, and used that dedicated bridge-enabled session for the watcher/UI assertions. Added cleanup that closes the spawned tab after the scenario.
+- **Commit:** same commit as this entry

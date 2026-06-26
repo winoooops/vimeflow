@@ -2,8 +2,8 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-06-15
-ref_count: 4
+last_updated: 2026-06-22
+ref_count: 7
 ---
 
 # Filesystem Scope
@@ -220,11 +220,56 @@ preserve their original Tauri-era paths.
 - **Fix:** Added `rename_path_rejects_path_outside_home` and `rename_path_refuses_symlink_leaf` tests and updated the SECURITY.md coverage map.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 23. `:edit <relative-path>` resolved against the sidecar process cwd instead of the active pane cwd
+### 23. Kimi index `session_dir` selected without path-under-home guard on macOS
 
-- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/workspace/WorkspaceView.tsx` L1315-1317
-- **Finding:** The vim `:edit` alias forwarded the raw relative path (e.g. `:edit src/App.tsx`) straight to `requestOpenFile`, which passed it to the filesystem IPC. The backend canonicalized the path relative to the Electron/sidecar process cwd rather than the active pane's cwd, so users in a project session opened the wrong file or a same-named file from the wrong directory.
-- **Fix:** Added an `activeCwdRef` mirroring the existing `requestOpenFileRef` pattern and, inside `openFileInEditorCommand`, prepended `activeCwdRef.current` to paths that are neither absolute nor `~`-prefixed (skipping the degenerate `.` cwd). This keeps absolute and home-relative paths untouched while anchoring workspace-relative edits to the active session directory.
+- **Source:** github-claude | PR #447 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `try_resolve_from_index` validated `session_dir` only when reading `created_at` metadata, then allowed the macOS fallback (`process_start = None`) to select the longest matching `workDir` regardless of whether its `sessionDir` was missing, outside the Kimi home, or traversing `..`. The winning untrusted path reached `status_path` construction, failed downstream trust checks, and left the agent-status panel blank.
+- **Fix:** Filter index candidates before they enter the match vector: require `session_dir` to be present and canonically resolve under `home` via `path_under`. Carry the validated `session_dir` forward so `status_path` is built from the trusted value and malformed rows can no longer shadow valid sessions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Existence check uses `listDir`, which filters dotfiles
+
+- **Source:** github-codex-connector | PR #510 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `fileSystemService.listDir` maps to the backend `list_dir`, which skips names starting with `.`. Open dotfiles such as `.env` or `.gitignore` were therefore marked as deleted even though they existed.
+- **Fix:** Replaced the directory-listing existence check with a direct `readFile` check, which is not filtered by the backend listing logic.
+- **Commit:** see current commit
+
+### 25. OpenCode transcript tail used stale PTY spawn cwd
+
+- **Source:** github-claude | PR #603 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`
+- **Finding:** OpenCode's locator resolved the project directory from its index row, but transcript startup still passed `pty_state.get_cwd()` to `start_or_replace`. Because OpenCode does not emit OSC 7, that cwd can remain the terminal spawn directory, causing the file explorer, git watcher, and test-run parser to follow the wrong workspace.
+- **Fix:** Thread the located status source into `maybe_start_transcript` and prefer `LocatedStatusSource.resolved_directory` over the live PTY cwd when present. Other adapters continue to fall back to the PTY cwd.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. OpenCode bridge used raw session IDs as JSONL filenames
+
+- **Source:** github-codex-connector | PR #603 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The OpenCode bridge appended per-session JSONL records with `appendLine(`${sessionID}.jsonl`, ...)` after only checking that `sessionID` was a string. A crafted session ID containing separators or `..` could escape the Vimeflow-owned bridge directory because the writer joined the value directly into the output path.
+- **Fix:** Added a shared session-filename helper that allows only alphanumeric, underscore, and hyphen session IDs with a length cap. All event/tool per-session writes now route through that helper and drop invalid IDs before calling the filesystem writer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. OpenCode bridge index rows retained raw session IDs
+
+- **Source:** local-codex | PR #603 round 3 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The bridge had hardened per-session JSONL writes but still allowed raw `sessionID` values into `index.jsonl`. The Rust locator later turns an index `sessionID` into `<sessionID>.jsonl`, so a traversal-shaped ID could escape the bridge root before downstream validation rejected tailing.
+- **Fix:** Reused the bridge's `sessionFilename` allowlist in `writeIndexRow`, dropping unsafe IDs before writing index rows. Added a bridge regression test proving an unsafe session ID creates neither an index row nor an escaped session file.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. OpenCode bridge index row bypassed coerced directory
+
+- **Source:** github-claude | PR #603 round 3 | 2026-06-22
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** `handleSessionInfo` normalized `info.directory` to a string for change detection but passed the raw value into `writeIndexRow`. Missing or non-string directory values could serialize as absent/null and remove the locator's cwd fallback signal.
+- **Fix:** Passed the already-coerced `directory` binding into `writeIndexRow`, so invalid directory payloads become an explicit empty string. Added a bridge regression test for an omitted directory field.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

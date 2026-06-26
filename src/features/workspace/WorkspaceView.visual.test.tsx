@@ -32,6 +32,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
@@ -261,8 +267,12 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(workspace.className).not.toContain('border-')
     })
 
-    test('DockPanel uses prototype border for separation', () => {
+    test('DockPanel uses prototype border for separation', async () => {
+      const user = userEvent.setup()
       render(<WorkspaceView />)
+
+      await user.click(screen.getByTestId('status-bar-dock-toggle'))
+
       const dockPanel = screen.getByTestId('dock-panel')
 
       // Bottom-docked DockPanel keeps its border on the edge facing terminal.
@@ -300,13 +310,19 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       expect(screen.getByTestId('top-chrome')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+      expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+      expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      )
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
     test('dock panel has Editor/Diff tabs, FILES tab has file explorer (v2)', async () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
+
+      await user.click(screen.getByTestId('status-bar-dock-toggle'))
 
       // Editor and Diff Viewer tabs are in dock panel
       expect(screen.getByText('Editor')).toBeInTheDocument()

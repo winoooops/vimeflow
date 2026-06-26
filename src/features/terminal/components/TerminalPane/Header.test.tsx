@@ -43,7 +43,6 @@ const session: Session = {
 const baseProps = {
   agent: AGENTS.claude,
   session,
-  pipStatus: 'running' as const,
   worktreeName: null,
   branch: 'feat/jose-auth',
   added: 48,
@@ -59,7 +58,12 @@ describe('Header', () => {
     render(<Header {...baseProps} />)
 
     expect(screen.getByText('CLAUDE')).toBeInTheDocument()
-    expect(screen.getByText('∴')).toBeInTheDocument()
+
+    const glyphChip = screen.getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+    const brandMark = glyphChip.querySelector('svg')
+
+    expect(brandMark).toBeInTheDocument()
   })
 
   test('renders pane title from session.name', () => {
@@ -182,5 +186,51 @@ describe('Header', () => {
       'data-focused',
       'true'
     )
+  })
+
+  test('is not draggable by default', () => {
+    render(<Header {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveAttribute(
+      'draggable',
+      'true'
+    )
+  })
+
+  test('draggable header exposes the drag handle and fires drag callbacks', () => {
+    const onHeaderDragStart = vi.fn()
+    const onHeaderDragEnd = vi.fn()
+
+    render(
+      <Header
+        {...baseProps}
+        draggable
+        onHeaderDragStart={onHeaderDragStart}
+        onHeaderDragEnd={onHeaderDragEnd}
+      />
+    )
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveAttribute('draggable', 'true')
+    expect(header).toHaveAttribute('data-drag-handle', 'true')
+
+    fireEvent.dragStart(header)
+    expect(onHeaderDragStart).toHaveBeenCalledTimes(1)
+
+    fireEvent.dragEnd(header)
+    expect(onHeaderDragEnd).toHaveBeenCalledTimes(1)
+  })
+
+  test('rounds all corners during the drag so the snapshot reads as a pill', () => {
+    render(<Header {...baseProps} draggable onHeaderDragStart={vi.fn()} />)
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header.style.borderRadius).toBe('')
+
+    fireEvent.dragStart(header)
+    expect(header.style.borderRadius).toBe('10px')
+
+    fireEvent.dragEnd(header)
+    expect(header.style.borderRadius).toBe('')
   })
 })

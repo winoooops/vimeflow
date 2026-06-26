@@ -14,13 +14,83 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
-import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
 import {
   loadWorkspaceForRestore,
   pushWorkspaceShape,
 } from '../workspaceLayoutBridge'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { createBrowserPane } from '../../browser/browserBridge'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
+
+const customGrid2x2 = (): PaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+})
+
+const shadowSingleCustomLayout = (): PaneLayoutDefinition => ({
+  ...customGrid2x2(),
+  id: 'single',
+  title: 'Shadow single',
+})
+
+const customGrid4x2 = (): PaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:grid-4x2',
+  title: 'Custom grid 4x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+      { id: 'c2', units: 12 },
+      { id: 'c3', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 2, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 3, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p4', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p5', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p6', rect: { col: 2, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p7', rect: { col: 3, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: [
+    'slot:p0',
+    'slot:p1',
+    'slot:p2',
+    'slot:p3',
+    'slot:p4',
+    'slot:p5',
+    'slot:p6',
+    'slot:p7',
+  ],
+})
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -298,6 +368,45 @@ describe('useSessionManager', () => {
           'null'
       )
     ).toEqual([75])
+  })
+
+  test('clearPaneCacheHistory clears pane cacheHistory and deletes its persisted key', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.appendPaneCacheReading('pty-1', 'p0', 75)
+    })
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([75])
+
+    act(() => {
+      result.current.clearPaneCacheHistory('pty-1', 'p0')
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).toBeNull()
   })
 
   test('removeSession deletes the pane cacheHistory key for the killed pty', async () => {
@@ -1429,7 +1538,7 @@ describe('useSessionManager', () => {
   // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.
   test('auto-create is skipped for a restored browser-only session', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-browser',
@@ -1437,6 +1546,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],
@@ -1471,6 +1581,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -1521,7 +1632,7 @@ describe('useSessionManager', () => {
   // cache must NOT be merged — otherwise a pane closed before a crash (never
   // cleared from localStorage) would be resurrected on the next restore.
   test('store-driven restore ignores the stale localStorage browser cache', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -1529,6 +1640,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -1656,6 +1768,7 @@ describe('useSessionManager', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],
@@ -5140,6 +5253,214 @@ describe('useSessionManager', () => {
       })
     }
 
+    test('setCustomPaneLayouts installs accepted workspace layouts', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() => result.current.setCustomPaneLayouts([customLayout]))
+
+      expect(result.current.customPaneLayouts).toEqual([customLayout])
+      expect(
+        result.current.layoutRegistry.getLayout('custom:grid-2x2')
+      ).toMatchObject({
+        id: 'custom:grid-2x2',
+        capacity: 4,
+        name: 'Custom grid 2x2',
+      })
+    })
+
+    test('setCustomPaneLayouts drops definitions rejected by the registry', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() =>
+        result.current.setCustomPaneLayouts([
+          customLayout,
+          shadowSingleCustomLayout(),
+        ])
+      )
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-2x2'])
+
+      expect(
+        result.current.layoutRegistry.getLayout('custom:grid-2x2')
+      ).not.toBeNull()
+    })
+
+    test('removing a custom layout falls affected sessions back to a fitting builtin layout', async () => {
+      const service = createSequentialSpawnService()
+      const customLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+
+      act(() => result.current.setCustomPaneLayouts([customLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-2x2'))
+
+      expect(result.current.sessions[0].layout).toBe('custom:grid-2x2')
+
+      act(() => result.current.setCustomPaneLayouts([]))
+
+      expect(result.current.customPaneLayouts).toEqual([])
+      expect(result.current.sessions[0].layout).toBe('vsplit')
+    })
+
+    test('removing an over-capacity custom layout preserves it while sessions depend on it', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      act(() => result.current.setCustomPaneLayouts([]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
+    })
+
+    test('rejected replacement for an over-capacity custom layout preserves the old definition', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      const rejectedReplacement: PaneLayoutDefinition = {
+        ...largeLayout,
+        title: '',
+      }
+
+      act(() => result.current.setCustomPaneLayouts([rejectedReplacement]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
+    })
+
+    test('under-capacity replacement for an over-capacity custom layout preserves the old definition', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+      const smallLayout = customGrid2x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      const smallReplacement: PaneLayoutDefinition = {
+        ...smallLayout,
+        id: 'custom:grid-4x2',
+      }
+
+      act(() => result.current.setCustomPaneLayouts([smallReplacement]))
+
+      expect(
+        result.current.customPaneLayouts.map((layout) => layout.id)
+      ).toEqual(['custom:grid-4x2'])
+      expect(result.current.sessions[0].layout).toBe('custom:grid-4x2')
+    })
+
+    test('skipPreservation removes an over-capacity custom layout and migrates the session', async () => {
+      const service = createSequentialSpawnService()
+      const largeLayout = customGrid4x2()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setCustomPaneLayouts([largeLayout]))
+      act(() => result.current.setSessionLayout(sessionId, 'custom:grid-4x2'))
+
+      for (let target = 2; target <= 8; target += 1) {
+        act(() => result.current.addPane(sessionId))
+        await waitFor(() => {
+          const session = result.current.sessions.find(
+            (s) => s.id === sessionId
+          )
+          expect(session?.panes).toHaveLength(target)
+        })
+      }
+
+      act(() =>
+        result.current.setCustomPaneLayouts([], { skipPreservation: true })
+      )
+
+      expect(result.current.customPaneLayouts).toEqual([])
+      expect(result.current.sessions[0].layout).toBe('grid3x2')
+    })
+
     test('addPane spawns in the session cwd and appends an active pane', async () => {
       const service = createSequentialSpawnService()
 
@@ -5375,7 +5696,7 @@ describe('useSessionManager', () => {
     // Rust briefly pointing at a dying PTY; the cleanest fix is to make
     // focus rotation a no-op while a lifecycle op holds pendingPaneOps.
     // Round 14, Claude LOW: the guarded early-return must also warn so
-    // a developer chasing a "⌘1-4 stopped working briefly" report sees
+    // a developer chasing a "⌘1-6 stopped working briefly" report sees
     // the suppression in devtools (parity with every other guard in the
     // file).
     test('setSessionActivePane is a no-op while removePane is in flight', async () => {
@@ -5432,6 +5753,96 @@ describe('useSessionManager', () => {
         resolveKill()
         await Promise.resolve()
       })
+    })
+  })
+
+  describe('setSessionPlacements', () => {
+    test('writes the supplied placements onto the session', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = result.current.sessions[0].id
+
+      act(() => {
+        result.current.setSessionLayout(sessionId, 'vsplit')
+      })
+
+      await waitFor(() => {
+        expect(result.current.sessions[0].layout).toBe('vsplit')
+      })
+
+      act(() => {
+        result.current.addPane(sessionId, 'browser')
+      })
+
+      await waitFor(() => {
+        expect(result.current.sessions[0].panes).toHaveLength(2)
+      })
+
+      act(() => {
+        result.current.setSessionPlacements(sessionId, [
+          { paneId: 'p0', slotId: 'slot:p1' },
+          { paneId: 'p1', slotId: 'slot:p0' },
+        ])
+      })
+
+      expect(result.current.sessions[0].placements).toEqual([
+        { paneId: 'p0', slotId: 'slot:p1' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ])
+    })
+
+    test('ignores an unknown session id', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionsBefore = result.current.sessions
+
+      act(() => {
+        result.current.setSessionPlacements('does-not-exist', [
+          { paneId: 'p0', slotId: 'slot:p1' },
+        ])
+      })
+
+      expect(result.current.sessions).toBe(sessionsBefore)
     })
   })
 })

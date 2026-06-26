@@ -3,7 +3,7 @@
 // Two distinct shapes:
 //  - The persisted store (`PersistedWorkspaceLayoutStore`) mirrors the Rust
 //    `WorkspaceLayoutStore` binding; it carries full browser tab + history.
-//  - The shape-only DTO (`WorkspaceShapeDto`) is what the renderer pushes and
+//  - The shape-only DTO (`PersistedWorkspaceShape`) is what the renderer pushes and
 //    what `load` returns to the renderer; it omits browser tab/history (main
 //    owns those via the WebContents) and keeps shell pane fields.
 //
@@ -43,23 +43,63 @@ export interface PersistedBrowserPane {
 
 export type PersistedWorkspacePane = PersistedShellPane | PersistedBrowserPane
 
+export interface PersistedPanePlacement {
+  paneId: string
+  slotId: string
+}
+
+export interface PersistedTrackSpec {
+  readonly id: string
+  readonly units: number
+  readonly minPx?: number
+}
+
+export interface PersistedPaneSlotRect {
+  readonly col: number
+  readonly row: number
+  readonly colSpan: number
+  readonly rowSpan: number
+}
+
+export interface PersistedPaneSlotSpec {
+  readonly id: string
+  readonly rect: PersistedPaneSlotRect
+  readonly accepts?: readonly string[]
+}
+
+export interface PersistedPaneLayoutDefinition {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly title: string
+  readonly source: 'builtin' | 'workspace'
+  readonly tracks: {
+    readonly columns: readonly PersistedTrackSpec[]
+    readonly rows: readonly PersistedTrackSpec[]
+  }
+  readonly slots: readonly PersistedPaneSlotSpec[]
+  readonly addOrder: readonly string[]
+}
+
 export interface PersistedWorkspaceSession {
   id: string
   projectId: string
   layout: string
+  placements: PersistedPanePlacement[]
   workingDirectory: string
   active: boolean
+  open: boolean
   panes: PersistedWorkspacePane[]
 }
 
 export interface PersistedWorkspaceLayoutStore {
   version: number
+  customPaneLayouts: PersistedPaneLayoutDefinition[]
   sessions: PersistedWorkspaceSession[]
 }
 
 // Shape-only DTO (renderer <-> main). No browser tab/history.
 
-export interface WorkspaceShapeShellPane {
+export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
   paneIndex: number
@@ -70,28 +110,31 @@ export interface WorkspaceShapeShellPane {
   agentSessionId: string | null
 }
 
-export interface WorkspaceShapeBrowserPane {
+export interface PersistedBrowserPaneShape {
   kind: 'browser'
   paneId: string
   paneIndex: number
   active: boolean
 }
 
-export type WorkspaceShapePane =
-  | WorkspaceShapeShellPane
-  | WorkspaceShapeBrowserPane
+export type PersistedWorkspacePaneShape =
+  | PersistedShellPaneShape
+  | PersistedBrowserPaneShape
 
-export interface WorkspaceShapeSession {
+export interface PersistedWorkspaceSessionShape {
   id: string
   projectId: string
   layout: string
+  placements?: PersistedPanePlacement[]
   workingDirectory: string
   active: boolean
-  panes: WorkspaceShapePane[]
+  open: boolean
+  panes: PersistedWorkspacePaneShape[]
 }
 
-export interface WorkspaceShapeDto {
-  sessions: WorkspaceShapeSession[]
+export interface PersistedWorkspaceShape {
+  customPaneLayouts?: PersistedPaneLayoutDefinition[]
+  sessions: PersistedWorkspaceSessionShape[]
 }
 
 // Arguments the renderer passes to load-for-restore so Rust can apply project
@@ -104,7 +147,7 @@ export interface LoadWorkspaceForRestoreRequest {
 // Port the single-writer assembler plugs into so the controller can drive it
 // without depending on the concrete writer.
 export interface WorkspaceLayoutWriterPort {
-  onShapePushed: (dto: WorkspaceShapeDto) => void
+  onShapePushed: (dto: PersistedWorkspaceShape) => void
   setHydrating: (hydrating: boolean) => void
 }
 

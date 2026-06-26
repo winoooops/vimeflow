@@ -2,8 +2,8 @@
 id: command-injection
 category: security
 created: 2026-04-09
-last_updated: 2026-06-14
-ref_count: 4
+last_updated: 2026-05-02
+ref_count: 3
 ---
 
 # Command Injection
@@ -99,11 +99,11 @@ Beyond the general "no template-string shell commands" rule:
 - **Fix:** Narrowed the first-character class to `[a-zA-Z0-9_]` (no `/`). Slash remains in the trailing class so internal-separator paths still pass. Test added asserting `/foo/bar` falls through to the working-tree path. The lesson: when an allowlist regex has a "first character" vs "rest" split, the first class is almost always strictly narrower — the underlying spec usually has a "must start with" rule that's stricter than its "may contain" rule.
 - **Commit:** _(see git log for the round-3 fix commit)_
 
-### 8. Newlines in persisted alias fields become command separators at invocation
+### 6. Avoid executing KIMI_CODE_HOME/bin/kimi for version discovery
 
-- **Source:** github-codex-connector | PR #453 round 1 | 2026-06-14
-- **Severity:** MEDIUM
-- **File:** `crates/backend/src/aliases/agent_aliases.rs` L173-202
-- **Finding:** `build_alias_command` trimmed `extra` but did not normalize embedded CR/LF in `model` or `extra` before embedding the command in a shell alias. Single-quote escaping protected `init.sh` sourcing, but alias expansion is reparsed when invoked, where a newline can separate commands. This was reachable via direct `aliases.toml` editing or the IPC surface, turning a single alias invocation into multiple shell commands.
-- **Fix:** Added `normalize_alias_field` to replace `\r\n`, `\r`, and `\n` with a single space, trim, and then generate the alias line. Added regression tests showing multiline `model`/`extra` inputs collapse to one safe alias line and cannot spawn a second command.
-- **Commit:** same commit as this entry
+- **Source:** github-codex-connector | PR #477 round 1 | 2026-06-16
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/usage_fetch.rs`
+- **Finding:** version_from_kimi_binary spawned <effective_home>/bin/kimi --version when metadata was missing; effective_home is derived from the attached process's KIMI_CODE_HOME, which can point to a writable directory containing an arbitrary executable, causing Vimeflow to run attacker-controlled code during a usage fetch.
+- **Fix:** Removed the binary-execution fallback; version discovery is now metadata-only and falls back to FALLBACK_VERSION instead of executing a file from a user-controlled path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

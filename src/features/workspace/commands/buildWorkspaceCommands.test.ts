@@ -52,10 +52,36 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(themeCmd?.children?.map((c) => c.id)).toEqual([
       'theme-obsidian-lens',
       'theme-flexoki',
+      'theme-gruvbox-dark',
+      'theme-gruvbox-light',
+      'theme-tokyo-night',
+      'theme-dracula',
     ])
 
     themeCmd?.children?.find((c) => c.id === 'theme-flexoki')?.execute?.('')
     expect(themeService.current().id).toBe('flexoki')
+
+    themeCmd?.children
+      ?.find((c) => c.id === 'theme-gruvbox-dark')
+      ?.execute?.('')
+    expect(themeService.current().id).toBe('gruvbox-dark')
+
+    themeCmd?.children
+      ?.find((c) => c.id === 'theme-gruvbox-light')
+      ?.execute?.('')
+    expect(themeService.current().id).toBe('gruvbox-light')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.preview?.()
+    expect(themeService.current().id).toBe('gruvbox-light')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.execute?.('')
+    expect(themeService.current().id).toBe('tokyo-night')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.preview?.()
+    expect(themeService.current().id).toBe('tokyo-night')
+
+    themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.execute?.('')
+    expect(themeService.current().id).toBe('dracula')
 
     themeCmd?.children
       ?.find((c) => c.id === 'theme-obsidian-lens')

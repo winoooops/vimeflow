@@ -9,7 +9,20 @@ import {
   useState,
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
-import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
+import {
+  LayoutDisplayMenu,
+  LayoutSwitcher,
+} from '../terminal/components/LayoutSwitcher'
+import {
+  HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+  SHOWN_LAYOUTS_STORAGE_KEY,
+  readLayoutDisplayPreference,
+  writeLayoutDisplayPreference,
+} from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
+import {
+  LayoutCreatorModal,
+  createCustomPaneLayoutId,
+} from '../terminal/components/LayoutCreator'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '@/components/sidebar/Sidebar'
@@ -18,7 +31,6 @@ import {
   type SidebarTabItem,
 } from '@/components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '@/components/StatusBar'
-import { Tooltip } from '@/components/Tooltip'
 import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
@@ -82,21 +94,28 @@ import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
+import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
+import { selectVisiblePanes } from '../terminal/components/SplitView'
+import {
+  getPaneLayoutCapacity,
+  type PaneLayoutDefinition,
+} from '../terminal/layout-registry'
 import { lineDelta } from '../sessions/utils/lineDelta'
-import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
+import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
-import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type {
-  LayoutId,
-  SessionCloseResult,
-  SessionStatus,
-} from '../sessions/types'
+import {
+  AGENTS,
+  agentTypeToRegistryKey,
+  type AgentDef,
+} from '../../agents/registry'
+import type { PaneLayoutId, SessionCloseResult } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -112,6 +131,15 @@ import {
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
 import { canClosePane } from '../terminal/components/SplitView'
+import { OverlayStackProvider } from './overlays/OverlayStackProvider'
+import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
+import {
+  parentPathForGitStatus,
+  parentPathForFileLookup,
+  relativePathFromCwd,
+  resolveEditorFileLifecycleStatus,
+  buildSelectedFileGitKey,
+} from './utils/editorFileLifecycleStatus'
 
 const rateLimitPercentage = (
   limit: RateLimitsState['fiveHour'] | null | undefined
@@ -177,10 +205,18 @@ const SIDEBAR_TOP_BAR_HEIGHT = 42
 const SIDEBAR_TOGGLE_SIZE = 28
 const SIDEBAR_TOGGLE_TOP = 7
 const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
+// Right-edge inset for the activity-panel toggle. (44 - 28) / 2 = 8 centers it
+// in the collapsed rail, so the control reads as symmetric in both states.
+const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
+
+const DEFAULT_VISIBLE_LAYOUT_IDS: readonly PaneLayoutId[] = [
+  'single',
+  'grid3x2',
+]
 
 const readCompactViewport = (): boolean =>
   typeof window !== 'undefined' &&
@@ -204,36 +240,6 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   },
 ]
 
-const normalizePathForComparison = (path: string): string =>
-  path.replace(/\\/g, '/').replace(/\/+$/u, '')
-
-const relativePathFromCwd = (path: string, cwd: string): string | null => {
-  const normalizedPath = normalizePathForComparison(path)
-  const normalizedCwd = normalizePathForComparison(cwd)
-
-  if (normalizedCwd === '') {
-    return null
-  }
-
-  if (normalizedPath === normalizedCwd) {
-    return ''
-  }
-
-  if (normalizedCwd === '/') {
-    return normalizedPath.startsWith('/')
-      ? normalizedPath.replace(/^\/+/u, '')
-      : null
-  }
-
-  const cwdPrefix = `${normalizedCwd}/`
-
-  if (!normalizedPath.startsWith(cwdPrefix)) {
-    return null
-  }
-
-  return normalizedPath.slice(cwdPrefix.length)
-}
-
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
     Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
@@ -243,7 +249,7 @@ const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
 
 type DockTab = 'editor' | 'diff'
 
-export const WorkspaceView = (): ReactElement => {
+const WorkspaceViewContent = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
@@ -264,6 +270,9 @@ export const WorkspaceView = (): ReactElement => {
   const {
     sessions,
     activeSessionId,
+    customPaneLayouts,
+    layoutRegistry,
+    setCustomPaneLayouts,
     setActiveSessionId,
     createSession,
     createBrowserSession,
@@ -274,11 +283,13 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     appendPaneCacheReading,
+    clearPaneCacheHistory,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
+    setSessionPlacements,
     addPane,
     removePane,
     loading,
@@ -350,6 +361,24 @@ export const WorkspaceView = (): ReactElement => {
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
 
+  const [visibleLayoutIds, setVisibleLayoutIds] = useState<
+    readonly PaneLayoutId[]
+  >(() =>
+    readLayoutDisplayPreference(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      DEFAULT_VISIBLE_LAYOUT_IDS
+    )
+  )
+
+  const [hiddenCustomLayoutIds, setHiddenCustomLayoutIds] = useState<
+    readonly PaneLayoutId[]
+  >(() => readLayoutDisplayPreference(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY, []))
+  const [isLayoutDisplayMenuOpen, setIsLayoutDisplayMenuOpen] = useState(false)
+  const [layoutCreatorOpen, setLayoutCreatorOpen] = useState(false)
+
+  const [layoutCreatorEditId, setLayoutCreatorEditId] =
+    useState<PaneLayoutId | null>(null)
+
   useEffect(() => {
     if (
       typeof window === 'undefined' ||
@@ -371,6 +400,17 @@ export const WorkspaceView = (): ReactElement => {
       mediaQuery.removeEventListener('change', applyViewport)
     }
   }, [])
+
+  useEffect(() => {
+    writeLayoutDisplayPreference(SHOWN_LAYOUTS_STORAGE_KEY, visibleLayoutIds)
+  }, [visibleLayoutIds])
+
+  useEffect(() => {
+    writeLayoutDisplayPreference(
+      HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+      hiddenCustomLayoutIds
+    )
+  }, [hiddenCustomLayoutIds])
 
   // Imperative ref to the persistent SidebarToggle so keyboard/scrim closes can
   // restore focus without relying on data-testid selectors.
@@ -510,6 +550,72 @@ export const WorkspaceView = (): ReactElement => {
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
+
+  const visibleLayoutSwitcherIds = useMemo(() => {
+    const hiddenCustomIds = new Set(hiddenCustomLayoutIds)
+
+    return layoutRegistry.layouts
+      .filter((layout) => {
+        if (layout.id === 'single') {
+          return true
+        }
+
+        if (layout.definition.source === 'workspace') {
+          return !hiddenCustomIds.has(layout.id)
+        }
+
+        return visibleLayoutIds.includes(layout.id)
+      })
+      .map((layout) => layout.id)
+  }, [hiddenCustomLayoutIds, layoutRegistry.layouts, visibleLayoutIds])
+
+  const blockedLayoutIds = useMemo(
+    () =>
+      activeSession === undefined
+        ? []
+        : layoutRegistry.layouts
+            .filter(
+              (layout) =>
+                layout.id !== activeSession.layout &&
+                activeSession.panes.length > layout.capacity
+            )
+            .map((layout) => layout.id),
+    [activeSession, layoutRegistry.layouts]
+  )
+
+  const layoutCreatorEditLayout = useMemo(() => {
+    if (layoutCreatorEditId === null) {
+      return undefined
+    }
+
+    const layout = layoutRegistry.getLayout(layoutCreatorEditId)?.definition
+
+    return layout?.source === 'workspace' ? layout : undefined
+  }, [layoutCreatorEditId, layoutRegistry])
+
+  const layoutCreatorSeedLayout = activeSession
+    ? layoutRegistry.getFallbackLayout(activeSession.layout).definition
+    : undefined
+
+  // If the active session disappears while the layout-display menu is open,
+  // the menu unmounts without firing onOpenChange(false). Reset the flag so
+  // the top chrome restores the draggable region on macOS.
+  useEffect(() => {
+    if (!activeSession) {
+      setIsLayoutDisplayMenuOpen(false)
+    }
+  }, [activeSession])
+
+  useEffect(() => {
+    const customIds = new Set(
+      layoutRegistry.customLayouts.map((layout) => layout.id)
+    )
+
+    setHiddenCustomLayoutIds((previous) =>
+      previous.filter((layoutId) => customIds.has(layoutId))
+    )
+  }, [layoutRegistry.customLayouts])
+
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
@@ -535,10 +641,68 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPaneId = activePtyBackedPane?.id
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
-  const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+  const [agentStatusReset, setAgentStatusReset] = useState<{
+    ptyId: string
+    generation: number
+  } | null>(null)
+
+  const agentStatusResetGeneration =
+    agentStatusReset !== null &&
+    agentStatusReset.ptyId === activePtyBackedPanePtyId
+      ? agentStatusReset.generation
+      : 0
+
+  const agentStatus = useAgentStatus(
+    activePtyBackedPanePtyId ?? null,
+    agentStatusResetGeneration
+  )
+
+  // Watcher relocation recovery (VIM-188/192): a `/clear` on a codex or
+  // opencode pane arms the red "needs reattach" indicator + a bounded
+  // auto-reattach; the always-on drift tick additionally relocates the active
+  // Codex pane so the panel follows an undetectable in-session `resume`.
+  // Recovery is automatic once the agent writes the new session (the user
+  // sends a prompt) — there is no manual button.
+  const agentReattach = useAgentReattach({
+    sessionId: activePtyBackedPanePtyId ?? null,
+    agentSessionId: agentStatus.agentSessionId,
+    agentTokenTotal: agentStatus.contextWindow
+      ? agentStatus.contextWindow.totalInputTokens +
+        agentStatus.contextWindow.totalOutputTokens
+      : null,
+    staleGeneration: agentStatusResetGeneration,
+    // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
+    // periodically so the panel follows an in-session `resume` (which is
+    // undetectable and never arms the red state). opencode does not need drift
+    // — its bridge writes are append-close so the lsof open-FD signal doesn't
+    // apply; `/clear` reattach is covered by the command path above.
+    driftEnabled: agentStatus.agentType === 'codex' && agentStatus.isActive,
+  })
+
+  const visibleAgentStatusPtyIds = useMemo(
+    () =>
+      activeSession === undefined
+        ? []
+        : selectVisiblePanes(
+            activeSession.panes,
+            layoutRegistry.capacityFor(activeSession.layout)
+          )
+            .filter((pane) => isShellPane(pane))
+            .map((pane) => pane.ptyId),
+    [activeSession, layoutRegistry]
+  )
+
+  const isAgentStatusRefreshing = useAgentStatusHotLoading({
+    activePtyId: activePtyBackedPanePtyId ?? null,
+    visiblePtyIds: visibleAgentStatusPtyIds,
+  })
 
   useCacheHistoryCollector({
     ptyId: activePtyBackedPanePtyId ?? null,
+    runId:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? agentStatus.agentSessionId
+        : null,
     sessionId: activeSessionId,
     paneId: activePtyBackedPaneId ?? null,
     usage:
@@ -546,7 +710,57 @@ export const WorkspaceView = (): ReactElement => {
         ? (agentStatus.contextWindow?.currentUsage ?? null)
         : null,
     onReading: appendPaneCacheReading,
+    onReset: clearPaneCacheHistory,
   })
+
+  const handleTerminalCommandSubmit = useCallback(
+    (ptyId: string, command: string): void => {
+      // A codex `/clear` opens a fresh conversation and `/resume` switches to a
+      // different one — both point codex/opencode at a NEW session, so the live
+      // status is now stale. Treat both as a context switch: reset agent-status
+      // and arm the red "send a prompt to reattach" indicator until the watcher
+      // relocates onto the new conversation (VIM-192). `/resume <id>` is the
+      // arg form (codex-only; harmless for opencode which only uses `/clear`).
+      const isContextSwitch =
+        command === '/clear' ||
+        command === '/resume' ||
+        command.startsWith('/resume ')
+      if (!isContextSwitch) {
+        return
+      }
+
+      // Only reset agent-status state when the active pane is actually running
+      // Codex or opencode. Raw PTY input (e.g. vim's `/clear` search followed
+      // by Enter) is syntactically identical to an agent command, and a false
+      // reset for a live session would suppress same-run events until the next
+      // session boundary (Claude Code Review on PR #469).
+      const at = agentStatus.agentType
+      // opencode follows `/clear` via the command path only; its bridge writes
+      // are append-close so the codex lsof open-FD drift signal doesn't apply.
+      const followsClearReattach = at === 'codex' || at === 'opencode'
+      if (ptyId === activePtyBackedPanePtyId && followsClearReattach) {
+        setAgentStatusReset((prev) => ({
+          ptyId,
+          generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
+        }))
+      }
+
+      for (const session of sessions) {
+        const pane = session.panes.find((p) => p.ptyId === ptyId)
+        if (pane) {
+          clearPaneCacheHistory(session.id, pane.id)
+
+          return
+        }
+      }
+    },
+    [
+      activePtyBackedPanePtyId,
+      agentStatus.agentType,
+      clearPaneCacheHistory,
+      sessions,
+    ]
+  )
 
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
@@ -554,16 +768,6 @@ export const WorkspaceView = (): ReactElement => {
     () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
     [agentStatus.agentType]
   )
-
-  // Source the header status from the active pane's lifecycle, not from the
-  // agent's `isActive` flag. After a PTY exits, `agentStatus.isActive` flips
-  // to false and the `running` → `paused` ternary would silently mislabel
-  // terminal states (`completed`, `errored`) as paused, complete with a
-  // pulsing dot. The pane's own `status` is the source of truth for
-  // running/paused/completed/errored — agent activity stays an orthogonal
-  // signal that the "live" pulse next to the agent chip already reflects.
-  const activityPanelStatus: SessionStatus =
-    activePtyBackedPane?.status ?? 'idle'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -710,7 +914,7 @@ export const WorkspaceView = (): ReactElement => {
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
-      if (hasLivePane(session.panes)) {
+      if (isOpenSession(session)) {
         continue
       }
       // Effect-path: skip silently on transient invariant violations
@@ -844,6 +1048,7 @@ export const WorkspaceView = (): ReactElement => {
   >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isUnsavedDialogSaving, setIsUnsavedDialogSaving] = useState(false)
+  const [editorSavedAt, setEditorSavedAt] = useState<number | null>(null)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
@@ -902,7 +1107,7 @@ export const WorkspaceView = (): ReactElement => {
   // Dock panel controlled state.
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
-  const [isDockOpen, setIsDockOpen] = useState(true)
+  const [isDockOpen, setIsDockOpen] = useState(false)
   const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
@@ -1125,13 +1330,142 @@ export const WorkspaceView = (): ReactElement => {
   // forward to the same setSessionLayout the TerminalZone toolbar used, so
   // pane add/remove, active-pane, and layout semantics are untouched.
   const handlePickLayout = useCallback(
-    (layoutId: LayoutId): void => {
-      if (!activeSessionId) {
+    (layoutId: PaneLayoutId): boolean => {
+      if (!activeSessionId || !activeSession) {
+        return false
+      }
+
+      if (activeSession.panes.length > layoutRegistry.capacityFor(layoutId)) {
+        return false
+      }
+
+      setSessionLayout(activeSessionId, layoutId)
+
+      return true
+    },
+    [activeSession, activeSessionId, layoutRegistry, setSessionLayout]
+  )
+
+  const handleCreateCustomLayout = useCallback((): void => {
+    setLayoutCreatorEditId(null)
+    setLayoutCreatorOpen(true)
+    setIsLayoutDisplayMenuOpen(false)
+  }, [])
+
+  const handleEditCustomLayout = useCallback((layoutId: PaneLayoutId): void => {
+    setLayoutCreatorEditId(layoutId)
+    setLayoutCreatorOpen(true)
+    setIsLayoutDisplayMenuOpen(false)
+  }, [])
+
+  const handleDuplicateCustomLayout = useCallback(
+    (layoutId: PaneLayoutId): void => {
+      const definition = layoutRegistry.getLayout(layoutId)?.definition
+      // Only custom (workspace) layouts can be duplicated; builtins are
+      // immutable seeds.
+      if (definition?.source !== 'workspace') {
         return
       }
-      setSessionLayout(activeSessionId, layoutId)
+
+      // Mint the fresh id against every known layout id so the clone never
+      // collides with (or shadows) an existing custom/builtin layout.
+      const existingIds = new Set<PaneLayoutId>(
+        layoutRegistry.layouts.map((layout) => layout.id)
+      )
+      const cloneTitle = `Copy of ${definition.title}`
+      const cloneId = createCustomPaneLayoutId(cloneTitle, existingIds)
+
+      // Deep-clone so the clone shares no references with the source —
+      // slots (incl. each slot's `accepts` restriction), rect, tracks, and
+      // addOrder are all copied. Title is derived; the active session layout
+      // is intentionally left untouched.
+      const clone: PaneLayoutDefinition = {
+        ...definition,
+        id: cloneId,
+        title: cloneTitle,
+        tracks: {
+          columns: definition.tracks.columns.map((track) => ({ ...track })),
+          rows: definition.tracks.rows.map((track) => ({ ...track })),
+        },
+        slots: definition.slots.map((slot) => ({
+          ...slot,
+          rect: { ...slot.rect },
+          ...(slot.accepts === undefined ? {} : { accepts: [...slot.accepts] }),
+        })),
+        addOrder: [...definition.addOrder],
+      }
+
+      setCustomPaneLayouts((previous) => [...previous, clone], {
+        skipPreservation: true,
+      })
     },
-    [activeSessionId, setSessionLayout]
+    [layoutRegistry, setCustomPaneLayouts]
+  )
+
+  const handleSaveCustomLayout = useCallback(
+    (definition: PaneLayoutDefinition): void => {
+      const isEditingActiveLayout =
+        layoutCreatorEditId !== null && activeSession?.layout === definition.id
+
+      const shouldApplyToActiveSession =
+        layoutCreatorEditId === null || isEditingActiveLayout
+
+      setCustomPaneLayouts((previous) => [
+        ...previous.filter((layout) => layout.id !== definition.id),
+        definition,
+      ])
+
+      setHiddenCustomLayoutIds((previous) =>
+        previous.filter((layoutId) => layoutId !== definition.id)
+      )
+
+      if (
+        shouldApplyToActiveSession &&
+        activeSessionId &&
+        activeSession &&
+        activeSession.panes.length <= getPaneLayoutCapacity(definition)
+      ) {
+        setSessionLayout(activeSessionId, definition.id)
+      }
+      setLayoutCreatorOpen(false)
+      setLayoutCreatorEditId(null)
+    },
+    [
+      activeSessionId,
+      activeSession,
+      layoutCreatorEditId,
+      setCustomPaneLayouts,
+      setHiddenCustomLayoutIds,
+      setSessionLayout,
+    ]
+  )
+
+  const handleDeleteCustomLayout = useCallback(
+    (layoutId: PaneLayoutId): void => {
+      if (activeSession?.layout === layoutId && activeSessionId) {
+        setSessionLayout(activeSessionId, 'single')
+      }
+      // Intentional deletes must bypass the preservation guard that
+      // otherwise re-adds custom layouts still referenced by sessions with
+      // more panes than any builtin layout supports. The session migration
+      // queued here (and the explicit setSessionLayout above for the active
+      // session) moves affected sessions to a fallback layout.
+      setCustomPaneLayouts(
+        (previous) => previous.filter((layout) => layout.id !== layoutId),
+        { skipPreservation: true }
+      )
+
+      setHiddenCustomLayoutIds((previous) =>
+        previous.filter((hiddenLayoutId) => hiddenLayoutId !== layoutId)
+      )
+    },
+    [
+      activeSession?.layout,
+      activeSessionId,
+      setCustomPaneLayouts,
+      setHiddenCustomLayoutIds,
+      setSessionLayout,
+    ]
   )
 
   // Main-stage handoff J8: one bottom-bar affordance for both directions.
@@ -1298,6 +1632,7 @@ export const WorkspaceView = (): ReactElement => {
     try {
       await editorBuffer.saveFile()
       setFileError(null)
+      setEditorSavedAt(Date.now())
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to save: ${message}`)
@@ -1488,6 +1823,7 @@ export const WorkspaceView = (): ReactElement => {
     matches,
     onTerminalZoneFocus: claimTerminal,
     isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
+    layoutRegistry,
   })
 
   useDockShortcuts({
@@ -1608,10 +1944,123 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [activeCwd, clearFeedbackBatch])
 
-  const gitStatus = useGitStatus(activeCwd, {
+  const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
+  const editorFileLookupCwd = parentPathForFileLookup(editorBuffer.filePath)
+
+  const [selectedEditorFileExists, setSelectedEditorFileExists] = useState<
+    boolean | null
+  >(null)
+
+  const activeCwdCanLoadGitStatus =
+    activeCwd !== '.' && activeCwd !== '~' && activeCwd.length > 0
+
+  const gitStatusCwd =
+    activeCwdCanLoadGitStatus || editorGitStatusCwd === null
+      ? activeCwd
+      : editorGitStatusCwd
+
+  const gitStatus = useGitStatus(gitStatusCwd, {
     watch: true,
-    enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
+    enabled:
+      agentStatus.isActive ||
+      (isDockOpen && (dockTab === 'diff' || editorBuffer.filePath !== null)),
   })
+
+  // Stable key for the selected file's relevant git state. The git watcher
+  // emits a new `files` array reference on each poll; this key collapses that
+  // down to a primitive that only changes when the selected file's status,
+  // staging, cwd, or presence in the changed-file list actually changes.
+  const selectedFileGitKey = useMemo(
+    () =>
+      buildSelectedFileGitKey(
+        editorBuffer.filePath,
+        gitStatus.files,
+        gitStatus.filesCwd,
+        gitStatus.repoRoot
+      ),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+    ]
+  )
+
+  useEffect(() => {
+    if (!editorBuffer.filePath || !editorFileLookupCwd) {
+      setSelectedEditorFileExists((current) =>
+        current === null ? current : null
+      )
+
+      return
+    }
+
+    let cancelled = false
+
+    const checkSelectedFile = async (initial = false): Promise<void> => {
+      if (initial) {
+        setSelectedEditorFileExists(null)
+      }
+
+      try {
+        const exists = await fileSystemService.fileExists(
+          editorBuffer.filePath ?? ''
+        )
+
+        if (!cancelled) {
+          setSelectedEditorFileExists(exists)
+        }
+      } catch {
+        if (!cancelled) {
+          setSelectedEditorFileExists(null)
+        }
+      }
+    }
+
+    void checkSelectedFile(true)
+
+    const isStatusLess = selectedFileGitKey.endsWith(':none')
+    let intervalId: ReturnType<typeof setInterval> | undefined
+
+    if (isStatusLess) {
+      intervalId = setInterval(() => {
+        void checkSelectedFile(false)
+      }, 2000)
+    }
+
+    return (): void => {
+      cancelled = true
+
+      if (intervalId !== undefined) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [
+    editorFileLookupCwd,
+    editorBuffer.filePath,
+    fileSystemService,
+    selectedFileGitKey,
+  ])
+
+  const editorFileLifecycleStatus = useMemo(
+    () =>
+      resolveEditorFileLifecycleStatus({
+        filePath: editorBuffer.filePath,
+        gitStatusCwd,
+        files: gitStatus.files,
+        filesCwd: gitStatus.filesCwd,
+        repoRoot: gitStatus.repoRoot,
+        selectedFileExists: selectedEditorFileExists,
+      }),
+    [
+      editorBuffer.filePath,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      gitStatusCwd,
+      selectedEditorFileExists,
+    ]
+  )
 
   const statusBarSession = useMemo<StatusBarSession | null>(() => {
     if (!activeSession || !isStatusBarAgentActive) {
@@ -1674,13 +2123,48 @@ export const WorkspaceView = (): ReactElement => {
     'No session'
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
-  const sidebarCardFiveHourPct = rateLimitPercentage(
-    agentStatus.rateLimits?.fiveHour
-  )
+  // kimi gates its (network-fetched) plan usage behind consent; the card
+  // renders the gate instead of the bars. `usageFetched` is the backend's
+  // explicit "a real /usages fetch landed" signal, so the gate tells LOADING
+  // from a genuine zero-usage ON without guessing from the zeroed default.
+  const sidebarCardIsKimi = agentStatus.agentType === 'kimi'
+  const sidebarCardHasUsageData = agentStatus.usageFetched ?? false
 
-  const sidebarCardWeekPct = rateLimitPercentage(
-    agentStatus.rateLimits?.sevenDay
-  )
+  // Agents with no readable usage API (opencode) show a notice + feature-request
+  // link in the quota slot instead of bars; the data is registry-driven. The
+  // `as AgentDef` upcast reaches the optional `quotaNotice` past the `as const`
+  // union of literals (only the opencode entry carries it).
+  const sidebarCardQuotaNotice =
+    (activityPanelAgent as AgentDef).quotaNotice ?? null
+
+  // Non-kimi bars use `rateLimitPercentage` (a zeroed/placeholder window reads
+  // as absent). For kimi, `usageFetched` proves a fetch landed, not that every
+  // window came back — `/usages` can be weekly-only, and the required backend
+  // `five_hour` field then holds a `resetsAt: 0` placeholder. Each window keeps
+  // its own presence check (`resetsAt > 0` for 5-hour, `!== undefined` for the
+  // optional weekly) so a weekly-only fetch never fabricates a 0% 5-hour bar; a
+  // present window shows its percentage as-is, 0% included.
+  const kimiWindowPct = (
+    limit: RateLimitsState['fiveHour'] | undefined,
+    present: boolean
+  ): number | null =>
+    present && limit ? Math.round(limit.usedPercentage) : null
+
+  const sidebarCardFiveHourPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.fiveHour,
+        sidebarCardHasUsageData &&
+          (agentStatus.rateLimits?.fiveHour.resetsAt ?? 0) > 0
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.fiveHour)
+
+  const sidebarCardWeekPct = sidebarCardIsKimi
+    ? kimiWindowPct(
+        agentStatus.rateLimits?.sevenDay,
+        sidebarCardHasUsageData &&
+          agentStatus.rateLimits?.sevenDay !== undefined
+      )
+    : rateLimitPercentage(agentStatus.rateLimits?.sevenDay)
 
   // Handle file selection from FileExplorer. Memoized so its identity
   // is stable across the 4-level prop chain (WorkspaceView → Sidebar →
@@ -1977,16 +2461,6 @@ export const WorkspaceView = (): ReactElement => {
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
 
-  const areBrowserPanesOccluded =
-    terminalFitDeferred ||
-    showUnsavedDialog ||
-    commandPalette.state.isOpen ||
-    settingsDialog.isOpen ||
-    hasVisibleBurner ||
-    paneRenameNode !== null ||
-    fileError !== null ||
-    infoMessage !== null
-
   const feedbackDispatch = useMemo(() => {
     // Inline-review feedback dispatches to the single CONNECTED (active) pane —
     // the one whose diff is on screen. We gate the candidate on LIVE agent
@@ -2053,6 +2527,8 @@ export const WorkspaceView = (): ReactElement => {
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
+      editorFileLifecycleStatus={editorFileLifecycleStatus}
+      savedAt={editorSavedAt}
       content={editorBuffer.currentContent}
       onContentChange={editorBuffer.updateContent}
       onSave={() => {
@@ -2127,6 +2603,18 @@ export const WorkspaceView = (): ReactElement => {
         } as CSSProperties
       }
     >
+      <WorkspaceOverlayRegistrations
+        commandPaletteOpen={commandPalette.state.isOpen}
+        unsavedChangesDialogOpen={showUnsavedDialog}
+        burnerTerminalOpen={hasVisibleBurner}
+        paneRenameOpen={paneRenameNode !== null}
+        layoutCreatorOpen={layoutCreatorOpen}
+        dragOverlayOpen={isDragging}
+        dockDragOverlayOpen={
+          verticalDockElastic.isDragging || horizontalDockElastic.isDragging
+        }
+        bannerOpen={fileError !== null || infoMessage !== null}
+      />
       {isCompactViewport && !isSidebarClosed && (
         <button
           type="button"
@@ -2246,6 +2734,9 @@ export const WorkspaceView = (): ReactElement => {
                   turns={sidebarCardTurns}
                   fiveHourPct={sidebarCardFiveHourPct}
                   weekPct={sidebarCardWeekPct}
+                  isKimi={sidebarCardIsKimi}
+                  hasUsageData={sidebarCardHasUsageData}
+                  quotaNotice={sidebarCardQuotaNotice}
                   shellName={activePtyBackedPane?.shell ?? null}
                 />
               }
@@ -2341,7 +2832,9 @@ export const WorkspaceView = (): ReactElement => {
         <div
           data-testid="top-chrome"
           className={`relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px] ${
-            reserveWindowControls ? 'vf-app-drag-region' : ''
+            reserveWindowControls && !isLayoutDisplayMenuOpen
+              ? 'vf-app-drag-region'
+              : ''
           }`}
         >
           {reserveWindowControls && isSidebarClosed && (
@@ -2364,61 +2857,26 @@ export const WorkspaceView = (): ReactElement => {
           {activeSession && (
             <LayoutSwitcher
               activeLayoutId={activeSession.layout}
+              visibleLayoutIds={visibleLayoutSwitcherIds}
+              layouts={layoutRegistry.layouts}
+              blockedLayoutIds={blockedLayoutIds}
               onPick={handlePickLayout}
               trailing={
-                // Disabled controls swallow pointer events in Chromium, so the
-                // hover target is a wrapper span rather than the button itself.
-                <Tooltip
-                  content="Configure displayed layouts"
-                  placement="bottom"
-                >
-                  <span className="inline-flex">
-                    <button
-                      type="button"
-                      aria-label="Configure displayed layouts"
-                      disabled
-                      aria-disabled="true"
-                      tabIndex={-1}
-                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                          stroke="currentColor"
-                          strokeWidth="1.35"
-                          strokeLinecap="round"
-                        />
-                        <circle
-                          cx="8"
-                          cy="4.5"
-                          r="1.6"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="10.7"
-                          cy="8"
-                          r="1.45"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="6.5"
-                          cy="11.5"
-                          r="1.55"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                      </svg>
-                    </button>
-                  </span>
-                </Tooltip>
+                <LayoutDisplayMenu
+                  activeLayoutId={activeSession.layout}
+                  visibleLayoutIds={visibleLayoutIds}
+                  blockedLayoutIds={blockedLayoutIds}
+                  hiddenCustomLayoutIds={hiddenCustomLayoutIds}
+                  layouts={layoutRegistry.layouts}
+                  onVisibleLayoutIdsChange={setVisibleLayoutIds}
+                  onHiddenCustomLayoutIdsChange={setHiddenCustomLayoutIds}
+                  onPickLayout={handlePickLayout}
+                  onCreateCustomLayout={handleCreateCustomLayout}
+                  onEditCustomLayout={handleEditCustomLayout}
+                  onDuplicateCustomLayout={handleDuplicateCustomLayout}
+                  onDeleteCustomLayout={handleDeleteCustomLayout}
+                  onOpenChange={setIsLayoutDisplayMenuOpen}
+                />
               }
             />
           )}
@@ -2439,17 +2897,19 @@ export const WorkspaceView = (): ReactElement => {
               ref={terminalZoneRef}
               sessions={sessions}
               activeSessionId={activeSessionId}
+              layoutRegistry={layoutRegistry}
               onSessionCwdChange={updatePaneCwd}
               deferTerminalFit={terminalFitDeferred}
               loading={loading}
               onPaneReady={notifyPaneReady}
+              onCommandSubmit={handleTerminalCommandSubmit}
               onSessionRestart={restartSession}
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
               updateBrowserPaneUrl={updateBrowserPaneUrl}
               addPane={addPane}
               removePane={removePane}
-              areBrowserPanesOccluded={areBrowserPanesOccluded}
+              setSessionPlacements={setSessionPlacements}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
@@ -2464,7 +2924,11 @@ export const WorkspaceView = (): ReactElement => {
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
-          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+          <div
+            data-testid="workspace-banner-stack"
+            data-workspace-overlay-id="workspace-banners"
+            className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2"
+          >
             {/* File error banner — surfaces failures from direct file open
                 (openFileSafely) and vim :w saves (handleVimSave). Rendered at
                 the top of the main area so the user always sees what went wrong. */}
@@ -2507,6 +2971,35 @@ export const WorkspaceView = (): ReactElement => {
         />
       </main>
 
+      {/* Persistent activity-panel toggle — the right-edge mirror of the
+          sidebar toggle. Anchored to the workspace root (not the rail/header)
+          so it holds one fixed coordinate while the panel collapses/expands;
+          `mirrored` flips the glyph to a right-docked panel and the fill flips
+          with the collapse state. The rail/header carry a no-drag clearance
+          span so this floats reliably over the macOS drag region. */}
+      {!isCompactViewport && (
+        <div
+          data-testid="activity-toggle-fixed-shell"
+          className="vf-app-no-drag absolute z-40"
+          style={{ right: ACTIVITY_TOGGLE_RIGHT, top: SIDEBAR_TOGGLE_TOP }}
+        >
+          <SidebarToggle
+            collapsed={activityPanelCollapsed}
+            mirrored
+            onClick={() => {
+              handleActivityPanelCollapsed(!activityPanelCollapsed)
+            }}
+            size={SIDEBAR_TOGGLE_SIZE}
+            label={
+              activityPanelCollapsed
+                ? 'Expand activity panel'
+                : 'Collapse activity panel'
+            }
+            data-testid="activity-toggle-fixed"
+          />
+        </div>
+      )}
+
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
@@ -2524,10 +3017,6 @@ export const WorkspaceView = (): ReactElement => {
               cacheHitPercentage={cacheHitPercentage(
                 agentStatus.contextWindow?.currentUsage
               )}
-              isRunning={agentStatus.isActive}
-              onExpand={() => {
-                handleActivityPanelCollapsed(false)
-              }}
               reserveWindowControls={reserveWindowControls}
             />
           ) : (
@@ -2536,6 +3025,8 @@ export const WorkspaceView = (): ReactElement => {
               cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
               cwd={activeCwd}
               gitStatus={gitStatus}
+              isRefreshing={isAgentStatusRefreshing}
+              needsReattach={agentReattach.needsReattach}
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
@@ -2544,6 +3035,7 @@ export const WorkspaceView = (): ReactElement => {
                 handleActivityPanelCollapsed(true)
               }}
               reservoirSwell={reservoirSwell}
+              snapshotKey={activePtyBackedPanePtyId ?? null}
               reserveWindowControls={reserveWindowControls}
             />
           )}
@@ -2569,8 +3061,25 @@ export const WorkspaceView = (): ReactElement => {
         onCancel={handleCancel}
       />
 
+      <LayoutCreatorModal
+        isOpen={layoutCreatorOpen}
+        existingLayouts={customPaneLayouts}
+        seedLayout={layoutCreatorSeedLayout}
+        editLayout={layoutCreatorEditLayout}
+        onSave={handleSaveCustomLayout}
+        onCancel={(): void => {
+          setLayoutCreatorOpen(false)
+          setLayoutCreatorEditId(null)
+        }}
+      />
+
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
-      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+      {isDragging && (
+        <div
+          data-testid="workspace-drag-overlay"
+          className="fixed inset-0 z-50 cursor-col-resize"
+        />
+      )}
 
       {paneRenameNode}
       {burnerTerminalNode}
@@ -2592,5 +3101,11 @@ export const WorkspaceView = (): ReactElement => {
     </div>
   )
 }
+
+export const WorkspaceView = (): ReactElement => (
+  <OverlayStackProvider>
+    <WorkspaceViewContent />
+  </OverlayStackProvider>
+)
 
 export default WorkspaceView

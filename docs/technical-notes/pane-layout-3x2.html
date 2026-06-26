@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vimeflow Technical Note: 3x2 Pane Layout Addition</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f111a;
+        --panel: rgba(24, 27, 39, 0.9);
+        --panel-2: rgba(33, 38, 54, 0.9);
+        --text: #e8ecff;
+        --muted: #aab3d8;
+        --accent: #8bd5ca;
+        --accent-2: #f5c2e7;
+        --warn: #f9e2af;
+        --danger: #f38ba8;
+        --line: rgba(232, 236, 255, 0.09);
+        --shadow: 0 20px 70px rgba(0, 0, 0, 0.35);
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+        --sans:
+          'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', 'Georgia',
+          serif;
+        --radius: 22px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background:
+          radial-gradient(
+            circle at top left,
+            rgba(139, 213, 202, 0.13),
+            transparent 30%
+          ),
+          radial-gradient(
+            circle at top right,
+            rgba(245, 194, 231, 0.12),
+            transparent 28%
+          ),
+          linear-gradient(180deg, #090b11 0%, var(--bg) 100%);
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 40px 0 72px;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        padding: 36px;
+        background:
+          linear-gradient(135deg, rgba(139, 213, 202, 0.12), transparent 56%),
+          linear-gradient(
+            180deg,
+            rgba(24, 27, 39, 0.95),
+            rgba(13, 15, 24, 0.96)
+          );
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(139, 213, 202, 0.13);
+        color: var(--accent);
+        font: 600 12px/1.1 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.12;
+      }
+
+      h1 {
+        font-size: clamp(34px, 5vw, 56px);
+        letter-spacing: -0.03em;
+      }
+
+      h2 {
+        font-size: 28px;
+        margin-bottom: 16px;
+      }
+
+      h3 {
+        font-size: 20px;
+        margin-bottom: 10px;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        font-size: 16px;
+        line-height: 1.72;
+      }
+
+      p,
+      li,
+      td {
+        color: var(--muted);
+      }
+
+      .lede {
+        max-width: 880px;
+        margin: 18px 0 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+
+      .hero-grid,
+      .cards,
+      .two-up {
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 24px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-up {
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+        align-items: start;
+      }
+
+      .stat,
+      .card,
+      .note,
+      .code,
+      .icon-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+      }
+
+      .stat,
+      .card,
+      .icon-card {
+        padding: 18px 20px;
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 30px;
+      }
+
+      .stat .label,
+      .label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-2);
+        font: 600 12px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--text);
+        font-size: 22px;
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid var(--warn);
+      }
+
+      .note strong {
+        color: var(--text);
+      }
+
+      .code {
+        margin-top: 14px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        background: rgba(8, 10, 18, 0.92);
+        color: #f6f8ff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font: 600 12px/1.3 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      ul {
+        margin: 12px 0 0 18px;
+        padding: 0;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .chip {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text);
+        font: 500 12px/1.2 var(--mono);
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      .icon-card {
+        display: grid;
+        gap: 14px;
+      }
+
+      .icon-frame {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(139, 213, 202, 0.06),
+            rgba(255, 255, 255, 0.02)
+          ),
+          rgba(6, 8, 14, 0.55);
+      }
+
+      .glyph-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .glyph-swatch {
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.025);
+        text-align: center;
+      }
+
+      .glyph-swatch svg {
+        display: block;
+        margin: 0 auto 10px;
+      }
+
+      .footer {
+        margin-top: 20px;
+        color: #99a3c7;
+        font-size: 14px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .cards,
+        .two-up,
+        .glyph-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">Technical Note</span>
+        <h1>Adding a <span class="mono">3x2</span> pane layout pill</h1>
+        <p class="lede">
+          This note maps how terminal-zone pane layouts work today, where the
+          current implementation is tightly coupled to a 5-layout / max-4-pane
+          world, and what must change before adding a true 6-pane
+          <span class="mono">3x2</span> layout to the layout pill group.
+        </p>
+        <div class="chip-row">
+          <span class="chip">Scope: terminal zone + top chrome</span>
+          <span class="chip">Current date: 2026-06-17</span>
+          <span class="chip">Recommended id: <code>grid3x2</code></span>
+          <span class="chip">Capacity target: <code>6</code> panes</span>
+        </div>
+        <div class="hero-grid">
+          <div class="stat">
+            <span class="label">Current Layout Set</span>
+            <strong>5 layouts</strong>
+            <span>single, vsplit, hsplit, threeRight, quad</span>
+          </div>
+          <div class="stat">
+            <span class="label">Hidden Constraint</span>
+            <strong>1 column ratio</strong>
+            <span>plus 1 row ratio per layout in the resize model</span>
+          </div>
+          <div class="stat">
+            <span class="label">Main Risk</span>
+            <strong>Render path is extendable</strong>
+            <span>but divider and ratio plumbing are not 3-column ready</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Current structure</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="label">UI entry point</span>
+            <h3>Top chrome pill group</h3>
+            <p>
+              <code>WorkspaceView.tsx</code> renders
+              <code>LayoutSwitcher</code> in the top chrome. The switcher maps
+              directly over <code>Object.values(LAYOUTS)</code>, so adding a new
+              layout record automatically adds a new pill.
+            </p>
+            <ul>
+              <li>
+                <code>src/features/workspace/WorkspaceView.tsx</code>
+              </li>
+              <li>
+                <code
+                  >src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx</code
+                >
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="label">Session model</span>
+            <h3>Layout is session state</h3>
+            <p>
+              Each session carries a <code>layout: LayoutId</code>. The active
+              session layout is mutated through
+              <code>setSessionLayout(sessionId, layoutId)</code> in
+              <code>useSessionManager</code>.
+            </p>
+            <ul>
+              <li><code>src/features/sessions/types/index.ts</code></li>
+              <li>
+                <code>src/features/sessions/hooks/useSessionManager.ts</code>
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="label">Render path</span>
+            <h3>TerminalZone -&gt; SplitView</h3>
+            <p>
+              <code>TerminalZone</code> renders one <code>SplitView</code> per
+              session, hides inactive sessions, and forwards pane
+              focus/add/remove handlers. <code>SplitView</code> chooses visible
+              panes, places them into CSS grid slots, and mounts divider handles
+              only for the active session.
+            </p>
+            <ul>
+              <li>
+                <code>src/features/workspace/components/TerminalZone.tsx</code>
+              </li>
+              <li>
+                <code
+                  >src/features/terminal/components/SplitView/SplitView.tsx</code
+                >
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="label">Layout source of truth</span>
+            <h3><code>LAYOUTS</code> record</h3>
+            <p>
+              <code>LAYOUTS</code> currently defines name, capacity, base grid
+              template, and area matrix. It also implicitly defines the keyboard
+              cycle order because <code>usePaneShortcuts</code> derives
+              <code>LAYOUT_CYCLE</code> from record insertion order.
+            </p>
+            <ul>
+              <li>
+                <code
+                  >src/features/terminal/components/SplitView/layouts.ts</code
+                >
+              </li>
+              <li>
+                <code>src/features/terminal/hooks/usePaneShortcuts.ts</code>
+              </li>
+            </ul>
+          </article>
+        </div>
+        <div class="note">
+          <p>
+            <strong>Important:</strong> adding a record to
+            <code>LAYOUTS</code> is enough to render a new pill, but it is
+            <strong>not</strong> enough to safely support a real
+            <code>3x2</code> layout end-to-end.
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>How the layout engine is arranged today</h2>
+        <div class="two-up">
+          <div>
+            <div class="code">
+              <pre>
+WorkspaceView
+  -> LayoutSwitcher
+     -> Object.values(LAYOUTS)
+        -> onPick(layoutId)
+           -> useSessionManager.setSessionLayout(...)
+
+WorkspaceView
+  -> TerminalZone
+     -> SplitView(session.layout)
+        -> LAYOUTS[layoutId]
+        -> selectVisiblePanes(session.panes, capacity)
+        -> resolveGrid(layoutId, currentRatios)
+        -> render pane slots by index as p0..pN
+        -> render SplitDividers(layoutId, ratios)
+</pre
+              >
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <span class="label">Behavioral details</span>
+              <ul>
+                <li>
+                  Slots are placed by <strong>visible pane index</strong>, not
+                  by <code>pane.id</code>. The wrapper style is
+                  <code>gridArea: p${i}</code>.
+                </li>
+                <li>
+                  If a session has more panes than the active layout capacity,
+                  <code>selectVisiblePanes</code> keeps the active pane visible
+                  by replacing the last visible slot.
+                </li>
+                <li>
+                  Empty slots only render when <code>onAddPane</code> is
+                  present.
+                </li>
+                <li>
+                  Divider handles only mount for the active session and only
+                  after the container has measurable size.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Coupling problems to watch</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Current assumption</th>
+              <th>Why it matters for 3x2</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>LayoutId</code></td>
+              <td>Union is fixed to 5 values.</td>
+              <td>
+                New layout touches the session type, restore whitelist, test
+                snapshots, and every switch over layout ids.
+              </td>
+            </tr>
+            <tr>
+              <td><code>LayoutShape.capacity</code></td>
+              <td><code>1 | 2 | 3 | 4</code></td>
+              <td>
+                A <code>3x2</code> layout needs <code>6</code>, so this type
+                must widen immediately.
+              </td>
+            </tr>
+            <tr>
+              <td><code>LayoutRatios</code></td>
+              <td>Exactly one <code>col</code> and one <code>row</code>.</td>
+              <td class="danger">
+                This is the biggest structural blocker. A 3-column layout needs
+                two independent vertical divider positions, not one.
+              </td>
+            </tr>
+            <tr>
+              <td><code>resolveGrid()</code></td>
+              <td>
+                Builds templates from <code>--split-col</code>,
+                <code>--split-col-end</code>, <code>--split-row</code>,
+                <code>--split-row-end</code>.
+              </td>
+              <td>
+                That variable scheme only expresses two pane tracks per axis. A
+                true <code>3x2</code> needs a different track model.
+              </td>
+            </tr>
+            <tr>
+              <td><code>SplitDividers</code></td>
+              <td>
+                Covers four hard-coded layouts and reuses one column binding for
+                segmented bars in <code>quad</code>.
+              </td>
+              <td>
+                <code>3x2</code> needs two logical column bindings plus one row
+                binding, likely rendered as 5 resize handles total.
+              </td>
+            </tr>
+            <tr>
+              <td><code>useSplitDivider()</code></td>
+              <td>
+                Accepts only <code>'--split-col'</code> or
+                <code>'--split-row'</code>.
+              </td>
+              <td>
+                It cannot currently drive <code>--split-col-0</code>,
+                <code>--split-col-1</code>, etc.
+              </td>
+            </tr>
+            <tr>
+              <td>Keyboard cycle</td>
+              <td>
+                <code>Cmd/Ctrl+\</code> cycle comes from
+                <code>LAYOUTS</code> insertion order.
+              </td>
+              <td>
+                Inserting <code>3x2</code> changes the shortcut sequence for
+                every user. That should be intentional, documented, and tested.
+              </td>
+            </tr>
+            <tr>
+              <td>Auto-shrink</td>
+              <td>
+                <code>autoShrinkLayoutFor()</code> only knows 1, 2, 3, and
+                4-plus pane cases.
+              </td>
+              <td>
+                Closing from 6 to 5 panes has no current policy. Without a rule,
+                the layout downgrade path becomes arbitrary.
+              </td>
+            </tr>
+            <tr>
+              <td>Restore / hydration</td>
+              <td>
+                <code>KNOWN_LAYOUT_IDS</code> in restore code only allows the
+                current 5 ids.
+              </td>
+              <td>
+                A persisted <code>3x2</code> session would currently fall back
+                to <code>single</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>Tests</td>
+              <td>
+                Several tests assert "5 buttons", "5 canonical layouts", or only
+                current layout switch cases.
+              </td>
+              <td>
+                Adding the pill without updating the test matrix will create a
+                broad but expected test break.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Recommended shape for the new layout</h2>
+        <div class="two-up">
+          <div>
+            <div class="card">
+              <span class="label">Suggested identifier</span>
+              <h3><code>grid3x2</code></h3>
+              <p>
+                I would avoid naming it by pane count alone.
+                <code>grid3x2</code>
+                is explicit about geometry, reads cleanly beside
+                <code>threeRight</code>, and leaves room for future
+                <code>grid2x3</code> or asymmetric 6-pane layouts if needed.
+              </p>
+              <div class="code">
+                <pre>
+type LayoutId =
+  | 'single'
+  | 'vsplit'
+  | 'hsplit'
+  | 'threeRight'
+  | 'quad'
+  | 'grid3x2'</pre
+                >
+              </div>
+            </div>
+            <div class="card" style="margin-top: 18px">
+              <span class="label">Proposed slot map</span>
+              <div class="code">
+                <pre>
+areas: [
+  ['p0', 'vdiv0', 'p1', 'vdiv1', 'p2'],
+  ['hdiv', 'hdiv', 'hdiv', 'hdiv', 'hdiv'],
+  ['p3', 'vdiv2', 'p4', 'vdiv3', 'p5'],
+]</pre
+                >
+              </div>
+              <p>
+                This keeps the same "segmented vertical handles around a
+                full-width horizontal divider" approach used by
+                <code>quad</code>, but doubles the logical column divider count.
+              </p>
+            </div>
+          </div>
+          <div class="icon-card">
+            <span class="label">Suggested glyph</span>
+            <div class="icon-frame">
+              <svg
+                width="180"
+                height="140"
+                viewBox="0 0 140 100"
+                fill="none"
+                aria-label="3x2 pane layout icon"
+                role="img"
+              >
+                <rect
+                  x="10"
+                  y="10"
+                  width="120"
+                  height="80"
+                  rx="11"
+                  stroke="currentColor"
+                  stroke-width="7"
+                />
+                <line
+                  x1="50"
+                  y1="14"
+                  x2="50"
+                  y2="86"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="90"
+                  y1="14"
+                  x2="90"
+                  y2="86"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+                <line
+                  x1="14"
+                  y1="50"
+                  x2="126"
+                  y2="50"
+                  stroke="currentColor"
+                  stroke-width="7"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </div>
+            <div class="glyph-grid">
+              <div class="glyph-swatch">
+                <svg
+                  width="28"
+                  height="22"
+                  viewBox="0 0 14 11"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="12"
+                    height="9"
+                    rx="1.4"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="5"
+                    y1="1.5"
+                    x2="5"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="9"
+                    y1="1.5"
+                    x2="9"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="1.5"
+                    y1="5.5"
+                    x2="12.5"
+                    y2="5.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                </svg>
+                <div class="mono">Toolbar size</div>
+              </div>
+              <div class="glyph-swatch">
+                <svg
+                  width="56"
+                  height="44"
+                  viewBox="0 0 14 11"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="12"
+                    height="9"
+                    rx="1.4"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="5"
+                    y1="1.5"
+                    x2="5"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="9"
+                    y1="1.5"
+                    x2="9"
+                    y2="9.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <line
+                    x1="1.5"
+                    y1="5.5"
+                    x2="12.5"
+                    y2="5.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                </svg>
+                <div class="mono">Same visual language as existing glyphs</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Implementation implications</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="label">Safe, local changes</span>
+            <ul>
+              <li>Add <code>grid3x2</code> to <code>LayoutId</code>.</li>
+              <li>
+                Add a new <code>LAYOUTS.grid3x2</code> entry and include its
+                display name.
+              </li>
+              <li>
+                Extend <code>LayoutGlyph</code> to render two vertical
+                separators plus one horizontal separator.
+              </li>
+              <li>
+                Extend restore whitelist logic in
+                <code>groupSessionsFromInfos.ts</code>.
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <span class="label">Non-local changes</span>
+            <ul>
+              <li>
+                Replace the current <code>{ col, row }</code> ratio model with a
+                layout-aware shape that supports multiple vertical splits.
+              </li>
+              <li>
+                Generalize <code>useSplitDivider()</code> so a divider can
+                target arbitrary CSS variable names.
+              </li>
+              <li>
+                Add a dedicated <code>grid3x2</code> branch to
+                <code>resolveGrid()</code> and <code>SplitDividers</code>.
+              </li>
+              <li>
+                Decide the shrink path for 6 -&gt; 5 -&gt; 4 panes. My
+                recommendation: 6/5 stay <code>grid3x2</code>, 4 falls to
+                <code>quad</code>, 3 to <code>threeRight</code>, 2 to
+                <code>vsplit</code> or preserve <code>hsplit</code> if that was
+                the current layout.
+              </li>
+            </ul>
+          </article>
+        </div>
+        <div class="note">
+          <p>
+            <strong>Recommendation:</strong> do not treat this as a pure icon +
+            enum change. If the product intent is a real interactive
+            <code>3x2</code> layout, the resize model should be refactored first
+            or in the same PR.
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Concrete files that will move</h2>
+        <div class="code">
+          <pre>
+src/features/sessions/types/index.ts
+src/features/terminal/components/SplitView/layouts.ts
+src/features/terminal/components/SplitView/resolveGrid.ts
+src/features/terminal/components/SplitView/SplitDividers.tsx
+src/features/terminal/components/SplitView/useSplitDivider.ts
+src/features/terminal/components/LayoutSwitcher/LayoutGlyph.tsx
+src/features/terminal/hooks/usePaneShortcuts.ts
+src/features/sessions/utils/paneLifecycle.ts
+src/features/sessions/utils/groupSessionsFromInfos.ts
+
+Tests likely touched:
+src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.test.tsx
+src/features/terminal/components/LayoutSwitcher/LayoutGlyph.test.tsx
+src/features/terminal/components/SplitView/layouts.test.ts
+src/features/terminal/components/SplitView/resolveGrid.test.ts
+src/features/terminal/components/SplitView/SplitDividers.test.tsx
+src/features/terminal/components/SplitView/SplitView.test.tsx
+src/features/terminal/hooks/usePaneShortcuts.test.ts
+src/features/sessions/types/index.test.ts
+src/features/sessions/utils/paneLifecycle.test.ts</pre
+          >
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Bottom line</h2>
+        <p>
+          The terminal-zone layout system is well organized around
+          <code>SplitView</code>, but its resize architecture is still tuned for
+          layouts that need at most one horizontal split and one logical
+          vertical split. A new <code>3x2</code> pill is straightforward; a
+          production-ready <code>3x2</code> layout is a small structural
+          extension, not just a new case statement.
+        </p>
+        <p>
+          If the next step is implementation, the cleanest sequence is: 1) widen
+          the ratio/divider model, 2) add <code>grid3x2</code> render + glyph
+          support, 3) update shrink/restore policies, 4) repair the test matrix.
+        </p>
+        <p class="footer">
+          Prepared from current repository state on 2026-06-17.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

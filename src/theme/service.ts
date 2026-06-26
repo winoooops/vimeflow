@@ -1,12 +1,45 @@
 // src/theme/service.ts
 import { toCssVars } from './cssVars'
+import { dracula } from './themes/dracula'
 import { flexoki } from './themes/flexoki'
+import { gruvboxDark } from './themes/gruvbox/gruvbox-dark'
+import { gruvboxLight } from './themes/gruvbox/gruvbox-light'
 import { obsidianLens } from './themes/obsidian-lens'
+import { tokyoNightTheme } from './themes/tokyo-night'
 import type { ThemeDefinition, ThemeId } from './types'
 
 export const THEME_STORAGE_KEY = 'vimeflow:theme'
 
-let themes: readonly ThemeDefinition[] = [obsidianLens, flexoki]
+const themeModules = [
+  {
+    exportName: 'obsidianLens',
+    fallback: obsidianLens,
+  },
+  {
+    exportName: 'flexoki',
+    fallback: flexoki,
+  },
+  {
+    exportName: 'gruvboxDark',
+    fallback: gruvboxDark,
+  },
+  {
+    exportName: 'gruvboxLight',
+    fallback: gruvboxLight,
+  },
+  {
+    exportName: 'tokyoNightTheme',
+    fallback: tokyoNightTheme,
+  },
+  {
+    exportName: 'dracula',
+    fallback: dracula,
+  },
+] as const
+
+let themes: readonly ThemeDefinition[] = themeModules.map(
+  ({ fallback }) => fallback
+)
 
 const DEFAULT_THEME = obsidianLens
 
@@ -36,8 +69,16 @@ const apply = (id: ThemeId): void => {
   listeners.forEach((listener) => listener(next))
 }
 
+const preview = (id: ThemeId): void => {
+  const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
+
+  writeDom(next)
+  listeners.forEach((listener) => listener(next))
+}
+
 export const themeService = {
   apply,
+  preview,
   current: (): ThemeDefinition => active,
   list: (): readonly ThemeDefinition[] => themes,
   subscribe: (listener: Listener): (() => void) => {
@@ -59,21 +100,30 @@ export const themeService = {
 /* Dev-only: editing a theme file re-applies the active theme live, so
  * Flexoki value tuning shows on screen without a reload (spec §5). */
 if (import.meta.hot) {
+  // The dependency array is a static literal because Vite's HMR boundary
+  // requires static analysis. Positions must match `themeModules` order:
+  // array index -> exportName mapping above.
   import.meta.hot.accept(
-    ['./themes/obsidian-lens', './themes/flexoki'],
-    ([obsMod, flexMod]) => {
-      const nextObsidian =
-        (obsMod as { obsidianLens?: ThemeDefinition } | undefined)
-          ?.obsidianLens ??
-        themes.find((t) => t.id === 'obsidian-lens') ??
-        obsidianLens
+    [
+      './themes/obsidian-lens',
+      './themes/flexoki',
+      './themes/gruvbox/gruvbox-dark',
+      './themes/gruvbox/gruvbox-light',
+      './themes/tokyo-night',
+      './themes/dracula',
+    ],
+    (mods) => {
+      themes = themeModules.map((themeModule, index) => {
+        const next = (
+          mods[index] as Record<string, ThemeDefinition | undefined> | undefined
+        )?.[themeModule.exportName]
 
-      const nextFlexoki =
-        (flexMod as { flexoki?: ThemeDefinition } | undefined)?.flexoki ??
-        themes.find((t) => t.id === 'flexoki') ??
-        flexoki
-
-      themes = [nextObsidian, nextFlexoki]
+        return (
+          next ??
+          themes.find((t) => t.id === themeModule.fallback.id) ??
+          themeModule.fallback
+        )
+      })
       apply(active.id)
     }
   )

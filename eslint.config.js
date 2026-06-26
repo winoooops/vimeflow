@@ -1,6 +1,7 @@
 // For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
 import storybook from 'eslint-plugin-storybook'
 import noHardcodedColors from './eslint-rules/no-hardcoded-colors.js'
+import noRawIconButton from './eslint-rules/no-raw-icon-button.js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import pluginReact from 'eslint-plugin-react'
@@ -15,6 +16,13 @@ import stylistic from '@stylistic/eslint-plugin'
 import cspellPlugin from '@cspell/eslint-plugin'
 import prettier from 'eslint-config-prettier'
 
+const vimeflowPlugin = {
+  rules: {
+    'no-hardcoded-colors': noHardcodedColors,
+    'no-raw-icon-button': noRawIconButton,
+  },
+}
+
 export default defineConfig([
   {
     ignores: [
@@ -28,6 +36,12 @@ export default defineConfig([
       'vite-plugin-*.ts',
       'target',
       'crates/backend/bindings/',
+      // The vendored opencode bridge plugin is a Bun/Node build asset (not part
+      // of the React app); its hook params are `any` and it has no
+      // `@opencode-ai/*` types. It is verified separately by
+      // `npm run type-check:bridge` (tsconfig.opencode-bridge.json) and stays
+      // under prettier (`format:check`).
+      'crates/backend/src/agent/adapter/opencode/plugin/**',
       '.claude/**',
       'src/bindings/',
       'docs/**',
@@ -241,7 +255,7 @@ export default defineConfig([
           },
           {
             regex:
-              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|sidebar/)',
+              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|Button|IconButton|ToolbarButton|sidebar/)',
             message:
               'Shared primitives are imported via the @/components/* alias.',
           },
@@ -279,10 +293,21 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/theme/**'],
     plugins: {
-      vimeflow: { rules: { 'no-hardcoded-colors': noHardcodedColors } },
+      vimeflow: vimeflowPlugin,
     },
     rules: {
       'vimeflow/no-hardcoded-colors': 'error',
+    },
+  },
+
+  {
+    files: ['src/**/*.tsx'],
+    ignores: ['src/components/**'],
+    plugins: {
+      vimeflow: vimeflowPlugin,
+    },
+    rules: {
+      'vimeflow/no-raw-icon-button': 'error',
     },
   },
 

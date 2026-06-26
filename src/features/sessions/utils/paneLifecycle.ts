@@ -1,6 +1,20 @@
-import type { LayoutId, Pane, Session } from '../types'
+import type {
+  LayoutSlotId,
+  Pane,
+  PaneLayoutId,
+  PanePlacement,
+  Session,
+} from '../types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  autoShrinkLayoutFor,
+  type PaneLayoutRegistry,
+} from '../../terminal/layout-registry/layoutRegistry'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { isShellPane } from './paneKind'
+import { normalizePanePlacements } from './panePlacements'
+
+export { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
 
 export interface ApplyAddPaneResult {
   sessions: Session[]
@@ -11,25 +25,6 @@ export interface ApplyRemovePaneResult {
   sessions: Session[]
   removedPtyId?: string
   newActivePtyId?: string
-}
-
-export const autoShrinkLayoutFor = (
-  nextPaneCount: number,
-  currentLayoutId: LayoutId
-): LayoutId => {
-  if (nextPaneCount <= 1) {
-    return 'single'
-  }
-
-  if (nextPaneCount === 2) {
-    return currentLayoutId === 'hsplit' ? 'hsplit' : 'vsplit'
-  }
-
-  if (nextPaneCount === 3) {
-    return 'threeRight'
-  }
-
-  return currentLayoutId
 }
 
 export const pickNextActivePaneId = (
@@ -62,7 +57,8 @@ export const applyAddPane = (
   sessions: Session[],
   sessionId: string,
   newPane: Pane,
-  capacity: number
+  capacity: number,
+  slotId?: LayoutSlotId
 ): ApplyAddPaneResult => {
   const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
   if (sessionIndex === -1) {
@@ -85,9 +81,19 @@ export const applyAddPane = (
     { ...newPane, active: true },
   ]
 
+  const placements: PanePlacement[] | undefined = slotId
+    ? [
+        ...(session.placements?.filter(
+          (placement) => placement.slotId !== slotId
+        ) ?? []),
+        { paneId: newPane.id, slotId },
+      ]
+    : session.placements
+
   const updated: Session = {
     ...session,
     panes,
+    placements,
     status: deriveShellSessionStatus(panes),
     agentType: newPane.agentType,
   }
@@ -106,7 +112,8 @@ export const applyRemovePane = (
   sessions: Session[],
   sessionId: string,
   paneId: string,
-  currentLayoutId: LayoutId
+  currentLayoutId: PaneLayoutId,
+  layoutRegistry: PaneLayoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY
 ): ApplyRemovePaneResult => {
   const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
   if (sessionIndex === -1) {
@@ -141,10 +148,21 @@ export const applyRemovePane = (
 
   const activePane = panes.find((pane) => pane.active)
 
+  const layout = autoShrinkLayoutFor(
+    panes.length,
+    currentLayoutId,
+    layoutRegistry
+  )
+
   const updated: Session = {
     ...session,
     panes,
-    layout: autoShrinkLayoutFor(panes.length, currentLayoutId),
+    layout,
+    placements: normalizePanePlacements(
+      panes,
+      layoutRegistry.getFallbackLayout(layout),
+      session.placements?.filter((placement) => placement.paneId !== paneId)
+    ),
     status: deriveShellSessionStatus(panes),
     agentType: activePane?.agentType ?? session.agentType,
   }

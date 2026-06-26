@@ -48,4 +48,22 @@ describe('RateLimitBar', () => {
     const bar = screen.getByRole('progressbar')
     expect(bar).toHaveAttribute('aria-valuenow', '0')
   })
+
+  test('defaults to the primary fill', () => {
+    render(<RateLimitBar label="5-hour Session" percentage={20} />)
+
+    expect(screen.getByTestId('rate-limit-bar-fill')).toHaveClass(
+      'bg-primary-container'
+    )
+  })
+
+  test('uses the kimi peach fill when accent is kimi', () => {
+    render(
+      <RateLimitBar label="5-hour Session" percentage={20} accent="kimi" />
+    )
+
+    expect(screen.getByTestId('rate-limit-bar-fill')).toHaveClass(
+      'bg-[var(--color-agent-kimi-accent)]'
+    )
+  })
 })

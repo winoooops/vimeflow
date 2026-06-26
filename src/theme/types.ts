@@ -97,9 +97,10 @@ export const SYN_TOKENS = [
 export const AGENT_IDS = [
   'claude',
   'codex',
-  'gemini',
   'shell',
   'browser',
+  'kimi',
+  'opencode',
 ] as const
 
 export const AGENT_ACCENT_FIELDS = [
@@ -123,7 +124,13 @@ export type AgentAccentField = (typeof AGENT_ACCENT_FIELDS)[number]
 
 export type AgentAccent = Record<AgentAccentField, string>
 
-export type ThemeId = 'obsidian-lens' | 'flexoki'
+export type ThemeId =
+  | 'obsidian-lens'
+  | 'flexoki'
+  | 'gruvbox-dark'
+  | 'gruvbox-light'
+  | 'tokyo-night'
+  | 'dracula'
 
 export type ThemeKind = 'dark' | 'light'
 

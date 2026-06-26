@@ -38,14 +38,35 @@ describe('SidebarTabs', () => {
     )
   })
 
-  test('every button has the default tabIndex', () => {
+  test('uses roving tabIndex with the active button as the entry point', () => {
     render(
       <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
     )
 
-    for (const button of screen.getAllByRole('button')) {
-      expect(button).not.toHaveAttribute('tabindex', '-1')
-    }
+    expect(screen.getByRole('button', { name: 'SESSIONS' })).toHaveAttribute(
+      'tabindex',
+      '0'
+    )
+
+    expect(screen.getByRole('button', { name: 'FILES' })).toHaveAttribute(
+      'tabindex',
+      '-1'
+    )
+  })
+
+  test('ArrowRight moves focus and calls onChange with the next id', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={onChange} />
+    )
+
+    screen.getByRole('button', { name: 'SESSIONS' }).focus()
+    await user.keyboard('{ArrowRight}')
+
+    expect(onChange).toHaveBeenCalledWith('files')
+    expect(screen.getByRole('button', { name: 'FILES' })).toHaveFocus()
   })
 
   test('clicking a non-active button calls onChange with that id', async () => {

@@ -1,7 +1,13 @@
 import type { Terminal } from '@xterm/xterm'
-import { invoke } from './backend'
+import { __dispatchBackendEventForE2e, invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
+import {
+  clearBrowserPaneBoundsCaptures,
+  getBrowserPaneBoundsCaptures,
+  startBrowserPaneBoundsCapture,
+  stopBrowserPaneBoundsCapture,
+} from '../features/browser/browserBridge'
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
@@ -125,13 +131,54 @@ const getVisibleSessionId = (): string | null => {
   return pane?.dataset.sessionId ?? null
 }
 
+const getVisiblePtyId = (): string | null => {
+  const pane = findActivePane()
+  if (!pane) {
+    return null
+  }
+
+  const focusedWrapper = pane.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
+  )
+
+  const focusedSlot = focusedWrapper?.closest<HTMLElement>(
+    '[data-testid="split-view-slot"][data-pty-id]'
+  )
+  if (focusedSlot?.dataset.ptyId) {
+    return focusedSlot.dataset.ptyId
+  }
+
+  const firstSlot = pane.querySelector<HTMLElement>(
+    '[data-testid="split-view-slot"][data-pty-id]'
+  )
+  if (firstSlot?.dataset.ptyId) {
+    return firstSlot.dataset.ptyId
+  }
+
+  const bodyContainer = pane.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane"][data-pty-id]'
+  )
+
+  return bodyContainer?.dataset.ptyId ?? null
+}
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
     getTerminalBufferForSession: readTerminalBufferForSession,
     getVisibleSessionId,
+    getVisiblePtyId,
     getActiveSessionIds: getAllPtySessionIds,
+    invokeBackend: async <T>(
+      method: string,
+      args?: Record<string, unknown>
+    ): Promise<T> => invoke<T>(method, args),
+    emitBackendEvent: __dispatchBackendEventForE2e,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    startBrowserPaneBoundsCapture,
+    clearBrowserPaneBoundsCaptures,
+    stopBrowserPaneBoundsCapture,
+    getBrowserPaneBoundsCaptures,
   }
 }

@@ -6,10 +6,53 @@ import {
 } from './workspace-layout-writer'
 import { WorkspaceTeardown } from './workspace-teardown'
 import type {
+  PersistedPaneLayoutDefinition,
   PersistedTab,
   PersistedWorkspaceLayoutStore,
-  WorkspaceShapeDto,
+  PersistedWorkspaceShape,
 } from './workspace-layout-types'
+
+const customPaneLayout = (): PersistedPaneLayoutDefinition => ({
+  schemaVersion: 1,
+  id: 'custom:main-side-stack',
+  title: 'Main + side stack',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'main', units: 16 },
+      { id: 'side', units: 8 },
+    ],
+    rows: [
+      { id: 'top', units: 8 },
+      { id: 'middle', units: 8 },
+      { id: 'bottom', units: 8 },
+    ],
+  },
+  slots: [
+    {
+      id: 'slot:main',
+      rect: { col: 0, row: 0, colSpan: 1, rowSpan: 3 },
+    },
+    {
+      id: 'slot:side-top',
+      rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
+    },
+    {
+      id: 'slot:side-middle',
+      rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+    },
+    {
+      id: 'slot:side-bottom',
+      rect: { col: 1, row: 2, colSpan: 1, rowSpan: 1 },
+    },
+  ],
+  addOrder: [
+    'slot:main',
+    'slot:side-top',
+    'slot:side-middle',
+    'slot:side-bottom',
+  ],
+})
 
 const browserOnlyTabs: PersistedTab[] = [
   {
@@ -39,22 +82,30 @@ const mixedTabs: PersistedTab[] = [
   },
 ]
 
-const roundTripShape = (): WorkspaceShapeDto => ({
+const roundTripShape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [customPaneLayout()],
   sessions: [
     {
       id: 'ws-browser',
       projectId: 'proj-1',
       layout: 'single',
+      placements: [{ paneId: 'p0', slotId: 'slot:p0' }],
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [{ kind: 'browser', paneId: 'p0', paneIndex: 0, active: true }],
     },
     {
       id: 'ws-mixed',
       projectId: 'proj-1',
-      layout: 'vsplit',
+      layout: 'custom:main-side-stack',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:main' },
+        { paneId: 'p1', slotId: 'slot:side-top' },
+      ],
       workingDirectory: '/repo',
       active: false,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -97,6 +148,7 @@ const makeRoundTripHarness = (): {
       return Promise.resolve(
         (store ?? {
           version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+          customPaneLayouts: [],
           sessions: [],
         }) as T
       )
@@ -142,6 +194,7 @@ describe('workspace layout round trip', () => {
 
     expect(harness.savedStore()).toEqual({
       version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      customPaneLayouts: shape.customPaneLayouts,
       sessions: [
         {
           ...shape.sessions[0],
@@ -189,7 +242,8 @@ describe('workspace layout round trip', () => {
     const harness = makeRoundTripHarness()
     const shape = roundTripShape()
 
-    const browserOnlyShape: WorkspaceShapeDto = {
+    const browserOnlyShape: PersistedWorkspaceShape = {
+      customPaneLayouts: shape.customPaneLayouts,
       sessions: [shape.sessions[0]],
     }
 
@@ -213,5 +267,8 @@ describe('workspace layout round trip', () => {
     })
 
     expect(restoreShape.sessions).toEqual(browserOnlyShape.sessions)
+    expect(restoreShape.customPaneLayouts).toEqual(
+      browserOnlyShape.customPaneLayouts
+    )
   })
 })

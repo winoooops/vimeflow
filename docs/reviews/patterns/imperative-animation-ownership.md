@@ -2,8 +2,8 @@
 id: imperative-animation-ownership
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 1
+last_updated: 2026-06-17
+ref_count: 3
 ---
 
 # Imperative Animation Ownership
@@ -60,4 +60,49 @@ The fix shape:
   write a resting `buildReservoirSurface` path to both SVG paths using the
   current geometry. Added test coverage verifying the surface returns to the
   resting crest when reduced motion is enabled mid-hover.
+- **Commit:** _(same commit as this entry)_
+
+### 3. Perpetual rAF loop polls `getBoundingClientRect` at 60+ fps per pane forever
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** A `requestAnimationFrame` loop scheduled on mount called `syncBounds()` every frame for the component's entire lifetime. `syncBounds` ran `getBoundingClientRect()` and built a string key on every tick even when nothing had moved; the dedup only short-circuited the IPC call, not the DOM read.
+- **Fix:** Added a 60-frame idle counter inside the rAF tick. When the bounds key is unchanged for 60 consecutive frames the loop stops rescheduling. A `useLayoutEffect` that already fires `syncBounds()` on every React render bumps a `boundsGeneration` key whenever the bounds actually change, causing the rAF effect to re-run and restart the loop.
+- **Commit:** _(same commit as this entry)_
+
+### 4. Bounds-sync rAF runs for hidden/background browser panes
+
+- **Source:** github-codex-connector | PR #515 round 1 | 2026-06-17
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** `TerminalZone` keeps inactive session panels mounted and only hides them with CSS, so the unconditional rAF loop started for every background `BrowserPane`. Hidden panes kept calling `syncBounds()`/`getBoundingClientRect()` once per frame even after they had already sent invisible/0×0 bounds.
+- **Fix:** Gated the rAF effect on `nativePaneReady && isActive && !isOccluded` so the loop only runs while the pane is visible. The existing focus/occlusion effects still send a final invisible bounds update when the pane becomes inactive or occluded.
+- **Commit:** _(same commit as this entry)_
+
+### 5. rAF idle cutoff leaves stale native bounds after position-only ancestor moves
+
+- **Source:** github-claude | PR #515 round 2 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** After 60 unchanged frames the rAF bounds-sync loop stopped and only restarted from React-visible dependencies. A later CSS transform or other position-only ancestor move that did not cause a React render left the native `WebContentsView` at stale coordinates until an unrelated render occurred.
+- **Fix:** Added a 250 ms post-idle polling interval and an ancestor `MutationObserver` watching `style`/`class` attributes up to 10 ancestors deep. Either detector restarts a short rAF burst that calls `syncBounds()`, catching CSS-only moves without restoring a perpetual 60 fps loop.
+- **Commit:** _(same commit as this entry)_
+
+### 6. `nativePaneReady` state is not reset in creation-effect cleanup
+
+- **Source:** github-claude | PR #515 round 2 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** The creation effect cleanup set `nativePaneReadyRef.current = false` but did not call `setNativePaneReady(false)`. If `browserSessionId` or `pane.id` changed and the effect re-ran, the rAF guard stayed `true` and the loop spun for up to 60 idle frames before `syncBounds()`'s ref guard short-circuited each tick.
+- **Fix:** Added `setNativePaneReady(false)` to the cleanup so the reactive state mirror matches the ref and reliably restarts the rAF effect on re-mount.
+- **Commit:** _(same commit as this entry)_
+
+### 7. MutationObserver restarts rAF burst unconditionally on ancestor class/style mutations
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** In `startPostIdleDetection`, the `MutationObserver` callback called `restart()` for every `style` or `class` attribute change on any observed ancestor, with no bounds-change guard. Hover/focus/active CSS classes on split-view ancestors therefore triggered a 60-frame rAF burst even when the browser pane had not moved.
+- **Fix:** Mirrored the interval guard inside the MO callback: call `syncBounds()`, then only call `restart()` if `lastBoundsKeyRef.current` changed. This catches transform-driven moves while ignoring cosmetic class mutations.
 - **Commit:** _(same commit as this entry)_

@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type KeyboardEvent,
@@ -38,6 +39,7 @@ import type {
 import { DEFAULT_BROWSER_URL } from '../types'
 import { BrowserTabBar } from './BrowserTabBar'
 import { BrowserToolbar } from './BrowserToolbar'
+import { useNativeSurface } from '../../workspace/overlays/useNativeSurface'
 
 const LOCAL_DEV_HOST_PATTERN =
   /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?::\d+)?(?:[/?#]|$)/i
@@ -46,7 +48,6 @@ export interface BrowserPaneProps {
   session: Session
   pane: Pane
   isActive: boolean
-  isOccluded?: boolean
   onClose?: (sessionId: string, paneId: string) => void
   onRequestActive?: (sessionId: string, paneId: string) => void
   onRequestFocus?: () => void
@@ -77,7 +78,6 @@ export const BrowserPane = ({
   session,
   pane,
   isActive,
-  isOccluded = false,
   onClose = undefined,
   onRequestActive = undefined,
   onRequestFocus = undefined,
@@ -88,10 +88,8 @@ export const BrowserPane = ({
   const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
   const initialUrlRef = useRef(url)
   const isActiveRef = useRef(isActive)
-  const isOccludedRef = useRef(isOccluded)
   const nativePaneReadyRef = useRef(false)
   const wasPaneActiveRef = useRef<boolean | undefined>(undefined)
-  const wasOccludedRef = useRef(isOccluded)
   const suppressNextNativeFocusRef = useRef(false)
   const lastBoundsKeyRef = useRef<string | null>(null)
   const onUrlChangeRef = useRef(onUrlChange)
@@ -107,6 +105,12 @@ export const BrowserPane = ({
   const [isEditing, setIsEditing] = useState(false)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [nativePaneReady, setNativePaneReady] = useState(false)
+
+  const [boundsGeneration, bumpBoundsGeneration] = useReducer(
+    (generation: number): number => generation + 1,
+    0
+  )
 
   const [navState, setNavState] = useState<BrowserPaneNavState>({
     canGoBack: false,
@@ -119,6 +123,16 @@ export const BrowserPane = ({
     { id: 'tab-0', url, title: null, active: true, favicon: null },
   ])
   const browserSessionId = browserSessionIdForSession(session)
+
+  const nativeSurface = useNativeSurface({
+    id: `browser-pane:${browserSessionId}:${pane.id}`,
+    owner: 'browser-pane',
+    belowPlane: 'pane-chrome',
+    getRect: () => contentRef.current?.getBoundingClientRect() ?? null,
+  })
+  const isOccluded = nativeSurface.occluded
+  const isOccludedRef = useRef(isOccluded)
+  const wasOccludedRef = useRef(isOccluded)
 
   const paneIds = useMemo(
     () => session.panes.map((sessionPane) => sessionPane.id),
@@ -209,7 +223,11 @@ export const BrowserPane = ({
     // ResizeObserver does not fire for pure position changes. Ancestor layout
     // changes such as moving the dock still re-render this component, so sync
     // after every render and let syncBounds de-dupe unchanged rectangles.
+    const previousKey = lastBoundsKeyRef.current
     syncBounds()
+    if (lastBoundsKeyRef.current !== previousKey) {
+      bumpBoundsGeneration()
+    }
   })
 
   useEffect(() => {
@@ -243,6 +261,7 @@ export const BrowserPane = ({
         }
 
         nativePaneReadyRef.current = true
+        setNativePaneReady(true)
         setCommittedUrl(result.url)
         setTabs(result.tabs)
         if (!receivedLiveNavRef.current) {
@@ -274,6 +293,7 @@ export const BrowserPane = ({
     return (): void => {
       lifecycle.cancelled = true
       nativePaneReadyRef.current = false
+      setNativePaneReady(false)
       offNavState()
     }
   }, [browserSessionId, pane.id, session.id, session.projectId, syncBounds])
@@ -301,6 +321,121 @@ export const BrowserPane = ({
       })
     }
   }, [browserSessionId, pane.id, syncBounds])
+
+  // ResizeObserver only sees box-size changes; native WebContentsView bounds
+  // also need to follow ancestor transforms and other position-only moves.
+  // The loop runs only while the pane is visible and stops once bounds have
+  // been stable for a short interval, restarting automatically when visibility
+  // or layout changes. After the rAF window idles, a low-frequency interval
+  // plus an ancestor mutation observer detect CSS-only position moves that
+  // do not trigger a React render.
+  useEffect(() => {
+    if (!nativePaneReady || !isActive || isOccluded) {
+      return
+    }
+
+    const IDLE_CUTOFF = 60
+    const POST_IDLE_INTERVAL_MS = 250
+    const MAX_MUTATION_ANCESTOR_DEPTH = 10
+
+    let frameId: number | null = null
+    let postIdleIntervalId: number | null = null
+    let mutationObserver: MutationObserver | null = null
+    let idleFrames = 0
+    let running = true
+
+    const stopPostIdleDetection = (): void => {
+      if (postIdleIntervalId !== null) {
+        window.clearInterval(postIdleIntervalId)
+        postIdleIntervalId = null
+      }
+
+      if (mutationObserver !== null) {
+        mutationObserver.disconnect()
+        mutationObserver = null
+      }
+    }
+
+    const restart = (): void => {
+      if (running) {
+        return
+      }
+
+      running = true
+      idleFrames = 0
+      stopPostIdleDetection()
+      frameId = window.requestAnimationFrame(tick)
+    }
+
+    const startPostIdleDetection = (): void => {
+      const node = contentRef.current
+      if (!node) {
+        return
+      }
+
+      postIdleIntervalId = window.setInterval(() => {
+        const previousKey = lastBoundsKeyRef.current
+        syncBounds()
+        if (lastBoundsKeyRef.current !== previousKey) {
+          restart()
+        }
+      }, POST_IDLE_INTERVAL_MS)
+
+      mutationObserver = new MutationObserver(() => {
+        const previousKey = lastBoundsKeyRef.current
+        syncBounds()
+        if (lastBoundsKeyRef.current !== previousKey) {
+          restart()
+        }
+      })
+
+      let ancestor: Element | null = node.parentElement
+      let depth = 0
+      while (ancestor !== null && depth < MAX_MUTATION_ANCESTOR_DEPTH) {
+        mutationObserver.observe(ancestor, {
+          attributes: true,
+          attributeFilter: ['style', 'class'],
+        })
+        ancestor = ancestor.parentElement
+        depth += 1
+      }
+    }
+
+    const tick = (): void => {
+      if (!running) {
+        return
+      }
+
+      const previousKey = lastBoundsKeyRef.current
+      syncBounds()
+
+      if (lastBoundsKeyRef.current === previousKey) {
+        idleFrames += 1
+      } else {
+        idleFrames = 0
+      }
+
+      if (idleFrames >= IDLE_CUTOFF) {
+        running = false
+        startPostIdleDetection()
+
+        return
+      }
+
+      frameId = window.requestAnimationFrame(tick)
+    }
+
+    frameId = window.requestAnimationFrame(tick)
+
+    return (): void => {
+      running = false
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+
+      stopPostIdleDetection()
+    }
+  }, [isActive, isOccluded, nativePaneReady, boundsGeneration, syncBounds])
 
   useEffect(() => {
     const becameVisibleAgain = wasOccludedRef.current && !isOccluded

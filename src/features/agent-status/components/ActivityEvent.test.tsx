@@ -111,6 +111,22 @@ describe('ActivityEvent — basic row', () => {
     }
   )
 
+  test('renders meta row icon with crisp sizing and readable contrast', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'meta', tool: 'EXEC_COMMAND' })}
+        now={now}
+      />
+    )
+    const article = screen.getByRole('article', { name: 'EXEC_COMMAND' })
+    // eslint-disable-next-line testing-library/no-node-access -- Material Symbols icon verification per rules/typescript/testing/CLAUDE.md
+    const icon = article.querySelector('.material-symbols-outlined')
+
+    expect(icon).toHaveClass('text-[16px]')
+    expect(icon).toHaveClass('leading-none')
+    expect(icon).toHaveClass('text-on-surface-muted')
+  })
+
   test('renders relative timestamp for done events (minute granularity)', () => {
     // toolEvent default timestamp is 18s before `now` → shows 'now'.
     render(<ActivityEvent event={toolEvent({ status: 'done' })} now={now} />)
@@ -307,27 +323,6 @@ describe('ActivityEvent — bash status pill', () => {
 })
 
 describe('ActivityEvent — running state', () => {
-  test('renders animated dot with role="status" for running events', () => {
-    render(
-      <ActivityEvent
-        event={{
-          id: 'active-Edit',
-          kind: 'edit',
-          tool: 'Edit',
-          body: 'src/foo.ts',
-          timestamp: '2026-04-22T11:59:52Z', // 8s before now
-          status: 'running',
-          durationMs: null,
-        }}
-        now={now}
-      />
-    )
-    const dot = screen.getByRole('status', { name: 'running' })
-
-    expect(dot).toHaveClass('animate-pulse')
-    expect(dot).toHaveClass('bg-success')
-  })
-
   test('running timestamp reads "running Xs" computed from startedAt', () => {
     render(
       <ActivityEvent

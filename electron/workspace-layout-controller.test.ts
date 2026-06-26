@@ -14,7 +14,7 @@ import type {
   IpcMainLike,
   PersistedWorkspaceLayoutStore,
   WorkspaceLayoutWriterPort,
-  WorkspaceShapeDto,
+  PersistedWorkspaceShape,
 } from './workspace-layout-types'
 
 const makeWriter = (): WorkspaceLayoutWriterPort & {
@@ -31,14 +31,20 @@ const makeSidecar = (
   invoke: vi.fn().mockResolvedValue(result),
 })
 
-const sampleShape = (): WorkspaceShapeDto => ({
+const sampleShape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
       projectId: 'proj-1',
       layout: 'vsplit',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p0' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ],
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -58,13 +64,19 @@ const sampleShape = (): WorkspaceShapeDto => ({
 
 const sampleStore = (): PersistedWorkspaceLayoutStore => ({
   version: 1,
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
       projectId: 'proj-1',
       layout: 'vsplit',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p0' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ],
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -358,6 +370,7 @@ describe('WorkspaceLayoutController', () => {
             layout: 'vsplit',
             workingDirectory: '/repo',
             active: true,
+            open: true,
             panes: [
               {
                 kind: 'browser',
@@ -377,6 +390,7 @@ describe('WorkspaceLayoutController', () => {
             layout: 'vsplit',
             workingDirectory: '/repo',
             active: true,
+            open: true,
             panes: [
               {
                 kind: 'shell',
@@ -426,11 +440,18 @@ describe('WorkspaceLayoutController', () => {
         handlers.get(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE)?.({}, payload)
       )
 
-    await expect(loadForRestore(null)).resolves.toEqual({ sessions: [] })
+    await expect(loadForRestore(null)).resolves.toEqual({
+      customPaneLayouts: [],
+      sessions: [],
+    })
 
-    await expect(loadForRestore({})).resolves.toEqual({ sessions: [] })
+    await expect(loadForRestore({})).resolves.toEqual({
+      customPaneLayouts: [],
+      sessions: [],
+    })
 
     await expect(loadForRestore({ projectId: 'proj-1' })).resolves.toEqual({
+      customPaneLayouts: [],
       sessions: [],
     })
 

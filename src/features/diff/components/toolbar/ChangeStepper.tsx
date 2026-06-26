@@ -1,5 +1,8 @@
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export interface ChangeStepperProps {
   // 1-based `N/N` hunk position string (or `0/0` when there are no hunks),
@@ -37,10 +40,14 @@ export const ChangeStepper = ({
   // role="group" makes the aria-label a valid author name — ARIA 1.2 forbids
   // names on the implicit `generic` role of a bare <span>, so the hunk
   // position would otherwise be discarded by screen readers.
-  <span
+  <Chip
     role="group"
     aria-label={`hunk ${counterText}`}
-    className="inline-flex items-center gap-[7px] h-[30px] pl-2.5 pr-1 rounded-md bg-secondary/[0.08] ring-1 ring-inset ring-secondary/[0.16]"
+    tone="secondary"
+    variant="tinted"
+    radius="md"
+    size="custom"
+    className="h-7 gap-[7px] rounded-md bg-secondary/[0.08] pl-2.5 pr-1 ring-1 ring-inset ring-secondary/[0.16]"
   >
     <Tooltip content="Jump between changes in this file">
       <span className="inline-flex items-center gap-[7px]">
@@ -57,37 +64,27 @@ export const ChangeStepper = ({
     </Tooltip>
     <span className="flex flex-col">
       <Tooltip content="Previous change">
-        <button
-          type="button"
+        <IconButton
+          icon="keyboard_arrow_up"
+          label="prev hunk"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="prev hunk"
           onClick={onPrev}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-sm leading-none"
-          >
-            keyboard_arrow_up
-          </span>
-        </button>
+        />
       </Tooltip>
       <Tooltip content="Next change">
-        <button
-          type="button"
+        <IconButton
+          icon="keyboard_arrow_down"
+          label="next hunk"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="next hunk"
           onClick={onNext}
+          showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-sm leading-none"
-          >
-            keyboard_arrow_down
-          </span>
-        </button>
+        />
       </Tooltip>
     </span>
-  </span>
+  </Chip>
 )

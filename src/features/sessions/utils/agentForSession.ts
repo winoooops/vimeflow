@@ -4,6 +4,8 @@ import type { Pane, Session } from '../types'
 const AGENT_BY_SESSION_TYPE: Record<Session['agentType'], AgentId> = {
   'claude-code': 'claude',
   codex: 'codex',
+  kimi: 'kimi',
+  opencode: 'opencode',
   aider: 'shell',
   generic: 'shell',
 }

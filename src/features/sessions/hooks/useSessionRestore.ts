@@ -3,14 +3,15 @@ import type { SessionInfo } from '../../../bindings'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
 import { isBrowserPane } from '../utils/paneKind'
 import type {
-  WorkspaceShapeDto,
-  WorkspaceShapePane,
-  WorkspaceShapeShellPane,
+  PersistedWorkspaceShape,
+  PersistedWorkspacePaneShape,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   beginWorkspaceHydration,
@@ -27,25 +28,25 @@ const log = createLogger('restore')
 const RESTORE_PANE_TIMEOUT_MS = 4000
 
 const isShapeShellPane = (
-  pane: WorkspaceShapePane
-): pane is WorkspaceShapeShellPane => pane.kind === 'shell'
+  pane: PersistedWorkspacePaneShape
+): pane is PersistedShellPaneShape => pane.kind === 'shell'
 
 interface StoreShellSelection {
   sessionId: string
   paneId: string
-  pane: WorkspaceShapeShellPane
+  pane: PersistedShellPaneShape
 }
 
 interface RestartedStoreShell {
-  storeShape: WorkspaceShapeDto
+  storeShape: PersistedWorkspaceShape
   liveSession: SessionInfo
 }
 
 const findActiveStoreShell = (
-  storeShape: WorkspaceShapeDto | null
+  storeShape: PersistedWorkspaceShape | null
 ): StoreShellSelection | null => {
   const activeSession = storeShape?.sessions.find((session) => session.active)
-  if (!activeSession) {
+  if (!activeSession?.open) {
     return null
   }
 
@@ -78,10 +79,11 @@ const findActiveStoreShell = (
 }
 
 const shapeWithRestartedShell = (
-  storeShape: WorkspaceShapeDto,
+  storeShape: PersistedWorkspaceShape,
   selection: StoreShellSelection,
   liveSession: SessionInfo
-): WorkspaceShapeDto => ({
+): PersistedWorkspaceShape => ({
+  customPaneLayouts: storeShape.customPaneLayouts,
   sessions: storeShape.sessions.map((session) =>
     session.id !== selection.sessionId
       ? session
@@ -104,7 +106,7 @@ const shapeWithRestartedShell = (
 
 const restartPersistedActiveShell = async (
   service: ITerminalService,
-  storeShape: WorkspaceShapeDto | null,
+  storeShape: PersistedWorkspaceShape | null,
   liveSessions: readonly SessionInfo[]
 ): Promise<RestartedStoreShell | null> => {
   const hasLiveSession = liveSessions.some(
@@ -157,6 +159,9 @@ export interface UseSessionRestoreOptions {
   onActiveFallback?: (sessionId: string) => void
   /** Activate the store's persisted-active session (browser-capable, §5). */
   onActivePersisted?: (sessionId: string) => void
+  onCustomPaneLayoutsRestore?: (
+    customPaneLayouts: readonly PaneLayoutDefinition[]
+  ) => void
   /** Active project context for the load command's repair defaults (§2.2). */
   projectId?: string
   workingDirectory?: string
@@ -203,6 +208,7 @@ export const useSessionRestore = ({
   onActiveResolved,
   onActiveFallback,
   onActivePersisted,
+  onCustomPaneLayoutsRestore,
   projectId = 'proj-1',
   workingDirectory = '~',
 }: UseSessionRestoreOptions): SessionRestoreState => {
@@ -212,12 +218,14 @@ export const useSessionRestore = ({
   const onActiveResolvedRef = useRef(onActiveResolved)
   const onActiveFallbackRef = useRef(onActiveFallback)
   const onActivePersistedRef = useRef(onActivePersisted)
+  const onCustomPaneLayoutsRestoreRef = useRef(onCustomPaneLayoutsRestore)
 
   bufferRef.current = buffer
   onRestoreRef.current = onRestore
   onActiveResolvedRef.current = onActiveResolved
   onActiveFallbackRef.current = onActiveFallback
   onActivePersistedRef.current = onActivePersisted
+  onCustomPaneLayoutsRestoreRef.current = onCustomPaneLayoutsRestore
 
   useEffect(() => {
     let cancelled = false
@@ -290,7 +298,7 @@ export const useSessionRestore = ({
     // through the browser-capable `setActiveSessionId` so a browser-only
     // session is selectable); otherwise fall back to the PTY-driven order.
     const activate = (
-      storeShape: WorkspaceShapeDto | null,
+      storeShape: PersistedWorkspaceShape | null,
       sessions: Session[],
       activePtyId: string | null
     ): void => {
@@ -362,15 +370,39 @@ export const useSessionRestore = ({
         hydrationStarted = true
 
         // The durable store is the authoritative shape; live PTYs overlay it
-        // by ptyId. Load both, then reconstruct.
-        let storeShape = await loadWorkspaceForRestore({
-          projectId,
-          workingDirectory,
-        })
+        // by ptyId. If the shape store is unreadable, keep the PTY cache as a
+        // fallback when it has sessions to recover.
+        let storeShape: PersistedWorkspaceShape | null = null
+        let storeLoadFailed = false
+        try {
+          storeShape = await loadWorkspaceForRestore({
+            projectId,
+            workingDirectory,
+          })
+        } catch (err) {
+          storeLoadFailed = true
+          log.warn(
+            'workspace layout restore failed; falling back to PTY sessions',
+            err
+          )
+        }
+        onCustomPaneLayoutsRestoreRef.current?.(
+          storeShape?.customPaneLayouts ?? []
+        )
         const list = await service.listSessions()
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {
           return
+        }
+
+        const hasRecoverablePtySession = list.sessions.some(
+          (session) => session.status.kind === 'Alive'
+        )
+
+        if (storeLoadFailed && !hasRecoverablePtySession) {
+          throw new Error(
+            'workspace layout restore failed and PTY cache had no live sessions'
+          )
         }
 
         let liveSessions = list.sessions

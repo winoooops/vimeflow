@@ -28,9 +28,9 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
+use crate::agent::adapter::types::StatusSnapshot;
 #[cfg(test)]
 use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
-use crate::agent::adapter::types::StatusSnapshot;
 use crate::agent::types::{
     ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -315,6 +315,8 @@ impl CodexFoldState {
             context_window,
             cost,
             rate_limits,
+            // Network-fetched-usage is a kimi-only concept.
+            usage_fetched: false,
         }
     }
 }
@@ -323,7 +325,10 @@ fn fold_event(state: &mut CodexFoldState, line: CodexRolloutLine) {
     match line {
         CodexRolloutLine::SessionMeta { payload } => {
             if let Some(p) = payload {
-                if let Some(id) = p.id {
+                if let Some(id) = p.id.filter(|id| !id.is_empty()) {
+                    if !state.agent_session_id.is_empty() && state.agent_session_id != id {
+                        *state = CodexFoldState::default();
+                    }
                     state.agent_session_id = id;
                 }
                 if let Some(version) = p.cli_version {
@@ -507,6 +512,30 @@ mod tests {
     }
 
     #[test]
+    fn new_session_meta_resets_run_scoped_status() {
+        let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"old-run","cli_version":"0.139.0"}}
+{"timestamp":"...","type":"turn_context","payload":{"model":"gpt-old"}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":9000,"output_tokens":1000,"cached_input_tokens":7000,"total_tokens":10000},"model_context_window":20000}}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"task_complete","duration_ms":5000}}
+{"timestamp":"...","type":"session_meta","payload":{"id":"new-run","cli_version":"0.139.0"}}
+{"timestamp":"...","type":"turn_context","payload":{"model":"gpt-new"}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"task_started","model_context_window":258000}}
+"#;
+
+        let parsed = parse_rollout("pty-clear", raw).expect("clear reset");
+        let event = parsed.event;
+
+        assert_eq!(event.agent_session_id, "new-run");
+        assert_eq!(event.model_id, "gpt-new");
+        assert_eq!(event.context_window.context_window_size, 258000);
+        assert_eq!(event.context_window.total_input_tokens, 0);
+        assert_eq!(event.context_window.total_output_tokens, 0);
+        assert!(event.context_window.current_usage.is_none());
+        assert_eq!(event.context_window.used_percentage, None);
+        assert_eq!(event.cost.total_duration_ms, 0);
+    }
+
+    #[test]
     fn multi_turn_sums_durations() {
         let raw = fixture("rollout-multi-turn.jsonl");
         let parsed = parse_rollout("pty-multi", &raw).expect("multi-turn");
@@ -542,8 +571,8 @@ mod tests {
     #[test]
     fn parse_rollout_snapshot_returns_session_id_free_status() {
         let raw = fixture("rollout-minimal.jsonl");
-        let snapshot = parse_rollout_snapshot(Some("pty-direct"), &raw)
-            .expect("snapshot should parse");
+        let snapshot =
+            parse_rollout_snapshot(Some("pty-direct"), &raw).expect("snapshot should parse");
         // R2.2: snapshot carries `agent_session_id` (from JSONL
         // payload) but NO Vimeflow session_id field — that's stamped
         // by the runtime via `stamp_snapshot`.

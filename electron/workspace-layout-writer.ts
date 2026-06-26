@@ -14,11 +14,11 @@
 
 import type {
   PersistedTab,
+  PersistedWorkspaceShape,
   PersistedWorkspaceLayoutStore,
   PersistedWorkspacePane,
   WorkspaceLayoutWriterPort,
   WorkspaceLayoutWriteSignals,
-  WorkspaceShapeDto,
 } from './workspace-layout-types'
 
 // Mirrors the Rust CURRENT_WORKSPACE_LAYOUT_VERSION; a reader accepts only this.
@@ -56,7 +56,9 @@ const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
     })),
   }))
 
-const browserPaneKeysFromShape = (shape: WorkspaceShapeDto): Set<string> =>
+const browserPaneKeysFromShape = (
+  shape: PersistedWorkspaceShape
+): Set<string> =>
   new Set(
     shape.sessions.flatMap((session) =>
       session.panes
@@ -72,7 +74,7 @@ export class WorkspaceLayoutWriter
   private readonly captureTabsForPane: CaptureTabs
   private readonly preservedTabsForPane: TabsForPane | null
   private readonly debounceMs: number
-  private shape: WorkspaceShapeDto | null = null
+  private shape: PersistedWorkspaceShape | null = null
   private hydrating = false
   private latestGeneration = 0
   private committedGeneration = 0
@@ -90,7 +92,7 @@ export class WorkspaceLayoutWriter
     this.debounceMs = deps.debounceMs ?? DEFAULT_VOLATILE_DEBOUNCE_MS
   }
 
-  onShapePushed(dto: WorkspaceShapeDto): void {
+  onShapePushed(dto: PersistedWorkspaceShape): void {
     this.noteBrowserPaneShape(dto)
     this.shape = dto
     this.markStructural()
@@ -163,14 +165,17 @@ export class WorkspaceLayoutWriter
         id: session.id,
         projectId: session.projectId,
         layout: session.layout,
+        placements: session.placements ?? [],
         workingDirectory: session.workingDirectory,
         active: session.active,
+        open: session.open,
         panes,
       })
     }
 
     return {
       version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      customPaneLayouts: this.shape.customPaneLayouts ?? [],
       sessions,
     }
   }
@@ -256,7 +261,7 @@ export class WorkspaceLayoutWriter
     }
   }
 
-  private noteBrowserPaneShape(dto: WorkspaceShapeDto): void {
+  private noteBrowserPaneShape(dto: PersistedWorkspaceShape): void {
     const nextKeys = browserPaneKeysFromShape(dto)
 
     for (const key of this.browserPaneKeys) {

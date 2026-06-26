@@ -5,6 +5,8 @@ import {
   type ReactNode,
 } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 // Shared icon-button base for every button inside the tool-well (and the
 // discard-all button the parent renders into the `discardAllSlot`, so the
@@ -12,7 +14,7 @@ import { Tooltip } from '@/components/Tooltip'
 // surface; brighter on hover. Exported so the discard-all button matches.
 export const WELL_BUTTON_CLASSES =
   'w-7 h-7 grid place-items-center rounded-md bg-transparent ' +
-  'text-on-surface-variant hover:bg-surface-bright hover:text-on-surface ' +
+  'text-on-surface-variant hover:bg-surface-container hover:text-on-surface ' +
   'transition-colors'
 
 // Disabled placeholder variant — muted, inert. Mirrors the not-allowed cursor
@@ -53,21 +55,16 @@ export const WellDisabledButton = forwardRef<
   WellDisabledButtonProps
 >(
   ({ icon, label, ...buttonProps }, ref): ReactElement => (
-    <button
+    <IconButton
       ref={ref}
-      type="button"
+      icon={icon}
+      label={label}
+      size="md"
       aria-disabled="true"
-      aria-label={label}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={WELL_DISABLED_BUTTON_CLASSES}
       {...buttonProps}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
+    />
   )
 )
 
@@ -90,20 +87,15 @@ const WellButton = ({
   disabled: boolean
 }): ReactElement => (
   <Tooltip content={tooltip}>
-    <button
-      type="button"
+    <IconButton
+      icon={icon}
+      label={label}
+      size="md"
       disabled={disabled}
-      aria-label={label}
       onClick={onClick}
+      showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
+    />
   </Tooltip>
 )
 
@@ -125,9 +117,11 @@ export interface ToolWellProps {
   discardAllSlot: ReactNode
 }
 
-// Tool-well: one tonal container holding the per-file staging actions (stage /
-// unstage / discard / discard-all), rendered as a single unit so PriorityPlus
-// overflows the whole well together rather than spilling individual buttons.
+// Tool-well: the per-file staging actions (stage / unstage / discard /
+// discard-all) as a flat ghost-icon group — no tonal container block, so the
+// buttons share the bar's quiet rhythm and only lift on hover. Rendered as a
+// single inline-flex unit so PriorityPlus overflows the whole group together
+// rather than spilling individual buttons.
 //
 // The speculative annotation tools (comment / highlight / erase) were dropped —
 // commenting is the gutter `+` affordance, and highlight/erase had no backend
@@ -140,7 +134,7 @@ export const ToolWell = ({
   onDiscard,
   discardAllSlot,
 }: ToolWellProps): ReactElement => (
-  <span className="inline-flex items-center gap-0.5 bg-surface-container-highest rounded-md px-0.5 py-px">
+  <span className="inline-flex items-center gap-px">
     {/* Staging group — fully wired when handlers are provided. */}
     {onStage !== undefined ? (
       <WellButton

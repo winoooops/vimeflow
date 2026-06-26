@@ -17,6 +17,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import {
@@ -66,6 +67,11 @@ const useMenuContext = (): MenuContextValue => {
 
 const MENU_BODY_CLASSES = 'py-1 min-w-52 max-h-[28rem] overflow-auto'
 
+const CONTEXT_MENU_SURFACE_CLASSES =
+  'z-50 overflow-hidden rounded-md border border-outline-variant/30 bg-surface-container-high shadow-lg outline-none focus:outline-none focus-visible:outline-none'
+
+const CONTEXT_MENU_BODY_CLASSES = 'min-w-0 max-h-[28rem] overflow-auto'
+
 const SECTION_HEADER_CLASSES =
   'text-[0.65rem] font-bold uppercase tracking-wider text-on-surface-variant px-2.5 pt-2 pb-1'
 
@@ -85,22 +91,31 @@ const SHORTCUT_CHIP_CLASSES =
   'shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] ' +
   'text-on-surface-variant'
 
-// 18×18 rounded check square ported from ViewSettingsDropdown's CheckIndicator:
-// checked => filled primary square with a `check` glyph; unchecked => thin
-// outline-variant border.
-const CheckIndicator = ({ checked }: { checked: boolean }): ReactElement => (
+// 16×16 rounded check square ported from ViewSettingsDropdown's CheckIndicator:
+// checked => filled square with a `check` glyph; unchecked => thin
+// outline-variant border. Disabled rows tone the checked state down so the
+// indicator visually matches the muted label.
+const CheckIndicator = ({
+  checked,
+  disabled,
+}: {
+  checked: boolean
+  disabled: boolean
+}): ReactElement => (
   <span
     aria-hidden="true"
     className={
-      'inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] flex-shrink-0 ' +
+      'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[4px] ' +
       (checked
-        ? 'bg-primary text-on-primary'
-        : 'bg-transparent border-[1.5px] border-on-surface-variant/30')
+        ? disabled
+          ? 'border border-on-surface-variant/20 bg-on-surface-variant/12 text-on-surface-variant/55'
+          : 'bg-primary text-on-primary'
+        : 'border border-on-surface-variant/30 bg-transparent')
     }
     style={checked ? { fontVariationSettings: '"wght" 700' } : undefined}
   >
     {checked ? (
-      <span className="material-symbols-outlined text-[14px] leading-none">
+      <span className="material-symbols-outlined text-[12px] leading-none">
         check
       </span>
     ) : null}
@@ -117,6 +132,8 @@ interface MenuBodyProps {
   listRef: MutableRefObject<(HTMLElement | null)[]>
   labelsRef: MutableRefObject<(string | null)[]>
   width?: number
+  surfaceClassName?: string
+  bodyClassName?: string
   ariaLabel?: string
   focus?: false | { modal?: boolean }
   contextValue: MenuContextValue
@@ -136,6 +153,8 @@ const MenuBody = ({
   listRef,
   labelsRef,
   width = undefined,
+  surfaceClassName = undefined,
+  bodyClassName = MENU_BODY_CLASSES,
   ariaLabel = undefined,
   focus = false,
   contextValue,
@@ -147,10 +166,11 @@ const MenuBody = ({
     context={context}
     width={width}
     focus={focus}
+    className={surfaceClassName}
     aria-label={ariaLabel}
     {...floatingProps}
   >
-    <div className={MENU_BODY_CLASSES}>
+    <div className={bodyClassName}>
       <MenuContext.Provider value={contextValue}>
         <FloatingList elementsRef={listRef} labelsRef={labelsRef}>
           {children}
@@ -256,7 +276,14 @@ interface MenuProps {
   // Opt out of scroll-dismiss where a consumer's behavior differs (spec §5.3).
   middleware?: { ancestorScroll?: boolean }
   'aria-label'?: string
+  onOpenChange?: (open: boolean) => void
   children: ReactNode
+  // Optional shared Tooltip label for the trigger. When provided, Menu clones
+  // the trigger with its floating reference props first, then Tooltip wraps that
+  // cloned element and composes its own hover/focus handlers with Menu's.
+  tooltip?: ReactNode
+  tooltipPlacement?: Placement
+  closeSignal?: number
 }
 
 // Generic anchored menu: a trigger element opens a portal-rendered, glass
@@ -270,24 +297,42 @@ const MenuRoot = ({
   width = undefined,
   middleware = undefined,
   'aria-label': ariaLabel = undefined,
+  onOpenChange = undefined,
   children,
+  tooltip = undefined,
+  tooltipPlacement = 'top',
+  closeSignal = undefined,
 }: MenuProps): ReactElement => {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const openSubmenuIdRef = useRef(openSubmenuId)
+  const closeSignalRef = useRef(closeSignal)
   const listRef = useRef<(HTMLElement | null)[]>([])
   const labelsRef = useRef<(string | null)[]>([])
 
   const { disabledIndices, setRowDisabled, clearRow } = useMenuDisabledIndices()
 
-  const handleOpenChange = useCallback((nextOpen: boolean): void => {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setActiveIndex(null)
-      setOpenSubmenuId(null)
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean): void => {
+      setOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+      if (!nextOpen) {
+        setActiveIndex(null)
+        setOpenSubmenuId(null)
+      }
+    },
+    [onOpenChange]
+  )
+
+  useEffect(() => {
+    if (closeSignalRef.current === closeSignal) {
+      return
     }
-  }, [])
+
+    closeSignalRef.current = closeSignal
+    handleOpenChange(false)
+  }, [closeSignal, handleOpenChange])
 
   // Keep a live ref so the stable dismissWhen callback can read the currently
   // open submenu id without re-registering the listener each time it changes.
@@ -381,9 +426,17 @@ const MenuRoot = ({
     onKeyDown: consumerOnKeyDown,
   })
 
+  const triggerNode = <TriggerSlot trigger={trigger} props={triggerProps} />
+
   return (
     <>
-      <TriggerSlot trigger={trigger} props={triggerProps} />
+      {tooltip !== undefined ? (
+        <Tooltip content={tooltip} placement={tooltipPlacement}>
+          {triggerNode}
+        </Tooltip>
+      ) : (
+        triggerNode
+      )}
       {open ? (
         <MenuBody
           setFloating={refs.setFloating}
@@ -429,6 +482,91 @@ const MenuSection = ({
     {children}
   </div>
 )
+
+interface MenuRowProps {
+  label: string
+  disabled?: boolean
+  onSelect?: () => void
+  className?: string
+  children: ReactNode
+}
+
+const MenuRow = ({
+  label,
+  disabled = false,
+  onSelect = undefined,
+  className = undefined,
+  children,
+}: MenuRowProps): ReactElement => {
+  const menu = useMenuContext()
+  const { index, ref } = useMenuRow(disabled, label)
+
+  const select = (): void => {
+    if (disabled) {
+      return
+    }
+
+    onSelect?.()
+  }
+
+  const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (event.currentTarget !== event.target) {
+      return
+    }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return
+    }
+
+    event.preventDefault()
+    select()
+  }
+
+  const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (
+    event
+  ) => {
+    if (
+      event.currentTarget === event.target ||
+      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
+    ) {
+      return
+    }
+
+    event.stopPropagation()
+  }
+
+  const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
+    const target = event.target instanceof Element ? event.target : null
+
+    const nestedControl = target?.closest(
+      'button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"])'
+    )
+
+    if (nestedControl !== null && nestedControl !== event.currentTarget) {
+      return
+    }
+
+    select()
+  }
+
+  return (
+    <div
+      role="menuitem"
+      ref={ref}
+      tabIndex={menu.activeIndex === index ? 0 : -1}
+      aria-disabled={disabled ? true : undefined}
+      aria-label={label}
+      className={className}
+      {...menu.getItemProps({
+        onClick: handleClick,
+        onKeyDown: handleKeyDown,
+        onKeyDownCapture: handleKeyDownCapture,
+      })}
+    >
+      {children}
+    </div>
+  )
+}
 
 interface MenuItemProps {
   icon?: string
@@ -488,6 +626,7 @@ const MenuItem = ({
 interface MenuCheckboxProps {
   icon?: string
   checked: boolean
+  disabled?: boolean
   onChange: (next: boolean) => void
   children: ReactNode
 }
@@ -495,23 +634,31 @@ interface MenuCheckboxProps {
 const MenuCheckbox = ({
   icon = undefined,
   checked,
+  disabled = false,
   onChange,
   children,
 }: MenuCheckboxProps): ReactElement => {
   const menu = useMenuContext()
   const label = typeof children === 'string' ? children : ''
-  const { index, ref } = useMenuRow(false, label)
+  const { index, ref } = useMenuRow(disabled, label)
 
   return (
     <button
       type="button"
       role="menuitemcheckbox"
       aria-checked={checked}
+      aria-disabled={disabled}
       ref={ref}
       tabIndex={menu.activeIndex === index ? 0 : -1}
-      className={ITEM_CLASSES}
+      className={`${ITEM_CLASSES} ${DISABLED_ITEM_CLASSES}`}
       {...menu.getItemProps({
-        onClick: (): void => onChange(!checked),
+        onClick: (): void => {
+          if (disabled) {
+            return
+          }
+
+          onChange(!checked)
+        },
       })}
     >
       <span className="flex items-center gap-2.5">
@@ -522,7 +669,7 @@ const MenuCheckbox = ({
         ) : null}
         {children}
       </span>
-      <CheckIndicator checked={checked} />
+      <CheckIndicator checked={checked} disabled={disabled} />
     </button>
   )
 }
@@ -774,6 +921,8 @@ const MenuContextMenu = ({
       labelsRef={labelsRef}
       ariaLabel={ariaLabel}
       focus={{ modal: false }}
+      surfaceClassName={CONTEXT_MENU_SURFACE_CLASSES}
+      bodyClassName={CONTEXT_MENU_BODY_CLASSES}
       contextValue={contextValue}
     >
       {children}
@@ -785,6 +934,7 @@ interface MenuComponent {
   (props: MenuProps): ReactElement
   Context: typeof MenuContextMenu
   Section: typeof MenuSection
+  Row: typeof MenuRow
   Item: typeof MenuItem
   Checkbox: typeof MenuCheckbox
   Submenu: typeof MenuSubmenu
@@ -793,6 +943,7 @@ interface MenuComponent {
 export const Menu = MenuRoot as MenuComponent
 Menu.Context = MenuContextMenu
 Menu.Section = MenuSection
+Menu.Row = MenuRow
 Menu.Item = MenuItem
 Menu.Checkbox = MenuCheckbox
 Menu.Submenu = MenuSubmenu

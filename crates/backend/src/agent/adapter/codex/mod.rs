@@ -172,6 +172,7 @@ impl AgentAdapter for CodexAdapter {
 
     fn located_status_source(
         &self,
+        _app_data_dir: &Path,
         cwd: &Path,
         session_id: &str,
     ) -> Result<LocatedStatusSource, String> {
@@ -316,6 +317,7 @@ mod adapter_tests {
             trust_root: PathBuf::from("/home/u/.codex"),
             static_transcript_hint: Some("/home/u/.codex/sessions/r.jsonl".to_string()),
             agent_session_id: Some("thread-id".to_string()),
+            resolved_directory: None,
         };
         assert_eq!(
             tps.static_hint(&with_hint),
@@ -327,6 +329,7 @@ mod adapter_tests {
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: None,
             agent_session_id: None,
+            resolved_directory: None,
         };
         assert_eq!(tps.static_hint(&without_hint), None);
     }
@@ -437,16 +440,29 @@ mod status_source_tests {
         let pty_start = SystemTime::now() - Duration::from_secs(5);
         let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
 
+        // VIM-191: a fake proc root whose pid has an (empty) fd dir, so the
+        // open-FD provider returns `Ok(∅)` (process alive, no rollout open) and
+        // the resolver falls through to the seeded logs/threads path — rather
+        // than `Err` (the host's real /proc lacks pid 999), which is now an
+        // authoritative not-yet-ready that would exhaust retries.
+        let proc_root = tempfile::tempdir().expect("fake proc root");
+        std::fs::create_dir_all(proc_root.path().join("999").join("fd"))
+            .expect("fake /proc/999/fd");
         let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
             codex_home.path().to_path_buf(),
             999,
             pty_start,
-            Some(PathBuf::from("/proc")),
+            Some(proc_root.path().to_path_buf()),
         )));
         let cwd = codex_home.path().to_path_buf();
 
-        let src = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
-            .expect("located_status_source should resolve");
+        let src = <CodexAdapter as AgentAdapter>::located_status_source(
+            &adapter,
+            codex_home.path(),
+            &cwd,
+            "sid",
+        )
+        .expect("located_status_source should resolve");
 
         assert_eq!(src.status_path, rollout_path);
         assert_eq!(src.trust_root, codex_home.path());
@@ -473,8 +489,13 @@ mod status_source_tests {
         )));
         let cwd = codex_home.path().to_path_buf();
 
-        let err = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
-            .expect_err("empty codex_home should exhaust retry");
+        let err = <CodexAdapter as AgentAdapter>::located_status_source(
+            &adapter,
+            codex_home.path(),
+            &cwd,
+            "sid",
+        )
+        .expect_err("empty codex_home should exhaust retry");
         assert!(err.contains("retry exhausted"), "got: {}", err);
     }
 }

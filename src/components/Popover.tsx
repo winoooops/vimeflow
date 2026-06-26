@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode } from 'react'
+import { type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import { type Placement } from '@/components/base/floating/glassSurface'
@@ -9,6 +9,8 @@ interface PopoverProps {
   onOpenChange: (open: boolean) => void
   placement?: Placement
   width?: number
+  pointerEvents?: CSSProperties['pointerEvents']
+  focus?: 'dialog' | 'none'
   // e.g. { ancestorScroll: false } for a plain-dismiss confirm dialog
   middleware?: { ancestorScroll?: boolean }
   'aria-label': string
@@ -24,6 +26,8 @@ export const Popover = ({
   onOpenChange,
   placement = undefined,
   width = undefined,
+  pointerEvents = undefined,
+  focus = 'dialog',
   middleware = undefined,
   'aria-label': ariaLabel,
   children,
@@ -45,10 +49,14 @@ export const Popover = ({
   return (
     <SurfacePanel
       setFloating={refs.setFloating}
-      style={floatingStyles}
+      style={
+        pointerEvents === undefined
+          ? floatingStyles
+          : { ...floatingStyles, pointerEvents }
+      }
       context={context}
       width={width}
-      focus={{ initialFocus: 0, modal: true }}
+      focus={focus === 'dialog' ? { initialFocus: 0, modal: true } : false}
       aria-label={ariaLabel}
       {...getFloatingProps()}
     >

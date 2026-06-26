@@ -1,167 +1,158 @@
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { test, expect, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import { test, expect } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
 import { ctxTone } from '../utils/contextTone'
 
-const notRunning = false
-
-test('renders glyph chip, context bucket, cache bucket, and running dot when running', () => {
+test('renders glyph chip, context meter, and cache meter', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={42}
       cacheHitPercentage={75}
-      isRunning
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByText('∴')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-ctx')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-ctx-pct')).toHaveTextContent('42%')
-  expect(screen.getByTestId('bucket-cache')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-cache-pct')).toHaveTextContent('75%')
-  expect(screen.getByTestId('running-dot')).toBeInTheDocument()
+  const glyphChip = screen.getByTestId('agent-glyph-chip')
+  // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
+  const brandMark = glyphChip.querySelector('svg')
+
+  expect(brandMark).toBeInTheDocument()
+  expect(screen.getByRole('meter', { name: 'CTX' })).toHaveAttribute(
+    'aria-valuenow',
+    '42'
+  )
+
+  expect(screen.getByRole('meter', { name: 'CACHE' })).toHaveAttribute(
+    'aria-valuenow',
+    '75'
+  )
 })
 
-// The context bucket shares the continuous ctxTone sweep with the expanded
+// The context meter shares the continuous ctxTone sweep with the expanded
 // reservoir card so the context color agrees across collapsed + expanded
 // states — no more tiered token swaps.
-test('context bucket color follows the shared ctxTone sweep', () => {
+test('context meter color follows the shared ctxTone sweep', () => {
   const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={92}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: ctxTone(92).base,
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CTX' })).getByText('%')
+  ).toHaveStyle({ color: ctxTone(92).base })
 
   rerender(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={40}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: ctxTone(40).base,
-  })
+  expect(
+    within(screen.getByRole('meter', { name: 'CTX' })).getByText('%')
+  ).toHaveStyle({ color: ctxTone(40).base })
 })
 
-test('hides context bucket when contextUsedPercentage is null', () => {
+test('hides context meter when contextUsedPercentage is null', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.queryByTestId('bucket-ctx')).not.toBeInTheDocument()
+  expect(screen.queryByRole('meter', { name: 'CTX' })).not.toBeInTheDocument()
 })
 
-test('hides cache bucket when cacheHitPercentage is null', () => {
+test('hides cache meter when cacheHitPercentage is null', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.queryByTestId('bucket-cache')).not.toBeInTheDocument()
+  expect(screen.queryByRole('meter', { name: 'CACHE' })).not.toBeInTheDocument()
 })
 
-test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
+test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={85}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-success-muted)',
-  })
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-success-muted)'
+  )
 
   rerender(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={55}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-primary)',
-  })
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-primary)'
+  )
 
   rerender(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
       cacheHitPercentage={20}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
-  expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: 'var(--color-tertiary)',
-  })
-})
-
-test('omits running dot when isRunning is false', () => {
-  render(
-    <AgentStatusRail
-      agent={AGENTS.codex}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
-    />
+  expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
+    'stroke',
+    'var(--color-tertiary)'
   )
-
-  expect(screen.queryByTestId('running-dot')).not.toBeInTheDocument()
 })
 
-test('chevron expand button fires onExpand', async () => {
-  const onExpand = vi.fn()
-
+test('renders the cache rate as a ring, not the liquid bar', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
-      contextUsedPercentage={10}
-      cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={onExpand}
+      contextUsedPercentage={42}
+      cacheHitPercentage={75}
     />
   )
 
-  await userEvent.click(
-    screen.getByRole('button', { name: /expand activity panel/i })
+  const cacheMeter = screen.getByRole('meter', { name: 'CACHE' })
+
+  expect(within(cacheMeter).getByTestId('cache-ring-arc')).toBeInTheDocument()
+  expect(
+    within(cacheMeter).queryByTestId('liquid-base')
+  ).not.toBeInTheDocument()
+})
+
+test('drops the visible CACHE caption from the rail ring', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={null}
+      cacheHitPercentage={75}
+    />
   )
-  expect(onExpand).toHaveBeenCalledTimes(1)
+
+  // The label now lives only in the tooltip + accessible name, not on the ring.
+  expect(
+    within(screen.getByRole('meter', { name: 'CACHE' })).queryByText('CACHE')
+  ).not.toBeInTheDocument()
 })
 
 test('rail is 44px wide', () => {
@@ -170,8 +161,6 @@ test('rail is 44px wide', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
@@ -184,8 +173,6 @@ test('rail sits on the canvas surface token', () => {
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 
@@ -195,14 +182,12 @@ test('rail sits on the canvas surface token', () => {
   expect(rail.className).not.toContain('bg-surface-container')
 })
 
-test('adds macOS drag coverage while keeping expand clickable', () => {
+test('adds macOS drag coverage with a no-drag clearance for the floating toggle', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
       reserveWindowControls
     />
   )
@@ -211,9 +196,23 @@ test('adds macOS drag coverage while keeping expand clickable', () => {
     'vf-app-drag-region'
   )
 
+  expect(screen.getByTestId('activity-toggle-clearance')).toHaveClass(
+    'vf-app-no-drag'
+  )
+})
+
+test('omits the drag clearance when native controls are not reserved', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+    />
+  )
+
   expect(
-    screen.getByRole('button', { name: /expand activity panel/i })
-  ).toHaveClass('vf-app-no-drag')
+    screen.queryByTestId('activity-toggle-clearance')
+  ).not.toBeInTheDocument()
 })
 
 test('does not add rail drag coverage when native controls are not reserved', () => {
@@ -222,8 +221,6 @@ test('does not add rail drag coverage when native controls are not reserved', ()
       agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
-      isRunning={notRunning}
-      onExpand={() => undefined}
     />
   )
 

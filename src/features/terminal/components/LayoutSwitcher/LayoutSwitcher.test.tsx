@@ -4,10 +4,10 @@ import { describe, expect, test, vi } from 'vitest'
 import { LayoutSwitcher } from './LayoutSwitcher'
 
 describe('LayoutSwitcher', () => {
-  test('renders 5 buttons (one per LayoutId)', () => {
+  test('renders 6 buttons (one per LayoutId)', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
-    expect(screen.getAllByRole('button')).toHaveLength(5)
+    expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 
   test('marks the active button with data-active', () => {
@@ -30,6 +30,45 @@ describe('LayoutSwitcher', () => {
     expect(onPick).toHaveBeenCalledWith('quad')
   })
 
+  test('renders the new 3x2 grid pill', () => {
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
+  })
+
+  test('renders only the configured visible layouts in registry order', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        visibleLayoutIds={['single', 'threeRight', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Single' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Main + 2 stack' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3x2 grid' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Vertical split' })).toBeNull()
+  })
+
+  test('keeps the active layout visible even when it is not in the configured list', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'grid3x2']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(
+      screen.getByRole('button', { name: 'Vertical split' })
+    ).toBeInTheDocument()
+  })
+
   test('clicking the already-active button does NOT fire onPick', async () => {
     // The component's contract is that onPick fires only when the
     // active layout actually changes. setSessionLayout already no-ops
@@ -43,6 +82,65 @@ describe('LayoutSwitcher', () => {
     await user.click(screen.getByRole('button', { name: 'Vertical split' }))
 
     expect(onPick).not.toHaveBeenCalled()
+  })
+
+  test('renders a blocked layout as a present-but-disabled pill that does not pick', async () => {
+    const user = userEvent.setup()
+    const onPick = vi.fn()
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        blockedLayoutIds={['quad']}
+        onPick={onPick}
+      />
+    )
+
+    // The blocked layout still renders as a pill (visibility is not affected).
+    const quad = screen.getByRole('button', { name: /quad/i })
+    expect(quad).toBeInTheDocument()
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(quad)
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  test('a blocked pill exposes the reduce-panes explanation as its accessible name and tooltip', async () => {
+    const user = userEvent.setup()
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        blockedLayoutIds={['quad']}
+        onPick={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Reduce panes to switch to Quad' })
+    ).toBeInTheDocument()
+
+    await user.hover(
+      screen.getByRole('button', { name: 'Reduce panes to switch to Quad' })
+    )
+
+    expect(
+      await screen.findByRole('tooltip', {
+        name: 'Reduce panes to switch to Quad',
+      })
+    ).toBeInTheDocument()
+  })
+
+  test('the active layout is never disabled even if listed as blocked', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="quad"
+        blockedLayoutIds={['quad']}
+        onPick={vi.fn()}
+      />
+    )
+
+    const quad = screen.getByRole('button', { name: 'Quad' })
+    expect(quad).not.toHaveAttribute('aria-disabled', 'true')
+    expect(quad).toHaveAttribute('data-active', 'true')
   })
 
   test('docks a trailing control inside the pillar after a hairline divider', () => {
@@ -73,8 +171,8 @@ describe('LayoutSwitcher', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
     expect(screen.queryByTestId('layout-switcher-divider')).toBeNull()
-    // Still just the 5 layout pills — no stray trailing button.
-    expect(screen.getAllByRole('button')).toHaveLength(5)
+    // Still just the 6 layout pills — no stray trailing button.
+    expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 
   test('exposes role="group" with an aria-label', () => {

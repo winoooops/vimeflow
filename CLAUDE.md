@@ -10,7 +10,7 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 Vimeflow is a **CLI coding agent control plane** — an Electron desktop application (Rust sidecar + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
 
-**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and Claude Code / Codex agent adapter modules. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
+**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and agent adapter modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
 
 ## Commands
 
@@ -46,7 +46,7 @@ src/
 │   ├── sessions/               # Session tabs, pane model, layout state, lifecycle orchestration
 │   ├── workspace/              # Workspace assembly, shell components, DockPanel, focus state
 │   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
-│   ├── agent-status/           # Live Claude Code / Codex observability panel
+│   ├── agent-status/           # Live agent observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
 │   ├── diff/                   # Git status/diff viewer
@@ -60,7 +60,7 @@ crates/backend/
 │   ├── terminal/               # PTY commands, cache, bridge, state
 │   ├── filesystem/             # List/read/write commands with scope validation
 │   ├── git/                    # Git status/diff/watch support
-│   └── agent/                  # Agent detector and Claude Code / Codex adapters
+│   └── agent/                  # Agent detector and adapters for supported coding agents
 └── tests/                      # Rust integration fixtures and transcript tests
 ```
 

@@ -1,8 +1,12 @@
 // cspell:ignore cheatsheet incard powershell pwsh tcsh xonsh zsh
 import type { ReactElement } from 'react'
+import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
+import { KimiUsageGate } from '../../agent-status/components/KimiUsageGate'
+import { QuotaUnavailableNotice } from '../../agent-status/components/QuotaUnavailableNotice'
 import { parseModelTitle } from '../utils/parseModelTitle'
+import type { QuotaNotice } from '@/agents/registry'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
 // ONE fixed card height in every state: switching the active pane between an
@@ -26,6 +30,14 @@ export interface AgentStatusCardProps {
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
   weekPct?: number | null
+  /** True when the active agent is kimi — renders the consent-gated usage gate. */
+  isKimi?: boolean
+  /** The backend `usageFetched` signal — true once a real kimi `/usages` fetch
+   * has landed; lets the gate tell ON (incl. genuine 0%) from LOADING. */
+  hasUsageData?: boolean
+  /** Set for agents with no readable usage API (opencode): the quota slot shows
+   * this notice + a feature-request link instead of rate-limit bars. */
+  quotaNotice?: QuotaNotice | null
   /** Resolved shell path/name for pure shell panes, e.g. `/bin/zsh`. */
   shellName?: string | null
 }
@@ -97,7 +109,12 @@ const shellCheatsheetUrl = (shellName: string): string =>
 
 const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
   <Tooltip content={`${turns ?? 0} turns`}>
-    <span className="inline-flex h-6 max-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant">
+    <Chip
+      tone="custom"
+      radius="pill"
+      size="custom"
+      className="h-6 max-w-[86px] justify-center rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant"
+    >
       {/* Both the Material icon and the descender-less mono label ride ~1px high
         in their own line-boxes. Wrap them in one flex row so items-center keeps
         them aligned to each other, then nudge the whole row down ~1px to center
@@ -112,7 +129,7 @@ const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
         </span>
         <span>{turns ?? 0} turns</span>
       </span>
-    </span>
+    </Chip>
   </Tooltip>
 )
 
@@ -138,7 +155,6 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
           No active agent
         </div>
         <div className="mt-1 flex items-center gap-1.5">
-          <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
           <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
             Idle · {shellName} shell
           </span>
@@ -180,6 +196,9 @@ export const AgentStatusCard = ({
   contextPct = null,
   fiveHourPct = null,
   weekPct = null,
+  isKimi = false,
+  hasUsageData = false,
+  quotaNotice = null,
   shellName = null,
 }: AgentStatusCardProps): ReactElement => {
   const hasUsage = fiveHourPct !== null || weekPct !== null
@@ -223,12 +242,14 @@ export const AgentStatusCard = ({
               </span>
               {contextLabel !== null && (
                 <Tooltip content={`${contextLabel} context window`}>
-                  <span
+                  <Chip
                     data-testid="agent-card-context-badge"
+                    tone="custom"
+                    radius="chip"
+                    size="custom"
+                    label={contextLabel}
                     className="shrink-0 rounded-[5px] bg-surface-container-highest px-[5px] py-[2px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
-                  >
-                    {contextLabel}
-                  </span>
+                  />
                 </Tooltip>
               )}
             </div>
@@ -238,24 +259,34 @@ export const AgentStatusCard = ({
             className="mt-[9px] flex flex-col justify-center"
             style={{ height: CARD_BODY_H }}
           >
-            {hasUsage && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 9,
-                }}
-              >
-                {fiveHourPct !== null && (
-                  <RateLimitBar
-                    label="5-hour Session"
-                    percentage={fiveHourPct}
-                  />
-                )}
-                {weekPct !== null && (
-                  <RateLimitBar label="Weekly Usage" percentage={weekPct} />
-                )}
-              </div>
+            {isKimi ? (
+              <KimiUsageGate
+                fiveHourPct={fiveHourPct}
+                weekPct={weekPct}
+                hasUsageData={hasUsageData}
+              />
+            ) : quotaNotice ? (
+              <QuotaUnavailableNotice {...quotaNotice} />
+            ) : (
+              hasUsage && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 9,
+                  }}
+                >
+                  {fiveHourPct !== null && (
+                    <RateLimitBar
+                      label="5-hour Session"
+                      percentage={fiveHourPct}
+                    />
+                  )}
+                  {weekPct !== null && (
+                    <RateLimitBar label="Weekly Usage" percentage={weekPct} />
+                  )}
+                </div>
+              )
             )}
           </div>
         </>

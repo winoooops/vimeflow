@@ -195,8 +195,8 @@
   }
 }
 
-/* Liquid bucket animations (used by both Bucket and ContextBucket via
-   LiquidFill). Two opposing sine-wave translations create the ripple;
+/* Liquid animations consumed by LiquidFill (the collapsed-rail RailMeter
+   gauges). Two opposing sine-wave translations create the ripple;
    vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
    prefers-reduced-motion. */
 @keyframes vfLiquidWaveA {
@@ -248,6 +248,113 @@
   .vf-liquid-wave-b,
   .vf-liquid-slosh {
     animation: none;
+  }
+}
+
+/* Activity panel refresh affordance. The sweep rides inside the header
+   divider so refresh state never changes layout height. */
+@keyframes vfActivityRefreshComet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(240%);
+  }
+}
+
+@keyframes vfActivityGlyphBreathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+  }
+}
+
+.vf-activity-refresh-comet {
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-primary-container) 58%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: vfActivityRefreshComet 1.4s ease-in-out infinite;
+}
+
+.vf-activity-glyph-refresh {
+  animation: vfActivityGlyphBreathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vf-activity-refresh-comet,
+  .vf-activity-glyph-refresh {
+    animation: none;
+  }
+}
+
+/* Tool Calls jar (packed treemap). Keyframes + motion classes live here so the
+   section never injects a runtime <style>; all motion is reduced-motion gated. */
+@keyframes tjEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.07);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tj-enter {
+  animation: tjEnter 0.45s cubic-bezier(0.2, 0.85, 0.3, 1) both;
+}
+.tj-enter-pill {
+  animation: tjEnter 0.4s cubic-bezier(0.2, 0.85, 0.3, 1) both;
+}
+
+/* Odometer digit-column slide. */
+.tj-digit-roll {
+  transition: transform 0.5s cubic-bezier(0.34, 1.25, 0.5, 1);
+}
+
+/* Tile bloat/shrink + relocate; fires only when rounded geometry changes. */
+.tj-tile-move {
+  transition:
+    left 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.8s ease,
+    background 0.8s ease;
+}
+
+/* Keep the tags box scrollable for genuine overflow, but never paint a
+   scrollbar — avoids the entrance-pop scrollbar flash on view switch. */
+.tj-no-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tj-no-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tj-enter,
+  .tj-enter-pill {
+    animation: none;
+  }
+  .tj-digit-roll,
+  .tj-tile-move {
+    transition: none;
   }
 }
 

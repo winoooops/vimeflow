@@ -12,6 +12,10 @@ pub enum AgentType {
     ClaudeCode,
     /// Codex (AI coding agent)
     Codex,
+    /// Kimi Code (Moonshot kimi-code CLI)
+    Kimi,
+    /// opencode (AI coding agent by SST)
+    Opencode,
     /// Aider (AI pair programming tool)
     Aider,
     /// Generic/unknown agent
@@ -152,6 +156,10 @@ pub struct AgentStatusEvent {
     pub cost: CostMetrics,
     /// Rate limit status
     pub rate_limits: RateLimits,
+    /// Whether `rate_limits` is a real network-fetched value vs a placeholder.
+    /// `false` for claude/codex and for a kimi session that hasn't fetched yet;
+    /// the kimi usage gate reads it to tell LOADING from ON.
+    pub usage_fetched: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -17,6 +17,9 @@ const backendMethods = new Set([
   'list_system_fonts',
   'load_agent_aliases',
   'save_agent_aliases',
+  'set_kimi_usage_consent',
+  'get_kimi_usage_consent',
+  'refresh_kimi_usage',
   'detect_agent_in_session',
   'start_agent_watcher',
   'stop_agent_watcher',
@@ -39,7 +42,14 @@ const backendMethods = new Set([
   'discard_file',
 ])
 
-const e2eBackendMethods = new Set(['list_active_pty_sessions'])
+const e2eBackendMethods = new Set([
+  'list_active_pty_sessions',
+  'e2e_agent_bridge_info',
+  'e2e_seed_live_agent',
+  'e2e_start_codex_watcher',
+  'e2e_start_kimi_watcher',
+  'e2e_emit_agent_status',
+])
 
 interface BackendMethodOptions {
   allowE2eMethods?: boolean

@@ -5,6 +5,7 @@ export interface Command {
   icon: string
   children?: Command[]
   execute?: (args: string) => void
+  preview?: () => void
   match?: (query: string) => number
 }
 

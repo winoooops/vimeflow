@@ -3,6 +3,10 @@ import { describe, expect, test } from 'vitest'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
 import {
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../../terminal/layout-registry'
+import {
   applyAddPane,
   applyRemovePane,
   autoShrinkLayoutFor,
@@ -36,6 +40,30 @@ const mockSession = (overrides: Partial<Session> = {}): Session => ({
   ...overrides,
 })
 
+const customGrid2x2: PaneLayoutDefinition = {
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+}
+
 describe('autoShrinkLayoutFor', () => {
   test('1 pane shrinks to single', () => {
     expect(autoShrinkLayoutFor(1, 'quad')).toBe('single')
@@ -55,6 +83,7 @@ describe('autoShrinkLayoutFor', () => {
     expect(autoShrinkLayoutFor(2, 'vsplit')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'threeRight')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'quad')).toBe('vsplit')
+    expect(autoShrinkLayoutFor(2, 'grid3x2')).toBe('vsplit')
     expect(autoShrinkLayoutFor(2, 'single')).toBe('vsplit')
   })
 
@@ -63,9 +92,19 @@ describe('autoShrinkLayoutFor', () => {
     expect(autoShrinkLayoutFor(3, 'vsplit')).toBe('threeRight')
   })
 
-  test('4 or more panes preserves current layout defensively', () => {
+  test('4 panes shrink to quad and 5+ panes shrink to grid3x2', () => {
     expect(autoShrinkLayoutFor(4, 'quad')).toBe('quad')
-    expect(autoShrinkLayoutFor(5, 'quad')).toBe('quad')
+    expect(autoShrinkLayoutFor(4, 'grid3x2')).toBe('quad')
+    expect(autoShrinkLayoutFor(5, 'grid3x2')).toBe('grid3x2')
+    expect(autoShrinkLayoutFor(6, 'grid3x2')).toBe('grid3x2')
+  })
+
+  test('custom layouts preserve empty slots after pane removal', () => {
+    const registry = new PaneLayoutRegistry([customGrid2x2])
+
+    expect(autoShrinkLayoutFor(3, 'custom:grid-2x2', registry)).toBe(
+      'custom:grid-2x2'
+    )
   })
 })
 
@@ -215,6 +254,16 @@ describe('applyAddPane', () => {
 
     expect(result.sessions[1]).toBe(untouched)
   })
+
+  test('records a placement for the requested slot when slotId is provided', () => {
+    const result = applyAddPane([mockSession()], 's0', newPane, 2, 'slot:right')
+
+    expect(result.appended).toBe(true)
+    expect(result.sessions[0].placements).toContainEqual({
+      paneId: 'p1',
+      slotId: 'slot:right',
+    })
+  })
 })
 
 describe('applyRemovePane', () => {
@@ -267,6 +316,35 @@ describe('applyRemovePane', () => {
 
     expect(result.sessions[0].panes[0].active).toBe(true)
     expect(result.newActivePtyId).toBeUndefined()
+  })
+
+  test('drops removed pane placement and reflows against the next layout', () => {
+    const result = applyRemovePane(
+      [
+        mockSession({
+          layout: 'quad',
+          placements: [
+            { paneId: 'p0', slotId: 'slot:p3' },
+            { paneId: 'p1', slotId: 'slot:p0' },
+            { paneId: 'p2', slotId: 'slot:p1' },
+          ],
+          panes: [
+            mockPane({ id: 'p0', ptyId: 'pty-0', active: true }),
+            mockPane({ id: 'p1', ptyId: 'pty-1', active: false }),
+            mockPane({ id: 'p2', ptyId: 'pty-2', active: false }),
+          ],
+        }),
+      ],
+      's0',
+      'p1',
+      'quad'
+    )
+
+    expect(result.sessions[0].layout).toBe('vsplit')
+    expect(result.sessions[0].placements).toEqual([
+      { paneId: 'p2', slotId: 'slot:p1' },
+      { paneId: 'p0', slotId: 'slot:p0' },
+    ])
   })
 
   test('closing in quad shrinks to threeRight', () => {

@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-20
-ref_count: 22
+last_updated: 2026-06-21
+ref_count: 69
 ---
 
 # Async Race Conditions
@@ -642,65 +642,56 @@ prevent showing previous data.
 - **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
 - **Commit:** same commit as this entry
 
-### 63. Overlapping settings saves can persist an older snapshot after a newer update
+### 64. Stale `selectedEditorFileExists` bleeds into new file path
 
-- **Source:** github-codex-connector | PR #430 round 1 | 2026-06-12
+- **Source:** github-claude | PR #510 round 1 | 2026-06-17
 - **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsProvider.tsx` L58
-- **Finding:** `update()` fired `bridge.save(merged)` as a fire-and-forget promise. If two updates happened before the first save resolved, both full snapshots were dispatched concurrently; the sidecar processes IPC requests concurrently, so an older snapshot could reach the Rust save mutex after a newer one and overwrite the newer preferences on disk.
-- **Fix:** Replaced fire-and-forget with a single-producer save queue. `saveQueueRef` always holds the tail promise; each new update awaits the previous save before invoking `bridge.save(next)`, guaranteeing that the last update to run is the last one persisted.
-- **Commit:** same commit as this entry
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `selectedEditorFileExists` was never reset before a new existence check began. Switching from a deleted file to an existing file could make the new file momentarily read-only because `resolveEditorFileLifecycleStatus` saw the stale `false` value before the async check completed.
+- **Fix:** Set `selectedEditorFileExists(null)` synchronously at the start of the check, then update it with the async result.
+- **Commit:** see current commit
 
-### 64. window-all-closed reads stale settings.json before async save completes
+### 65. Auto-reattach retry budget ignored non-inflight no-op rounds
 
-- **Source:** github-claude | PR #432 round 1 | 2026-06-12
+- **Source:** github-claude | PR #583 round 1 | 2026-06-20
 - **Severity:** MEDIUM
-- **File:** `electron/main.ts` L531-550
-- **Finding:** The `window-all-closed` handler read `onLastWindowClosed` from disk via `readFileSync`, but settings are persisted through an async IPC → Rust sidecar pipeline (`window.vimeflow.settings.save()`). If the user changed `onLastWindowClosed` to `'quit'` and immediately closed the last window before the queued save flushed to disk, `readFileSync` returned the pre-change value. On macOS the guard then evaluated `platform !== 'darwin'` → `false`, so `app.quit()` was never called and the app silently stayed alive despite the user's explicit quit preference.
-- **Fix:** Added an in-memory settings snapshot in the main process that the renderer updates via a new `settings:sync-snapshot` IPC channel. The close handler now prefers `lastKnownSettings.onLastWindowClosed`; it only falls back to reading `settings.json` when no snapshot has been received.
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** The auto-reattach loop only consumed retry budget when an IPC call was issued. If the PTY mapping was temporarily absent, `reattachAsync()` returned false and the loop kept scheduling 700 ms retries indefinitely instead of respecting the bounded retry contract.
+- **Fix:** Count false returns against the retry budget when no invoke is currently in flight, while preserving the manual-click/single-flight no-op behavior. Added a fake-timer regression test that removes the PTY mapping and verifies the timer queue drains without issuing IPC calls.
 - **Commit:** same commit as this entry
 
-### 65. Async alias load can overwrite user edits made before hydration resolves
+### 66. Pane-switch stale identity was cleared before unresolved recovery
 
-- **Source:** github-claude | PR #453 round 1 | 2026-06-14
-- **Severity:** HIGH
-- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
-- **Finding:** `AgentsPane` rendered editable alias controls immediately while `bridge.load()` was in flight, then unconditionally called `setAliases(loadedAliases)` after the await. A user mutation during a slow IPC/startup window could be overwritten by the stale pre-session alias list, splitting disk and UI state with no signal.
-- **Fix:** Added an `isInitializing` state that gates alias editing until the initial load finishes, plus a `hasInteractedRef` guard that skips applying `loadedAliases` if the user has already mutated the list. The component initializes to `[]` so controls stay disabled and no stale defaults flash.
-- **Commit:** same commit as this entry
-
-### 66. Default alias seed still flashes and collapses to empty on first backend load
-
-- **Source:** github-claude | PR #453 round 1 | 2026-06-14
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
-- **Finding:** The component initialized `aliases` with `DEFAULT_ALIASES`, but the backend returns `[]` when `aliases.toml` is missing. First-launch users saw defaults briefly before the list collapsed to empty; returning users also saw defaults before their real aliases arrived.
-- **Fix:** Initialize `aliases` to `[]` with an explicit `isInitializing` loading state. Defaults are now used only as an intentional fallback when the aliases bridge is absent or when the backend load fails. Added tests verifying no default flash during a slow load and that controls remain disabled until hydration completes.
-- **Commit:** same commit as this entry
-
-### 67. Hydrated settings snapshot rebroadcasts stale disk state as a renderer edit
-
-- **Source:** github-codex-connector | PR #577 round 1 | 2026-06-20
+- **Source:** github-codex-connector | PR #583 round 1 | 2026-06-20
 - **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsProvider.tsx`
-- **Finding:** A newly mounted settings renderer loaded settings from disk and immediately synced that hydration snapshot back to the main process. The main process broadcast that snapshot as `settings:changed`, so a stale disk value could overwrite a newer in-memory edit in another renderer while the async save queue was still pending.
-- **Fix:** Stopped syncing load hydration snapshots to the main process. Explicit user updates still sync the in-memory snapshot immediately before the queued save, preserving the last-window-close race guard without treating disk hydration as an authoritative cross-renderer edit.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** Switching away from an unresolved stale pane cleared the captured stale identity but left the capture-session guard in place. Returning after `useAgentStatus` reset the live id to null allowed an old watcher event to look fresh and resolve the stale key without a successful relocate.
+- **Fix:** Split non-stale pane transitions from resolved stale-key cleanup, so pane switches clear the visible red state without discarding the captured identity needed when the unresolved pane is selected again. Added regression coverage for switching away and back before the relocate lands.
+- **Commit:** same commit as this entry
 
-### 69. Settings snapshot echo can overwrite the sender's newer local merge base
+### 67. Late success event resolved the newest stale generation
 
-- **Source:** github-claude | PR #577 round 2 | 2026-06-20
-- **Severity:** HIGH
-- **File:** `electron/main.ts`
-- **Finding:** The settings sync handler broadcast every valid settings snapshot to all windows, including the renderer that just submitted it. A stale IPC echo could write an older snapshot back into the sender's `settingsRef.current`, making the next rapid settings update merge on the wrong base and drop an intermediate change.
-- **Fix:** Pass the originating `WebContents` from the IPC event into the settings broadcast helper and skip that sender when publishing `settings:changed`. Other windows still receive the live update, but the local renderer keeps its current in-memory edit sequence.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 70. Pre-ready singleton window reopen bypasses hidden-until-ready loading guard
-
-- **Source:** github-claude | PR #577 round 2 | 2026-06-20
+- **Source:** github-claude | PR #583 round 1 | 2026-06-20
 - **Severity:** MEDIUM
-- **File:** `electron/settings-window.ts`
-- **Finding:** The settings window singleton was assigned before `ready-to-show`, but repeated `open()` calls unconditionally called `show()` and `focus()` on the existing window. A rapid second open could therefore reveal the still-loading BrowserWindow despite the initial `show: false` guard.
-- **Fix:** Track whether the singleton has reached `ready-to-show`; repeated opens only restore/show/focus once that flag is true, while the original `ready-to-show` handler remains responsible for the first reveal. Regression coverage now asserts a second pre-ready `open()` does not call `show()`.
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** The success listener read the render-synchronized `staleKey` mirror at callback time. If a second `/clear` advanced the generation before the first reattach success event arrived, the late event marked the newer generation resolved and skipped recovery for the second clear.
+- **Fix:** Added an armed stale-key ref that records the key active when the red-state cycle was entered. A late event resolves only that armed key; if the current key has advanced, the newer key remains armed and still requires its own fresh event. Added regression tests for repeated `/clear` and the late-success generation race.
+- **Commit:** same commit as this entry
+
+### 68. Late drift no-op stopped the still-valid previous watcher
+
+- **Source:** github-codex-connector | PR #593 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`, `crates/backend/src/agent/adapter/session_lifecycle.rs`
+- **Finding:** `useAgentReattach` stopped the captured PTY watcher whenever a drift `start_agent_watcher` completed after the active pane changed. The backend already distinguished real respawns from Codex same-rollout no-ops internally, but the production IPC discarded that `changed` result. A harmless late no-op could therefore kill the original valid watcher for the previous pane.
+- **Fix:** Propagate the backend `changed` boolean through `start_agent_watcher` IPC and only run stale-completion cleanup when the backend actually spawned/replaced a watcher. Added regression coverage for both late respawn cleanup and late no-op preservation.
+- **Commit:** same commit as this entry
+
+### 69. Terminal event updates consumed metadata needed by later authoritative output events
+
+- **Source:** github-codex-connector | PR #588 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** The opencode decoder removed an in-flight bash call when a completed `message.part.updated` arrived. If the later `tool.after` event carried the command output, test-run parsing no longer had the original command and silently skipped the snapshot.
+- **Fix:** Added a per-call metadata cache that survives display-state completion until `tool.after` runs, and covered the `tool.before` -> completed part update -> bash `tool.after` ordering with a regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1,6 +1,14 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { LayoutId, Pane, PaneKind, Session, SessionStatus } from '../types'
+import type {
+  LayoutSlotId,
+  Pane,
+  PaneKind,
+  PaneLayoutId,
+  PanePlacement,
+  Session,
+  SessionStatus,
+} from '../types'
 import type {
   AgentLifecycleEvent,
   AgentPhase,
@@ -9,7 +17,12 @@ import type {
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
+import {
+  PaneLayoutRegistry,
+  isCustomPaneLayoutId,
+  MAX_BUILTIN_PANE_COUNT,
+  type PaneLayoutDefinition,
+} from '../../terminal/layout-registry'
 import type {
   RestoreData,
   PaneEventHandler,
@@ -33,6 +46,7 @@ import {
 } from '../utils/paneLifecycle'
 import {
   deriveShellSessionStatus,
+  hasLivePane,
   isLiveStatus,
   isTerminalStatus,
 } from '../utils/sessionStatus'
@@ -67,9 +81,31 @@ export interface SessionManager {
   createSession: () => void
   createBrowserSession: () => void
   removeSession: (id: string) => void
-  setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  customPaneLayouts: readonly PaneLayoutDefinition[]
+  layoutRegistry: PaneLayoutRegistry
+  setCustomPaneLayouts: (
+    updater:
+      | readonly PaneLayoutDefinition[]
+      | ((
+          previous: readonly PaneLayoutDefinition[]
+        ) => readonly PaneLayoutDefinition[]),
+    setOptions?: { skipPreservation?: boolean }
+  ) => void
+  setSessionLayout: (sessionId: string, layoutId: PaneLayoutId) => void
+  /**
+   * Replace a session's explicit pane-to-slot placements (VIM-167
+   * drag-into-slot swap/move). The supplied array is written verbatim — the
+   * caller (SplitView drop handler) computes a fully-normalized placement list
+   * via `swapPanePlacements` / `movePaneToSlot`, so this action stays a thin
+   * setter. Persisted through the same workspace push bridge as every other
+   * `sessions[]` change. No-op on an unknown session id.
+   */
+  setSessionPlacements: (
+    sessionId: string,
+    placements: readonly PanePlacement[]
+  ) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
-  addPane: (sessionId: string, kind?: PaneKind) => void
+  addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
@@ -108,6 +144,7 @@ export interface SessionManager {
     paneId: string,
     percentage: number
   ) => void
+  clearPaneCacheHistory: (sessionId: string, paneId: string) => void
   updateBrowserPaneUrl?: (
     sessionId: string,
     paneId: string,
@@ -238,6 +275,126 @@ export const useSessionManager = (
   const { autoCreateOnEmpty = true } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
+
+  const [customPaneLayouts, setCustomPaneLayoutsState] = useState<
+    readonly PaneLayoutDefinition[]
+  >([])
+  const customPaneLayoutsRef = useRef(customPaneLayouts)
+  customPaneLayoutsRef.current = customPaneLayouts
+
+  const layoutRegistry = useMemo(
+    () => new PaneLayoutRegistry(customPaneLayouts),
+    [customPaneLayouts]
+  )
+  const layoutRegistryRef = useRef(layoutRegistry)
+  layoutRegistryRef.current = layoutRegistry
+
+  const setCustomPaneLayouts = useCallback(
+    (
+      updater:
+        | readonly PaneLayoutDefinition[]
+        | ((
+            previous: readonly PaneLayoutDefinition[]
+          ) => readonly PaneLayoutDefinition[]),
+      setOptions?: { skipPreservation?: boolean }
+    ): void => {
+      // Custom layouts that support more panes than any builtin layout must be
+      // preserved while sessions still depend on them. Otherwise
+      // autoShrinkLayoutFor falls back to grid3x2, and the backend durable
+      // repair caps non-custom layouts at six panes — silently dropping extra
+      // panes on the next save/reload.
+      //
+      // Derive the next registry at top-level (outside the layout-state
+      // updater) so the session migration can be performed as a separate
+      // top-level state update. Keeping setSessions out of the functional
+      // updater avoids impure-updater hazards under Strict Mode / concurrent
+      // rendering.
+
+      const previous = customPaneLayoutsRef.current
+
+      const nextCustomPaneLayouts =
+        typeof updater === 'function' ? updater(previous) : updater
+      const candidateRegistry = new PaneLayoutRegistry(nextCustomPaneLayouts)
+
+      let nextRegistry: PaneLayoutRegistry
+
+      if (setOptions?.skipPreservation) {
+        nextRegistry = candidateRegistry
+      } else {
+        const neededLayoutIds = new Set(
+          sessionsRef.current
+            .filter(
+              (session) =>
+                isCustomPaneLayoutId(session.layout) &&
+                session.panes.length > MAX_BUILTIN_PANE_COUNT
+            )
+            .map((session) => session.layout)
+        )
+
+        const preservedLayouts = layoutRegistryRef.current.customLayouts.filter(
+          (layout) => {
+            if (!neededLayoutIds.has(layout.id)) {
+              return false
+            }
+
+            const dependentPaneCount = Math.max(
+              ...sessionsRef.current
+                .filter((session) => session.layout === layout.id)
+                .map((session) => session.panes.length)
+            )
+
+            const candidateFits =
+              candidateRegistry.hasLayoutId(layout.id) &&
+              candidateRegistry.capacityFor(layout.id) >= dependentPaneCount
+
+            return !candidateFits
+          }
+        )
+
+        const preservedIds = new Set(
+          preservedLayouts.map((layout) => layout.id)
+        )
+
+        const mergedCustomPaneLayouts = [
+          ...nextCustomPaneLayouts.filter(
+            (layout) => !preservedIds.has(layout.id)
+          ),
+          ...preservedLayouts,
+        ]
+
+        nextRegistry = new PaneLayoutRegistry(mergedCustomPaneLayouts)
+      }
+
+      const nextCustomLayouts = nextRegistry.customLayouts
+
+      // Migrate any sessions whose current layout is no longer available or
+      // no longer fits. This runs as a top-level update so it sees the latest
+      // sessions state (e.g. a layout change queued just before this call).
+      setSessions((prev) =>
+        prev.map((session) => {
+          const currentLayoutStillFits =
+            nextRegistry.hasLayoutId(session.layout) &&
+            session.panes.length <= nextRegistry.capacityFor(session.layout)
+
+          if (currentLayoutStillFits) {
+            return session
+          }
+
+          const nextLayout = nextRegistry.autoShrinkLayoutFor(
+            session.panes.length,
+            session.layout
+          )
+
+          return nextLayout === session.layout
+            ? session
+            : { ...session, layout: nextLayout }
+        })
+      )
+
+      setCustomPaneLayoutsState(nextCustomLayouts)
+    },
+    []
+  )
   const [restoreSucceeded, setRestoreSucceeded] = useState(false)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
@@ -313,6 +470,9 @@ export const useSessionManager = (
         setActiveSessionId(id)
       }
     },
+    onCustomPaneLayoutsRestore: (restoredCustomPaneLayouts): void => {
+      setCustomPaneLayouts(restoredCustomPaneLayouts)
+    },
     // Single-project defaults until real multi-project state exists; the load
     // command uses them as repair fallbacks for records missing the fields.
     projectId: 'proj-1',
@@ -362,6 +522,7 @@ export const useSessionManager = (
           ...s,
           status: deriveShellSessionStatus(newPanes),
           agentType: activePane?.agentType ?? s.agentType,
+          open: hasLivePane(newPanes) ? s.open : false,
           panes: newPanes,
           lastActivityAt: exitedAt,
         }
@@ -395,6 +556,7 @@ export const useSessionManager = (
           ...s,
           status: deriveShellSessionStatus(newPanes),
           agentType: activePane?.agentType ?? s.agentType,
+          open: hasLivePane(newPanes) ? s.open : false,
           panes: newPanes,
           lastActivityAt: exitedAt,
         }
@@ -856,6 +1018,7 @@ export const useSessionManager = (
   usePushWorkspaceGrouping({
     sessions,
     activeSessionId,
+    customPaneLayouts,
     loading,
     canPushEmptyShape: restoreSucceeded,
   })
@@ -1028,7 +1191,7 @@ export const useSessionManager = (
   )
 
   const setSessionLayout = useCallback(
-    (sessionId: string, layoutId: LayoutId): void => {
+    (sessionId: string, layoutId: PaneLayoutId): void => {
       // Warn outside `setSessions` so StrictMode's double-invocation
       // of the state updater doesn't fire the log twice. The lookup
       // reads `sessionsRef.current` for the check; the actual mutation
@@ -1058,6 +1221,33 @@ export const useSessionManager = (
     []
   )
 
+  const setSessionPlacements = useCallback(
+    (sessionId: string, placements: readonly PanePlacement[]): void => {
+      // Warn outside `setSessions` for StrictMode parity with setSessionLayout
+      // (the updater may run twice; the warn must fire once).
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        log.warn(`setSessionPlacements: no session ${sessionId}`)
+
+        return
+      }
+
+      setSessions((prev) => {
+        const sessionIndex = prev.findIndex((s) => s.id === sessionId)
+        if (sessionIndex === -1) {
+          return prev
+        }
+
+        return [
+          ...prev.slice(0, sessionIndex),
+          { ...prev[sessionIndex], placements: [...placements] },
+          ...prev.slice(sessionIndex + 1),
+        ]
+      })
+    },
+    []
+  )
+
   const setSessionActivePane = useCallback(
     (sessionId: string, paneId: string): void => {
       // Warn outside `setSessions` for StrictMode parity (same reason
@@ -1077,7 +1267,7 @@ export const useSessionManager = (
       // (the target pane may evaporate anyway when the remove commits).
       // Warn for parity with every other guarded early-return in this
       // function (and in addPane / removePane): otherwise a developer
-      // chasing a "⌘1-4 stopped working for 50–300ms" report sees
+      // chasing a "⌘1-6 stopped working for 50–300ms" report sees
       // nothing in devtools and can't distinguish the transient
       // suppression from a real bug.
       if (pendingPaneOps.current.has(sessionId)) {
@@ -1124,7 +1314,11 @@ export const useSessionManager = (
   )
 
   const addPane = useCallback(
-    (sessionId: string, kind: PaneKind = 'shell'): void => {
+    (
+      sessionId: string,
+      kind: PaneKind = 'shell',
+      slotId?: LayoutSlotId
+    ): void => {
       if (pendingPaneOps.current.has(sessionId)) {
         log.warn(
           `addPane: another pane op in flight for ${sessionId}; ignoring`
@@ -1147,7 +1341,7 @@ export const useSessionManager = (
         return
       }
 
-      if (session.panes.length >= LAYOUTS[session.layout].capacity) {
+      if (session.panes.length >= layoutRegistry.capacityFor(session.layout)) {
         log.warn(
           `addPane: session ${sessionId} is at capacity for layout ${session.layout}`
         )
@@ -1180,8 +1374,18 @@ export const useSessionManager = (
           flushSync(() => {
             setSessions((prev) => {
               const target = prev.find((s) => s.id === sessionId)
-              const capacity = target ? LAYOUTS[target.layout].capacity : 0
-              const update = applyAddPane(prev, sessionId, newPane, capacity)
+
+              const capacity = target
+                ? layoutRegistry.capacityFor(target.layout)
+                : 0
+
+              const update = applyAddPane(
+                prev,
+                sessionId,
+                newPane,
+                capacity,
+                slotId
+              )
               appended = update.appended
 
               return update.sessions
@@ -1260,8 +1464,18 @@ export const useSessionManager = (
           flushSync(() => {
             setSessions((prev) => {
               const target = prev.find((s) => s.id === sessionId)
-              const capacity = target ? LAYOUTS[target.layout].capacity : 0
-              const update = applyAddPane(prev, sessionId, newPane, capacity)
+
+              const capacity = target
+                ? layoutRegistry.capacityFor(target.layout)
+                : 0
+
+              const update = applyAddPane(
+                prev,
+                sessionId,
+                newPane,
+                capacity,
+                slotId
+              )
               appended = update.appended
 
               return update.sessions
@@ -1298,7 +1512,13 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, dropAllForPty, registerPending, service]
+    [
+      activeSessionIdRef,
+      dropAllForPty,
+      layoutRegistry,
+      registerPending,
+      service,
+    ]
   )
 
   const removePane = useCallback(
@@ -1373,7 +1593,8 @@ export const useSessionManager = (
                 prev,
                 sessionId,
                 paneId,
-                fresh?.layout ?? session.layout
+                fresh?.layout ?? session.layout,
+                layoutRegistry
               )
               newActivePtyId = update.newActivePtyId
 
@@ -1408,7 +1629,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, dropAllForPty, service]
+    [activeSessionIdRef, dropAllForPty, layoutRegistry, service]
   )
 
   // F5 (round 2): restart an Exited session in the same cwd.
@@ -1794,6 +2015,33 @@ export const useSessionManager = (
     []
   )
 
+  const clearPaneCacheHistory = useCallback(
+    (sessionId: string, paneId: string): void => {
+      const target = sessionsRef.current.find((s) => s.id === sessionId)
+      const targetPane = target?.panes.find((p) => p.id === paneId)
+      if (!targetPane) {
+        return
+      }
+
+      deleteCacheHistory(targetPane.ptyId)
+
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const panes = session.panes.map((pane) =>
+            pane.id === paneId ? { ...pane, cacheHistory: [] } : pane
+          )
+
+          return { ...session, panes }
+        })
+      )
+    },
+    []
+  )
+
   const updatePaneAgentType = useCallback(
     (
       sessionId: string,
@@ -1924,11 +2172,15 @@ export const useSessionManager = (
   return {
     sessions,
     activeSessionId,
+    customPaneLayouts,
+    layoutRegistry,
+    setCustomPaneLayouts,
     setActiveSessionId,
     createSession,
     createBrowserSession,
     removeSession,
     setSessionLayout,
+    setSessionPlacements,
     setSessionActivePane,
     addPane,
     removePane,
@@ -1938,6 +2190,7 @@ export const useSessionManager = (
     reorderSessions,
     updatePaneCwd,
     appendPaneCacheReading,
+    clearPaneCacheHistory,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,

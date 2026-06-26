@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'vitest'
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import type {
-  WorkspaceShapeBrowserPane,
-  WorkspaceShapeDto,
-  WorkspaceShapeShellPane,
+  PersistedBrowserPaneShape,
+  PersistedWorkspaceShape,
+  PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import {
   groupSessionsFromInfos,
   reconstructWorkspace,
 } from './groupSessionsFromInfos'
+import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 
 const alive = (id: string, cwd: string): SessionInfo => ({
   id,
@@ -26,6 +27,30 @@ const grouping = (
   active: false,
   ...overrides,
 })
+
+const customGrid2x2: PaneLayoutDefinition = {
+  schemaVersion: 1,
+  id: 'custom:grid-2x2',
+  title: 'Custom grid 2x2',
+  source: 'workspace',
+  tracks: {
+    columns: [
+      { id: 'c0', units: 12 },
+      { id: 'c1', units: 12 },
+    ],
+    rows: [
+      { id: 'r0', units: 12 },
+      { id: 'r1', units: 12 },
+    ],
+  },
+  slots: [
+    { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p2', rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 } },
+    { id: 'slot:p3', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+  ],
+  addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+}
 
 describe('groupSessionsFromInfos', () => {
   test('ungrouped PTYs each become a single-pane session (back-compat)', () => {
@@ -111,6 +136,13 @@ describe('groupSessionsFromInfos', () => {
       'p1',
       'p2',
       'p3',
+    ])
+
+    expect(restored.placements).toEqual([
+      { paneId: 'p0', slotId: 'slot:p0' },
+      { paneId: 'p1', slotId: 'slot:p1' },
+      { paneId: 'p2', slotId: 'slot:p2' },
+      { paneId: 'p3', slotId: 'slot:p3' },
     ])
 
     expect(restored.panes.map((pane) => pane.agentType)).toEqual([
@@ -315,8 +347,8 @@ describe('groupSessionsFromInfos', () => {
 })
 
 const shellShape = (
-  overrides: Partial<WorkspaceShapeShellPane> = {}
-): WorkspaceShapeShellPane => ({
+  overrides: Partial<PersistedShellPaneShape> = {}
+): PersistedShellPaneShape => ({
   kind: 'shell',
   paneId: 'p0',
   paneIndex: 0,
@@ -329,8 +361,8 @@ const shellShape = (
 })
 
 const browserShape = (
-  overrides: Partial<WorkspaceShapeBrowserPane> = {}
-): WorkspaceShapeBrowserPane => ({
+  overrides: Partial<PersistedBrowserPaneShape> = {}
+): PersistedBrowserPaneShape => ({
   kind: 'browser',
   paneId: 'p0',
   paneIndex: 0,
@@ -339,17 +371,19 @@ const browserShape = (
 })
 
 const storeOf = (
-  sessions: WorkspaceShapeDto['sessions']
-): WorkspaceShapeDto => ({ sessions })
+  sessions: PersistedWorkspaceShape['sessions'],
+  customPaneLayouts: PersistedWorkspaceShape['customPaneLayouts'] = []
+): PersistedWorkspaceShape => ({ customPaneLayouts, sessions })
 
 const storeSession = (
-  overrides: Partial<WorkspaceShapeDto['sessions'][number]> = {}
-): WorkspaceShapeDto['sessions'][number] => ({
+  overrides: Partial<PersistedWorkspaceShape['sessions'][number]> = {}
+): PersistedWorkspaceShape['sessions'][number] => ({
   id: 'ws-1',
   projectId: 'proj-1',
   layout: 'single',
   workingDirectory: '/home/will/repo',
   active: true,
+  open: true,
   panes: [shellShape({ active: true })],
   ...overrides,
 })
@@ -439,6 +473,47 @@ describe('reconstructWorkspace', () => {
     expect(sessions[0].agentType).toBe('codex')
   })
 
+  test('preserves store open state for lazy restored shell placeholders', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-open',
+        open: true,
+        panes: [shellShape({ ptyId: 'pty-open', active: true })],
+      }),
+      storeSession({
+        id: 'ws-recent',
+        active: false,
+        open: false,
+        panes: [shellShape({ ptyId: 'pty-recent', active: true })],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions.map((session) => [session.id, session.open])).toEqual([
+      ['ws-open', true],
+      ['ws-recent', false],
+    ])
+  })
+
+  // A persisted `agentType: 'kimi'` must survive restore (not coerce to
+  // 'generic'), so the kimi accent/glyph holds across an app restart.
+  test('preserves a persisted kimi agentType through restore', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-kimi',
+        panes: [
+          shellShape({ ptyId: 'pty-kimi', agentType: 'kimi', active: true }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions[0].panes[0].agentType).toBe('kimi')
+    expect(sessions[0].agentType).toBe('kimi')
+  })
+
   // Browser-only session: no PTY exists; the store is the sole source.
   test('builds a browser-only session from a browser pane shape', () => {
     const store = storeOf([
@@ -496,6 +571,73 @@ describe('reconstructWorkspace', () => {
     expect(s.panes.find((p) => p.active)?.id).toBe('p1')
     expect(s.status).toBe('completed')
     expect(s.layout).toBe('vsplit')
+  })
+
+  test('preserves valid store placements and fills invalid or missing entries', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-placements',
+        layout: 'quad',
+        placements: [
+          { paneId: 'p2', slotId: 'slot:p1' },
+          { paneId: 'missing', slotId: 'slot:p0' },
+          { paneId: 'p0', slotId: 'slot:p1' },
+          { paneId: 'p1', slotId: 'slot:missing' },
+        ],
+        panes: [
+          browserShape({ paneId: 'p0', paneIndex: 0, active: true }),
+          browserShape({ paneId: 'p1', paneIndex: 1, active: false }),
+          browserShape({ paneId: 'p2', paneIndex: 2, active: false }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions[0].placements).toEqual([
+      { paneId: 'p2', slotId: 'slot:p1' },
+      { paneId: 'p0', slotId: 'slot:p0' },
+      { paneId: 'p1', slotId: 'slot:p2' },
+    ])
+  })
+
+  test('preserves a persisted custom layout when its definition is present', () => {
+    const store = storeOf(
+      [
+        storeSession({
+          id: 'ws-custom',
+          layout: 'custom:grid-2x2',
+          panes: [
+            browserShape({ paneId: 'p0', paneIndex: 0, active: true }),
+            browserShape({ paneId: 'p1', paneIndex: 1, active: false }),
+          ],
+        }),
+      ],
+      [customGrid2x2]
+    )
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].layout).toBe('custom:grid-2x2')
+  })
+
+  test('falls back to single for a persisted custom layout missing its definition', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-custom-missing',
+        layout: 'custom:missing',
+        panes: [browserShape({ paneId: 'p0', paneIndex: 0, active: true })],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].layout).toBe('single')
+    expect(sessions[0].placements).toEqual([
+      { paneId: 'p0', slotId: 'slot:p0' },
+    ])
   })
 
   test('reload shape restores browser-only and mixed browser sessions together', () => {
@@ -703,5 +845,29 @@ describe('reconstructWorkspace', () => {
     expect(sessions.map((s) => s.id)).toContain('ws-valid')
     expect(sessions.map((s) => s.id)).toContain('pty-b')
     expect(sessions.find((s) => s.id === 'ws-valid')?.panes).toHaveLength(1)
+  })
+
+  test('accepts grid3x2 from persisted groupings without falling back to single', () => {
+    const ws = 'ws-grid'
+
+    const live = Array.from({ length: 6 }, (_, index) => ({
+      ...alive(`pty-${index}`, '/home/will/repo'),
+      grouping: grouping({
+        workspaceSessionId: ws,
+        layout: 'grid3x2',
+        workspaceDirectory: '/home/will/repo',
+        paneId: `p${index}`,
+        paneIndex: index,
+        active: index === 0,
+        agentType: 'generic',
+      }),
+    }))
+
+    const sessions = reconstructWorkspace(null, live, 'pty-0')
+
+    expect(sessions).toHaveLength(1)
+
+    expect(sessions[0].layout).toBe('grid3x2')
+    expect(sessions[0].panes).toHaveLength(6)
   })
 })

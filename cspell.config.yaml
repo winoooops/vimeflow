@@ -78,6 +78,14 @@ words:
   - framer
   - contenteditable
 
+  # Kimi / Moonshot AI
+  - kimi
+  - Kimi
+
+  # opencode (SST coding agent)
+  - opencode
+  - Opencode
+
   # Design / UI
   - glassmorphism
   - catppuccin

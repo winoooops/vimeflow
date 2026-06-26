@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-16
-ref_count: 26
+last_updated: 2026-06-25
+ref_count: 90
 ---
 
 # Documentation Accuracy
@@ -802,32 +802,6 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Added a short comment directly above `installFaviconEmitter` stating that it must precede history restore/load because the favicon event can fire during that work.
 - **Commit:** same commit as this entry
 
-### 86. Corrupted YAML frontmatter in review-pattern files after count update
-
-- **Source:** github-claude | PR #422 round 1 | 2026-06-11
-- **Severity:** MEDIUM
-- **File:** `docs/reviews/patterns/accessibility.md`, `docs/reviews/patterns/react-lifecycle.md`
-- **Finding:** `last_updated: 2026-06-11` was replaced with the bare string `P26-06-11` (no key, no colon) in both files during an automated frontmatter edit. A bare scalar inside a YAML mapping block is a parse error; strict YAML parsers reject the document and lenient ones silently drop the field.
-- **Fix:** Restored both lines to `last_updated: 2026-06-11`.
-- **Commit:** same commit as this entry
-
-### 87. Review index table rows malformatted after count update
-
-- **Source:** github-claude | PR #422 round 1 | 2026-06-11
-- **Severity:** LOW
-- **File:** `docs/reviews/CLAUDE.md`
-- **Finding:** The React Lifecycle and Accessibility rows in the index table were rewritten with a leading space before the opening `|`, collapsed column widths, and an extra empty cell `|  |` at the end. Most Markdown renderers produce broken output for misaligned pipe tables.
-- **Fix:** Re-aligned both rows to match the surrounding pipe-table style and removed the trailing empty cell.
-- **Commit:** same commit as this entry
-
-### 88. Version constant duplicated between Rust and TypeScript with no cross-check
-
-- **Source:** github-claude | PR #430 round 3 | 2026-06-12
-- **Severity:** LOW
-- **File:** `src/features/settings/store/settingsDefaults.ts` L4-4
-- **Finding:** Rust declares `CURRENT_APP_SETTINGS_VERSION: u32 = 1` in `crates/backend/src/settings/app_settings.rs:10`, and TypeScript hard-codes `version: 1` in `settingsDefaults.ts:4`. `AppSettingsCache::save()` rejects any settings whose version doesn't match the Rust constant. When the Rust constant is bumped for a schema migration, the TypeScript default must also be updated; if it isn't, all `save_app_settings` calls from fresh renderer sessions will be rejected with a version-mismatch error and `saveError` will be set immediately on first user edit.
-- **Fix:** Added a comment on the TypeScript constant referencing `CURRENT_APP_SETTINGS_VERSION` in `crates/backend/src/settings/app_settings.rs` so the coupling is visible at change time.
-
 ### 86. Popover focus contract in UNIFIED.md mismatches implementation and tests
 
 - **Source:** github-claude | PR #450 round 3 | 2026-06-14
@@ -846,29 +820,56 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Updated the comment to name the fully configured rule: `react/jsx-boolean-value (assumeUndefinedIsFalse) flags explicit false props; alias it`.
 - **Commit:** same commit as this entry
 
-### 88. Spec status header still reads "Drafting" post codex-review
+### 88. Chinese README uses inconsistent translated term for "agent observability"
 
-- **Source:** github-claude | PR #491 round 1 | 2026-06-16
+- **Source:** github-human | PR #492 round 1 | 2026-06-16
+- **Severity:** HUMAN
+- **File:** `README.zh-CN.md`
+- **Finding:** The line read `代理可观测性：Claude Code、Codex CLI 和 Kimi Code`; the reviewer requested the term be rendered as `agent可观测性` to keep the English product term consistent with the bilingual docs.
+- **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Reattach hook comment still references removed manual button
+
+- **Source:** github-claude | PR #592 round 1 | 2026-06-21
 - **Severity:** LOW
-- **File:** `docs/superpowers/specs/2026-06-15-keybinding-engine-design.md`
-- **Finding:** The **Status:** field said "Drafting... Pending per-section + whole-spec codex review" while the footer already carried `<!-- codex-reviewed: 2026-06-16T04:05:18Z -->` and the decision record marked the spec Accepted. A reader scanning only the header would believe review was still pending.
-- **Fix:** Updated the status header to "Accepted (codex-reviewed 2026-06-16T04:05:18Z; TDD implementation pending in `feature/vim-136`)".
-- **Commit:** same commit as this entry
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A comment on `resolveArmedReattach` still said the helper was shared by the success listener and the manual button, but this PR removed the manual reattach button.
+- **Fix:** Updated stale comments so they describe the current automatic success-listener and bounded-retry/drift behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 89. `detectConflicts` signature in spec §5.4 mismatches plan's Task 4 impl
+### 90. Opencode icon provenance missing from NOTICE
 
-- **Source:** github-claude | PR #491 round 1 | 2026-06-16
+- **Source:** github-claude | PR #589 round 1 | 2026-06-20
 - **Severity:** MEDIUM
-- **File:** `docs/superpowers/specs/2026-06-15-keybinding-engine-design.md`
-- **Finding:** Spec §5.4 declared `detectConflicts(catalog, overrides, isMac): Conflict[]` but the plan implements `detectConflicts(resolved, superKey)`. An SP2 implementer calling the spec signature would hit TypeScript errors or runtime failures, and the catalog-driven signature would create a `conflicts.ts → resolve.ts → conflicts.ts` circular import.
-- **Fix:** Updated the pseudocode signature to `detectConflicts(resolved: Map<CommandId, Chord>, superKey: PlatformSuper): Conflict[]` and added a note that the caller pre-resolves to avoid the circular import.
-- **Commit:** same commit as this entry
+- **File:** `src/agents/icons-NOTICE.md`
+- **Finding:** The PR added an Opencode SVG mark while the adjacent file-level comment pointed readers to `icons-NOTICE.md` for Lobe Icons MIT attribution only. Future maintainers could reasonably assume the new mark was covered by the existing vendored-icon notice.
+- **Fix:** Reworded the file-level comment to point to the notice for per-mark provenance and documented the Opencode mark as an original Vimeflow geometric terminal mark outside the Lobe Icons vendored set.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 90. Plan instructs the wrong commit-message trailer for Codex-assisted commits
+### 91. `resolve_by_pid` comment overstated cached fallback guarantee
 
-- **Source:** github-codex-connector | PR #491 round 1 | 2026-06-16
-- **Severity:** P2 / MEDIUM
-- **File:** `docs/superpowers/plans/2026-06-15-keybinding-engine-pr1.md`
-- **Finding:** The plan told workers to end each task commit with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` (and possibly a connector trailer), which conflicts with `rules/common/git-workflow.md`. That rule requires exactly `Co-Authored-By: codex <codex@openai.com>` and notes Claude attribution is disabled.
-- **Fix:** Replaced the trailer instruction with the exact repo-required trailer `Co-Authored-By: codex <codex@openai.com>`.
-- **Commit:** same commit as this entry
+- **Source:** github-claude | PR #599 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The comment said a pid miss with a prior cache returns `None` so `cached_or_err` keeps the live binding. In reality `locate` tries the cwd fallback first, and only preserves the cached binding when cwd also finds nothing.
+- **Fix:** Reworded the comment to document the actual fallback order: pid miss triggers cwd resolution first, and `cached_or_err` preserves the binding only after cwd also misses.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 92. OpenCode technical notes were checked in as generated HTML instead of source Markdown
+
+- **Source:** github-human | PR #603 round 5 | 2026-06-22
+- **Severity:** HUMAN
+- **File:** `docs/opencode/opencode-adapter-technical-note.zh.html`
+- **Finding:** The PR added two OpenCode technical notes as standalone HTML artifacts even though the reviewer wanted the source form to live as Markdown for easier maintenance and Linear references. Keeping only generated HTML makes future edits and issue-link reuse more expensive than necessary.
+- **Fix:** Replaced both OpenCode HTML notes with Markdown equivalents, updated the OpenCode adapter design spec to reference the `.md` paths, and kept the documentation content in repo-native Markdown form.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Claude Code icon comment used nonstandard jargon and over-documented the invariant
+
+- **Source:** github-claude | PR #619 round 2 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.tsx`
+- **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
+- **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

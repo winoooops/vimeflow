@@ -6,9 +6,15 @@ import {
   type PointerEvent,
   type ReactElement,
 } from 'react'
-import type { PaneKind, Session } from '../../sessions/types'
+import type {
+  LayoutSlotId,
+  PaneKind,
+  PanePlacement,
+  Session,
+} from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
+import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
@@ -33,6 +39,7 @@ export interface TerminalZoneProps {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+  onCommandSubmit?: (ptyId: string, command: string) => void
   /**
    * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
    */
@@ -54,9 +61,13 @@ export interface TerminalZoneProps {
     paneId: string,
     browserUrl: string
   ) => void
-  addPane: (sessionId: string, kind?: PaneKind) => void
+  addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
-  areBrowserPanesOccluded?: boolean
+  /** VIM-167: persist a drag-into-slot swap/move. Forwarded to SplitView. */
+  setSessionPlacements?: (
+    sessionId: string,
+    placements: PanePlacement[]
+  ) => void
   isZoneFocused?: boolean
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
@@ -66,6 +77,7 @@ export interface TerminalZoneProps {
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   terminalFontFamily?: string
+  layoutRegistry?: PaneLayoutRegistry
 }
 
 export interface TerminalZoneHandle {
@@ -80,6 +92,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onSessionCwdChange = undefined,
       loading = false,
       onPaneReady = undefined,
+      onCommandSubmit = undefined,
       onSessionRestart = undefined,
       deferTerminalFit = false,
       service,
@@ -87,13 +100,14 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       updateBrowserPaneUrl = undefined,
       addPane,
       removePane,
-      areBrowserPanesOccluded = false,
+      setSessionPlacements = undefined,
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       terminalFontFamily = undefined,
+      layoutRegistry = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -188,16 +202,18 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     isActive={isActive}
                     onSessionCwdChange={onSessionCwdChange}
                     onPaneReady={onPaneReady}
+                    onCommandSubmit={onCommandSubmit}
                     onSessionRestart={onSessionRestart}
                     onSetActivePane={setSessionActivePane}
                     onBrowserPaneUrlChange={updateBrowserPaneUrl}
                     onRequestFocus={onContainerFocus}
                     onAddPane={addPane}
                     onClosePane={removePane}
+                    onPanePlacementsChange={setSessionPlacements}
                     onBurner={onBurner}
+                    layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
-                    areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     terminalFontFamily={terminalFontFamily}
                     // The active pane keeps its highlight even when the dock

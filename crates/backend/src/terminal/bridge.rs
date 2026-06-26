@@ -6,16 +6,24 @@
 
 use crate::aliases::{build_alias_lines, AgentAlias};
 
+use sha2::{Digest, Sha256};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+const BRIDGE_RUNTIME_DIR: &str = "runtime";
+const BRIDGE_WORKSPACES_DIR: &str = "workspaces";
+const BRIDGE_SESSIONS_DIR: &str = "sessions";
+
 /// Result of generating statusline bridge files
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Fields read by spawn_pty and future cleanup logic
 pub struct BridgeFiles {
+    /// Directory containing the generated per-session status bridge files
+    pub agent_status_dir_path: PathBuf,
     /// Path to the generated statusline script
     pub script_path: PathBuf,
     /// Directory prepended to PATH so aliases like `env ... claude` are bridged
@@ -32,6 +40,131 @@ pub struct BridgeFiles {
     pub zsh_env_path: PathBuf,
     /// Path to generated zsh rc file used when the user's shell is zsh
     pub zsh_rc_path: PathBuf,
+}
+
+fn sanitized_component(raw: &str) -> String {
+    let mut component = String::with_capacity(raw.len());
+    let mut previous_was_dash = false;
+
+    for ch in raw.chars() {
+        let next = if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            ch.to_ascii_lowercase()
+        } else {
+            '-'
+        };
+
+        if next == '-' {
+            if previous_was_dash {
+                continue;
+            }
+            previous_was_dash = true;
+        } else {
+            previous_was_dash = false;
+        }
+
+        component.push(next);
+    }
+
+    let trimmed = component.trim_matches('-');
+    if trimmed.is_empty() {
+        "workspace".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Quote a path so it survives being passed to `statusLine.command` and run
+/// through a POSIX shell. Wraps the value in single quotes; any embedded
+/// single quote is escaped by exiting the quoted string, emitting an escaped
+/// quote, and re-entering.
+fn shell_quote_path(path: &str) -> String {
+    if path.is_empty() {
+        return "''".to_string();
+    }
+    // A conservative whitelist: if the path contains no shell metacharacters,
+    // leave it unquoted. Otherwise wrap the whole thing in single quotes.
+    let needs_quote = path.bytes().any(|b| {
+        b.is_ascii_whitespace()
+            || b == b'\''
+            || b == b'"'
+            || b == b'`'
+            || b == b'$'
+            || b == b'\\'
+            || b == b'|'
+            || b == b'&'
+            || b == b';'
+            || b == b'<'
+            || b == b'>'
+            || b == b'('
+            || b == b')'
+            || b == b'#'
+            || b == b'*'
+            || b == b'?'
+            || b == b'['
+            || b == b']'
+            || b == b'!'
+            || b == b'~'
+    });
+    if !needs_quote {
+        return path.to_string();
+    }
+    let mut quoted = String::with_capacity(path.len() + 2);
+    quoted.push('\'');
+    for ch in path.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn cwd_basename(cwd: &Path) -> String {
+    cwd.file_name()
+        .and_then(OsStr::to_str)
+        .map(sanitized_component)
+        .unwrap_or_else(|| "workspace".to_string())
+}
+
+/// Maximum bytes for the sanitized basename portion of a workspace bridge
+/// bucket, leaving room for the hyphen separator and the 12-character hex
+/// hash (6 bytes × 2 hex digits) on filesystems with a 255-byte filename
+/// limit.
+const MAX_BUCKET_BASENAME_BYTES: usize = 242;
+
+fn workspace_bridge_bucket(cwd: &Path) -> String {
+    let digest = Sha256::digest(cwd.to_string_lossy().as_bytes());
+    let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+    let basename = cwd_basename(cwd);
+    let truncated = if basename.len() > MAX_BUCKET_BASENAME_BYTES {
+        basename
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_BUCKET_BASENAME_BYTES)
+            .map(|(_, ch)| ch)
+            .collect()
+    } else {
+        basename
+    };
+    format!("{}-{}", truncated, hex)
+}
+
+pub(crate) fn workspace_bridge_root(app_data_dir: &Path, cwd: &Path) -> PathBuf {
+    app_data_dir
+        .join(BRIDGE_RUNTIME_DIR)
+        .join(BRIDGE_WORKSPACES_DIR)
+        .join(workspace_bridge_bucket(cwd))
+}
+
+pub(crate) fn session_bridge_dir(app_data_dir: &Path, cwd: &Path, session_id: &str) -> PathBuf {
+    workspace_bridge_root(app_data_dir, cwd)
+        .join(BRIDGE_SESSIONS_DIR)
+        .join(session_id)
+}
+
+pub(crate) fn session_status_file(app_data_dir: &Path, cwd: &Path, session_id: &str) -> PathBuf {
+    session_bridge_dir(app_data_dir, cwd, session_id).join("status.json")
 }
 
 /// Write a script file atomically and make it executable on Unix.
@@ -79,7 +212,7 @@ fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
 /// 5. `<dir>/.zshenv` and `<dir>/.zshrc` — zsh-specific startup hooks (when shell is zsh)
 ///
 /// # Arguments
-/// * `agent_status_dir` - Directory to create files in (e.g. `.vimeflow/sessions/<id>/`)
+/// * `agent_status_dir` - Directory to create files in (typically under app data)
 /// * `session_id` - Session identifier for the comment header
 /// * `shim_dir` - Optional directory for the PATH shim; `None` falls back to `<agent_status_dir>/bin`
 /// * `aliases` - User-defined agent aliases to inject into the shell init
@@ -168,7 +301,7 @@ pub fn generate_bridge_files(
     let settings = serde_json::json!({
         "statusLine": {
             "type": "command",
-            "command": script_path.to_string_lossy(),
+            "command": shell_quote_path(&script_path.to_string_lossy()),
             "refreshInterval": 5
         }
     });
@@ -245,6 +378,7 @@ pub fn generate_bridge_files(
     );
 
     Ok(BridgeFiles {
+        agent_status_dir_path: dir.to_path_buf(),
         script_path,
         shim_dir_path,
         claude_shim_path,
@@ -286,6 +420,78 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     #[cfg(unix)]
     use std::process::{Command, Stdio};
+
+    #[test]
+    fn session_bridge_dir_uses_app_data_safe_workspace_bucket() {
+        let app_data = PathBuf::from("/tmp/Vimeflow Data");
+        let cwd = PathBuf::from("/Users/test/Project With Quote's");
+
+        let dir = session_bridge_dir(&app_data, &cwd, "session-abc");
+        let workspace_root = workspace_bridge_root(&app_data, &cwd);
+        let bucket = workspace_root
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("workspace bucket should be UTF-8");
+
+        assert!(dir.starts_with(&app_data));
+        assert_eq!(dir, workspace_root.join("sessions").join("session-abc"));
+        assert!(!dir.components().any(|c| c.as_os_str() == ".vimeflow"));
+        assert!(bucket.starts_with("project-with-quote-s-"));
+        assert!(
+            bucket
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+            "bucket should be safe as one macOS/Linux path component: {bucket}"
+        );
+    }
+
+    #[test]
+    fn workspace_bridge_bucket_distinguishes_same_basename_paths() {
+        let app_data = PathBuf::from("/tmp/vimeflow-data");
+        let first = workspace_bridge_root(&app_data, Path::new("/tmp/one/app"));
+        let second = workspace_bridge_root(&app_data, Path::new("/tmp/two/app"));
+
+        assert_ne!(first, second);
+        assert!(first.starts_with(&app_data));
+        assert!(second.starts_with(&app_data));
+    }
+
+    #[test]
+    fn workspace_bridge_bucket_truncates_long_basenames() {
+        let app_data = PathBuf::from("/tmp/vimeflow-data");
+        let long_name = "a".repeat(300);
+        let cwd = PathBuf::from(format!("/tmp/{long_name}"));
+
+        let bucket = workspace_bridge_bucket(&cwd);
+        let bucket_bytes = bucket.as_bytes();
+        assert!(
+            bucket_bytes.len() <= 255,
+            "bucket component must fit in a 255-byte filesystem filename: {bucket}"
+        );
+        // Truncated basename + hyphen + 6-char hash.
+        assert_eq!(
+            bucket.matches('-').count(),
+            1,
+            "bucket should contain exactly one separator: {bucket}"
+        );
+        let (basename, hash) = bucket.rsplit_once('-').unwrap();
+        assert_eq!(hash.len(), 12, "hash suffix should be 12 hex chars");
+        assert_eq!(basename.len(), MAX_BUCKET_BASENAME_BYTES);
+    }
+
+    #[test]
+    fn shell_quote_path_quotes_metacharacters() {
+        assert_eq!(shell_quote_path("/safe/path"), "/safe/path");
+        assert_eq!(
+            shell_quote_path("/Users/foo/Application Support/vimeflow/statusline.sh"),
+            "'/Users/foo/Application Support/vimeflow/statusline.sh'"
+        );
+        assert_eq!(
+            shell_quote_path("/path/with'quote/statusline.sh"),
+            "'/path/with'\\''quote/statusline.sh'"
+        );
+        assert_eq!(shell_quote_path(""), "''");
+    }
 
     #[test]
     fn generates_bridge_files_in_temp_dir() {

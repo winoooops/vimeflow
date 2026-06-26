@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-20
-ref_count: 13
+last_updated: 2026-06-24
+ref_count: 2
 ---
 
 # Keyboard Shortcut Guards
@@ -29,43 +29,6 @@ against three classes of false-fire:
    `event.preventDefault()` in the main process suppresses the renderer `keydown`,
    so a renderer-only guard (e.g. `event.repeat`) never runs. The main-process
    matcher must replicate the guard itself (filter `input.isAutoRepeat`).
-5. **Optional guard defaults must be safe** — when a caller can omit a guard
-   prop, the hook should default to _not_ claiming the keystroke. Treating
-   `undefined` as "active" lets capture-phase shortcuts steal input from
-   unfocused surfaces.
-6. **Platform-specific display** — keymap hints, tooltips, and settings labels
-   that show shortcuts must render the modifier that matches the runtime
-   platform (`⌘` on macOS, `Ctrl` on Linux/Windows). Hardcoding `⌘` in the UI
-   misleads non-Mac users and drifts from the behavior-side modifier choice.
-7. **Capture-target guard in renderer shortcut hooks** — capture-phase document
-   listeners that fire global shortcuts must check whether the active element is
-   inside a keymap-recorder (or similar capture target) and return early. A
-   button-level `onKeyDown` runs after capture-phase listeners, so it cannot
-   outrace them; the guard must live in the same hook that claims the keystroke.
-8. **Main-process guard parity for capture state** — when a shortcut is consumed
-   in the Electron main process (`before-input-event`) and the renderer already
-   has a capture-active guard, the main-process matcher must receive the same
-   state. `event.preventDefault()` in the main process suppresses the renderer
-   `keydown`, so a renderer-only guard is bypassed in packaged builds; route
-   capture state through an explicit IPC channel and WeakMap per window.
-9. **Platform-specific modifier enforcement** — shortcuts that are tied to a
-   single platform modifier (e.g. `Cmd+,` on macOS, `Ctrl+,` elsewhere) must
-   reject the cross-platform modifier and any Alt/Shift variants, otherwise a
-   recorded user binding can collide with the built-in toggle and fire both
-   actions.
-10. **Reserve non-rebindable catalog entries for system chords** — chords that
-    must remain available to the browser or shell (settings toggle, browser
-    location focus, etc.) should be represented as non-rebindable catalog
-    entries so the keymap validator rejects attempts to bind them to other
-    commands.
-11. **Keep selection and DOM focus synchronized for listbox shortcuts** —
-    shortcut-driven listbox navigation must either let the focused widget own
-    the key or move focus to the newly selected option. Updating selection state
-    while leaving focus on an old option breaks the visible focus indicator.
-12. **Search confirmation must report whether it selected anything** — Enter
-    handlers that both confirm a result and blur the search input need a
-    success signal from the confirmation path. Blurring on query presence alone
-    strands users after no-result searches.
 
 ## Findings
 
@@ -315,235 +278,35 @@ against three classes of false-fire:
 - **File:** `src/features/workspace/components/SidebarToggle.tsx`
 - **Finding:** The toggle button always rendered `'Show sidebar  ⌘B'` / `'Hide sidebar  ⌘B'` as the `title` tooltip, regardless of platform. On Linux and Windows the actual shortcut is `Ctrl+⇧B`, so hovering the button showed the wrong hint.
 - **Fix:** Added an optional `shortcutHint?: string` prop to `SidebarToggleProps` (defaulting to `'⌘B'`) and threaded a platform-appropriate value (`preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'`) from `WorkspaceView` through `AgentStatusCard` and `IconRail`.
-- **Commit:** same commit as this entry
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 20. Directional pane shortcut lacked the `isTerminalContainerActive` guard used by digit keys
+### 20. Wire shortcuts for all six grid panes
 
-- **Source:** github-claude | PR #460 round 1 | 2026-06-15
-- **Severity:** HIGH
+- **Source:** github-codex-connector | PR #527 round 1 | 2026-06-18
+- **Severity:** P2 / MEDIUM
 - **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
-- **Finding:** The new `Cmd/Ctrl+Shift+Arrow` directional handler registered at the document capture phase with `stopPropagation()` but only checked `event.shiftKey` before acting. It did not reuse the existing `isTerminalContainerActive` guard that the digit-key handler already used, so the shortcut fired when CodeMirror (in the dock) had focus and silently stole `Cmd+Shift+Arrow` text-selection shortcuts whenever a neighbor pane existed.
-- **Fix:** Added the same guard pattern used by the digit-key path: when `isTerminalContainerActive` is explicitly provided and `false`, return early before the `shiftKey` check so editor focus keeps the event.
+- **Finding:** `usePaneShortcuts` matched only `Digit1` through `Digit4`, but
+  the new `grid3x2` layout has six panes and the per-pane tooltips advertise
+  `Mod+5` / `Mod+6`. Those shortcuts never fired, leaving the bottom middle and
+  right panes unreachable by keyboard.
+- **Fix:** Extended the regex from `^Digit([1-4])$` to `^Digit([1-6])$` and
+  added a test covering `Ctrl+5` / `Ctrl+6` focus in a `grid3x2` session.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 21. No-op directional shortcuts still propagated into the terminal
+### 21. Image paste shortcut stole shifted macOS text paste
 
-- **Source:** github-claude | PR #460 round 2 | 2026-06-15
-- **Severity:** MEDIUM
-- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
-- **Finding:** After the container-active and dialog guards passed, the directional arrow handler returned without claiming the key when `resolveDirectionalPane` found no neighbor. Because the listener runs at the document capture phase, the unclaimed `keydown` reached xterm.js and forwarded a modified-arrow escape sequence to the PTY on Linux/Windows, making an advertised pane-navigation chord affect the running shell/editor at layout edges or in single-pane sessions.
-- **Fix:** Called `event.preventDefault()` and `event.stopPropagation()` before returning from the `target === null` branch, while keeping the editor/dock guard intact. Updated the regression test to expect the shortcut is claimed at edges.
+- **Source:** github-codex-connector | PR #618 round 1 | 2026-06-24
+- **Severity:** P2
+- **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
+- **Finding:** The macOS image-paste shortcut matched `Cmd+Shift+V` because it did not require `!event.shiftKey`. In agent panes with image paste enabled, this branch ran before the normal text-paste shortcut and regressed the shifted terminal paste chord.
+- **Fix:** Required `!event.shiftKey` for the macOS image-paste shortcut so `Cmd+Shift+V` continues through the normal text paste path. Added a regression test with image paste enabled and an image-capable clipboard.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 22. Directional arrow shortcut claims keys when container-active guard is omitted
+### 22. Duplicate macOS shortcut chips for semantically different paste rows
 
-- **Source:** github-claude | PR #460 round 3 | 2026-06-15
-- **Severity:** MEDIUM
-- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
-- **Finding:** The `Cmd/Ctrl+Shift+Arrow` handler checked `isTerminalContainerActive !== undefined && !isTerminalContainerActive` before returning. When the prop was omitted (default `undefined`), the guard was skipped and the capture-phase listener claimed the modified-arrow keystroke even though no caller had vouched that the terminal container owned focus.
-- **Fix:** Changed the guard to `if (!isTerminalContainerActive) return`, treating an omitted guard as inactive. Updated all directional-focus regression tests to pass `isTerminalContainerActive: true` and added a new test asserting the shortcut passes through when the guard is omitted.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 23. Keymap pane hardcodes ⌘ modifier on all platforms
-
-- **Source:** github-codex-connector | PR #460 round 3 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/sections.ts`, `src/features/settings/components/panes/KeymapPane.tsx`
-- **Finding:** The Keymap settings pane stored pre-rendered `⌘`-prefixed strings in `KEYMAP_GROUPS` and `VIM_KEYMAP_GROUPS`. On Linux/Windows the actual shortcuts use `Ctrl`, so the authoritative read-only keymap list advertised the wrong modifier on every non-Mac platform.
-- **Fix:** Migrated the keymap data to `ShortcutInput` tokens (`Mod`, `Ctrl`, `Shift`, arrow glyphs, etc.) and rendered each binding through the existing `formatShortcut` utility, which maps `Mod` to `⌘` on macOS and `Ctrl` elsewhere. Added a `KeymapKeys` type that can be a static list or a function `(isMac) => ShortcutInput[]` so chords that require Shift only on Ctrl platforms (sidebar `Ctrl+Shift+B`, terminal copy `Ctrl+Shift+C`) render correctly on every OS. Also formatted the Vim zone labels and footer text through `formatShortcut` so palette references stay platform-correct. Added regression tests asserting `⌘B`/`⌘C` on Mac and `Ctrl+Shift+B`/`Ctrl+Shift+C` on Linux/Windows.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 24. Sidebar-tab shortcut bailed on the sidebar drawer itself
-
-- **Source:** github-codex-connector | PR #460 round 5 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L59-61
-- **Finding:** The shortcut hook used a blanket `document.querySelector(DIALOG_SELECTOR)` guard to defer to open modals. On compact viewports the sidebar shell is rendered as `role="dialog"` for a11y, so after opening Sessions with Ctrl/Cmd+Shift+S the guard treated the sidebar itself as a modal and suppressed Ctrl/Cmd+Shift+F/S, preventing keyboard switching between Sessions and Files while the drawer was open.
-- **Fix:** Replaced the single-selector bail-out with the same exception used by `useSidebarShortcut`: enumerate `openDialogs`, detect when the event target is inside `[role="dialog"][aria-label="Sidebar"]`, and only return early when a dialog is open AND the focus is not inside the sidebar drawer.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 25. Sidebar-tab shortcut required focus inside the drawer after opening it from elsewhere
-
-- **Source:** github-codex-connector | PR #460 round 6 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L73-75
-- **Finding:** The cycle-5 fix allowed the tab shortcut only when focus was inside `[role="dialog"][aria-label="Sidebar"]`. On compact viewports `revealSidebar` opens the drawer without moving focus into it, so a user opening Sessions with Ctrl/Cmd+Shift+S from the terminal/main area still had `document.activeElement` outside the drawer. The next S/F chord therefore failed the `inSidebarDialog` check and was suppressed, forcing keyboard-only users to click or tab into the drawer before switching to Files.
-- **Fix:** Dropped the target-dependent `inSidebarDialog` check. The guard now asks: "is any non-sidebar dialog open?" using `document.querySelectorAll(DIALOG_SELECTOR)` and a reference comparison against the sidebar dialog node. If the only open dialog is the sidebar drawer, the shortcut fires regardless of where focus lives.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 26. Directional pane shortcut intercepted bare Ctrl+Arrow on Linux/Windows
-
-- **Source:** github-codex-connector | PR #460 round 7 | 2026-06-15
-- **Severity:** P1 / HIGH
-- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L224-242
-- **Finding:** The directional arrow handler was shift-agnostic, so on Linux/Windows (where `preferModifier` is `ctrl`) it claimed bare `Ctrl+Arrow` keystrokes before xterm could forward them to the PTY. `Ctrl+Left/Right` is common terminal input for word movement in shells, readline, vim, tmux, and other TUI programs, causing visible terminal input regressions. The PR's own design doc (`docs/superpowers/specs/2026-06-14-keymap-presets-vim-mode-design.md` §5.2) specified `⌘+Shift`+arrow.
-- **Fix:** Added `if (!event.shiftKey) return` after the container-active and dialog guards in the arrow branch, restoring the Shift requirement on all platforms. Updated the regression test that previously asserted shiftless navigation to instead assert that bare `Ctrl+Arrow` and bare `Cmd+Arrow` pass through, and updated the Keymap settings labels to advertise `Mod+Shift+Arrow`.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 27. Sidebar-tab shortcut matched logical `event.key`, breaking non-Latin layouts
-
-- **Source:** github-claude | PR #460 round 9 | 2026-06-15
-- **Severity:** MEDIUM
-- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L43-45
-- **Finding:** The shortcut detected S/F via `event.key.toLowerCase()`. On non-Latin IME layouts (Cyrillic, Arabic, Hebrew, CJK), the physical S/F keys produce non-Latin characters in `event.key`, so the guard never matched and ⌘⇧S / Ctrl+⇧S silently did nothing. Other keyboard hooks in the same PR already used `event.code` for physical-key matching.
-- **Fix:** Replaced the `event.key` check with `event.code !== 'KeyS' && event.code !== 'KeyF'` and derived the dispatch key from `event.code`. Updated the unit-test helper to set `KeyboardEvent.code` by default and added a regression test with a Cyrillic `event.key`.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 28. Session-navigation shortcut did not reclaim terminal focus after switching
-
-- **Source:** github-codex-connector | PR #460 round 9 | 2026-06-15
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/workspace/WorkspaceView.tsx` L1500-1512
-- **Finding:** When Ctrl/Cmd+[ or ] changed `activeSessionId`, `TerminalZone` kept inactive sessions mounted hidden and the newly shown session's active pane did not get a focus rising edge. DOM focus could stay on the old hidden xterm textarea or fall to `body`, so subsequent typing went nowhere until the user clicked.
-- **Fix:** Called `claimTerminal()` immediately after `setActiveSessionId(nextSession.id)` in `switchRelativeSession`, reusing the existing terminal-focus request path so the new active session's pane receives focus.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 29. Backslash layout-cycle shortcut falls through into the arrow-direction block
-
-- **Source:** github-claude | PR #460 round 10 | 2026-06-15
+- **Source:** github-claude | PR #618 round 1 | 2026-06-24
 - **Severity:** LOW
-- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L187-203
-- **Finding:** The `event.code === 'Backslash'` branch called `setSessionLayout` but did not `return`. The branch happened to be safe because `arrowDirection` was `null` for Backslash and the subsequent guard exited, but any future case inserted between the Backslash block and the arrow block would execute on every `⌘\` / `Ctrl+\` keypress.
-- **Fix:** Added an explicit `return` immediately after `setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])` so the Backslash branch exclusively owns the keystroke.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 30. Keymap recorder lost chords to document-capture workspace shortcuts
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/panes/KeymapPane.tsx`, `src/features/workspace/hooks/useSidebarTabShortcut.ts`, `src/features/workspace/hooks/useSidebarShortcut.ts`, `src/features/workspace/hooks/useSessionNavShortcut.ts`, `src/features/workspace/hooks/useNewSessionShortcut.ts`, `src/features/workspace/hooks/useDockShortcuts.ts`, `src/features/workspace/hooks/useBurnerToggleShortcut.ts`, `src/features/workspace/hooks/useDockToggleShortcut.ts`
-- **Finding:** The keymap capture UI only handled `onKeyDown` on the focused button. Because the app's workspace shortcuts register at the document capture phase, they consumed chords such as `Cmd/Ctrl+,`, `Cmd/Ctrl+Shift+S`, and layout-cycle chords before the recorder's button handler ever saw them. A button-level handler cannot outrace a capture-phase listener, so recording silently failed or triggered unrelated global actions.
-- **Fix:** Added `isKeymapCaptureTarget(event.target)` guard to every workspace document-capture shortcut hook and returned early when the event originated inside the keymap recorder. Added tests verifying the recorder can capture `Cmd/Ctrl+,` without opening Settings.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 31. Electron command-palette shortcut fired while keymap recorder was active
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `electron/command-palette-shortcut.ts`, `electron/ipc-channels.ts`, `electron/preload.ts`, `electron/main.ts`, `src/lib/backend.ts`, `src/features/settings/components/panes/KeymapPane.tsx`
-- **Finding:** `Cmd/Ctrl+;` toggles the command palette via Electron's `before-input-event` in packaged builds. The renderer-side capture-target guard did not run because `event.preventDefault()` in the main process suppresses the renderer `keydown`. Recording `Cmd/Ctrl+;` inside the keymap pane therefore opened the palette instead of capturing the chord.
-- **Fix:** Added a new `KEYMAP_CAPTURE_ACTIVE` IPC channel and preload helper `setKeymapCaptureActive(active)`. `KeymapPane` calls this whenever `editingId !== null`. `command-palette-shortcut.ts` stores capture state in a per-window WeakMap and returns early from `isCommandPaletteShortcutInput` while capture is active, mirroring the renderer guard in the main process.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 32. Settings toggle shortcut accepted wrong modifiers and collided with recorded bindings
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/hooks/useSettingsDialog.ts`, `src/features/keymap/catalog.ts`
-- **Finding:** `useSettingsDialog` toggled for `metaKey || ctrlKey` together with `event.key === ','`, without rejecting `altKey`/`shiftKey`. On macOS a user could record `Control+Comma` or `Command+Shift+Comma` for another command, and pressing it would both run the rebound command and open Settings.
-- **Fix:** Tightened the matcher to the exact platform super chord (`Cmd` on macOS, `Ctrl` elsewhere) and added explicit `!event.altKey && !event.shiftKey` checks. Added non-rebindable catalog entries (`settings`, `settings-control`) so the validator also blocks these chords at save time.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 33. Browser-location chord not reserved in the keymap catalog
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/keymap/catalog.ts`, `src/features/keymap/hooks/useKeybindings.test.ts`
-- **Finding:** `setUserBinding` only validated against `CATALOG`, which did not include a reservation for the browser's `Mod+L` address-bar focus chord. A user could bind `Mod+L` to a workspace command such as dock-toggle, after which the browser still focused the address bar and the app also ran the bound command.
-- **Fix:** Added a `browser-location` catalog entry (`Mod+KeyL`, non-rebindable, `preserveStoredOverrides`) so the validator rejects `Mod+L` rebindings. Existing stored overrides are preserved to avoid breaking users who already remapped it.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 34. macOS Ctrl+Comma not reserved alongside Command+Comma for settings
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/keymap/catalog.ts`, `src/features/keymap/hooks/useKeybindings.test.ts`
-- **Finding:** On macOS the keymap recorder stores a literal `Control+Comma` chord separately from `Mod+Comma`. The catalog only reserved `Mod+Comma` for settings, so `Control+Comma` could be saved as a user binding and collide with the settings toggle path.
-- **Fix:** Added a `settings-control` catalog entry (`Ctrl+Comma`, non-rebindable, `preserveStoredOverrides`) to reserve the literal Ctrl+Comma chord on macOS. `useSettingsDialog` now only toggles on the platform super chord, so Ctrl+Comma no longer opens Settings.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 35. Alt/Shift-modified comma chords could toggle Settings while bound elsewhere
-
-- **Source:** github-codex-connector | PR #507 round 1 | 2026-06-17
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/hooks/useSettingsDialog.ts`
-- **Finding:** The settings shortcut matcher ignored modifier state beyond `metaKey`/`ctrlKey`. A user could record `Ctrl+Alt+Comma` (Linux/Windows) or `Cmd+Shift+Comma` (macOS) for a rebindable command, and the settings toggle would still fire because it did not reject `altKey` or `shiftKey`.
-- **Fix:** Added `!event.altKey && !event.shiftKey` to the platform-super matcher so only the bare `Cmd/Ctrl+Comma` chord toggles Settings. Added tests for `Ctrl+Alt+Comma` and `Cmd+Shift+Comma` to confirm they pass through.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 36. Bypass search shortcuts during IME composition
-
-- **Source:** github-codex-connector | PR #540 round 1 | 2026-06-19
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx` L43-43
-- **Finding:** The search input's ArrowDown/ArrowUp/Enter handlers always called `preventDefault()` and repurposed those keys for settings navigation. When a user types with a CJK/IME input method active, those same keys are used to choose or commit composition candidates, so the custom handlers interrupted composing text.
-- **Fix:** Added an early return in `handleSearchKeyDown` when `event.nativeEvent.isComposing` is true, before the Arrow/Enter branches. Added a co-located test firing composing keydown events to confirm navigation/confirmation callbacks are not invoked during composition.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 37. Settings sidebar navigation still cycles invisible sections on no-match search
-
-- **Source:** github-claude | PR #556 round 1 | 2026-06-20
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx` L155-183
-- **Finding:** `sidebarNavigationEntries` fell back to `SETTINGS_SECTIONS` whenever `filtered.length === 0`, which conflated an empty query with an active query that had no matches. A user could type a no-match search, blur the input, then press `j`/`k` or arrow keys and silently change the active settings section while the sidebar still showed no results.
-- **Fix:** Changed the fallback to use all sections only when `query.trim() === ''`, leaving `sidebarNavigationEntries` empty for active no-match searches. The existing `sidebarNavigationEntries.length === 0` guard in `navigateSidebar` then no-ops as intended. Added a regression test covering the no-match keyboard path.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 38. Focused settings sidebar options desynced from arrow navigation
-
-- **Source:** github-claude | PR #556 round 2 | 2026-06-20
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** The global settings dialog ArrowDown/ArrowUp handler still fired when
-  DOM focus was on a sidebar `role="option"` button. It changed the active section or
-  subsection while the browser focus ring stayed on the old option.
-- **Fix:** When sidebar navigation starts from inside the sidebar listbox, the dialog
-  now focuses the newly selected option after React applies the state update. This
-  preserves the advertised global navigation keys while keeping selection and focus
-  synchronized. Added a regression test for focused sidebar arrow navigation.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 39. Backward settings sidebar navigation wrapped from an absent active entry
-
-- **Source:** github-claude | PR #556 round 2 | 2026-06-20
-- **Severity:** LOW
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** When the current navigation key was absent from the visible sidebar
-  entries, backward navigation used an artificial base index that wrapped to the last
-  entry. Filtered or placeholder states could therefore jump to an unrelated section.
-- **Fix:** `navigateSidebar` now returns early when the current navigation key is not
-  present in `sidebarNavigationEntries`. Added a regression test covering a filtered
-  sidebar where the active section is no longer visible.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 40. No-result settings search blurred on Enter
-
-- **Source:** github-codex-connector | PR #556 round 2 | 2026-06-20
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx`
-- **Finding:** The search input blurred on Enter whenever the query was non-empty,
-  even if the query had no matching result and confirmation selected nothing. That
-  removed focus from the only control the user needed to correct the query.
-- **Fix:** The confirmation callback now returns a boolean success signal, and the
-  sidebar blurs the search input only when a result was actually confirmed. Added
-  component and dialog regression tests for no-result Enter.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 41. Keyboard search confirmation selected targets without scrolling to them
-
-- **Source:** github-codex-connector | PR #556 round 2 | 2026-06-20
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsDialog.tsx`
-- **Finding:** Pressing Enter on a target search result used the preserve-focus path,
-  clearing `scrollTargetId` before blur. Long panes could update the active sidebar
-  state while leaving the confirmed setting offscreen.
-- **Fix:** Confirmed search results now use the same scroll-target path as clicked
-  results, while unconfirmed no-result searches keep focus in the input. The existing
-  Enter regression test now asserts the confirmed target scrolls into view.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 42. Sidebar arrow navigation ignored the focused option anchor
-
-- **Source:** github-codex-connector | PR #556 round 3 | 2026-06-20
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/settings/SettingsContent.tsx`
-- **Finding:** When a keydown started from a focused settings sidebar option,
-  ArrowDown/ArrowUp and `j`/`k` still anchored to the active or viewport-derived
-  navigation key. A user could focus `Keymap` while `Appearance` was active, press
-  ArrowDown, and jump from Appearance's active row instead of the row with DOM focus.
-- **Fix:** Sidebar navigation now resolves the current key from the focused
-  `role="option"` element when focus is inside the sidebar listbox, then falls back
-  to the viewport/active anchor for content-origin shortcuts. Added a regression
-  test that focuses `Keymap` while Appearance is active and confirms ArrowDown
-  selects `Coding Agents`.
+- **File:** `src/features/terminal/components/TerminalContextMenu.tsx`
+- **Finding:** On macOS, both the Paste and Paste Image context-menu rows rendered the same shortcut chip, making the menu look contradictory even though the image path has priority only when the clipboard contains an image.
+- **Fix:** Made the Paste Image shortcut chip platform-aware and omitted it on macOS while keeping the distinct `Ctrl+V` chip on non-mac platforms. Added a macOS module-load regression test for the rendered row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

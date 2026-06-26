@@ -32,6 +32,7 @@ describe('NewSessionButton', () => {
       'min-w-[38px]',
       'max-w-[150px]',
       'flex-1',
+      'bg-primary',
       'vf-new-session-button'
     )
   })

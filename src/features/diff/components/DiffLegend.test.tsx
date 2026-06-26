@@ -60,23 +60,19 @@ describe('DiffLegend', () => {
   })
 
   test('renders green indicator dot for ADDED', () => {
-    /* eslint-disable testing-library/no-container, testing-library/no-node-access */
-    const { container } = render(<DiffLegend />)
+    render(<DiffLegend />)
 
-    const greenDot = container.querySelector('[data-testid="added-dot"]')
+    const greenDot = screen.getByTestId('added-dot')
 
     expect(greenDot).toHaveClass('bg-vcs-added')
-    /* eslint-enable testing-library/no-container, testing-library/no-node-access */
   })
 
   test('renders red indicator dot for REMOVED', () => {
-    /* eslint-disable testing-library/no-container, testing-library/no-node-access */
-    const { container } = render(<DiffLegend />)
+    render(<DiffLegend />)
 
-    const redDot = container.querySelector('[data-testid="removed-dot"]')
+    const redDot = screen.getByTestId('removed-dot')
 
     expect(redDot).toHaveClass('bg-vcs-deleted')
-    /* eslint-enable testing-library/no-container, testing-library/no-node-access */
   })
 
   test('has proper text styling', () => {

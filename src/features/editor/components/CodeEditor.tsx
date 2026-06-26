@@ -33,6 +33,8 @@ interface CodeEditorProps {
   /** Render a loading overlay while an async file read is in flight. */
   isLoading?: boolean
   shouldAutoFocus?: boolean
+  /** Prevent editing and saving while still allowing read/copy navigation. */
+  isReadOnly?: boolean
 }
 
 export interface CodeEditorHandle {
@@ -56,6 +58,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       isDirty = false,
       isLoading = false,
       shouldAutoFocus = false,
+      isReadOnly = false,
     }: CodeEditorProps,
     ref
   ): ReactElement {
@@ -79,6 +82,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     // bypassed the error-surfacing improvements in WorkspaceView. We now
     // require the caller to own the save lifecycle.
     const handleSave = (): void => {
+      if (isReadOnly) {
+        return
+      }
+
       onSave?.()
     }
 
@@ -96,6 +103,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       onSave: handleSave,
       onChange: onContentChange,
       shouldAutoFocus,
+      readOnly: isReadOnly,
     })
 
     const vimMode = useVimMode(editorView)
@@ -167,27 +175,31 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             void copySelection()
           },
         },
-        {
-          label: 'Cut',
-          icon: 'content_cut',
-          onSelect: (): void => {
-            void cutSelection()
-          },
-        },
-        {
-          label: 'Paste',
-          icon: 'content_paste',
-          onSelect: (): void => {
-            void pasteClipboard()
-          },
-        },
+        ...(isReadOnly
+          ? []
+          : [
+              {
+                label: 'Cut',
+                icon: 'content_cut',
+                onSelect: (): void => {
+                  void cutSelection()
+                },
+              },
+              {
+                label: 'Paste',
+                icon: 'content_paste',
+                onSelect: (): void => {
+                  void pasteClipboard()
+                },
+              },
+            ]),
         {
           label: 'Select All',
           icon: 'select_all',
           onSelect: selectAll,
         },
       ],
-      [copySelection, cutSelection, pasteClipboard, selectAll]
+      [copySelection, cutSelection, isReadOnly, pasteClipboard, selectAll]
     )
 
     useImperativeHandle(ref, () => ({

@@ -109,6 +109,13 @@ export const __resetBackendEventSubscriptions = (): void => {
   backendEventSubscriptions.clear()
 }
 
+export const __dispatchBackendEventForE2e = (
+  event: string,
+  payload: unknown
+): void => {
+  dispatchBackendEvent(event, payload)
+}
+
 const requireBridge = (): BackendApi => {
   if (typeof window === 'undefined' || !window.vimeflow) {
     throw new Error(

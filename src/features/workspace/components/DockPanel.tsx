@@ -14,6 +14,10 @@ import {
   CodeEditor,
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
+import {
+  EditorPathCrumb,
+  type EditorPathCrumbStatus,
+} from '../../editor/components/EditorPathCrumb'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
 import {
@@ -28,6 +32,7 @@ import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 import type { UseFeedbackBatchReturn } from '../../diff/hooks/useFeedbackBatch'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
+import type { EditorFileLifecycleStatus } from '../utils/editorFileLifecycleStatus'
 import {
   DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
   KEYBOARD_STEP_PX,
@@ -73,10 +78,14 @@ interface DockPanelBaseProps {
   horizontalPixelMax: number
 
   selectedFilePath: string | null
+  /** Git-derived lifecycle state for the selected editor file. */
+  editorFileLifecycleStatus?: EditorFileLifecycleStatus | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
   content: string
   onContentChange?: (content: string) => void
   onSave?: () => void
+  /** Timestamp set by the parent when a save successfully completes. */
+  savedAt?: number | null
   isDirty?: boolean
   /** True while an async file read is in flight. */
   isLoading?: boolean
@@ -125,6 +134,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       content,
       onContentChange = undefined,
       onSave = undefined,
+      savedAt,
       isDirty = false,
       isLoading = false,
       cwd = '.',
@@ -134,6 +144,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
+      editorFileLifecycleStatus = null,
       selectedDiffFile,
       onSelectedDiffFileChange,
     }: DockPanelProps,
@@ -267,6 +278,15 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const compactActions =
       !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
 
+    const editorPathCrumbStatus: EditorPathCrumbStatus | null = isDirty
+      ? 'UNSAVED'
+      : editorFileLifecycleStatus === 'DELETED'
+        ? 'DELETED'
+        : savedAt != null
+          ? 'SAVED'
+          : editorFileLifecycleStatus
+    const isEditorReadOnly = editorFileLifecycleStatus === 'DELETED' && !isDirty
+
     const handleVerticalKeyDown = (e: KeyboardEvent): void => {
       const step = e.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX
       const growKey = position === 'top' ? 'ArrowDown' : 'ArrowUp'
@@ -348,7 +368,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         <DockTab
           tab={tab}
           onTabChange={onTabChange}
-          selectedFilePath={selectedFilePath}
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
@@ -368,8 +387,15 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           {tab === 'editor' && (
             <div
               data-testid="editor-panel"
-              className="flex min-h-0 flex-1 overflow-hidden"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
             >
+              {selectedFilePath ? (
+                <EditorPathCrumb
+                  filePath={selectedFilePath}
+                  savedAt={savedAt ?? null}
+                  status={editorPathCrumbStatus}
+                />
+              ) : null}
               {isMarkdown && viewMode === 'reading' ? (
                 <MarkdownReadingView
                   key={selectedFilePath ?? 'markdown'}
@@ -388,6 +414,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                   isDirty={isDirty}
                   isLoading={isLoading}
                   shouldAutoFocus={isFocused}
+                  isReadOnly={isEditorReadOnly}
                 />
               )}
             </div>

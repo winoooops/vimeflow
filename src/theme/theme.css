@@ -80,10 +80,6 @@
   --color-agent-codex-accent-dim: rgb(125 239 161 / 0.16);
   --color-agent-codex-accent-soft: rgb(125 239 161 / 0.32);
   --color-agent-codex-on-accent: #0a2415;
-  --color-agent-gemini-accent: #a8c8ff;
-  --color-agent-gemini-accent-dim: rgb(168 200 255 / 0.16);
-  --color-agent-gemini-accent-soft: rgb(168 200 255 / 0.32);
-  --color-agent-gemini-on-accent: #0e1c33;
   --color-agent-shell-accent: #f0c674;
   --color-agent-shell-accent-dim: rgb(240 198 116 / 0.14);
   --color-agent-shell-accent-soft: rgb(240 198 116 / 0.3);
@@ -92,6 +88,14 @@
   --color-agent-browser-accent-dim: rgb(79 200 214 / 0.16);
   --color-agent-browser-accent-soft: rgb(79 200 214 / 0.3);
   --color-agent-browser-on-accent: #06232a;
+  --color-agent-kimi-accent: #fab387;
+  --color-agent-kimi-accent-dim: rgb(250 179 135 / 0.16);
+  --color-agent-kimi-accent-soft: rgb(250 179 135 / 0.32);
+  --color-agent-kimi-on-accent: #2a1608;
+  --color-agent-opencode-accent: #74c7ec;
+  --color-agent-opencode-accent-dim: rgb(116 199 236 / 0.16);
+  --color-agent-opencode-accent-soft: rgb(116 199 236 / 0.32);
+  --color-agent-opencode-on-accent: #062030;
   --shadow-pane-focus:
     0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35);
   --shadow-modal: 0 24px 80px rgb(0 0 0 / 0.5);

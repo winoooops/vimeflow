@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-19
-ref_count: 32
+last_updated: 2026-06-25
+ref_count: 38
 ---
 
 # Testing Gaps
@@ -631,23 +631,6 @@ filesystem scope restrictions).
 - **Code-review heuristic:** When a test asserts inequality of two computed DOM style strings, check whether structural differences (width, box-shadow, margin, etc.) already guarantee the strings differ. If so, the test is trivially true. Narrow the assertion to the specific property or value that actually matters (e.g., `background`, `color`, or `not.toContain(expectedColor)`).
 - **Commit:** same commit as this entry
 
-### 63. saveError rejection path in SettingsProvider has no test coverage
-
-- **Source:** github-claude | PR #430 round 3 | 2026-06-12
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/SettingsProvider.test.tsx` L112-165
-- **Finding:** `SettingsProvider.test.tsx` covered hydration, update-success, bridge-absent, and load-rejection, but the `catch (error)` branch in `SettingsProvider.saveNext` (where `bridge.save()` rejects and `saveError` is populated) had zero coverage. `saveError` is the primary user-facing error signal for save failures and part of the public `SettingsContextValue` interface that VIM-101..104 panes will consume.
-- **Fix:** Added a fifth test that mocks `window.vimeflow.settings.save` to reject with `Error('disk full')`, triggers `update()`, and asserts `saveError.message` is surfaced in the context consumer.
-- **Commit:** same commit as this entry
-
-### 64. Missing 'General Settings' sub-title assertion in consolidated test
-
-- **Source:** github-claude | PR #432 round 1 | 2026-06-12
-- **Severity:** LOW
-- **File:** `src/features/settings/components/panes/GeneralPane.test.tsx` L56-70
-- **Finding:** The first `GeneralPane` test consolidated the original two pane-rendering tests but the `General Settings` sub-title assertion was inadvertently left out during consolidation. No runtime risk, but a future rename of the subtitle (e.g. during an i18n pass) would go undetected by the test suite.
-- **Fix:** Restored the missing assertion: `expect(screen.getByText('General Settings')).toBeInTheDocument()`.
-
 ### 63. Test mock leaks across cases because cleanup only restores one of two replaced properties
 
 - **Source:** github-claude | PR #428 round 1 | 2026-06-12
@@ -675,38 +658,171 @@ filesystem scope restrictions).
 - **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
 - **Commit:** same commit as this entry
 
-### 65. Test assertion on union-typed field called `.length` on a function branch, checking arity instead of shortcut count
+### 66. DiffLegend tests assert tagName instead of behavioral contract
 
-- **Source:** github-claude | PR #460 round 4 | 2026-06-15
-- **Severity:** MEDIUM
-- **File:** `src/features/settings/sections.test.ts` L76-82
-- **Finding:** `KEYMAP_GROUPS` bindings can declare `keys` as either `ShortcutInput[]` or `(isMac: boolean) => ShortcutInput[]`. The test `expect(b.keys.length).toBeGreaterThan(0)` calls `.length` directly on the union, which on a function returns the function's arity (always 1) rather than the resolved shortcut array length. A regression that empties the returned array would pass the suite silently.
-- **Fix:** Resolved the function branch before asserting: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
-- **Commit:** same commit as this entry
-
-### 66. Sibling VIM_KEYMAP_GROUPS test repeated the same union-typed `.length` mistake
-
-- **Source:** github-claude | PR #460 round 5 | 2026-06-15
+- **Source:** github-claude | PR #509 round 2 | 2026-06-17
 - **Severity:** LOW
-- **File:** `src/features/settings/sections.test.ts` L94-99
-- **Finding:** After fixing `KEYMAP_GROUPS` in the same file, the adjacent `VIM_KEYMAP_GROUPS` binding test still called `expect(b.keys.length).toBeGreaterThan(0)` directly on the `ShortcutInput[] | ((isMac: boolean) => ShortcutInput[])` union. A future vim binding using the function form would silently pass because `function.length` reports parameter count, not the returned array length.
-- **Fix:** Mirrored the same resolution pattern used for `KEYMAP_GROUPS`: `const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys; expect(resolved.length).toBeGreaterThan(0)`.
+- **File:** `src/features/diff/components/DiffLegend.test.tsx` L62-78
+- **Finding:** Both indicator-dot tests asserted `greenDot.tagName === 'SPAN'` and `redDot.tagName === 'SPAN'`. The meaningful contract — that each dot carries the correct VCS color class (`bg-vcs-added` / `bg-vcs-deleted`) and is reachable by its `data-testid` — was already covered. The `tagName` check is pure implementation coupling: it would fail on any future refactor that swaps the element type for a semantically equivalent one, even when the visual contract is preserved.
+- **Fix:** Removed the two `tagName` assertions. The remaining `toHaveClass('bg-vcs-added')` / `toHaveClass('bg-vcs-deleted')` assertions plus `getByTestId` fully describe the contract.
 - **Commit:** same commit as this entry
 
-### 67. Default catalog has no test asserting it is conflict-free
+### 67. Production-used gradient rendering path in shared primitive lacks test coverage
 
-- **Source:** github-claude | PR #491 round 1 | 2026-06-16
-- **Severity:** LOW
-- **File:** `docs/superpowers/plans/2026-06-15-keybinding-engine-pr1.md`
-- **Finding:** Task 3's `catalog.test.ts` checks descriptor invariants per entry but never asserts that `detectConflicts(resolveBindings({}, isMac, superKey), superKey)` returns `[]`. A future catalog addition that reuses a default `(super, code)` would produce a permanently non-empty `conflicts` array in `useKeybindings` before the user changes anything.
-- **Fix:** Added a `default catalog is conflict-free for both platforms` test to Task 5's `resolve.test.ts` plan, importing `detectConflicts` and asserting zero conflicts for both `isMac` values.
-- **Commit:** same commit as this entry
-
-### 68. New subsection navigation branch lacks parallel aria-activedescendant regression test
-
-- **Source:** github-codex-connector | PR #549 round 2 | 2026-06-19
+- **Source:** github-codex-connector | PR #509 round 3 | 2026-06-17
 - **Severity:** MEDIUM
-- **File:** `src/features/settings/components/SettingsSidebar.tsx` L74-83, `src/features/settings/components/SettingsSidebar.test.tsx`
-- **Finding:** The PR introduced a new `activeSubsection` path in `fallbackActiveResultId` that routes the combobox's `aria-activedescendant` to `settings-search-result-subsection-${id}` when subsection tree mode is active. Existing tests covered subsection rendering, click handling, and selected/current state, but none asserted the combobox attribute itself — the actual screen-reader focus signal. A future refactor to the ternary or subsection id helper could silently break AT focus announcements for the new subsection UI.
-- **Fix:** Added a focused `SettingsSidebar.test.tsx` case that renders subsection tree mode with `activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}` and asserts the combobox `aria-activedescendant` equals `settings-search-result-subsection-appearance-fonts`.
+- **File:** `src/components/ProgressBar.test.tsx` L46-L50
+- **Finding:** `ProgressBar` switches fill classes when `gradient` is true, and the PR uses that branch in `CommitInfoPanel` for context memory and token progress bars. Existing tests covered clamping, semantic mode, segmented mode, and decorative mode, but not the gradient lookup path, so a future token/class regression could make production fills visually disappear without test signal.
+- **Fix:** Added a focused test that renders `ProgressBar` with `gradient` and a production-used `secondary` tone, then asserts the fill element receives `bg-gradient-to-r`.
+- **Code-review heuristic:** When a PR centralizes rendering into a new shared primitive and production consumers exercise a non-default branch, add at least one targeted test for that branch. Simple lookup tables are still worth covering because theme-token or primitive refactors can silently break the mapped class.
 - **Commit:** same commit as this entry
+
+### 68. `requestAnimationFrame` mock always returns the same frame ID
+
+- **Source:** github-claude | PR #515 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The test spy mocked `window.requestAnimationFrame` to always return `1`. After the spy was restored, the component's unmount cleanup called `window.cancelAnimationFrame(1)` against the real API. In jsdom frame IDs start at `1`, so any other real rAF queued with that ID would be silently dropped.
+- **Fix:** Changed the mock to return incrementing IDs (`let nextFrameId = 1; return nextFrameId++`) so each scheduled frame is unique and cleanup cancels only this component's own frame.
+- **Commit:** _(same commit as this entry)_
+
+### 69. e2e helper hard-codes pane ID format `p${slotIndex}` without DOM read
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`
+- **Finding:** `prepareBrowserPaneAtSlot` constructed `paneId = \`p${slotIndex}\``and passed it to`readBrowserPaneIdentity` without verifying the ID against the DOM. A future change to pane-ID format would fail every parametrized slot test with an opaque "identity not available" error.
+- **Fix:** Read `dataset.paneId` from the Nth `[data-testid="split-view-slot"]` node in the active split view and throw a clear error if the slot has no pane ID.
+- **Commit:** _(same commit as this entry)_
+
+### 70. Post-idle unit test asserts interval cleanup but not MutationObserver disconnect
+
+- **Source:** github-claude | PR #515 round 3 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/features/browser/components/BrowserPane.test.tsx`
+- **Finding:** The `detects position-only moves after the rAF loop has idled` test verified `clearInterval` was called on unmount, but did not assert that the `MutationObserver` from `startPostIdleDetection` was disconnected. A regression that omitted `disconnect()` would leave a live MO after unmount undetected.
+- **Fix:** Added `vi.spyOn(MutationObserver.prototype, 'disconnect')` before render and asserted it was called after `unmount()`.
+- **Commit:** _(same commit as this entry)_
+
+### 69. Global inert-click interceptor can silence capture-phase test handlers
+
+- **Source:** github-claude | PR #517 round 1 | 2026-06-17
+- **Severity:** LOW
+- **File:** `src/test/setup.ts`
+- **Finding:** A module-level capture-phase click listener called `event.stopImmediatePropagation()` for clicks inside `[inert]` elements to polyfill jsdom's lack of inert activation suppression. Because the listener is installed once at module load and persists across all tests, a future test adding its own capture-phase click spy near an inert subtree would have its handler silently dropped, producing a false-green assertion.
+- **Fix:** Added a comment documenting the global side-effect and warning future contributors to use bubbling-phase listeners or keep spies outside inert subtrees unless explicitly testing inert blocking.
+- **Commit:** same commit as this entry
+- **Note:** Low-severity test-infrastructure finding; a per-test helper would be cleaner but requires broader test-file changes.
+
+### 70. Global inert-click interceptor persists across all test files
+
+- **Source:** github-claude | PR #517 round 10 | 2026-06-17
+- **Severity:** MEDIUM
+- **File:** `src/test/setup.ts` L102-121
+- **Finding:** The same module-level capture-phase click listener from entry 69
+  was still installed globally. A comment documenting the side-effect does not
+  remove the risk: any future test that registers a capture-phase click handler
+  near an `[inert]` subtree continues to have that handler silenced with no
+  error or warning.
+- **Fix:** Extracted the inert click polyfill into a scoped helper
+  (`src/test/inertClickPolyfill.ts`) and installed it via `beforeAll`/`afterAll`
+  only in the test file that actually exercises inert click behavior
+  (`AgentStatusPanel/index.test.tsx`), removing the global side-effect from
+  `src/test/setup.ts`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 71. Keyboard resize test loses explicit clamp-bounds verification
+
+- **Source:** github-claude | PR #526 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/useSplitDivider.test.tsx` L66-76
+- **Finding:** The keyboard resize assertion only checked `ratios[0] > ratios[1]`, verifying direction but not that the resulting boundary fraction stayed within `[SPLIT_ELASTIC_CONFIG.minPercent, SPLIT_ELASTIC_CONFIG.maxPercent]`. The old test was the only place in the file that validated the actual clamped bounds.
+- **Fix:** Derived the boundary fraction with `const frac = ratios[0] / (ratios[0] + ratios[1])` and added `toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)` / `toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)` assertions.
+
+### 72. Test script memory flag not mirrored to `test:coverage`
+
+- **Source:** github-claude | PR #528 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `package.json` L28-30
+- **Finding:** The `test` script was prefixed with `cross-env NODE_OPTIONS=--max-old-space-size=8192` to prevent CI OOM, but the `test:coverage` script was not. Coverage instrumentation holds more live objects than a plain run, so any CI step invoking `npm run test:coverage` would still hit the default heap limit and crash with the same OOM that the `test` change was meant to fix.
+- **Fix:** Added the identical `cross-env NODE_OPTIONS=--max-old-space-size=8192` prefix to the `test:coverage` script.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 73. `requestAnimationFrame` callback captured before effect scheduling races in CI
+
+- **Source:** deterministic-ci-failure | PR #528 round 2 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.test.tsx` L253-294
+- **Finding:** The test captured `window.requestAnimationFrame` callback in a local variable and invoked it once synchronously after `settle()`. In CI the effect that schedules the rAF loop could resolve after the single invocation, so `setBrowserPaneBounds` was never called and `waitFor` timed out.
+- **Fix:** Moved the callback invocation inside the `waitFor` poll so each retry ticks the latest captured animation-frame callback until the moved-bounds assertion passes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 74. `findActiveStoreShell` open guard lacks coverage for active-but-closed session
+
+- **Source:** github-claude | PR #538 round 1 | 2026-06-18
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L47-49
+- **Finding:** The `!activeSession?.open` guard added to `findActiveStoreShell` prevents spawning a PTY when the persisted active session was already closed. Every existing restore test used `active: true, open: true`; the `active: true, open: false` branch that exercises the guard had no coverage, so dropping or inverting the condition would not fail any test.
+- **Fix:** Added a restore test with `active: true, open: false` in the store fixture, asserting `service.spawn` is never called and the persisted active session is still activated via `onActivePersisted`.
+
+### 75. `isOpenSession` unit tests omit explicit `open: false` cases
+
+- **Source:** github-claude | PR #538 round 1 | 2026-06-18
+- **Severity:** LOW
+- **File:** `src/features/sessions/utils/sessionStatus.test.ts` L90-110
+- **Finding:** The unit tests covered `open: true` (placeholder treated as open) and `open: undefined` (fallback to pane liveness), but not the explicit `open: false` path. Both `open: false, dead panes → false` and `open: false, live panes → true via hasLivePane` were untested, leaving the defensive fallback undocumented.
+- **Fix:** Added two focused tests: one asserting `isOpenSession({ open: false, panes: [completed] }) === false`, and one asserting `isOpenSession({ open: false, panes: [running] }) === true`.
+
+### 79. Standalone bridge type check not wired into CI
+
+- **Source:** github-codex-connector | PR #585 round 2 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `eslint.config.js`
+- **Finding:** The vendored OpenCode bridge was excluded from ESLint with a dedicated `type-check:bridge` script, but that script was not called by the main `type-check` path or the CI type-check step. Future bridge edits could therefore break the standalone TypeScript contract without failing automation.
+- **Fix:** Added `type-check:bridge` behind `type-check:generated`, the script already used by CI's Type check step, so both local and cloud gates verify the excluded bridge asset.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 80. Signed epoch-ms test helper wrapped negative values
+
+- **Source:** github-claude | PR #586 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The `epoch_ms(ms: i64)` test helper converted signed milliseconds with `ms as u64`. A future negative timestamp test would wrap to a huge duration and panic in debug builds instead of producing a useful pre-epoch `SystemTime`.
+- **Fix:** Made the helper sign-aware by subtracting the absolute duration from `UNIX_EPOCH` for negative values and adding it for non-negative values.
+- **Commit:** same commit as this entry
+
+### 81. Cached fallback branch for present-but-nonmatching index was untested
+
+- **Source:** github-claude | PR #595 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The OpenCode locator had tests for a missing index with a populated cache and for a present nonmatching index with no cache, but not for a present index whose rows no longer matched cwd after a successful resolve. That left the `resolve_by_cwd -> None` cached fallback contract unpinned.
+- **Fix:** Added a regression test that resolves `ses_A`, rewrites the index to contain only another cwd, and asserts the second `locate` returns the cached `ses_A`.
+- **Commit:** same commit as this entry
+
+### 82. Shared UI control props used in production lacked branch coverage
+
+- **Source:** github-claude | PR #605 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/SidebarToggle.test.tsx`
+- **Finding:** `SidebarToggle` added exported `label` and `mirrored` props for the right-docked activity-panel toggle, but the sibling tests only covered the updated `inset` variant behavior. A later regression could break the activity-panel accessible name, tooltip text, or mirrored glyph orientation without any focused test failure.
+- **Fix:** Added focused tests asserting `label` overrides both the button accessible name and shared tooltip content, and asserting the SVG mirror class is absent by default and present when `mirrored` is true.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 83. Moved shell control lost integration-level state-transition coverage
+
+- **Source:** github-claude | PR #605 round 2 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.integration.test.tsx`
+- **Finding:** The activity-panel expand/collapse control moved out of the rail/header subcomponents and into `WorkspaceView` as the root-owned `activity-toggle-fixed` control, but the deleted lower-level callback tests were not re-expressed at the new owner boundary. A wrong boolean update or stale handler wiring regression could leave the user-facing activity panel toggle broken while the suite stayed green.
+- **Fix:** Updated the WorkspaceView integration coverage to click `activity-toggle-fixed` directly and assert both transitions: expanded panel header to collapsed rail, then collapsed rail back to expanded panel header.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 84. Shared icon test weakened unaffected sizing contracts
+
+- **Source:** github-codex-connector | PR #619 round 1 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.test.tsx`
+- **Finding:** The ClaudeCode icon needed custom rendered dimensions, but the shared `BRAND_ICONS` table changed from exact `height === size` coverage to a positive-height assertion for every icon. That let Codex, Kimi, and OpenCode regress to an incorrect rendered height without failing the only shared sizing guard.
+- **Fix:** Split the exact-height assertion into a square-icon table for Codex, Kimi, and OpenCode, and kept ClaudeCode covered by its dedicated custom-dimension test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

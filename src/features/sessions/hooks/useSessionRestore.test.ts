@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Session } from '../types'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
 import { useSessionRestore } from './useSessionRestore'
 
 const loadWorkspaceForRestore = vi.hoisted(() =>
-  vi.fn((): Promise<WorkspaceShapeDto | null> => Promise.resolve(null))
+  vi.fn((): Promise<PersistedWorkspaceShape | null> => Promise.resolve(null))
 )
 const beginWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const endWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
@@ -118,6 +118,97 @@ describe('useSessionRestore', () => {
     expect(restoredSessions[0].panes[0].ptyId).toBe('pty-1')
     expect(restoredSessions[0].panes[0].active).toBe(true)
     expect(restoredSessions[0].panes[0].status).toBe('running')
+  })
+
+  test('falls back to PTY sessions when durable workspace load fails', async () => {
+    loadWorkspaceForRestore.mockRejectedValue(
+      new Error('corrupt workspace layout')
+    )
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/home/will/repo',
+            shell: '/bin/zsh',
+            status: {
+              kind: 'Alive',
+              pid: 1234,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+        activeSessionId: 'pty-1',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.listSessions).toHaveBeenCalled()
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restoredSessions).toHaveLength(1)
+    expect(restoredSessions[0].panes[0].ptyId).toBe('pty-1')
+    expect(onActiveResolved).toHaveBeenCalledWith('pty-1')
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not treat exited-only PTY cache as a restore fallback after store load failure', async () => {
+    loadWorkspaceForRestore.mockRejectedValue(
+      new Error('corrupt workspace layout')
+    )
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-old',
+            cwd: '/home/will/repo',
+            shell: '/bin/zsh',
+            status: {
+              kind: 'Exited',
+              exit_code: 0,
+            },
+          },
+        ],
+        activeSessionId: null,
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.listSessions).toHaveBeenCalled()
+    expect(onRestore).not.toHaveBeenCalled()
+    expect(onActiveResolved).not.toHaveBeenCalled()
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
   })
 
   // Fragmentation regression (captured evidence for the multi-pane restore
@@ -468,7 +559,7 @@ describe('useSessionRestore', () => {
   test('restores a browser-only session from the durable store', async () => {
     const order: string[] = []
 
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-browser',
@@ -476,6 +567,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
           ],
@@ -543,7 +635,7 @@ describe('useSessionRestore', () => {
   })
 
   test('restarts the persisted active shell workspace when graceful quit left no live PTYs', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -551,6 +643,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -635,8 +728,171 @@ describe('useSessionRestore', () => {
     expect(onActiveResolved).not.toHaveBeenCalled()
   })
 
+  test('keeps non-selected previously open shell workspaces open as lazy placeholders', async () => {
+    const store: PersistedWorkspaceShape = {
+      sessions: [
+        {
+          id: 'ws-selected',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/selected',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-selected-old',
+              cwd: '/home/will/selected',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+        {
+          id: 'ws-background',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/background',
+          active: false,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-background-old',
+              cwd: '/home/will/background',
+              agentType: 'claude-code',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-selected-new',
+        pid: 4321,
+        cwd: '/home/will/selected',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).toHaveBeenCalledTimes(1)
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+
+    expect(restoredSessions).toHaveLength(2)
+    expect(restoredSessions[0]).toEqual(
+      expect.objectContaining({
+        id: 'ws-selected',
+        open: true,
+        status: 'running',
+      })
+    )
+
+    expect(restoredSessions[1]).toEqual(
+      expect.objectContaining({
+        id: 'ws-background',
+        open: true,
+        status: 'completed',
+      })
+    )
+
+    expect(restoredSessions[1].panes[0]).toEqual(
+      expect.objectContaining({
+        ptyId: 'pty-background-old',
+        status: 'completed',
+      })
+    )
+  })
+
+  test('does not spawn a PTY for the persisted-active session when it is closed', async () => {
+    const store: PersistedWorkspaceShape = {
+      sessions: [
+        {
+          id: 'ws-closed',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/closed',
+          active: true,
+          open: false,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-closed-old',
+              cwd: '/home/will/closed',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/closed',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActivePersisted = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(onRestore).toHaveBeenCalled()
+    expect(onActivePersisted).toHaveBeenCalledWith('ws-closed')
+  })
+
   test('resolves active session from the restarted PTY id when no persisted-active handler is registered', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -644,6 +900,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -691,7 +948,7 @@ describe('useSessionRestore', () => {
   })
 
   test('kills restarted PTY when restore is cancelled while spawn is in flight', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -699,6 +956,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -759,7 +1017,7 @@ describe('useSessionRestore', () => {
   })
 
   test('kills restarted PTY when restore is cancelled after spawn resolves', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -767,6 +1025,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',
@@ -830,7 +1089,7 @@ describe('useSessionRestore', () => {
   })
 
   test('does not restart an inactive shell when a browser pane is active', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -838,6 +1097,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
             {
@@ -905,7 +1165,7 @@ describe('useSessionRestore', () => {
   // so restore must reconstruct the browser workspace and must NOT spawn a
   // background shell.
   test('does not restart shell when mixed workspace has browser normalized active', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-mixed',
@@ -913,6 +1173,7 @@ describe('useSessionRestore', () => {
           layout: 'vsplit',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
             {
@@ -979,7 +1240,7 @@ describe('useSessionRestore', () => {
   // Exited SessionInfo rows after the cached PTY is gone. Those rows are not
   // live sessions, so restore must still restart the persisted active shell.
   test('restarts persisted active shell when listSessions only returns Exited rows', async () => {
-    const store: WorkspaceShapeDto = {
+    const store: PersistedWorkspaceShape = {
       sessions: [
         {
           id: 'ws-shell',
@@ -987,6 +1248,7 @@ describe('useSessionRestore', () => {
           layout: 'single',
           workingDirectory: '/home/will/proj',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',

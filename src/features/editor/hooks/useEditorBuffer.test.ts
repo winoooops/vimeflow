@@ -10,6 +10,7 @@ describe('useEditorBuffer', () => {
     mockFileSystemService = {
       listDir: vi.fn(),
       readFile: vi.fn(),
+      fileExists: vi.fn(),
       writeFile: vi.fn(),
       renamePath: vi.fn(),
       deletePath: vi.fn(),

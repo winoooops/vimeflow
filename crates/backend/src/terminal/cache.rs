@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const SCHEMA_VERSION: u32 = 1;
@@ -64,6 +64,11 @@ impl Default for SessionCacheData {
 #[derive(Debug)]
 pub struct SessionCache {
     path: PathBuf,
+    /// The Vimeflow data root that owns this cache. Stored explicitly (rather
+    /// than derived from `path.parent()`) so `sessions.json` can move to a
+    /// subdirectory without silently redirecting bridge/status directories to
+    /// the wrong parent.
+    app_data_dir: PathBuf,
     data: Mutex<SessionCacheData>,
 }
 
@@ -78,10 +83,27 @@ impl SessionCache {
         } else {
             SessionCacheData::default()
         };
+        let app_data_dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.clone());
         Ok(Self {
             path,
+            app_data_dir,
             data: Mutex::new(data),
         })
+    }
+
+    /// Override the data root inferred from the cache path. Production code
+    /// (BackendState) uses this to pin the true `app_data_dir` instead of
+    /// relying on the cache-file placement convention.
+    pub fn with_app_data_dir(mut self, app_data_dir: PathBuf) -> Self {
+        self.app_data_dir = app_data_dir;
+        self
+    }
+
+    pub fn app_data_dir(&self) -> Option<PathBuf> {
+        Some(self.app_data_dir.clone())
     }
 
     /// Load from disk; if corrupted, move aside and start empty.
@@ -109,8 +131,13 @@ impl SessionCache {
                 // rename above failed, the corrupt file is still at `path`;
                 // re-running `Self::load(path)` would re-parse it and Err
                 // again, and the previous `.expect(...)` would panic.
+                let app_data_dir = path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| path.clone());
                 Self {
                     path,
+                    app_data_dir,
                     data: Mutex::new(SessionCacheData::default()),
                 }
             }
@@ -230,8 +257,8 @@ impl SessionCache {
             .parent()
             .ok_or_else(|| "cache path has no parent".to_string())?;
         fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)
-            .map_err(|e| format!("create tempfile: {e}"))?;
+        let mut tmp =
+            tempfile::NamedTempFile::new_in(parent).map_err(|e| format!("create tempfile: {e}"))?;
         let bytes = serde_json::to_vec_pretty(data).map_err(|e| format!("serialize: {e}"))?;
         tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
         tmp.persist(&self.path)
@@ -277,6 +304,22 @@ mod tests {
         assert_eq!(snap.session_order.len(), 0);
         assert!(snap.sessions.is_empty());
         assert!(snap.active_session_id.is_none());
+    }
+
+    #[test]
+    fn explicit_app_data_dir_is_preserved_independently_of_cache_path() {
+        let dir = TempDir::new().unwrap();
+        let app_data_dir = dir.path().join("runtime").join("app-data");
+        let cache_path = app_data_dir.join("db").join("sessions.json");
+
+        let cache = SessionCache::load(cache_path.clone())
+            .unwrap()
+            .with_app_data_dir(app_data_dir.clone());
+
+        assert_eq!(cache.app_data_dir(), Some(app_data_dir));
+        // The cache file lives in a subdirectory, but the reported data root
+        // is the explicit app_data_dir — not the cache file's immediate parent.
+        assert_ne!(cache.app_data_dir(), cache_path.parent().map(Path::to_path_buf));
     }
 
     #[test]
@@ -477,6 +520,12 @@ mod tests {
     #[test]
     fn load_or_recover_does_not_panic_when_rename_fails() {
         use std::os::unix::fs::PermissionsExt;
+
+        // Permission-based EACCES simulation is ineffective when running as
+        // root, so skip rather than assert behavior the OS will not produce.
+        if unsafe { libc::getuid() } == 0 {
+            return;
+        }
 
         let dir = TempDir::new().unwrap();
         let parent = dir.path().join("readonly");

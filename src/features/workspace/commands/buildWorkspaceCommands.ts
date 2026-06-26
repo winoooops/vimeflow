@@ -235,6 +235,9 @@ export const buildWorkspaceCommands = (
         label: theme.label,
         description: `Switch to ${theme.label}`,
         icon: 'palette',
+        preview: (): void => {
+          themeService.preview(theme.id)
+        },
         execute: (): void => {
           themeService.apply(theme.id)
         },

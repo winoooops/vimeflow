@@ -3,16 +3,25 @@ import {
   CURRENT_WORKSPACE_LAYOUT_VERSION,
   WorkspaceLayoutWriter,
 } from './workspace-layout-writer'
-import type { PersistedTab, WorkspaceShapeDto } from './workspace-layout-types'
+import type {
+  PersistedTab,
+  PersistedWorkspaceShape,
+} from './workspace-layout-types'
 
-const shape = (): WorkspaceShapeDto => ({
+const shape = (): PersistedWorkspaceShape => ({
+  customPaneLayouts: [],
   sessions: [
     {
       id: 's1',
       projectId: 'proj-1',
       layout: 'vsplit',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p0' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ],
       workingDirectory: '/repo',
       active: true,
+      open: true,
       panes: [
         {
           kind: 'shell',
@@ -70,13 +79,19 @@ describe('WorkspaceLayoutWriter', () => {
 
     expect(writer.assemble()).toEqual({
       version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      customPaneLayouts: [],
       sessions: [
         {
           id: 's1',
           projectId: 'proj-1',
           layout: 'vsplit',
+          placements: [
+            { paneId: 'p0', slotId: 'slot:p0' },
+            { paneId: 'p1', slotId: 'slot:p1' },
+          ],
           workingDirectory: '/repo',
           active: true,
+          open: true,
           panes: [
             {
               kind: 'shell',

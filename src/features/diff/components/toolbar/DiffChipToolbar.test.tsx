@@ -231,8 +231,11 @@ describe('DiffChipToolbar', () => {
       screen.queryByRole('button', { name: /unstage/i })
     ).not.toBeInTheDocument()
 
-    // Dropdown triggers — value labels surface on the chip itself.
-    expect(screen.getByRole('button', { name: /^Word$/ })).toBeInTheDocument() // highlight
+    // Config chips — the small-caps key + value both surface on the chip
+    // itself (e.g. "Highlight" + "Word"), not as an external caption.
+    expect(
+      screen.getByRole('button', { name: /highlight.*word/i })
+    ).toBeInTheDocument() // highlight chip
 
     expect(
       screen.getByRole('button', { name: /pierre-dark/i })
@@ -395,7 +398,7 @@ describe('DiffChipToolbar', () => {
 
     renderToolbar({ onLineDiffTypeChange })
 
-    await user.click(screen.getByRole('button', { name: /^Word$/ }))
+    await user.click(screen.getByRole('button', { name: /highlight.*word/i }))
     const menu = await screen.findByRole('menu')
     await user.click(within(menu).getByRole('menuitem', { name: /^Character/ }))
 
@@ -539,6 +542,25 @@ describe('DiffChipToolbar', () => {
       expect(
         await screen.findByText(/discard all changes to/i)
       ).toBeInTheDocument()
+    })
+
+    test('Discard All (IconButton anchor) forwards the dialog disclosure attributes', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      const trigger = screen.getByRole('button', { name: /^discard all$/i })
+      // The migrated IconButton forwards aria-haspopup / aria-expanded through
+      // ...rest; closed reads aria-expanded=false.
+      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+      await user.click(trigger)
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
     })
 
     test('Discard All button exposes a tooltip on hover', async () => {

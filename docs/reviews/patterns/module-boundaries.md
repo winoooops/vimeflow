@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-18
+last_updated: 2026-06-25
 ref_count: 3
 ---
 
@@ -160,14 +160,6 @@ Don't widen the coupling by adding a second importer.
 - **Fix:** Remove the unused context parameter, delete the `storeAuthoritative` calculation, and call `onRestore(restored)` with the API shape that callers actually consume.
 - **Commit:** same commit as this entry
 
-### 14. `AppSettingsCache` exposes two identical accessor names for one concept
-
-- **Source:** github-claude | PR #430 round 1 | 2026-06-12
-- **Severity:** LOW
-- **File:** `crates/backend/src/settings/app_settings.rs` L109-122
-- **Finding:** `current()` and `get()` were both `#[allow(dead_code)]` accessors returning the in-memory mirror; `get()` simply delegated to `current()`. Follow-up panes would arbitrarily pick one name, leaving the other permanently dead and creating a small but real API-surface drift risk.
-- **Fix:** Removed the `get()` alias and its `#[allow(dead_code)]` marker. Only `current()` remains as the single mirror accessor, so future callers have one obvious name and the compiler will enforce usage once the renderer-facing IPC path is wired.
-
 ### 14. Local `ContextMenuState` shadows the shared `ContextMenuState` type
 
 - **Source:** github-claude | PR #428 round 1 | 2026-06-12
@@ -186,20 +178,20 @@ Don't widen the coupling by adding a second importer.
 - **Fix:** Promoted the helper to `src/features/editor/utils/clipboard.ts`, exported `ClipboardLike` from the same module, and added the required co-located `clipboard.test.ts`. Updated `useCodeMirror.ts` and `MarkdownReadingView.tsx` to import from the new utility module. The move keeps the hook focused on CodeMirror integration and places the clipboard abstraction next to `readingStyleStore.ts`, the existing stateless utility in `src/features/editor/utils/`.
 - **Commit:** same commit as this entry
 
-### 16. Duplicated session-cycling logic in `WorkspaceView` and `buildWorkspaceCommands`
+### 16. `BrowserPaneBoundsCapture` re-declared in `e2e.d.ts` instead of imported from canonical source
 
-- **Source:** github-claude | PR #460 round 1 | 2026-06-15
+- **Source:** github-claude | PR #472 round 1 | 2026-06-15
 - **Severity:** MEDIUM
-- **File:** `src/features/workspace/WorkspaceView.tsx` L1492-1509, `src/features/workspace/commands/buildWorkspaceCommands.ts` L187-204
-- **Finding:** Both files implemented an identical wrap-around session cycle (empty-sessions guard, `findIndex` on `activeSessionId`, modulo wrap, `setActiveSessionId`). The two closures differed only in variable names (`idx`/`nextIdx` vs `index`/`nextIndex`), making the duplication non-obvious in future diffs. A behavior change — different empty-list message, skip-locked-session guard, etc. — would have to be applied independently in both places, and the compiler would not warn on divergence.
-- **Fix:** Extracted a pure `cycleSession(items, activeId, delta)` utility into `src/features/sessions/utils/cycleSession.ts` with co-located `cycleSession.test.ts`. Replaced both closures with one-liner delegates that call the utility and surface the same "No open sessions" toast when it returns `null`.
+- **File:** `src/types/e2e.d.ts` L6-9
+- **Finding:** `src/types/e2e.d.ts` re-declared `BrowserPaneBoundsCapture` as a global ambient interface that independently extended `BrowserPaneBoundsRequest` with `sequence: number`. The canonical type already existed as a named export in `src/features/browser/browserBridge.ts`. TypeScript could not enforce that the two declarations stayed in sync; a required field added to the module type would silently leave the global type stale.
+- **Fix:** Replaced the ambient interface block with a global type alias that imports the canonical `BrowserPaneBoundsCapture` from `../features/browser/browserBridge` (aliased to avoid naming collision). E2E specs continue to consume the type globally while the renderer-side type remains the single source of truth.
 - **Commit:** same commit as this entry
 
-### 18. Trivial `isActiveTarget` helper duplicated across four settings pane files
+### 17. Packaging hook reached into electron-builder internals with an unstable helper contract
 
-- **Source:** github-claude | PR #537 round 1 | 2026-06-18
-- **Severity:** LOW
-- **File:** `src/features/settings/components/panes/AppearancePane.tsx` L7-10, `GeneralPane.tsx` L7-10, `KeymapPane.tsx` L109-112, `AgentsPane.tsx` L26-29
-- **Finding:** The same one-line helper `const isActiveTarget = (id, activeTargetId) => activeTargetId === id` was copy-pasted into all four settings pane files. The body was a single equality comparison that needed no helper name to be readable; keeping it local in each pane created a four-file edit surface for any future semantic change to "active target" matching.
-- **Fix:** Removed the helper from each pane and inlined the equality as `activeTargetId === targetId` at every call site. This keeps each pane self-contained without the duplicated helper surface.
+- **Source:** github-codex-connector | PR #621 round 1 | 2026-06-25
+- **Severity:** P1 / HIGH + P2 / MEDIUM
+- **File:** `scripts/package-macos-icon.mjs`
+- **Finding:** A custom macOS icon packaging hook imported `generateAssetCatalogForIcon` from an `app-builder-lib/out/...` path and called it with the wrong argument shape. The helper lives behind electron-builder's compiled internal layout, so the import path and function signature are not a stable package contract; the hook failed before packaging could reach its platform guard or before `actool` could compile the asset catalog.
+- **Fix:** Removed the custom hook path from the active PR state and used electron-builder's native `mac.icon: build/composed_icon.icon` support. The package configuration now delegates Icon Composer handling to electron-builder instead of coupling repository scripts to private `app-builder-lib` internals.
 - **Commit:** same commit as this entry

@@ -24,9 +24,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "type-check": "npm run generate:bindings && npm run type-check:generated",
-    "type-check:generated": "tsc -b && tsc -p electron/tsconfig.json",
-    "test": "npm run generate:bindings:if-missing && vitest --passWithNoTests",
-    "test:coverage": "npm run generate:bindings:if-missing && vitest run --coverage",
+    "type-check:generated": "tsc -b && tsc -p electron/tsconfig.json && npm run type-check:bridge",
+    "type-check:bridge": "tsc -p tsconfig.opencode-bridge.json",
+    "test": "npm run generate:bindings:if-missing && cross-env NODE_OPTIONS=--max-old-space-size=8192 vitest --passWithNoTests",
+    "test:coverage": "npm run generate:bindings:if-missing && cross-env NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",
     "clean:bindings": "mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete",
     "generate:bindings": "npm run clean:bindings && cargo test --manifest-path crates/backend/Cargo.toml export_bindings && prettier --write src/bindings/",
     "generate:bindings:if-missing": "node scripts/generate-bindings-if-missing.mjs",
@@ -80,7 +81,9 @@
     "rehype-highlight": "^7.0.2",
     "rehype-sanitize": "^6.0.0",
     "rehype-slug": "^6.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwind-variants": "^3.2.2"
   },
   "overrides": {
     "@xterm/addon-canvas": {

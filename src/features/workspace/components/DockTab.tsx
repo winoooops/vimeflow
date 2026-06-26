@@ -7,14 +7,16 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
+import { SegmentedControl } from '@/components/SegmentedControl'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export type DockTabType = 'editor' | 'diff'
 
 interface DockTabProps {
   tab: DockTabType
   onTabChange: (next: DockTabType) => void
-  selectedFilePath: string | null
   onClose: () => void
   compactActions?: boolean
   /**
@@ -23,18 +25,26 @@ interface DockTabProps {
    * Defaults to 'right'.
    */
   menuAlign?: 'left' | 'right'
-  /** Slot rendered between the tab strip spacer and the file-path/close cluster. */
+  /** Slot rendered between the tab strip spacer and the action cluster. */
   children?: ReactNode
 }
 
-const tabButtonClass = (active: boolean, compact: boolean): string =>
-  `flex items-center justify-center font-mono text-[10.5px] h-[26px] rounded-md border transition-colors ${
-    compact ? 'w-[30px] px-0' : 'gap-1.5 px-[11px]'
-  } ${
-    active
-      ? 'bg-primary/[0.08] border-primary-container/30 text-primary'
-      : 'bg-transparent border-transparent text-on-surface-muted hover:text-primary'
-  }`
+const DOCK_TAB_OPTIONS = [
+  {
+    value: 'diff',
+    label: 'Diff Viewer',
+    icon: 'difference',
+    tooltip: 'Diff Viewer',
+    shortcut: ['Mod', 'G'] as const,
+  },
+  {
+    value: 'editor',
+    label: 'Editor',
+    icon: 'code',
+    tooltip: 'Editor',
+    shortcut: ['Mod', 'E'] as const,
+  },
+] as const
 
 const tabIconClass = (active: boolean): string =>
   `material-symbols-outlined text-[12px] ${
@@ -44,7 +54,6 @@ const tabIconClass = (active: boolean): string =>
 export const DockTab = ({
   tab,
   onTabChange,
-  selectedFilePath,
   onClose,
   compactActions = false,
   menuAlign = 'right',
@@ -105,10 +114,6 @@ export const DockTab = ({
     }
   }, [compactActions])
 
-  const displayPath = selectedFilePath
-    ? selectedFilePath.replace(/^~\//, '')
-    : 'No file'
-
   const handleCompactKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape') {
       return
@@ -121,6 +126,7 @@ export const DockTab = ({
 
   return (
     <div
+      data-testid="dock-tab"
       className="relative flex h-[34px] min-w-0 items-center gap-1 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
       onKeyDown={compactActions ? handleCompactKeyDown : undefined}
       onBlurCapture={
@@ -133,41 +139,22 @@ export const DockTab = ({
           : undefined
       }
     >
-      <div className="flex min-w-0 shrink-0 gap-1">
-        <Tooltip
-          content="Diff Viewer"
-          shortcut={['Mod', 'G']}
-          placement="bottom"
-        >
-          <button
-            type="button"
-            aria-pressed={tab === 'diff'}
-            onClick={() => onTabChange('diff')}
-            className={tabButtonClass(tab === 'diff', compactActions)}
-            aria-label="Diff Viewer"
-          >
-            <span className={tabIconClass(tab === 'diff')} aria-hidden="true">
-              difference
+      <SegmentedControl
+        aria-label="Dock tab"
+        variant="dock"
+        value={tab}
+        options={DOCK_TAB_OPTIONS}
+        onChange={onTabChange}
+        buttonClassName={compactActions ? 'w-[30px] px-0' : 'gap-1.5'}
+        renderOption={(option, active) => (
+          <>
+            <span className={tabIconClass(active)} aria-hidden="true">
+              {option.icon}
             </span>
-            {!compactActions && <span>Diff Viewer</span>}
-          </button>
-        </Tooltip>
-
-        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
-          <button
-            type="button"
-            aria-pressed={tab === 'editor'}
-            onClick={() => onTabChange('editor')}
-            className={tabButtonClass(tab === 'editor', compactActions)}
-            aria-label="Editor"
-          >
-            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
-              code
-            </span>
-            {!compactActions && <span>Editor</span>}
-          </button>
-        </Tooltip>
-      </div>
+            {!compactActions && <span>{option.label}</span>}
+          </>
+        )}
+      />
 
       <div className="min-w-0 flex-1" />
 
@@ -178,10 +165,11 @@ export const DockTab = ({
             placement="bottom"
             disabled={actionsOpen}
           >
-            <button
+            <IconButton
               ref={triggerRef}
-              type="button"
-              aria-label="More dock actions"
+              icon="more_horiz"
+              label="More dock actions"
+              showTooltip={TOOLTIP_SUPPRESSED}
               aria-expanded={actionsOpen}
               onMouseDown={(e): void => {
                 // Stop the document mousedown listener from firing so that
@@ -189,15 +177,8 @@ export const DockTab = ({
                 e.stopPropagation()
               }}
               onClick={(): void => setActionsOpen((prev) => !prev)}
-              className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
-            >
-              <span
-                className="material-symbols-outlined text-[16px]"
-                aria-hidden="true"
-              >
-                more_horiz
-              </span>
-            </button>
+              className="h-6 w-6 rounded-[5px] text-[16px] focus:bg-wash-subtle focus:text-primary"
+            />
           </Tooltip>
 
           {actionsOpen && (
@@ -208,17 +189,6 @@ export const DockTab = ({
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-lowest p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
-              {/* stopPropagation so clicking the read-only path label does not
-                  bubble to the container's onClick and close the menu */}
-              <Tooltip content={selectedFilePath} placement="bottom">
-                <span
-                  className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
-                  onClick={(e): void => e.stopPropagation()}
-                >
-                  {displayPath}
-                </span>
-              </Tooltip>
-
               <div className="flex items-center justify-between gap-2">
                 {children}
                 <Tooltip
@@ -226,19 +196,13 @@ export const DockTab = ({
                   shortcut={['Mod', '0']}
                   placement="bottom"
                 >
-                  <button
-                    type="button"
-                    aria-label="Collapse panel"
+                  <IconButton
+                    icon="minimize"
+                    label="Collapse panel"
+                    showTooltip={TOOLTIP_SUPPRESSED}
                     onClick={onClose}
-                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
-                  >
-                    <span
-                      className="material-symbols-outlined text-[14px]"
-                      aria-hidden="true"
-                    >
-                      minimize
-                    </span>
-                  </button>
+                    className="h-6 w-6 rounded-[5px] text-[14px]"
+                  />
                 </Tooltip>
               </div>
             </div>
@@ -248,30 +212,19 @@ export const DockTab = ({
         <>
           {children && <div className="shrink-0">{children}</div>}
 
-          <div className="ml-2 flex min-w-0 items-center gap-3">
-            <Tooltip content={selectedFilePath} placement="bottom">
-              <span className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline">
-                {displayPath}
-              </span>
-            </Tooltip>
+          <div className="ml-1 flex shrink-0 items-center">
             <Tooltip
               content="Collapse panel"
               shortcut={['Mod', '0']}
               placement="bottom"
             >
-              <button
-                type="button"
-                aria-label="Collapse panel"
+              <IconButton
+                icon="minimize"
+                label="Collapse panel"
+                showTooltip={TOOLTIP_SUPPRESSED}
                 onClick={onClose}
-                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary"
-              >
-                <span
-                  className="material-symbols-outlined text-[14px]"
-                  aria-hidden="true"
-                >
-                  minimize
-                </span>
-              </button>
+                className="h-6 w-6 rounded-[5px] text-[14px]"
+              />
             </Tooltip>
           </div>
         </>

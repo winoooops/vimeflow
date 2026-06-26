@@ -34,6 +34,6 @@ mac:
     - dmg
   category: public.app-category.developer-tools
   artifactName: vimeflow-${version}-${arch}.dmg
-  icon: build/icon.png
+  icon: build/composed_icon.icon
 
 publish: null

@@ -32,6 +32,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../../hooks/useElasticContainer', () => ({
   useElasticContainer: vi.fn(() => ({
     size: 400,

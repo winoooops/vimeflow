@@ -47,6 +47,12 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
@@ -137,6 +143,12 @@ type User = ReturnType<typeof userEvent.setup>
 
 const switchToFilesTab = async (user: User): Promise<void> => {
   await user.click(screen.getByRole('button', { name: 'FILES' }))
+}
+
+const openDockPanel = async (user: User): Promise<HTMLElement> => {
+  await user.click(screen.getByTestId('status-bar-dock-toggle'))
+
+  return screen.findByTestId('dock-panel')
 }
 
 /**
@@ -259,7 +271,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const dockPanel = screen.getByTestId('dock-panel')
+      const dockPanel = await openDockPanel(user)
 
       // Diff is the default tab now — the editor panel is not shown yet.
       expect(
@@ -277,7 +289,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const dockPanel = screen.getByTestId('dock-panel')
+      const dockPanel = await openDockPanel(user)
 
       // Click Diff Viewer tab
       const diffTab = within(dockPanel).getByText('Diff Viewer')
@@ -296,7 +308,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const dockPanel = screen.getByTestId('dock-panel')
+      const dockPanel = await openDockPanel(user)
 
       // Click Diff Viewer tab
       await user.click(within(dockPanel).getByText('Diff Viewer'))
@@ -319,7 +331,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const dockPanel = screen.getByTestId('dock-panel')
+      const dockPanel = await openDockPanel(user)
       const diffTab = within(dockPanel).getByText('Diff Viewer')
 
       // Click Diff Viewer tab
@@ -344,7 +356,7 @@ describe('WorkspaceView Integration Tests', () => {
       // Panel is a shell — collapsible sections will be added in sub-specs 5-7
     })
 
-    test('clicking the header chevron renders the rail; clicking the rail chevron returns to the panel', async () => {
+    test('clicking the fixed activity toggle switches between panel and rail states', async () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
@@ -352,12 +364,14 @@ describe('WorkspaceView Integration Tests', () => {
       expect(
         screen.getByTestId('agent-status-panel-header')
       ).toBeInTheDocument()
+      expect(screen.queryByTestId('agent-status-rail')).not.toBeInTheDocument()
 
-      await user.click(
-        screen.getByRole('button', { name: /collapse activity panel/i })
-      )
+      await user.click(screen.getByTestId('activity-toggle-fixed'))
 
       expect(await screen.findByTestId('agent-status-rail')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('agent-status-panel-header')
+      ).not.toBeInTheDocument()
 
       // Session-scoped UI state — must NOT call the agent/PTY backend.
       const serviceResults = vi.mocked(createTerminalService).mock.results
@@ -368,13 +382,12 @@ describe('WorkspaceView Integration Tests', () => {
       }
       expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
 
-      await user.click(
-        screen.getByRole('button', { name: /expand activity panel/i })
-      )
+      await user.click(screen.getByTestId('activity-toggle-fixed'))
 
       expect(
         await screen.findByTestId('agent-status-panel-header')
       ).toBeInTheDocument()
+      expect(screen.queryByTestId('agent-status-rail')).not.toBeInTheDocument()
     })
   })
 
@@ -1069,34 +1082,28 @@ describe('WorkspaceView focus orchestration', () => {
     )
   })
 
-  test('initial state: terminal zone is focused, dock does not have focus outline', async () => {
+  test('initial state: terminal zone is focused with dock collapsed', () => {
     render(<WorkspaceView />)
 
-    // Dock starts open but terminal is the active container
-    await waitFor(() => {
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-    })
+    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
 
     const terminalZone = screen.getByTestId('terminal-zone')
-    const dockPanel = screen.getByTestId('dock-panel')
 
     // Terminal zone should be at full opacity (active)
     expect(terminalZone.className).not.toContain('opacity-[0.65]')
-    // Dock should NOT have the focus outline span
-    expect(
-      dockPanel.querySelector('[data-testid="dock-focus-outline"]')
-    ).toBeNull()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 
   test('clicking dock claims dock focus: terminal dims (no competing dock outline)', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-    })
+    const dockPanel = await openDockPanel(user)
 
     // Click a non-interactive part of the dock panel
-    const dockPanel = screen.getByTestId('dock-panel')
     dockPanel.focus() // simulate focus entering dock via onFocus
 
     await waitFor(() => {
@@ -1113,14 +1120,12 @@ describe('WorkspaceView focus orchestration', () => {
   })
 
   test('closing the dock returns container focus to terminal', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-    })
+    const dockPanel = await openDockPanel(user)
 
     // Give focus to dock first
-    const dockPanel = screen.getByTestId('dock-panel')
     dockPanel.focus()
 
     await waitFor(() => {

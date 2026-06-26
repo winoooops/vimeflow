@@ -3,8 +3,9 @@ import { render, screen } from '@testing-library/react'
 import { test, expect, describe, vi, beforeEach, afterEach } from 'vitest'
 import { useRef } from 'react'
 import { SplitDividers } from './SplitDividers'
-import { DEFAULT_RATIOS } from './resolveGrid'
+import { DEFAULT_RATIOS, SPLIT_DIVIDER_PX } from './resolveGrid'
 import type { LayoutId } from '../../../sessions/types'
+import { LAYOUTS } from '../../layout-registry'
 
 const CONTAINER_WIDTH = 1200
 const CONTAINER_HEIGHT = 800
@@ -41,7 +42,7 @@ const Harness = ({ layout }: { layout: LayoutId }): React.ReactElement => {
   return (
     <div ref={ref} style={{ width: 1200, height: 800 }}>
       <SplitDividers
-        layout={layout}
+        layout={LAYOUTS[layout]}
         containerRef={ref}
         ratios={DEFAULT_RATIOS[layout]}
         onRatioChange={vi.fn()}
@@ -57,9 +58,54 @@ describe('SplitDividers', () => {
     ['hsplit', 1],
     ['threeRight', 2],
     ['quad', 3],
+    ['grid3x2', 5],
   ] as const)('%s renders %i handle element(s)', (layout, count) => {
     render(<Harness layout={layout} />)
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(count)
+  })
+
+  test('segmented column boundaries share one controller (grid3x2 mounts 3 controllers)', () => {
+    // Regression for Claude HIGH / Codex P2: quad and grid3x2 used to mount a
+    // separate useSplitDivider instance for each visual segment of a shared
+    // column boundary. The duplicated commit effects fought each other and
+    // caused an infinite update loop on drag. Grouping specs by logical
+    // boundary means grid3x2 now creates exactly three controllers:
+    // cols-0, cols-1, and rows-0 — even though it renders five handles.
+    const onRatioChange = vi.fn()
+    const observerInstances: MockResizeObserver[] = []
+
+    class CountingResizeObserver extends MockResizeObserver {
+      constructor() {
+        super()
+        observerInstances.push(this)
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', CountingResizeObserver)
+
+    const GridHarness = (): React.ReactElement => {
+      const ref = useRef<HTMLDivElement>(document.createElement('div'))
+
+      return (
+        <div
+          ref={ref}
+          style={{ width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT }}
+        >
+          <SplitDividers
+            layout={LAYOUTS.grid3x2}
+            containerRef={ref}
+            ratios={DEFAULT_RATIOS.grid3x2}
+            onRatioChange={onRatioChange}
+          />
+        </div>
+      )
+    }
+
+    render(<GridHarness />)
+    expect(observerInstances).toHaveLength(3)
+    expect(onRatioChange).not.toHaveBeenCalled()
+
+    vi.stubGlobal('ResizeObserver', MockResizeObserver)
   })
 
   test('vsplit handle is a vertical separator (col-resize)', () => {
@@ -68,6 +114,24 @@ describe('SplitDividers', () => {
       'aria-orientation',
       'vertical'
     )
+  })
+
+  test('grid3x2 column controllers use per-boundary feasible ranges', () => {
+    // Regression for Codex P2: multi-column boundaries must not use the
+    // global 15%–85% bounds. With default [1,1,1] the first divider can only
+    // reach ~51.7% of the pane space because the middle column must stay at
+    // the 15% minimum; the second divider can only start at ~48.3%.
+    render(<Harness layout="grid3x2" />)
+    const handles = screen.getAllByTestId('split-resize-handle')
+    expect(handles).toHaveLength(5)
+
+    // Effective pane width = CONTAINER_WIDTH - SPLIT_DIVIDER_PX.
+    const effectiveWidth = CONTAINER_WIDTH - SPLIT_DIVIDER_PX
+    const firstMax = Number(handles[0].getAttribute('aria-valuemax'))
+    const secondMin = Number(handles[2].getAttribute('aria-valuemin'))
+
+    expect(firstMax).toBe(Math.floor(effectiveWidth * (1.55 / 3)))
+    expect(secondMin).toBe(Math.ceil(effectiveWidth * (1.45 / 3)))
   })
 
   test('parent re-render does not overwrite an in-progress drag preview', () => {
@@ -100,7 +164,7 @@ describe('SplitDividers', () => {
           style={{ width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT }}
         >
           <SplitDividers
-            layout="vsplit"
+            layout={LAYOUTS.vsplit}
             containerRef={ref}
             ratios={DEFAULT_RATIOS.vsplit}
             onRatioChange={onRatioChange}
@@ -112,13 +176,13 @@ describe('SplitDividers', () => {
     const container = screen.getByTestId('container')
 
     // Mount writes the default ratio (0.5fr / 0.5fr) via the commit-size effect.
-    expect(container.style.getPropertyValue('--split-col')).toBe('0.5fr')
-    expect(container.style.getPropertyValue('--split-col-end')).toBe('0.5fr')
+    expect(container.style.getPropertyValue('--split-cols-0')).toBe('1fr')
+    expect(container.style.getPropertyValue('--split-cols-1')).toBe('1fr')
 
     // Simulate an in-progress drag: `onDragPreview` → `writeRatio(0.8)` has
     // written the live ratio straight into the CSS var, bypassing React state.
-    container.style.setProperty('--split-col', '0.8fr')
-    container.style.setProperty('--split-col-end', '0.2fr')
+    container.style.setProperty('--split-cols-0', '1.6fr')
+    container.style.setProperty('--split-cols-1', '0.4fr')
 
     // Parent re-renders (mirrors SplitView re-rendering from a session prop
     // change while the user is still dragging). `onRatioChange` identity is
@@ -127,7 +191,7 @@ describe('SplitDividers', () => {
 
     // Without the useCallback fix the inline arrow in VSplitDividers would
     // have churned the effect dep and snapped these back to 0.5fr / 0.5fr.
-    expect(container.style.getPropertyValue('--split-col')).toBe('0.8fr')
-    expect(container.style.getPropertyValue('--split-col-end')).toBe('0.2fr')
+    expect(container.style.getPropertyValue('--split-cols-0')).toBe('1.6fr')
+    expect(container.style.getPropertyValue('--split-cols-1')).toBe('0.4fr')
   })
 })

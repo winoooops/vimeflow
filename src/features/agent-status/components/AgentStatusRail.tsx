@@ -1,14 +1,14 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
-import { Bucket } from './Bucket'
+import { AgentGlyph } from '@/components/AgentGlyph'
+import { RailMeter } from './RailMeter'
+import { CacheRing } from './CacheRing'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
   agent: Agent
   contextUsedPercentage: number | null
   cacheHitPercentage: number | null
-  isRunning: boolean
-  onExpand: () => void
   reserveWindowControls?: boolean
 }
 
@@ -21,7 +21,7 @@ export const RAIL_WIDTH_PX = 44
 // These literals mirror tokens in `docs/design/tokens.ts` (success-muted,
 // primary, tertiary); `tokens.ts` is the design reference and is NOT imported
 // from `src/` (see the rationale in `TokenCache.tsx`). If the palette migrates,
-// update these in lockstep. The context bucket no longer uses tiered tokens —
+// update these in lockstep. The context meter no longer uses tiered tokens —
 // it shares the continuous `ctxTone` sweep with the expanded reservoir card so
 // the context color agrees across collapsed and expanded states.
 const TONE_DANGER = 'var(--color-tertiary)' // tertiary (strong pink, low cache)
@@ -43,8 +43,6 @@ export const AgentStatusRail = ({
   agent,
   contextUsedPercentage,
   cacheHitPercentage,
-  isRunning,
-  onExpand,
   reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
@@ -53,37 +51,39 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className={`flex h-full flex-col items-center bg-surface pb-3 pt-2 ${
+      className={`relative flex h-full flex-col items-center bg-surface pb-3 pt-[40px] ${
         reserveWindowControls ? 'vf-app-drag-region' : ''
       }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
-      <button
-        type="button"
-        onClick={onExpand}
-        aria-label="Expand activity panel"
-        className="vf-app-no-drag grid h-7 w-7 shrink-0 place-items-center rounded-md text-on-surface-muted transition-colors hover:bg-surface-container-high hover:text-on-surface"
-      >
-        <span className="material-symbols-outlined text-base">
-          chevron_left
-        </span>
-      </button>
+      {/* No-drag clearance for the workspace-root activity toggle that floats
+          above this rail (top:7/right:8/28²). The floating toggle is a sibling
+          of the drag region, so it cannot subtract from it on its own — this
+          descendant span carves the hole, mirroring the sidebar toggle. */}
+      {reserveWindowControls && (
+        <span
+          aria-hidden="true"
+          data-testid="activity-toggle-clearance"
+          className="vf-app-no-drag pointer-events-none absolute"
+          style={{ top: 7, right: 8, width: 28, height: 28 }}
+        />
+      )}
 
       <div
         data-testid="agent-glyph-chip"
-        className="mb-3 mt-2 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border font-mono text-[12px] font-bold"
+        className="mb-3 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border font-mono text-[12px] font-bold"
         style={{
           background: agent.accentDim,
           color: agent.accent,
           borderColor: agent.accentSoft,
         }}
       >
-        {agent.glyph}
+        <AgentGlyph agent={agent} size={14} />
       </div>
 
       {ctxPct !== null && (
         <div className="vf-app-no-drag">
-          <Bucket
+          <RailMeter
             pct={ctxPct}
             color={ctxTone(ctxPct).base}
             label="CTX"
@@ -94,27 +94,11 @@ export const AgentStatusRail = ({
 
       {cachePct !== null && (
         <div className="vf-app-no-drag mt-4">
-          <Bucket
-            pct={cachePct}
-            color={cacheTone(cachePct)}
-            label="CACHE"
-            tooltip={`Cache hit rate: ${Math.round(cachePct)}%`}
-          />
+          <CacheRing pct={cachePct} color={cacheTone(cachePct)} />
         </div>
       )}
 
       <span className="flex-1" />
-
-      {isRunning && (
-        <span
-          data-testid="running-dot"
-          className="h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
-          style={{
-            background: agent.accent,
-            boxShadow: `0 0 10px ${agent.accent}`,
-          }}
-        />
-      )}
     </aside>
   )
 }

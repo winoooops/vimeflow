@@ -5,7 +5,10 @@
 // The shape-only DTO defined here is the renderer<->main contract: it carries
 // pane existence + shell fields, never browser tab/history (main owns those).
 
-export interface WorkspaceShapeShellPane {
+import type { PaneLayoutDefinition } from '../terminal/layout-registry'
+import type { PanePlacement } from './types'
+
+export interface PersistedShellPaneShape {
   kind: 'shell'
   paneId: string
   paneIndex: number
@@ -16,28 +19,31 @@ export interface WorkspaceShapeShellPane {
   agentSessionId: string | null
 }
 
-export interface WorkspaceShapeBrowserPane {
+export interface PersistedBrowserPaneShape {
   kind: 'browser'
   paneId: string
   paneIndex: number
   active: boolean
 }
 
-export type WorkspaceShapePane =
-  | WorkspaceShapeShellPane
-  | WorkspaceShapeBrowserPane
+export type PersistedWorkspacePaneShape =
+  | PersistedShellPaneShape
+  | PersistedBrowserPaneShape
 
-export interface WorkspaceShapeSession {
+export interface PersistedWorkspaceSessionShape {
   id: string
   projectId: string
   layout: string
+  placements?: readonly PanePlacement[]
   workingDirectory: string
   active: boolean
-  panes: WorkspaceShapePane[]
+  open: boolean
+  panes: PersistedWorkspacePaneShape[]
 }
 
-export interface WorkspaceShapeDto {
-  sessions: WorkspaceShapeSession[]
+export interface PersistedWorkspaceShape {
+  customPaneLayouts?: readonly PaneLayoutDefinition[]
+  sessions: PersistedWorkspaceSessionShape[]
 }
 
 export interface LoadWorkspaceForRestoreRequest {
@@ -46,10 +52,10 @@ export interface LoadWorkspaceForRestoreRequest {
 }
 
 export interface WorkspaceLayoutBridge {
-  pushShape: (dto: WorkspaceShapeDto) => Promise<void>
+  pushShape: (dto: PersistedWorkspaceShape) => Promise<void>
   loadForRestore: (
     request: LoadWorkspaceForRestoreRequest
-  ) => Promise<WorkspaceShapeDto>
+  ) => Promise<PersistedWorkspaceShape>
   beginHydration: () => Promise<void>
   endHydration: () => Promise<void>
   onRequestFinalShape: (callback: () => void) => () => void
@@ -70,14 +76,14 @@ const bridge = (): WorkspaceLayoutBridge | undefined => {
 }
 
 export const pushWorkspaceShape = async (
-  dto: WorkspaceShapeDto
+  dto: PersistedWorkspaceShape
 ): Promise<void> => {
   await bridge()?.pushShape(dto)
 }
 
 export const loadWorkspaceForRestore = async (
   request: LoadWorkspaceForRestoreRequest
-): Promise<WorkspaceShapeDto | null> =>
+): Promise<PersistedWorkspaceShape | null> =>
   bridge()?.loadForRestore(request) ?? null
 
 export const beginWorkspaceHydration = async (): Promise<void> => {

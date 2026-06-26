@@ -61,12 +61,22 @@ pub(crate) struct AttachContext {
     pub(crate) pty_start: SystemTime,
     /// Which CLI agent is attached.
     pub(crate) agent_type: AgentType,
+    /// Vimeflow-owned app data directory. Runtime bridge/status files live
+    /// under this root instead of the user's project tree.
+    pub(crate) app_data_dir: PathBuf,
     /// Home directory for the attached agent (e.g. `~/.codex` for Codex,
     /// `~/.claude` for ClaudeCode). `None` when the active agent has no
     /// canonical home (Aider / Generic today). Resolved at attach time
     /// via [`crate::agent::config::AgentSpec::provider_home`]; adding a
     /// new provider home only touches that registry, not this struct.
     pub(crate) provider_home: Option<PathBuf>,
+    /// Explicit provider-home override used by hermetic E2E helpers.
+    /// When set, it takes precedence over both the registry-resolved
+    /// `provider_home` and any agent-specific environment variable
+    /// (`KIMI_CODE_HOME`) so tests can seed fixtures under a temporary
+    /// directory without mutating the process-wide environment across
+    /// an await.
+    pub(crate) provider_home_override: Option<PathBuf>,
     /// Filesystem path to `/proc`. `Some(/proc)` on Linux; `None` on
     /// platforms where `/proc` doesn't exist (macOS, Windows). Codex's
     /// `/proc`-based fast-paths (`resume_thread_id_from_proc`,
@@ -154,7 +164,9 @@ mod tests {
             agent_pid: 200,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::ClaudeCode,
+            app_data_dir: PathBuf::from("/home/u/.config/vimeflow"),
             provider_home: Some(PathBuf::from("/home/u/.claude")),
+            provider_home_override: None,
             proc_root: Some(PathBuf::from("/proc")),
         };
 
@@ -166,9 +178,10 @@ mod tests {
         assert_eq!(attach.pty_start, SystemTime::UNIX_EPOCH);
         assert_eq!(attach.agent_type, AgentType::ClaudeCode);
         assert_eq!(
-            attach.provider_home,
-            Some(PathBuf::from("/home/u/.claude"))
+            attach.app_data_dir,
+            PathBuf::from("/home/u/.config/vimeflow")
         );
+        assert_eq!(attach.provider_home, Some(PathBuf::from("/home/u/.claude")));
         assert_eq!(attach.proc_root, Some(PathBuf::from("/proc")));
     }
 
@@ -184,13 +197,16 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Codex,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: Some(PathBuf::from(".codex")),
+            provider_home_override: None,
             proc_root: None,
         };
 
         let cloned = original.clone();
         assert_eq!(cloned.session_id, original.session_id);
         assert_eq!(cloned.agent_pid, original.agent_pid);
+        assert_eq!(cloned.app_data_dir, original.app_data_dir);
         assert_eq!(cloned.provider_home, original.provider_home);
         assert_eq!(cloned.proc_root, original.proc_root);
     }
@@ -208,7 +224,9 @@ mod tests {
             agent_pid: 2,
             pty_start: SystemTime::UNIX_EPOCH,
             agent_type: AgentType::Codex,
+            app_data_dir: PathBuf::from("/tmp/vimeflow-data"),
             provider_home: None,
+            provider_home_override: None,
             proc_root: None,
         };
         // If AgentType lost Copy, this would consume attach.agent_type.

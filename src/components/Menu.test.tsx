@@ -279,6 +279,54 @@ describe('Menu.Checkbox', () => {
     const indicator = checkbox.querySelector('.material-symbols-outlined')
     expect(indicator).not.toBeInTheDocument()
   })
+
+  test('a disabled checkbox ignores clicks', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn<(next: boolean) => void>()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Checkbox checked disabled onChange={onChange}>
+          Current layout
+        </Menu.Checkbox>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const checkbox = await screen.findByRole('menuitemcheckbox', {
+      name: 'Current layout',
+    })
+
+    expect(checkbox).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(checkbox)
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('a disabled checked checkbox uses muted indicator styling', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Checkbox checked disabled onChange={vi.fn()}>
+          Required layout
+        </Menu.Checkbox>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const checkbox = await screen.findByRole('menuitemcheckbox', {
+      name: 'Required layout',
+    })
+    // eslint-disable-next-line testing-library/no-node-access -- inspect the visual check indicator container
+    const indicator = checkbox.lastElementChild
+
+    expect(indicator).toHaveClass('bg-on-surface-variant/12')
+    expect(indicator).toHaveClass('text-on-surface-variant/55')
+  })
 })
 
 const indicatorOptions = [
@@ -530,6 +578,65 @@ describe('Menu.Submenu', () => {
 
     expect(screen.getByRole('menuitem', { name: /Indicators/ })).toHaveFocus()
     expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+})
+
+describe('Menu.Row', () => {
+  test('nested button arrow keys do not move menu row focus', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha">
+          <span>Layout Alpha</span>
+          <button type="button">Edit Alpha</button>
+        </Menu.Row>
+        <Menu.Row label="Layout Beta">
+          <span>Layout Beta</span>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{ArrowDown}')
+
+    expect(editButton).toHaveFocus()
+    expect(
+      screen.getByRole('menuitem', { name: 'Layout Beta' })
+    ).not.toHaveFocus()
+  })
+
+  test('nested button Enter activates the button instead of the menu row', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onEdit = vi.fn()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Row label="Layout Alpha" onSelect={onSelect}>
+          <span>Layout Alpha</span>
+          <button type="button" onClick={onEdit}>
+            Edit Alpha
+          </button>
+        </Menu.Row>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    const editButton = await screen.findByRole('button', {
+      name: 'Edit Alpha',
+    })
+    editButton.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onEdit).toHaveBeenCalledOnce()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })
 

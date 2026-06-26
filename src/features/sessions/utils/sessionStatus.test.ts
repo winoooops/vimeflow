@@ -4,8 +4,9 @@ import {
   deriveShellSessionStatus,
   isTerminalStatus,
   isLiveStatus,
+  isOpenSession,
 } from './sessionStatus'
-import type { Pane } from '../types'
+import type { Pane, Session } from '../types'
 
 const pane = (status: Pane['status']): Pane =>
   ({
@@ -84,4 +85,45 @@ test('deriveShellSessionStatus keeps completed shells completed when a browser r
 
 test('deriveShellSessionStatus treats browser-only sessions as idle', () => {
   expect(deriveShellSessionStatus([browserPane('running')])).toBe('idle')
+})
+
+test('isOpenSession treats restored open placeholders as open', () => {
+  expect(
+    isOpenSession({
+      open: true,
+      panes: [pane('completed')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(true)
+})
+
+test('isOpenSession falls back to pane liveness when open is absent', () => {
+  expect(
+    isOpenSession({
+      panes: [pane('completed')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(false)
+
+  expect(
+    isOpenSession({
+      panes: [pane('running')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(true)
+})
+
+test('isOpenSession treats explicit open:false as closed when panes are dead', () => {
+  expect(
+    isOpenSession({
+      open: false,
+      panes: [pane('completed')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(false)
+})
+
+test('isOpenSession falls back to pane liveness when open:false but panes are live', () => {
+  expect(
+    isOpenSession({
+      open: false,
+      panes: [pane('running')],
+    } satisfies Pick<Session, 'open' | 'panes'>)
+  ).toBe(true)
 })

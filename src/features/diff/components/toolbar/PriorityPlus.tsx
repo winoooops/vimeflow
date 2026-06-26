@@ -6,8 +6,11 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import { isSeparatorElement } from './ToolbarSeparator'
 
 // Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
 // (= 12 px). Exported through index.ts so consumers and measurement logic keep
@@ -32,6 +35,19 @@ interface PriorityPlusProps {
 // beyond `maxRows` into a portal-rendered `...` menu. Re-measures on container
 // resize via ResizeObserver. Children must be stable across renders (use
 // `key`) so refs map consistently.
+//
+// LAYOUT CONTRACT — PriorityPlus FILLS the width of its row (its root carries
+// `flex-1 min-w-0`, and a `display:flex` root is block-level so it also fills a
+// non-flex parent). This is not cosmetic: overflow is detected by which items
+// WRAP past `maxRows`, which can only happen while the container is constrained
+// to the available width. A content-width ("hug") container would (a) never
+// wrap, so nothing ever folds, and (b) — once narrowed by flex-shrink — never
+// widen back, so the ResizeObserver (which only fires when this observed
+// element's own width changes) would miss every expand and leave items stuck
+// in the `…` tray. Consumers must therefore give PriorityPlus a full row; do
+// not place it in an inline / content-sized / horizontally-scrolling context.
+// Pinned, never-overflow controls belong in a SIBLING after PriorityPlus (see
+// DiffChipToolbar's feedback actions), not inside it.
 //
 // Measurement is a two-phase pass:
 //   Phase A — overflowFrom === null: render every child with real layout so we
@@ -138,15 +154,43 @@ export const PriorityPlus = ({
       }
     }
 
+    // Never leave a group separator dangling at the trailing edge of the
+    // visible run: when the last visible item is a hairline, pull the cutoff
+    // back so it folds away with its group instead of floating before the `…`
+    // chip. Reads the marker off the wrapper's dataset (set in render) so this
+    // effect needn't depend on the `children` array identity. Trimmed
+    // separators are also dropped from the overflow tray (see `hiddenItems`).
+    while (
+      cutoff !== null &&
+      cutoff > 0 &&
+      items[cutoff - 1]?.dataset.ppSeparator !== undefined
+    ) {
+      cutoff -= 1
+    }
+
     setOverflowFrom(cutoff)
   }, [overflowFrom, maxRows, resizeTick])
 
   const showOverflow = overflowFrom !== null && overflowFrom < children.length
   const visibleEnd = showOverflow ? overflowFrom : children.length
-  const hiddenItems = showOverflow ? children.slice(overflowFrom) : []
+
+  // Drop separators from the tray — a 1px vertical hairline is meaningless in
+  // the vertical `…` menu and would inflate the "N more controls" count.
+  const hiddenItems = showOverflow
+    ? children.slice(overflowFrom).filter((child) => !isSeparatorElement(child))
+    : []
 
   return (
-    <div ref={containerRef} className={`flex flex-wrap items-center ${gap}`}>
+    // `flex-1 min-w-0` makes the container FILL its row rather than hug its
+    // content. This is load-bearing for re-expansion: the ResizeObserver fires
+    // only when this observed element's own width changes. A content-width
+    // container shrinks (and folds) when the pane narrows but never grows back
+    // when it widens, leaving items stuck in the `…` tray. Filling the row ties
+    // the observed width to the pane so a widen triggers a fresh measurement.
+    <div
+      ref={containerRef}
+      className={`flex min-w-0 flex-1 flex-wrap items-center ${gap}`}
+    >
       {children.map((child, index) => {
         const isHidden = overflowFrom !== null && index >= visibleEnd
 
@@ -156,6 +200,10 @@ export const PriorityPlus = ({
             ref={(el): void => {
               itemRefs.current[index] = el
             }}
+            // `data-pp-separator` flags hairline children so the measurement
+            // pass can trim a trailing separator off the visible run by reading
+            // the DOM, with no dependency on the `children` array identity.
+            data-pp-separator={isSeparatorElement(child) ? '' : undefined}
             // Hidden items get `hidden` so they're laid out only during the
             // Phase A measurement pass; once measured we drop them from the
             // visible flow without breaking the ref map.
@@ -165,7 +213,9 @@ export const PriorityPlus = ({
           </div>
         )
       })}
-      {showOverflow ? <OverflowMenu hiddenItems={hiddenItems} /> : null}
+      {hiddenItems.length > 0 ? (
+        <OverflowMenu hiddenItems={hiddenItems} />
+      ) : null}
     </div>
   )
 }
@@ -195,22 +245,19 @@ const OverflowMenu = ({
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
-        <button
+        <IconButton
           ref={setAnchor}
-          type="button"
+          icon="more_horiz"
+          label={`Show ${hiddenItems.length} more controls`}
+          size="lg"
+          showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already supplies the label
           onClick={(): void => setOpen((previous) => !previous)}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
-          aria-label={`Show ${hiddenItems.length} more controls`}
           aria-haspopup="dialog"
           aria-expanded={open}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            more_horiz
-          </span>
-        </button>
+          // Circular overflow affordance — an intentional radius exception
+          // (the chip's 32px width feeds the PriorityPlus overflow math).
+          className="rounded-full"
+        />
       </Tooltip>
       <Popover
         anchor={anchor}

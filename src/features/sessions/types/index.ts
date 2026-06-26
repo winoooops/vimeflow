@@ -1,6 +1,5 @@
 // Session domain types — owned by src/features/sessions/.
 // cspell:ignore vsplit hsplit
-
 export type SessionStatus =
   | 'running'
   | 'awaiting'
@@ -10,7 +9,24 @@ export type SessionStatus =
 
 export type SessionCloseResult = false | void
 
-export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
+export type LayoutId =
+  | 'single'
+  | 'vsplit'
+  | 'hsplit'
+  | 'threeRight'
+  | 'quad'
+  | 'grid3x2'
+
+export type CustomPaneLayoutId = `custom:${string}`
+
+export type PaneLayoutId = LayoutId | CustomPaneLayoutId
+
+export type LayoutSlotId = `slot:${string}`
+
+export interface PanePlacement {
+  paneId: string
+  slotId: LayoutSlotId
+}
 
 export type PaneKind = 'shell' | 'browser'
 
@@ -41,7 +57,7 @@ export interface Pane {
   shell?: string
 
   /** Detected agent CLI for this pane. */
-  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
 
   /**
    * Title emitted by the agent for the agent session bound to this PTY.
@@ -99,13 +115,25 @@ export interface Session {
   id: string
   projectId: string
   name: string // user-assigned or derived from prompt
+  /**
+   * Sidebar Active-section membership. Undefined means derive from live panes
+   * for legacy/runtime sessions; restored lazy placeholders set this true even
+   * before their PTY is rehydrated.
+   */
+  open?: boolean
   status: SessionStatus
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
-  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
-  /** Per-session canvas layout. Default 'single' in step 5a. */
-  layout: LayoutId
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
+  /** Per-session canvas layout. Builtin ids or validated workspace custom ids. */
+  layout: PaneLayoutId
+  /**
+   * Optional explicit pane-to-layout-slot mapping. Older sessions and PTY-only
+   * restores omit this; render/persistence derive a compatible mapping from
+   * `panes[]` order and the layout's `addOrder`.
+   */
+  placements?: PanePlacement[]
   /** Session-scoped collapse state for the right agent activity panel.
    *  Shared by every pane so switching pane within a session never
    *  jumps the bar. UI-only: hydrated from localStorage by session id

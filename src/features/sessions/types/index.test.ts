@@ -33,15 +33,16 @@ describe('Session Types', () => {
   })
 
   describe('Session', () => {
-    test('LayoutId enumerates the five canonical layouts', () => {
+    test('LayoutId enumerates the six canonical layouts', () => {
       const ids: LayoutId[] = [
         'single',
         'vsplit',
         'hsplit',
         'threeRight',
         'quad',
+        'grid3x2',
       ]
-      expect(ids).toHaveLength(5)
+      expect(ids).toHaveLength(6)
     })
 
     test('Pane has the documented fields', () => {

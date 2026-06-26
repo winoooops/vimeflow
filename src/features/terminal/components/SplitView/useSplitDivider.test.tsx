@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { test, expect, describe, vi, beforeEach, afterEach } from 'vitest'
 import { useRef } from 'react'
 import { useSplitDivider } from './useSplitDivider'
+import { SPLIT_ELASTIC_CONFIG } from '../../../workspace/panelConfig'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -30,13 +31,14 @@ const DividerChild = ({
   onRatioChange,
 }: {
   containerRef: React.RefObject<HTMLElement | null>
-  onRatioChange: (r: number) => void
+  onRatioChange: (ratios: readonly number[]) => void
 }): React.ReactElement => {
   const divider = useSplitDivider({
     containerRef,
     axis: 'horizontal',
-    cssVar: '--split-col',
-    initialRatio: 0.5,
+    trackAxis: 'cols',
+    trackIndex: 0,
+    initialRatios: [1, 1],
     onRatioChange,
   })
 
@@ -48,7 +50,7 @@ const Harness = ({
   onRatioChange,
 }: {
   active?: boolean
-  onRatioChange: (r: number) => void
+  onRatioChange: (ratios: readonly number[]) => void
 }): React.ReactElement => {
   const ref = useRef<HTMLDivElement>(document.createElement('div'))
 
@@ -62,25 +64,36 @@ const Harness = ({
 }
 
 describe('useSplitDivider', () => {
-  test('keyboard resize mirrors a clamped ratio up and writes both fr vars', () => {
+  test('mount sync writes CSS vars without persisting a custom ratio', () => {
+    const onRatioChange = vi.fn()
+    render(<Harness active onRatioChange={onRatioChange} />)
+
+    const container = screen.getByTestId('container')
+    expect(container.style.getPropertyValue('--split-cols-0')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-cols-1')).toMatch(/fr$/)
+    expect(onRatioChange).not.toHaveBeenCalled()
+  })
+
+  test('keyboard resize mirrors updated track weights up and writes both fr vars', () => {
     const onRatioChange = vi.fn()
     render(<Harness active onRatioChange={onRatioChange} />)
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowRight' })
     const calls = onRatioChange.mock.calls
-    const ratio = calls[calls.length - 1]?.[0] as number
-    expect(ratio).toBeGreaterThanOrEqual(0.15)
-    expect(ratio).toBeLessThanOrEqual(0.85)
-    // Both fr tracks are set (summing to 1) so the grid always fills.
+    const ratios = calls[calls.length - 1]?.[0] as readonly number[]
+    expect(ratios[0]).toBeGreaterThan(ratios[1])
+    const frac = ratios[0] / (ratios[0] + ratios[1])
+    expect(frac).toBeGreaterThanOrEqual(SPLIT_ELASTIC_CONFIG.minPercent)
+    expect(frac).toBeLessThanOrEqual(SPLIT_ELASTIC_CONFIG.maxPercent)
     const container = screen.getByTestId('container')
-    expect(container.style.getPropertyValue('--split-col')).toMatch(/fr$/)
-    expect(container.style.getPropertyValue('--split-col-end')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-cols-0')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-cols-1')).toMatch(/fr$/)
   })
 
   test('removes the CSS var on unmount (container stays mounted)', () => {
     const { rerender } = render(<Harness active onRatioChange={vi.fn()} />)
     const container = screen.getByTestId('container')
-    expect(container.style.getPropertyValue('--split-col')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-cols-0')).toMatch(/fr$/)
     rerender(<Harness onRatioChange={vi.fn()} />)
-    expect(container.style.getPropertyValue('--split-col')).toBe('')
+    expect(container.style.getPropertyValue('--split-cols-0')).toBe('')
   })
 })

@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-13
-ref_count: 6
+last_updated: 2026-06-23
+ref_count: 7
 ---
 
 # Persisted State Invariants
@@ -68,41 +68,6 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Fix:** Clear `removedBrowserPaneKeys` for every key present in the next shape. Updated assemble and flush coverage so a reappearing pane with no live capture persists as `tabs: []` rather than blocking the save.
 - **Commit:** same commit as this entry
 
-### 7. "Open settings.json" does nothing on a fresh profile because the file was never created
-
-- **Source:** github-codex-connector | PR #430 round 1 | 2026-06-12
-- **Severity:** MEDIUM
-- **File:** `electron/main.ts` L452-454
-- **Finding:** The `SETTINGS_OPEN_FILE` handler called `shell.openPath` on `userData/settings.json`. On a fresh profile, `load_app_settings` returns defaults without writing them, so the file does not exist and the open action silently fails (the renderer also ignores the returned error string).
-- **Fix:** Before opening, the handler checks whether `settings.json` exists; if missing, it asks the sidecar to `load_app_settings` (which returns defaults) and then `save_app_settings` so the default file is materialized on disk. The open is still attempted even if seeding fails, letting the OS surface any residual error.
-- **Commit:** same commit as this entry
-
-### 8. Settings version not validated before honoring close behavior
-
-- **Source:** github-codex-connector | PR #432 round 1 | 2026-06-12
-- **Severity:** P2 / MEDIUM
-- **File:** `electron/main.ts` L528
-- **Finding:** The `window-all-closed` handler parsed `onLastWindowClosed` from `settings.json` without validating the persisted `version`. The backend settings store intentionally discards files written by a newer app version and loads defaults on version mismatch, but this direct parse in the main process still honored the field. In a downgrade/unsupported-version scenario such as `{"version":999,"onLastWindowClosed":"quit"}`, the UI/store would behave as platform default while the main process quit on macOS after the last window closed.
-- **Fix:** When reading `settings.json` as a fallback (no in-memory snapshot yet), compare `parsed.version` against `DEFAULT_SETTINGS.version` and only honor `onLastWindowClosed` when the versions match. Mismatched versions fall back to the platform default.
-- **Commit:** same commit as this entry
-
-### 9. Settings version validation imported a renderer value into Electron main
-
-- **Source:** github-codex-connector | PR #432 round 2 | 2026-06-12
-- **Severity:** MEDIUM
-- **File:** `electron/main.ts` L15, L551
-- **Finding:** Round 1's fix for finding #8 imported `DEFAULT_SETTINGS` from `src/features/settings/store/settingsDefaults` into `electron/main.ts` so the fallback `settings.json` parse could compare `parsed.version === DEFAULT_SETTINGS.version`. That is a runtime value import from a renderer feature tree into the Electron main process. The defaults module is a plain object today, but a future edit can add browser/React-facing imports (e.g., a theme helper, a hook, or a component) without any type-system or build guard to stop Electron main from loading it. When that happens, main-process startup or bundling fails silently until runtime.
-- **Fix:** Removed the `DEFAULT_SETTINGS` value import. Added a main-process-local `SETTINGS_SCHEMA_VERSION = 1` constant in `electron/main.ts`, documented as mirroring `DEFAULT_SETTINGS.version` and `CURRENT_APP_SETTINGS_VERSION`. The fallback parse now compares `parsed.version === SETTINGS_SCHEMA_VERSION`. This keeps the version validation behavior identical while severing the runtime dependency on a renderer-owned module. Code-review heuristic: value imports from `src/features/**` into `electron/**` are a process-boundary smell; prefer a local constant, an `electron/`-scoped shared constant, or a type-only import. Type-only imports are erased at compile time and are safe; value imports execute at runtime and couple main-process startup to renderer module graphs.
-- **Commit:** same commit as this entry
-
-### 10. Disk fallback omits runtime string check for onLastWindowClosed
-
-- **Source:** github-claude | PR #432 round 4 | 2026-06-12
-- **Severity:** LOW
-- **File:** `electron/main.ts` L549-567
-- **Finding:** The `window-all-closed` disk fallback parsed `onLastWindowClosed` from `settings.json` under a TypeScript assertion (`as { version?: number; onLastWindowClosed?: string }`), which is erased at runtime. A non-string persisted value such as `true` or `42` would be assigned unchecked, pass through `?? 'platform'`, and reach `shouldQuitOnAllWindowsClosed`. On macOS that produced the wrong quit decision because any non-`'darwin'` truthy value evaluates to quit instead of the platform-default stay-alive behavior.
-- **Fix:** Mirrored the IPC snapshot validation: the disk fallback now checks `parsed.version === SETTINGS_SCHEMA_VERSION && typeof parsed.onLastWindowClosed === 'string'` before assigning the value. This makes the cold-start fallback symmetric with the renderer-sync path and prevents malformed persisted state from altering close behavior.
-
 ### 7. Transient multi-active pane snapshot restarts background shell instead of normalized browser pane
 
 - **Source:** github-codex-connector (P2) | PR #443 cycle 1 | 2026-06-13
@@ -119,4 +84,58 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** `restartPersistedActiveShell` used `liveSessions.length > 0` as the "session is live" guard. The backend's lazy-reconciliation path can return a non-empty `listSessions()` result where every row has `status.kind === 'Exited'`. The guard treated this as a live restore and skipped restarting the persisted active shell, leaving a `completed` placeholder and forcing auto-create to open a second terminal.
 - **Fix:** Replace the length check with `liveSessions.some((session) => session.status.kind === 'Alive')` so only actually alive PTYs block the restart path. Added a regression test where `listSessions()` returns a single `Exited` record.
+- **Commit:** same commit as this entry
+
+### 9. Rust `valid_layout_tracks` accepts whitespace-only track IDs
+
+- **Source:** github-claude | PR #542 round 1 | 2026-06-19
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/workspace_layout.rs`
+- **Finding:** `valid_layout_tracks` only checked `!track.id.is_empty()`, so a hand-crafted persisted layout with a whitespace-only track id (e.g., `" "`) passed validation. The resulting CSS grid track name would be invisible and produce no diagnostics.
+- **Fix:** Changed the guard to `!track.id.trim().is_empty()` so whitespace-only ids are rejected, matching the TypeScript validation.
+- **Commit:** same commit as this entry
+
+### 10. Custom slot ids can collide after grid-area sanitization
+
+- **Source:** github-codex-connector | PR #542 round 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/layout-registry/layoutDefinition.ts`
+- **Finding:** `gridAreaNameForSlotId` replaces non-alphanumeric characters with `-`, so distinct ids such as `slot:a b` and `slot:a-b` map to the same CSS grid-area name. A persisted custom layout passing validation could therefore place multiple panes in one grid area, causing overlap or an invalid grid template at runtime.
+- **Fix:** Added `duplicate-grid-area` validation in `validateSlots` that rejects layouts whose sanitized slot ids produce colliding grid-area names.
+- **Commit:** same commit as this entry
+
+### 11. `SessionCache` derived `app_data_dir` implicitly from its cache-file parent
+
+- **Source:** github-claude | PR #563 cycle 1 | 2026-06-19
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/cache.rs` L87-89 (original)
+- **Finding:** `SessionCache::app_data_dir()` derived the Vimeflow data root by calling `.parent()` on `self.path` (`sessions.json`). The invariant that the cache file is always a direct child of `app_data_dir` was established by convention in `BackendState::new` and not enforced by the type system. Moving the cache path (e.g., `db/sessions.json`) would silently write bridge/status files under the wrong parent with no compile-time or runtime warning.
+- **Fix:** Stored `app_data_dir: PathBuf` explicitly in `SessionCache`, initialized it in `SessionCache::new`/`with_path`, and added `BackendState::with_app_data_dir` so the root is pinned once at construction rather than inferred from the cache path. `spawn_pty_inner` now uses the explicit field instead of `cache.app_data_dir()`.
+- **Commit:** same commit as this entry
+
+### 12. Durable layout repair coerced opencode panes to generic
+
+- **Source:** github-codex-connector | PR #584 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/workspace_layout.rs`
+- **Finding:** The frontend type contract allowed `agentType: "opencode"` and workspace-shape persistence could write that value, but Rust layout repair still treated only the older agent set as known. Restarting from a durable layout would coerce opencode panes to `generic` until detection ran again.
+- **Fix:** Added `opencode` to the repair allowlist and added a regression test proving `repair_workspace_layout` preserves the opencode agent type.
+- **Commit:** same commit as this entry
+
+### 13. Opencode pid locator trusted stale append-only index rows
+
+- **Source:** github-codex-connector | PR #586 round 1 | 2026-06-20
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The opencode locator treated any row with `pid == agent_pid` as authoritative before applying the existing freshness gate. Because the bridge index is append-only, OS PID reuse could make an old row for the same pid bind a new opencode process to a previous session's transcript instead of returning the startup-window retry signal.
+- **Fix:** Applied the `pty_start - SLACK` freshness floor to pid matches as well as cwd fallback matches, preserving pid-first disambiguation only for fresh rows. Added a reused-PID regression test proving stale pid rows return the not-ready error.
+- **Commit:** same commit as this entry
+
+### 14. Exited-only PTY cache masked durable restore failure
+
+- **Source:** github-claude | PR #613 round 1 | 2026-06-23
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** The store-load failure guard treated any non-empty PTY cache as a usable fallback. If the durable workspace layout was unreadable and `listSessions()` returned only `Exited` rows, restore reconstructed stale completed sessions and called `onRestore` instead of taking the intended failure path.
+- **Fix:** Changed the fallback eligibility check to require at least one `Alive` PTY row before suppressing the store-load failure. Added a regression test proving an exited-only cache after store-load failure does not call `onRestore` and still releases hydration.
 - **Commit:** same commit as this entry

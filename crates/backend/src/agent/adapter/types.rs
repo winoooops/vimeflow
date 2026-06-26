@@ -57,6 +57,13 @@ pub struct LocatedStatusSource {
     /// session id, stamped by the runtime; this one is the agent's own
     /// internal id.
     pub agent_session_id: Option<String>,
+    /// Workspace directory resolved by the adapter locator at attach time.
+    ///
+    /// OpenCode records the project directory in its bridge index but does not
+    /// currently emit OSC 7, so the PTY cwd can remain stuck at the terminal's
+    /// spawn directory. When present, the runtime should prefer this value for
+    /// the initial transcript cwd.
+    pub resolved_directory: Option<PathBuf>,
 }
 
 /// Decoder output — provider-neutral status state, **session-id-free**
@@ -97,6 +104,12 @@ pub struct StatusSnapshot {
     pub context_window: ContextWindowStatus,
     pub cost: CostMetrics,
     pub rate_limits: RateLimits,
+    /// Whether `rate_limits` carries a real network-fetched value rather than a
+    /// placeholder default. Only kimi fetches usage over the network, so this is
+    /// `false` for claude/codex (they read local files) and for a kimi session
+    /// that hasn't fetched yet — the kimi usage gate uses it to tell LOADING
+    /// from ON without guessing from zeroed values.
+    pub usage_fetched: bool,
 }
 
 /// Statusline-parser output as consumed by `base/watcher_runtime`.
@@ -131,6 +144,7 @@ pub(crate) fn stamp_snapshot(session_id: &str, snapshot: StatusSnapshot) -> Agen
         context_window: snapshot.context_window,
         cost: snapshot.cost,
         rate_limits: snapshot.rate_limits,
+        usage_fetched: snapshot.usage_fetched,
     }
 }
 
