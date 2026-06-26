@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useLayoutEffect, useState, type RefObject } from 'react'
 
 /**
  * Tracks an element's live pixel width via ResizeObserver, ignoring zero
@@ -14,7 +14,7 @@ export const usePaneWidth = <T extends Element>(
 ): number | null => {
   const [width, setWidth] = useState<number | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current
     if (!element) {
       return

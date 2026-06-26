@@ -2,7 +2,7 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-24
+last_updated: 2026-06-26
 ref_count: 2
 ---
 
@@ -95,4 +95,17 @@ to persistent state through a separate, explicit path.
 - **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
 - **Finding:** The terminal context menu reset `canPasteImage` to false and opened immediately while the clipboard image-type read was still pending. Fast reads produced a visible disabled-to-enabled transition for the Paste Image row.
 - **Fix:** Deferred menu open until a fast clipboard image check resolves, with a short fallback timer for slow or permission-gated reads. Cleanup now cancels pending fallback timers, and a regression test asserts the fast-read path opens with image state already settled.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Width-derived pane collapse applied after first paint
+
+- **Source:** github-claude | PR #627 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/usePaneWidth.ts`
+- **Finding:** `usePaneWidth` measured the pane in `useEffect`, so panes that
+  mounted below the auto-collapse threshold first painted expanded chrome before
+  width state updated and collapsed the pane.
+- **Fix:** Switched the measurement and ResizeObserver setup to
+  `useLayoutEffect`, keeping the same width logic while applying the
+  layout-derived state before the browser paints.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
