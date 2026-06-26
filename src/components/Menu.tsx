@@ -540,10 +540,7 @@ const MenuRow = ({
   ) => {
     if (
       event.currentTarget === event.target ||
-      (event.key !== 'ArrowUp' &&
-        event.key !== 'ArrowDown' &&
-        event.key !== 'Enter' &&
-        event.key !== ' ')
+      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
     ) {
       return
     }
