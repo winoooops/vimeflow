@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-26
-ref_count: 9
+ref_count: 10
 ---
 
 # Agent-State Guards
@@ -129,4 +129,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** `applyToolCallEvents` cleared `toolCalls.active` for any `done` or `failed` event, so a completion for tool A could make the UI appear idle even while a different tool B was still running in the same replay batch.
 - **Fix:** Guarded the active-clear by `toolUseId` so only the matching completion clears the active call. Added regression coverage for an unrelated completed tool preserving the running active call.
+- **Commit:** same commit as this entry
+
+### 14. Active-only replay summary was suppressed as empty
+
+- **Source:** github-claude | PR #626 round 5 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/transcript.rs`, `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** The replay boundary emitted `agent-replay-summary` only when completed tool calls, turns, or cwd were present. A resume whose only replay activity was an in-flight tool call built a summary with `activeToolCall` but dropped it as empty, leaving the frontend falsely idle after resume.
+- **Fix:** Included `active_tool_call` in the summary emission guard for Claude and Codex transcript decoders. Added active-only replay-boundary regression tests for both decoders.
 - **Commit:** same commit as this entry

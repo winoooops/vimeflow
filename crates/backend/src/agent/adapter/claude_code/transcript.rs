@@ -323,7 +323,11 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
                 self.num_turns,
                 self.last_cwd.clone(),
             );
-            if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
+            if summary.tool_call_total > 0
+                || summary.active_tool_call.is_some()
+                || summary.num_turns > 0
+                || summary.cwd.is_some()
+            {
                 if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
                     log::warn!("Failed to emit agent-replay-summary event: {}", e);
                 }
@@ -1104,6 +1108,35 @@ mod tests {
         );
         assert_eq!(sink.count("agent-tool-call"), 2);
         assert_eq!(sink.count("agent-replay-summary"), 1);
+    }
+
+    #[test]
+    fn claude_replay_summary_emits_for_active_tool_call_only() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"active-1","name":"Bash","input":{"command":"sleep 10"}}],"stop_reason":"tool_use"}}"#,
+        );
+
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        decoder.on_caught_up();
+
+        assert_eq!(sink.count("agent-replay-summary"), 1);
+        let summaries: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-replay-summary")
+            .collect();
+        assert_eq!(summaries[0].1["numTurns"], 0);
+        assert_eq!(summaries[0].1["toolCallTotal"], 0);
+        assert!(summaries[0].1["recentToolCalls"]
+            .as_array()
+            .expect("recentToolCalls should be an array")
+            .is_empty());
+        assert_eq!(summaries[0].1["activeToolCall"]["toolUseId"], "active-1");
+        assert_eq!(summaries[0].1["activeToolCall"]["status"], "running");
     }
 
     #[test]
