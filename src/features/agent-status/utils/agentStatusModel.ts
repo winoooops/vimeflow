@@ -4,6 +4,7 @@ const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
   codex: 'codex',
   kimi: 'kimi',
+  opencode: 'opencode',
   aider: 'aider',
   generic: 'generic',
 } as const

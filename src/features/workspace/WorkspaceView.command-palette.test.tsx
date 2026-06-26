@@ -48,6 +48,13 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
+
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../diff/hooks/useGitStatus')
 vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')
@@ -195,6 +202,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
@@ -433,7 +441,37 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
-  test('terminal /clear does not reset agent-status generation for non-Codex panes', async () => {
+  test('terminal /clear resets the active pane status generation and cache history when pane is opencode', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        agentType: 'opencode',
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        1
+      )
+    })
+  })
+
+  test('terminal /clear does not reset agent-status generation for non-Codex/non-opencode panes', async () => {
     const { useAgentStatus } =
       await import('../agent-status/hooks/useAgentStatus')
 
@@ -459,6 +497,98 @@ describe('WorkspaceView - Command Palette Integration', () => {
       expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
         'pty-session-1',
         0
+      )
+    })
+  })
+
+  test('terminal /clear does not reset agent-status generation for generic panes', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        agentType: null,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        0
+      )
+    })
+  })
+
+  test('a non-context-switch command on a Codex pane does not bump the reset generation', async () => {
+    // Only the codex slash commands `/clear` and `/resume` switch the rollout.
+    // A bare `resume` (no slash — a shell command, not codex's `/resume`) and any
+    // other input must NOT arm the reset/red state (codex review, VIM-192).
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        agentType: 'codex',
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', 'resume')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).not.toHaveBeenCalled()
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        0
+      )
+    })
+  })
+
+  test('terminal /resume invalidates the status (bumps generation + clears cache) on a Codex pane', async () => {
+    // `/resume` switches codex to another conversation — same invalidation as
+    // `/clear` so the panel goes red until the watcher relocates (VIM-192).
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        agentType: 'codex',
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/resume')
+    })
+
+    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    await waitFor(() => {
+      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
+        'pty-session-1',
+        1
       )
     })
   })

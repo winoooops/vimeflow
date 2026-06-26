@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-19
-ref_count: 25
+last_updated: 2026-06-22
+ref_count: 61
 ---
 
 # React Lifecycle
@@ -508,7 +508,25 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Wrapped both `layoutIds` and `layoutById` in `useMemo(() => ..., [layouts])` so the references stay stable across unrelated re-renders.
 - **Commit:** same commit as this entry
 
-### 53. Open Dialog unmount leaves focus on document.body
+### 53. Custom layout save/delete reads stale `customPaneLayouts` closure
+
+- **Source:** github-claude | PR #569 round 1 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1265-1295
+- **Finding:** `handleSaveCustomLayout` and `handleDeleteCustomLayout` called `setCustomPaneLayouts([...customPaneLayouts.filter(...), ...])`, reading `customPaneLayouts` from the `useCallback` closure. The deps array recreated the callback when the list changed, but concurrent or batched updates between renders could operate on a stale snapshot and silently drop an interleaved layout change.
+- **Fix:** Switched both callbacks to the functional updater form `setCustomPaneLayouts(previous => ...)`. Also updated `useSessionManager`'s `setCustomPaneLayouts` wrapper to accept functional updaters and evaluate them inside the underlying `setCustomPaneLayoutsState` updater so the latest previous value is always used.
+- **Commit:** same commit as this entry
+
+### 54. `setSessions` called as a side effect inside a state updater
+
+- **Source:** github-claude | PR #569 round 3 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts` L276-366
+- **Finding:** `setCustomPaneLayouts` computed the preserved layouts and migrated sessions inside the `setCustomPaneLayoutsState` functional updater, calling `setSessions` from within that updater. React functional updaters must be pure and may be invoked more than once in Strict Mode or replayed under concurrent rendering, which could queue duplicate session transformations.
+- **Fix:** Derived the next custom layout registry at top-level (using a `customPaneLayoutsRef` to read the current registry) and performed `setSessions` as a separate top-level functional update. The layout state still uses a direct `setCustomPaneLayoutsState(nextCustomLayouts)` call because the registry was already derived from the latest previous value.
+- **Commit:** same commit as this entry
+
+### 55. Open Dialog unmount leaves focus on document.body
 
 - **Source:** github-claude | PR #548 round 1 | 2026-06-19
 - **Severity:** LOW
@@ -517,7 +535,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Added a dedicated `useEffect` with an empty dependency array whose cleanup restores `previousFocusRef.current` when `wasOpenRef.current` is true and `restoreFocus` is enabled. Captured `restoreFocus` in a ref so the cleanup closure sees the latest value. Added a co-located test that unmounts an open Dialog and asserts focus returns to the prior element.
 - **Commit:** same commit as this entry
 
-### 54. Per-instance document keydown listeners allow stacked dialogs to all process Escape
+### 56. Per-instance document keydown listeners allow stacked dialogs to all process Escape
 
 - **Source:** github-codex-connector | PR #548 round 2 | 2026-06-19
 - **Severity:** MEDIUM
@@ -526,7 +544,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Introduced a module-level LIFO `dialogStack` of open dialog layers. A single document listener reads the top layer on each `keydown`; Escape calls only the top layer's close handler and `stopImmediatePropagation()`, and Tab only traps focus inside the top layer's container. Each Dialog pushes its layer on open and removes it on close/unmount. Added regression tests covering (a) Escape closes only the topmost dialog, (b) Escape does not propagate to a lower dialog when the topmost is `dismissDisabled`, and (c) Escape does not propagate when the topmost has `closeOnEscape={false}`.
 - **Commit:** same commit as this entry
 
-### 55. Dialog layer registration reorders the stack on parent re-renders
+### 57. Dialog layer registration reorders the stack on parent re-renders
 
 - **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
 - **Severity:** HIGH
@@ -534,3 +552,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The layer-registration `useEffect` listed `requestClose` (which depends on `onOpenChange`) and `closeOnEscape` in its dependency array. Because parents often pass an inline `onOpenChange` callback, every parent re-render unregistered and re-registered an already-open lower dialog, pushing it to the top of the module-level `dialogStack`. In stacked modal use, Escape and Tab then targeted the background dialog instead of the visible top dialog.
 - **Fix:** Captured `requestClose` and `closeOnEscape` in refs that are updated synchronously each render, and keyed the registration effect only to `open`. The layer's close handler now reads the latest ref values, so prop changes are honored without re-registering the layer and corrupting stack order. Added a regression test that re-renders a parent with two open dialogs and asserts Escape still closes only the topmost.
 - **Commit:** same commit as this entry
+
+### 58. Tool jar auto-fit effect re-ran on every count tick
+
+- **Source:** github-claude | PR #576 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ToolCalls/ToolJarTile.tsx`
+- **Finding:** The tile auto-fit `useLayoutEffect` depended on `data.count`, so every increment disconnected and recreated observers plus delayed measurement timers. The measured content width only changes when the count gains or loses a digit, making same-digit ticks unnecessary layout work.
+- **Fix:** Derived `countDigits = String(data.count).length` and used that primitive in the dependency array. The effect still remeasures at digit boundaries and on tile size changes, but avoids churn for hot same-width count updates.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

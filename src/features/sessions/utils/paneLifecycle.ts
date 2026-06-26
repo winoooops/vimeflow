@@ -1,4 +1,10 @@
-import type { Pane, PaneLayoutId, Session } from '../types'
+import type {
+  LayoutSlotId,
+  Pane,
+  PaneLayoutId,
+  PanePlacement,
+  Session,
+} from '../types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   autoShrinkLayoutFor,
@@ -6,6 +12,7 @@ import {
 } from '../../terminal/layout-registry/layoutRegistry'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { isShellPane } from './paneKind'
+import { normalizePanePlacements } from './panePlacements'
 
 export { autoShrinkLayoutFor } from '../../terminal/layout-registry/layoutRegistry'
 
@@ -50,7 +57,8 @@ export const applyAddPane = (
   sessions: Session[],
   sessionId: string,
   newPane: Pane,
-  capacity: number
+  capacity: number,
+  slotId?: LayoutSlotId
 ): ApplyAddPaneResult => {
   const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
   if (sessionIndex === -1) {
@@ -73,9 +81,19 @@ export const applyAddPane = (
     { ...newPane, active: true },
   ]
 
+  const placements: PanePlacement[] | undefined = slotId
+    ? [
+        ...(session.placements?.filter(
+          (placement) => placement.slotId !== slotId
+        ) ?? []),
+        { paneId: newPane.id, slotId },
+      ]
+    : session.placements
+
   const updated: Session = {
     ...session,
     panes,
+    placements,
     status: deriveShellSessionStatus(panes),
     agentType: newPane.agentType,
   }
@@ -130,10 +148,21 @@ export const applyRemovePane = (
 
   const activePane = panes.find((pane) => pane.active)
 
+  const layout = autoShrinkLayoutFor(
+    panes.length,
+    currentLayoutId,
+    layoutRegistry
+  )
+
   const updated: Session = {
     ...session,
     panes,
-    layout: autoShrinkLayoutFor(panes.length, currentLayoutId, layoutRegistry),
+    layout,
+    placements: normalizePanePlacements(
+      panes,
+      layoutRegistry.getFallbackLayout(layout),
+      session.placements?.filter((placement) => placement.paneId !== paneId)
+    ),
     status: deriveShellSessionStatus(panes),
     agentType: activePane?.agentType ?? session.agentType,
   }

@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-17
-ref_count: 3
+last_updated: 2026-06-22
+ref_count: 12
 ---
 
 # Cross-Platform Paths
@@ -78,4 +78,49 @@ consider using path libraries for cross-platform code.
 - **File:** `src/features/workspace/utils/editorFileLifecycleStatus.ts` L207-210
 - **Finding:** The guard comparing `filesCwd` to `gitStatusCwd` used raw `!==`, so trailing slashes, tilde expansion, or case-only differences on case-insensitive volumes made equivalent directories look different. The function then returned `null`, silently disabling the `NEW`/`DELETED` lifecycle crumb for the selected editor file even though the file was inside the reported git status directory.
 - **Fix:** Reuse the shared `normalizePathForComparison` helper (which expands `~`, normalizes separators, strips trailing slashes, and lowercases on macOS/Windows) before comparing both cwd values.
+
+### 8. Workspace bucket basename could exceed filesystem component limits
+
+- **Source:** github-codex-connector | PR #563 cycle 1 | 2026-06-19
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs` L84 (original)
+- **Finding:** `workspace_bridge_bucket` constructed an app-data directory component from the sanitized cwd basename plus a `_<sha256>` suffix. When the project directory name was long but still a valid filename, the combined component exceeded common filesystems' 255-byte component limit, causing `create_dir_all` to fail and leaving the session without a generated bridge.
+- **Fix:** Truncate the sanitized basename to `MAX_BUCKET_BASENAME_BYTES = 242` bytes (leaving room for the underscore, 6-hex hash, and margin) before appending the hash suffix. The resulting component stays well under 255 bytes even on conservative filesystems.
+- **Commit:** same commit as this entry
+- **Commit:** same commit as this entry
+
+### 9. Path-normalization tests compared case-folded output against raw `$HOME`
+
+- **Source:** github-claude | PR #572 round 2 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/utils/editorFileLifecycleStatus.test.ts`
+- **Finding:** The pre-push Vitest hook failed on macOS because `parentPathForGitStatus('~/repo/src/new.ts')` intentionally lowercases the expanded path on case-insensitive platforms, while the test expected the raw `$HOME` casing (`/Users/...`). The production behavior was correct, but the platform-sensitive expectation made the local gate fail and encouraged a `git push --no-verify` bypass.
+- **Fix:** Keep the direct `expandTildePath` assertion for raw home expansion, but compare the git-status parent path with `normalizePathForComparison(`${home}/repo/src`)` so the expected value follows the same case-folding contract as the API under test.
+- **Commit:** same commit as this entry
+
+### 10. opencode provider home used a Linux XDG path as a home-relative subdir
+
+- **Source:** github-claude | PR #584 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/config.rs`
+- **Finding:** The opencode registry entry set `home_subdir` to `.local/share/opencode`, which made `provider_home()` resolve a Linux XDG data path through `dirs::home_dir().join(...)` on every platform. macOS and Windows would receive nonexistent home-relative paths instead of their platform data directories once the opencode adapter starts consuming `provider_home`.
+- **Fix:** Cleared opencode's `home_subdir` for the scaffold milestone and documented the M6 follow-up to resolve it through `dirs::data_dir().join("opencode")` when the adapter needs the value.
+- **Commit:** same commit as this entry
+
+### 11. Missing macOS helper binary blocked fallback attach strategies
+
+- **Source:** github-claude | PR #593 round 1 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** The non-`/proc` Codex locator relies on `lsof` for macOS/BSD open-rollout detection. If the binary was absent from PATH, the provider surfaced `NotFound` as an authoritative provider error, so the resolver returned `NotYetReady` before resume-argv, logs, or recency fallback strategies could run.
+- **Fix:** Treat `io::ErrorKind::NotFound` from the lsof runner as empty output, preserving the pre-lsof fallback behavior when the platform signal is unavailable. Timeout and non-zero-exit errors still propagate as provider failures.
+- **Commit:** same commit as this entry
+
+### 12. Windows rename does not replace existing bridge plugin files
+
+- **Source:** github-codex-connector | PR #603 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/install.rs` L147
+- **Finding:** `std::fs::rename(tmp, target)` replaces an existing file on Unix but fails on Windows when `target` already exists. Because OpenCode bridge install errors are non-fatal, Windows users with a stale or unparsable plugin file could remain on the old schema indefinitely.
+- **Fix:** Routed replacement through a platform helper: Unix keeps atomic rename-over-existing, while Windows removes an existing target before renaming the temp file into place and cleans up the temp file on failure.
 - **Commit:** same commit as this entry

@@ -2,8 +2,8 @@
 id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-19
-ref_count: 4
+last_updated: 2026-06-22
+ref_count: 6
 ---
 
 # React Prop Contracts
@@ -67,3 +67,21 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **Finding:** The call site passed `bg-primary bg-none` to strip the gradient defined inside the `primary` variant. tailwind-merge currently resolves this as intended, but the intent is invisible at the call site and would silently break if the variant ever expresses the gradient through a non-background-image mechanism.
 - **Fix:** Added a dedicated `flat-primary` variant to `buttonVariants.ts` that uses `bg-primary` without the gradient, switched `NewSessionButton` to `variant="flat-primary"`, and updated the co-located test to drop the now-unnecessary `bg-none` assertion.
 - **Commit:** same commit as this entry
+
+### 7. Tool calls view switch reimplemented SegmentedControl locally
+
+- **Source:** github-codex-connector | PR #576 round 1 | 2026-06-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/components/ToolCalls/ToolCallsViewSwitch.tsx`
+- **Finding:** The view switch rendered two raw icon buttons with a local segmented-track implementation. That duplicated the shared `SegmentedControl` contract and required a lint suppression for the raw icon-button rule.
+- **Fix:** Replaced the local button group with `SegmentedControl` using the toolbar variant and icon-only option rendering. The control keeps the same accessible labels while inheriting the shared keyboard and pressed-state behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Quota unavailable tooltip duplicated registry-owned issue metadata
+
+- **Source:** github-claude | PR #603 round 1 | 2026-06-22
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/QuotaUnavailableNotice.tsx` L30-34
+- **Finding:** The quota notice component hardcoded a tooltip string containing `sst/opencode#16017` while the URL lived in the agent registry. Updating the upstream issue link later could leave the tooltip stale even though the link opened the new destination.
+- **Fix:** Added `tooltipLabel` to `QuotaNotice`, populated it beside `trackUrl` in the registry, and made `QuotaUnavailableNotice` render that prop. Updated component and card tests to provide the co-located label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

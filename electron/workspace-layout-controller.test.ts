@@ -38,6 +38,10 @@ const sampleShape = (): PersistedWorkspaceShape => ({
       id: 's1',
       projectId: 'proj-1',
       layout: 'vsplit',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p0' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ],
       workingDirectory: '/repo',
       active: true,
       open: true,
@@ -66,6 +70,10 @@ const sampleStore = (): PersistedWorkspaceLayoutStore => ({
       id: 's1',
       projectId: 'proj-1',
       layout: 'vsplit',
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p0' },
+        { paneId: 'p1', slotId: 'slot:p1' },
+      ],
       workingDirectory: '/repo',
       active: true,
       open: true,

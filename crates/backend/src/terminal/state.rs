@@ -4,7 +4,7 @@ use portable_pty::{Child, MasterPty};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use super::types::SessionId;
 
@@ -74,6 +74,10 @@ pub struct ManagedSession {
     /// Current working directory
     #[allow(dead_code)]
     pub cwd: String,
+    /// Bridge directory path for this session, used for cleanup.
+    /// Stored at spawn time so cleanup uses the exact app-data path that
+    /// generated the statusline files.
+    pub bridge_dir: Option<String>,
     /// Shim directory path for this session, used for cleanup.
     /// Stored at spawn time so cleanup reads the same path even if
     /// `dirs::cache_dir()` env variables change between spawn and kill.
@@ -250,6 +254,24 @@ impl PtyState {
         sessions.remove(session_id)
     }
 
+    /// Snapshot bridge cleanup paths before killing a PTY.
+    ///
+    /// The reader thread can observe EOF and remove the session while
+    /// `kill_pty` is waiting for the child to exit. Capturing these paths
+    /// before signalling the child lets `kill_pty` clean the bridge directory
+    /// even if the reader wins that race and `remove` later returns `None`.
+    pub fn bridge_cleanup_paths(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<(String, Option<String>)> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions.get(session_id)?;
+        session
+            .bridge_dir
+            .as_ref()
+            .map(|bridge_dir| (bridge_dir.clone(), session.shim_dir.clone()))
+    }
+
     /// Remove a PTY session only if its generation matches the expected value.
     /// Prevents a stale reader thread from removing a replacement session.
     pub fn remove_if_generation(
@@ -357,6 +379,46 @@ impl PtyState {
         // code) must stay non-zero so a failed exit is never read as clean.
         let raw = status.exit_code();
         Some(i32::try_from(raw).unwrap_or(i32::MAX))
+    }
+
+    /// Wait for a session's child process to exit, up to `timeout`.
+    ///
+    /// Returns `Ok(Some(exit_code))` when the child exits within the timeout,
+    /// `Ok(None)` when the session is no longer present (already reaped), and
+    /// `Err` if polling the child fails unexpectedly.
+    pub fn wait_for_exit(
+        &self,
+        session_id: &SessionId,
+        timeout: Duration,
+    ) -> Result<Option<i32>, String> {
+        let start = Instant::now();
+        loop {
+            let mut sessions = self.sessions.lock().expect("failed to lock sessions");
+            let Some(session) = sessions.get_mut(session_id) else {
+                return Ok(None);
+            };
+            match session.child.try_wait() {
+                Ok(Some(status)) => {
+                    let raw = status.exit_code();
+                    return Ok(Some(i32::try_from(raw).unwrap_or(i32::MAX)));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    return Err(format!(
+                        "failed to wait for session {} child: {}",
+                        session_id, e
+                    ));
+                }
+            }
+            drop(sessions);
+            if start.elapsed() >= timeout {
+                return Err(format!(
+                    "timeout waiting for session {} child to exit",
+                    session_id
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Get the resolved CWD for a session
@@ -640,6 +702,7 @@ mod tests {
             writer,
             child,
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
@@ -713,6 +776,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            bridge_dir: None,
             shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),

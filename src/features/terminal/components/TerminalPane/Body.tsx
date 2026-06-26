@@ -199,6 +199,11 @@ export interface BodyProps {
    * dragged. The final size is fitted when this flips back to false.
    */
   deferFit?: boolean
+
+  /**
+   * Enables coding-agent-only clipboard image paste controls.
+   */
+  enableImagePaste?: boolean
 }
 
 export interface BodyHandle {
@@ -220,6 +225,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onPtyStatusChange = undefined,
     onFocusChange = undefined,
     deferFit = false,
+    enableImagePaste = false,
   },
   ref
 ): ReactElement {
@@ -672,6 +678,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         theme: toXtermTheme(themeService.current().terminal),
         scrollback: 10000,
         allowProposedApi: true,
+        macOptionClickForcesSelection: true,
       })
 
       // Create and load fit addon
@@ -978,6 +985,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   const clipboard = useTerminalClipboard({
     terminal,
+    enableImagePaste,
     // TODO: surface clipboard failures via a visible status/error channel.
     onCopyError: (): void => undefined,
     onPasteError: (): void => undefined,
@@ -1005,7 +1013,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         onPaste={(): void => {
           void clipboard.paste()
         }}
+        onPasteImage={(): void => {
+          void clipboard.pasteImage()
+        }}
         canCopy={clipboard.hasSelection}
+        canPasteImage={clipboard.canPasteImage}
+        showPasteImage={enableImagePaste}
       />
     </div>
   )

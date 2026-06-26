@@ -27,6 +27,7 @@ import type {
   PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
+import { normalizePanePlacements } from './panePlacements'
 import { sessionFromInfo } from './sessionFromInfo'
 import { deriveShellSessionStatus } from './sessionStatus'
 import { tabName } from './tabName'
@@ -39,6 +40,7 @@ const KNOWN_AGENT_TYPES: readonly AgentType[] = [
   'claude-code',
   'codex',
   'kimi',
+  'opencode',
   'aider',
   'generic',
 ]
@@ -117,7 +119,8 @@ const buildGroupedSession = (
   workspaceId: string,
   layout: PaneLayoutId,
   entries: GroupedEntry[],
-  fallbackIndex: number
+  fallbackIndex: number,
+  registry: PaneLayoutRegistry
 ): Session => {
   // Stable ordering by paneIndex; ties broken by first-seen order.
   const ordered = [...entries].sort(
@@ -168,6 +171,11 @@ const buildGroupedSession = (
     workingDirectory: workspaceDirectory,
     agentType: activePane.agentType,
     layout,
+    placements: normalizePanePlacements(
+      panes,
+      registry.getFallbackLayout(layout),
+      undefined
+    ),
     activityPanelCollapsed: readActivityPanelCollapsed(workspaceId),
     panes,
     createdAt: now,
@@ -249,7 +257,13 @@ export const groupSessionsFromInfos = (
       return sessionFromInfo(bucket.entries[0], index)
     }
 
-    return buildGroupedSession(bucket.id, bucket.layout, bucket.entries, index)
+    return buildGroupedSession(
+      bucket.id,
+      bucket.layout,
+      bucket.entries,
+      index,
+      registry
+    )
   })
 }
 
@@ -375,6 +389,7 @@ const buildStoreSession = (
   }))
   const activePane = panes.find((pane) => pane.active) ?? panes[0]
   const now = new Date().toISOString()
+  const layout = toLayoutId(shape.layout, registry)
 
   return {
     id: shape.id,
@@ -384,7 +399,12 @@ const buildStoreSession = (
     status: deriveShellSessionStatus(panes),
     workingDirectory: shape.workingDirectory,
     agentType: activePane.agentType,
-    layout: toLayoutId(shape.layout, registry),
+    layout,
+    placements: normalizePanePlacements(
+      panes,
+      registry.getFallbackLayout(layout),
+      shape.placements
+    ),
     activityPanelCollapsed: readActivityPanelCollapsed(shape.id),
     panes,
     createdAt: now,

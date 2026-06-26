@@ -56,6 +56,12 @@ fn resolve_transcript_path(
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
+    /// The status source (Codex: rollout) path this handle is watching.
+    /// Read via `AgentWatcherState::current_status_path` so the relocate
+    /// sequence can skip a no-op re-spawn when a fresh locate returns the
+    /// same path (the drift tick calls `start_agent_watcher` every few
+    /// seconds; re-tailing a 20-114MB rollout on every tick is wasteful).
+    status_path: PathBuf,
     _watcher: Option<RecommendedWatcher>,
     /// Signals the polling fallback thread to exit
     poll_stop: Arc<(Mutex<bool>, Condvar)>,
@@ -482,8 +488,7 @@ impl AgentWatcherState {
                     // debug-asserts the match so a future
                     // contributor accidentally passing the wrong
                     // session's guard fails fast in debug builds.
-                    removed_transcript =
-                        ts.stop_with_held_gate(&session_id, &_gate_guard);
+                    removed_transcript = ts.stop_with_held_gate(&session_id, &_gate_guard);
                 }
                 // Always clear: either the new handle owns the entry
                 // (claim transferred) or we just tore it down — either
@@ -565,6 +570,20 @@ impl AgentWatcherState {
         watchers.get(pty_id).map(|handle| handle.agent_type)
     }
 
+    /// The status source path the live watcher for `session_id` is
+    /// currently tailing, or `None` when no watcher is registered. Reads
+    /// the same `watchers` mutex as `contains` / `agent_type_for_pty`, so
+    /// the relocate sequence sees a consistent (path, presence) pair. Used
+    /// by `run_watch_sequence` to skip a no-op re-spawn when a fresh locate
+    /// resolves the same path the handle already watches (drift-tick churn
+    /// guard, VIM-192).
+    pub(crate) fn current_status_path(&self, session_id: &str) -> Option<PathBuf> {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers
+            .get(session_id)
+            .map(|handle| handle.status_path.clone())
+    }
+
     /// Test-only seam to set a pty's agent type without going through a
     /// real watcher startup. Builds a stub `WatcherHandle::new_for_test`
     /// with a fresh `TranscriptState` (whose `stop` is a no-op for an
@@ -585,7 +604,7 @@ impl AgentWatcherState {
     /// because both sides come from the same stub state — they match
     /// each other, not the production state. Threading the real
     /// state is the only structural fix.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "e2e-test"))]
     pub(crate) fn insert_agent_type_for_test(
         &self,
         transcript_state: TranscriptState,
@@ -614,6 +633,7 @@ fn maybe_start_transcript(
     transcript_state: &TranscriptState,
     session_id: &str,
     transcript_path: &str,
+    located: &LocatedStatusSource,
     // PR #302 cycle 9 — the `claim_flag` is threaded all the way down
     // to `TranscriptState::start_or_replace`, which sets it while
     // STILL HOLDING the per-session gate. That gate-held write is
@@ -665,9 +685,14 @@ fn maybe_start_transcript(
         }
     };
 
-    let cwd = pty_state
-        .get_cwd(&session_id.to_string())
-        .map(PathBuf::from);
+    let cwd = located
+        .resolved_directory
+        .clone()
+        .or_else(|| {
+            pty_state
+                .get_cwd(&session_id.to_string())
+                .map(PathBuf::from)
+        });
 
     // Step B'': `TranscriptState::start_or_replace` now takes
     // `Arc<dyn TranscriptStreamer>` directly (was `Arc<dyn AgentAdapter>`
@@ -771,6 +796,9 @@ pub(crate) fn start_watching(
 ) -> Result<WatcherHandle, String> {
     let located = located.into_inner();
     let status_file_path = located.status_path.clone();
+    // Retained for the `WatcherHandle` so the relocate sequence can compare a
+    // fresh locate against the path this handle is already watching.
+    let handle_status_path = status_file_path.clone();
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
@@ -952,6 +980,7 @@ pub(crate) fn start_watching(
                             &transcript_state_for_cb,
                             &sid,
                             &path,
+                            &located_for_cb,
                             Some(claimed_transcript_for_cb.clone()),
                             Some(alive_for_cb.clone()),
                         );
@@ -961,11 +990,7 @@ pub(crate) fn start_watching(
                 }
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to parse statusline for session {}: {}",
-                    sid,
-                    e
-                );
+                log::warn!("Failed to parse statusline for session {}: {}", sid, e);
                 (TxOutcome::ParseError, None)
             }
         };
@@ -1067,6 +1092,7 @@ pub(crate) fn start_watching(
                                 &initial_transcript_state,
                                 &initial_sid,
                                 &path,
+                                &initial_located,
                                 Some(claimed_transcript.clone()),
                                 None,
                             );
@@ -1203,6 +1229,7 @@ pub(crate) fn start_watching(
                                     &poll_transcript_state,
                                     &poll_sid,
                                     &path,
+                                    &poll_located,
                                     Some(poll_claimed_transcript.clone()),
                                     Some(poll_alive.clone()),
                                 );
@@ -1296,6 +1323,7 @@ pub(crate) fn start_watching(
     );
 
     Ok(WatcherHandle {
+        status_path: handle_status_path,
         _watcher: Some(watcher),
         poll_stop,
         join_handle: poll_join_handle,
@@ -1326,18 +1354,16 @@ pub(crate) fn start_watching(
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "e2e-test"))]
 impl WatcherHandle {
-    pub(crate) fn new_for_test(
-        transcript_state: TranscriptState,
-        session_id: String,
-    ) -> Self {
+    pub(crate) fn new_for_test(transcript_state: TranscriptState, session_id: String) -> Self {
         // `agent_type` defaults to `ClaudeCode`. Tests that care about
         // the agent type pass the real value through
         // `AgentWatcherState::insert(sid, handle, agent_type)`, which
         // overwrites this field — so the default only matters for
         // tests that never call `agent_type_for_pty` on the stub.
         WatcherHandle {
+            status_path: PathBuf::new(),
             _watcher: None,
             poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
             join_handle: None,
@@ -1373,6 +1399,7 @@ impl WatcherHandle {
     /// Without this seam, tests can't exercise the ownership-transfer
     /// decision independently of running the full inline-init / notify
     /// code path.
+    #[cfg(test)]
     pub(crate) fn set_claimed_for_test(&mut self, v: bool) {
         self.claimed_transcript
             .store(v, std::sync::atomic::Ordering::Release);
@@ -1654,7 +1681,15 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
 
         let status = transcript_state
-            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None, None, None)
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path,
+                None,
+                None,
+                None,
+            )
             .expect("failed to start transcript watcher");
         assert_eq!(status, TranscriptStartStatus::Started);
 

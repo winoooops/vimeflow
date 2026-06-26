@@ -445,6 +445,25 @@ mod tests {
     }
 
     #[test]
+    fn detects_opencode_agent() {
+        let source = MockProcessSource {
+            children: HashMap::from([(10, vec![11])]),
+            cmdlines: HashMap::from([
+                (10, vec!["bash".to_string()]),
+                (11, vec!["opencode".to_string()]),
+            ]),
+        };
+
+        let detected = detect_agent_with_source(10, &source);
+
+        assert!(
+            matches!(detected, Some((AgentType::Opencode, 11))),
+            "expected opencode detection, got {:?}",
+            detected,
+        );
+    }
+
+    #[test]
     fn detects_aider_agent() {
         let cmdline = vec!["aider".to_string(), "--model".to_string()];
         let binary = extract_binary_name(&cmdline).unwrap();

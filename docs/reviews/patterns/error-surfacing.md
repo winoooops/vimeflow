@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-17
-ref_count: 13
+last_updated: 2026-06-20
+ref_count: 44
 ---
 
 # Error Surfacing
@@ -405,3 +405,30 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** A `fileSystemService.readFile` call was used as an existence probe for the selected editor file. The bare `catch` set `selectedEditorFileExists(false)` for any rejection, so `resolveEditorFileLifecycleStatus` mapped permission errors, IPC failures, disk I/O errors, and remote-mount hiccups to `DELETED`. `DockPanel` makes clean `DELETED` buffers read-only, so a transient non-not-found failure could incorrectly lock editing of an existing file until a later successful check.
 - **Fix:** Added `isNotFoundError` helper that matches explicit not-found signals (`ENOENT`, `No such file or directory`, `os error 2`, Windows file-not-found text) on both string rejections and `Error` objects. The catch block now sets `selectedEditorFileExists(false)` only for not-found errors and preserves `null` (unknown) state for all other failures. Added regression tests for the helper classification and for `WorkspaceView` keeping the lifecycle status null on a permission-denied rejection.
 - **Commit:** see current commit
+
+### 42. Layout creator save path lets schema-validation throws escape
+
+- **Source:** github-claude | PR #569 round 5 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L767-785
+- **Finding:** `handleSave` relied on draft validation before calling `definitionFromDraft`, but `definitionFromDraft` also runs schema validation and can throw if the validators diverge in a future change. An uncaught throw from the click handler would leave the modal open without user-facing feedback.
+- **Fix:** Wrapped `definitionFromDraft` and `onSave` in the same try/catch shape used by the code-import path and route the caught message to the modal's existing inline `codeError` surface.
+- **Commit:** same commit as this entry
+
+### 43. Layout creator save error routed to a hidden code-panel-only surface
+
+- **Source:** github-claude | PR #569 round 6 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L777-789
+- **Finding:** The round-5 `handleSave` catch surfaced failures through `codeError`, but that message only rendered while the optional code panel was open. With the default closed panel, a save-time validation or `onSave` failure kept the modal open with no visible explanation.
+- **Fix:** Added a separate `saveError` state rendered unconditionally below the modal header, cleared it on successful save and draft/name edits, and covered the closed-code-panel failure path with a regression test.
+- **Commit:** same commit as this entry
+
+### 44. Code apply left stale save-error banner visible
+
+- **Source:** github-claude | PR #569 round 7 | 2026-06-20
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L875-884
+- **Finding:** After a failed save displayed the always-visible `saveError` banner, a successful code-panel Apply cleared only `codeError`. The draft updated correctly but the stale save banner stayed visible alongside valid layout state.
+- **Fix:** Clear `saveError` on the successful `applyCode` path alongside `codeError`, and add regression coverage that applying valid code removes a previously displayed save failure.
+- **Commit:** same commit as this entry

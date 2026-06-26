@@ -14,6 +14,7 @@ import {
 import type {
   IpcMainLike,
   LoadWorkspaceForRestoreRequest,
+  PersistedPanePlacement,
   PersistedTab,
   PersistedWorkspaceLayoutStore,
   PersistedWorkspacePane,
@@ -71,6 +72,7 @@ const storeToShape = (
     id: session.id,
     projectId: session.projectId,
     layout: session.layout,
+    placements: session.placements,
     workingDirectory: session.workingDirectory,
     active: session.active,
     open: session.open,
@@ -88,6 +90,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isNullableString = (value: unknown): value is string | null =>
   value === null || typeof value === 'string'
+
+const isPersistedPanePlacement = (
+  placement: unknown
+): placement is PersistedPanePlacement =>
+  isRecord(placement) &&
+  typeof placement.paneId === 'string' &&
+  typeof placement.slotId === 'string'
 
 const isLoadWorkspaceForRestoreRequest = (
   request: unknown
@@ -139,6 +148,9 @@ const isPersistedWorkspaceSessionShape = (
     typeof session.id === 'string' &&
     typeof session.projectId === 'string' &&
     typeof session.layout === 'string' &&
+    (session.placements === undefined ||
+      (Array.isArray(session.placements) &&
+        session.placements.every(isPersistedPanePlacement))) &&
     typeof session.workingDirectory === 'string' &&
     typeof session.active === 'boolean' &&
     typeof session.open === 'boolean' &&
@@ -161,7 +173,10 @@ const normalizeWorkspaceShape = (
   dto: PersistedWorkspaceShape
 ): PersistedWorkspaceShape => ({
   customPaneLayouts: dto.customPaneLayouts ?? [],
-  sessions: dto.sessions,
+  sessions: dto.sessions.map((session) => ({
+    ...session,
+    placements: session.placements ?? [],
+  })),
 })
 
 const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>

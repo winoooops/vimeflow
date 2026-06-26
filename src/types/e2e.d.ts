@@ -10,7 +10,13 @@ declare global {
       getTerminalBuffer(): string
       getTerminalBufferForSession(sessionId: string): string
       getVisibleSessionId(): string | null
+      getVisiblePtyId(): string | null
       getActiveSessionIds(): string[]
+      invokeBackend<T>(
+        method: string,
+        args?: Record<string, unknown>
+      ): Promise<T>
+      emitBackendEvent(event: string, payload: unknown): void
       listActivePtySessions(): Promise<string[]>
       startBrowserPaneBoundsCapture(): boolean
       clearBrowserPaneBoundsCaptures(): void

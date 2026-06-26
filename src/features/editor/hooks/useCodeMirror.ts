@@ -22,7 +22,7 @@ import { history } from '@codemirror/commands'
 import { vim, Vim, getCM } from '@replit/codemirror-vim'
 import { themeService } from '../../../theme'
 import { createEditorTheme } from '../theme/editorTheme'
-import { writeClipboardText, type ClipboardLike } from '../utils/clipboard'
+import { writeClipboardText, type ClipboardLike } from '@/lib/clipboard'
 
 /**
  * Scroll the viewport to follow the cursor on any PURE-selection change

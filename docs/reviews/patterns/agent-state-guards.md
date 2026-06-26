@@ -2,8 +2,8 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 2
+last_updated: 2026-06-22
+ref_count: 7
 ---
 
 # Agent-State Guards
@@ -39,4 +39,67 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts` L197-200
 - **Finding:** A second `/clear` after the first reset committed saw `prev.agentSessionId === null` and overwrote `locallyResetAgentSessionIdRef` with null. That disabled the same-run staleness guard, so the next stale `agent-status` event could repopulate the cleared sidebar and clear the run-scoped suppression latch for old tool-call, turn, and test events.
 - **Fix:** Preserved the existing reset latch when `prev.agentSessionId` is already null, while still keeping run-scoped suppression active. Added a regression test that sends two reset generations across separate renders, then verifies same-run stale status, tool-call, and turn events remain suppressed until a fresh agent session ID arrives.
+- **Commit:** same commit as this entry
+
+### 4. Same-id reset hook cleared before status latch could recover
+
+- **Source:** github-codex-connector | PR #583 round 1 | 2026-06-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** The reattach hook treated a zero-token same-id event as a successful recovery, but `useAgentStatus` still suppressed same-id reset events unless the token total dropped below the captured total. When `/clear` happened before any tokens accrued, the red reattach state disappeared while the status panel stayed reset.
+- **Fix:** Updated the status latch to accept zero-token same-id reset events and kept the reattach predicate aligned with that latch. Added regression coverage for the zero-token path in the reattach hook and retained status-hook coverage for same-id reset recovery.
+- **Commit:** same commit as this entry
+
+### 5. Unknown token baseline kept same-id reset recovery impossible
+
+- **Source:** github-claude | PR #583 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** When the pre-clear status had an `agentSessionId` but no `contextWindow`, `staleTotal` was null, so same-id relocated events with non-zero tokens could never satisfy the freshness predicate. The pane stayed in the red stale state until a pane switch or a different agent session ID arrived.
+- **Fix:** Treat a known post-reset token total as fresh when the captured baseline is unknown, and mirror that rule in `useAgentStatus` so the panel accepts the same event. Added hook and status tests for same-id recovery from a null token baseline.
+- **Commit:** same commit as this entry
+
+### 6. Unknown stale session id let any old rollout clear reattach state
+
+- **Source:** github-codex-connector | PR #593 round 1 | 2026-06-21
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** When `/clear` was submitted before the first status event populated `agentSessionId`, the stale identity snapshot was null. The hook treated any later non-null id as different from null, so an old-rollout status event could clear the red reattach state even though the watcher was still pinned to the pre-clear rollout.
+- **Fix:** Require a known captured stale id before the different-id branch can resolve recovery. Unknown-baseline clears now require the existing token-reset freshness signal, and a regression test covers a different-id old-rollout event followed by a zero-token reset event.
+- **Commit:** same commit as this entry
+
+### 7. Unknown token baseline let same-id stale replay clear reattach state
+
+- **Source:** github-claude | PR #593 round 2 | 2026-06-21
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A `/clear` after `agentSessionId` was known but before any `contextWindow` baseline left `staleId` known and `staleTotal` null. The reattach predicate accepted any known token total in that state, so an old watcher event with the same id and non-zero context could clear the red stale state even though no relocated watcher had been observed.
+- **Fix:** Kept zero-token reset and lower-token reset events valid, but allowed the unknown-baseline fallback only when no stale identity was captured. Added a same-id, non-zero context replay regression test that keeps `needsReattach` armed.
+- **Commit:** same commit as this entry
+
+### 8. Retained Codex type kept drift relocation alive after exit
+
+- **Source:** github-claude | PR #593 round 2 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `WorkspaceView` enabled Codex drift relocation from `agentStatus.agentType === 'codex'` alone, but `useAgentStatus` intentionally retains `agentType` after disconnect so the exit UI can describe the last agent. Exited Codex panes could keep the periodic relocation loop active until the PTY closed or was replaced.
+- **Fix:** Gated drift relocation on both Codex identity and `agentStatus.isActive`. Added workspace coverage asserting an inactive retained Codex status passes `driftEnabled: false` into `useAgentReattach`.
+- **Commit:** same commit as this entry
+
+### 9. Unknown token baseline accepted same-id stale status after reset
+
+- **Source:** github-codex-connector | PR #593 round 3 | 2026-06-21
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** After a local `/clear`, the status latch accepted a same-id `agent-status` event with non-zero tokens when the captured pre-reset token baseline was null. In that recovery window, an old watcher still pinned to the stale rollout could repopulate the sidebar and clear run-scoped suppression before the relocated watcher was proven fresh.
+- **Fix:** Kept same-id unknown-baseline status suppressed unless the event is a zero-token reset. Different `agentSessionId` events still clear the latch as the explicit session boundary. Updated the null-context regression test to prove non-zero stale replays stay blocked while zero-token reset events recover.
+- **Commit:** same commit as this entry
+
+### 10. OpenCode attach emitted stale PTY cwd instead of resolved project directory
+
+- **Source:** github-claude | PR #603 round 1 | 2026-06-22
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs` L88-110
+- **Finding:** OpenCode did not emit OSC 7, so the runtime passed the terminal spawn cwd into transcript tailing even when the locator had resolved a project directory from the bridge index. The initial `agent-cwd` event could therefore point the file explorer, git watcher, and test-run parser at `~` instead of the OpenCode project.
+- **Fix:** Added `resolved_directory` to `LocatedStatusSource`, populated it from OpenCode index rows and cache fallback, and made the watcher runtime prefer it over PTY cwd when starting transcript tailing.
 - **Commit:** same commit as this entry

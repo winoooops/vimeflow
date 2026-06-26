@@ -189,7 +189,7 @@ The canonical surfaces and their key contracts. Full props live in the code; thi
 
 ### 5.5 GitRefChip
 
-A rounded 22px pill in the pane header / session metadata: optional worktree segment (`account_tree` + name + `›`) then branch (`fork_right` + name); `primary-container` tint normally, two-tone coral (`tertiary`/`error`) when detached. Tooltip lists branch / detached-HEAD / worktree / full cwd verbatim. Props: `branch` (req), `worktree?`, `detached?`.
+A rounded 22px pill in the pane header / session metadata: optional worktree segment (`account_tree` + name + `›`) then branch (`fork_right` + name); `primary-container` tint normally, two-tone coral (`tertiary`/`error`) when detached. On hover it opens a **copy popover** — a 244px `bare interactive` `Tooltip` on the same glass surface as the activity-detail card — with one click-to-copy row per ref fact: worktree (only when set), the full cwd path (only when available), then branch (label reads `detached head` when detached). Each row is a single `<button>`; clicking anywhere on it copies that value and flips the trailing `content_copy` glyph to a `success` check for ~1.3s. The chip's own visuals are unchanged. Props: `branch` (req), `worktreeName`, `cwd?`, `detached?`.
 
 ### 5.5.1 Chip
 

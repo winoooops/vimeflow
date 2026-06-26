@@ -92,6 +92,10 @@
   --color-agent-kimi-accent-dim: rgb(250 179 135 / 0.16);
   --color-agent-kimi-accent-soft: rgb(250 179 135 / 0.32);
   --color-agent-kimi-on-accent: #2a1608;
+  --color-agent-opencode-accent: #74c7ec;
+  --color-agent-opencode-accent-dim: rgb(116 199 236 / 0.16);
+  --color-agent-opencode-accent-soft: rgb(116 199 236 / 0.32);
+  --color-agent-opencode-on-accent: #062030;
   --shadow-pane-focus:
     0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35);
   --shadow-modal: 0 24px 80px rgb(0 0 0 / 0.5);

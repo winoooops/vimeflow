@@ -2,8 +2,8 @@
 id: generated-shell-scripts
 category: backend
 created: 2026-06-02
-last_updated: 2026-06-03
-ref_count: 1
+last_updated: 2026-06-19
+ref_count: 2
 ---
 
 # Generated Shell Scripts
@@ -82,4 +82,13 @@ end to avoid leaking ephemeral artifacts.
 - **File:** `crates/backend/src/terminal/bridge.rs`
 - **Finding:** The PATH reconstruction in the generated `init.sh` converted colons to newlines, filtered the shim dir, converted back, then stripped the trailing colon with `${new_path%:}`. A trailing colon in the original PATH (the POSIX convention for appending `.`) was indistinguishable from the sentinel the final `tr '\n' ':'` added. After `${new_path%:}`, the user's intentional trailing colon was removed and never restored, so `export PATH="$VIMEFLOW_CLAUDE_SHIM_DIR${new_path:+:$new_path}"` omitted the `.` entry.
 - **Fix:** Capture whether PATH ends with `:` before transformation (`case "$PATH" in *:) path_ends_colon=1 ;; esac`), then restore it after stripping the sentinel colon (`[ -n "$path_ends_colon" ] && new_path="${new_path}:"`).
+- **Commit:** same commit as this entry
+
+### 8. Generated Claude `settings.json` command path was not shell-quoted
+
+- **Source:** github-codex-connector | PR #563 cycle 1 | 2026-06-19
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/terminal/bridge.rs` L178 (original)
+- **Finding:** After moving bridge files under app data, macOS sessions placed the statusline script under `Application Support/.../statusline.sh`. `generate_bridge_files` wrote the raw `script_path` into Claude's `statusLine.command`, which Claude runs in a shell. The unquoted path split on the space, so the statusline script never executed and agent status stayed inactive on macOS.
+- **Fix:** Added a `shell_quote_path` helper that wraps paths containing non-shell-safe characters in single quotes (with embedded single-quote handling) and used it when serializing `statusLine.command` in the generated `settings.json`.
 - **Commit:** same commit as this entry

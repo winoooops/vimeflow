@@ -120,6 +120,97 @@ describe('useSessionRestore', () => {
     expect(restoredSessions[0].panes[0].status).toBe('running')
   })
 
+  test('falls back to PTY sessions when durable workspace load fails', async () => {
+    loadWorkspaceForRestore.mockRejectedValue(
+      new Error('corrupt workspace layout')
+    )
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/home/will/repo',
+            shell: '/bin/zsh',
+            status: {
+              kind: 'Alive',
+              pid: 1234,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+        activeSessionId: 'pty-1',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.listSessions).toHaveBeenCalled()
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restoredSessions).toHaveLength(1)
+    expect(restoredSessions[0].panes[0].ptyId).toBe('pty-1')
+    expect(onActiveResolved).toHaveBeenCalledWith('pty-1')
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not treat exited-only PTY cache as a restore fallback after store load failure', async () => {
+    loadWorkspaceForRestore.mockRejectedValue(
+      new Error('corrupt workspace layout')
+    )
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-old',
+            cwd: '/home/will/repo',
+            shell: '/bin/zsh',
+            status: {
+              kind: 'Exited',
+              exit_code: 0,
+            },
+          },
+        ],
+        activeSessionId: null,
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.listSessions).toHaveBeenCalled()
+    expect(onRestore).not.toHaveBeenCalled()
+    expect(onActiveResolved).not.toHaveBeenCalled()
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
   // Fragmentation regression (captured evidence for the multi-pane restore
   // bug): when several PTYs belonged to ONE workspace session (e.g. a quad
   // layout with 3 agents + 1 shell), restore currently fragments them into

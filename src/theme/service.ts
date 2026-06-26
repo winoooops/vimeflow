@@ -69,8 +69,16 @@ const apply = (id: ThemeId): void => {
   listeners.forEach((listener) => listener(next))
 }
 
+const preview = (id: ThemeId): void => {
+  const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
+
+  writeDom(next)
+  listeners.forEach((listener) => listener(next))
+}
+
 export const themeService = {
   apply,
+  preview,
   current: (): ThemeDefinition => active,
   list: (): readonly ThemeDefinition[] => themes,
   subscribe: (listener: Listener): (() => void) => {

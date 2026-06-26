@@ -362,6 +362,7 @@ impl KimiLocator {
             status_path: wire,
             trust_root: home.to_path_buf(),
             agent_session_id,
+            resolved_directory: None,
         })
     }
 
@@ -494,6 +495,7 @@ impl KimiLocator {
             status_path,
             trust_root: home.to_path_buf(),
             agent_session_id: entry.session_id,
+            resolved_directory: None,
         })
     }
 
@@ -556,6 +558,7 @@ impl KimiLocator {
             status_path,
             trust_root: home.to_path_buf(),
             agent_session_id,
+            resolved_directory: None,
         })
     }
 }

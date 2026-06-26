@@ -9,6 +9,7 @@ describe('agentStatusModel', () => {
     expect(mapDetectedAgentType('claudeCode')).toBe('claude-code')
     expect(mapDetectedAgentType('codex')).toBe('codex')
     expect(mapDetectedAgentType('aider')).toBe('aider')
+    expect(mapDetectedAgentType('opencode')).toBe('opencode')
     expect(mapDetectedAgentType('unknown')).toBe('generic')
   })
 

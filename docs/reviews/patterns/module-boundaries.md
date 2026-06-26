@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-15
+last_updated: 2026-06-25
 ref_count: 3
 ---
 
@@ -185,4 +185,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/types/e2e.d.ts` L6-9
 - **Finding:** `src/types/e2e.d.ts` re-declared `BrowserPaneBoundsCapture` as a global ambient interface that independently extended `BrowserPaneBoundsRequest` with `sequence: number`. The canonical type already existed as a named export in `src/features/browser/browserBridge.ts`. TypeScript could not enforce that the two declarations stayed in sync; a required field added to the module type would silently leave the global type stale.
 - **Fix:** Replaced the ambient interface block with a global type alias that imports the canonical `BrowserPaneBoundsCapture` from `../features/browser/browserBridge` (aliased to avoid naming collision). E2E specs continue to consume the type globally while the renderer-side type remains the single source of truth.
+- **Commit:** same commit as this entry
+
+### 17. Packaging hook reached into electron-builder internals with an unstable helper contract
+
+- **Source:** github-codex-connector | PR #621 round 1 | 2026-06-25
+- **Severity:** P1 / HIGH + P2 / MEDIUM
+- **File:** `scripts/package-macos-icon.mjs`
+- **Finding:** A custom macOS icon packaging hook imported `generateAssetCatalogForIcon` from an `app-builder-lib/out/...` path and called it with the wrong argument shape. The helper lives behind electron-builder's compiled internal layout, so the import path and function signature are not a stable package contract; the hook failed before packaging could reach its platform guard or before `actool` could compile the asset catalog.
+- **Fix:** Removed the custom hook path from the active PR state and used electron-builder's native `mac.icon: build/composed_icon.icon` support. The package configuration now delegates Icon Composer handling to electron-builder instead of coupling repository scripts to private `app-builder-lib` internals.
 - **Commit:** same commit as this entry

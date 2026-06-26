@@ -279,6 +279,7 @@ describe('Body', () => {
           cursorBlink: true,
           fontSize: 14,
           fontFamily: TERMINAL_FONT_FAMILY,
+          macOptionClickForcesSelection: true,
         })
       )
     })

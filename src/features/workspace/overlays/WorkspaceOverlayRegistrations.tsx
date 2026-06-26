@@ -6,6 +6,7 @@ export interface WorkspaceOverlayRegistrationsProps {
   unsavedChangesDialogOpen: boolean
   burnerTerminalOpen: boolean
   paneRenameOpen: boolean
+  layoutCreatorOpen?: boolean
   dragOverlayOpen: boolean
   dockDragOverlayOpen: boolean
   bannerOpen: boolean
@@ -30,6 +31,7 @@ export const WorkspaceOverlayRegistrations = ({
   unsavedChangesDialogOpen,
   burnerTerminalOpen,
   paneRenameOpen,
+  layoutCreatorOpen = false,
   dragOverlayOpen,
   dockDragOverlayOpen,
   bannerOpen,
@@ -52,6 +54,13 @@ export const WorkspaceOverlayRegistrations = ({
     id: 'burner-terminal-popup',
     plane: 'dialog',
     isOpen: burnerTerminalOpen,
+    nativeOcclusion: 'global',
+  })
+
+  useOverlayRegistration({
+    id: 'layout-creator',
+    plane: 'dialog',
+    isOpen: layoutCreatorOpen,
     nativeOcclusion: 'global',
   })
 

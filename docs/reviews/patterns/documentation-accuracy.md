@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-16
-ref_count: 26
+last_updated: 2026-06-25
+ref_count: 90
 ---
 
 # Documentation Accuracy
@@ -827,4 +827,49 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.zh-CN.md`
 - **Finding:** The line read `代理可观测性：Claude Code、Codex CLI 和 Kimi Code`; the reviewer requested the term be rendered as `agent可观测性` to keep the English product term consistent with the bilingual docs.
 - **Fix:** Replaced `代理可观测性` with `agent可观测性` on line 22.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Reattach hook comment still references removed manual button
+
+- **Source:** github-claude | PR #592 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentReattach.ts`
+- **Finding:** A comment on `resolveArmedReattach` still said the helper was shared by the success listener and the manual button, but this PR removed the manual reattach button.
+- **Fix:** Updated stale comments so they describe the current automatic success-listener and bounded-retry/drift behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Opencode icon provenance missing from NOTICE
+
+- **Source:** github-claude | PR #589 round 1 | 2026-06-20
+- **Severity:** MEDIUM
+- **File:** `src/agents/icons-NOTICE.md`
+- **Finding:** The PR added an Opencode SVG mark while the adjacent file-level comment pointed readers to `icons-NOTICE.md` for Lobe Icons MIT attribution only. Future maintainers could reasonably assume the new mark was covered by the existing vendored-icon notice.
+- **Fix:** Reworded the file-level comment to point to the notice for per-mark provenance and documented the Opencode mark as an original Vimeflow geometric terminal mark outside the Lobe Icons vendored set.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 91. `resolve_by_pid` comment overstated cached fallback guarantee
+
+- **Source:** github-claude | PR #599 round 1 | 2026-06-21
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/opencode/locator.rs`
+- **Finding:** The comment said a pid miss with a prior cache returns `None` so `cached_or_err` keeps the live binding. In reality `locate` tries the cwd fallback first, and only preserves the cached binding when cwd also finds nothing.
+- **Fix:** Reworded the comment to document the actual fallback order: pid miss triggers cwd resolution first, and `cached_or_err` preserves the binding only after cwd also misses.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 92. OpenCode technical notes were checked in as generated HTML instead of source Markdown
+
+- **Source:** github-human | PR #603 round 5 | 2026-06-22
+- **Severity:** HUMAN
+- **File:** `docs/opencode/opencode-adapter-technical-note.zh.html`
+- **Finding:** The PR added two OpenCode technical notes as standalone HTML artifacts even though the reviewer wanted the source form to live as Markdown for easier maintenance and Linear references. Keeping only generated HTML makes future edits and issue-link reuse more expensive than necessary.
+- **Fix:** Replaced both OpenCode HTML notes with Markdown equivalents, updated the OpenCode adapter design spec to reference the `.md` paths, and kept the documentation content in repo-native Markdown form.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Claude Code icon comment used nonstandard jargon and over-documented the invariant
+
+- **Source:** github-claude | PR #619 round 2 | 2026-06-25
+- **Severity:** MEDIUM
+- **File:** `src/agents/brandIcons.tsx`
+- **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
+- **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

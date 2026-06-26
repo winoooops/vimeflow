@@ -1,12 +1,27 @@
-import { render, screen, act, waitFor, within } from '@testing-library/react'
+import {
+  render,
+  screen,
+  act,
+  waitFor,
+  within,
+  fireEvent,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
-import type { Session, SessionStatus, LayoutId } from '../sessions/types'
-import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
+import type { Session, SessionStatus, PaneLayoutId } from '../sessions/types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../terminal/layout-registry'
+import {
+  HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
+  SHOWN_LAYOUTS_STORAGE_KEY,
+} from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 
 // Mock all WorkspaceView dependencies
@@ -38,6 +53,13 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
+
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 vi.mock('../diff/hooks/useGitStatus')
 vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')
@@ -70,7 +92,7 @@ vi.mock('../editor/components/UnsavedChangesDialog', () => ({
 }))
 
 interface MockSessionOptions {
-  layout?: LayoutId
+  layout?: PaneLayoutId
   status?: SessionStatus
   agentType?: Session['agentType']
 }
@@ -161,6 +183,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
@@ -191,6 +214,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   }
 
   beforeEach(async () => {
+    window.localStorage.removeItem(SHOWN_LAYOUTS_STORAGE_KEY)
+    window.localStorage.removeItem(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY)
     Object.defineProperty(navigator, 'platform', {
       value: '',
       configurable: true,
@@ -295,6 +320,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   })
 
   afterEach(() => {
+    window.localStorage.removeItem(SHOWN_LAYOUTS_STORAGE_KEY)
+    window.localStorage.removeItem(HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY)
     act(() => {
       setSidebarCollapsed(false)
     })
@@ -514,6 +541,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   test('layout picks forward to setSessionLayout without touching pane semantics (J6)', async () => {
     const user = userEvent.setup()
     await setupSessionManager(mockSessions, 'session-2')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'quad', 'grid3x2'])
+    )
     render(<WorkspaceView />)
 
     await user.click(screen.getByRole('button', { name: 'Quad' }))
@@ -525,6 +556,256 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.addPane).not.toHaveBeenCalled()
     expect(mockSessionManager.removePane).not.toHaveBeenCalled()
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
+  })
+
+  test('custom layout pick is ignored when the session has more panes than it supports', async () => {
+    const user = userEvent.setup()
+
+    const tinyCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:tiny',
+      title: 'Tiny',
+      source: 'workspace',
+      tracks: {
+        columns: [{ id: 'col-0', units: 24 }],
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        {
+          id: 'slot:p0',
+          rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+        },
+      ],
+      addOrder: ['slot:p0'],
+    }
+
+    const baseSession = createMockSession('session-2', 'feature work', {
+      layout: 'single',
+    })
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          id: 'p1',
+          ptyId: 'pty-session-2-1',
+          cwd: '/home/user',
+          agentType: 'claude-code',
+          status: 'running',
+          active: false,
+        },
+      ],
+    }
+
+    await setupSessionManager([twoPaneSession], 'session-2')
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      tinyCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [tinyCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+    const menu = await screen.findByRole('menu')
+    const tinyLabel = await within(menu).findByText('Tiny')
+    await user.click(tinyLabel)
+
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
+  test('saving an undersized custom layout does not apply it to an over-capacity session', async () => {
+    const user = userEvent.setup()
+
+    const baseSession = createMockSession('session-2', 'feature work', {
+      layout: 'vsplit',
+    })
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          id: 'p1',
+          ptyId: 'pty-session-2-1',
+          cwd: '/home/user',
+          agentType: 'claude-code',
+          status: 'running',
+          active: false,
+        },
+      ],
+    }
+
+    await setupSessionManager([twoPaneSession], 'session-2')
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create custom layout' })
+    )
+    await user.click(screen.getByRole('button', { name: 'Code · JSON/YAML' }))
+    fireEvent.change(screen.getAllByRole('textbox')[1], {
+      target: {
+        value: JSON.stringify({
+          tracks: {
+            columns: [{ id: 'col-0', units: 24 }],
+            rows: [{ id: 'row-0', units: 24 }],
+          },
+          slots: [
+            {
+              id: 'slot:p0',
+              rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+            },
+          ],
+        }),
+      },
+    })
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Layout name' }))
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Tiny'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledWith(
+      expect.any(Function)
+    )
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
+  test('editing an inactive custom layout does not switch the active session layout', async () => {
+    const user = userEvent.setup()
+
+    const inactiveCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:main-bottom',
+      title: 'Main + bottom',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'col-0', units: 12 },
+          { id: 'col-1', units: 12 },
+        ],
+        rows: [{ id: 'row-0', units: 24 }],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+        { id: 'slot:p1', rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0', 'slot:p1'],
+    }
+
+    await setupSessionManager(
+      [createMockSession('session-1', 'auth refactor', { layout: 'single' })],
+      'session-1'
+    )
+
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      inactiveCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [inactiveCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Edit Main + bottom' })
+    )
+    await user.clear(screen.getByRole('textbox', { name: 'Layout name' }))
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Main + bottom renamed'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+  })
+
+  test('duplicating a custom layout clones it under a fresh custom id without changing the active session layout', async () => {
+    const user = userEvent.setup()
+
+    const sourceCustomLayout: PaneLayoutDefinition = {
+      schemaVersion: 1,
+      id: 'custom:main-bottom',
+      title: 'Main + bottom',
+      source: 'workspace',
+      tracks: {
+        columns: [
+          { id: 'col-0', units: 8 },
+          { id: 'col-1', units: 8 },
+          { id: 'col-2', units: 8 },
+        ],
+        rows: [
+          { id: 'row-0', units: 16 },
+          { id: 'row-1', units: 8 },
+        ],
+      },
+      slots: [
+        { id: 'slot:p0', rect: { col: 0, row: 0, colSpan: 3, rowSpan: 1 } },
+        {
+          id: 'slot:p1',
+          rect: { col: 0, row: 1, colSpan: 1, rowSpan: 1 },
+          accepts: ['browser'],
+        },
+        { id: 'slot:p2', rect: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+        { id: 'slot:p3', rect: { col: 2, row: 1, colSpan: 1, rowSpan: 1 } },
+      ],
+      addOrder: ['slot:p0', 'slot:p1', 'slot:p2', 'slot:p3'],
+    }
+
+    const singleSession = createMockSession('session-1', 'auth refactor', {
+      layout: 'single',
+    })
+
+    await setupSessionManager([singleSession], 'session-1')
+    mockSessionManager.layoutRegistry = new PaneLayoutRegistry([
+      sourceCustomLayout,
+    ])
+    mockSessionManager.customPaneLayouts = [sourceCustomLayout]
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Duplicate Main + bottom' })
+    )
+
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledOnce()
+    expect(mockSessionManager.setCustomPaneLayouts).toHaveBeenCalledWith(
+      expect.any(Function),
+      { skipPreservation: true }
+    )
+    // Duplicating must never re-point the active session at the clone.
+    expect(mockSessionManager.setSessionLayout).not.toHaveBeenCalled()
+
+    const updater = vi.mocked(mockSessionManager.setCustomPaneLayouts).mock
+      .calls[0][0] as (
+      prev: readonly PaneLayoutDefinition[]
+    ) => readonly PaneLayoutDefinition[]
+    const next = updater([sourceCustomLayout])
+
+    expect(next).toHaveLength(2)
+    expect(next[0]).toBe(sourceCustomLayout)
+
+    const clone = next[1]
+    expect(clone.id).not.toBe(sourceCustomLayout.id)
+    expect(clone.id).toMatch(/^custom:copy-of-main-bottom-/)
+    expect(clone.title).toBe('Copy of Main + bottom')
+    expect(clone.source).toBe('workspace')
+    expect(clone.tracks).toEqual(sourceCustomLayout.tracks)
+    expect(clone.slots).toEqual(sourceCustomLayout.slots)
+    expect(clone.addOrder).toEqual(sourceCustomLayout.addOrder)
   })
 
   test('single layout: same chrome as the splits — config docked in the pillar', () => {
@@ -552,15 +833,60 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeNull()
   })
 
+  test('an over-capacity checked layout renders as a disabled pill instead of vanishing', async () => {
+    const baseSession = createMockSession('session-1', 'auth refactor', {
+      layout: 'single',
+    })
+
+    // Five panes exceed Quad's capacity (4) but fit 3x2 grid (6): Quad is
+    // blocked, grid3x2 is not.
+    const fivePaneSession: Session = {
+      ...baseSession,
+      panes: [0, 1, 2, 3, 4].map((index) => ({
+        id: `p${index}`,
+        ptyId: `pty-session-1-${index}`,
+        cwd: '/home/user',
+        agentType: 'claude-code',
+        status: 'running',
+        active: index === 0,
+      })),
+    }
+
+    await setupSessionManager([fivePaneSession], 'session-1')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'quad', 'grid3x2'])
+    )
+    render(<WorkspaceView />)
+
+    const switcher = screen.getByTestId('layout-switcher')
+
+    // Quad still renders (visibility is decoupled from capacity) but is
+    // disabled with a reduce-panes explanation.
+    const quad = within(switcher).getByRole('button', {
+      name: 'Reduce panes to switch to Quad',
+    })
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+
+    // A layout that DOES fit the pane count stays enabled.
+    expect(
+      within(switcher).getByRole('button', { name: '3x2 grid' })
+    ).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
   test('the layout display menu can hide a non-active layout pill from the pillar', async () => {
     const user = userEvent.setup()
 
     await setupSessionManager(mockSessions, 'session-2')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'hsplit', 'grid3x2'])
+    )
     render(<WorkspaceView />)
 
     const switcher = screen.getByTestId('layout-switcher')
     expect(
-      within(switcher).getByRole('button', { name: '3x2 grid' })
+      within(switcher).getByRole('button', { name: 'Horizontal split' })
     ).toBeInTheDocument()
 
     await user.click(
@@ -570,18 +896,18 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     )
 
     await user.click(
-      await screen.findByRole('menuitemcheckbox', { name: '3x2 grid' })
+      await screen.findByRole('menuitemcheckbox', { name: 'Horizontal split' })
     )
 
     expect(
       within(screen.getByTestId('layout-switcher')).queryByRole('button', {
-        name: '3x2 grid',
+        name: 'Horizontal split',
       })
     ).toBeNull()
 
     expect(
       within(screen.getByTestId('layout-switcher')).getByRole('button', {
-        name: 'Vertical split',
+        name: '3x2 grid',
       })
     ).toBeInTheDocument()
   })

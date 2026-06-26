@@ -57,6 +57,13 @@ pub struct LocatedStatusSource {
     /// session id, stamped by the runtime; this one is the agent's own
     /// internal id.
     pub agent_session_id: Option<String>,
+    /// Workspace directory resolved by the adapter locator at attach time.
+    ///
+    /// OpenCode records the project directory in its bridge index but does not
+    /// currently emit OSC 7, so the PTY cwd can remain stuck at the terminal's
+    /// spawn directory. When present, the runtime should prefer this value for
+    /// the initial transcript cwd.
+    pub resolved_directory: Option<PathBuf>,
 }
 
 /// Decoder output — provider-neutral status state, **session-id-free**

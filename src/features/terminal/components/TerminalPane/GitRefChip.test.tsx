@@ -1,7 +1,20 @@
 // cspell:ignore worktree testids worktrees
-import { render, screen } from '@testing-library/react'
-import { expect, test } from 'vitest'
-import { GitRefChip, composeTooltipLines } from './GitRefChip'
+import userEvent from '@testing-library/user-event'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import { expect, test, vi } from 'vitest'
+import { writeClipboardText } from '@/lib/clipboard'
+import { GitRefChip, GitRefCopyRows, composeCopyRows } from './GitRefChip'
+
+vi.mock('@/lib/clipboard', () => ({
+  writeClipboardText: vi.fn().mockResolvedValue(true),
+}))
 
 test('renders nothing when branch is null', () => {
   render(<GitRefChip worktreeName="feat-jose" branch={null} />)
@@ -125,57 +138,130 @@ test('detached=true with worktreeName=null renders coral branch-only chip', () =
   )
 })
 
-test('composeTooltipLines produces the right lines for every state', () => {
-  // The chip wraps its content in <Tooltip>, which only renders the floating
-  // surface on hover/focus via a portal. Asserting the per-state lines
-  // against the rendered DOM would require driving floating-ui's hover state
-  // through fake timers. The wording is pulled out into a pure function so
-  // the contract stays locked without that machinery.
+test('composeCopyRows produces the right rows for every state', () => {
+  // The copy popover only renders on hover via a portal, so the per-state row
+  // contract — which rows show, their order, icons, labels and two-tone
+  // detached colors — is locked via this pure function (same rationale as the
+  // old composeTooltipLines wording test). Order is always worktree (if any) →
+  // path (if cwd) → branch (always).
 
-  // Branch only (no worktree, no cwd, attached) — single line.
-  expect(composeTooltipLines(null, 'feat/jose-auth', null, false)).toEqual([
-    'branch: feat/jose-auth',
+  // Branch only — single branch row, attached colors.
+  expect(composeCopyRows(null, 'feat/jose-auth', null, false)).toEqual([
+    {
+      key: 'branch',
+      icon: 'fork_right',
+      iconClassName: 'text-primary-container',
+      label: 'branch',
+      value: 'feat/jose-auth',
+    },
   ])
 
-  // Branch + worktree — branch first, worktree second.
-  expect(
-    composeTooltipLines('feat-jose', 'feat/jose-auth', null, false)
-  ).toEqual(['branch: feat/jose-auth', 'worktree: feat-jose'])
-
-  // Detached SHA only.
-  expect(composeTooltipLines(null, 'a7f23c', null, true)).toEqual([
-    'detached HEAD: a7f23c',
+  // Branch + worktree (no cwd) — worktree first, branch last.
+  expect(composeCopyRows('feat-jose', 'feat/jose-auth', null, false)).toEqual([
+    {
+      key: 'worktree',
+      icon: 'account_tree',
+      iconClassName: 'text-secondary-dim',
+      label: 'worktree',
+      value: 'feat-jose',
+    },
+    {
+      key: 'branch',
+      icon: 'fork_right',
+      iconClassName: 'text-primary-container',
+      label: 'branch',
+      value: 'feat/jose-auth',
+    },
   ])
 
-  // Detached + worktree — detached HEAD line first.
-  expect(composeTooltipLines('feat-jose', 'a7f23c', null, true)).toEqual([
-    'detached HEAD: a7f23c',
-    'worktree: feat-jose',
-  ])
-
-  // Branch + cwd (no worktree) — cwd appears verbatim on line 2.
+  // Full three rows: worktree, path (the real absolute cwd), branch.
   expect(
-    composeTooltipLines(null, 'main', '/home/will/projects/foo', false)
-  ).toEqual(['branch: main', '/home/will/projects/foo'])
-
-  // Full three-line tooltip: branch, worktree, cwd path (verbatim, no `~`).
-  expect(
-    composeTooltipLines(
-      'git-chip-migration',
-      'feat/git-chip-migration',
-      '/home/will/projects/vimeflow/.claude/worktrees/git-chip-migration',
+    composeCopyRows(
+      'feat-jose',
+      'feat/jose-auth',
+      '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose',
       false
     )
   ).toEqual([
-    'branch: feat/git-chip-migration',
-    'worktree: git-chip-migration',
-    '/home/will/projects/vimeflow/.claude/worktrees/git-chip-migration',
+    {
+      key: 'worktree',
+      icon: 'account_tree',
+      iconClassName: 'text-secondary-dim',
+      label: 'worktree',
+      value: 'feat-jose',
+    },
+    {
+      key: 'path',
+      icon: 'folder_open',
+      iconClassName: 'text-on-surface-variant',
+      label: 'path',
+      value: '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose',
+    },
+    {
+      key: 'branch',
+      icon: 'fork_right',
+      iconClassName: 'text-primary-container',
+      label: 'branch',
+      value: 'feat/jose-auth',
+    },
   ])
 
-  // Non-home absolute path passes through unchanged.
-  expect(composeTooltipLines(null, 'main', '/opt/code/proj', false)).toEqual([
-    'branch: main',
-    '/opt/code/proj',
+  // No worktree + cwd — worktree row omitted, path falls in.
+  expect(
+    composeCopyRows(
+      null,
+      'ci/release-v0.9',
+      '/Users/will/projects/vimeflow',
+      false
+    )
+  ).toEqual([
+    {
+      key: 'path',
+      icon: 'folder_open',
+      iconClassName: 'text-on-surface-variant',
+      label: 'path',
+      value: '/Users/will/projects/vimeflow',
+    },
+    {
+      key: 'branch',
+      icon: 'fork_right',
+      iconClassName: 'text-primary-container',
+      label: 'branch',
+      value: 'ci/release-v0.9',
+    },
+  ])
+
+  // Detached — branch label reads "detached head"; two-tone coral icons
+  // (worktree text-error, branch text-tertiary) mirroring the chip.
+  expect(
+    composeCopyRows(
+      'tests',
+      'a7f23c0',
+      '/Users/will/projects/vimeflow/.claude/worktrees/tests',
+      true
+    )
+  ).toEqual([
+    {
+      key: 'worktree',
+      icon: 'account_tree',
+      iconClassName: 'text-error',
+      label: 'worktree',
+      value: 'tests',
+    },
+    {
+      key: 'path',
+      icon: 'folder_open',
+      iconClassName: 'text-on-surface-variant',
+      label: 'path',
+      value: '/Users/will/projects/vimeflow/.claude/worktrees/tests',
+    },
+    {
+      key: 'branch',
+      icon: 'fork_right',
+      iconClassName: 'text-tertiary',
+      label: 'detached head',
+      value: 'a7f23c0',
+    },
   ])
 })
 
@@ -188,4 +274,153 @@ test('icons carry material-symbols-outlined class + aria-hidden', () => {
   expect(brIcon.className).toMatch(/material-symbols-outlined/)
   expect(wtIcon.getAttribute('aria-hidden')).toBe('true')
   expect(brIcon.getAttribute('aria-hidden')).toBe('true')
+})
+
+test('GitRefChip opens the copy popover from keyboard focus', async () => {
+  const user = userEvent.setup()
+  render(
+    <GitRefChip
+      worktreeName="feat-jose"
+      branch="feat/jose-auth"
+      cwd="/Users/will/projects/vimeflow/.claude/worktrees/feat-jose"
+    />
+  )
+
+  await user.tab()
+
+  expect(screen.getByTestId('git-ref-chip')).toHaveFocus()
+  expect(screen.getByTestId('git-ref-chip')).toHaveAttribute('tabindex', '0')
+  expect(
+    screen.getByRole('dialog', { name: 'Git ref details' })
+  ).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Copy path' })).toBeInTheDocument()
+})
+
+test('GitRefCopyRows renders one copy button per row carrying its value', () => {
+  render(
+    <GitRefCopyRows
+      worktreeName="feat-jose"
+      branch="feat/jose-auth"
+      cwd="/Users/will/projects/vimeflow/.claude/worktrees/feat-jose"
+    />
+  )
+
+  expect(
+    screen.getByRole('button', { name: 'Copy worktree' })
+  ).toHaveTextContent('feat-jose')
+
+  expect(screen.getByRole('button', { name: 'Copy path' })).toHaveTextContent(
+    '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose'
+  )
+
+  expect(screen.getByRole('button', { name: 'Copy branch' })).toHaveTextContent(
+    'feat/jose-auth'
+  )
+})
+
+test('GitRefCopyRows omits the worktree row when there is no worktree', () => {
+  render(
+    <GitRefCopyRows
+      worktreeName={null}
+      branch="ci/release-v0.9"
+      cwd="/Users/will/projects/vimeflow"
+    />
+  )
+  expect(screen.queryByRole('button', { name: 'Copy worktree' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Copy path' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Copy branch' })
+  ).toBeInTheDocument()
+})
+
+test('GitRefCopyRows omits the path row when there is no cwd', () => {
+  render(<GitRefCopyRows worktreeName="feat-jose" branch="main" cwd={null} />)
+  expect(screen.queryByRole('button', { name: 'Copy path' })).toBeNull()
+  expect(
+    screen.getByRole('button', { name: 'Copy worktree' })
+  ).toBeInTheDocument()
+
+  expect(
+    screen.getByRole('button', { name: 'Copy branch' })
+  ).toBeInTheDocument()
+})
+
+test('GitRefCopyRows labels the branch row "Copy detached head" when detached', () => {
+  render(
+    <GitRefCopyRows worktreeName={null} branch="a7f23c0" cwd={null} detached />
+  )
+
+  expect(
+    screen.getByRole('button', { name: 'Copy detached head' })
+  ).toHaveTextContent('a7f23c0')
+})
+
+test('clicking a row copies its value and flips that row glyph to a check', async () => {
+  vi.mocked(writeClipboardText).mockClear()
+  render(
+    <GitRefCopyRows
+      worktreeName="feat-jose"
+      branch="feat/jose-auth"
+      cwd="/Users/will/projects/vimeflow/.claude/worktrees/feat-jose"
+    />
+  )
+  const pathButton = screen.getByRole('button', { name: 'Copy path' })
+  expect(within(pathButton).getByText('content_copy')).toBeInTheDocument()
+
+  fireEvent.click(pathButton)
+
+  await waitFor(() =>
+    expect(writeClipboardText).toHaveBeenCalledWith(
+      '/Users/will/projects/vimeflow/.claude/worktrees/feat-jose'
+    )
+  )
+  expect(await within(pathButton).findByText('check')).toBeInTheDocument()
+  // Other rows are unaffected — only the clicked row shows the check.
+  expect(
+    within(screen.getByRole('button', { name: 'Copy branch' })).getByText(
+      'content_copy'
+    )
+  ).toBeInTheDocument()
+})
+
+test('copy failure keeps the row glyph on content_copy', async () => {
+  vi.mocked(writeClipboardText).mockResolvedValueOnce(false)
+  render(<GitRefCopyRows worktreeName={null} branch="main" cwd={null} />)
+  const branchButton = screen.getByRole('button', { name: 'Copy branch' })
+
+  fireEvent.click(branchButton)
+
+  await waitFor(() => expect(writeClipboardText).toHaveBeenCalledWith('main'))
+  expect(within(branchButton).queryByText('check')).toBeNull()
+  expect(within(branchButton).getByText('content_copy')).toBeInTheDocument()
+})
+
+test('the copied check reverts to content_copy after the feedback window', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.mocked(writeClipboardText).mockClear()
+    render(
+      <GitRefCopyRows
+        worktreeName={null}
+        branch="main"
+        cwd="/Users/will/projects/vimeflow"
+      />
+    )
+    const pathButton = screen.getByRole('button', { name: 'Copy path' })
+
+    fireEvent.click(pathButton)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(writeClipboardText).toHaveBeenCalled()
+    expect(within(pathButton).getByText('check')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(1300)
+    })
+
+    expect(within(pathButton).getByText('content_copy')).toBeInTheDocument()
+  } finally {
+    vi.useRealTimers()
+  }
 })

@@ -24,8 +24,12 @@ import {
   type PersistedWorkspaceShape,
   type PersistedWorkspacePaneShape,
 } from '../workspaceLayoutBridge'
-import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
+import {
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../../terminal/layout-registry'
 import { isShellPane } from '../utils/paneKind'
+import { normalizePanePlacements } from '../utils/panePlacements'
 import { isOpenSession } from '../utils/sessionStatus'
 import type { Session } from '../types'
 
@@ -55,37 +59,50 @@ export const buildWorkspaceShape = (
   sessions: readonly Session[],
   activeSessionId: string | null,
   customPaneLayouts: readonly PaneLayoutDefinition[] = []
-): PersistedWorkspaceShape => ({
-  customPaneLayouts,
-  sessions: sessions.map((session) => ({
-    id: session.id,
-    projectId: session.projectId,
-    layout: session.layout,
-    workingDirectory: session.workingDirectory,
-    active: session.id === activeSessionId,
-    open: isOpenSession(session),
-    panes: session.panes.map(
-      (pane, paneIndex): PersistedWorkspacePaneShape =>
-        isShellPane(pane)
-          ? {
-              kind: 'shell',
-              paneId: pane.id,
-              paneIndex,
-              active: pane.active,
-              ptyId: pane.ptyId,
-              cwd: pane.cwd,
-              agentType: pane.agentType,
-              agentSessionId: null,
-            }
-          : {
-              kind: 'browser',
-              paneId: pane.id,
-              paneIndex,
-              active: pane.active,
-            }
-    ),
-  })),
-})
+): PersistedWorkspaceShape => {
+  const layoutRegistry = new PaneLayoutRegistry(customPaneLayouts)
+
+  return {
+    customPaneLayouts,
+    sessions: sessions.map((session) => {
+      const layout = layoutRegistry.getFallbackLayout(session.layout)
+
+      return {
+        id: session.id,
+        projectId: session.projectId,
+        layout: session.layout,
+        placements: normalizePanePlacements(
+          session.panes,
+          layout,
+          session.placements
+        ),
+        workingDirectory: session.workingDirectory,
+        active: session.id === activeSessionId,
+        open: isOpenSession(session),
+        panes: session.panes.map(
+          (pane, paneIndex): PersistedWorkspacePaneShape =>
+            isShellPane(pane)
+              ? {
+                  kind: 'shell',
+                  paneId: pane.id,
+                  paneIndex,
+                  active: pane.active,
+                  ptyId: pane.ptyId,
+                  cwd: pane.cwd,
+                  agentType: pane.agentType,
+                  agentSessionId: null,
+                }
+              : {
+                  kind: 'browser',
+                  paneId: pane.id,
+                  paneIndex,
+                  active: pane.active,
+                }
+        ),
+      }
+    }),
+  }
+}
 
 // Signature of the structural half (everything except cwd/agentType drift), so
 // a `cd` or agent-detection update debounces instead of pushing eagerly.
@@ -96,6 +113,7 @@ const structuralSignature = (shape: PersistedWorkspaceShape): string =>
       id: session.id,
       projectId: session.projectId,
       layout: session.layout,
+      placements: session.placements,
       workingDirectory: session.workingDirectory,
       active: session.active,
       open: session.open,

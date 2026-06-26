@@ -1,15 +1,14 @@
 import type { ReactElement } from 'react'
-import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../agents/registry'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { RailMeter } from './RailMeter'
+import { CacheRing } from './CacheRing'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
   agent: Agent
   contextUsedPercentage: number | null
   cacheHitPercentage: number | null
-  onExpand: () => void
   reserveWindowControls?: boolean
 }
 
@@ -44,7 +43,6 @@ export const AgentStatusRail = ({
   agent,
   contextUsedPercentage,
   cacheHitPercentage,
-  onExpand,
   reserveWindowControls = false,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
@@ -53,21 +51,27 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className={`flex h-full flex-col items-center bg-surface pb-3 pt-2 ${
+      className={`relative flex h-full flex-col items-center bg-surface pb-3 pt-[40px] ${
         reserveWindowControls ? 'vf-app-drag-region' : ''
       }`}
       style={{ width: RAIL_WIDTH_PX }}
     >
-      <IconButton
-        icon="chevron_left"
-        label="Expand activity panel"
-        onClick={onExpand}
-        className="vf-app-no-drag shrink-0"
-      />
+      {/* No-drag clearance for the workspace-root activity toggle that floats
+          above this rail (top:7/right:8/28²). The floating toggle is a sibling
+          of the drag region, so it cannot subtract from it on its own — this
+          descendant span carves the hole, mirroring the sidebar toggle. */}
+      {reserveWindowControls && (
+        <span
+          aria-hidden="true"
+          data-testid="activity-toggle-clearance"
+          className="vf-app-no-drag pointer-events-none absolute"
+          style={{ top: 7, right: 8, width: 28, height: 28 }}
+        />
+      )}
 
       <div
         data-testid="agent-glyph-chip"
-        className="mb-3 mt-2 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border font-mono text-[12px] font-bold"
+        className="mb-3 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border font-mono text-[12px] font-bold"
         style={{
           background: agent.accentDim,
           color: agent.accent,
@@ -90,12 +94,7 @@ export const AgentStatusRail = ({
 
       {cachePct !== null && (
         <div className="vf-app-no-drag mt-4">
-          <RailMeter
-            pct={cachePct}
-            color={cacheTone(cachePct)}
-            label="CACHE"
-            tooltip={`Cache hit rate: ${Math.round(cachePct)}%`}
-          />
+          <CacheRing pct={cachePct} color={cacheTone(cachePct)} />
         </div>
       )}
 
