@@ -25,7 +25,7 @@ The durable result is not any single fix. It is that the chain of measurements l
 
 ## What #626 actually implements (grounded)
 
-The old "Liberty Rust" model — libghostty-vt in the Rust sidecar, shipping a rows+cells JSON snapshot per frame — lived on the `rust-libghostty-vt` lineage (commit `7cd08bd5`), **not** in this PR's base. #626 sits on `feature/ghostty-wasm-integration`, a plain-PTY-byte backend, and moves the VT into the renderer:
+The old "libghostty Rust" model — libghostty-vt in the Rust sidecar, shipping a rows+cells JSON snapshot per frame — lived on the `rust-libghostty-vt` lineage (commit `7cd08bd5`), **not** in this PR's base. #626 sits on `feature/ghostty-wasm-integration`, a plain-PTY-byte backend, and moves the VT into the renderer:
 
 - **WASM core + adapter** — `wtermGhosttyTerminal.ts:52-118`: `createWtermGhosttyTerminal` is async — awaits fonts, dynamically `import()`s `@wterm/dom` + `@wterm/ghostty`, `GhosttyCore.load({ scrollbackLimit: 10000 })` fetches/instantiates `ghostty-vt.wasm` (419 KB), then `new WTerm(...)` + `init()`. `GhosttyCore` owns grid/cursor/scrollback/alt-screen/bracketed-paste/cursor-keys in WASM heap; **no React state mirrors it**. The adapter conforms to a new `TerminalIo` seam.
 - **Anti-double-paint by construction** — `wtermGhosttyTerminal.test.ts:100-137` proves 120 synchronous `write()`s flush 120 raw writes into the core but schedule **exactly one** rAF, and `destroy()` cancels the pending frame. This is the structural answer to the VIM-231 double-paint that rAF-over-snapshot could never _guarantee_.
