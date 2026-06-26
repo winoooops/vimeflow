@@ -5914,6 +5914,40 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes).toHaveLength(1)
   })
 
+  test('createSession calls onCreated after the new session is active', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: 'old', sessions: [] })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty',
+      pid: 1,
+      cwd: '/home/u',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let activeSessionIdDuringCallback: string | null = null
+
+    const onCreated = vi.fn((sessionId: string) => {
+      activeSessionIdDuringCallback = result.current.activeSessionId
+      expect(activeSessionIdDuringCallback).toBe(sessionId)
+    })
+
+    act(() => {
+      result.current.createSession({ onCreated })
+    })
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledOnce())
+    expect(activeSessionIdDuringCallback).toBe(result.current.activeSessionId)
+    expect(result.current.sessions[0].id).toBe(result.current.activeSessionId)
+  })
+
   test('createSession skips a failed pane but still creates the session', async () => {
     const service = createMockService()
     service.listSessions = vi

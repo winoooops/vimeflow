@@ -233,4 +233,5 @@ export interface CreateSessionOptions {
   cwd?: string
   layout?: PaneLayoutId
   panes?: NewPaneSpec[]
+  onCreated?: (sessionId: string) => void
 }

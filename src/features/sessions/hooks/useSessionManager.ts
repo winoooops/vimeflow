@@ -964,7 +964,10 @@ export const useSessionManager = (
             })
           })
 
-          setActiveSessionId(newSessionId)
+          flushSync(() => {
+            setActiveSessionId(newSessionId)
+          })
+          opts?.onCreated?.(newSessionId)
 
           // Browser panes: create the WebContents after state is committed
           // (guarded — a startup/shutdown rejection must not surface).

@@ -2869,8 +2869,10 @@ const WorkspaceViewContent = (): ReactElement => {
         defaultCwd={newSessionDialog.defaultCwd}
         layoutRegistry={layoutRegistry}
         onCreate={(opts) => {
-          createSession(opts)
-          window.requestAnimationFrame(() => claimTerminal())
+          createSession({
+            ...opts,
+            onCreated: () => claimTerminal(),
+          })
         }}
       />
 

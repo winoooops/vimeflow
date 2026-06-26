@@ -706,3 +706,12 @@ prevent showing previous data.
 - **Fix:** Re-initialize only on the closed-to-open transition, reading the latest
   `defaultCwd` and registry from refs so dependency changes do not wipe in-progress edits.
 - **Commit:** same commit as this entry
+
+### 71. Terminal focus requested before async session creation activated the target
+
+- **Source:** github-claude | PR #624 round 2 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The New Session dialog queued `claimTerminal()` with `requestAnimationFrame` immediately after calling async `createSession`. PTY spawning commonly outlived the next frame, so focus could be requested for the previous active session and never re-requested after the new session became active.
+- **Fix:** Add an `onCreated` completion callback to `createSession`, commit the new active session synchronously in the success path, and request terminal focus from the dialog only after that callback fires.
+- **Commit:** same commit as this entry
