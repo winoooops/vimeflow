@@ -7,6 +7,9 @@ import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { Session } from '../../../sessions/types'
 import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane, type TerminalPaneHandle } from './index'
+import { usePaneWidth } from './usePaneWidth'
+
+vi.mock('./usePaneWidth', () => ({ usePaneWidth: vi.fn(() => null) }))
 
 const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
@@ -111,6 +114,7 @@ describe('TerminalPane index', () => {
   beforeEach(() => {
     bodyPropsSpy.mockClear()
     focusTerminalSpy.mockClear()
+    vi.mocked(usePaneWidth).mockReturnValue(null)
   })
 
   test('renders Body when mode is spawn', () => {
@@ -253,6 +257,37 @@ describe('TerminalPane index', () => {
     expect(
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
+  })
+
+  test('auto-collapses (header + status bar) when the pane is narrower than the floor', () => {
+    vi.mocked(usePaneWidth).mockReturnValue(180)
+
+    render(<TerminalPane {...baseProps} />)
+
+    expect(
+      screen.queryByTestId('terminal-pane-status-bar')
+    ).not.toBeInTheDocument()
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveAttribute(
+      'data-collapsed',
+      'true'
+    )
+
+    // The collapse toggle is hidden too — it can't expand a too-narrow pane.
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
+  })
+
+  test('stays expanded when the pane is wide and not manually collapsed', () => {
+    vi.mocked(usePaneWidth).mockReturnValue(600)
+
+    render(<TerminalPane {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveAttribute(
+      'data-collapsed'
+    )
   })
 
   test('forwards pane.ptyId to Body as sessionId', () => {

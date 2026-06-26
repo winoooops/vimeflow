@@ -191,8 +191,10 @@ describe('PaneStatusBar', () => {
       '@max-[280px]:hidden'
     )
 
-    // Floor (<220px pane): the whole bar drops, leaving the collapsed look.
-    expect(screen.getByTestId('terminal-pane-status-bar')).toHaveClass(
+    // The bar must NOT self-hide on pane width — its visibility is coupled to
+    // the pane's collapsed state by the parent (index.tsx gates on !isCollapsed),
+    // so a narrow-but-expanded pane keeps its (shrunken) status bar.
+    expect(screen.getByTestId('terminal-pane-status-bar')).not.toHaveClass(
       '@max-[220px]/pane:hidden'
     )
   })

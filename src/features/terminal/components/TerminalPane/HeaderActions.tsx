@@ -16,6 +16,8 @@ const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
 export interface HeaderActionsProps {
   isCollapsed: boolean
   onToggleCollapse: () => void
+  /** Collapsed by width (too narrow) — hide the toggle; it can't expand the pane. */
+  autoCollapsed?: boolean
   onClose?: () => void
   /** Toggle this pane's ephemeral burner terminal (VIM-53). */
   onBurner?: () => void
@@ -35,6 +37,7 @@ export interface HeaderActionsProps {
 export const HeaderActions = ({
   isCollapsed,
   onToggleCollapse,
+  autoCollapsed = false,
   onClose = undefined,
   onBurner = undefined,
   burnerActive = false,
@@ -59,15 +62,17 @@ export const HeaderActions = ({
       />
     )}
 
-    <IconButton
-      icon={isCollapsed ? 'unfold_more' : 'unfold_less'}
-      label={isCollapsed ? 'expand status' : 'collapse status'}
-      size="sm"
-      onClick={(event) => {
-        event.stopPropagation()
-        onToggleCollapse()
-      }}
-    />
+    {!autoCollapsed && (
+      <IconButton
+        icon={isCollapsed ? 'unfold_more' : 'unfold_less'}
+        label={isCollapsed ? 'expand status' : 'collapse status'}
+        size="sm"
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleCollapse()
+        }}
+      />
+    )}
 
     {onClose && (
       <IconButton

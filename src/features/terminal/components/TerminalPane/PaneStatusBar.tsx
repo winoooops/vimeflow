@@ -23,8 +23,9 @@ export interface PaneStatusBarProps {
  *   - < 384px: drop the last-activity time
  *   - < 280px: collapse the git card to branch-only (hide the worktree segment)
  *
- * Below a pane floor width the whole bar drops out, leaving the header + body
- * (the collapsed look) — keyed off the `pane` container, not the bar itself.
+ * The bar never self-hides on width — the parent (index.tsx) renders it only
+ * when the pane is expanded (!isCollapsed), so its visibility stays coupled to
+ * the collapsed state instead of a separate width floor.
  */
 export const PaneStatusBar = ({
   worktreeName,
@@ -39,7 +40,7 @@ export const PaneStatusBar = ({
   return (
     <div
       data-testid="terminal-pane-status-bar"
-      className="flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] px-3 py-1 font-mono text-[10.5px] [container-type:inline-size] @max-[220px]/pane:hidden"
+      className="flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] px-3 py-1 font-mono text-[10.5px] [container-type:inline-size]"
     >
       {/* Ref group is hard-bounded to the leftover space and clips, so the
        * always-visible time on the right is never overlapped. */}

@@ -12,6 +12,7 @@ export interface HeaderProps {
   session: Session
   isFocused: boolean
   isCollapsed: boolean
+  autoCollapsed?: boolean
   ptyId: string
   paneAgentTitle?: string
   paneUserLabel?: string
@@ -27,6 +28,7 @@ export const Header = ({
   session,
   isFocused,
   isCollapsed,
+  autoCollapsed = false,
   ptyId,
   paneAgentTitle = undefined,
   paneUserLabel = undefined,
@@ -89,6 +91,7 @@ export const Header = ({
         <HeaderActions
           isCollapsed={isCollapsed}
           onToggleCollapse={onToggleCollapse}
+          autoCollapsed={autoCollapsed}
           onClose={onClose}
           onBurner={onBurner}
           burnerActive={burnerActive}

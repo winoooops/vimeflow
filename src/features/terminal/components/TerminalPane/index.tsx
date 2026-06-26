@@ -23,6 +23,11 @@ import { Body, type BodyHandle } from './Body'
 import { Header } from './Header'
 import { PaneStatusBar } from './PaneStatusBar'
 import { RestartAffordance } from './RestartAffordance'
+import { usePaneWidth } from './usePaneWidth'
+
+// A pane narrower than this auto-collapses (header + status bar together) so the
+// collapsed look never drifts out of sync with a real `isCollapsed`. Tunable.
+const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
 
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
@@ -90,7 +95,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     // on first paint — otherwise its xterm stays unfocused with no transition
     // for the rising-edge branch below to catch.
     const wasActiveRef = useRef<boolean | undefined>(undefined)
-    const [isCollapsed, setIsCollapsed] = useState(false)
+    const wrapperRef = useRef<HTMLDivElement | null>(null)
+    const [manuallyCollapsed, setManuallyCollapsed] = useState(false)
+    // Width-driven auto-collapse: a pane too narrow for the expanded chrome
+    // collapses for real (header + status bar together), so the collapsed state
+    // is always in sync with what's shown — never just the bar vanishing.
+    const paneWidth = usePaneWidth(wrapperRef)
+
+    const autoCollapsed =
+      paneWidth !== null && paneWidth < AUTO_COLLAPSE_PANE_WIDTH_PX
+    const isCollapsed = manuallyCollapsed || autoCollapsed
 
     useImperativeHandle(ref, () => ({
       focusTerminal(): boolean {
@@ -146,7 +160,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     }, [pane.active])
 
     const handleToggleCollapse = useCallback((): void => {
-      setIsCollapsed((collapsed) => !collapsed)
+      setManuallyCollapsed((collapsed) => !collapsed)
     }, [])
 
     const handleClose = useCallback((): void => {
@@ -208,6 +222,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     return (
       <div
+        ref={wrapperRef}
         data-testid="terminal-pane-wrapper"
         data-session-id={session.id}
         data-mode={mode}
@@ -227,6 +242,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           session={session}
           isFocused={isFocusHighlightVisible}
           isCollapsed={isCollapsed}
+          autoCollapsed={autoCollapsed}
           ptyId={pane.ptyId}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
