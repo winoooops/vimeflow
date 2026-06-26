@@ -935,6 +935,47 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
   })
 
+  test(':open-file respects the dirty-buffer guard', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':open-file /tmp/notes.md')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
+
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
   test('does not open the palette while the unsaved dialog is active', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn(() => true)

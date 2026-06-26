@@ -1614,6 +1614,15 @@ const WorkspaceViewContent = (): ReactElement => {
         },
         focusTerminal: claimTerminal,
         openFile: (path: string): void => {
+          // Mirror handleFileSelect's unsaved-changes guard before opening.
+          if (editorBuffer.isDirty) {
+            setPendingFilePathSynced(path)
+            setPendingSessionRestoreIdRef(null)
+            setShowUnsavedDialog(true)
+
+            return
+          }
+
           void openFileSafely(path)
         },
       }),
@@ -1651,6 +1660,10 @@ const WorkspaceViewContent = (): ReactElement => {
       setSidebarCollapsed,
       claimTerminal,
       openFileSafely,
+      editorBuffer.isDirty,
+      setPendingFilePathSynced,
+      setPendingSessionRestoreIdRef,
+      setShowUnsavedDialog,
     ]
   )
 
