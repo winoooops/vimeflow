@@ -62,6 +62,7 @@ import {
 } from '../command-palette/hooks/usePaneRenameChord'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
+import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 import {
   clampSize,
   useResizable,
@@ -81,6 +82,7 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
+import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
@@ -1015,6 +1017,8 @@ const WorkspaceViewContent = (): ReactElement => {
   const { hasUnsavedChanges, releaseScope } = editorBuffer
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
+  const newSessionDialog = useNewSessionDialog()
+  const newSessionButtonRef = useRef<HTMLButtonElement>(null)
 
   const [pendingSessionRemovalId, setPendingSessionRemovalId] = useState<
     string | null
@@ -1461,10 +1465,12 @@ const WorkspaceViewContent = (): ReactElement => {
     [claimTerminal, setActiveSessionId]
   )
 
-  const handleCreateSession = useCallback((): void => {
-    createSession()
-    claimTerminal()
-  }, [claimTerminal, createSession])
+  const handleOpenNewSession = useCallback((): void => {
+    const sessionCwd = sessions.find(
+      (s) => s.id === activeSessionId
+    )?.workingDirectory
+    newSessionDialog.openWith(sessionCwd)
+  }, [activeSessionId, newSessionDialog, sessions])
 
   const handleRemoveSession = useCallback(
     (sessionId: string): SessionCloseResult => {
@@ -1599,7 +1605,7 @@ const WorkspaceViewContent = (): ReactElement => {
   )
 
   const commandPalette = useCommandPalette(workspaceCommands, {
-    enabled: !showUnsavedDialog,
+    enabled: !showUnsavedDialog && !newSessionDialog.open,
   })
 
   usePaneShortcuts({
@@ -1632,7 +1638,7 @@ const WorkspaceViewContent = (): ReactElement => {
   })
 
   useNewSessionShortcut({
-    onNewSession: handleCreateSession,
+    onNewSession: handleOpenNewSession,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
@@ -2405,6 +2411,7 @@ const WorkspaceViewContent = (): ReactElement => {
       <WorkspaceOverlayRegistrations
         commandPaletteOpen={commandPalette.state.isOpen}
         unsavedChangesDialogOpen={showUnsavedDialog}
+        newSessionDialogOpen={newSessionDialog.open}
         burnerTerminalOpen={hasVisibleBurner}
         paneRenameOpen={paneRenameNode !== null}
         layoutCreatorOpen={layoutCreatorOpen}
@@ -2548,7 +2555,8 @@ const WorkspaceViewContent = (): ReactElement => {
                       onChange={setActiveTab}
                     />
                     <NewSessionButton
-                      onClick={handleCreateSession}
+                      ref={newSessionButtonRef}
+                      onClick={handleOpenNewSession}
                       shortcutHint={newSessionShortcutHint}
                       ariaKeyshortcuts={newSessionAriaKeyshortcuts}
                     />
@@ -2853,6 +2861,19 @@ const WorkspaceViewContent = (): ReactElement => {
           void handleDiscard()
         }}
         onCancel={handleCancel}
+      />
+
+      <NewSessionDialog
+        open={newSessionDialog.open}
+        onOpenChange={newSessionDialog.setOpen}
+        defaultCwd={newSessionDialog.defaultCwd}
+        layoutRegistry={layoutRegistry}
+        onCreate={(opts) => {
+          createSession({
+            ...opts,
+            onCreated: () => claimTerminal(),
+          })
+        }}
       />
 
       <LayoutCreatorModal

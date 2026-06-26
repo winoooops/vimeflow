@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-21
+last_updated: 2026-06-26
 ref_count: 12
 ---
 
@@ -175,4 +175,14 @@ base data is technically "correct."
 - **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
 - **Finding:** The opencode live path refreshed an in-flight tool record when `tool.before` supplied authoritative args after an empty pending part, but only patched `tool` and `args`. The derived `is_test_file` flag stayed at the pending placeholder value, so the terminal `tool.after` event could report a test-file tool call as non-test-file.
 - **Fix:** Derive test-file status from authoritative `filePath` args and patch `entry.is_test_file` alongside the upgraded tool and args. Added a pending-empty -> `tool.before` test-file -> `tool.after` regression test that asserts the terminal event keeps `isTestFile: true`.
+- **Commit:** same commit as this entry
+
+### 15. Blank session name bypassed derived folder-name fallback
+
+- **Source:** github-codex-connector + github-claude | PR #624 round 1 | 2026-06-26
+- **Severity:** P2 / LOW
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** The dialog passed an empty or whitespace-only session name through to
+  session creation, bypassing the derived folder-name fallback used for nullish names.
+- **Fix:** Trim the submitted name and fall back to `deriveSessionName(path)` when it is blank.
 - **Commit:** same commit as this entry

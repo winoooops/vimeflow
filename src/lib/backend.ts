@@ -21,6 +21,10 @@ export interface BackendApi {
   ) => Promise<UnlistenFn>
 
   onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
+
+  dialog?: {
+    pickDirectory: () => Promise<string | null>
+  }
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

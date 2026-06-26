@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-20
-ref_count: 44
+last_updated: 2026-06-26
+ref_count: 45
 ---
 
 # Error Surfacing
@@ -431,4 +431,14 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L875-884
 - **Finding:** After a failed save displayed the always-visible `saveError` banner, a successful code-panel Apply cleared only `codeError`. The draft updated correctly but the stale save banner stayed visible alongside valid layout state.
 - **Fix:** Clear `saveError` on the successful `applyCode` path alongside `codeError`, and add regression coverage that applying valid code removes a previously displayed save failure.
+- **Commit:** same commit as this entry
+
+### 45. Directory picker rejection escaped a fire-and-forget click handler
+
+- **Source:** github-claude | PR #624 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/WorkingDirectoryField.tsx`
+- **Finding:** `void handleBrowse()` discarded rejections from the Electron directory-picker
+  IPC call, producing an unhandled rejection instead of a graceful no-op.
+- **Fix:** Catch picker rejections inside `handleBrowse` and leave the current path unchanged.
 - **Commit:** same commit as this entry

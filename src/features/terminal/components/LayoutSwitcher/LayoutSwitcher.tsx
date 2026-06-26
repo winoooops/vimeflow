@@ -26,6 +26,12 @@ export interface LayoutSwitcherProps {
    * separate pin toggle to stand alone. Omit it and no divider renders.
    */
   trailing?: ReactNode
+  /**
+   * Stack the pills in a column instead of a row. The toolbar leaves this
+   * false (horizontal); the new-session dialog sets it so the picker fits the
+   * narrow Layout column. Arrow Up/Down already drive selection either way.
+   */
+  vertical?: boolean
 }
 
 export const LayoutSwitcher = ({
@@ -37,6 +43,7 @@ export const LayoutSwitcher = ({
   blockedLayoutIds = [],
   onPick,
   trailing = undefined,
+  vertical = false,
 }: LayoutSwitcherProps): ReactElement => {
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
 
@@ -66,7 +73,11 @@ export const LayoutSwitcher = ({
       // sequence — adequate for this small picker.
       role="group"
       aria-label="Pane layout"
-      className="vf-app-no-drag inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
+      className={`vf-app-no-drag gap-0.5 rounded-md bg-surface-container/60 p-0.5 ${
+        vertical
+          ? 'flex w-full flex-col items-stretch'
+          : 'inline-flex items-center'
+      }`}
     >
       <SegmentedControl
         aria-label="Pane layout"
@@ -93,11 +104,23 @@ export const LayoutSwitcher = ({
         })}
         onChange={onPick}
         skipActiveReselect
+        // Vertical mode fills the column as a grouped list: each row is a
+        // full-width glyph + name. Horizontal mode keeps the compact icon pill.
+        buttonClassName={
+          vertical
+            ? 'w-full h-8 justify-start gap-2 px-2 text-[12px] rounded-[7px]'
+            : undefined
+        }
         renderOption={(layout) => (
-          <LayoutGlyph
-            layoutId={layout.value}
-            definition={layoutById.get(layout.value)?.definition}
-          />
+          <>
+            <LayoutGlyph
+              layoutId={layout.value}
+              definition={layoutById.get(layout.value)?.definition}
+            />
+            {vertical && (
+              <span className="truncate font-medium">{layout.label}</span>
+            )}
+          </>
         )}
       />
       {trailing !== undefined && (
@@ -107,7 +130,9 @@ export const LayoutSwitcher = ({
           <span
             aria-hidden="true"
             data-testid="layout-switcher-divider"
-            className="mx-0.5 h-[14px] w-px shrink-0 bg-outline-variant/50"
+            className={`shrink-0 bg-outline-variant/50 ${
+              vertical ? 'my-0.5 h-px w-[14px]' : 'mx-0.5 h-[14px] w-px'
+            }`}
           />
           {trailing}
         </>

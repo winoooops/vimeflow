@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-24
-ref_count: 2
+last_updated: 2026-06-26
+ref_count: 3
 ---
 
 # Keyboard Shortcut Guards
@@ -310,3 +310,24 @@ against three classes of false-fire:
 - **Finding:** On macOS, both the Paste and Paste Image context-menu rows rendered the same shortcut chip, making the menu look contradictory even though the image path has priority only when the clipboard contains an image.
 - **Fix:** Made the Paste Image shortcut chip platform-aware and omitted it on macOS while keeping the distinct `Ctrl+V` chip on non-mac platforms. Added a macOS module-load regression test for the rendered row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Command palette shortcut stayed active inside New Session modal
+
+- **Source:** github-codex-connector | PR #624 round 1 | 2026-06-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command palette remained enabled while the New Session dialog was open,
+  so the capture-phase palette shortcut could open a second modal over the active modal.
+- **Fix:** Include `newSessionDialog.open` in the palette `enabled` guard.
+- **Commit:** same commit as this entry
+
+### 24. Nested controls inside menu rows lost their own keyboard activation
+
+- **Source:** CI | PR #624 unit test failure | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `Menu.Row` let nested button Enter key events reach menu navigation
+  plumbing, so the nested control did not receive its expected activation.
+- **Fix:** Stop propagation for keyboard events that originate from nested focusable
+  controls while preserving the row's own Enter/Space activation.
+- **Commit:** same commit as this entry

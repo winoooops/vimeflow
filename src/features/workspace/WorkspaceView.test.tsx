@@ -690,12 +690,18 @@ describe('WorkspaceView', () => {
         ).toBe(true)
       })
 
+      // Completing the new-session flow (button → dialog → Create session)
+      // appends a session whose name derives from cwd '~' → 'session'.
       await user.click(
         within(screen.getByTestId('sidebar')).getByRole('button', {
           name: 'New session',
         })
       )
-      await screen.findByRole('button', { name: 'session 2' })
+      const dialog = await screen.findByRole('dialog', { name: /new session/i })
+      await user.click(
+        within(dialog).getByRole('button', { name: /create session/i })
+      )
+      await screen.findByRole('button', { name: 'session' })
 
       await waitFor(() => {
         expect(
@@ -1436,13 +1442,26 @@ describe('WorkspaceView', () => {
     )
     await user.click(newSessionButton)
 
-    // After clicking, the spawn() mock resolves with a new sessionId
-    // and useSessionManager appends a new Session at index 1, with
-    // tabName(cwd='~', index=1) = 'session 2'. Asserting the new row
-    // appears proves createSession was wired through end-to-end —
-    // a regression of the onClick handler being dropped (e.g. during
-    // a future Sidebar.footer slot refactor) would fail this test.
-    await screen.findByRole('button', { name: 'session 2' })
+    // The button no longer instant-creates a session — it opens the
+    // NewSessionDialog. The session is created only when the user clicks
+    // "Create session", which calls createSession(opts) then closes the
+    // dialog. Completing the full flow proves the button → dialog → create
+    // path is wired end-to-end (a dropped onClick or onCreate handler would
+    // fail this test).
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
+
+    // The dialog defaults the name to deriveSessionName(cwd) — cwd '~'
+    // (the seed session's working directory) → 'session'. The spawn() mock
+    // resolves with a new sessionId and useSessionManager appends the new
+    // Session, so a second sidebar row appears: the original 'session 1' plus
+    // the freshly-created 'session'.
+    await screen.findByRole('button', { name: 'session' })
+    expect(
+      screen.getByRole('button', { name: 'session 1' })
+    ).toBeInTheDocument()
   })
 
   test('new-session button lives in the switcher row, not the list bottom', () => {
@@ -1460,10 +1479,12 @@ describe('WorkspaceView', () => {
   })
 
   test('Ctrl+⇧N creates a new session (keyboard shortcut)', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
     await screen.findByRole('button', { name: 'session 1' })
 
+    // The chord now opens the NewSessionDialog rather than instant-creating.
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
@@ -1475,7 +1496,14 @@ describe('WorkspaceView', () => {
       )
     })
 
-    await screen.findByRole('button', { name: 'session 2' })
+    // Completing the dialog ("Create session") creates the session, named
+    // from cwd '~' → 'session'.
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
+
+    await screen.findByRole('button', { name: 'session' })
   })
 
   test('opens command palette from the status-bar command button', async () => {
@@ -1644,14 +1672,21 @@ describe('WorkspaceView', () => {
       'bg-primary-container/15'
     )
 
+    // Creating a session via the dialog makes it the active one — the
+    // highlight must move off 'session 1' onto the new row (named 'session',
+    // derived from cwd '~').
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
       'button',
       { name: 'New session' }
     )
     await user.click(newSessionButton)
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
 
     const secondSession = await screen.findByRole('button', {
-      name: 'session 2',
+      name: 'session',
     })
     expect(secondSession.closest('li')!.className).toContain(
       'bg-primary-container/15'

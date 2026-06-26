@@ -70,6 +70,7 @@ const NativeSurfaceStatus = (): ReactElement => {
 interface HarnessProps {
   commandPaletteOpen?: boolean
   unsavedChangesDialogOpen?: boolean
+  newSessionDialogOpen?: boolean
   burnerTerminalOpen?: boolean
   paneRenameOpen?: boolean
   dragOverlayOpen?: boolean
@@ -82,6 +83,7 @@ interface HarnessProps {
 const Harness = ({
   commandPaletteOpen = false,
   unsavedChangesDialogOpen = false,
+  newSessionDialogOpen = false,
   burnerTerminalOpen = false,
   paneRenameOpen = false,
   dragOverlayOpen = false,
@@ -94,6 +96,7 @@ const Harness = ({
     <WorkspaceOverlayRegistrations
       commandPaletteOpen={commandPaletteOpen}
       unsavedChangesDialogOpen={unsavedChangesDialogOpen}
+      newSessionDialogOpen={newSessionDialogOpen}
       burnerTerminalOpen={burnerTerminalOpen}
       paneRenameOpen={paneRenameOpen}
       dragOverlayOpen={dragOverlayOpen}
@@ -147,6 +150,24 @@ describe('WorkspaceOverlayRegistrations', () => {
 
     await waitFor(() =>
       expect(nativeSurfaceStatus()).toHaveTextContent(/^dock-drag-overlay$/u)
+    )
+
+    rerender(<Harness />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+    )
+  })
+
+  test('registers the new-session dialog overlay', async () => {
+    const { rerender } = render(<Harness />)
+
+    expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+
+    rerender(<Harness newSessionDialogOpen />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent(/^new-session-dialog$/u)
     )
 
     rerender(<Harness />)
