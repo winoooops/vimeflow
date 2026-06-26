@@ -1057,16 +1057,24 @@ describe('Body', () => {
         expect(onResize).not.toBeNull()
       })
 
+      const capturedOnResize = (): ((cols: number, rows: number) => void) => {
+        if (onResize === null) {
+          throw new Error('Ghostty onResize callback was not captured')
+        }
+
+        return onResize
+      }
+
       vi.mocked(mockUseTerminal.resize).mockClear()
-      onResize?.(1, 24)
+      capturedOnResize()(1, 24)
       expect(mockUseTerminal.resize).not.toHaveBeenCalled()
 
       offsetWidthSpy.mockReturnValue(800)
       offsetHeightSpy.mockReturnValue(600)
 
-      onResize?.(80, 24)
-      onResize?.(80, 24)
-      onResize?.(81, 24)
+      capturedOnResize()(80, 24)
+      capturedOnResize()(80, 24)
+      capturedOnResize()(81, 24)
 
       expect(mockUseTerminal.resize).toHaveBeenCalledTimes(2)
       expect(mockUseTerminal.resize).toHaveBeenNthCalledWith(1, 80, 24)

@@ -761,6 +761,21 @@ describe('Menu.Context', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'outside' })).toBeInTheDocument()
   })
+
+  test('renders above z-100 overlays like the burner terminal popup', () => {
+    render(
+      <Menu.Context
+        position={{ x: 0, y: 0 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+      </Menu.Context>
+    )
+
+    expect(screen.getByRole('menu')).toHaveClass('z-[110]')
+  })
 })
 
 describe('Menu dynamic items', () => {

@@ -384,7 +384,6 @@ pub struct AgentToolCallEvent {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // Used by frontend and future sub-specs
 pub struct AgentReplaySummaryEvent {
     pub session_id: String,
     pub num_turns: u32,

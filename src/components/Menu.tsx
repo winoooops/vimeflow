@@ -68,7 +68,7 @@ const useMenuContext = (): MenuContextValue => {
 const MENU_BODY_CLASSES = 'py-1 min-w-52 max-h-[28rem] overflow-auto'
 
 const CONTEXT_MENU_SURFACE_CLASSES =
-  'z-50 overflow-hidden rounded-md border border-outline-variant/30 bg-surface-container-high shadow-lg outline-none focus:outline-none focus-visible:outline-none'
+  'z-[110] overflow-hidden rounded-md border border-outline-variant/30 bg-surface-container-high shadow-lg outline-none focus:outline-none focus-visible:outline-none'
 
 const CONTEXT_MENU_BODY_CLASSES = 'min-w-0 max-h-[28rem] overflow-auto'
 
@@ -355,6 +355,21 @@ const MenuRoot = ({
       : true
   }, [])
 
+  const handleNavigate = useCallback((nextIndex: number | null): void => {
+    const activeElement = document.activeElement
+    if (activeElement instanceof Element) {
+      const focusedRow = listRef.current.find((row) =>
+        row?.contains(activeElement)
+      )
+
+      if (focusedRow !== undefined && focusedRow !== activeElement) {
+        return
+      }
+    }
+
+    setActiveIndex(nextIndex)
+  }, [])
+
   const {
     refs,
     floatingStyles,
@@ -372,7 +387,7 @@ const MenuRoot = ({
     list: {
       ref: listRef,
       activeIndex,
-      onNavigate: setActiveIndex,
+      onNavigate: handleNavigate,
       loop: true,
       disabledIndices,
       focusItemOnOpen: true,
@@ -535,20 +550,6 @@ const MenuRow = ({
     select()
   }
 
-  const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (
-    event
-  ) => {
-    if (
-      event.currentTarget === event.target ||
-      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
-    ) {
-      return
-    }
-
-    event.stopPropagation()
-    event.nativeEvent.stopImmediatePropagation()
-  }
-
   const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
     const target = event.target instanceof Element ? event.target : null
 
@@ -577,7 +578,7 @@ const MenuRow = ({
       aria-label={label}
       className={className}
       {...itemProps}
-      onKeyDownCapture={handleKeyDownCapture}
+      onKeyDown={handleKeyDown}
     >
       {children}
     </div>

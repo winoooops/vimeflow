@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 0
+last_updated: 2026-06-26
+ref_count: 1
 ---
 
 # Native Surface Occlusion
@@ -39,4 +39,13 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
 - **Finding:** When a consumer owns `isOpen` locally inside the overlay component, toggling it only updates `latestDescriptorRef`; the registration effect does not re-run and the provider map/context identity does not change, so already-mounted `useNativeSurface` consumers in sibling panes are not re-rendered. A newly opened global/intersecting overlay can leave an Electron `WebContentsView` visible above it until some unrelated workspace render happens.
 - **Fix:** Added `isOpen` to the `useOverlayRegistration` effect dependency array so toggles re-register the descriptor, invalidate provider state, and re-render native-surface subscribers. The descriptor getter continues to read the live ref for the current value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Context menu rendered below burner terminal overlay
+
+- **Source:** github-claude | PR #626 round 2 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `Menu.Context` lowered its surface from `z-[110]` to `z-50`, placing right-click menus behind the burner terminal popup's `z-[100]` backdrop and making them invisible or unreachable inside that overlay.
+- **Fix:** Restored `z-[110]` for context menus and added a regression test that asserts the menu stays above z-100 overlays.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

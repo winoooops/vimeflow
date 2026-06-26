@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-06-26
-ref_count: 3
+ref_count: 4
 ---
 
 # Bridge Payload Minimization
@@ -57,4 +57,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `src/features/terminal/services/desktopTerminalService.ts`
 - **Finding:** The Electron terminal bridge decoded `dataBytesBase64` for every PTY chunk, so default xterm sessions paid per-chunk base64 decode and allocation overhead even though only Ghostty WASM consumes raw bytes.
 - **Fix:** Added per-session raw-byte consumer registration and decode only when the emitted session is registered by a Ghostty renderer. The xterm path now receives string data without decoding the optional base64 payload.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Malformed Ghostty raw-byte payload aborted PTY chunk delivery
+
+- **Source:** github-claude | PR #626 round 2 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** `decodeBase64Bytes` called `atob()` without guarding malformed `dataBytesBase64` payloads. A bad raw-byte field for a registered Ghostty session could throw inside the PTY event listener before callbacks received the fallback string data.
+- **Fix:** Wrapped the base64 decode in a try/catch that returns `undefined` on invalid payloads, preserving the existing string-data callback path for that chunk.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

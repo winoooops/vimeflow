@@ -29,7 +29,13 @@ const decodeBase64Bytes = (
     return undefined
   }
 
-  const binary = atob(value)
+  let binary: string
+  try {
+    binary = atob(value)
+  } catch {
+    return undefined
+  }
+
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index)

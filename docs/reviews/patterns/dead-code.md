@@ -2,8 +2,8 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-22
-ref_count: 7
+last_updated: 2026-06-26
+ref_count: 8
 ---
 
 # Dead Code
@@ -79,3 +79,12 @@ code and should be removed.
 - **Finding:** `modelToDraft` normalized imported track units before validation, and `normalizeUnits` caps over-capacity axes to `MAX_LAYOUT_TRACKS`. The later `validation.trackOverCapacity` error branch could never fire for imported 25+ track layouts.
 - **Fix:** Reject imported layouts whose raw column or row count exceeds `MAX_LAYOUT_TRACKS` before normalization, then remove the dead post-normalization `trackOverCapacity` branch.
 - **Commit:** same commit as this entry
+
+### 8. Stale dead-code suppression hid active replay summary schema
+
+- **Source:** github-claude | PR #626 round 2 | 2026-06-26
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/types.rs`
+- **Finding:** `AgentReplaySummaryEvent` kept an obsolete `#[allow(dead_code)]` after the event became exported, emitted, and consumed by the frontend. The suppression made an active schema look provisional and could mask future cleanup mistakes.
+- **Fix:** Removed the stale suppression while leaving the exported event schema unchanged.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

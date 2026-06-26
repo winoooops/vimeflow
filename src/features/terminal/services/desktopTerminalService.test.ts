@@ -276,6 +276,24 @@ describe('DesktopTerminalService', () => {
       )
     })
 
+    test('onData falls back to string data for invalid raw byte payloads', async () => {
+      const callback = vi.fn()
+      await service.onData(callback)
+      await mockSpawnAndInit(service)
+
+      service.setRawDataConsumer('raw-session', true)
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'raw-session',
+        data: 'fallback',
+        dataBytesBase64: '@@@',
+        offsetStart: 0,
+        byteLen: 8,
+      })
+
+      expect(callback).toHaveBeenCalledWith('raw-session', 'fallback', 0, 8)
+    })
+
     test('onExit delivers pty-exit events to callback', async () => {
       const callback = vi.fn()
       await service.onExit(callback)

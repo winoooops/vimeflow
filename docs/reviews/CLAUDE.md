@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 4        | 1    | 2026-06-26   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 56       | 26   | 2026-06-22   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
@@ -58,7 +58,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 84       | 38   | 2026-06-25   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 91   | 2026-06-26   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 92   | 2026-06-26   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 69       | 69   | 2026-06-21   |
@@ -67,7 +67,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 1    | 2026-06-17   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 3    | 2026-06-26   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 6        | 4    | 2026-06-26   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -93,7 +93,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 7        | 7    | 2026-06-22   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 8        | 8    | 2026-06-26   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 8        | 5    | 2026-06-20   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
