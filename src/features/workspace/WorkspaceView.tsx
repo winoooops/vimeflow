@@ -1605,7 +1605,7 @@ const WorkspaceViewContent = (): ReactElement => {
   )
 
   const commandPalette = useCommandPalette(workspaceCommands, {
-    enabled: !showUnsavedDialog,
+    enabled: !showUnsavedDialog && !newSessionDialog.open,
   })
 
   usePaneShortcuts({
@@ -2867,11 +2867,10 @@ const WorkspaceViewContent = (): ReactElement => {
         open={newSessionDialog.open}
         onOpenChange={newSessionDialog.setOpen}
         defaultCwd={newSessionDialog.defaultCwd}
-        anchorEl={newSessionButtonRef.current}
         layoutRegistry={layoutRegistry}
         onCreate={(opts) => {
           createSession(opts)
-          claimTerminal()
+          window.requestAnimationFrame(() => claimTerminal())
         }}
       />
 

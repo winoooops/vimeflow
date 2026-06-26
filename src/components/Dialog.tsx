@@ -102,7 +102,7 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   )
 
 interface DialogLayer {
-  close: () => void
+  close: () => boolean
   container: HTMLDivElement
 }
 
@@ -116,8 +116,9 @@ const handleDocumentKeyDown = (event: KeyboardEvent): void => {
   const topLayer = dialogStack[dialogStack.length - 1]
 
   if (event.key === 'Escape') {
-    topLayer.close()
-    event.stopImmediatePropagation()
+    if (topLayer.close()) {
+      event.stopImmediatePropagation()
+    }
 
     return
   }
@@ -259,6 +260,9 @@ const DialogRoot = ({
   const requestCloseRef = useRef(requestClose)
   requestCloseRef.current = requestClose
 
+  const dismissDisabledRef = useRef(dismissDisabled)
+  dismissDisabledRef.current = dismissDisabled
+
   const closeOnEscapeRef = useRef(closeOnEscape)
   closeOnEscapeRef.current = closeOnEscape
 
@@ -306,10 +310,14 @@ const DialogRoot = ({
     }
 
     const layer: DialogLayer = {
-      close: (): void => {
-        if (closeOnEscapeRef.current) {
-          requestCloseRef.current()
+      close: (): boolean => {
+        if (!closeOnEscapeRef.current || dismissDisabledRef.current) {
+          return false
         }
+
+        requestCloseRef.current()
+
+        return true
       },
       container: dialog,
     }

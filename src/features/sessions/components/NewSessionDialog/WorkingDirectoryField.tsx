@@ -13,7 +13,13 @@ export const WorkingDirectoryField = ({
   onChange,
 }: WorkingDirectoryFieldProps): ReactElement => {
   const handleBrowse = async (): Promise<void> => {
-    const picked = await pickDirectory()
+    let picked: string | null
+
+    try {
+      picked = await pickDirectory()
+    } catch {
+      return
+    }
 
     if (picked !== null) {
       onChange(picked)

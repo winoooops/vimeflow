@@ -4,8 +4,6 @@ import { describe, expect, test, vi } from 'vitest'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../../terminal/layout-registry'
 import { NewSessionDialog } from './NewSessionDialog'
 
-const anchorEl = document.createElement('button')
-
 const setup = (
   overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}
 ): {
@@ -21,7 +19,6 @@ const setup = (
       onOpenChange={onOpenChange}
       onCreate={onCreate}
       defaultCwd="~/code/vimeflow-core"
-      anchorEl={anchorEl}
       layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
       {...overrides}
     />
@@ -40,7 +37,6 @@ const renderWithOpen = (
       onOpenChange={vi.fn()}
       onCreate={vi.fn()}
       defaultCwd={cwd}
-      anchorEl={anchorEl}
       layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
     />
   )
@@ -71,7 +67,6 @@ describe('NewSessionDialog', () => {
         onOpenChange={vi.fn()}
         onCreate={vi.fn()}
         defaultCwd="~/code/beta"
-        anchorEl={anchorEl}
         layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
       />
     )
@@ -134,5 +129,42 @@ describe('NewSessionDialog', () => {
         panes: [{ command: 'codex' }],
       })
     )
+  })
+
+  test('Create falls back to the path basename when the name is blank', async () => {
+    const { onCreate } = setup()
+    const user = userEvent.setup()
+    const input = screen.getByRole('textbox', { name: /session name/i })
+
+    await user.clear(input)
+    await user.type(input, '   ')
+    await user.click(screen.getByRole('button', { name: /create session/i }))
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'vimeflow-core',
+      })
+    )
+  })
+
+  test('does not reset edited fields when defaultCwd changes while open', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderWithOpen(true, '~/code/alpha')
+    const input = screen.getByRole('textbox', { name: /session name/i })
+
+    await user.clear(input)
+    await user.type(input, 'custom name')
+
+    rerender(
+      <NewSessionDialog
+        open
+        onOpenChange={vi.fn()}
+        onCreate={vi.fn()}
+        defaultCwd="~/code/beta"
+        layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
+      />
+    )
+
+    expect(input).toHaveValue('custom name')
   })
 })

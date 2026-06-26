@@ -12,6 +12,7 @@ import {
   type HTMLProps,
   type MouseEvent as ReactMouseEvent,
   type MouseEventHandler,
+  type FocusEventHandler,
   type KeyboardEventHandler,
   type MutableRefObject,
   type ReactElement,
@@ -74,6 +75,11 @@ const CONTEXT_MENU_BODY_CLASSES = 'min-w-0 max-h-[28rem] overflow-auto'
 
 const SECTION_HEADER_CLASSES =
   'text-[0.65rem] font-bold uppercase tracking-wider text-on-surface-variant px-2.5 pt-2 pb-1'
+
+const NESTED_CONTROL_SELECTOR =
+  'button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"])'
+
+const NESTED_ACTIVATION_SELECTOR = 'button, a, [role="button"]'
 
 const ITEM_CLASSES =
   'flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
@@ -510,6 +516,7 @@ const MenuRow = ({
 }: MenuRowProps): ReactElement => {
   const menu = useMenuContext()
   const { index, ref } = useMenuRow(disabled, label)
+  const nestedFocusRef = useRef<HTMLElement | null>(null)
 
   const select = (): void => {
     if (disabled) {
@@ -520,7 +527,45 @@ const MenuRow = ({
   }
 
   const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
-    if (event.currentTarget !== event.target) {
+    const nestedControl =
+      event.currentTarget === event.target
+        ? nestedFocusRef.current
+        : event.target instanceof Element
+          ? event.target.closest(NESTED_CONTROL_SELECTOR)
+          : null
+
+    if (nestedControl !== null && nestedControl !== event.currentTarget) {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        event.stopPropagation()
+        event.nativeEvent.stopImmediatePropagation()
+
+        if (nestedControl instanceof HTMLElement) {
+          nestedControl.focus()
+          queueMicrotask(() => nestedControl.focus())
+        }
+
+        return
+      }
+
+      if (event.key === 'Enter' || event.key === ' ') {
+        const activationTarget = nestedControl.closest(
+          NESTED_ACTIVATION_SELECTOR
+        )
+
+        if (
+          activationTarget instanceof HTMLElement &&
+          activationTarget !== event.currentTarget
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+          event.nativeEvent.stopImmediatePropagation()
+          activationTarget.click()
+
+          return
+        }
+      }
+
       return
     }
 
@@ -535,22 +580,99 @@ const MenuRow = ({
   const handleKeyDownCapture: KeyboardEventHandler<HTMLDivElement> = (
     event
   ) => {
-    if (
-      event.currentTarget === event.target ||
-      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')
-    ) {
+    if (event.currentTarget !== event.target) {
+      const target = event.target instanceof Element ? event.target : null
+      const nestedControl = target?.closest(NESTED_CONTROL_SELECTOR)
+
+      if (nestedControl !== null && nestedControl !== event.currentTarget) {
+        if (nestedControl instanceof HTMLElement) {
+          nestedFocusRef.current = nestedControl
+        }
+
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault()
+          event.stopPropagation()
+          event.nativeEvent.stopImmediatePropagation()
+
+          if (target instanceof HTMLElement) {
+            target.focus()
+            queueMicrotask(() => target.focus())
+          }
+
+          return
+        }
+
+        if (event.key === 'Enter' || event.key === ' ') {
+          const activationTarget = target?.closest(NESTED_ACTIVATION_SELECTOR)
+
+          if (
+            activationTarget instanceof HTMLElement &&
+            activationTarget !== event.currentTarget
+          ) {
+            event.preventDefault()
+            event.stopPropagation()
+            event.nativeEvent.stopImmediatePropagation()
+            activationTarget.click()
+
+            return
+          }
+        }
+
+        event.stopPropagation()
+        event.nativeEvent.stopImmediatePropagation()
+      }
+
+      return
+    }
+
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
       return
     }
 
     event.stopPropagation()
   }
 
+  const handleFocusCapture: FocusEventHandler<HTMLDivElement> = (
+    focusEvent
+  ) => {
+    if (focusEvent.currentTarget === focusEvent.target) {
+      const nestedFocus = nestedFocusRef.current
+
+      if (nestedFocus !== null) {
+        nestedFocus.focus()
+        queueMicrotask(() => nestedFocus.focus())
+      }
+
+      return
+    }
+
+    const focusTarget =
+      focusEvent.target instanceof Element ? focusEvent.target : null
+    const nestedControl = focusTarget?.closest(NESTED_CONTROL_SELECTOR)
+
+    if (
+      nestedControl instanceof HTMLElement &&
+      nestedControl !== focusEvent.currentTarget
+    ) {
+      nestedFocusRef.current = nestedControl
+    }
+  }
+
+  const handleBlurCapture: FocusEventHandler<HTMLDivElement> = (blurEvent) => {
+    const nextFocus =
+      blurEvent.relatedTarget instanceof Node ? blurEvent.relatedTarget : null
+
+    if (nextFocus !== null && blurEvent.currentTarget.contains(nextFocus)) {
+      return
+    }
+
+    nestedFocusRef.current = null
+  }
+
   const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
     const target = event.target instanceof Element ? event.target : null
 
-    const nestedControl = target?.closest(
-      'button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"])'
-    )
+    const nestedControl = target?.closest(NESTED_CONTROL_SELECTOR)
 
     if (nestedControl !== null && nestedControl !== event.currentTarget) {
       return
@@ -571,6 +693,8 @@ const MenuRow = ({
         onClick: handleClick,
         onKeyDown: handleKeyDown,
         onKeyDownCapture: handleKeyDownCapture,
+        onFocusCapture: handleFocusCapture,
+        onBlurCapture: handleBlurCapture,
       })}
     >
       {children}

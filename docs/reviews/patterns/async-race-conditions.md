@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 69
+last_updated: 2026-06-26
+ref_count: 70
 ---
 
 # Async Race Conditions
@@ -695,3 +695,14 @@ prevent showing previous data.
 - **Finding:** The opencode decoder removed an in-flight bash call when a completed `message.part.updated` arrived. If the later `tool.after` event carried the command output, test-run parsing no longer had the original command and silently skipped the snapshot.
 - **Fix:** Added a per-call metadata cache that survives display-state completion until `tool.after` runs, and covered the `tool.before` -> completed part update -> bash `tool.after` ordering with a regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 70. Open dialog form reset when initialization dependencies changed mid-edit
+
+- **Source:** github-claude | PR #624 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** The New Session dialog reset path/name/layout/command assignment whenever
+  `defaultCwd` or the layout registry changed while the dialog was already open.
+- **Fix:** Re-initialize only on the closed-to-open transition, reading the latest
+  `defaultCwd` and registry from refs so dependency changes do not wipe in-progress edits.
+- **Commit:** same commit as this entry
