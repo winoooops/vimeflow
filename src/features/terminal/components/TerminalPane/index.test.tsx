@@ -197,6 +197,10 @@ describe('TerminalPane index', () => {
     expect(
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
   })
 
   test('Header shows agent chip resolved from pane.agentType', () => {

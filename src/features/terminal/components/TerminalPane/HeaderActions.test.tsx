@@ -35,9 +35,13 @@ describe('HeaderActions', () => {
     expect(button).toHaveTextContent('unfold_more')
   })
 
-  test('hides the collapse toggle when collapsed by width (autoCollapsed)', () => {
+  test('hides the collapse toggle when requested', () => {
     render(
-      <HeaderActions isCollapsed autoCollapsed onToggleCollapse={vi.fn()} />
+      <HeaderActions
+        isCollapsed
+        hideCollapseToggle
+        onToggleCollapse={vi.fn()}
+      />
     )
 
     expect(

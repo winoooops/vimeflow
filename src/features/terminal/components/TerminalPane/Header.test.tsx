@@ -134,6 +134,14 @@ describe('Header', () => {
     expect(onToggleCollapse).toHaveBeenCalledTimes(1)
   })
 
+  test('hides collapse button when the status bar cannot render', () => {
+    render(<Header {...baseProps} hideCollapseToggle />)
+
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
+  })
+
   test('close button renders only when onClose is defined', () => {
     const onClose = vi.fn()
     const { rerender } = render(<Header {...baseProps} />)

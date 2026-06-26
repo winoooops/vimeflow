@@ -212,6 +212,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
+    const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const enableImagePaste = pane.agentType !== 'generic'
 
     const containerStyle = isFocusHighlightVisible
@@ -255,6 +256,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           isFocused={isFocusHighlightVisible}
           isCollapsed={isCollapsed}
           autoCollapsed={autoCollapsed}
+          hideCollapseToggle={hideCollapseToggle}
           ptyId={pane.ptyId}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
