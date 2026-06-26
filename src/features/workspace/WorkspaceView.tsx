@@ -1602,7 +1602,10 @@ const WorkspaceViewContent = (): ReactElement => {
         openDiff: (): void => {
           setTimeout(() => openDock('diff'), 0)
         },
-        toggleDock: handleToggleDock,
+        // Defer past Dialog's close-time focus restore so the dock wins.
+        toggleDock: (): void => {
+          setTimeout(() => handleToggleDock(), 0)
+        },
         pickLayout: (id: string): boolean =>
           handlePickLayout(id as PaneLayoutId),
         availableLayouts: layoutRegistry.layouts.map((layout) => ({
