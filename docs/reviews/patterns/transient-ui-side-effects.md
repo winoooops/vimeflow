@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-24
-ref_count: 2
+last_updated: 2026-06-26
+ref_count: 3
 ---
 
 # Transient UI Side Effects
@@ -96,3 +96,14 @@ to persistent state through a separate, explicit path.
 - **Finding:** The terminal context menu reset `canPasteImage` to false and opened immediately while the clipboard image-type read was still pending. Fast reads produced a visible disabled-to-enabled transition for the Paste Image row.
 - **Fix:** Deferred menu open until a fast clipboard image check resolves, with a short fallback timer for slow or permission-gated reads. Cleanup now cancels pending fallback timers, and a regression test asserts the fast-read path opens with image state already settled.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Dialog focus restoration overrode a confirmed create action
+
+- **Source:** github-codex-connector | PR #624 round 1 | 2026-06-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** Creating a session requested terminal focus while the modal was still open,
+  then dialog teardown restored focus to the old New Session button.
+- **Fix:** Suppress focus restoration on the successful-create path and request terminal
+  focus on the next animation frame after closing.
+- **Commit:** same commit as this entry

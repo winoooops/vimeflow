@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Vimeflow · New Session dialog</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet">
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; width: 100%; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+  #root {
+    --vf-bg:            #141424;
+    --vf-surface-0:     #0d0d1c;  --vf-surface-0-rgb: 13,13,28;
+    --vf-surface-1:     #121221;
+    --vf-surface-2:     #1e1e2e;  --vf-surface-2-rgb: 30,30,46;
+    --vf-surface-3:     #292839;
+    --vf-text:          #e3e0f7;
+    --vf-text-1:        #cdc3d1;
+    --vf-text-2:        #8a8299;
+    --vf-text-3:        #6c7086;
+    --vf-accent:        #cba6f7;  --vf-accent-rgb: 203,166,247;
+    --vf-accent-bright: #e2c7ff;  --vf-accent-bright-rgb: 226,199,255;
+    --vf-outline:       #4a444f;  --vf-outline-rgb: 74,68,79;
+    --vf-success:       #7defa1;  --vf-success-rgb: 125,239,161;
+    --vf-warn:          #ff94a5;  --vf-warn-rgb: 255,148,165;
+    --vf-agent-claude:  #cba6f7;
+    --vf-agent-codex:   #7defa1;
+    --vf-agent-kimi:    #74e0cf;
+    --vf-agent-opencode:#f7a6d4;
+    --vf-agent-vbrowser:#a8c8ff;
+    --vf-agent-shell:   #f0c674;
+    color: var(--vf-text);
+  }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20; user-select: none; }
+  .vfscroll::-webkit-scrollbar { width: 8px; }
+  .vfscroll::-webkit-scrollbar-thumb { background: rgba(var(--vf-outline-rgb),0.4); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+  @keyframes vfBlink { 0%,48%{opacity:1} 50%,98%{opacity:0} 100%{opacity:1} }
+  @keyframes vfFadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes vfPop { from{opacity:0;transform:translateY(-4px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
+  input { font-family: inherit; }
+  button { font-family: inherit; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" src="new-session-dialog.jsx"></script>
+  <script type="text/babel">
+    ReactDOM.createRoot(document.getElementById('root')).render(<NewSessionApp />);
+  </script>
+</body>
+</html>

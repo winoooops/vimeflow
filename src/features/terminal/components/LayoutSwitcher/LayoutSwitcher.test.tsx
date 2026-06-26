@@ -10,6 +10,18 @@ describe('LayoutSwitcher', () => {
     expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 
+  test('stacks vertically only when vertical is set', () => {
+    const { rerender } = render(
+      <LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />
+    )
+    expect(screen.getByTestId('layout-switcher')).not.toHaveClass('flex-col')
+
+    rerender(
+      <LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} vertical />
+    )
+    expect(screen.getByTestId('layout-switcher')).toHaveClass('flex-col')
+  })
+
   test('marks the active button with data-active', () => {
     render(<LayoutSwitcher activeLayoutId="vsplit" onPick={vi.fn()} />)
 
