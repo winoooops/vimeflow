@@ -3,7 +3,7 @@ id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-06-15
-ref_count: 0
+ref_count: 1
 ---
 
 # Stale Retained Interactions

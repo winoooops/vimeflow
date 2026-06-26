@@ -43,10 +43,6 @@ const session: Session = {
 const baseProps = {
   agent: AGENTS.claude,
   session,
-  worktreeName: null,
-  branch: 'feat/jose-auth',
-  added: 48,
-  removed: 12,
   isFocused: true,
   isCollapsed: false,
   ptyId: 's1',
@@ -122,40 +118,11 @@ describe('Header', () => {
     )
   })
 
-  test('expanded header shows branch, added, and removed counts', () => {
+  test('does not render git metadata (it lives in the status bar)', () => {
     render(<Header {...baseProps} />)
 
-    expect(screen.getByText('feat/jose-auth')).toBeInTheDocument()
-    expect(screen.getByText('+48')).toBeInTheDocument()
-    expect(screen.getByText('−12')).toBeInTheDocument()
-  })
-
-  test('collapsed header hides branch, counts, and relative-time', () => {
-    render(<Header {...baseProps} isCollapsed />)
-
-    expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
-    expect(screen.queryByText('+48')).not.toBeInTheDocument()
-    expect(screen.queryByText('−12')).not.toBeInTheDocument()
-  })
-
-  test('collapsed header hides the git ref chip', () => {
-    render(<Header {...baseProps} isCollapsed worktreeName="agent-sidebar" />)
-
     expect(screen.queryByTestId('git-ref-chip')).not.toBeInTheDocument()
-  })
-
-  test('null branch omits the branch segment', () => {
-    render(<Header {...baseProps} branch={null} />)
-
-    expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
-  })
-
-  test('renders git ref chip with worktree label when worktreeName is supplied', () => {
-    render(<Header {...baseProps} worktreeName="agent-sidebar" />)
-
-    expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
-      'agent-sidebar'
-    )
+    expect(screen.queryByText('+48')).not.toBeInTheDocument()
   })
 
   test('collapse button fires onToggleCollapse', () => {
@@ -165,6 +132,14 @@ describe('Header', () => {
     fireEvent.click(screen.getByRole('button', { name: /collapse status/i }))
 
     expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  test('hides collapse button when the status bar cannot render', () => {
+    render(<Header {...baseProps} hideCollapseToggle />)
+
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
   })
 
   test('close button renders only when onClose is defined', () => {
@@ -177,6 +152,25 @@ describe('Header', () => {
     fireEvent.click(screen.getByRole('button', { name: /close pane/i }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps action buttons rendered alongside a long pane title', () => {
+    render(
+      <Header
+        {...baseProps}
+        paneUserLabel="a-very-long-pane-title-that-would-otherwise-push-the-controls-off"
+        onClose={vi.fn()}
+        onBurner={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /open burner terminal/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /close pane/i })
+    ).toBeInTheDocument()
   })
 
   test('focused state applies header gradient marker', () => {

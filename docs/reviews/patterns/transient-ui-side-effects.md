@@ -97,13 +97,30 @@ to persistent state through a separate, explicit path.
 - **Fix:** Deferred menu open until a fast clipboard image check resolves, with a short fallback timer for slow or permission-gated reads. Cleanup now cancels pending fallback timers, and a regression test asserts the fast-read path opens with image state already settled.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 7. Dialog focus restoration overrode a confirmed create action
+### 7. Width-derived pane collapse applied after first paint
 
-- **Source:** github-codex-connector | PR #624 round 1 | 2026-06-26
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
-- **Finding:** Creating a session requested terminal focus while the modal was still open,
-  then dialog teardown restored focus to the old New Session button.
-- **Fix:** Suppress focus restoration on the successful-create path and request terminal
-  focus on the next animation frame after closing.
-- **Commit:** same commit as this entry
+- **Source:** github-claude | PR #627 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/usePaneWidth.ts`
+- **Finding:** `usePaneWidth` measured the pane in `useEffect`, so panes that
+  mounted below the auto-collapse threshold first painted expanded chrome before
+  width state updated and collapsed the pane.
+- **Fix:** Switched the measurement and ResizeObserver setup to
+  `useLayoutEffect`, keeping the same width logic while applying the
+  layout-derived state before the browser paints.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Status collapse toggle stayed active while status bar was suppressed
+
+- **Source:** github-codex-connector | PR #627 round 1 | 2026-06-26
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** `PaneStatusBar` was suppressed in awaiting-restart mode, but
+  the header collapse toggle stayed interactive in wide panes. Clicking it
+  mutated retained collapse state for a surface that was not rendered, making
+  the action appear inert and carrying surprising state across restart.
+- **Fix:** Computed `hideCollapseToggle` from the same terminal-pane state that
+  suppresses the status bar and threaded it through `Header` to `HeaderActions`.
+  Added regression coverage for the awaiting-restart pane and header forwarding
+  behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
