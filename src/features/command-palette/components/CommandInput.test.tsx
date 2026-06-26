@@ -25,7 +25,10 @@ describe('CommandInput', () => {
     })
     expect(input).toBeInTheDocument()
     expect(input).toHaveAttribute('type', 'text')
-    expect(input).toHaveAttribute('placeholder', ':')
+    expect(input).toHaveAttribute(
+      'placeholder',
+      'type a command, : prefix, or search files…'
+    )
     expect(input).toHaveAttribute('aria-label', 'Command palette search')
   })
 
@@ -54,8 +57,8 @@ describe('CommandInput', () => {
       'border-none',
       'outline-none',
       'text-on-surface',
-      'font-medium',
-      'text-lg'
+      'font-mono',
+      'text-[13.5px]'
     )
   })
 
@@ -75,14 +78,18 @@ describe('CommandInput', () => {
 
     const badge = screen.getByText('ESC')
     expect(badge).toHaveClass(
-      'bg-surface-container-highest/50',
-      'px-2',
-      'py-1',
-      'rounded',
+      'inline-flex',
+      'items-center',
+      'justify-center',
+      'rounded-[4px]',
+      'border',
+      'font-mono',
+      'font-semibold',
+      'h-[18px]',
       'text-[10px]',
-      'font-bold',
-      'text-on-surface/60',
-      'font-mono'
+      'bg-surface-container-highest/60',
+      'text-on-surface-variant',
+      'border-outline-variant/60'
     )
   })
 

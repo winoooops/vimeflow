@@ -32,7 +32,7 @@ export const CommandResults = ({
     <div
       id="command-palette-listbox"
       role="listbox"
-      className="p-2 overflow-y-auto max-h-[60vh]"
+      className="p-[6px] overflow-y-auto max-h-[60vh]"
     >
       {filteredResults.map((command, index) => (
         <motion.div

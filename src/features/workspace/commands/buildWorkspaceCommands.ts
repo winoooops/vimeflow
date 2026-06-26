@@ -200,7 +200,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'new-browser',
         label: ':new-browser',
-        description: 'Create a new browser-only session',
+        description: 'New browser',
+        hint: 'open a browser-only session',
         icon: 'public',
         execute: (): void => {
           createBrowserSession()
@@ -212,7 +213,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'restart',
         label: ':restart',
-        description: 'Restart the active session shell',
+        description: 'Restart session',
+        hint: 'respawn the active shell',
         icon: 'restart_alt',
         execute: (): void => {
           if (!activeSessionId) {
@@ -230,7 +232,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'open-editor',
         label: ':open-editor',
-        description: 'Open the editor in the dock',
+        description: 'Open editor',
+        hint: 'edit files in the dock',
         icon: 'code',
         // ⌘E / Ctrl+E — useDockShortcuts.
         shortcut: isMac ? ['⌘', 'E'] : ['Ctrl', 'E'],
@@ -244,7 +247,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'open-diff',
         label: ':open-diff',
-        description: 'Open the git diff in the dock',
+        description: 'Open diff',
+        hint: 'review changes vs HEAD',
         icon: 'difference',
         // ⌘G / Ctrl+G — useDockShortcuts.
         shortcut: isMac ? ['⌘', 'G'] : ['Ctrl', 'G'],
@@ -258,7 +262,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'toggle-dock',
         label: ':toggle-dock',
-        description: 'Open or collapse the editor/diff dock',
+        description: 'Toggle dock',
+        hint: 'show or hide the panel',
         icon: 'horizontal_split',
         // ⌘0 / Ctrl+0 — useDockToggleShortcut.
         shortcut: isMac ? ['⌘', '0'] : ['Ctrl', '0'],
@@ -273,7 +278,8 @@ export const buildWorkspaceCommands = (
       ? {
           id: 'layout',
           label: ':layout',
-          description: 'Switch the pane layout',
+          description: 'Pane layout',
+          hint: 'switch the arrangement',
           icon: 'grid_view',
           children: availableLayouts.map((layout) => ({
             id: `layout-${layout.id}`,
@@ -294,7 +300,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'dock-position',
         label: ':dock-position',
-        description: 'Move the dock to an edge',
+        description: 'Dock position',
+        hint: 'move it to an edge',
         icon: 'open_in_new',
         children: DOCK_POSITION_CHOICES.map((choice) => ({
           id: `dock-position-${choice.pos}`,
@@ -315,7 +322,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'toggle-activity',
         label: ':toggle-activity',
-        description: 'Show or hide the agent activity panel',
+        description: 'Activity panel',
+        hint: 'show or hide agent activity',
         icon: 'notes',
         execute: (): void => {
           toggleActivityPanel()
@@ -327,7 +335,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'show-sessions',
         label: ':show-sessions',
-        description: 'Show the sessions sidebar tab',
+        description: 'Sessions tab',
+        hint: 'open the sessions sidebar',
         icon: 'view_agenda',
         execute: (): void => {
           showSidebarTab('sessions')
@@ -339,7 +348,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'show-files',
         label: ':show-files',
-        description: 'Show the files sidebar tab',
+        description: 'Files tab',
+        hint: 'open the file tree',
         icon: 'folder_open',
         execute: (): void => {
           showSidebarTab('files')
@@ -351,7 +361,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'focus-terminal',
         label: ':focus-terminal',
-        description: 'Move focus to the active terminal',
+        description: 'Focus terminal',
+        hint: 'return focus to the terminal',
         icon: 'terminal',
         execute: (): void => {
           focusTerminal()
@@ -363,7 +374,8 @@ export const buildWorkspaceCommands = (
     ? {
         id: 'open-file',
         label: ':open-file',
-        description: 'Open a file by absolute path',
+        description: 'Open file',
+        hint: 'by absolute path',
         icon: 'description',
         execute: (args: string): void => {
           const path = args.trim()
@@ -387,7 +399,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'theme',
       label: ':theme',
-      description: 'Switch color theme',
+      description: 'Color theme',
+      hint: 'switch the active scheme',
       icon: 'palette',
       children: themeService.list().map((theme) => ({
         id: `theme-${theme.id}`,
@@ -405,7 +418,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'new',
       label: ':new',
-      description: 'Create a new terminal session',
+      description: 'New session',
+      hint: 'spawn a terminal session',
       icon: 'add',
       // ⌘N / Ctrl+⇧N — useNewSessionShortcut.
       shortcut: isMac ? ['⌘', 'N'] : ['Ctrl', '⇧', 'N'],
@@ -417,7 +431,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'close',
       label: ':close',
-      description: 'Close the active terminal session',
+      description: 'Close session',
+      hint: 'close the active session',
       icon: 'close',
       execute: (): void => {
         const idx = findActiveIndex()
@@ -438,7 +453,8 @@ export const buildWorkspaceCommands = (
       // wanted to label one pane in a multi-pane session).
       id: 'rename-session',
       label: ':rename-session',
-      description: 'Rename the active terminal session (affects all panes)',
+      description: 'Rename session',
+      hint: 'renames every pane',
       icon: 'edit',
       execute: (args: string): void => {
         const idx = findActiveIndex()
@@ -469,7 +485,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'rename-pane',
       label: ':rename-pane',
-      description: 'Rename only the active pane (does not affect siblings)',
+      description: 'Rename pane',
+      hint: 'only the active pane',
       icon: 'edit',
       execute: (args: string): void => {
         if (!activePanePtyId) {
@@ -531,7 +548,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'next',
       label: ':next',
-      description: 'Switch to the next terminal session',
+      description: 'Next session',
+      hint: 'switch forward',
       icon: 'arrow_forward',
       execute: (): void => {
         if (sessions.length === 0) {
@@ -549,7 +567,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'previous',
       label: ':previous',
-      description: 'Switch to the previous terminal session',
+      description: 'Previous session',
+      hint: 'switch back',
       icon: 'arrow_back',
       execute: (): void => {
         if (sessions.length === 0) {
@@ -571,7 +590,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'goto',
       label: ':goto',
-      description: 'Go to a terminal session by position or name',
+      description: 'Go to session',
+      hint: 'by position or name',
       icon: 'tab',
       execute: (args: string): void => {
         const trimmed = args.trim()
@@ -652,7 +672,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'toggle-sidebar',
       label: ':toggle-sidebar',
-      description: 'Show or hide the sidebar',
+      description: 'Toggle sidebar',
+      hint: 'show or hide the sidebar',
       icon: 'left_panel_close',
       // ⌘B / Ctrl+⇧B — useSidebarShortcut.
       shortcut: isMac ? ['⌘', 'B'] : ['Ctrl', '⇧', 'B'],
@@ -663,7 +684,8 @@ export const buildWorkspaceCommands = (
     {
       id: 'burner',
       label: ':burner',
-      description: 'Toggle the burner terminal for the focused pane',
+      description: 'Burner terminal',
+      hint: 'toggle for the focused pane',
       icon: 'terminal',
       // No chip: :burner is a ⌘; then ` leader chord, not a single combo.
       execute: (): void => {

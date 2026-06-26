@@ -61,7 +61,7 @@ export const CommandPalette = ({
       )}
     />
 
-    <div className="h-px bg-surface-container-low/30" />
+    <div className="h-px bg-outline-variant/25" />
 
     <CommandResults
       filteredResults={filteredResults}
@@ -70,7 +70,7 @@ export const CommandPalette = ({
       onExecute={executeAt}
     />
 
-    <div className="h-px bg-surface-container-low/30" />
+    <div className="h-px bg-outline-variant/25" />
     <CommandFooter />
   </Dialog>
 )

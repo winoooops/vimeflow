@@ -1,4 +1,5 @@
 import { type ChangeEvent, type ReactElement, useEffect, useRef } from 'react'
+import { KeyCap } from './KeyCap'
 
 interface CommandInputProps {
   value: string
@@ -23,20 +24,20 @@ export const CommandInput = ({
   }
 
   return (
-    <div className="px-5 py-4 flex items-center gap-3">
-      {/* Terminal glyph in accent */}
-      <span className="material-symbols-outlined text-primary-container text-xl">
+    <div className="flex items-center gap-[10px] px-[16px] py-[14px]">
+      {/* Terminal glyph in accent, per the handoff input row */}
+      <span className="material-symbols-outlined text-[16px] text-primary-container">
         terminal
       </span>
 
-      {/* Input field */}
+      {/* Input field - monospace, matching the handoff */}
       <input
         ref={inputRef}
         type="text"
         value={value}
         onChange={handleChange}
-        className="flex-1 bg-transparent border-none outline-none text-on-surface font-medium text-lg"
-        placeholder=":"
+        className="flex-1 bg-transparent border-none outline-none font-mono text-[13.5px] text-on-surface placeholder:text-on-surface-muted"
+        placeholder="type a command, : prefix, or search files…"
         role="combobox"
         aria-label="Command palette search"
         aria-expanded
@@ -44,10 +45,8 @@ export const CommandInput = ({
         aria-activedescendant={activeDescendantId}
       />
 
-      {/* ESC badge */}
-      <div className="bg-surface-container-highest/50 px-2 py-1 rounded text-[10px] font-bold text-on-surface/60 font-mono">
-        ESC
-      </div>
+      {/* ESC keycap */}
+      <KeyCap size="md">ESC</KeyCap>
     </div>
   )
 }

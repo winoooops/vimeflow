@@ -56,7 +56,7 @@ describe('CommandResultItem', () => {
 
     const label = screen.getByText('Test Command')
     expect(label).toBeInTheDocument()
-    expect(label).toHaveClass('font-mono', 'text-primary-container')
+    expect(label).toHaveClass('font-mono', 'text-primary')
   })
 
   test('renders description when present', () => {
@@ -77,10 +77,31 @@ describe('CommandResultItem', () => {
 
     const description = screen.getByText('This is a test description')
     expect(description).toBeInTheDocument()
-    expect(description).toHaveClass('text-sm')
+    expect(description).toHaveClass('text-[12.5px]')
   })
 
-  test('selected state applies bg tint and 2px left-accent border', () => {
+  test('renders hint text when command.hint is present', () => {
+    const commandWithHint: Command = {
+      ...mockCommand,
+      hint: 'a helpful hint',
+    }
+
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={commandWithHint}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    const hint = screen.getByText('a helpful hint')
+    expect(hint).toBeInTheDocument()
+    expect(hint).toHaveClass('text-[11px]', 'text-on-surface-muted')
+  })
+
+  test('selected state applies bg tint and full-border accent', () => {
     render(
       <CommandResultItem
         id="command-test"
@@ -93,8 +114,7 @@ describe('CommandResultItem', () => {
 
     const option = screen.getByRole('option')
     expect(option).toHaveClass('bg-primary-container/10')
-    expect(option).toHaveClass('border-l-2')
-    expect(option).toHaveClass('border-primary-container')
+    expect(option).toHaveClass('border-primary-container/25')
   })
 
   test('selected state applies filled icon variation', () => {
@@ -110,10 +130,10 @@ describe('CommandResultItem', () => {
 
     const icon = screen.getByText('description')
     expect(icon).toHaveStyle({ fontVariationSettings: '"FILL" 1' })
-    expect(icon).toHaveClass('text-primary-container')
+    expect(icon).toHaveClass('text-primary')
   })
 
-  test('unselected state applies hover background and transparent left border placeholder', () => {
+  test('unselected state applies hover background and transparent border', () => {
     render(
       <CommandResultItem
         id="command-test"
@@ -125,9 +145,8 @@ describe('CommandResultItem', () => {
     )
 
     const option = screen.getByRole('option')
-    expect(option).toHaveClass('hover:bg-surface-container-highest/50')
+    expect(option).toHaveClass('hover:bg-surface-container-high/40')
     expect(option).not.toHaveClass('bg-primary-container/10')
-    expect(option).toHaveClass('border-l-2')
     expect(option).toHaveClass('border-transparent')
   })
 
@@ -144,7 +163,7 @@ describe('CommandResultItem', () => {
 
     const icon = screen.getByText('description')
     expect(icon).toHaveStyle({ fontVariationSettings: '"FILL" 0' })
-    expect(icon).toHaveClass('text-on-surface-variant')
+    expect(icon).toHaveClass('text-on-surface-muted')
   })
 
   test('renders shortcut chips when command.shortcut is present', () => {
@@ -199,11 +218,11 @@ describe('CommandResultItem', () => {
     )
 
     const chip = screen.getByText('Ctrl')
-    expect(chip).toHaveClass('text-primary-container')
+    expect(chip).toHaveClass('text-primary')
     expect(chip).toHaveClass('border-primary-container/40')
   })
 
-  test('idle shortcut chips use the variant tone', () => {
+  test('idle shortcut chips use the muted tone', () => {
     const commandWithShortcut: Command = {
       ...mockCommand,
       shortcut: ['Ctrl', 'N'],
@@ -220,8 +239,8 @@ describe('CommandResultItem', () => {
     )
 
     const chip = screen.getByText('Ctrl')
-    expect(chip).toHaveClass('text-on-surface-variant')
-    expect(chip).toHaveClass('bg-surface-container-highest')
+    expect(chip).toHaveClass('text-on-surface-muted')
+    expect(chip).toHaveClass('bg-surface-container-lowest/60')
   })
 
   test('aria-selected is true when selected', () => {

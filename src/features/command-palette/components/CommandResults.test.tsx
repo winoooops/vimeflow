@@ -237,7 +237,7 @@ describe('CommandResults', () => {
 
     const listbox = screen.getByRole('listbox')
 
-    expect(listbox).toHaveClass('p-2', 'overflow-y-auto', 'max-h-[60vh]')
+    expect(listbox).toHaveClass('p-[6px]', 'overflow-y-auto', 'max-h-[60vh]')
   })
 
   test('renders descriptions when present', () => {

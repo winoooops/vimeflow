@@ -80,8 +80,9 @@ describe('CommandPalette', () => {
   test('renders the footer and overlay z-index', () => {
     renderPalette()
 
-    expect(screen.getByText('Navigate')).toBeInTheDocument()
-    expect(screen.getByText('Run')).toBeInTheDocument()
+    // Footer uses KeyCap spans with unicode chars (↵ run / ↑↓ navigate)
+    expect(screen.getByText('↵')).toBeInTheDocument()
+    expect(screen.getByText('↑')).toBeInTheDocument()
     expect(screen.queryByText("Type '?' for help")).toBeNull()
     expect(screen.getByRole('dialog')).toHaveClass('z-[100]')
   })

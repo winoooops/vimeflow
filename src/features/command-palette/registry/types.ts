@@ -2,6 +2,8 @@ export interface Command {
   id: string
   label: string
   description?: string
+  // Dim tertiary detail shown after the label, mirroring the handoff anatomy.
+  hint?: string
   icon: string
   // Key glyphs for a real single-combo global accelerator, e.g. ['⌘','N'].
   shortcut?: string[]
