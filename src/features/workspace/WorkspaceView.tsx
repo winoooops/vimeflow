@@ -1610,9 +1610,17 @@ const WorkspaceViewContent = (): ReactElement => {
           handleActivityPanelCollapsed(!activityPanelCollapsed),
         showSidebarTab: (tab: SidebarTab): void => {
           setActiveTab(tab)
-          setSidebarCollapsed(false)
+          // Compact viewports gate sidebar visibility on the drawer flag.
+          if (isCompactViewport) {
+            setCompactSidebarOpen(true)
+          } else {
+            setSidebarCollapsed(false)
+          }
         },
-        focusTerminal: claimTerminal,
+        // Defer past Dialog's close-time focus restore so the terminal wins.
+        focusTerminal: (): void => {
+          setTimeout(() => claimTerminal(), 0)
+        },
         openFile: (path: string): void => {
           // Mirror handleFileSelect's unsaved-changes guard before opening.
           if (editorBuffer.isDirty) {
@@ -1658,6 +1666,8 @@ const WorkspaceViewContent = (): ReactElement => {
       activityPanelCollapsed,
       setActiveTab,
       setSidebarCollapsed,
+      isCompactViewport,
+      setCompactSidebarOpen,
       claimTerminal,
       openFileSafely,
       editorBuffer.isDirty,
