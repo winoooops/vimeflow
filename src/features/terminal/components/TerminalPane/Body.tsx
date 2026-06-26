@@ -653,7 +653,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   }, [activeRendererMode, sessionId])
 
   useEffect(() => {
-    service.setRawDataConsumer?.(sessionId, activeRendererMode === 'ghostty-wasm')
+    service.setRawDataConsumer?.(
+      sessionId,
+      activeRendererMode === 'ghostty-wasm'
+    )
 
     return (): void => {
       service.setRawDataConsumer?.(sessionId, false)

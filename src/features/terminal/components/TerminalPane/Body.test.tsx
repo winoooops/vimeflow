@@ -1021,21 +1021,19 @@ describe('Body', () => {
 
   test('guards Ghostty auto-resize callbacks while hidden and dedupes repeats', async () => {
     let onResize: ((cols: number, rows: number) => void) | null = null
-    vi.mocked(createWtermGhosttyTerminal).mockImplementationOnce(
-      (options) => {
-        onResize = options.onResize
+    vi.mocked(createWtermGhosttyTerminal).mockImplementationOnce((options) => {
+      onResize = options.onResize
 
-        return Promise.resolve({
-          clear: vi.fn(),
-          cols: 80,
-          destroy: vi.fn(),
-          focus: vi.fn(),
-          onData: vi.fn(() => ({ dispose: vi.fn() })),
-          rows: 24,
-          write: vi.fn(),
-        } as never)
-      }
-    )
+      return Promise.resolve({
+        clear: vi.fn(),
+        cols: 80,
+        destroy: vi.fn(),
+        focus: vi.fn(),
+        onData: vi.fn(() => ({ dispose: vi.fn() })),
+        rows: 24,
+        write: vi.fn(),
+      } as never)
+    })
 
     const offsetWidthSpy = vi
       .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
