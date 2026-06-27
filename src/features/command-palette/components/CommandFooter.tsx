@@ -1,34 +1,20 @@
 import type { ReactElement } from 'react'
+import { KeyCap } from './KeyCap'
 
 export const CommandFooter = (): ReactElement => (
-  <div className="bg-surface-container-lowest/50 px-5 py-3 flex items-center justify-between">
-    {/* Keyboard shortcuts */}
-    <div className="flex items-center gap-4">
-      {/* Navigate hint */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1">
-          <span className="material-symbols-outlined text-sm text-on-surface/60">
-            arrow_upward
-          </span>
-          <span className="material-symbols-outlined text-sm text-on-surface/60">
-            arrow_downward
-          </span>
-        </div>
-        <span className="text-sm text-on-surface/60">Navigate</span>
-      </div>
+  <div className="flex items-center gap-[14px] px-[14px] py-[8px] bg-surface-container-lowest/50 font-mono text-[10px] text-on-surface-muted">
+    {/* Run hint */}
+    <span className="flex items-center gap-[6px]">
+      <KeyCap size="md">↵</KeyCap> run
+    </span>
 
-      {/* Select hint */}
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-sm text-on-surface/60">
-          keyboard_return
-        </span>
-        <span className="text-sm text-on-surface/60">Select</span>
-      </div>
-    </div>
-
-    {/* Help text */}
-    <div className="text-sm text-primary-container/60">
-      Type &apos;?&apos; for help
-    </div>
+    {/* Navigate hint */}
+    <span className="flex items-center gap-[6px]">
+      <span className="flex gap-[3px]">
+        <KeyCap size="md">↑</KeyCap>
+        <KeyCap size="md">↓</KeyCap>
+      </span>
+      navigate
+    </span>
   </div>
 )

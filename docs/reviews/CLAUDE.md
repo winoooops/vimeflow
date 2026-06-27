@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 56       | 26   | 2026-06-22   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 62   | 2026-06-27   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 84       | 38   | 2026-06-25   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 85       | 39   | 2026-06-27   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 90   | 2026-06-25   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
@@ -101,7 +101,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 1    | 2026-06-15   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 1    | 2026-06-15   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 4        | 2    | 2026-06-20   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 6        | 2    | 2026-06-27   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 1    | 2026-06-18   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |

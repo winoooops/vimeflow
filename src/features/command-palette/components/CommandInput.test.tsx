@@ -4,12 +4,12 @@ import { describe, test, expect, vi } from 'vitest'
 import { CommandInput } from './CommandInput'
 
 describe('CommandInput', () => {
-  test('renders search icon', () => {
+  test('renders terminal icon', () => {
     const mockOnChange = vi.fn()
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const icon = screen.getByText('search')
+    const icon = screen.getByText('terminal')
     expect(icon).toBeInTheDocument()
     expect(icon).toHaveClass('material-symbols-outlined')
     expect(icon).toHaveClass('text-primary-container')
@@ -25,7 +25,10 @@ describe('CommandInput', () => {
     })
     expect(input).toBeInTheDocument()
     expect(input).toHaveAttribute('type', 'text')
-    expect(input).toHaveAttribute('placeholder', ':')
+    expect(input).toHaveAttribute(
+      'placeholder',
+      'type a command, : prefix, or search files…'
+    )
     expect(input).toHaveAttribute('aria-label', 'Command palette search')
   })
 
@@ -40,6 +43,44 @@ describe('CommandInput', () => {
     expect(input).toHaveValue(':open')
   })
 
+  test('renders argument placeholder without changing the input value', () => {
+    const mockOnChange = vi.fn()
+
+    render(
+      <CommandInput
+        value=":rename-pane "
+        onChange={mockOnChange}
+        argumentPlaceholder="<name>"
+      />
+    )
+
+    expect(screen.getByText('<name>')).toBeInTheDocument()
+    expect(
+      screen.getByText((_, element) => element?.textContent === ':rename-pane ')
+    ).toBeInTheDocument()
+
+    const input = screen.getByRole('combobox', {
+      name: /command palette search/i,
+    })
+
+    expect(input).toHaveValue(':rename-pane ')
+    expect(input).toHaveClass('text-transparent', 'caret-on-surface')
+  })
+
+  test('hides argument placeholder once args are present', () => {
+    const mockOnChange = vi.fn()
+
+    render(
+      <CommandInput
+        value=":rename-pane left"
+        onChange={mockOnChange}
+        argumentPlaceholder="<name>"
+      />
+    )
+
+    expect(screen.queryByText('<name>')).toBeNull()
+  })
+
   test('renders input with correct Tailwind classes', () => {
     const mockOnChange = vi.fn()
 
@@ -52,10 +93,12 @@ describe('CommandInput', () => {
       'flex-1',
       'bg-transparent',
       'border-none',
+      'p-0',
       'outline-none',
       'text-on-surface',
-      'font-medium',
-      'text-lg'
+      'font-mono',
+      'text-[13.5px]',
+      'leading-[18px]'
     )
   })
 
@@ -75,14 +118,18 @@ describe('CommandInput', () => {
 
     const badge = screen.getByText('ESC')
     expect(badge).toHaveClass(
-      'bg-surface-container-highest/50',
-      'px-2',
-      'py-1',
-      'rounded',
+      'inline-flex',
+      'items-center',
+      'justify-center',
+      'rounded-[4px]',
+      'border',
+      'font-mono',
+      'font-semibold',
+      'h-[18px]',
       'text-[10px]',
-      'font-bold',
-      'text-on-surface/60',
-      'font-mono'
+      'bg-surface-container-highest/60',
+      'text-on-surface-variant',
+      'border-outline-variant/60'
     )
   })
 

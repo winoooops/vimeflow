@@ -26,13 +26,12 @@ describe('CommandResults', () => {
   ]
 
   test('renders with role listbox', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -41,74 +40,65 @@ describe('CommandResults', () => {
   })
 
   test('renders filtered list of results', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
-    // All three commands should be rendered
     expect(screen.getByText('Open File')).toBeInTheDocument()
     expect(screen.getByText('Set Theme')).toBeInTheDocument()
     expect(screen.getByText('Help')).toBeInTheDocument()
   })
 
   test('renders empty list when no results', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={[]}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const listbox = screen.getByRole('listbox')
 
     expect(listbox).toBeInTheDocument()
-    // No options should be rendered
     expect(screen.queryAllByRole('option')).toHaveLength(0)
   })
 
   test('selectedIndex highlights correct item', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={1}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const options = screen.getAllByRole('option')
 
-    // First item should NOT be selected
     expect(options[0]).toHaveAttribute('aria-selected', 'false')
     expect(options[0]).not.toHaveClass('bg-primary-container/10')
 
-    // Second item SHOULD be selected
     expect(options[1]).toHaveAttribute('aria-selected', 'true')
     expect(options[1]).toHaveClass('bg-primary-container/10')
 
-    // Third item should NOT be selected
     expect(options[2]).toHaveAttribute('aria-selected', 'false')
     expect(options[2]).not.toHaveClass('bg-primary-container/10')
   })
 
   test('listbox has id for aria-controls reference', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={1}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -118,13 +108,12 @@ describe('CommandResults', () => {
   })
 
   test('option elements have ids for aria-activedescendant', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -135,115 +124,148 @@ describe('CommandResults', () => {
     expect(options[2]).toHaveAttribute('id', 'command-cmd3')
   })
 
-  test('calls onSelect with correct index when item clicked', async () => {
+  test('calls onExecute with correct index when item clicked', async () => {
     const user = userEvent.setup()
-
-    const mockOnSelect = vi.fn()
+    const onExecute = vi.fn()
 
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={onExecute}
       />
     )
 
     const options = screen.getAllByRole('option')
 
-    // Click the second item
     await user.click(options[1])
 
-    expect(mockOnSelect).toHaveBeenCalledTimes(1)
-    expect(mockOnSelect).toHaveBeenCalledWith(1)
+    expect(onExecute).toHaveBeenCalledTimes(1)
+    expect(onExecute).toHaveBeenCalledWith(1)
   })
 
-  test('calls onSelect with correct index when first item clicked', async () => {
+  test('calls onExecute with last index when last item clicked', async () => {
     const user = userEvent.setup()
-
-    const mockOnSelect = vi.fn()
-
-    render(
-      <CommandResults
-        filteredResults={mockCommands}
-        selectedIndex={1}
-        onSelect={mockOnSelect}
-      />
-    )
-
-    const options = screen.getAllByRole('option')
-
-    // Click the first item
-    await user.click(options[0])
-
-    expect(mockOnSelect).toHaveBeenCalledTimes(1)
-    expect(mockOnSelect).toHaveBeenCalledWith(0)
-  })
-
-  test('calls onSelect with correct index when last item clicked', async () => {
-    const user = userEvent.setup()
-
-    const mockOnSelect = vi.fn()
+    const onExecute = vi.fn()
 
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={onExecute}
       />
     )
 
     const options = screen.getAllByRole('option')
 
-    // Click the last item
     await user.click(options[2])
 
-    expect(mockOnSelect).toHaveBeenCalledTimes(1)
-    expect(mockOnSelect).toHaveBeenCalledWith(2)
+    expect(onExecute).toHaveBeenCalledTimes(1)
+    expect(onExecute).toHaveBeenCalledWith(2)
   })
 
-  test('has correct Tailwind classes for scrolling', () => {
-    const mockOnSelect = vi.fn()
+  test('calls onSelect with correct index when item hovered', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onExecute = vi.fn()
 
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={onSelect}
+        onExecute={onExecute}
+      />
+    )
+
+    const options = screen.getAllByRole('option')
+
+    await user.hover(options[1])
+
+    expect(onSelect).toHaveBeenCalledWith(1)
+    expect(onExecute).not.toHaveBeenCalled()
+  })
+
+  test('scrolls the active row into view within the container only', () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const getElementByIdSpy = vi.spyOn(document, 'getElementById')
+
+    render(
+      <CommandResults
+        filteredResults={mockCommands}
+        selectedIndex={2}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    expect(scrollSpy).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+    })
+    expect(getElementByIdSpy).not.toHaveBeenCalled()
+
+    scrollSpy.mockRestore()
+    getElementByIdSpy.mockRestore()
+  })
+
+  test('does not scroll when selectedIndex is negative', () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+
+    render(
+      <CommandResults
+        filteredResults={mockCommands}
+        selectedIndex={-1}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    expect(scrollSpy).not.toHaveBeenCalled()
+
+    scrollSpy.mockRestore()
+  })
+
+  test('has correct Tailwind classes for dynamic-height scrolling', () => {
+    render(
+      <CommandResults
+        filteredResults={mockCommands}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const listbox = screen.getByRole('listbox')
 
-    expect(listbox).toHaveClass('p-2', 'overflow-y-auto', 'max-h-96')
+    expect(listbox).toHaveClass('p-[6px]', 'overflow-y-auto', 'max-h-[60vh]')
   })
 
   test('renders descriptions when present', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
-    // First two commands have descriptions
     expect(screen.getByText('Open a file by name')).toBeInTheDocument()
     expect(screen.getByText('Change color theme')).toBeInTheDocument()
 
-    // Third command has no description
     expect(screen.queryByText('Help description')).not.toBeInTheDocument()
   })
 
   test('renders icons for all commands', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResults
         filteredResults={mockCommands}
         selectedIndex={0}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 

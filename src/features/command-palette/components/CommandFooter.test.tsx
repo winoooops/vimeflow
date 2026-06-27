@@ -4,94 +4,77 @@ import { CommandFooter } from './CommandFooter'
 
 describe('CommandFooter', () => {
   test('renders Navigate hint text', () => {
-    render(<CommandFooter />)
+    const { container } = render(<CommandFooter />)
 
-    const navigateText = screen.getByText('Navigate')
-
-    expect(navigateText).toBeInTheDocument()
-    expect(navigateText).toHaveClass('text-sm', 'text-on-surface/60')
+    expect(container.textContent).toContain('navigate')
   })
 
-  test('renders arrow_upward icon for navigation', () => {
+  test('renders ↑ keycap for navigation', () => {
     render(<CommandFooter />)
 
-    const upArrow = screen.getByText('arrow_upward')
+    const upCap = screen.getByText('↑')
 
-    expect(upArrow).toBeInTheDocument()
-    expect(upArrow).toHaveClass('material-symbols-outlined')
+    expect(upCap).toBeInTheDocument()
+    expect(upCap).toHaveClass('inline-flex')
   })
 
-  test('renders arrow_downward icon for navigation', () => {
+  test('renders ↓ keycap for navigation', () => {
     render(<CommandFooter />)
 
-    const downArrow = screen.getByText('arrow_downward')
+    const downCap = screen.getByText('↓')
 
-    expect(downArrow).toBeInTheDocument()
-    expect(downArrow).toHaveClass('material-symbols-outlined')
+    expect(downCap).toBeInTheDocument()
+    expect(downCap).toHaveClass('inline-flex')
   })
 
-  test('renders Select hint text', () => {
-    render(<CommandFooter />)
+  test('renders Run hint text', () => {
+    const { container } = render(<CommandFooter />)
 
-    const selectText = screen.getByText('Select')
-
-    expect(selectText).toBeInTheDocument()
-    expect(selectText).toHaveClass('text-sm', 'text-on-surface/60')
+    expect(container.textContent).toContain('run')
   })
 
-  test('renders keyboard_return icon for select action', () => {
+  test('renders ↵ keycap for run action', () => {
     render(<CommandFooter />)
 
-    const returnIcon = screen.getByText('keyboard_return')
+    const returnCap = screen.getByText('↵')
 
-    expect(returnIcon).toBeInTheDocument()
-    expect(returnIcon).toHaveClass('material-symbols-outlined')
+    expect(returnCap).toBeInTheDocument()
+    expect(returnCap).toHaveClass('inline-flex')
   })
 
-  test('renders help text', () => {
+  test('does not render the removed help text', () => {
     render(<CommandFooter />)
 
-    const helpText = screen.getByText("Type '?' for help")
-
-    expect(helpText).toBeInTheDocument()
-    expect(helpText).toHaveClass('text-sm', 'text-primary-container/60')
+    expect(screen.queryByText("Type '?' for help")).toBeNull()
   })
 
   test('Navigate text has correct styling', () => {
     render(<CommandFooter />)
 
-    const navigateText = screen.getByText('Navigate')
-
-    expect(navigateText).toHaveClass('text-sm')
-    expect(navigateText).toHaveClass('text-on-surface/60')
+    // navigate hint uses md-size keycaps with muted idle tone
+    const upCap = screen.getByText('↑')
+    expect(upCap).toHaveClass('h-[18px]')
+    expect(upCap).toHaveClass('text-on-surface-variant')
   })
 
-  test('Select text has correct styling', () => {
+  test('Run text has correct styling', () => {
     render(<CommandFooter />)
 
-    const selectText = screen.getByText('Select')
-
-    expect(selectText).toHaveClass('text-sm')
-    expect(selectText).toHaveClass('text-on-surface/60')
+    // run hint uses md-size keycap with muted idle tone
+    const returnCap = screen.getByText('↵')
+    expect(returnCap).toHaveClass('h-[18px]')
+    expect(returnCap).toHaveClass('text-on-surface-variant')
   })
 
-  test('all navigation icons have correct styling', () => {
+  test('all navigation keycaps have correct styling', () => {
     render(<CommandFooter />)
 
-    const upArrow = screen.getByText('arrow_upward')
-    const downArrow = screen.getByText('arrow_downward')
-    const returnIcon = screen.getByText('keyboard_return')
+    const upCap = screen.getByText('↑')
+    const downCap = screen.getByText('↓')
+    const returnCap = screen.getByText('↵')
 
-    expect(upArrow).toHaveClass('text-sm', 'text-on-surface/60')
-    expect(downArrow).toHaveClass('text-sm', 'text-on-surface/60')
-    expect(returnIcon).toHaveClass('text-sm', 'text-on-surface/60')
-  })
-
-  test('help text has correct primary-container color styling', () => {
-    render(<CommandFooter />)
-
-    const helpText = screen.getByText("Type '?' for help")
-
-    expect(helpText).toHaveClass('text-primary-container/60')
+    expect(upCap).toHaveClass('bg-surface-container-highest/60')
+    expect(downCap).toHaveClass('bg-surface-container-highest/60')
+    expect(returnCap).toHaveClass('bg-surface-container-highest/60')
   })
 })

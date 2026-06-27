@@ -983,6 +983,47 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
   })
 
+  test(':open-file respects the dirty-buffer guard', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':open-file /tmp/notes.md')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
+
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
   test('does not open the palette while the unsaved dialog is active', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn(() => true)
@@ -1170,6 +1211,70 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test(':show-sessions opens the sidebar drawer on a compact viewport', async () => {
+    const user = userEvent.setup()
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: (): void => {
+          // No-op
+        },
+        removeListener: (): void => {
+          // No-op
+        },
+        addEventListener: (): void => {
+          // No-op
+        },
+        removeEventListener: (): void => {
+          // No-op
+        },
+        dispatchEvent: (): boolean => false,
+      }),
+    })
+
+    try {
+      render(<WorkspaceView />)
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('dialog', { name: 'Sidebar' })
+        ).not.toBeInTheDocument()
+      })
+
+      openPalette()
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('dialog', { name: 'Command palette' })
+        ).toBeInTheDocument()
+      })
+
+      const input = screen.getByRole('combobox', {
+        name: 'Command palette search',
+      })
+      await user.clear(input)
+      await user.type(input, ':show-sessions')
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('dialog', { name: 'Sidebar' })
+        ).toBeInTheDocument()
+      })
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      })
+    }
   })
 
   test('status-bar command button opens the palette', async () => {
