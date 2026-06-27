@@ -1460,6 +1460,43 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
+    test('keeps required-argument commands open until args are present', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'rename-pane',
+          label: ':rename-pane',
+          icon: 'edit',
+          requiresArgument: true,
+          execute,
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':r')
+        result.current.executeAt(0)
+      })
+
+      expect(execute).not.toHaveBeenCalled()
+      expect(result.current.state.query).toBe(':rename-pane ')
+      expect(result.current.state.isOpen).toBe(true)
+
+      act(() => {
+        result.current.setQuery(':rename-pane left')
+      })
+
+      act(() => {
+        result.current.executeSelected()
+      })
+
+      expect(execute).toHaveBeenCalledWith('left')
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('is a no-op for an out-of-bounds index', () => {
       const execute = vi.fn()
 

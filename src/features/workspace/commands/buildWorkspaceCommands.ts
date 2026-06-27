@@ -377,6 +377,8 @@ export const buildWorkspaceCommands = (
         description: 'Open file',
         hint: 'by absolute path',
         icon: 'description',
+        requiresArgument: true,
+        argumentPlaceholder: '<absolute path>',
         execute: (args: string): void => {
           const path = args.trim()
 
@@ -456,6 +458,8 @@ export const buildWorkspaceCommands = (
       description: 'Rename session',
       hint: 'renames every pane',
       icon: 'edit',
+      requiresArgument: true,
+      argumentPlaceholder: '<name>',
       execute: (args: string): void => {
         const idx = findActiveIndex()
 
@@ -488,6 +492,8 @@ export const buildWorkspaceCommands = (
       description: 'Rename pane',
       hint: 'only the active pane',
       icon: 'edit',
+      requiresArgument: true,
+      argumentPlaceholder: '<name>',
       execute: (args: string): void => {
         if (!activePanePtyId) {
           notifyInfo('No active pane to rename')
@@ -593,6 +599,8 @@ export const buildWorkspaceCommands = (
       description: 'Go to session',
       hint: 'by position or name',
       icon: 'tab',
+      requiresArgument: true,
+      argumentPlaceholder: '<position or name>',
       execute: (args: string): void => {
         const trimmed = args.trim()
 

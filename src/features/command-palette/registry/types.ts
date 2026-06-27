@@ -7,6 +7,10 @@ export interface Command {
   icon: string
   // Key glyphs for a real single-combo global accelerator, e.g. ['⌘','N'].
   shortcut?: string[]
+  // Palette execution requires a non-empty args string; direct execute callers
+  // still validate their own input.
+  requiresArgument?: boolean
+  argumentPlaceholder?: string
   children?: Command[]
   execute?: (args: string) => void
   preview?: () => void

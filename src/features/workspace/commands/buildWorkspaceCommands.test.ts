@@ -259,6 +259,36 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(matched).toEqual(['burner'])
   })
 
+  test('marks commands with required palette args', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+      openFile: vi.fn(),
+    })
+
+    expect(
+      commands
+        .filter((command) => command.requiresArgument === true)
+        .map((command) => ({
+          id: command.id,
+          argumentPlaceholder: command.argumentPlaceholder,
+        }))
+    ).toEqual([
+      { id: 'rename-session', argumentPlaceholder: '<name>' },
+      { id: 'rename-pane', argumentPlaceholder: '<name>' },
+      { id: 'goto', argumentPlaceholder: '<position or name>' },
+      { id: 'open-file', argumentPlaceholder: '<absolute path>' },
+    ])
+  })
+
   test(':rename-session command renames active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,

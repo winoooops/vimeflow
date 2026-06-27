@@ -43,6 +43,44 @@ describe('CommandInput', () => {
     expect(input).toHaveValue(':open')
   })
 
+  test('renders argument placeholder without changing the input value', () => {
+    const mockOnChange = vi.fn()
+
+    render(
+      <CommandInput
+        value=":rename-pane "
+        onChange={mockOnChange}
+        argumentPlaceholder="<name>"
+      />
+    )
+
+    expect(screen.getByText('<name>')).toBeInTheDocument()
+    expect(
+      screen.getByText((_, element) => element?.textContent === ':rename-pane ')
+    ).toBeInTheDocument()
+
+    const input = screen.getByRole('combobox', {
+      name: /command palette search/i,
+    })
+
+    expect(input).toHaveValue(':rename-pane ')
+    expect(input).toHaveClass('text-transparent', 'caret-on-surface')
+  })
+
+  test('hides argument placeholder once args are present', () => {
+    const mockOnChange = vi.fn()
+
+    render(
+      <CommandInput
+        value=":rename-pane left"
+        onChange={mockOnChange}
+        argumentPlaceholder="<name>"
+      />
+    )
+
+    expect(screen.queryByText('<name>')).toBeNull()
+  })
+
   test('renders input with correct Tailwind classes', () => {
     const mockOnChange = vi.fn()
 
@@ -55,10 +93,12 @@ describe('CommandInput', () => {
       'flex-1',
       'bg-transparent',
       'border-none',
+      'p-0',
       'outline-none',
       'text-on-surface',
       'font-mono',
-      'text-[13.5px]'
+      'text-[13.5px]',
+      'leading-[18px]'
     )
   })
 

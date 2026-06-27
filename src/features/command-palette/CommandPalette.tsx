@@ -15,17 +15,40 @@ export interface CommandPaletteProps {
   executeAt: (index: number) => void
 }
 
+const getActiveCommand = (
+  clampedSelectedIndex: number,
+  filteredResults: Command[]
+): Command | undefined =>
+  clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : undefined
+
 // Guards the indexed lookup so a mismatched (clampedSelectedIndex, filteredResults) pair degrades to "no active descendant" instead of crashing — see docs/reviews/patterns/react-lifecycle.md §19.
 const getActiveDescendantId = (
   clampedSelectedIndex: number,
   filteredResults: Command[]
 ): `command-${string}` | undefined => {
-  const activeCommand =
-    clampedSelectedIndex >= 0
-      ? filteredResults[clampedSelectedIndex]
-      : undefined
+  const activeCommand = getActiveCommand(clampedSelectedIndex, filteredResults)
 
   return activeCommand ? `command-${activeCommand.id}` : undefined
+}
+
+const getArgumentPlaceholder = (
+  state: CommandPaletteState,
+  clampedSelectedIndex: number,
+  filteredResults: Command[]
+): string | undefined => {
+  const activeCommand = getActiveCommand(clampedSelectedIndex, filteredResults)
+
+  if (
+    activeCommand?.requiresArgument !== true ||
+    activeCommand.argumentPlaceholder === undefined
+  ) {
+    return undefined
+  }
+
+  return state.query.endsWith(' ') &&
+    state.query.trimEnd() === activeCommand.label
+    ? activeCommand.argumentPlaceholder
+    : undefined
 }
 
 const DIALOG_CLOSE_ON_ESCAPE = false
@@ -56,6 +79,11 @@ export const CommandPalette = ({
       value={state.query}
       onChange={setQuery}
       activeDescendantId={getActiveDescendantId(
+        clampedSelectedIndex,
+        filteredResults
+      )}
+      argumentPlaceholder={getArgumentPlaceholder(
+        state,
         clampedSelectedIndex,
         filteredResults
       )}

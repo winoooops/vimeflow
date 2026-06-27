@@ -321,6 +321,20 @@ export const useCommandPalette = (
               ).replace(/^:/, '')
             : parsedQuery.args
 
+        if (
+          selected.requiresArgument === true &&
+          executionArgs.trim().length === 0
+        ) {
+          const queryPrefix =
+            state.currentNamespace !== null
+              ? `:${selected.label.replace(/^:/, '')}`
+              : selected.label
+
+          setQuery(`${queryPrefix} `)
+
+          return
+        }
+
         selected.execute(executionArgs)
         if (selected.preview != null) {
           originalThemeIdRef.current = null
@@ -334,6 +348,7 @@ export const useCommandPalette = (
       parsedQuery.commandVerb,
       state.currentNamespace,
       close,
+      setQuery,
     ]
   )
 

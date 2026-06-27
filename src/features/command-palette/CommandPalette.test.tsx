@@ -64,6 +64,25 @@ describe('CommandPalette', () => {
     expect(option).toHaveAttribute('aria-selected', 'true')
   })
 
+  test('renders selected command argument placeholder while waiting for args', () => {
+    renderPalette({
+      state: { isOpen: true, query: ':rename-pane ' },
+      filteredResults: [
+        {
+          id: 'rename-pane',
+          label: ':rename-pane',
+          description: 'Rename pane',
+          icon: 'edit',
+          requiresArgument: true,
+          argumentPlaceholder: '<name>',
+        },
+      ],
+      clampedSelectedIndex: 0,
+    })
+
+    expect(screen.getByText('<name>')).toBeInTheDocument()
+  })
+
   test('calls executeAt when a result is clicked', async () => {
     const user = userEvent.setup()
 
