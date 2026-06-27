@@ -20,10 +20,11 @@ import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
-import { Body, type BodyHandle } from './Body'
+import type { BodyMode } from './Body'
 import { Header } from './Header'
 import { PaneStatusBar } from './PaneStatusBar'
 import { RestartAffordance } from './RestartAffordance'
+import { TerminalBody, type TerminalBodyHandle } from './TerminalBody'
 import { usePaneWidth } from './usePaneWidth'
 
 // A pane narrower than this auto-collapses (header + status bar together) so the
@@ -99,7 +100,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     ref
   ): ReactElement {
     const agent = agentForPane(pane)
-    const bodyRef = useRef<BodyHandle>(null)
+    const bodyRef = useRef<TerminalBodyHandle>(null)
     // Seeded `undefined` (NOT `pane.active`) so the first effect run can detect
     // initial mount distinctly from a stable `true → true` re-render. A pane
     // born active (createSession, addPane, restored on app launch) must focus
@@ -214,6 +215,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const isAwaitingRestart = mode === 'awaiting-restart'
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const enableImagePaste = pane.agentType !== 'generic'
+    const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
     const containerStyle = isFocusHighlightVisible
       ? {
@@ -283,16 +285,18 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           />
         ) : (
           <div className="relative min-h-0 flex-1">
-            <Body
+            <TerminalBody
               ref={bodyRef}
-              sessionId={pane.ptyId}
+              paneId={pane.id}
+              ptyId={pane.ptyId}
               cwd={pane.cwd}
+              active={isActive && pane.active}
               service={service}
               restoredFrom={pane.restoreData}
               onCwdChange={onCwdChange}
               onPaneReady={onPaneReady}
               onCommandSubmit={onCommandSubmit}
-              mode={mode}
+              mode={bodyMode}
               deferFit={deferFit}
               enableImagePaste={enableImagePaste}
             />

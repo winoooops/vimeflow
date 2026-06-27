@@ -20,6 +20,15 @@ import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import {
+  setupGhosttyNativeHelper,
+  type GhosttyNativeHelperController,
+} from './ghostty-native-helper'
+import {
+  isGhosttyNativeParentEnabled,
+  setupGhosttyNativeParent,
+  type GhosttyNativeParentController,
+} from './ghostty-native-parent'
 import { setupDialogIpc } from './dialog-ipc'
 import {
   setupWorkspaceLayoutController,
@@ -202,6 +211,10 @@ type InvokeEnvelope =
 
 let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
+let ghosttyNativeController:
+  | GhosttyNativeHelperController
+  | GhosttyNativeParentController
+  | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
@@ -372,6 +385,20 @@ const setupApp = async (): Promise<void> => {
   browserPaneController?.dispose()
   browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
+  ghosttyNativeController?.dispose()
+  ghosttyNativeController = isGhosttyNativeParentEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+    ? setupGhosttyNativeParent({
+        sidecar: spawnedSidecar,
+        packaged: app.isPackaged,
+      })
+    : setupGhosttyNativeHelper({
+        sidecar: spawnedSidecar,
+        packaged: app.isPackaged,
+      })
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
@@ -477,6 +504,8 @@ app.on('before-quit', (event) => {
     } finally {
       browserPaneController?.dispose()
       browserPaneController = null
+      ghosttyNativeController?.dispose()
+      ghosttyNativeController = null
       workspaceLayoutController?.dispose()
       workspaceLayoutController = null
 

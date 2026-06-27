@@ -24,6 +24,12 @@ import {
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 import {
+  GHOSTTY_NATIVE_DATA,
+  GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_UPDATE,
+} from './ghostty-native-channels'
+import {
   WORKSPACE_LAYOUT_BEGIN_HYDRATION,
   WORKSPACE_LAYOUT_END_HYDRATION,
   WORKSPACE_LAYOUT_LOAD_FOR_RESTORE,
@@ -180,6 +186,16 @@ contextBridge.exposeInMainWorld('vimeflow', {
         ipcRenderer.off(BROWSER_PANE_NAV_STATE_CHANGED, handler)
       }
     },
+  },
+  ghosttyNative: {
+    update: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(GHOSTTY_NATIVE_UPDATE, request),
+    data: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(GHOSTTY_NATIVE_DATA, request),
+    focus: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
+    destroy: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
   },
   dialog: {
     pickDirectory: (): Promise<string | null> =>
