@@ -362,7 +362,6 @@ export const useCommandPalette = (
     let completionCandidates = candidates
     if (
       completionCandidates.length === 0 &&
-      filteredResults.length === 1 &&
       parsedQuery.args.length === 0
     ) {
       completionCandidates = filteredResults

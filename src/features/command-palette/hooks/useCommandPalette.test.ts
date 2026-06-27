@@ -1610,6 +1610,41 @@ describe('useCommandPalette', () => {
       expect(result.current.state.query).toBe(':focus-terminal')
     })
 
+    test('completes the common prefix of multiple fuzzy-only candidates', () => {
+      const openCommands: Command[] = [
+        {
+          id: 'open-editor',
+          label: ':open-editor',
+          icon: 'code',
+          execute: vi.fn(),
+        },
+        {
+          id: 'open-diff',
+          label: ':open-diff',
+          icon: 'difference',
+          execute: vi.fn(),
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(openCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':oe')
+      })
+
+      expect(result.current.filteredResults.map((cmd) => cmd.id)).toEqual([
+        'open-editor',
+        'open-diff',
+      ])
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':open-')
+    })
+
     test('is a no-op when already at the common prefix', () => {
       const { result } = renderHook(() => useCommandPalette(renameCommands))
 
