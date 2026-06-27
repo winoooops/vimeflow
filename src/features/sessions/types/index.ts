@@ -215,3 +215,23 @@ export interface UsageMetrics {
     currency: string
   }
 }
+
+export type CommandId =
+  | 'claude'
+  | 'codex'
+  | 'kimi'
+  | 'opencode'
+  | 'browser'
+  | 'shell'
+
+export interface NewPaneSpec {
+  command: CommandId
+}
+
+export interface CreateSessionOptions {
+  name?: string
+  cwd?: string
+  layout?: PaneLayoutId
+  panes?: NewPaneSpec[]
+  onCreated?: (sessionId: string) => void
+}

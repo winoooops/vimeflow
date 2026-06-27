@@ -77,8 +77,17 @@ vi.mock('./overlays/WorkspaceOverlayRegistrations', () => ({
 // Mock child components to keep test focused on command dispatch while still
 // rendering sidebar chrome needed by WorkspaceView.
 vi.mock('@/components/sidebar/Sidebar', () => ({
-  Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
-    <div data-testid="sidebar">{topBar}</div>
+  Sidebar: ({
+    topBar = undefined,
+    content = undefined,
+  }: {
+    topBar?: ReactNode
+    content?: ReactNode
+  }): ReactElement => (
+    <div data-testid="sidebar">
+      {topBar}
+      {content}
+    </div>
   ),
 }))
 
@@ -398,6 +407,45 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test('sidebar new-session button opens the dialog without instant-creating', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByRole('dialog', { name: /new session/i })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('sidebar-new-session'))
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', { name: /new session/i })
+      ).toBeInTheDocument()
+    })
+    // Opening the dialog must NOT create a session — that only happens on Create.
+    expect(mockSessionManager.createSession).not.toHaveBeenCalled()
+  })
+
+  test('the new-session chord opens the dialog without instant-creating', async () => {
+    // The harness sets navigator.platform to Linux, so preferModifier is
+    // 'ctrl' and the reserved chord is Ctrl+⇧N.
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByRole('dialog', { name: /new session/i })
+    ).not.toBeInTheDocument()
+
+    await user.keyboard('{Control>}{Shift>}n{/Shift}{/Control}')
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', { name: /new session/i })
+      ).toBeInTheDocument()
+    })
+    expect(mockSessionManager.createSession).not.toHaveBeenCalled()
   })
 
   test('forwards pane lifecycle handlers to TerminalZone', () => {

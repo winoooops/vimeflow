@@ -27,6 +27,8 @@ interface DialogProps {
   'aria-describedby'?: string
   testId?: string
   backdropTestId?: string
+  /** Extra classes appended to the panel (e.g. a custom width). Last-wins over the size class. */
+  panelClassName?: string
   children: ReactNode
 }
 
@@ -100,7 +102,7 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   )
 
 interface DialogLayer {
-  close: () => void
+  close: () => boolean
   container: HTMLDivElement
 }
 
@@ -114,8 +116,9 @@ const handleDocumentKeyDown = (event: KeyboardEvent): void => {
   const topLayer = dialogStack[dialogStack.length - 1]
 
   if (event.key === 'Escape') {
-    topLayer.close()
-    event.stopImmediatePropagation()
+    if (topLayer.close()) {
+      event.stopImmediatePropagation()
+    }
 
     return
   }
@@ -237,6 +240,7 @@ const DialogRoot = ({
   'aria-describedby': ariaDescribedBy = undefined,
   testId = undefined,
   backdropTestId = undefined,
+  panelClassName = undefined,
   children,
 }: DialogProps): ReactElement | null => {
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -255,6 +259,9 @@ const DialogRoot = ({
 
   const requestCloseRef = useRef(requestClose)
   requestCloseRef.current = requestClose
+
+  const dismissDisabledRef = useRef(dismissDisabled)
+  dismissDisabledRef.current = dismissDisabled
 
   const closeOnEscapeRef = useRef(closeOnEscape)
   closeOnEscapeRef.current = closeOnEscape
@@ -303,10 +310,14 @@ const DialogRoot = ({
     }
 
     const layer: DialogLayer = {
-      close: (): void => {
-        if (closeOnEscapeRef.current) {
-          requestCloseRef.current()
+      close: (): boolean => {
+        if (!closeOnEscapeRef.current || dismissDisabledRef.current) {
+          return false
         }
+
+        requestCloseRef.current()
+
+        return true
       },
       container: dialog,
     }
@@ -351,7 +362,9 @@ const DialogRoot = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: -8 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}`}
+            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}${
+              panelClassName !== undefined ? ` ${panelClassName}` : ''
+            }`}
           >
             {children}
           </motion.div>

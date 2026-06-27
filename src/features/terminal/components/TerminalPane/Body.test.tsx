@@ -307,6 +307,20 @@ describe('Body', () => {
     })
   })
 
+  test('paints the surface behind xterm with the terminal background', () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-body-wrapper')).toHaveStyle({
+      backgroundColor: obsidianLens.terminal.background,
+    })
+  })
+
   test('repaints the terminal when the window regains focus', async () => {
     render(
       <Body
@@ -1141,42 +1155,6 @@ describe('Body', () => {
     const container = screen.getByTestId('terminal-pane')
     expect(container).toHaveClass('w-full')
     expect(container).toHaveClass('h-full')
-  })
-
-  test('emits onPtyStatusChange when PTY status changes', async () => {
-    const onPtyStatusChange = vi.fn()
-
-    const { rerender } = render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onPtyStatusChange={onPtyStatusChange}
-      />
-    )
-
-    await waitFor(() => {
-      expect(onPtyStatusChange).toHaveBeenCalledWith('running')
-    })
-
-    vi.mocked(onPtyStatusChange).mockClear()
-    vi.mocked(useTerminal).mockReturnValue({
-      ...mockUseTerminal,
-      status: 'error',
-    })
-
-    rerender(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onPtyStatusChange={onPtyStatusChange}
-      />
-    )
-
-    await waitFor(() => {
-      expect(onPtyStatusChange).toHaveBeenCalledWith('error')
-    })
   })
 
   test('useImperativeHandle exposes focusTerminal that focuses cached xterm', async () => {

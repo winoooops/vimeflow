@@ -5845,4 +5845,138 @@ describe('useSessionManager', () => {
       expect(result.current.sessions).toBe(sessionsBefore)
     })
   })
+
+  test('createSession(opts) builds a multi-pane session honoring layout + cwd', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty',
+      pid: 1,
+      cwd: '/Users/x/proj',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession({
+        cwd: '/Users/x/proj',
+        layout: 'vsplit',
+        panes: [{ command: 'claude' }, { command: 'shell' }],
+      })
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const session = result.current.sessions[0]
+    expect(session.layout).toBe('vsplit')
+    expect(session.workingDirectory).toBe('/Users/x/proj')
+    expect(session.name).toBe('proj')
+    expect(session.panes).toHaveLength(2)
+    expect(session.panes[0].userLabel).toBe('Claude Code')
+    expect(session.panes[1].userLabel).toBeUndefined()
+    expect(session.panes[0].active).toBe(true)
+    // every shell pane spawned with the chosen cwd (fixed baseline)
+    expect(service.spawn).toHaveBeenCalledTimes(2)
+    expect(service.spawn).toHaveBeenNthCalledWith(1, {
+      cwd: '/Users/x/proj',
+      env: {},
+      enableAgentBridge: true,
+    })
+  })
+
+  test('createSession() with no args is unchanged (single shell pane)', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty',
+      pid: 1,
+      cwd: '/home/u',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].layout).toBe('single')
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+  })
+
+  test('createSession calls onCreated after the new session is active', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: 'old', sessions: [] })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty',
+      pid: 1,
+      cwd: '/home/u',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let activeSessionIdDuringCallback: string | null = null
+
+    const onCreated = vi.fn((sessionId: string) => {
+      activeSessionIdDuringCallback = result.current.activeSessionId
+      expect(activeSessionIdDuringCallback).toBe(sessionId)
+    })
+
+    act(() => {
+      result.current.createSession({ onCreated })
+    })
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledOnce())
+    expect(activeSessionIdDuringCallback).toBe(result.current.activeSessionId)
+    expect(result.current.sessions[0].id).toBe(result.current.activeSessionId)
+  })
+
+  test('createSession skips a failed pane but still creates the session', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty0',
+        pid: 1,
+        cwd: '/p',
+        shell: '/bin/zsh',
+      })
+      .mockRejectedValueOnce(new Error('boom'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession({
+        cwd: '/p',
+        layout: 'vsplit',
+        panes: [{ command: 'shell' }, { command: 'shell' }],
+      })
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+  })
 })

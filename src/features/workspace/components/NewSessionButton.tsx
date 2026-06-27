@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react'
+import { type ReactElement, type Ref } from 'react'
 import { Button } from '@/components/Button'
 import { Tooltip } from '@/components/Tooltip'
 
@@ -8,6 +8,8 @@ export interface NewSessionButtonProps {
   shortcutHint: string
   /** ARIA keyboard-shortcut token announced to assistive tech (e.g. 'Meta+N'). */
   ariaKeyshortcuts: string
+  /** Forwarded to the underlying button so a popover can anchor to it. */
+  ref?: Ref<HTMLButtonElement>
 }
 
 // Primary new-session control; chrome from the Button `primary` variant, reveal layout via className.
@@ -15,9 +17,11 @@ export const NewSessionButton = ({
   onClick,
   shortcutHint,
   ariaKeyshortcuts,
+  ref = undefined,
 }: NewSessionButtonProps): ReactElement => (
   <Tooltip content="New session" shortcut={shortcutHint} placement="bottom">
     <Button
+      ref={ref}
       variant="flat-primary"
       onClick={onClick}
       aria-label="New session"

@@ -3,6 +3,7 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
+  DIALOG_PICK_DIRECTORY,
 } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
@@ -179,6 +180,10 @@ contextBridge.exposeInMainWorld('vimeflow', {
         ipcRenderer.off(BROWSER_PANE_NAV_STATE_CHANGED, handler)
       }
     },
+  },
+  dialog: {
+    pickDirectory: (): Promise<string | null> =>
+      ipcRenderer.invoke(DIALOG_PICK_DIRECTORY) as Promise<string | null>,
   },
   workspaceLayout: {
     pushShape: (dto: unknown): Promise<unknown> =>

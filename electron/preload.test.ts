@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -153,5 +154,15 @@ describe('preload browserPane wiring', () => {
         expect.any(Function)
       )
     }
+  )
+})
+
+test('exposes dialog.pickDirectory bound to the channel', async () => {
+  const api = electronMock.exposed as {
+    dialog: { pickDirectory: () => Promise<unknown> }
+  }
+  await api.dialog.pickDirectory()
+  expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+    DIALOG_PICK_DIRECTORY
   )
 })

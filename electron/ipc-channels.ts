@@ -6,3 +6,5 @@ export const BACKEND_INVOKE = 'backend:invoke'
 export const BACKEND_EVENT = 'backend:event'
 
 export const COMMAND_PALETTE_TOGGLE = 'command-palette:toggle'
+
+export const DIALOG_PICK_DIRECTORY = 'dialog:pick-directory'

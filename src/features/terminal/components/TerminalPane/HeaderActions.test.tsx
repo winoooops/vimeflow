@@ -35,6 +35,20 @@ describe('HeaderActions', () => {
     expect(button).toHaveTextContent('unfold_more')
   })
 
+  test('hides the collapse toggle when requested', () => {
+    render(
+      <HeaderActions
+        isCollapsed
+        hideCollapseToggle
+        onToggleCollapse={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
+  })
+
   test('renders close control only when onClose is defined', () => {
     const onClose = vi.fn()
     const onParentClick = vi.fn()
