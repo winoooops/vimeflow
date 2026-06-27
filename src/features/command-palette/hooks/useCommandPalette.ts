@@ -360,10 +360,7 @@ export const useCommandPalette = (
           )
 
     let completionCandidates = candidates
-    if (
-      completionCandidates.length === 0 &&
-      parsedQuery.args.length === 0
-    ) {
+    if (completionCandidates.length === 0 && parsedQuery.args.length === 0) {
       completionCandidates = filteredResults
     }
 

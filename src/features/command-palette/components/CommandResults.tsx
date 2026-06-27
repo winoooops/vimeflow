@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { type ReactElement, useEffect } from 'react'
+import { type ReactElement, useEffect, useRef } from 'react'
 import type { Command } from '../types'
 import { CommandResultItem } from './CommandResultItem'
 
@@ -16,6 +16,8 @@ export const CommandResults = ({
   onSelect,
   onExecute,
 }: CommandResultsProps): ReactElement => {
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+
   // Keep the active row visible within the listbox only, never the page.
   useEffect(() => {
     if (selectedIndex < 0 || selectedIndex >= filteredResults.length) {
@@ -23,10 +25,22 @@ export const CommandResults = ({
     }
 
     const activeCommand = filteredResults[selectedIndex]
-    const activeEl = document.getElementById(`command-${activeCommand.id}`)
+    const activeEl = rowRefs.current.get(activeCommand.id)
 
     activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [selectedIndex, filteredResults])
+
+  const setRowRef =
+    (commandId: string) =>
+    (node: HTMLDivElement | null): void => {
+      if (node === null) {
+        rowRefs.current.delete(commandId)
+
+        return
+      }
+
+      rowRefs.current.set(commandId, node)
+    }
 
   return (
     <div
@@ -45,6 +59,7 @@ export const CommandResults = ({
           }}
         >
           <CommandResultItem
+            ref={setRowRef(command.id)}
             id={`command-${command.id}`}
             command={command}
             isSelected={index === selectedIndex}

@@ -1443,6 +1443,11 @@ describe('WorkspaceView', () => {
     // a regression of the onClick handler being dropped (e.g. during
     // a future Sidebar.footer slot refactor) would fail this test.
     await screen.findByRole('button', { name: 'session 2' })
+    expect(screen.getByTestId('terminal-zone')).toHaveAttribute(
+      'data-container-id',
+      'terminal'
+    )
+    expect(screen.getByTestId('terminal-zone')).toHaveFocus()
   })
 
   test('new-session button lives in the switcher row, not the list bottom', () => {

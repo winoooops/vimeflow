@@ -190,6 +190,7 @@ describe('CommandResults', () => {
 
   test('scrolls the active row into view within the container only', () => {
     const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const getElementByIdSpy = vi.spyOn(document, 'getElementById')
 
     render(
       <CommandResults
@@ -204,8 +205,10 @@ describe('CommandResults', () => {
       block: 'nearest',
       inline: 'nearest',
     })
+    expect(getElementByIdSpy).not.toHaveBeenCalled()
 
     scrollSpy.mockRestore()
+    getElementByIdSpy.mockRestore()
   })
 
   test('does not scroll when selectedIndex is negative', () => {
