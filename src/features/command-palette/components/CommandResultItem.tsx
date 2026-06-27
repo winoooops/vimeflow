@@ -39,8 +39,8 @@ export const CommandResultItem = ({
       {command.icon}
     </span>
 
-    {/* Verb - accent mono, fixed min-width column */}
-    <span className="font-mono text-[11.5px] text-primary min-w-[100px] shrink-0 whitespace-nowrap">
+    {/* Verb - accent mono, fixed-width column so labels align (fits the longest verb) */}
+    <span className="font-mono text-[11.5px] text-primary w-[120px] shrink-0 truncate">
       {command.label}
     </span>
 
