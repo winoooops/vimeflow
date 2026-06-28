@@ -235,23 +235,18 @@ bool CreateThreadsafeFunction(napi_env env, napi_value callback,
              nullptr, call_js, result) == napi_ok;
 }
 
+void ReleaseSurfaceCallbacks(SurfaceHandle *surface);
+
 void FinalizeSurface(napi_env env, void *data, void *) {
   auto *surface = static_cast<SurfaceHandle *>(data);
   if (surface == nullptr) {
     return;
   }
 
+  ReleaseSurfaceCallbacks(surface);
   if (surface->swift_surface != nullptr && bridge.destroy != nullptr) {
     bridge.destroy(surface->swift_surface);
     surface->swift_surface = nullptr;
-  }
-  if (surface->input_tsfn != nullptr) {
-    napi_release_threadsafe_function(surface->input_tsfn, napi_tsfn_abort);
-    surface->input_tsfn = nullptr;
-  }
-  if (surface->resize_tsfn != nullptr) {
-    napi_release_threadsafe_function(surface->resize_tsfn, napi_tsfn_abort);
-    surface->resize_tsfn = nullptr;
   }
 
   delete surface;

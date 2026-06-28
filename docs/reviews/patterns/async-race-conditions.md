@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-28
-ref_count: 72
+ref_count: 73
 ---
 
 # Async Race Conditions
@@ -771,4 +771,19 @@ prevent showing previous data.
   unavailable fallback on rejection, including the fire-and-forget output
   forwarder and the imperative `TerminalBody` focus path. Added regression tests
   for rejected data, focus, and output-forwarding IPC.
+- **Commit:** same commit as this entry
+
+### 76. Native finalizer bypassed mutex-protected TSFN release
+
+- **Source:** github-claude | PR #630 round 9 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `FinalizeSurface` still read, released, and nulled the input and
+  resize TSFN pointers directly even after explicit destroy moved to the
+  mutex-protected `ReleaseSurfaceCallbacks` helper. A Swift callback racing with
+  GC finalization could therefore access the same non-atomic TSFN fields without
+  synchronization and crash the Electron process during teardown.
+- **Fix:** Call `ReleaseSurfaceCallbacks(surface)` at the start of finalization
+  and remove the direct TSFN cleanup block, so both explicit destroy and GC
+  fallback use the same idempotent, mutex-protected release path.
 - **Commit:** same commit as this entry
