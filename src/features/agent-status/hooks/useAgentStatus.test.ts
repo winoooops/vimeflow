@@ -1053,6 +1053,61 @@ describe('useAgentStatus', () => {
     expect(result.current.recentToolCalls[1]?.durationMs).toBe(40)
   })
 
+  test('preserves active tool call when replay summary follows running event', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(
+        eventListeners.get('agent-replay-summary')?.length
+      ).toBeGreaterThanOrEqual(1)
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_running_replay',
+        tool: 'Bash',
+        args: '{"command":"npm test"}',
+        status: 'running',
+        timestamp: '2026-04-28T12:00:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-replay-summary', {
+        sessionId: 'pty-session-1',
+        numTurns: 2,
+        cwd: '/home/will/projects/vimeflow',
+        toolCallTotal: 5,
+        toolCallByType: { Read: 4, Bash: 1 },
+        recentToolCalls: [
+          {
+            sessionId: 'pty-session-1',
+            toolUseId: 'toolu_done',
+            tool: 'Read',
+            args: 'src/foo.ts',
+            status: 'done',
+            timestamp: '2026-04-28T12:00:01Z',
+            durationMs: 30n,
+            isTestFile: false,
+          },
+        ],
+      })
+    })
+
+    expect(result.current.toolCalls).toEqual({
+      total: 5,
+      byType: { Read: 4, Bash: 1 },
+      active: {
+        tool: 'Bash',
+        args: '{"command":"npm test"}',
+        startedAt: '2026-04-28T12:00:00Z',
+        toolUseId: 'toolu_running_replay',
+      },
+    })
+    expect(result.current.recentToolCalls[0]?.id).toBe('toolu_done')
+  })
+
   test('normalizes running entries from replay summary recent tool calls', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

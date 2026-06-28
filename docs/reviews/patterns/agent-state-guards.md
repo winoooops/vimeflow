@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-28
-ref_count: 8
+ref_count: 9
 ---
 
 # Agent-State Guards
@@ -129,4 +129,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `crates/backend/src/agent/adapter/claude_code/transcript.rs`
 - **Finding:** The Claude decoder flushed replay lifecycle phase and replay summary at catch-up but did not drain retained running tool calls first. Users resuming a Claude transcript during a long-running Bash/Edit tool saw the activity panel idle until completion arrived, or forever if the command hung.
 - **Fix:** Mirrored the Codex replay boundary by draining `ReplayActivity::take_running()` and emitting each retained call as an `agent-tool-call` event before taking the summary. Added a Claude replay regression test that proves an in-flight replayed tool emits `running` at catch-up.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Replay summary clobbered restored running tool state
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The backend emits retained replay running calls before `agent-replay-summary`, so the frontend had already restored `toolCalls.active` when the summary arrived. The summary reducer hard-coded `active: null`, immediately making the panel appear idle during resume even though a Bash/test/edit tool was still running.
+- **Fix:** Preserved `prev.toolCalls.active` when applying replay summary totals, cwd, and recent completed calls. Added a hook regression test that emits a running tool event followed by a replay summary and verifies the active call remains visible.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

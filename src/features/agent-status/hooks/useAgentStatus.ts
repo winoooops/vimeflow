@@ -901,7 +901,7 @@ export const useAgentStatus = (
               // (optional values); the wire shape never carries undefined values,
               // so coerce to the non-optional Record the state expects.
               byType: payload.toolCallByType as Record<string, number>,
-              active: null,
+              active: prev.toolCalls.active,
             },
             recentToolCalls: payload.recentToolCalls
               .slice(0, RECENT_TOOL_CALLS_LIMIT)
