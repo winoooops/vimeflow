@@ -3,7 +3,7 @@ id: terminal-input-handling
 category: terminal
 created: 2026-04-09
 last_updated: 2026-06-28
-ref_count: 3
+ref_count: 4
 ---
 
 # Terminal Input Handling
@@ -69,4 +69,13 @@ double execution, and paste failures.
 - **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
 - **Finding:** The native Ghostty body attached live PTY output but did not replay `restoredFrom` output and did not surface main-process native input through the terminal command-submit path. Restored panes could appear blank until new output, and `/clear` or `/resume` typed into a native pane bypassed workspace reset logic.
 - **Fix:** Forwarded `restoredFrom` and `onCommandSubmit` into `GhosttyBody`, replayed historical and buffered output into the native surface, and mirrored native input from Electron main through a backend event that the renderer tracks with the same command-line parsing rules as xterm.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Native Ghostty output bypassed cwd parsers
+
+- **Source:** github-codex-connector | PR #630 round 2 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty panes forwarded PTY bytes into the native view but did not run the renderer's OSC 7 and agent cwd-hint parsing path. After `cd` or worktree-changing agent output, pane cwd, git status, and burner cwd stayed at the launch directory while native mode was active.
+- **Fix:** Passed `onCwdChange` into `GhosttyBody`, parsed native PTY output for OSC 7 and text cwd hints before forwarding the unchanged bytes to Ghostty, and added a component regression test for OSC 7 output.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

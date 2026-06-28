@@ -20,8 +20,8 @@ use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscr
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_replay_summary, emit_agent_session_title, emit_agent_turn,
-    emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_session_title, emit_agent_tool_call,
+    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::sanitize_title;
 use crate::agent::types::{
@@ -313,6 +313,11 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
                     &mut self.last_phase,
                     phase,
                 );
+            }
+            for event in self.replay_activity.take_running() {
+                if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-tool-call event: {}", e);
+                }
             }
             // Flush the replay-accumulated tool-call/turn/cwd activity as one
             // summary, replacing the thousands of per-line events suppressed
@@ -1104,6 +1109,30 @@ mod tests {
         );
         assert_eq!(sink.count("agent-tool-call"), 2);
         assert_eq!(sink.count("agent-replay-summary"), 1);
+    }
+
+    #[test]
+    fn claude_replay_emits_running_tool_calls_at_catch_up() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}],"stop_reason":"tool_use"}}"#,
+        );
+
+        assert_eq!(sink.count("agent-tool-call"), 0);
+
+        decoder.on_caught_up();
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].1["toolUseId"], "t1");
+        assert_eq!(tool_calls[0].1["status"], "running");
     }
 
     #[test]

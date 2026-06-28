@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-25
-ref_count: 90
+last_updated: 2026-06-28
+ref_count: 91
 ---
 
 # Documentation Accuracy
@@ -872,4 +872,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/agents/brandIcons.tsx`
 - **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
 - **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Native parent build script pointed at obsolete docs smoke package
+
+- **Source:** github-codex-connector | PR #630 round 2 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/build-ghostty-native-parent.js`
+- **Finding:** The npm build script still used a docs exploration smoke directory as its SwiftPM cwd even though the committed Swift package now lives under `native/ghostty-helper`. macOS developers enabling the native parent runtime would fail before producing `dist-native/ghostty-parent`.
+- **Fix:** Pointed the build cwd at the committed `native/ghostty-helper` package so `swift build --product GhosttyElectronBridge` runs against the package shipped in the PR.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

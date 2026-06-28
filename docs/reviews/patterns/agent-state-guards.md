@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-28
-ref_count: 7
+ref_count: 8
 ---
 
 # Agent-State Guards
@@ -120,4 +120,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** Codex cleared in-flight calls, turns, cwd, and lifecycle state when `session_meta.id` changed, but the replay accumulator survived that reset. A boundary summary for the new session could include completed tools from the previous rollout.
 - **Fix:** Reset `ReplayActivity` alongside the other run-scoped Codex tail state when the session id changes, and added a replay-mode regression test that proves old-session activity is not included after the reset.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Claude replay boundary dropped retained running tool calls
+
+- **Source:** github-claude | PR #630 round 2 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/transcript.rs`
+- **Finding:** The Claude decoder flushed replay lifecycle phase and replay summary at catch-up but did not drain retained running tool calls first. Users resuming a Claude transcript during a long-running Bash/Edit tool saw the activity panel idle until completion arrived, or forever if the command hung.
+- **Fix:** Mirrored the Codex replay boundary by draining `ReplayActivity::take_running()` and emitting each retained call as an `agent-tool-call` event before taking the summary. Added a Claude replay regression test that proves an in-flight replayed tool emits `running` at catch-up.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

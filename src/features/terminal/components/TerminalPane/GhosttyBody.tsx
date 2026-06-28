@@ -16,6 +16,15 @@ import {
   sendNativeGhosttyData,
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
+import {
+  type AgentCwdSource,
+  isDescendantPath,
+  shouldIgnoreStaleOsc7Cwd,
+  stripCarriageReturnOverwrites,
+  toComparablePath,
+} from './agentCwdGuard'
+import { parseAgentCwdHint } from './agentCwdHint'
+import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 
 interface GhosttyBodyProps {
   paneId: string
@@ -24,6 +33,7 @@ interface GhosttyBodyProps {
   active: boolean
   service: ITerminalService
   restoredFrom?: RestoreData
+  onCwdChange?: (cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
   onUnavailable?: () => void
@@ -38,8 +48,19 @@ interface GhosttyNativeInputEvent {
 const TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN =
   /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g
 
+const AGENT_CWD_HINT_BUFFER_SIZE = 4096
+const OSC7_SEQUENCE_PATTERN = /\u001b\]7;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g
+
 const stripTerminalInputControlSequences = (data: string): string =>
   data.replace(TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN, '')
+
+const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
+  Boolean(
+    currentCwd &&
+      (WINDOWS_DRIVE_PATH.test(currentCwd) ||
+        currentCwd.startsWith('\\\\') ||
+        (currentCwd.startsWith('//') && !currentCwd.startsWith('///')))
+  )
 
 export const GhosttyBody = ({
   paneId,
@@ -48,6 +69,7 @@ export const GhosttyBody = ({
   active,
   service,
   restoredFrom = undefined,
+  onCwdChange = undefined,
   onPaneReady = undefined,
   onCommandSubmit = undefined,
   onUnavailable = undefined,
@@ -55,15 +77,123 @@ export const GhosttyBody = ({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const submittedInputLineRef = useRef('')
+  const agentCwdOutputBufferRef = useRef('')
+  const agentCwdHintContextRef = useRef('')
+  const cwdRef = useRef(cwd)
+  cwdRef.current = cwd
+  const agentCwdRef = useRef(cwd)
+  const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
   const paneRef = useMemo(() => ({ sessionId: ptyId, paneId }), [paneId, ptyId])
   const onCommandSubmitRef = useRef(onCommandSubmit)
+  const onCwdChangeRef = useRef(onCwdChange)
 
   useEffect(() => {
     onCommandSubmitRef.current = onCommandSubmit
   }, [onCommandSubmit])
 
+  useEffect(() => {
+    onCwdChangeRef.current = onCwdChange
+  }, [onCwdChange])
+
+  useEffect(() => {
+    if (
+      toComparablePath(agentCwdRef.current) !== toComparablePath(cwd) &&
+      !isDescendantPath(agentCwdRef.current, cwd)
+    ) {
+      agentCwdOutputBufferRef.current = ''
+      agentCwdHintContextRef.current = ''
+      agentCwdRef.current = cwd
+      agentCwdSourceRef.current = 'prop'
+    }
+  }, [cwd])
+
+  useEffect(() => {
+    agentCwdOutputBufferRef.current = ''
+    agentCwdHintContextRef.current = ''
+    agentCwdRef.current = cwdRef.current
+    agentCwdSourceRef.current = 'prop'
+  }, [ptyId])
+
+  const applyOsc7Cwd = useCallback((payload: string): void => {
+    const previousCwd = agentCwdRef.current
+
+    const path = parseOsc7Cwd(payload, {
+      preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
+    })
+
+    const shouldIgnore =
+      path !== null &&
+      shouldIgnoreStaleOsc7Cwd(
+        agentCwdRef.current,
+        path,
+        agentCwdSourceRef.current
+      )
+
+    if (path && path === agentCwdRef.current) {
+      agentCwdSourceRef.current = 'osc7'
+    } else if (path && !shouldIgnore) {
+      agentCwdOutputBufferRef.current = ''
+      agentCwdHintContextRef.current = ''
+      agentCwdRef.current = path
+      agentCwdSourceRef.current = 'osc7'
+      onCwdChangeRef.current?.(path)
+    }
+  }, [])
+
+  const applyAgentCwdHint = useCallback((output: string): void => {
+    const visibleOutput = stripCarriageReturnOverwrites(output)
+    const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
+    const cwdHint = parseAgentCwdHint(outputWithContext, agentCwdRef.current)
+
+    const shouldApplyCwdHint =
+      cwdHint !== null && cwdHint !== agentCwdRef.current
+
+    agentCwdHintContextRef.current = shouldApplyCwdHint
+      ? ''
+      : outputWithContext.slice(-AGENT_CWD_HINT_BUFFER_SIZE)
+
+    if (shouldApplyCwdHint) {
+      agentCwdSourceRef.current = 'text-hint'
+      agentCwdRef.current = cwdHint
+      onCwdChangeRef.current?.(cwdHint)
+    }
+  }, [])
+
+  const handleNativeOutput = useCallback(
+    (data: string): void => {
+      for (const match of data.matchAll(OSC7_SEQUENCE_PATTERN)) {
+        applyOsc7Cwd(match[1])
+      }
+
+      const output = `${agentCwdOutputBufferRef.current}${data.replace(
+        OSC7_SEQUENCE_PATTERN,
+        ''
+      )}`
+      const lastLineBreakIndex = output.lastIndexOf('\n')
+
+      if (lastLineBreakIndex === -1) {
+        agentCwdOutputBufferRef.current = output.slice(
+          -AGENT_CWD_HINT_BUFFER_SIZE
+        )
+
+        return
+      }
+
+      const completeOutput = output.slice(0, lastLineBreakIndex + 1)
+      agentCwdOutputBufferRef.current = output
+        .slice(lastLineBreakIndex + 1)
+        .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
+      applyAgentCwdHint(completeOutput)
+    },
+    [applyAgentCwdHint, applyOsc7Cwd]
+  )
+
   const trackNativeInput = useCallback(
     (data: string): void => {
+      if (agentCwdSourceRef.current === 'text-hint') {
+        agentCwdSourceRef.current = 'user-input'
+      }
+
       for (const char of stripTerminalInputControlSequences(data)) {
         if (char === '\r' || char === '\n') {
           const submitted = submittedInputLineRef.current.trim()
@@ -209,11 +339,14 @@ export const GhosttyBody = ({
     let cancelled = false
 
     const drainBufferedOutput = (data: string): void => {
+      handleNativeOutput(data)
       void sendNativeGhosttyData({ ...paneRef, data })
     }
 
     const attachOutput = async (): Promise<void> => {
-      const unsubscribe = await attachNativeGhosttyOutput(service, paneRef)
+      const unsubscribe = await attachNativeGhosttyOutput(service, paneRef, {
+        onOutput: handleNativeOutput,
+      })
 
       if (cancelled) {
         unsubscribe()
@@ -242,7 +375,7 @@ export const GhosttyBody = ({
       unsubscribeOutput?.()
       void destroyNativeGhostty(paneRef)
     }
-  }, [onPaneReady, paneRef, ptyId, restoredFrom, service])
+  }, [handleNativeOutput, onPaneReady, paneRef, ptyId, restoredFrom, service])
 
   return (
     <div

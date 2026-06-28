@@ -9,7 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const smokeDir = join(
   repoRoot,
-  'docs/exploration/2026-06-27-ghostty-native-macos-runtime/ghostty-native-macos-smoke'
+  'native/ghostty-helper'
 )
 const outputDir = join(repoRoot, 'dist-native/ghostty-parent')
 const scratchDir = join(tmpdir(), 'vimeflow-ghostty-electron-parent-swiftpm')

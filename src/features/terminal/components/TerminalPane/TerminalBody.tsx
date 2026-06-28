@@ -85,6 +85,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           active={active}
           service={service}
           restoredFrom={restoredFrom}
+          onCwdChange={onCwdChange}
           onPaneReady={onPaneReady}
           onCommandSubmit={onCommandSubmit}
           onUnavailable={(): void => setNativeUnavailable(true)}

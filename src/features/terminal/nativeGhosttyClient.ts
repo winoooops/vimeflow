@@ -30,6 +30,10 @@ export interface NativeGhosttyApi {
   destroy: (request: NativeGhosttyPaneRef) => Promise<unknown>
 }
 
+export interface NativeGhosttyOutputOptions {
+  onOutput?: (data: string) => void
+}
+
 type NativeGhosttyCapableWindow = Window & {
   vimeflow?: {
     ghosttyNative?: NativeGhosttyApi
@@ -92,12 +96,14 @@ export const destroyNativeGhostty = async (
 
 export const attachNativeGhosttyOutput = async (
   service: ITerminalService,
-  request: NativeGhosttyPaneRef
+  request: NativeGhosttyPaneRef,
+  options: NativeGhosttyOutputOptions = {}
 ): Promise<() => void> =>
   service.onData((eventSessionId, data) => {
     if (eventSessionId !== request.sessionId) {
       return
     }
 
+    options.onOutput?.(data)
     void sendNativeGhosttyData({ ...request, data })
   })
