@@ -451,3 +451,15 @@ failed" must mean the editor shows the original file, not the requested one.
   IPC call, producing an unhandled rejection instead of a graceful no-op.
 - **Fix:** Catch picker rejections inside `handleBrowse` and leave the current path unchanged.
 - **Commit:** same commit as this entry
+
+### 46. Helper stdin stream error could crash Electron during shutdown
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** `shutdownHelper` wrote to the Swift helper's stdin without a stream-level
+  error listener. If the helper had already exited but Node had not delivered the exit event,
+  the write could emit an unhandled `EPIPE` and terminate the Electron main process.
+- **Fix:** Register a warn-only stdin error handler immediately after spawn and wrap the
+  cooperative shutdown write in a best-effort try/catch before killing the helper.
+- **Commit:** same commit as this entry

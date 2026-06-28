@@ -289,6 +289,11 @@ export class GhosttyNativeHelperController {
       console.warn(`[ghostty-native] ${String(chunk)}`)
     })
 
+    helper.stdin.on('error', (error) => {
+      // eslint-disable-next-line no-console
+      console.warn('Ghostty native helper stdin failed', error)
+    })
+
     helper.on('exit', () => {
       this.helper = null
       this.currentPane = null
@@ -410,7 +415,12 @@ export class GhosttyNativeHelperController {
       return
     }
 
-    helper.stdin.write(encodeFrame({ kind: 'shutdown' }))
+    try {
+      helper.stdin.write(encodeFrame({ kind: 'shutdown' }))
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Ghostty native helper shutdown failed', error)
+    }
     helper.kill()
   }
 

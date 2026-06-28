@@ -1,5 +1,5 @@
 // cspell:ignore Ghostty
-import { render, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NativeGhosttyDataRequest } from '../../nativeGhosttyClient'
@@ -260,6 +260,59 @@ describe('GhosttyBody', () => {
     })
 
     expect(sendNativeGhosttyData).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'pane-1',
+      data: 'buffered output',
+    })
+  })
+
+  test('does not register pane-ready after unmount during restore replay', async () => {
+    let resolveReplay: ((enabled: boolean) => void) | undefined
+    vi.mocked(sendNativeGhosttyData).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveReplay = resolve
+      })
+    )
+    const onPaneReady = vi.fn(() => vi.fn())
+
+    const { unmount } = render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        restoredFrom={{
+          sessionId: 'pty-1',
+          cwd: '/tmp',
+          pid: 42,
+          replayData: 'historical output',
+          replayEndOffset: 17,
+          bufferedEvents: [
+            { data: 'buffered output', offsetStart: 17, byteLen: 15 },
+          ],
+        }}
+        onPaneReady={onPaneReady}
+      />
+    )
+
+    await waitFor(() => {
+      expect(sendNativeGhosttyData).toHaveBeenCalledWith({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        data: 'historical output',
+      })
+    })
+
+    unmount()
+
+    await act(async () => {
+      resolveReplay?.(true)
+      await Promise.resolve()
+    })
+
+    expect(onPaneReady).not.toHaveBeenCalled()
+    expect(sendNativeGhosttyData).not.toHaveBeenCalledWith({
       sessionId: 'pty-1',
       paneId: 'pane-1',
       data: 'buffered output',

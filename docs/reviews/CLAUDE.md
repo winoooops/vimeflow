@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 91   | 2026-06-28   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 70   | 2026-06-26   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 72       | 70   | 2026-06-28   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -75,7 +75,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 46       | 46   | 2026-06-28   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 47       | 46   | 2026-06-28   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 24       | 10   | 2026-06-19   |

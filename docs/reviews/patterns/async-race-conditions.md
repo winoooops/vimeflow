@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-26
+last_updated: 2026-06-28
 ref_count: 70
 ---
 
@@ -714,4 +714,18 @@ prevent showing previous data.
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** The New Session dialog queued `claimTerminal()` with `requestAnimationFrame` immediately after calling async `createSession`. PTY spawning commonly outlived the next frame, so focus could be requested for the previous active session and never re-requested after the new session became active.
 - **Fix:** Add an `onCreated` completion callback to `createSession`, commit the new active session synchronously in the success path, and request terminal focus from the dialog only after that callback fires.
+- **Commit:** same commit as this entry
+
+### 72. Ghostty restore replay registered pane-ready after unmount
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` checked its cancellation flag after attaching native output,
+  but then awaited restored replay output before registering `onPaneReady`. If the pane
+  unmounted during that await, cleanup had no registered release function and the resumed
+  task could still install a stale drain callback for the dead pane.
+- **Fix:** Re-check cancellation after the restored replay send and again before draining
+  buffered events or registering pane readiness. Added regression coverage that unmounts
+  while replay output is still pending.
 - **Commit:** same commit as this entry
