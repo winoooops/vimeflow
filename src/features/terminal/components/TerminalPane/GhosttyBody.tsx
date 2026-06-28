@@ -1,5 +1,11 @@
 // cspell:ignore Ghostty ghostty
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactElement,
+} from 'react'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import {
@@ -10,36 +16,38 @@ import {
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
 
-interface NativeGhosttyBodyProps {
+interface GhosttyBodyProps {
   paneId: string
   ptyId: string
   cwd: string
   active: boolean
   service: ITerminalService
   onPaneReady?: NotifyPaneReady
+  onUnavailable?: () => void
 }
 
-export const NativeGhosttyBody = ({
+export const GhosttyBody = ({
   paneId,
   ptyId,
   cwd,
   active,
   service,
   onPaneReady = undefined,
-}: NativeGhosttyBodyProps): ReactElement => {
+  onUnavailable = undefined,
+}: GhosttyBodyProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const paneRef = useMemo(() => ({ sessionId: ptyId, paneId }), [paneId, ptyId])
 
-  useEffect(() => {
+  const updateNativeFrame = useCallback(async (): Promise<void> => {
     const node = containerRef.current
-    if (!node || !active) {
+    if (!node) {
       return
     }
 
-    const update = async (): Promise<void> => {
-      const rect = node.getBoundingClientRect()
-      await updateNativeGhostty({
+    const rect = node.getBoundingClientRect()
+    try {
+      const enabled = await updateNativeGhostty({
         ...paneRef,
         cwd,
         bounds: {
@@ -48,30 +56,39 @@ export const NativeGhosttyBody = ({
           width: rect.width,
           height: rect.height,
         },
-        visible: active,
+        visible: true,
       })
-    }
 
-    const scheduleUpdate = (): void => {
-      if (frameIdRef.current !== null) {
-        return
+      if (!enabled) {
+        onUnavailable?.()
       }
+    } catch {
+      onUnavailable?.()
+    }
+  }, [cwd, onUnavailable, paneRef])
 
-      frameIdRef.current = window.requestAnimationFrame(() => {
-        frameIdRef.current = null
-        void update()
-      })
+  const scheduleNativeFrameUpdate = useCallback((): void => {
+    if (frameIdRef.current !== null) {
+      return
     }
 
-    const updateAndFocus = async (): Promise<void> => {
-      await update()
-      await focusNativeGhostty(paneRef)
+    frameIdRef.current = window.requestAnimationFrame(() => {
+      frameIdRef.current = null
+      void updateNativeFrame()
+    })
+  }, [updateNativeFrame])
+
+  // Keep the parented NSView aligned; resize events only schedule rAF updates.
+  useEffect(() => {
+    const node = containerRef.current
+    if (!node) {
+      return
     }
 
-    void updateAndFocus()
-    const observer = new ResizeObserver(scheduleUpdate)
+    void updateNativeFrame()
+    const observer = new ResizeObserver(scheduleNativeFrameUpdate)
     observer.observe(node)
-    window.addEventListener('resize', scheduleUpdate)
+    window.addEventListener('resize', scheduleNativeFrameUpdate)
 
     return (): void => {
       if (frameIdRef.current !== null) {
@@ -79,17 +96,19 @@ export const NativeGhosttyBody = ({
         frameIdRef.current = null
       }
       observer.disconnect()
-      window.removeEventListener('resize', scheduleUpdate)
+      window.removeEventListener('resize', scheduleNativeFrameUpdate)
     }
-  }, [active, cwd, paneId, paneRef, ptyId])
+  }, [scheduleNativeFrameUpdate, updateNativeFrame])
 
+  // Focus follows the active pane, but focus no longer owns surface lifetime.
   useEffect(() => {
-    if (!active) {
-      void destroyNativeGhostty(paneRef)
-
-      return
+    if (active) {
+      void focusNativeGhostty(paneRef)
     }
+  }, [active, paneRef])
 
+  // Keep output attached while mounted so inactive split panes keep rendering.
+  useEffect(() => {
     let releasePaneReady: (() => void) | null = null
     let unsubscribeOutput: (() => void) | null = null
     let cancelled = false
@@ -119,7 +138,7 @@ export const NativeGhosttyBody = ({
       unsubscribeOutput?.()
       void destroyNativeGhostty(paneRef)
     }
-  }, [active, onPaneReady, paneId, paneRef, ptyId, service])
+  }, [onPaneReady, paneRef, ptyId, service])
 
   return (
     <div

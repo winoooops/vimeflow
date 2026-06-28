@@ -1,5 +1,5 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -34,6 +34,13 @@ interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {
   data: string
 }
 
+type GhosttyNativePayloadByKind = {
+  update: GhosttyNativeUpdateRequest
+  data: GhosttyNativeDataRequest
+  focus: GhosttyNativePaneRequest
+  destroy: GhosttyNativePaneRequest
+}
+
 interface GhosttyNativeParentAddon {
   create: (
     bridgePath: string,
@@ -59,6 +66,13 @@ interface GhosttyNativeParentDeps {
   env?: NodeJS.ProcessEnv
   packaged?: boolean
   addon?: GhosttyNativeParentAddon
+}
+
+interface GhosttyNativeSurfaceState {
+  pane: GhosttyNativePaneRequest
+  surface: unknown
+  pendingData: string[]
+  lastResize: { cols: number; rows: number } | null
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -96,33 +110,43 @@ const loadAddon = (): GhosttyNativeParentAddon => {
   return require(addon) as GhosttyNativeParentAddon
 }
 
-function isGhosttyNativeUpdateRequest(
+function requireNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
+  kind: TKind,
   value: unknown
-): value is GhosttyNativeUpdateRequest {
-  return (
-    isRecord(value) &&
-    isString(value.sessionId) &&
-    isString(value.paneId) &&
-    isString(value.cwd) &&
-    isBounds(value.bounds) &&
-    typeof value.visible === 'boolean'
-  )
+): GhosttyNativePayloadByKind[TKind] {
+  if (!isNativePayload(kind, value)) {
+    throw new Error(`invalid ghostty native parent ${kind} payload`)
+  }
+
+  return value
 }
 
-function isGhosttyNativeDataRequest(
+function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
+  kind: TKind,
   value: unknown
-): value is GhosttyNativeDataRequest {
-  return (
-    isRecord(value) &&
-    isString(value.sessionId) &&
-    isString(value.paneId) &&
-    typeof value.data === 'string'
-  )
+): value is GhosttyNativePayloadByKind[TKind] {
+  if (!isPanePayload(value)) {
+    return false
+  }
+
+  switch (kind) {
+    case 'update':
+      return (
+        isString(value.cwd) &&
+        isBounds(value.bounds) &&
+        typeof value.visible === 'boolean'
+      )
+    case 'data':
+      return typeof value.data === 'string'
+    case 'focus':
+    case 'destroy':
+      return true
+  }
 }
 
-function isGhosttyNativePaneRequest(
+function isPanePayload(
   value: unknown
-): value is GhosttyNativePaneRequest {
+): value is GhosttyNativePaneRequest & Record<string, unknown> {
   return isRecord(value) && isString(value.sessionId) && isString(value.paneId)
 }
 
@@ -159,13 +183,7 @@ export class GhosttyNativeParentController {
 
   private addon: GhosttyNativeParentAddon | null
 
-  private currentPane: GhosttyNativePaneRequest | null = null
-
-  private surface: unknown = null
-
-  private pendingData: string[] = []
-
-  private lastResize: { cols: number; rows: number } | null = null
+  private readonly surfaces = new Map<string, GhosttyNativeSurfaceState>()
 
   constructor(deps: GhosttyNativeParentDeps) {
     this.sidecar = deps.sidecar
@@ -176,20 +194,22 @@ export class GhosttyNativeParentController {
   }
 
   registerIpc(): void {
+    // Only update needs sender: creating/positioning an NSView requires the
+    // owning BrowserWindow. Data/focus/destroy are pane-id routed.
     ipcMain.handle(GHOSTTY_NATIVE_UPDATE, (event, payload) =>
-      this.update(event, payload)
+      this.update(event.sender, requireNativePayload('update', payload))
     )
 
     ipcMain.handle(GHOSTTY_NATIVE_DATA, (_event, payload) =>
-      this.sendData(payload)
+      this.sendData(requireNativePayload('data', payload))
     )
 
     ipcMain.handle(GHOSTTY_NATIVE_FOCUS, (_event, payload) =>
-      this.focus(payload)
+      this.focus(requireNativePayload('focus', payload))
     )
 
     ipcMain.handle(GHOSTTY_NATIVE_DESTROY, (_event, payload) =>
-      this.destroy(payload)
+      this.destroy(requireNativePayload('destroy', payload))
     )
   }
 
@@ -198,36 +218,29 @@ export class GhosttyNativeParentController {
     ipcMain.removeHandler(GHOSTTY_NATIVE_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_FOCUS)
     ipcMain.removeHandler(GHOSTTY_NATIVE_DESTROY)
-    this.destroySurface()
+    for (const key of this.surfaces.keys()) {
+      this.destroySurface(key)
+    }
   }
 
   private update(
-    event: IpcMainInvokeEvent,
-    payload: unknown
+    sender: WebContents,
+    payload: GhosttyNativeUpdateRequest
   ): { enabled: boolean } {
+    // The renderer calls update with pane bounds; this path owns native view
+    // creation/alignment because Electron can resolve the BrowserWindow here.
     if (!this.enabled()) {
       return { enabled: false }
     }
 
-    if (!isGhosttyNativeUpdateRequest(payload)) {
-      throw new Error('invalid ghostty native parent update payload')
-    }
-
-    const win = BrowserWindow.fromWebContents(event.sender)
+    const win = BrowserWindow.fromWebContents(sender)
     if (!win) {
       throw new Error('ghostty native parent update has no owning window')
     }
 
-    const pane = {
-      sessionId: payload.sessionId,
-      paneId: payload.paneId,
-    }
-    if (!this.matchesCurrentPane(pane)) {
-      this.destroySurface()
-      this.currentPane = pane
-    }
+    const state = this.getOrCreatePaneState(payload)
 
-    const surface = this.getOrCreateSurface(win)
+    const surface = this.getOrCreateSurface(win, state)
     this.getAddon().setFrame(
       surface,
       payload.bounds.x,
@@ -235,71 +248,53 @@ export class GhosttyNativeParentController {
       payload.visible ? payload.bounds.width : 0,
       payload.visible ? payload.bounds.height : 0
     )
-    this.flushPendingData()
+    this.flushPendingData(state)
 
     return { enabled: true }
   }
 
-  private sendData(payload: unknown): { enabled: boolean } {
+  private sendData(payload: GhosttyNativeDataRequest): { enabled: boolean } {
     if (!this.enabled()) {
       return { enabled: false }
     }
 
-    if (!isGhosttyNativeDataRequest(payload)) {
-      throw new Error('invalid ghostty native parent data payload')
-    }
+    const state = this.getOrCreatePaneState(payload)
 
-    this.currentPane ??= {
-      sessionId: payload.sessionId,
-      paneId: payload.paneId,
-    }
-
-    if (!this.matchesCurrentPane(payload)) {
-      return { enabled: true }
-    }
-
-    if (!this.surface) {
-      this.pendingData.push(payload.data)
-      if (this.pendingData.length > MAX_PENDING_CHUNKS) {
-        this.pendingData.shift()
+    // PTY data can arrive before the renderer has reported pane bounds.
+    // Keep a small tail, then flush it when update creates the native surface.
+    if (!state.surface) {
+      state.pendingData.push(payload.data)
+      if (state.pendingData.length > MAX_PENDING_CHUNKS) {
+        state.pendingData.shift()
       }
 
       return { enabled: true }
     }
 
-    this.getAddon().write(this.surface, payload.data)
+    this.getAddon().write(state.surface, payload.data)
 
     return { enabled: true }
   }
 
-  private focus(payload: unknown): { enabled: boolean } {
+  private focus(payload: GhosttyNativePaneRequest): { enabled: boolean } {
     if (!this.enabled()) {
       return { enabled: false }
     }
 
-    if (!isGhosttyNativePaneRequest(payload)) {
-      throw new Error('invalid ghostty native parent focus payload')
-    }
-
-    if (this.surface && this.matchesCurrentPane(payload)) {
-      this.getAddon().focus(this.surface)
+    const state = this.getExistingPaneState(payload)
+    if (state?.surface) {
+      this.getAddon().focus(state.surface)
     }
 
     return { enabled: true }
   }
 
-  private destroy(payload: unknown): { enabled: boolean } {
+  private destroy(payload: GhosttyNativePaneRequest): { enabled: boolean } {
     if (!this.enabled()) {
       return { enabled: false }
     }
 
-    if (!isGhosttyNativePaneRequest(payload)) {
-      throw new Error('invalid ghostty native parent destroy payload')
-    }
-
-    if (this.matchesCurrentPane(payload)) {
-      this.destroySurface()
-    }
+    this.destroySurface(this.paneKey(payload))
 
     return { enabled: true }
   }
@@ -314,38 +309,71 @@ export class GhosttyNativeParentController {
     return this.addon
   }
 
-  private getOrCreateSurface(win: BrowserWindow): unknown {
-    if (this.surface) {
-      return this.surface
+  private getExistingPaneState(
+    payload: GhosttyNativePaneRequest
+  ): GhosttyNativeSurfaceState | null {
+    return this.surfaces.get(this.paneKey(payload)) ?? null
+  }
+
+  private getOrCreatePaneState(
+    payload: GhosttyNativePaneRequest
+  ): GhosttyNativeSurfaceState {
+    const key = this.paneKey(payload)
+    const existing = this.surfaces.get(key)
+    if (existing) {
+      return existing
     }
 
-    this.surface = this.getAddon().create(
+    const state = {
+      pane: {
+        sessionId: payload.sessionId,
+        paneId: payload.paneId,
+      },
+      surface: null,
+      pendingData: [],
+      lastResize: null,
+    }
+    this.surfaces.set(key, state)
+
+    return state
+  }
+
+  private getOrCreateSurface(
+    win: BrowserWindow,
+    state: GhosttyNativeSurfaceState
+  ): unknown {
+    if (state.surface) {
+      return state.surface
+    }
+
+    state.surface = this.getAddon().create(
       bridgePath(),
       win.getNativeWindowHandle(),
       (data) => {
-        if (!this.currentPane) {
+        if (!this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
 
         void this.sidecar.invoke('write_pty', {
           request: {
-            sessionId: this.currentPane.sessionId,
+            sessionId: state.pane.sessionId,
             data,
           },
         })
       },
       (cols, rows) => {
-        if (
-          !this.currentPane ||
-          (this.lastResize?.cols === cols && this.lastResize.rows === rows)
-        ) {
+        if (!this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
 
-        this.lastResize = { cols, rows }
+        if (state.lastResize?.cols === cols && state.lastResize.rows === rows) {
+          return
+        }
+
+        state.lastResize = { cols, rows }
         void this.sidecar.invoke('resize_pty', {
           request: {
-            sessionId: this.currentPane.sessionId,
+            sessionId: state.pane.sessionId,
             cols,
             rows,
           },
@@ -353,34 +381,35 @@ export class GhosttyNativeParentController {
       }
     )
 
-    return this.surface
+    return state.surface
   }
 
-  private flushPendingData(): void {
-    if (!this.surface) {
+  private flushPendingData(state: GhosttyNativeSurfaceState): void {
+    if (!state.surface) {
       return
     }
 
-    for (const data of this.pendingData.splice(0)) {
-      this.getAddon().write(this.surface, data)
+    // PTY output can arrive before the renderer reports pane bounds. Replay
+    // that small tail once the native surface exists so startup text is kept.
+    for (const data of state.pendingData.splice(0)) {
+      this.getAddon().write(state.surface, data)
     }
   }
 
-  private matchesCurrentPane(payload: GhosttyNativePaneRequest): boolean {
-    return (
-      this.currentPane?.sessionId === payload.sessionId &&
-      this.currentPane.paneId === payload.paneId
-    )
+  private paneKey(payload: GhosttyNativePaneRequest): string {
+    return `${payload.sessionId}:${payload.paneId}`
   }
 
-  private destroySurface(): void {
-    if (this.surface) {
-      this.getAddon().destroy(this.surface)
+  private destroySurface(key: string): void {
+    const state = this.surfaces.get(key)
+    if (!state) {
+      return
     }
-    this.surface = null
-    this.currentPane = null
-    this.pendingData = []
-    this.lastResize = null
+
+    if (state.surface) {
+      this.getAddon().destroy(state.surface)
+    }
+    this.surfaces.delete(key)
   }
 }
 

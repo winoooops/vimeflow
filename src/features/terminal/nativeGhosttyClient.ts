@@ -47,6 +47,12 @@ const nativeGhosttyApi = (): NativeGhosttyApi | undefined => {
 const isMacRenderer = (): boolean =>
   typeof navigator !== 'undefined' && navigator.platform.startsWith('Mac')
 
+const isDisabledResult = (value: unknown): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  'enabled' in value &&
+  value.enabled === false
+
 export const shouldUseNativeGhostty = (): boolean =>
   (import.meta.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
     import.meta.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1') &&
@@ -55,8 +61,15 @@ export const shouldUseNativeGhostty = (): boolean =>
 
 export const updateNativeGhostty = async (
   request: NativeGhosttyUpdateRequest
-): Promise<void> => {
-  await nativeGhosttyApi()?.update(request)
+): Promise<boolean> => {
+  const api = nativeGhosttyApi()
+  if (!api) {
+    return false
+  }
+
+  const result = await api.update(request)
+
+  return !isDisabledResult(result)
 }
 
 export const sendNativeGhosttyData = async (

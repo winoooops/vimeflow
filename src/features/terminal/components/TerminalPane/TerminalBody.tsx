@@ -2,8 +2,10 @@
 // cspell:ignore Ghostty
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type ReactElement,
 } from 'react'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
@@ -13,7 +15,7 @@ import {
   shouldUseNativeGhostty,
 } from '../../nativeGhosttyClient'
 import { Body as XtermBody, type BodyHandle, type BodyMode } from './Body'
-import { NativeGhosttyBody as GhosttyBody } from './NativeGhosttyBody'
+import { GhosttyBody } from './GhosttyBody'
 
 interface TerminalBodyProps {
   paneId: string
@@ -55,7 +57,12 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
     ref
   ): ReactElement {
     const xtermRef = useRef<BodyHandle>(null)
-    const useNativeGhostty = shouldUseNativeGhostty()
+    const [nativeUnavailable, setNativeUnavailable] = useState(false)
+    const useNativeGhostty = shouldUseNativeGhostty() && !nativeUnavailable
+
+    useEffect(() => {
+      setNativeUnavailable(false)
+    }, [paneId, ptyId])
 
     useImperativeHandle(ref, () => ({
       focusTerminal(): void {
@@ -78,6 +85,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           active={active}
           service={service}
           onPaneReady={onPaneReady}
+          onUnavailable={(): void => setNativeUnavailable(true)}
         />
       )
     }

@@ -710,9 +710,10 @@ VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></p
             证据。真正方向是 parent NSView addon。
           </li>
           <li>
-            parent NSView addon 目前仍是单 pane spike。它已经解决 helper window
-            的 z-order/focus 穿透大方向，但还需要手动确认输入焦点、 resize
-            跟随、多 pane 切换、窗口关闭和 orphan cleanup。
+            parent NSView addon 已经从单 surface spike 推进到 per-pane
+            registry：每个 pane 有自己的 native surface、pending data 和 resize
+            去重状态。还需要手动确认真实多 pane 的焦点、 resize 跟随、窗口关闭和
+            orphan cleanup。
           </li>
           <li>
             Swift package 现在仍放在 <code>docs/exploration</code> 下，方便
@@ -754,7 +755,97 @@ VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></p
       </section>
 
       <section>
-        <h2>11. 证据链接</h2>
+        <h2>11. 2026-06-27 M6 更新</h2>
+        <p>
+          当前交付方向已经收敛到 M6：先把 parent-host 产品化，但仍保持 feature
+          gate，不直接变成 macOS 默认。WTerm/libghostty-wasm 和 WebGL renderer
+          都只保留为历史调查结论。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>状态</th>
+              <th>证据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>multi-pane native surface</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                Electron parent controller 改为 per-pane registry；两个 pane
+                update 不再互相 destroy，input/resize 回到各自 PTY。
+              </td>
+            </tr>
+            <tr>
+              <td>inactive pane lifecycle</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                React 侧 mounted pane 继续保持 native surface；<code
+                  >active</code
+                >
+                只表示 focus，不再表示 visible/destroy。
+              </td>
+            </tr>
+            <tr>
+              <td>native fallback</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                如果 main 侧返回 <code>{ enabled: false }</code> 或 update
+                抛错，Ghostty body 会上报 unavailable，TerminalBody 立即切回
+                xterm。
+              </td>
+            </tr>
+            <tr>
+              <td>focused tests</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code
+                  >npx vitest run electron/ghostty-native-parent.test.ts</code
+                >
+                和
+                <code
+                  >npx vitest run
+                  src/features/terminal/components/TerminalPane/NativeGhosttyBody.test.tsx</code
+                >
+                以及
+                <code
+                  >npx vitest run
+                  src/features/terminal/components/TerminalPane/TerminalBody.test.tsx</code
+                >
+                均通过。
+              </td>
+            </tr>
+            <tr>
+              <td>type check</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code>npx tsc -p electron/tsconfig.json --noEmit</code> 和
+                <code>npx tsc -b --pretty false</code> 均通过。
+              </td>
+            </tr>
+            <tr>
+              <td>native smoke</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code>npm run ghostty:native-parent:build</code> 通过；Node
+                能加载 <code>ghostty_native_parent.node</code>，并确认
+                <code>create/setFrame/write/focus/destroy</code> 都是函数。
+                <code>otool -L</code> 未暴露 repo-local dylib 依赖。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          本轮还没有完成 packaged app smoke，也没有把 SwiftPM bridge 从
+          <code>docs/exploration</code> 迁到生产 native 目录；这仍属于 M6
+          后半段和 M7 的工作。
+        </p>
+      </section>
+
+      <section>
+        <h2>12. 证据链接</h2>
         <ul>
           <li>
             <a href="https://ghostty.org/docs/about"
