@@ -155,6 +155,8 @@ export class GhosttyNativeParentController {
 
   private addon: GhosttyNativeParentAddon | null
 
+  private addonLoadFailed = false
+
   private readonly surfaces = new Map<string, GhosttyNativeSurfaceState>()
 
   constructor(deps: GhosttyNativeParentDeps) {
@@ -218,12 +220,19 @@ export class GhosttyNativeParentController {
     const state = this.getOrCreatePaneState(payload)
 
     const surface = this.getOrCreateSurface(addon, win, state)
+
+    const frame = {
+      x: Math.round(payload.bounds.x),
+      y: Math.round(payload.bounds.y),
+      width: payload.visible ? Math.round(payload.bounds.width) : 0,
+      height: payload.visible ? Math.round(payload.bounds.height) : 0,
+    }
     addon.setFrame(
       surface,
-      payload.bounds.x,
-      payload.bounds.y,
-      payload.visible ? payload.bounds.width : 0,
-      payload.visible ? payload.bounds.height : 0
+      frame.x,
+      frame.y,
+      frame.width,
+      frame.height
     )
     this.flushPendingData(addon, state)
 
@@ -296,12 +305,25 @@ export class GhosttyNativeParentController {
   }
 
   private getAddon(): GhosttyNativeParentAddon {
-    this.addon ??= loadAddon()
+    if (this.addonLoadFailed) {
+      throw new Error('Ghostty native parent addon is disabled')
+    }
+
+    try {
+      this.addon ??= loadAddon()
+    } catch (error) {
+      this.addonLoadFailed = true
+      throw error
+    }
 
     return this.addon
   }
 
   private getOptionalAddon(): GhosttyNativeParentAddon | null {
+    if (this.addonLoadFailed) {
+      return null
+    }
+
     try {
       return this.getAddon()
     } catch {

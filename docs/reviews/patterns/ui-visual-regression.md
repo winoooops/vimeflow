@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-20
-ref_count: 9
+last_updated: 2026-06-28
+ref_count: 10
 ---
 
 # UI Visual Regression
@@ -169,3 +169,12 @@ test case for the state that triggers the collision.
 - **Finding:** The ClaudeCode regression test asserted the cropped viewBox and removed circle, but did not guard against reintroducing `preserveAspectRatio="none"`. That left the prior non-uniform scaling regression able to return without breaking the test.
 - **Fix:** Added an explicit assertion that the rendered SVG has no `preserveAspectRatio` attribute, preserving the uniform-scaling invariant alongside the rendered-ratio assertion.
 - **Commit:** same commit as this entry
+
+### 16. Native Ghostty parent forwarded fractional AppKit frame bounds
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The parented Ghostty surface path forwarded fractional `getBoundingClientRect()` coordinates directly to `addon.setFrame`, while the helper path rounded them before crossing into native code. On HiDPI displays this could place the NSView on subpixel boundaries and create a visible one-pixel gap, blur, or overlap against adjacent panes.
+- **Fix:** Rounded x, y, width, and height before calling `addon.setFrame`, preserving the existing hidden-pane behavior that sends zero width and height.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

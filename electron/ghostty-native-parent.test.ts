@@ -17,9 +17,15 @@ const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
 nativeHandle.writeBigUInt64LE(1n)
 
-const { isDestroyed, webContentsSend } = vi.hoisted(() => ({
+const { existsSync, isDestroyed, webContentsSend } = vi.hoisted(() => ({
+  existsSync: vi.fn(() => false),
   isDestroyed: vi.fn(() => false),
   webContentsSend: vi.fn(),
+}))
+
+vi.mock('node:fs', () => ({
+  default: { existsSync },
+  existsSync,
 }))
 
 vi.mock('electron', () => ({
@@ -45,6 +51,8 @@ vi.mock('electron', () => ({
 describe('ghostty native parent', () => {
   beforeEach(() => {
     handlers.clear()
+    existsSync.mockReset()
+    existsSync.mockReturnValue(false)
     isDestroyed.mockReset()
     isDestroyed.mockReturnValue(false)
     webContentsSend.mockClear()
@@ -139,6 +147,60 @@ describe('ghostty native parent', () => {
         { sessionId: 'pty-1', paneId: 'pane-1' }
       )
     ).toEqual({ enabled: false })
+    expect(existsSync).toHaveBeenCalledTimes(1)
+  })
+
+  test('rounds fractional parent frame bounds before forwarding to AppKit', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10.4, y: 20.5, width: 300.49, height: 200.51 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 21, 300, 201)
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: false,
+        bounds: { x: 10.6, y: 20.4, width: 300.51, height: 200.49 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenLastCalledWith(surface, 11, 20, 0, 0)
+
+    controller.dispose()
   })
 
   test('creates parented surface and forwards native input plus resize', () => {

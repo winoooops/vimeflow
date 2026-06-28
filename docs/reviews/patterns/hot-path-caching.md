@@ -3,7 +3,7 @@ id: hot-path-caching
 category: backend
 created: 2026-06-09
 last_updated: 2026-06-28
-ref_count: 1
+ref_count: 2
 ---
 
 # Hot-Path Caching
@@ -84,4 +84,13 @@ feature.
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** The native Ghostty parent cached the `dlopen` handle before all `dlsym` calls succeeded and used that handle as the readiness sentinel. A mismatched dylib could fail one symbol lookup, then the next native call would skip symbol loading and call a null function pointer.
 - **Fix:** Added a bridge reset path that `dlclose`s the library and clears every cached function pointer when any symbol lookup fails, so only a fully loaded bridge remains cached.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Missing Ghostty parent addon retried filesystem checks on every IPC call
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `getAddon()` used nullish assignment to cache successful addon loads, but a missing native addon made `loadAddon()` throw before assignment. Every later parent update/data/focus/destroy IPC call retried synchronous artifact checks and exception allocation while the feature flag was enabled.
+- **Fix:** Added an addon-load failure sentinel checked by `getOptionalAddon()` before entering the loader path, so a controller attempts the native artifact load once and later hot-path calls return disabled immediately.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
