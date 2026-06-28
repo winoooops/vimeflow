@@ -231,7 +231,9 @@ describe('ghostty native helper', () => {
   })
 
   test('handles helper stdin errors during shutdown', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
     const stdout = new PassThrough()
 
     const stdin = new Writable({

@@ -79,6 +79,10 @@ const applyToolCallEvents = (
   return { ...prev, toolCalls, recentToolCalls }
 }
 
+const replayRecentStatus = (
+  status: AgentToolCallEvent['status']
+): RecentToolCall['status'] => (status === 'failed' ? 'failed' : 'done')
+
 const createStatusForSession = (sessionId: string | null): AgentStatus => {
   if (sessionId === null) {
     return createDefaultAgentStatus(null)
@@ -534,8 +538,30 @@ export const useAgentStatus = (
     // per frame instead. `toolCallFlushScheduled` (a boolean, not the rAF id)
     // gates scheduling so a synchronous rAF (tests/jsdom) still re-arms cleanly.
     let pendingToolCalls: AgentToolCallEvent[] = []
+    const pendingSeenToolUseIds = new Set<string>()
     let toolCallFlushScheduled = false
     let toolCallFrame: number | null = null
+
+    const persistSeenToolUseIds = (
+      events: readonly AgentToolCallEvent[]
+    ): void => {
+      let changed = false
+      for (const event of events) {
+        if (event.status === 'running') {
+          continue
+        }
+
+        pendingSeenToolUseIds.delete(event.toolUseId)
+        if (!seenToolUseIdsRef.current.has(event.toolUseId)) {
+          seenToolUseIdsRef.current.add(event.toolUseId)
+          changed = true
+        }
+      }
+
+      if (changed) {
+        writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
+      }
+    }
 
     const flushToolCalls = (): void => {
       toolCallFlushScheduled = false
@@ -548,11 +574,13 @@ export const useAgentStatus = (
         // a resume's thousands of historical tool calls don't re-render per event.
         const batch = pendingToolCalls
         pendingToolCalls = []
+        persistSeenToolUseIds(batch)
         setStatus((prev) => applyToolCallEvents(prev, batch))
       } else {
         // Active mode (live agent): release ONE per frame so the JAR stacks each
         // tool call individually as the agent runs.
         const next = pendingToolCalls.shift()!
+        persistSeenToolUseIds([next])
         setStatus((prev) => applyToolCallEvents(prev, [next]))
       }
       if (pendingToolCalls.length > 0) {
@@ -728,9 +756,9 @@ export const useAgentStatus = (
           const p = payload
 
           if (p.status !== 'running') {
-            const duplicate = seenToolUseIdsRef.current.has(p.toolUseId)
-            seenToolUseIdsRef.current.add(p.toolUseId)
-            writeStatusSeenToolUseIds(sessionId, seenToolUseIdsRef.current)
+            const duplicate =
+              seenToolUseIdsRef.current.has(p.toolUseId) ||
+              pendingSeenToolUseIds.has(p.toolUseId)
 
             if (duplicate) {
               setStatus((prev) => {
@@ -754,6 +782,8 @@ export const useAgentStatus = (
 
               return
             }
+
+            pendingSeenToolUseIds.add(p.toolUseId)
           }
 
           pendingToolCalls.push(payload)
@@ -879,10 +909,7 @@ export const useAgentStatus = (
                 id: e.toolUseId,
                 tool: e.tool,
                 args: e.args,
-                // The backend only folds completed (done/failed) calls into a
-                // replay summary's recentToolCalls — never `running` — so this
-                // narrowing is sound at runtime (see ReplayActivity::record_completed).
-                status: e.status as 'done' | 'failed',
+                status: replayRecentStatus(e.status),
                 durationMs: Number(e.durationMs),
                 timestamp: e.timestamp,
                 isTestFile: e.isTestFile,

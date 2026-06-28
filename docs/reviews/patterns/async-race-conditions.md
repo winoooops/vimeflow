@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-28
-ref_count: 70
+ref_count: 71
 ---
 
 # Async Race Conditions
@@ -728,4 +728,18 @@ prevent showing previous data.
 - **Fix:** Re-check cancellation after the restored replay send and again before draining
   buffered events or registering pane readiness. Added regression coverage that unmounts
   while replay output is still pending.
+- **Commit:** same commit as this entry
+
+### 73. Tool-call seen IDs persisted before deferred state flush
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Completed tool-call IDs were written to the persisted seen-ID set when
+  the IPC event arrived, but the state update was deferred to `requestAnimationFrame`.
+  If the hook unmounted before that frame, replay later treated the event as already
+  applied and dropped it from totals/recent activity.
+- **Fix:** Keep a non-persistent pending seen-ID set for same-frame duplicate filtering,
+  and persist completed IDs only inside the rAF flush that applies the corresponding
+  state update. Added regression coverage for unmount-before-flush.
 - **Commit:** same commit as this entry

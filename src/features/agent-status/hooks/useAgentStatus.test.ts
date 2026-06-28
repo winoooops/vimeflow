@@ -4,7 +4,10 @@ import { renderHook, act } from '@testing-library/react'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type { TestRunSnapshot } from '../types'
-import { clearStatusSnapshots } from '../utils/statusSnapshotStore'
+import {
+  clearStatusSnapshots,
+  readStatusSeenToolUseIds,
+} from '../utils/statusSnapshotStore'
 import { useAgentStatus } from './useAgentStatus'
 
 type EventCallback<T = unknown> = (payload: T) => void
@@ -778,6 +781,44 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.total).toBe(43)
   })
 
+  test('does not persist seen tool calls before a deferred flush applies', async () => {
+    let frameCallback: FrameRequestCallback | null = null
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameCallback = callback
+
+      return 1
+    })
+
+    const { result, unmount } = renderHook(() => useAgentStatus('session-1'))
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_deferred',
+        tool: 'Read',
+        args: '{}',
+        status: 'done',
+        timestamp: '2026-04-12T00:00:00Z',
+        durationMs: 10,
+      })
+    })
+
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(readStatusSeenToolUseIds('session-1').has('toolu_deferred')).toBe(
+      false
+    )
+
+    unmount()
+
+    expect(frameCallback).not.toBeNull()
+    expect(readStatusSeenToolUseIds('session-1').has('toolu_deferred')).toBe(
+      false
+    )
+  })
+
   test('manages recentToolCalls as a sliding window capped at 50', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
@@ -1010,6 +1051,40 @@ describe('useAgentStatus', () => {
     })
     expect(result.current.recentToolCalls[1]?.id).toBe('toolu_older')
     expect(result.current.recentToolCalls[1]?.durationMs).toBe(40)
+  })
+
+  test('normalizes running entries from replay summary recent tool calls', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(
+        eventListeners.get('agent-replay-summary')?.length
+      ).toBeGreaterThanOrEqual(1)
+    })
+
+    act(() => {
+      emit('agent-replay-summary', {
+        sessionId: 'pty-session-1',
+        numTurns: 1,
+        cwd: null,
+        toolCallTotal: 1,
+        toolCallByType: { Bash: 1 },
+        recentToolCalls: [
+          {
+            sessionId: 'pty-session-1',
+            toolUseId: 'toolu_running_regression',
+            tool: 'Bash',
+            args: '{"command":"npm test"}',
+            status: 'running',
+            timestamp: '2026-04-28T12:00:02Z',
+            durationMs: 0n,
+            isTestFile: false,
+          },
+        ],
+      })
+    })
+
+    expect(result.current.recentToolCalls[0]?.status).toBe('done')
   })
 
   test('ignores agent-replay-summary events for other sessions', async () => {

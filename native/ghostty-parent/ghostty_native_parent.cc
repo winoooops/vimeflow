@@ -18,6 +18,7 @@ using DestroyFn = void (*)(void *);
 
 struct BridgeApi {
   void *library = nullptr;
+  std::string loaded_path;
   CreateFn create = nullptr;
   SetFrameFn set_frame = nullptr;
   WriteFn write = nullptr;
@@ -67,6 +68,12 @@ bool LoadSymbol(napi_env env, const char *name, void **target) {
 
 bool EnsureBridge(napi_env env, const std::string &path) {
   if (bridge.library != nullptr) {
+    if (bridge.loaded_path != path) {
+      napi_throw_error(env, nullptr,
+                       "ghostty native bridge already loaded from another path");
+      return false;
+    }
+
     return true;
   }
 
@@ -86,6 +93,7 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.focus)) &&
       LoadSymbol(env, "vimeflow_ghostty_destroy",
                  reinterpret_cast<void **>(&bridge.destroy))) {
+    bridge.loaded_path = path;
     return true;
   }
 

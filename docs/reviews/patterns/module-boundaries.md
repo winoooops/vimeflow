@@ -3,7 +3,7 @@ id: module-boundaries
 category: code-quality
 created: 2026-04-30
 last_updated: 2026-06-28
-ref_count: 5
+ref_count: 6
 ---
 
 # Module Boundaries

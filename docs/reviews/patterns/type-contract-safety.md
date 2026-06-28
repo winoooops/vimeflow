@@ -3,7 +3,7 @@ id: type-contract-safety
 category: code-quality
 created: 2026-06-15
 last_updated: 2026-06-28
-ref_count: 5
+ref_count: 6
 ---
 
 # Type Contract Safety
@@ -113,4 +113,32 @@ expands.
 - **File:** `electron/ghostty-native-shared.ts`
 - **Finding:** The shared `isString` guard rejected empty strings and was reused for both identity fields and `cwd` in native Ghostty IPC update payloads. A valid startup update with `cwd: ''` could be rejected, causing the renderer to mark native Ghostty unavailable and fall back to xterm for that pane.
 - **Fix:** Split the guard into plain `isString` for path-like fields and `isNonEmptyString` for `sessionId`/`paneId`, then updated both helper and parent payload validators with regression coverage for empty cwd.
+- **Commit:** same commit as this entry
+
+### 11. Replay summary recent-call status cast trusted a backend invariant without a runtime guard
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Replay-summary recent tool calls narrowed the generated
+  `AgentToolCallEvent.status` union with `as 'done' | 'failed'`. If the backend
+  accidentally emitted a `running` entry, the renderer would construct an invalid
+  `RecentToolCall` state object with no warning or fallback.
+- **Fix:** Replace the unchecked cast with a small runtime normalizer that maps failed
+  to failed and all other replay-summary statuses to done, with regression coverage
+  for a malformed running entry.
+- **Commit:** same commit as this entry
+
+### 12. Native Ghostty bridge singleton ignored mismatched dylib paths
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `EnsureBridge` cached the first loaded dylib handle but returned success
+  for all later calls regardless of the requested path. A dev hot-reload or build
+  artifact refresh could pass a new path while the addon silently kept using the old
+  bridge functions.
+- **Fix:** Store the loaded dylib path beside the handle and throw if a later request
+  asks for a different path, preserving the singleton while making the API contract
+  explicit.
 - **Commit:** same commit as this entry
