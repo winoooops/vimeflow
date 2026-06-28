@@ -2,7 +2,7 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-06-22
+last_updated: 2026-06-28
 ref_count: 12
 ---
 
@@ -124,3 +124,12 @@ consider using path libraries for cross-platform code.
 - **Finding:** `std::fs::rename(tmp, target)` replaces an existing file on Unix but fails on Windows when `target` already exists. Because OpenCode bridge install errors are non-fatal, Windows users with a stale or unparsable plugin file could remain on the old schema indefinitely.
 - **Fix:** Routed replacement through a platform helper: Unix keeps atomic rename-over-existing, while Windows removes an existing target before renaming the temp file into place and cleans up the temp file on failure.
 - **Commit:** same commit as this entry
+
+### 13. Runtime helper path pointed into date-stamped exploration docs
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The Swift Ghostty helper package path was hardcoded under `docs/exploration/2026-06-27-ghostty-native-macos-runtime`, so pruning exploratory documentation could silently break the development native-helper runtime.
+- **Fix:** Moved the Swift package to `native/ghostty-helper` and updated `helperPackageDir()` to resolve that product-owned native path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

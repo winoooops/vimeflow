@@ -10,6 +10,7 @@ import {
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
+import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 
 interface GhosttyNativeBounds {
@@ -141,6 +142,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
     case 'focus':
     case 'destroy':
       return true
+    default:
+      return false
   }
 }
 
@@ -354,6 +357,10 @@ export class GhosttyNativeParentController {
           return
         }
 
+        win.webContents.send(BACKEND_EVENT, {
+          event: 'ghostty-native-input',
+          payload: { ...state.pane, data },
+        })
         void this.sidecar.invoke('write_pty', {
           request: {
             sessionId: state.pane.sessionId,

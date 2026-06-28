@@ -2,7 +2,7 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-06-24
+last_updated: 2026-06-28
 ref_count: 3
 ---
 
@@ -60,4 +60,13 @@ double execution, and paste failures.
 - **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
 - **Finding:** `pasteImageIfAvailable` converted the top clipboard image to a data URL and pasted it into the PTY without checking byte size. Large screenshots can expand to multi-megabyte base64 input, freezing the terminal and overflowing coding-agent context windows.
 - **Fix:** Added a 512 KB pre-encoding cap for clipboard image paste, clears the image-paste affordance when exceeded, surfaces an error through `onPasteError`, and covers the rejection path with a regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Native Ghostty panes bypassed restore replay and command-submit tracking
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** The native Ghostty body attached live PTY output but did not replay `restoredFrom` output and did not surface main-process native input through the terminal command-submit path. Restored panes could appear blank until new output, and `/clear` or `/resume` typed into a native pane bypassed workspace reset logic.
+- **Fix:** Forwarded `restoredFrom` and `onCommandSubmit` into `GhosttyBody`, replayed historical and buffered output into the native surface, and mirrored native input from Electron main through a backend event that the renderer tracks with the same command-line parsing rules as xterm.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

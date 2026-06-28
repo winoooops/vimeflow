@@ -22,6 +22,7 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
+  isGhosttyNativeEnabled,
   setupGhosttyNativeHelper,
   type GhosttyNativeHelperController,
 } from './ghostty-native-helper'
@@ -387,19 +388,29 @@ const setupApp = async (): Promise<void> => {
   browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
   ghosttyNativeController?.dispose()
-  ghosttyNativeController = isGhosttyNativeParentEnabled(
+  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
     process.platform,
     process.env,
     app.isPackaged
   )
-    ? setupGhosttyNativeParent({
-        sidecar: spawnedSidecar,
-        packaged: app.isPackaged,
-      })
-    : setupGhosttyNativeHelper({
-        sidecar: spawnedSidecar,
-        packaged: app.isPackaged,
-      })
+  const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+  if (ghosttyNativeParentEnabled) {
+    ghosttyNativeController = setupGhosttyNativeParent({
+      sidecar: spawnedSidecar,
+      packaged: app.isPackaged,
+    })
+  } else if (ghosttyNativeHelperEnabled) {
+    ghosttyNativeController = setupGhosttyNativeHelper({
+      sidecar: spawnedSidecar,
+      packaged: app.isPackaged,
+    })
+  } else {
+    ghosttyNativeController = null
+  }
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({

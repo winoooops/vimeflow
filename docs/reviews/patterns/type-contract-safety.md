@@ -2,7 +2,7 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-20
+last_updated: 2026-06-28
 ref_count: 5
 ---
 
@@ -96,3 +96,12 @@ expands.
 - **Finding:** `closeSignal?: unknown` allowed callers to pass object or array values even though the close effect compares the value by strict equality. Reference-unstable values could close the menu on every render or fail to communicate the intended numeric counter semantics.
 - **Fix:** Narrowed the public prop to `number | undefined`, matching the only supported usage pattern: incrementing a primitive counter when a consumer needs to request a close.
 - **Commit:** same commit as this entry
+
+### 9. Generic IPC payload guard returned implicit undefined for future variants
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `isNativePayload` covered every current Ghostty payload kind but had no default arm. If a new kind were added without updating the guard and `noImplicitReturns` did not catch it, the runtime path would return `undefined` and reject otherwise valid payloads with a misleading invalid-payload error.
+- **Fix:** Added an explicit `default: return false` branch so unknown or future kinds fail closed at runtime.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

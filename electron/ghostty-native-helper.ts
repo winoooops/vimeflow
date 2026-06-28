@@ -10,6 +10,7 @@ import {
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
+import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 
 interface GhosttyNativeBounds {
@@ -374,6 +375,12 @@ export class GhosttyNativeHelperController {
       return
     }
 
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(BACKEND_EVENT, {
+        event: 'ghostty-native-input',
+        payload: { ...this.currentPane, data },
+      })
+    }
     void this.sidecar.invoke('write_pty', {
       request: {
         sessionId: this.currentPane.sessionId,
@@ -500,14 +507,7 @@ function isString(value: unknown): value is string {
 }
 
 function helperPackageDir(): string {
-  return path.resolve(
-    __dirname,
-    '..',
-    'docs',
-    'exploration',
-    '2026-06-27-ghostty-native-macos-runtime',
-    'ghostty-native-macos-smoke'
-  )
+  return path.resolve(__dirname, '..', 'native', 'ghostty-helper')
 }
 
 function helperScratchDir(): string {

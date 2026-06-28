@@ -250,7 +250,11 @@ napi_value Create(napi_env env, napi_callback_info info) {
   }
 
   napi_value external;
-  napi_create_external(env, surface, FinalizeSurface, nullptr, &external);
+  if (napi_create_external(env, surface, FinalizeSurface, nullptr, &external) !=
+      napi_ok) {
+    FinalizeSurface(env, surface, nullptr);
+    return Throw(env, "failed to create external");
+  }
 
   return external;
 }

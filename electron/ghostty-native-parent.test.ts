@@ -5,6 +5,7 @@ import {
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
+import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isGhosttyNativeParentEnabled,
@@ -14,11 +15,15 @@ import {
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
 nativeHandle.writeBigUInt64LE(1n)
+const { webContentsSend } = vi.hoisted(() => ({
+  webContentsSend: vi.fn(),
+}))
 
 vi.mock('electron', () => ({
   BrowserWindow: {
     fromWebContents: vi.fn(() => ({
       getNativeWindowHandle: (): Buffer => nativeHandle,
+      webContents: { send: webContentsSend },
     })),
   },
   ipcMain: {
@@ -36,6 +41,7 @@ vi.mock('electron', () => ({
 describe('ghostty native parent', () => {
   beforeEach(() => {
     handlers.clear()
+    webContentsSend.mockClear()
   })
 
   test('enables only on macOS with the parent feature flag', () => {
@@ -141,6 +147,10 @@ describe('ghostty native parent', () => {
 
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
+    })
+    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
+      event: 'ghostty-native-input',
+      payload: { sessionId: 'pty-1', paneId: 'pane-1', data: 'a' },
     })
 
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
