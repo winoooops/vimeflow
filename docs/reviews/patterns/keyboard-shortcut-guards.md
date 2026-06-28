@@ -349,3 +349,17 @@ against three classes of false-fire:
 - **Finding:** The `KeyZ` branch did not mirror the digit-shortcut container guard, so `Ctrl+Z` / `Cmd+Z` from the focused editor dock toggled the terminal layout instead of reaching the dock.
 - **Fix:** Added an `isTerminalContainerActiveRef.current === false` pass-through before the branch can prevent default, with regression coverage for dock focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Manual layout cycle left stale Mod+Z restore state
+
+- **Source:** github-claude | PR #631 round 2 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The per-session Mod+Z restore map was cleared on restore and failed-restore
+  paths, but not when `Mod+\` manually changed the same session's layout. A user could
+  enter single-pane focus with `Mod+Z`, cycle away with `Mod+\`, later return to single,
+  and have the next `Mod+Z` consume the stale restore entry.
+- **Fix:** Clear the active session's restore entry in the `Backslash` layout-cycle branch
+  before applying the next layout. Added regression coverage for the cycle-away-then-single
+  path so `Mod+Z` returns to the single-layout no-op behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

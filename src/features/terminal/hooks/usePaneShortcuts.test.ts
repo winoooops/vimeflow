@@ -312,6 +312,57 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
+  test('Mod+\\ clears pending Mod+Z restore state for the active session', () => {
+    const setSessionLayout = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ session }) =>
+        usePaneShortcuts({
+          sessions: [session],
+          activeSessionId: 's1',
+          setSessionActivePane: vi.fn(),
+          setSessionLayout,
+        }),
+      {
+        initialProps: {
+          session: makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2'], 2),
+        },
+      }
+    )
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenCalledWith(
+      's1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      session: makeSession(
+        's1',
+        SINGLE_PANE_FOCUS_LAYOUT_ID,
+        ['p0', 'p1', 'p2'],
+        2
+      ),
+    })
+    fire('\\', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith('s1', 'vsplit')
+
+    setSessionLayout.mockClear()
+    rerender({
+      session: makeSession(
+        's1',
+        SINGLE_PANE_FOCUS_LAYOUT_ID,
+        ['p0', 'p1', 'p2'],
+        2
+      ),
+    })
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
   test('Shift+Mod+Z does not switch layout', () => {
     const setSessionLayout = vi.fn()
     renderHook(() =>

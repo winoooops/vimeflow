@@ -275,6 +275,7 @@ export const usePaneShortcuts = ({
         event.preventDefault()
         event.stopPropagation()
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
+        lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
       }
     }
