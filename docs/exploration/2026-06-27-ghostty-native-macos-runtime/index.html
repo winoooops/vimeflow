@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vimeflow macOS baked-in Ghostty runtime spike</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #121221;
+        --panel: #1d1d31;
+        --panel-2: #27273d;
+        --line: #3a3a52;
+        --text: #e6e6f0;
+        --muted: #b8b8ca;
+        --subtle: #8d8da3;
+        --blue: #8fb8ff;
+        --teal: #8de0d2;
+        --green: #a6e3a1;
+        --yellow: #f4d17a;
+        --red: #f38ba8;
+        --code: #11111d;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.62;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 44px 0 72px;
+      }
+
+      header,
+      section {
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 28px;
+      }
+
+      section {
+        margin-top: 18px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.18;
+      }
+
+      h1 {
+        max-width: 880px;
+        font-size: clamp(34px, 5vw, 58px);
+      }
+
+      h2 {
+        margin-bottom: 14px;
+        font-size: 25px;
+      }
+
+      h3 {
+        margin-top: 18px;
+        color: var(--teal);
+        font-size: 18px;
+      }
+
+      p {
+        margin: 12px 0 0;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--teal);
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .lede {
+        max-width: 860px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        padding: 16px;
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .card span {
+        color: var(--muted);
+      }
+
+      table {
+        width: 100%;
+        margin-top: 16px;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #202036;
+        color: var(--teal);
+      }
+
+      td {
+        background: #18182a;
+      }
+
+      code,
+      pre {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+      }
+
+      code {
+        border-radius: 4px;
+        background: var(--code);
+        padding: 2px 5px;
+        color: var(--yellow);
+      }
+
+      pre {
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        padding: 14px;
+        color: var(--muted);
+      }
+
+      .ok {
+        color: var(--green);
+      }
+
+      .risk {
+        color: var(--red);
+      }
+
+      .note {
+        border-left: 3px solid var(--teal);
+        background: #18182a;
+        padding: 12px 14px;
+      }
+
+      ul,
+      ol {
+        margin: 12px 0 0;
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      @media (max-width: 840px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        header,
+        section {
+          padding: 20px;
+        }
+
+        table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">
+          Vimeflow / Ghostty native macOS spike / 2026-06-27
+        </p>
+        <h1>macOS baked-in Ghostty runtime 技术笔记</h1>
+        <p class="lede">
+          当前结论：Linux 继续使用 xterm fallback；macOS 进入 Ghostty native
+          surface spike。第一轮不继续修 WTerm DOM，也不复制 Supacode 的完整
+          Ghostty submodule 构建链，而是先验证一个最小闭环：Vimeflow backend
+          继续拥有 PTY，macOS native Ghostty surface
+          只负责输入编码、VT/grid、Metal 渲染、selection 和 resize。
+        </p>
+        <div class="grid">
+          <div class="card">
+            <strong>新 worktree</strong>
+            <span><code>worktrees/ghostty-native-macos-runtime</code></span>
+          </div>
+          <div class="card">
+            <strong>新分支</strong>
+            <span
+              ><code>spike/ghostty-native-macos-runtime</code> from
+              <code>origin/main</code></span
+            >
+          </div>
+          <div class="card">
+            <strong>运行策略</strong>
+            <span>macOS Ghostty native；Linux/其他平台 xterm。</span>
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <h2>1. 为什么不是继续修 WTerm/libghostty-wasm</h2>
+        <p>
+          WTerm/libghostty-wasm 已经证明可以真实加载
+          <code>libghostty-vt.wasm</code>， 但它的 renderer 仍是 DOM。问题不是
+          VT parser，而是字体 shaping、glyph
+          placement、selection、cursor、颜色状态和高频 repaint 都落在 WTerm DOM
+          renderer 上。这个方向继续修会变成“在 DOM 里重写一个 Ghostty
+          renderer”。
+        </p>
+        <p>
+          Ghostty 官方文档把 native 路线说得很清楚：<code>libghostty</code>
+          提供核心 terminal emulation、font handling 和 rendering；macOS app
+          使用 Swift/AppKit/SwiftUI 链接 C API，Linux 使用
+          Zig/GTK。也就是说，native 体验来自 libghostty runtime + platform
+          surface，不是只来自 <code>libghostty-vt</code>。
+        </p>
+        <p class="note">
+          懒结论：保留 WTerm/libghostty-wasm 作为
+          proof/fallback，不再把它作为主渲染质量路线。
+        </p>
+      </section>
+
+      <section>
+        <h2>2. 最小可行 macOS 入口：libghostty-spm</h2>
+        <p>
+          调研发现
+          <a href="https://github.com/Lakr233/libghostty-spm">libghostty-spm</a>
+          已经把 GhosttyKit/GhosttyTerminal 包成 Swift Package，并提供 prebuilt
+          <code>GhosttyKit.xcframework</code>。它保留了 Metal renderer、CoreText
+          字体、 输入处理、selection、clipboard 和配置系统，同时提供
+          host-managed I/O backend。
+        </p>
+        <pre><code>TerminalView(frame: .zero)
+TerminalController(...)
+TerminalSurfaceOptions(backend: .inMemory(session))
+InMemoryTerminalSession(
+  write: { data in /* terminal input -> host PTY */ },
+  resize: { viewport in /* cols/rows -> host PTY resize */ }
+)
+session.receive(data) // host PTY output -> Ghostty surface</code></pre>
+        <p>
+          这正好匹配 Vimeflow 现有 Rust sidecar PTY contract：
+          <code>spawn_pty</code> / <code>write_pty</code> /
+          <code>resize_pty</code> / <code>kill_pty</code> +
+          <code>pty-data</code> event。也就是说第一轮不需要改 backend
+          ownership，不需要让 Ghostty 自己 spawn shell。
+        </p>
+      </section>
+
+      <section>
+        <h2>3. Supacode 给出的上限参考</h2>
+        <p>
+          <a href="https://github.com/supabitapp/supacode">Supacode</a> 证明
+          Ghostty native agent terminal 是可行的，但它是 macOS native app，不是
+          Electron renderer。它通过 Tuist foreign build 生成
+          <code>GhosttyKit.xcframework</code>， 维护
+          <code>ThirdParty/ghostty</code> submodule，并在构建时应用 out-of-tree
+          patches。
+        </p>
+        <p>
+          这条路线接近 native 上限，但 carry cost 高：Zig/Xcode 版本、Ghostty
+          patch 维护、资源/terminfo 打包、Swift/AppKit surface
+          生命周期都要接管。Vimeflow 的第一轮 spike 不应该直接跳到这里。
+        </p>
+      </section>
+
+      <section>
+        <h2>4. Vimeflow 当前可复用的边界</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>现有模块</th>
+              <th>当前责任</th>
+              <th>Ghostty native spike 用法</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>electron/main.ts</code></td>
+              <td>
+                创建 BrowserWindow、spawn Rust sidecar、转发 backend events。
+              </td>
+              <td>
+                新增 macOS-only Ghostty native host IPC；非 macOS 不注册。
+              </td>
+            </tr>
+            <tr>
+              <td><code>electron/browser-pane.ts</code></td>
+              <td>已有 WebContentsView create/bounds/focus/destroy 模式。</td>
+              <td>
+                复用这个模式：renderer 只上报 pane bounds，main/native host 移动
+                surface。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>TerminalBody.tsx</code> + <code>useTerminal.ts</code>
+              </td>
+              <td>xterm 生命周期、PTY event 写入、输入写回、resize。</td>
+              <td>
+                第一轮不要大改；新增 GhosttyNativePane 走同一 service contract。
+              </td>
+            </tr>
+            <tr>
+              <td><code>crates/backend/src/terminal</code></td>
+              <td>portable-pty session、ring buffer、事件广播。</td>
+              <td>
+                保持不变；Ghostty native surface 通过现有 IPC 收发 bytes。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>5. 两种嵌入方式</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>方式</th>
+              <th>优点</th>
+              <th>风险</th>
+              <th>建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                Native addon 把 <code>TerminalView</code> 挂到 Electron
+                <code>NSView*</code>
+              </td>
+              <td>
+                最像真正 pane；Electron 官方提供
+                <code>getNativeWindowHandle()</code>。
+              </td>
+              <td>
+                Node-API/SwiftPM/AppKit 生命周期复杂，Electron 版本升级可能破。
+              </td>
+              <td>
+                <span class="ok">当前 Phase C 主线</span>，已进入单 pane
+                parent-host proof。
+              </td>
+            </tr>
+            <tr>
+              <td>独立 Swift helper window 覆盖在 Electron 上</td>
+              <td>最容易启动 SwiftPM + GhosttyTerminal。</td>
+              <td>z-order、focus、移动窗口、multi-pane、屏幕缩放会很脆。</td>
+              <td>
+                <span class="ok">Phase B/C-a 已验证</span>，只用于证明一条真实
+                Ghostty native runtime 闭环。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          当前结论已经从 helper window 前进到 parent NSView。helper window 证明
+          Ghostty runtime、PTY byte stream、resize 和 cleanup 这条链路成立；
+          但它无法解决 z-order 和焦点穿透。真正可交付方向必须是 native addon 把
+          Ghostty <code>TerminalView</code> 挂到 Electron window 的
+          <code>NSView*</code>。
+        </p>
+      </section>
+
+      <section>
+        <h2>6. 推荐 spike 顺序</h2>
+        <ol>
+          <li>
+            <strong>Phase A：standalone Swift smoke。</strong>
+            已放在
+            <code
+              >docs/exploration/2026-06-27-ghostty-native-macos-runtime/ghostty-native-macos-smoke</code
+            >。它使用 <code>libghostty-spm</code> +
+            <code>InMemoryTerminalSession</code>，已验证 GhosttyTerminal native
+            surface 和 host-managed I/O 的最小闭环。
+          </li>
+          <li>
+            <strong>Phase B：接 Vimeflow PTY IPC。</strong>
+            已让 Swift host 通过现有 <code>Content-Length</code> framed stdio
+            IPC 启动 <code>vimeflow-backend</code>，调用
+            <code>spawn_pty</code> / <code>write_pty</code> /
+            <code>resize_pty</code> / <code>kill_pty</code>，并把
+            <code>pty-data</code> 回灌给 Ghostty surface。不改 Rust PTY
+            ownership，也不改 Electron 产品路径。
+          </li>
+          <li>
+            <strong>Phase C-a：Electron helper window embedding spike。</strong>
+            已新增 macOS-only feature flag：
+            <code>VITE_GHOSTTY_NATIVE_MACOS=1</code>。React terminal pane 上报
+            bounds/focus，Electron main 启动 Swift helper，Swift helper 用
+            GhosttyTerminal 渲染真实 PTY bytes，并把 input/cols/rows resize
+            回传给 main，再由 main 调用现有 sidecar IPC。
+          </li>
+          <li>
+            <strong>Phase C-b：真实 NSView/addon integration。</strong>
+            当前正在做这一步：<code>VITE_GHOSTTY_NATIVE_MACOS_PARENT=1</code> 让
+            Electron main 通过 <code>getNativeWindowHandle()</code> 取得 macOS
+            <code>NSView*</code>，native addon 加载 Swift dynamic bridge， Swift
+            bridge 把 Ghostty <code>TerminalView</code> 作为子视图挂入 Electron
+            window。Linux 和失败路径继续 xterm。
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>7. Phase C 实现路径</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>层</th>
+              <th>文件</th>
+              <th>职责</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>React renderer</td>
+              <td>
+                <code
+                  >src/features/terminal/components/TerminalPane/NativeGhosttyBody.tsx</code
+                >
+                和 <code>src/features/terminal/nativeGhosttyClient.ts</code>
+              </td>
+              <td>
+                只在 macOS feature flag 开启时替换 xterm body；上报 pane
+                bounds/focus，把现有 terminal service 的 PTY output 作为 raw
+                bytes 转发给 native surface。helper 和 parent-host 两条 spike
+                共享这个 renderer bridge。
+              </td>
+            </tr>
+            <tr>
+              <td>Electron preload/main</td>
+              <td>
+                <code>electron/preload.ts</code>、
+                <code>electron/ghostty-native-helper.ts</code>、
+                <code>electron/ghostty-native-parent.ts</code>
+              </td>
+              <td>
+                暴露 <code>window.vimeflow.ghosttyNative</code>，校验 payload，
+                helper flag 下启动 Swift helper；parent flag 下加载
+                <code>ghostty_native_parent.node</code>，并把 native
+                input/resize event 转成现有 <code>write_pty</code> /
+                <code>resize_pty</code> sidecar 调用。
+              </td>
+            </tr>
+            <tr>
+              <td>Swift helper</td>
+              <td>
+                <code>ElectronHostClient.swift</code> 和
+                <code>GhosttyNativeMacosSmoke.swift</code>
+              </td>
+              <td>
+                <code>--electron-helper</code> 模式下创建 borderless floating
+                GhosttyTerminal window；stdin 接收 <code>Content-Length</code>
+                framed commands，stdout 发回 input/resize/closed events。
+              </td>
+            </tr>
+            <tr>
+              <td>Native parent addon</td>
+              <td>
+                <code>native/ghostty-parent/ghostty_native_parent.cc</code> 和
+                <code
+                  >Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift</code
+                >
+              </td>
+              <td>
+                C++ addon 负责 Node-API、<code>dlopen</code> Swift dylib、
+                Electron <code>NSView*</code> 解包；Swift bridge 负责 AppKit
+                主线程建 view、frame 映射、GhosttyTerminal I/O。来自 Ghostty IO
+                线程的 input/resize 回调必须通过
+                <code>napi_threadsafe_function</code> 回到 Node 主线程。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          helper 数据方向是：
+          <code
+            >backend pty-data -> React terminal service -> Electron main ->
+            Swift helper -> GhosttyTerminal</code
+          >。parent-host 数据方向是：
+          <code
+            >backend pty-data -> React terminal service -> Electron main -> Node
+            addon -> Swift bridge -> GhosttyTerminal</code
+          >。输入方向是：
+          <code
+            >GhosttyTerminal input -> Swift helper/addon -> Electron main ->
+            write_pty</code
+          >。 resize 方向是：
+          <code
+            >GhosttyTerminal cols/rows -> Swift helper/addon -> Electron main ->
+            resize_pty</code
+          >。
+        </p>
+      </section>
+
+      <section>
+        <h2>8. 当前 smoke 校验状态</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>检查项</th>
+              <th>结果</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SwiftPM dependency resolve</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code>Package.resolved</code> 已锁到
+                <code>libghostty-spm 1.2.7</code> 和
+                <code>MSDisplayLink 2.1.0</code>。
+              </td>
+            </tr>
+            <tr>
+              <td><code>swift build</code></td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                首次下载
+                <code>GhosttyKit.xcframework.zip</code> 很慢，直连约 3.5
+                分钟；artifact 进入 SwiftPM cache 后，本轮 debug build 无
+                warning 通过。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>npm test -- electron/ghostty-native-helper.test.ts</code>
+              </td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                覆盖 macOS-only feature flag 和 renderer pane bounds 到 native
+                screen frame 的投影。
+              </td>
+            </tr>
+            <tr>
+              <td><code>npm run type-check:generated</code></td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                React/Electron/bridge 类型检查通过；xterm fallback path
+                保持原状。
+              </td>
+            </tr>
+            <tr>
+              <td><code>npm run ghostty:native-parent:build</code></td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                构建 <code>libGhosttyElectronBridge.dylib</code> 和
+                <code>ghostty_native_parent.node</code> 到
+                <code>dist-native/ghostty-parent</code>。该目录被
+                <code>.gitignore</code> 忽略，用作本地 spike artifact。
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code
+                  >npm test -- electron/ghostty-native-parent.test.ts
+                  electron/ghostty-native-helper.test.ts</code
+                >
+              </td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                覆盖 parent feature flag、parented surface 创建、frame
+                转发、native input 写入 PTY、resize 去重，以及 helper 既有路径。
+              </td>
+            </tr>
+            <tr>
+              <td><code>npm run backend:build</code></td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                已生成 <code>target/debug/vimeflow-backend</code>。当前 Rust
+                backend 仍有两个既有 unused import warning，未在本 spike
+                中处理。
+              </td>
+            </tr>
+            <tr>
+              <td><code>swift run ghostty-native-macos-smoke</code></td>
+              <td><span class="ok">启动通过</span></td>
+              <td>
+                GUI smoke app 可启动并保持运行超过 10 秒，没有 immediate
+                crash。当前版本已从 fake echo 切到真实 Vimeflow PTY： Ghostty
+                输入写入 backend PTY，backend <code>pty-data</code>
+                写回 Ghostty surface。用户已手动确认 native terminal
+                可交互使用。
+              </td>
+            </tr>
+            <tr>
+              <td>真实 sidecar 证据</td>
+              <td><span class="ok">确认</span></td>
+              <td>
+                smoke 运行期间 <code>ps</code> 可见
+                <code
+                  >worktrees/ghostty-native-macos-runtime/target/debug/vimeflow-backend
+                  --app-data-dir .../vimeflow-ghostty-native-smoke</code
+                >，父进程是 <code>ghostty-native-macos-smoke</code>。
+              </td>
+            </tr>
+            <tr>
+              <td>Electron dev feature flag</td>
+              <td><span class="ok">启动通过</span></td>
+              <td>
+                <code
+                  >VITE_GHOSTTY_NATIVE_MACOS=1 npm run electron:dev -- --port
+                  5174</code
+                >
+                可以启动 Vite、Electron、worktree backend 和 Swift
+                helper。helper 使用
+                <code>/tmp/vimeflow-ghostty-native-helper-swiftpm</code> 作为
+                SwiftPM scratch path，避免 <code>.build</code> 文件变动触发 Vite
+                页面 reload。
+              </td>
+            </tr>
+            <tr>
+              <td>Electron parent-host feature flag</td>
+              <td><span class="ok">启动通过</span></td>
+              <td>
+                <code
+                  >VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev --
+                  --port 5174</code
+                >
+                可启动 Vite、Electron、worktree backend，并加载
+                <code>ghostty_native_parent.node</code> +
+                <code>libGhosttyElectronBridge.dylib</code>。曾出现一次
+                <code>io</code> 线程 crash，根因是 native addon 从 Ghostty IO
+                线程直接调用 V8/N-API；已改为
+                <code>napi_threadsafe_function</code>。复测两次未生成新的
+                Electron crash report，并用 <code>lsof -p</code> 确认 Electron
+                进程实际加载了 <code>ghostty_native_parent.node</code> 和
+                <code>libGhosttyElectronBridge.dylib</code>。
+              </td>
+            </tr>
+            <tr>
+              <td>产品代码变更</td>
+              <td><span class="ok">feature-gated</span></td>
+              <td>
+                默认 xterm 行为不变；只有 macOS 且
+                <code>VITE_GHOSTTY_NATIVE_MACOS=1</code> 时才走 native helper。
+                当前仍是 spike，不是最终多 pane 产品实现。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <pre><code>npm run backend:build
+npm run ghostty:native-parent:build
+cd docs/exploration/2026-06-27-ghostty-native-macos-runtime/ghostty-native-macos-smoke
+swift run ghostty-native-macos-smoke
+VITE_GHOSTTY_NATIVE_MACOS=1 npm run electron:dev -- --port 5174
+VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></pre>
+      </section>
+
+      <section>
+        <h2>9. 当前限制</h2>
+        <ul>
+          <li>
+            helper window 已经不是交付方向：它只保留为 runtime/PTY
+            证据。真正方向是 parent NSView addon。
+          </li>
+          <li>
+            parent NSView addon 已经从单 surface spike 推进到 per-pane
+            registry：每个 pane 有自己的 native surface、pending data 和 resize
+            去重状态。还需要手动确认真实多 pane 的焦点、 resize 跟随、窗口关闭和
+            orphan cleanup。
+          </li>
+          <li>
+            Swift package 现在仍放在 <code>docs/exploration</code> 下，方便
+            spike 不污染产品结构。确认 parent-host 路线后，应该迁到类似
+            <code>native/macos</code> 的专用目录，再接正式 build/package 流程。
+          </li>
+          <li>
+            native callback 不能直接从 Ghostty IO 线程调用 JS。所有 input/resize
+            event 都必须通过 Node-API thread-safe function 回到 Node 主线程。
+          </li>
+          <li>
+            PTY output 现在从 renderer bridge 转发给
+            main/helper，这是为了最快证明 path；最终可以把 backend event 在 main
+            里直接 fan-out 给 helper，减少 renderer 中转。
+          </li>
+          <li>
+            本轮没有做产品级 fallback UI。helper 启动失败时因为 feature flag
+            仍可关闭回 xterm，但还没有用户可见的自动降级提示。
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>10. 硬性验收</h2>
+        <ul>
+          <li>Powerline / Nerd Font glyph 不再破碎。</li>
+          <li>256 色和 truecolor dense transcript 不污染状态。</li>
+          <li>
+            resize 时只由 Ghostty surface 计算 cols/rows，再转发 PTY resize。
+          </li>
+          <li>
+            coding agent 长 transcript 不冻结；PTY read 不被 renderer IPC 背压。
+          </li>
+          <li>copy/paste、selection、focus、IME、快捷键有明确 ownership。</li>
+          <li>
+            非 macOS、native host 加载失败、feature flag 关闭时全部回到 xterm。
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>11. 2026-06-27 M6 更新</h2>
+        <p>
+          当前交付方向已经收敛到 M6：先把 parent-host 产品化，但仍保持 feature
+          gate，不直接变成 macOS 默认。WTerm/libghostty-wasm 和 WebGL renderer
+          都只保留为历史调查结论。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>状态</th>
+              <th>证据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>multi-pane native surface</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                Electron parent controller 改为 per-pane registry；两个 pane
+                update 不再互相 destroy，input/resize 回到各自 PTY。
+              </td>
+            </tr>
+            <tr>
+              <td>inactive pane lifecycle</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                React 侧 mounted pane 继续保持 native surface；<code
+                  >active</code
+                >
+                只表示 focus，不再表示 visible/destroy。
+              </td>
+            </tr>
+            <tr>
+              <td>native fallback</td>
+              <td><span class="ok">已补最小实现</span></td>
+              <td>
+                如果 main 侧返回 <code>{ enabled: false }</code> 或 update
+                抛错，Ghostty body 会上报 unavailable，TerminalBody 立即切回
+                xterm。
+              </td>
+            </tr>
+            <tr>
+              <td>focused tests</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code
+                  >npx vitest run electron/ghostty-native-parent.test.ts</code
+                >
+                和
+                <code
+                  >npx vitest run
+                  src/features/terminal/components/TerminalPane/NativeGhosttyBody.test.tsx</code
+                >
+                以及
+                <code
+                  >npx vitest run
+                  src/features/terminal/components/TerminalPane/TerminalBody.test.tsx</code
+                >
+                均通过。
+              </td>
+            </tr>
+            <tr>
+              <td>type check</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code>npx tsc -p electron/tsconfig.json --noEmit</code> 和
+                <code>npx tsc -b --pretty false</code> 均通过。
+              </td>
+            </tr>
+            <tr>
+              <td>native smoke</td>
+              <td><span class="ok">通过</span></td>
+              <td>
+                <code>npm run ghostty:native-parent:build</code> 通过；Node
+                能加载 <code>ghostty_native_parent.node</code>，并确认
+                <code>create/setFrame/write/focus/destroy</code> 都是函数。
+                <code>otool -L</code> 未暴露 repo-local dylib 依赖。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note">
+          本轮还没有完成 packaged app smoke，也没有把 SwiftPM bridge 从
+          <code>docs/exploration</code> 迁到生产 native 目录；这仍属于 M6
+          后半段和 M7 的工作。
+        </p>
+      </section>
+
+      <section>
+        <h2>12. 证据链接</h2>
+        <ul>
+          <li>
+            <a href="https://ghostty.org/docs/about"
+              >Ghostty About / libghostty architecture</a
+            >
+          </li>
+          <li>
+            <a href="https://mitchellh.com/writing/libghostty-is-coming"
+              >Mitchell Hashimoto: Libghostty Is Coming</a
+            >
+          </li>
+          <li>
+            <a href="https://github.com/ghostty-org/ghostty/discussions/12610"
+              >Ghostty discussion: RGBA rendered output rejected</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/ghostty-org/ghostling/blob/main/README.md"
+              >Ghostling README: libghostty render-state API</a
+            >
+          </li>
+          <li>
+            <a href="https://github.com/Lakr233/libghostty-spm"
+              >libghostty-spm: GhosttyTerminal Swift wrapper</a
+            >
+          </li>
+          <li>
+            <a href="https://github.com/supabitapp/supacode"
+              >Supacode: native macOS app using GhosttyKit</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.electronjs.org/docs/latest/api/browser-window#wingetnativewindowhandle"
+              >Electron BrowserWindow native handle</a
+            >
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/api/base-window"
+              >Electron BaseWindow / WebContentsView composition model</a
+            >
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

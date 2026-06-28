@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-20
-ref_count: 9
+last_updated: 2026-06-28
+ref_count: 10
 ---
 
 # UI Visual Regression
@@ -19,6 +19,8 @@ Regressions are especially likely when:
   semantic purpose without checking existing usages.
 - Tests exercise only the "healthy" or default state and omit edge states
   (cold, empty, error) where the collision occurs.
+- Native or external surface adapters encode visibility through dimensions, and
+  one backend handles zero-size first-paint frames differently from another.
 
 The fix shape: pick a visually distinct color from the palette, and add a
 test case for the state that triggers the collision.
@@ -169,3 +171,28 @@ test case for the state that triggers the collision.
 - **Finding:** The ClaudeCode regression test asserted the cropped viewBox and removed circle, but did not guard against reintroducing `preserveAspectRatio="none"`. That left the prior non-uniform scaling regression able to return without breaking the test.
 - **Fix:** Added an explicit assertion that the rendered SVG has no `preserveAspectRatio` attribute, preserving the uniform-scaling invariant alongside the rendered-ratio assertion.
 - **Commit:** same commit as this entry
+
+### 16. Native Ghostty parent forwarded fractional AppKit frame bounds
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The parented Ghostty surface path forwarded fractional `getBoundingClientRect()` coordinates directly to `addon.setFrame`, while the helper path rounded them before crossing into native code. On HiDPI displays this could place the NSView on subpixel boundaries and create a visible one-pixel gap, blur, or overlap against adjacent panes.
+- **Fix:** Rounded x, y, width, and height before calling `addon.setFrame`, preserving the existing hidden-pane behavior that sends zero width and height.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Native Ghostty parent treated visible zero-area panes as shown
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The parent backend encoded pane visibility only from the
+  renderer's `visible` flag, so a first-paint `visible=true` pane with a zero
+  width or height still called `addon.setFrame(..., 0, 0)`. The helper backend
+  already suppressed the same input with `visible && width > 0 && height > 0`,
+  leaving the two native paths inconsistent and risking transient zero-area
+  native-surface artifacts.
+- **Fix:** Compute `frameVisible` from `visible` plus positive rounded width
+  and height, and send a hidden 0x0 frame whenever the measured pane area is
+  zero. Added a parent-controller regression test for visible zero-area bounds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

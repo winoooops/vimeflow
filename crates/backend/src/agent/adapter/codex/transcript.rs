@@ -19,8 +19,8 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change,
-    record_lifecycle,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_tool_call, emit_agent_turn,
+    emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
@@ -217,6 +217,9 @@ struct CodexTranscriptDecoder {
     /// Settled phase accumulated silently during replay, flushed once at
     /// the replay->live boundary.
     replay_phase: Option<AgentPhase>,
+    /// Tool-call/turn/cwd activity accumulated silently during replay; flushed
+    /// once at the replay->live boundary as a single agent-replay-summary.
+    replay_activity: ReplayActivity,
     /// One-shot guard: false during replay, true after the first on_caught_up.
     replay_done: bool,
 }
@@ -235,6 +238,7 @@ impl CodexTranscriptDecoder {
             codex_agent_session_id: String::new(),
             last_phase: None,
             replay_phase: None,
+            replay_activity: ReplayActivity::default(),
             replay_done: false,
         }
     }
@@ -254,6 +258,7 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
             &mut self.codex_agent_session_id,
             &mut self.last_phase,
             &mut self.replay_phase,
+            &mut self.replay_activity,
             self.replay_done,
         );
     }
@@ -273,7 +278,25 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
                     );
                 }
             }
-            emit_replay_in_flight_tool_calls(&self.session_id, &self.events, &self.in_flight);
+            for event in self.replay_activity.take_running() {
+                if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-tool-call event: {}", e);
+                }
+            }
+            // Flush the replay-accumulated tool-call/turn/cwd activity as one
+            // summary, replacing the thousands of per-line events suppressed
+            // during replay. Only emit if it carries something, to avoid a
+            // noisy empty summary for a fresh session.
+            let summary = std::mem::take(&mut self.replay_activity).into_summary(
+                self.session_id.clone(),
+                self.num_turns,
+                self.last_cwd.clone(),
+            );
+            if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
+                if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
+                    log::warn!("Failed to emit agent-replay-summary event: {}", e);
+                }
+            }
         }
         self.emitter.finish_replay();
     }
@@ -292,6 +315,7 @@ fn process_line(
     codex_agent_session_id: &mut String,
     last_phase: &mut Option<AgentPhase>,
     replay_phase: &mut Option<AgentPhase>,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let dto: CodexLineDto = match serde_json::from_str(line) {
@@ -322,6 +346,7 @@ fn process_line(
                 *last_cwd = None;
                 *last_phase = None;
                 *replay_phase = None;
+                *replay_activity = ReplayActivity::default();
                 emitter.clear_pending();
             }
             *codex_agent_session_id = id.to_string();
@@ -361,12 +386,16 @@ fn process_line(
             .as_deref()
             .map_or(true, |seen| seen != observed.as_str())
         {
-            let event = AgentCwdEvent {
-                session_id: session_id.to_string(),
-                cwd: observed.clone(),
-            };
-            if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
-                log::warn!("Failed to emit agent-cwd event: {}", e);
+            // During replay, suppress the per-line cwd event; last_cwd still
+            // accumulates so the summary carries the final cwd at the boundary.
+            if replay_done {
+                let event = AgentCwdEvent {
+                    session_id: session_id.to_string(),
+                    cwd: observed.clone(),
+                };
+                if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-cwd event: {}", e);
+                }
             }
             *last_cwd = Some(observed);
         }
@@ -375,18 +404,35 @@ fn process_line(
     match record_type {
         CodexRecordType::ResponseItem => {
             process_response_item(
-                &dto, &payload, session_id, cwd, events, in_flight, replay_done,
+                &dto,
+                &payload,
+                session_id,
+                cwd,
+                events,
+                in_flight,
+                replay_activity,
+                replay_done,
             );
         }
         CodexRecordType::EventMsg => {
             process_event_msg(
-                &dto, &payload, session_id, cwd, events, emitter, in_flight, num_turns,
+                &dto,
+                &payload,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                num_turns,
+                replay_activity,
+                replay_done,
             );
         }
         _ => {}
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_response_item(
     dto: &CodexLineDto,
     payload: &CodexPayloadDto,
@@ -394,6 +440,7 @@ fn process_response_item(
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
@@ -407,6 +454,7 @@ fn process_response_item(
                 events,
                 in_flight,
                 &timestamp,
+                replay_activity,
                 replay_done,
             );
         }
@@ -417,23 +465,39 @@ fn process_response_item(
                 events,
                 in_flight,
                 &timestamp,
+                replay_activity,
                 replay_done,
             );
         }
         CodexPayloadType::FunctionCallOutput => {
             process_output_completion(
-                payload, session_id, events, in_flight, &timestamp, false,
+                payload,
+                session_id,
+                events,
+                in_flight,
+                &timestamp,
+                false,
+                replay_activity,
+                replay_done,
             );
         }
         CodexPayloadType::CustomToolCallOutput => {
             process_output_completion(
-                payload, session_id, events, in_flight, &timestamp, true,
+                payload,
+                session_id,
+                events,
+                in_flight,
+                &timestamp,
+                true,
+                replay_activity,
+                replay_done,
             );
         }
         _ => {}
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_event_msg(
     dto: &CodexLineDto,
     payload: &CodexPayloadDto,
@@ -443,20 +507,38 @@ fn process_event_msg(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
     match payload.payload_type() {
         CodexPayloadType::UserMessage => {
-            process_user_message(payload, session_id, events, num_turns);
+            process_user_message(payload, session_id, events, num_turns, replay_done);
         }
         CodexPayloadType::ExecCommandEnd => {
             process_exec_command_end(
-                payload, session_id, cwd, events, emitter, in_flight, &timestamp,
+                payload,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                &timestamp,
+                replay_activity,
+                replay_done,
             );
         }
         CodexPayloadType::PatchApplyEnd => {
-            process_patch_apply_end(payload, session_id, events, in_flight, &timestamp);
+            process_patch_apply_end(
+                payload,
+                session_id,
+                events,
+                in_flight,
+                &timestamp,
+                replay_activity,
+                replay_done,
+            );
         }
         CodexPayloadType::TaskComplete => {
             flush_in_flight_tool_calls(
@@ -465,6 +547,8 @@ fn process_event_msg(
                 in_flight,
                 ToolCallStatus::Done,
                 &timestamp,
+                replay_activity,
+                replay_done,
             );
         }
         _ => {}
@@ -476,6 +560,7 @@ fn process_user_message(
     session_id: &str,
     events: &Arc<dyn EventSink>,
     num_turns: &mut u32,
+    replay_done: bool,
 ) {
     let Some(message) = payload.message.as_deref() else {
         return;
@@ -485,16 +570,23 @@ fn process_user_message(
     }
 
     *num_turns = num_turns.saturating_add(1);
-    let event = AgentTurnEvent {
-        session_id: session_id.to_string(),
-        num_turns: *num_turns,
-    };
 
-    if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
-        log::warn!("Failed to emit agent-turn event: {}", e);
+    // During replay, suppress the per-turn event; num_turns still accumulates
+    // so the boundary summary carries the final count. Emit live only after
+    // the replay→live boundary.
+    if replay_done {
+        let event = AgentTurnEvent {
+            session_id: session_id.to_string(),
+            num_turns: *num_turns,
+        };
+
+        if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
+            log::warn!("Failed to emit agent-turn event: {}", e);
+        }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_function_call(
     payload: &CodexPayloadDto,
     session_id: &str,
@@ -502,6 +594,7 @@ fn start_function_call(
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
@@ -532,29 +625,31 @@ fn start_function_call(
         },
     );
 
-    if replay_done {
-        emit_tool_call(
-            events,
-            AgentToolCallEvent {
-                session_id: session_id.to_string(),
-                tool_use_id: call_id.to_string(),
-                tool,
-                args,
-                status: ToolCallStatus::Running,
-                timestamp: timestamp.to_string(),
-                duration_ms: 0,
-                is_test_file: false,
-            },
-        );
-    }
+    emit_tool_call(
+        events,
+        AgentToolCallEvent {
+            session_id: session_id.to_string(),
+            tool_use_id: call_id.to_string(),
+            tool,
+            args,
+            status: ToolCallStatus::Running,
+            timestamp: timestamp.to_string(),
+            duration_ms: 0,
+            is_test_file: false,
+        },
+        replay_activity,
+        replay_done,
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_custom_tool_call(
     payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
@@ -581,23 +676,24 @@ fn start_custom_tool_call(
         },
     );
 
-    if replay_done {
-        emit_tool_call(
-            events,
-            AgentToolCallEvent {
-                session_id: session_id.to_string(),
-                tool_use_id: call_id.to_string(),
-                tool,
-                args,
-                status: ToolCallStatus::Running,
-                timestamp: timestamp.to_string(),
-                duration_ms: 0,
-                is_test_file,
-            },
-        );
-    }
+    emit_tool_call(
+        events,
+        AgentToolCallEvent {
+            session_id: session_id.to_string(),
+            tool_use_id: call_id.to_string(),
+            tool,
+            args,
+            status: ToolCallStatus::Running,
+            timestamp: timestamp.to_string(),
+            duration_ms: 0,
+            is_test_file,
+        },
+        replay_activity,
+        replay_done,
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_output_completion(
     payload: &CodexPayloadDto,
     session_id: &str,
@@ -605,6 +701,8 @@ fn process_output_completion(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
     is_custom_tool_output: bool,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -647,6 +745,8 @@ fn process_output_completion(
             ),
             is_test_file: call.is_test_file,
         },
+        replay_activity,
+        replay_done,
     );
 }
 
@@ -661,6 +761,7 @@ fn output_completion_status(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_exec_command_end(
     payload: &CodexPayloadDto,
     session_id: &str,
@@ -669,6 +770,8 @@ fn process_exec_command_end(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -727,15 +830,20 @@ fn process_exec_command_end(
             }),
             is_test_file: call.is_test_file,
         },
+        replay_activity,
+        replay_done,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_patch_apply_end(
     payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
@@ -767,6 +875,8 @@ fn process_patch_apply_end(
             ),
             is_test_file: call.is_test_file,
         },
+        replay_activity,
+        replay_done,
     );
 }
 
@@ -776,6 +886,8 @@ fn flush_in_flight_tool_calls(
     in_flight: &mut InFlightToolCalls,
     status: ToolCallStatus,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     for (call_id, call) in in_flight.drain() {
         emit_tool_call(
@@ -794,36 +906,21 @@ fn flush_in_flight_tool_calls(
                 ),
                 is_test_file: call.is_test_file,
             },
+            replay_activity,
+            replay_done,
         );
     }
 }
 
-fn emit_replay_in_flight_tool_calls(
-    session_id: &str,
+/// Route a tool-call event through the replay-aware sink: live-emit once
+/// replay is done, else fold into the accumulator for the boundary summary.
+fn emit_tool_call(
     events: &Arc<dyn EventSink>,
-    in_flight: &InFlightToolCalls,
+    event: AgentToolCallEvent,
+    replay: &mut ReplayActivity,
+    replay_done: bool,
 ) {
-    for (call_id, call) in in_flight {
-        emit_tool_call(
-            events,
-            AgentToolCallEvent {
-                session_id: session_id.to_string(),
-                tool_use_id: call_id.clone(),
-                tool: call.tool.clone(),
-                args: call.args.clone(),
-                status: ToolCallStatus::Running,
-                timestamp: call.started_at_iso.clone(),
-                duration_ms: 0,
-                is_test_file: call.is_test_file,
-            },
-        );
-    }
-}
-
-fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
-    if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
-        log::warn!("Failed to emit agent-tool-call event: {}", e);
-    }
+    record_tool_call(events, event, replay, replay_done);
 }
 
 fn function_call_cmd(arguments: Option<&str>) -> Option<String> {
@@ -963,14 +1060,6 @@ mod tests {
             .collect()
     }
 
-    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
-        sink.recorded()
-            .into_iter()
-            .filter(|(name, _)| name == "agent-tool-call")
-            .map(|(_, payload)| payload)
-            .collect()
-    }
-
     #[test]
     fn codex_replay_flushes_only_the_settled_phase_once() {
         let sink = Arc::new(FakeEventSink::new());
@@ -1008,42 +1097,69 @@ mod tests {
     }
 
     #[test]
-    fn codex_replay_does_not_emit_running_for_settled_tool_calls() {
+    fn codex_replay_coalesces_tool_calls_then_live_emits_individually() {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
 
+        // Replay: a user_message (turn) + one completed exec_command. Both are
+        // suppressed during replay and folded into the boundary summary.
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"Read","arguments":"{\"file\":\"src/lib.rs\"}","call_id":"call_read"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#,
         );
-        assert_eq!(sink.count("agent-tool-call"), 0);
+        decoder.decode_line(
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":0}}"#,
+        );
 
-        decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_read","output":"file contents"}}"#,
-        );
+        // No per-line events during replay.
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        assert_eq!(sink.count("agent-turn"), 0);
+
         decoder.on_caught_up();
 
-        let payloads = tool_call_payloads(&sink);
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0]["toolUseId"], "call_read");
-        assert_eq!(payloads[0]["status"], "done");
+        // One coalesced summary; tool_call_total counts the completed call.
+        assert_eq!(sink.count("agent-replay-summary"), 1);
+        let summaries: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-replay-summary")
+            .collect();
+        assert_eq!(summaries[0].1["numTurns"], 1);
+        assert_eq!(summaries[0].1["toolCallTotal"], 1);
+
+        // After catch-up, a live exec_command emits individual events again.
+        decoder.decode_line(
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\"}"}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"exec_command_end","call_id":"c2","exit_code":0}}"#,
+        );
+        // running + done for the live call.
+        assert_eq!(sink.count("agent-tool-call"), 2);
+        // Still exactly one summary (boundary is one-shot).
+        assert_eq!(sink.count("agent-replay-summary"), 1);
     }
 
     #[test]
-    fn codex_replay_emits_running_for_unsettled_tool_call_at_catch_up() {
+    fn codex_replay_flushes_in_flight_tool_call_at_catch_up() {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
 
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}","call_id":"call_exec"}}"#,
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"sleep 60\"}"}}"#,
         );
-        assert_eq!(sink.count("agent-tool-call"), 0);
-
         decoder.on_caught_up();
 
-        let payloads = tool_call_payloads(&sink);
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0]["toolUseId"], "call_exec");
-        assert_eq!(payloads[0]["status"], "running");
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].1["toolUseId"], "c1");
+        assert_eq!(tool_calls[0].1["status"], "running");
     }
 
     fn write_rollout(path: &Path, lines: &[Value]) {
@@ -1195,21 +1311,15 @@ mod tests {
         )
         .expect("tailing should start");
 
-        // PR #302 cycle 9 — replaced two wall-clock sleeps
-        // (750ms + 100ms) with event-based sync via the existing
-        // `wait_for_count` helper. The sibling test
-        // `rollout_replay_collapses_then_live_test_run_emits` already
-        // uses this pattern; the sleep version was a stale copy from
-        // earlier work, copied before the helper was added. Wait for
-        // each event type the assertions below count so the tail has
-        // demonstrably emitted all of them before we stop and snapshot.
+        // Replay coalescing: the whole transcript replays before catch-up, so
+        // the individual `agent-tool-call` / `agent-turn` / `agent-cwd` events
+        // are suppressed and folded into ONE `agent-replay-summary` flushed at
+        // the replay→live boundary (`on_caught_up`). `test-run` still emits
+        // once (it routes through the separate replay-aware emitter that
+        // collapses to latest). Wait for the summary, then snapshot.
         assert!(
-            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
-            "expected 2 replay-settled agent-tool-call events within 5s",
-        );
-        assert!(
-            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
-            "expected 1 agent-turn event within 5s",
+            sink.wait_for_count("agent-replay-summary", 1, Duration::from_secs(5)),
+            "expected 1 agent-replay-summary event within 5s",
         );
         assert!(
             sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
@@ -1218,27 +1328,44 @@ mod tests {
         handle.stop();
 
         let recorded = sink.recorded();
-        let tool_call_payloads: Vec<Value> = recorded
-            .iter()
-            .filter(|(event, _)| event == "agent-tool-call")
-            .map(|(_, payload)| payload.clone())
-            .collect();
-        assert_eq!(tool_call_payloads.len(), 2);
-        assert_eq!(tool_call_payloads[0]["toolUseId"], "call_exec");
-        assert_eq!(tool_call_payloads[0]["status"], "done");
-        assert_eq!(tool_call_payloads[0]["durationMs"], 1250);
-        assert_eq!(tool_call_payloads[1]["toolUseId"], "call_patch");
-        assert_eq!(tool_call_payloads[1]["status"], "done");
-        assert_eq!(tool_call_payloads[1]["isTestFile"], true);
 
-        let turn_payloads: Vec<Value> = recorded
+        // During replay, no per-line tool-call / turn events fire.
+        assert_eq!(
+            sink.count("agent-tool-call"),
+            0,
+            "replay tool calls are coalesced into the summary, not emitted individually",
+        );
+        assert_eq!(
+            sink.count("agent-turn"),
+            0,
+            "replay turns are coalesced into the summary",
+        );
+
+        let summary_payloads: Vec<Value> = recorded
             .iter()
-            .filter(|(event, _)| event == "agent-turn")
+            .filter(|(event, _)| event == "agent-replay-summary")
             .map(|(_, payload)| payload.clone())
             .collect();
-        assert_eq!(turn_payloads.len(), 1);
-        assert_eq!(turn_payloads[0]["sessionId"], "sid-1");
-        assert_eq!(turn_payloads[0]["numTurns"], 1);
+        assert_eq!(summary_payloads.len(), 1);
+        let summary = &summary_payloads[0];
+        assert_eq!(summary["sessionId"], "sid-1");
+        assert_eq!(summary["numTurns"], 1);
+        // The exec_command workdir (mid-session cwd source) is the final cwd.
+        assert_eq!(summary["cwd"], "/tmp/ws");
+        // Only the two COMPLETED calls (call_exec done + call_patch done) are
+        // folded; the two `running` events observed during replay are dropped.
+        assert_eq!(summary["toolCallTotal"], 2);
+        let recent = summary["recentToolCalls"]
+            .as_array()
+            .expect("recentToolCalls array");
+        assert_eq!(recent.len(), 2);
+        // Newest-first: the apply_patch completion is most recent.
+        assert_eq!(recent[0]["toolUseId"], "call_patch");
+        assert_eq!(recent[0]["status"], "done");
+        assert_eq!(recent[0]["isTestFile"], true);
+        assert_eq!(recent[1]["toolUseId"], "call_exec");
+        assert_eq!(recent[1]["status"], "done");
+        assert_eq!(recent[1]["durationMs"], 1250);
 
         let test_run_payloads: Vec<Value> = recorded
             .iter()
@@ -1528,6 +1655,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1567,6 +1695,7 @@ mod tests {
                 &mut String::new(),
                 &mut None,
                 &mut None,
+                &mut ReplayActivity::default(),
                 true,
             );
         }
@@ -1607,6 +1736,7 @@ mod tests {
                 &mut String::new(),
                 &mut None,
                 &mut None,
+                &mut ReplayActivity::default(),
                 true,
             );
         }
@@ -1657,6 +1787,7 @@ mod tests {
                 &mut String::new(),
                 &mut None,
                 &mut None,
+                &mut ReplayActivity::default(),
                 true,
             );
         }
@@ -1708,6 +1839,7 @@ mod tests {
                 &mut codex_agent_session_id,
                 &mut last_phase,
                 &mut replay_phase,
+                &mut ReplayActivity::default(),
                 true,
             );
         }
@@ -1728,6 +1860,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut last_phase,
             &mut replay_phase,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1748,6 +1881,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut last_phase,
             &mut replay_phase,
+            &mut ReplayActivity::default(),
             true,
         );
         process_line(
@@ -1762,6 +1896,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut last_phase,
             &mut replay_phase,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1784,6 +1919,47 @@ mod tests {
             .map(|(_, payload)| payload["numTurns"].clone())
             .collect();
         assert_eq!(turns, vec![json!(1), json!(1)]);
+    }
+
+    #[test]
+    fn process_line_new_session_meta_resets_replay_activity() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+        let mut codex_agent_session_id = String::new();
+        let mut last_phase = None;
+        let mut replay_phase = None;
+        let mut replay_activity = ReplayActivity::default();
+
+        for line in [
+            r#"{"timestamp":"2026-06-28T10:00:00Z","type":"session_meta","payload":{"id":"old-run","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-06-28T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"old-call","arguments":"{\"cmd\":\"npm test\"}"}}"#,
+            r#"{"timestamp":"2026-06-28T10:00:02Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"old-call","exit_code":0,"duration":10}}"#,
+            r#"{"timestamp":"2026-06-28T10:00:03Z","type":"session_meta","payload":{"id":"new-run","cwd":"/workspace/A"}}"#,
+        ] {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+                &mut codex_agent_session_id,
+                &mut last_phase,
+                &mut replay_phase,
+                &mut replay_activity,
+                false,
+            );
+        }
+
+        let summary = replay_activity.into_summary("sid-1".into(), num_turns, last_cwd);
+        assert_eq!(summary.tool_call_total, 0);
+        assert!(summary.recent_tool_calls.is_empty());
     }
 
     // ---- DTO-migration regression tests (Task 1.6) ----
@@ -1810,6 +1986,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1826,6 +2003,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1860,6 +2038,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1876,6 +2055,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1897,6 +2077,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1934,6 +2115,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1950,6 +2132,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1971,6 +2154,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2007,6 +2191,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2023,6 +2208,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2044,6 +2230,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2080,6 +2267,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2096,6 +2284,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2104,8 +2293,15 @@ mod tests {
             .into_iter()
             .filter(|(n, _)| n == "agent-tool-call")
             .collect();
-        assert_eq!(tool_calls_after_output.len(), 1, "custom_tool_call_output must not finalize apply_patch");
-        assert!(in_flight.contains_key("call_patch"), "apply_patch must stay in-flight until patch_apply_end");
+        assert_eq!(
+            tool_calls_after_output.len(),
+            1,
+            "custom_tool_call_output must not finalize apply_patch"
+        );
+        assert!(
+            in_flight.contains_key("call_patch"),
+            "apply_patch must stay in-flight until patch_apply_end"
+        );
 
         let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call_patch","success":false}}"#;
         process_line(
@@ -2120,6 +2316,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2156,6 +2353,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2172,6 +2370,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2209,6 +2408,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2225,6 +2425,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2241,6 +2442,7 @@ mod tests {
             &mut codex_agent_session_id,
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2282,6 +2484,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2298,6 +2501,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2332,6 +2536,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2348,6 +2553,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2382,6 +2588,7 @@ mod tests {
             &mut String::new(),
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -2426,27 +2633,34 @@ mod tests {
         let handle = start_tailing(sink.clone(), "sid-cwd".to_string(), transcript_path, None)
             .expect("start tailing");
 
-        // PR #302 cycle 9 — replaced wall-clock sleeps with
-        // event-based sync (see the sibling-test fix above).
+        // The whole transcript replays before catch-up, so the per-line
+        // `agent-cwd` transitions are suppressed; the summary at the
+        // replay→live boundary carries the FINAL cwd (the last transition,
+        // /workspace/A). The transition ORDER + dedup semantics are covered
+        // by the `process_line_*` tests (which drive with replay_done=true).
         assert!(
-            sink.wait_for_count("agent-cwd", 3, Duration::from_secs(5)),
-            "expected 3 agent-cwd events within 5s",
+            sink.wait_for_count("agent-replay-summary", 1, Duration::from_secs(5)),
+            "expected 1 agent-replay-summary event within 5s",
         );
         handle.stop();
 
-        let cwd_events: Vec<Value> = sink
+        assert_eq!(
+            sink.count("agent-cwd"),
+            0,
+            "replay cwd transitions are coalesced into the summary, not emitted individually",
+        );
+
+        let summary_payloads: Vec<Value> = sink
             .recorded()
             .into_iter()
-            .filter(|(event, _)| event == "agent-cwd")
+            .filter(|(event, _)| event == "agent-replay-summary")
             .map(|(_, payload)| payload)
             .collect();
-
-        assert_eq!(cwd_events.len(), 3, "expected exactly 3 cwd transitions");
-        assert_eq!(cwd_events[0]["cwd"], "/workspace/A");
-        assert_eq!(cwd_events[1]["cwd"], "/workspace/B");
-        assert_eq!(cwd_events[2]["cwd"], "/workspace/A");
-        for ev in &cwd_events {
-            assert_eq!(ev["sessionId"], "sid-cwd");
-        }
+        assert_eq!(summary_payloads.len(), 1);
+        assert_eq!(summary_payloads[0]["sessionId"], "sid-cwd");
+        assert_eq!(
+            summary_payloads[0]["cwd"], "/workspace/A",
+            "summary carries the final cwd after all replay transitions",
+        );
     }
 }

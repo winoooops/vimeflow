@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-25
-ref_count: 3
+last_updated: 2026-06-28
+ref_count: 7
 ---
 
 # Module Boundaries
@@ -194,4 +194,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `scripts/package-macos-icon.mjs`
 - **Finding:** A custom macOS icon packaging hook imported `generateAssetCatalogForIcon` from an `app-builder-lib/out/...` path and called it with the wrong argument shape. The helper lives behind electron-builder's compiled internal layout, so the import path and function signature are not a stable package contract; the hook failed before packaging could reach its platform guard or before `actool` could compile the asset catalog.
 - **Fix:** Removed the custom hook path from the active PR state and used electron-builder's native `mac.icon: build/composed_icon.icon` support. The package configuration now delegates Icon Composer handling to electron-builder instead of coupling repository scripts to private `app-builder-lib` internals.
+- **Commit:** same commit as this entry
+
+### 18. Native Ghostty helper and parent duplicated IPC request contracts
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-helper.ts`, `electron/ghostty-native-parent.ts`
+- **Finding:** The helper and parent controllers each declared byte-for-byte copies of native pane/update/data request types and primitive guards. Future contract tightening in one controller could silently diverge from the other.
+- **Fix:** Extracted the shared request interfaces and primitive guards into `electron/ghostty-native-shared.ts`, imported them from both controllers, and added a sibling guard test for the new module.
 - **Commit:** same commit as this entry

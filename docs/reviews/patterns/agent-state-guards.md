@@ -2,8 +2,8 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-22
-ref_count: 7
+last_updated: 2026-06-28
+ref_count: 9
 ---
 
 # Agent-State Guards
@@ -103,3 +103,39 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **Finding:** OpenCode did not emit OSC 7, so the runtime passed the terminal spawn cwd into transcript tailing even when the locator had resolved a project directory from the bridge index. The initial `agent-cwd` event could therefore point the file explorer, git watcher, and test-run parser at `~` instead of the OpenCode project.
 - **Fix:** Added `resolved_directory` to `LocatedStatusSource`, populated it from OpenCode index rows and cache fallback, and made the watcher runtime prefer it over PTY cwd when starting transcript tailing.
 - **Commit:** same commit as this entry
+
+### 11. Replay dropped in-flight tool calls at catch-up
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/events.rs`
+- **Finding:** Replay suppression retained completed tool calls for the boundary summary but discarded `running` events observed before the first EOF. Users resuming during a long-running command lost the active tool indication until a later terminal event arrived.
+- **Fix:** Added replay storage for unsettled running tool calls, removed them when a matching done/failed event arrives, and flushed remaining running calls as live `agent-tool-call` events at the replay-to-live boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Codex replay activity crossed session id reset boundaries
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex cleared in-flight calls, turns, cwd, and lifecycle state when `session_meta.id` changed, but the replay accumulator survived that reset. A boundary summary for the new session could include completed tools from the previous rollout.
+- **Fix:** Reset `ReplayActivity` alongside the other run-scoped Codex tail state when the session id changes, and added a replay-mode regression test that proves old-session activity is not included after the reset.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Claude replay boundary dropped retained running tool calls
+
+- **Source:** github-claude | PR #630 round 2 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/transcript.rs`
+- **Finding:** The Claude decoder flushed replay lifecycle phase and replay summary at catch-up but did not drain retained running tool calls first. Users resuming a Claude transcript during a long-running Bash/Edit tool saw the activity panel idle until completion arrived, or forever if the command hung.
+- **Fix:** Mirrored the Codex replay boundary by draining `ReplayActivity::take_running()` and emitting each retained call as an `agent-tool-call` event before taking the summary. Added a Claude replay regression test that proves an in-flight replayed tool emits `running` at catch-up.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Replay summary clobbered restored running tool state
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The backend emits retained replay running calls before `agent-replay-summary`, so the frontend had already restored `toolCalls.active` when the summary arrived. The summary reducer hard-coded `active: null`, immediately making the panel appear idle during resume even though a Bash/test/edit tool was still running.
+- **Fix:** Preserved `prev.toolCalls.active` when applying replay summary totals, cwd, and recent completed calls. Added a hook regression test that emits a running tool event followed by a replay summary and verifies the active call remains visible.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

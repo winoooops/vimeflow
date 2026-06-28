@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-26
-ref_count: 70
+last_updated: 2026-06-28
+ref_count: 73
 ---
 
 # Async Race Conditions
@@ -714,4 +714,76 @@ prevent showing previous data.
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** The New Session dialog queued `claimTerminal()` with `requestAnimationFrame` immediately after calling async `createSession`. PTY spawning commonly outlived the next frame, so focus could be requested for the previous active session and never re-requested after the new session became active.
 - **Fix:** Add an `onCreated` completion callback to `createSession`, commit the new active session synchronously in the success path, and request terminal focus from the dialog only after that callback fires.
+- **Commit:** same commit as this entry
+
+### 72. Ghostty restore replay registered pane-ready after unmount
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` checked its cancellation flag after attaching native output,
+  but then awaited restored replay output before registering `onPaneReady`. If the pane
+  unmounted during that await, cleanup had no registered release function and the resumed
+  task could still install a stale drain callback for the dead pane.
+- **Fix:** Re-check cancellation after the restored replay send and again before draining
+  buffered events or registering pane readiness. Added regression coverage that unmounts
+  while replay output is still pending.
+- **Commit:** same commit as this entry
+
+### 73. Tool-call seen IDs persisted before deferred state flush
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Completed tool-call IDs were written to the persisted seen-ID set when
+  the IPC event arrived, but the state update was deferred to `requestAnimationFrame`.
+  If the hook unmounted before that frame, replay later treated the event as already
+  applied and dropped it from totals/recent activity.
+- **Fix:** Keep a non-persistent pending seen-ID set for same-frame duplicate filtering,
+  and persist completed IDs only inside the rAF flush that applies the corresponding
+  state update. Added regression coverage for unmount-before-flush.
+- **Commit:** same commit as this entry
+
+### 74. Native TSFN dispatch raced callback release during surface teardown
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `OnInput` and `OnResize` read shared `napi_threadsafe_function`
+  pointers while `ReleaseSurfaceCallbacks` could concurrently null and release
+  them during native surface destruction. A destroy-while-callback interleaving
+  could pass an invalid or null TSFN to Node-API and crash the Electron process.
+- **Fix:** Added an atomic callback-release guard plus a mutex-protected TSFN
+  acquire path. Input and resize callbacks now acquire a stable local TSFN before
+  dispatch and release that per-call reference after the nonblocking call.
+- **Commit:** same commit as this entry
+
+### 75. Native Ghostty IPC rejections bypassed xterm fallback
+
+- **Source:** github-claude | PR #630 round 8 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty data and focus calls handled disabled responses,
+  but rejected IPC promises skipped `onUnavailable`. Startup, hot-reload, or
+  teardown races could leave the renderer in native mode with no working surface
+  instead of falling back to xterm.
+- **Fix:** Wrap native data/focus awaits in `try`/`catch` and call the existing
+  unavailable fallback on rejection, including the fire-and-forget output
+  forwarder and the imperative `TerminalBody` focus path. Added regression tests
+  for rejected data, focus, and output-forwarding IPC.
+- **Commit:** same commit as this entry
+
+### 76. Native finalizer bypassed mutex-protected TSFN release
+
+- **Source:** github-claude | PR #630 round 9 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `FinalizeSurface` still read, released, and nulled the input and
+  resize TSFN pointers directly even after explicit destroy moved to the
+  mutex-protected `ReleaseSurfaceCallbacks` helper. A Swift callback racing with
+  GC finalization could therefore access the same non-atomic TSFN fields without
+  synchronization and crash the Electron process during teardown.
+- **Fix:** Call `ReleaseSurfaceCallbacks(surface)` at the start of finalization
+  and remove the direct TSFN cleanup block, so both explicit destroy and GC
+  fallback use the same idempotent, mutex-protected release path.
 - **Commit:** same commit as this entry

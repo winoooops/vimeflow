@@ -9,6 +9,7 @@ export type {
   AgentCwdEvent,
   AgentToolCallEvent,
   AgentTurnEvent,
+  AgentReplaySummaryEvent,
   AgentDetectedEvent,
   AgentDisconnectedEvent,
 } from '../../../bindings'

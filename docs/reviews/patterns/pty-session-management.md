@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-28
 ref_count: 4
 ---
 
@@ -96,4 +96,13 @@ below preserve their original Tauri-era file paths for auditability.
 - **File:** `crates/backend/src/terminal/commands.rs`
 - **Finding:** Both `kill_pty_inner` and `read_pty_output` recomputed the shim directory path by calling `dirs::cache_dir()` at cleanup time rather than reading a stored path from `ManagedSession`. `dirs::cache_dir()` resolves `$HOME` / `$XDG_CACHE_HOME` at call time. If either env var is mutated between spawn and cleanup, cleanup silently targets the wrong directory and the actual shim dir leaks — invisibly, because both callers discard the `Result` with `let _ = ...`. Even without env mutation, the computation was duplicated across three call sites (spawn, kill, read-loop), all of which must stay in sync.
 - **Fix:** Added `shim_dir: Option<String>` to `ManagedSession`, populated from `BridgeFiles.shim_dir_path` at spawn time. Both cleanup callers now read `session.shim_dir.as_deref()` directly instead of recomputing via `dirs::cache_dir()`. Updated all test-session constructors to include `shim_dir: None`.
+- **Commit:** same commit as this entry
+
+### 10. Native Ghostty body omitted the PTY session map bridge
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** The xterm body registered the lookup that lets agent status resolve an active pane id to the backend PTY id, but the native Ghostty body had no equivalent lifecycle side effect. Ghostty-backed panes could render terminal output while `useAgentStatus` returned early because `getPtySessionId(...)` had no mapping.
+- **Fix:** Added a GhosttyBody mount/cwd lifecycle effect that registers the active PTY id with `registerPtySession` and unregisters it on cleanup, with a component regression test covering registration, cwd updates, and unmount cleanup.
 - **Commit:** same commit as this entry

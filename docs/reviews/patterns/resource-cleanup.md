@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 19
+last_updated: 2026-06-28
+ref_count: 21
 ---
 
 # Resource Cleanup
@@ -189,4 +189,52 @@ causes listener accumulation and duplicate event handling.
 - **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
 - **Finding:** `message.part.updated` running events cached tool metadata for every call, but the terminal part-update path only removed `in_flight` state. Calls without a later `tool.after` left one stale metadata entry per completed tool call for the lifetime of the session.
 - **Fix:** Remove the call's metadata immediately after a terminal part update is accepted for calls that do not expect `tool.after`, and add a regression test that asserts pure part-update completion clears the metadata cache.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. N-API external creation failure leaked native Ghostty surface resources
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `napi_create_external` was unchecked after allocating the `SurfaceHandle`, creating both TSFNs, and creating the Swift surface. If external creation failed, the handle and native resources were never registered for GC finalization and leaked permanently.
+- **Fix:** Checked the `napi_create_external` status, called `FinalizeSurface` on failure, and returned a thrown error instead of an indeterminate external value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Disabled native Ghostty flags still registered no-op IPC handlers
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** Main-process setup always installed either the native parent controller or the Swift helper fallback, so Ghostty IPC channels were registered even on platforms and environments where both native flags were disabled. The handlers short-circuited, but the process-global IPC surface stayed larger than necessary.
+- **Fix:** Guarded controller creation on the parent and helper feature flags. When neither native mode is enabled, `ghosttyNativeController` remains null and no Ghostty IPC handlers are registered.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Explicit native Ghostty surface destroy left TSFNs alive until GC
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `Destroy` tore down the Swift surface but left the input and resize threadsafe functions alive until the JS external finalizer eventually ran. Pending native callbacks could still dispatch through closures after explicit pane teardown.
+- **Fix:** Release both TSFNs with `napi_tsfn_abort` during explicit destroy after nulling the Swift surface, and null the TSFN pointers so the later finalizer remains idempotent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Native surface callbacks can send through a destroyed BrowserWindow
+
+- **Source:** github-codex-connector | PR #630 round 5 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty input and resize callbacks captured a `BrowserWindow` and only checked pane membership before calling `win.webContents.send`. A late callback during window teardown could touch a destroyed Electron object and throw in the main process.
+- **Fix:** Guard both callback closures with `win.isDestroyed()` before accessing `webContents` or dispatching sidecar work, preserving the existing pane-liveness check for normal teardown.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Fire-and-forget native surface cleanup dropped destroy IPC rejection
+
+- **Source:** github-codex-connector | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` voided `destroyNativeGhostty(paneRef)` during unmount cleanup without handling rejection. If Electron IPC teardown was already unavailable during quit, hot reload, or pane teardown, the renderer could emit an unhandled promise rejection from an otherwise best-effort cleanup path.
+- **Fix:** Wrap the destroy call in a voided async cleanup task with local
+  `try/catch` so destroy failures are absorbed without violating
+  `promise/prefer-await-to-then`, and add a regression test that rejects
+  `destroyNativeGhostty` during unmount.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
