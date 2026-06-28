@@ -19,6 +19,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -50,6 +51,17 @@ const DEFAULT_FIXER_ENGINE = 'kimi'
 const FIXER_ENGINES = new Set(['kimi', 'codex'])
 const KIMI_DEFAULT_MODEL = 'kimi-code/kimi-for-coding'
 const KIMI_DEFAULT_OUTPUT_FORMAT = 'stream-json'
+export const DEFAULT_LOCAL_CI_COMMAND = [
+  'npm run lint',
+  'npm run format:check',
+  'npm run type-check',
+  'npm test',
+  'cargo test',
+  "find src/bindings -name '*.ts' ! -name 'index.ts' -delete",
+  'npm run generate:bindings',
+  'git diff --exit-code src/bindings/',
+  'test -z "$(git ls-files --others --exclude-standard src/bindings/)"',
+].join(' && ')
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 
@@ -332,8 +344,9 @@ const liveSinglePassText =
   'run the codex verify gate, commit, push, then reply to and resolve the threads ' +
   'you addressed, and STOP. Do NOT poll or wait for a re-review, and do NOT begin ' +
   'another fix round — exit cleanly as soon as this round is pushed. The orchestrator ' +
-  're-dispatches you when fresh review feedback arrives. Use `git push --no-verify` ' +
-  'after the codex verify gate; CI is the cloud verification gate, not local pre-push hooks.'
+  're-dispatches you when fresh review feedback arrives. The worker enforces local CI ' +
+  'before every git push; if push fails because local CI failed, fix the reported failure, ' +
+  'commit it, and retry the push.'
 
 const dryRunText =
   'MODE: DRY RUN — run the cycle through the codex verify gate ONLY, then STOP. ' +
@@ -400,6 +413,65 @@ export const codexExecArgs = ({ wt, repoRoot, env = process.env } = {}) => {
   args.push('-')
 
   return args
+}
+
+export const localCiCommand = (env = process.env) =>
+  env.QA_LOCAL_CI_COMMAND || DEFAULT_LOCAL_CI_COMMAND
+
+const realGitPath = (env = process.env) => {
+  if (env.QA_REAL_GIT) {
+    return env.QA_REAL_GIT
+  }
+  const result = spawnSync('sh', ['-lc', 'command -v git'], {
+    encoding: 'utf8',
+    env,
+  })
+  const path = result.stdout?.trim()
+  if (!path) {
+    throw new Error('git not found on PATH')
+  }
+
+  return path
+}
+
+export const gitPushCiWrapperScript = ({ realGit, ciCommand }) => `#!/usr/bin/env bash
+set -euo pipefail
+
+real_git=${shellQuote(realGit)}
+ci_cmd=${shellQuote(ciCommand)}
+is_push=0
+for arg in "$@"; do
+  if [ "$arg" = "push" ]; then
+    is_push=1
+    break
+  fi
+done
+
+if [ "$is_push" = "1" ]; then
+  echo "QA_RUNNER_LOCAL_CI_START $ci_cmd" >&2
+  bash -lc "$ci_cmd"
+  echo "QA_RUNNER_LOCAL_CI_OK" >&2
+fi
+
+exec "$real_git" "$@"
+`
+
+const installGitPushCiWrapper = (wt, env = process.env) => {
+  const wrapperDir = join(wt, '.qa-runner', 'bin')
+  mkdirSync(wrapperDir, { recursive: true })
+  const wrapper = join(wrapperDir, 'git')
+  writeFileSync(
+    wrapper,
+    gitPushCiWrapperScript({
+      realGit: realGitPath(env),
+      ciCommand: localCiCommand(env),
+    })
+  )
+  chmodSync(wrapper, 0o755)
+
+  return {
+    PATH: `${wrapperDir}:${env.PATH || ''}`,
+  }
 }
 
 const lockOwnerIsActiveRunner = (pid) => {
@@ -515,10 +587,12 @@ const run = async (pr, live) => {
     // so the skill can't POLL_NEXT. Local HEAD changes too early: stopping at
     // commit time can kill the child before Step 6.7 pushes the fix.
     const remoteRef = `origin/${branch}`
+    const gitPushCiEnv = live ? installGitPushCiWrapper(wt) : {}
 
     const childEnv = {
       ...process.env,
       ...botEnv(bot),
+      ...gitPushCiEnv,
       USER_SUPPLIED_PR_NUMBER: String(pr),
       QA_FIXER_ENGINE: engine,
     }

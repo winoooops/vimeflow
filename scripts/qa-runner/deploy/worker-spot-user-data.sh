@@ -70,7 +70,18 @@ export QA_LIFELINE_SKILLS_DIR="$lifeline_dir/skills"
 
 install -d -m 0755 "$(dirname "$repo")"
 
-dnf install -y git jq nodejs npm dnf-plugins-core libsecret
+dnf install -y \
+  git \
+  jq \
+  nodejs \
+  npm \
+  dnf-plugins-core \
+  libsecret \
+  rust \
+  cargo \
+  gtk3-devel \
+  librsvg2-devel \
+  patchelf
 
 if ! command -v gh >/dev/null 2>&1; then
   dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo

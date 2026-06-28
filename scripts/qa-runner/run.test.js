@@ -2,10 +2,13 @@ import { describe, expect, test } from 'vitest'
 import {
   codexExecArgs,
   codexInvocation,
+  DEFAULT_LOCAL_CI_COMMAND,
   fixerTimeoutMs,
   gitCredentialHelperCommand,
+  gitPushCiWrapperScript,
   kimiInvocation,
   kimiModelArgs,
+  localCiCommand,
   normalizeFixerEngine,
   staleDeterministicCiPreflight,
 } from './run.js'
@@ -69,6 +72,34 @@ describe('fixer command args', () => {
   })
 })
 
+describe('local CI push gate', () => {
+  test('defaults to the local CI Checks workflow commands', () => {
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run lint')
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run format:check')
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run type-check')
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm test')
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('cargo test')
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run generate:bindings')
+  })
+
+  test('allows the worker CI command to be overridden', () => {
+    expect(localCiCommand({ QA_LOCAL_CI_COMMAND: 'npm test' })).toBe(
+      'npm test'
+    )
+  })
+
+  test('wraps git push with local CI even when push uses --no-verify', () => {
+    const script = gitPushCiWrapperScript({
+      realGit: '/usr/bin/git',
+      ciCommand: 'npm test',
+    })
+
+    expect(script).toContain('if [ "$arg" = "push" ]')
+    expect(script).toContain('bash -lc "$ci_cmd"')
+    expect(script).toContain('exec "$real_git" "$@"')
+  })
+})
+
 describe('fixer prompts', () => {
   test('keeps Kimi on the slash-skill path', () => {
     expect(kimiInvocation(348, true)).toContain('/skill:upsource-review 348')
@@ -80,6 +111,7 @@ describe('fixer prompts', () => {
     expect(prompt).toContain('skills/upsource-review/SKILL.md')
     expect(prompt).toContain('USER_SUPPLIED_PR_NUMBER=348')
     expect(prompt).toContain('SINGLE PASS')
+    expect(prompt).toContain('worker enforces local CI')
     expect(prompt).not.toContain('/skill:upsource-review')
   })
 })
