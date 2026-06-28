@@ -178,7 +178,7 @@ export class GhosttyNativeHelperController {
     }
 
     if (!this.matchesCurrentPane(payload)) {
-      return { enabled: true }
+      return { enabled: false }
     }
 
     this.getOrStartHelper().stdin.write(
@@ -203,7 +203,7 @@ export class GhosttyNativeHelperController {
     }
 
     if (!this.matchesCurrentPane(payload)) {
-      return { enabled: true }
+      return { enabled: false }
     }
 
     this.getOrStartHelper().stdin.write(
@@ -228,6 +228,7 @@ export class GhosttyNativeHelperController {
     if (this.matchesCurrentPane(payload)) {
       this.currentPane = null
       this.lastResize = null
+      this.clearStdout()
       this.helper?.stdin.write(
         encodeFrame({
           kind: 'command',

@@ -1,7 +1,12 @@
 // cspell:ignore ghostty GHOSTTY
 import { PassThrough, Writable } from 'node:stream'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { GHOSTTY_NATIVE_UPDATE } from './ghostty-native-channels'
+import {
+  GHOSTTY_NATIVE_DATA,
+  GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_UPDATE,
+} from './ghostty-native-channels'
 import {
   isGhosttyNativeEnabled,
   setupGhosttyNativeHelper,
@@ -223,6 +228,152 @@ describe('ghostty native helper', () => {
 
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 100, rows: 30 },
+    })
+
+    controller.dispose()
+  })
+
+  test('reports disabled for non-current pane data and focus requests', () => {
+    const stdout = new PassThrough()
+
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback): void {
+        callback()
+      },
+    })
+
+    const helper: {
+      stdin: Writable
+      stdout: PassThrough
+      stderr: null
+      on: ReturnType<typeof vi.fn>
+      kill: ReturnType<typeof vi.fn>
+    } = {
+      stdin,
+      stdout,
+      stderr: null,
+      on: vi.fn(() => helper),
+      kill: vi.fn(() => true),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeHelper({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
+      spawnFn: vi.fn(() => helper),
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+    const data = handlers.get(GHOSTTY_NATIVE_DATA)
+    const focus = handlers.get(GHOSTTY_NATIVE_FOCUS)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(
+      data?.({}, { sessionId: 'pty-2', paneId: 'pane-2', data: 'ignored' })
+    ).toEqual({ enabled: false })
+
+    expect(focus?.({}, { sessionId: 'pty-2', paneId: 'pane-2' })).toEqual({
+      enabled: false,
+    })
+
+    controller.dispose()
+  })
+
+  test('clears partial helper stdout when destroying the current pane', () => {
+    const stdout = new PassThrough()
+
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback): void {
+        callback()
+      },
+    })
+
+    const helper: {
+      stdin: Writable
+      stdout: PassThrough
+      stderr: null
+      on: ReturnType<typeof vi.fn>
+      kill: ReturnType<typeof vi.fn>
+    } = {
+      stdin,
+      stdout,
+      stderr: null,
+      on: vi.fn(() => helper),
+      kill: vi.fn(() => true),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeHelper({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
+      spawnFn: vi.fn(() => helper),
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+    const destroy = handlers.get(GHOSTTY_NATIVE_DESTROY)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    const body = Buffer.from(
+      JSON.stringify({
+        kind: 'event',
+        event: 'pty-input',
+        payload: { data: 'old-pane-input' },
+      }),
+      'utf8'
+    )
+
+    const frame = Buffer.concat([
+      Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
+      body,
+    ])
+
+    stdout.emit('data', frame.subarray(0, 12))
+    destroy?.({}, { sessionId: 'pty-1', paneId: 'pane-1' })
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-2',
+        paneId: 'pane-2',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+    stdout.emit('data', frame.subarray(12))
+
+    expect(webContentsSend).not.toHaveBeenCalled()
+    expect(sidecar.invoke).not.toHaveBeenCalledWith('write_pty', {
+      request: { sessionId: 'pty-2', data: 'old-pane-input' },
     })
 
     controller.dispose()

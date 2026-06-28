@@ -48,6 +48,13 @@ napi_value Throw(napi_env env, const char *message) {
   return nullptr;
 }
 
+void ResetBridge() {
+  if (bridge.library != nullptr) {
+    dlclose(bridge.library);
+  }
+  bridge = BridgeApi{};
+}
+
 bool LoadSymbol(napi_env env, const char *name, void **target) {
   *target = dlsym(bridge.library, name);
   if (*target != nullptr) {
@@ -69,16 +76,21 @@ bool EnsureBridge(napi_env env, const std::string &path) {
     return false;
   }
 
-  return LoadSymbol(env, "vimeflow_ghostty_create",
-                    reinterpret_cast<void **>(&bridge.create)) &&
-         LoadSymbol(env, "vimeflow_ghostty_set_frame",
-                    reinterpret_cast<void **>(&bridge.set_frame)) &&
-         LoadSymbol(env, "vimeflow_ghostty_write",
-                    reinterpret_cast<void **>(&bridge.write)) &&
-         LoadSymbol(env, "vimeflow_ghostty_focus",
-                    reinterpret_cast<void **>(&bridge.focus)) &&
-         LoadSymbol(env, "vimeflow_ghostty_destroy",
-                    reinterpret_cast<void **>(&bridge.destroy));
+  if (LoadSymbol(env, "vimeflow_ghostty_create",
+                 reinterpret_cast<void **>(&bridge.create)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_frame",
+                 reinterpret_cast<void **>(&bridge.set_frame)) &&
+      LoadSymbol(env, "vimeflow_ghostty_write",
+                 reinterpret_cast<void **>(&bridge.write)) &&
+      LoadSymbol(env, "vimeflow_ghostty_focus",
+                 reinterpret_cast<void **>(&bridge.focus)) &&
+      LoadSymbol(env, "vimeflow_ghostty_destroy",
+                 reinterpret_cast<void **>(&bridge.destroy))) {
+    return true;
+  }
+
+  ResetBridge();
+  return false;
 }
 
 std::string GetString(napi_env env, napi_value value) {

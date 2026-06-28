@@ -31,7 +31,12 @@ export interface NativeGhosttyApi {
 }
 
 export interface NativeGhosttyOutputOptions {
-  onOutput?: (data: string) => void
+  onOutput?: (
+    data: string,
+    offsetStart: number,
+    byteLen: number
+  ) => boolean | void
+  onUnavailable?: () => void
 }
 
 type NativeGhosttyCapableWindow = Window & {
@@ -78,14 +83,18 @@ export const updateNativeGhostty = async (
 
 export const sendNativeGhosttyData = async (
   request: NativeGhosttyDataRequest
-): Promise<void> => {
-  await nativeGhosttyApi()?.data(request)
+): Promise<boolean> => {
+  const result = await nativeGhosttyApi()?.data(request)
+
+  return !isDisabledResult(result)
 }
 
 export const focusNativeGhostty = async (
   request: NativeGhosttyPaneRef
-): Promise<void> => {
-  await nativeGhosttyApi()?.focus(request)
+): Promise<boolean> => {
+  const result = await nativeGhosttyApi()?.focus(request)
+
+  return !isDisabledResult(result)
 }
 
 export const destroyNativeGhostty = async (
@@ -99,11 +108,19 @@ export const attachNativeGhosttyOutput = async (
   request: NativeGhosttyPaneRef,
   options: NativeGhosttyOutputOptions = {}
 ): Promise<() => void> =>
-  service.onData((eventSessionId, data) => {
+  service.onData((eventSessionId, data, offsetStart, byteLen) => {
     if (eventSessionId !== request.sessionId) {
       return
     }
 
-    options.onOutput?.(data)
-    void sendNativeGhosttyData({ ...request, data })
+    if (options.onOutput?.(data, offsetStart, byteLen) === false) {
+      return
+    }
+
+    void (async (): Promise<void> => {
+      const enabled = await sendNativeGhosttyData({ ...request, data })
+      if (!enabled) {
+        options.onUnavailable?.()
+      }
+    })()
   })

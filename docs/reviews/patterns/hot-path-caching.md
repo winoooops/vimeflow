@@ -76,3 +76,12 @@ feature.
 - **Finding:** `handleHelperEvent` constructed a two-entry `Map` on every PTY input or resize event, adding avoidable allocation to a high-frequency helper event path.
 - **Fix:** Replaced the per-call `Map` with a `switch` over the known helper event names.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Partial native bridge loads were cached as ready
+
+- **Source:** github-codex-connector | PR #630 round 4 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native Ghostty parent cached the `dlopen` handle before all `dlsym` calls succeeded and used that handle as the readiness sentinel. A mismatched dylib could fail one symbol lookup, then the next native call would skip symbol loading and call a null function pointer.
+- **Fix:** Added a bridge reset path that `dlclose`s the library and clears every cached function pointer when any symbol lookup fails, so only a fully loaded bridge remains cached.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

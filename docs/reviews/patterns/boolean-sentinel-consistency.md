@@ -2,7 +2,7 @@
 id: boolean-sentinel-consistency
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-22
+last_updated: 2026-06-28
 ref_count: 1
 ---
 
@@ -35,3 +35,12 @@ encourages future contributors to invent yet another name for the same intent.
 - **Finding:** `inputTokens > 0` intentionally treated zero as "data not yet available" for unknown context windows, but the prop documentation did not state that zero is a sentinel. Future callers could pass `0` expecting a literal `0 tokens` label.
 - **Fix:** Documented the zero-sentinel behavior directly on `inputTokens`, keeping the existing render contract and tests unchanged.
 - **Commit:** same commit as this entry
+
+### 3. Helper IPC reported enabled for requests it ignored
+
+- **Source:** github-codex-connector | PR #630 round 4 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The single-pane Ghostty helper returned `{ enabled: true }` for data and focus requests whose pane did not match `currentPane`. Renderer callers treated that as native success, so helper-flag split panes could silently drop output or focus instead of falling back.
+- **Fix:** Return `{ enabled: false }` for non-current-pane data and focus requests, preserving the existing fallback contract for panes the helper cannot service.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

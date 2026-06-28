@@ -79,3 +79,12 @@ double execution, and paste failures.
 - **Finding:** Native Ghostty panes forwarded PTY bytes into the native view but did not run the renderer's OSC 7 and agent cwd-hint parsing path. After `cd` or worktree-changing agent output, pane cwd, git status, and burner cwd stayed at the launch directory while native mode was active.
 - **Fix:** Passed `onCwdChange` into `GhosttyBody`, parsed native PTY output for OSC 7 and text cwd hints before forwarding the unchanged bytes to Ghostty, and added a component regression test for OSC 7 output.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Native Ghostty restore drain ignored PTY byte cursors
+
+- **Source:** github-codex-connector | PR #630 round 4 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** The native Ghostty restore path replayed restored buffered bytes and registered a pane-ready drain without using `offsetStart` and `byteLen`. If live subscription output and the mount-time drain overlapped, the native surface could receive the same PTY byte range twice.
+- **Fix:** Added a cursor initialized from `replayEndOffset`, threaded byte offsets through native output callbacks and pane-ready drains, and skipped any restored, live, or drained event whose `offsetStart` is behind the cursor.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -79,6 +79,7 @@ export const GhosttyBody = ({
   const submittedInputLineRef = useRef('')
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
+  const cursorRef = useRef(restoredFrom?.replayEndOffset ?? 0)
   const cwdRef = useRef(cwd)
   cwdRef.current = cwd
   const agentCwdRef = useRef(cwd)
@@ -112,7 +113,8 @@ export const GhosttyBody = ({
     agentCwdHintContextRef.current = ''
     agentCwdRef.current = cwdRef.current
     agentCwdSourceRef.current = 'prop'
-  }, [ptyId])
+    cursorRef.current = restoredFrom?.replayEndOffset ?? 0
+  }, [ptyId, restoredFrom?.replayEndOffset])
 
   const applyOsc7Cwd = useCallback((payload: string): void => {
     const previousCwd = agentCwdRef.current
@@ -230,6 +232,49 @@ export const GhosttyBody = ({
     [ptyId]
   )
 
+  const sendOutputToNative = useCallback(
+    async (data: string): Promise<void> => {
+      const enabled = await sendNativeGhosttyData({ ...paneRef, data })
+      if (!enabled) {
+        onUnavailable?.()
+      }
+    },
+    [onUnavailable, paneRef]
+  )
+
+  const focusNativeSurface = useCallback(async (): Promise<void> => {
+    const enabled = await focusNativeGhostty(paneRef)
+    if (!enabled) {
+      onUnavailable?.()
+    }
+  }, [onUnavailable, paneRef])
+
+  const forwardNativeOutput = useCallback(
+    (
+      data: string,
+      offsetStart: number,
+      byteLen: number,
+      sendToNative: boolean
+    ): boolean => {
+      if (offsetStart < cursorRef.current) {
+        return false
+      }
+
+      handleNativeOutput(data)
+      if (sendToNative) {
+        void sendOutputToNative(data)
+      }
+
+      const writtenEnd = offsetStart + byteLen
+      if (writtenEnd > cursorRef.current) {
+        cursorRef.current = writtenEnd
+      }
+
+      return true
+    },
+    [handleNativeOutput, sendOutputToNative]
+  )
+
   const updateNativeFrame = useCallback(async (): Promise<void> => {
     const node = containerRef.current
     if (!node) {
@@ -294,9 +339,9 @@ export const GhosttyBody = ({
   // Focus follows the active pane, but focus no longer owns surface lifetime.
   useEffect(() => {
     if (active) {
-      void focusNativeGhostty(paneRef)
+      void focusNativeSurface()
     }
-  }, [active, paneRef])
+  }, [active, focusNativeSurface])
 
   useEffect(() => {
     let cancelled = false
@@ -338,14 +383,19 @@ export const GhosttyBody = ({
     let unsubscribeOutput: (() => void) | null = null
     let cancelled = false
 
-    const drainBufferedOutput = (data: string): void => {
-      handleNativeOutput(data)
-      void sendNativeGhosttyData({ ...paneRef, data })
+    const drainBufferedOutput = (
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ): void => {
+      forwardNativeOutput(data, offsetStart, byteLen, true)
     }
 
     const attachOutput = async (): Promise<void> => {
       const unsubscribe = await attachNativeGhosttyOutput(service, paneRef, {
-        onOutput: handleNativeOutput,
+        onOutput: (data, offsetStart, byteLen) =>
+          forwardNativeOutput(data, offsetStart, byteLen, false),
+        onUnavailable,
       })
 
       if (cancelled) {
@@ -356,13 +406,11 @@ export const GhosttyBody = ({
 
       unsubscribeOutput = unsubscribe
       if (restoredFrom?.replayData) {
-        await sendNativeGhosttyData({
-          ...paneRef,
-          data: restoredFrom.replayData,
-        })
+        handleNativeOutput(restoredFrom.replayData)
+        await sendOutputToNative(restoredFrom.replayData)
       }
       for (const event of restoredFrom?.bufferedEvents ?? []) {
-        await sendNativeGhosttyData({ ...paneRef, data: event.data })
+        forwardNativeOutput(event.data, event.offsetStart, event.byteLen, true)
       }
       releasePaneReady = onPaneReady?.(ptyId, drainBufferedOutput) ?? null
     }
@@ -375,7 +423,17 @@ export const GhosttyBody = ({
       unsubscribeOutput?.()
       void destroyNativeGhostty(paneRef)
     }
-  }, [handleNativeOutput, onPaneReady, paneRef, ptyId, restoredFrom, service])
+  }, [
+    forwardNativeOutput,
+    handleNativeOutput,
+    onPaneReady,
+    onUnavailable,
+    paneRef,
+    ptyId,
+    restoredFrom,
+    sendOutputToNative,
+    service,
+  ])
 
   return (
     <div
@@ -383,10 +441,10 @@ export const GhosttyBody = ({
       data-testid="native-ghostty-pane"
       className="h-full w-full"
       onFocus={(): void => {
-        void focusNativeGhostty(paneRef)
+        void focusNativeSurface()
       }}
       onMouseDown={(): void => {
-        void focusNativeGhostty(paneRef)
+        void focusNativeSurface()
       }}
       role="presentation"
       style={{ background: 'var(--color-surface)' }}
