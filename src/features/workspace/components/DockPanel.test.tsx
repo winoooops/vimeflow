@@ -1356,7 +1356,9 @@ describe('DockPanel', () => {
     const popover = await screen.findByRole('dialog', {
       name: 'Finish feedback',
     })
-    await user.click(within(popover).getByRole('button', { name: 'Confirm' }))
+    await user.click(
+      within(popover).getByRole('button', { name: 'Confirm (Y)' })
+    )
 
     await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
 

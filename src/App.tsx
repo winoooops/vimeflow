@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react'
 import { WorkerPoolContextProvider } from '@pierre/diffs/react'
 import { WorkspaceView } from './features/workspace/WorkspaceView'
-import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
 import { ReorderMotionDemo } from './features/sessions/demo/ReorderMotionDemo'
 
 // Pierre's worker entry is exposed as a dedicated package export so Vite
@@ -31,10 +30,6 @@ const devDemoName = (): string | null =>
     : null
 
 const renderDemo = (demoName: string | null): ReactElement => {
-  if (demoName === 'inline-comments') {
-    return <InlineCommentDemo />
-  }
-
   if (demoName === 'session-reorder') {
     return <ReorderMotionDemo />
   }

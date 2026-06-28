@@ -67,7 +67,12 @@ const renderKeyboard = (
     onScrollPage: vi.fn(),
     onPreviousFile: vi.fn(),
     onNextFile: vi.fn(),
+    onPreviousHunk: vi.fn(),
+    onNextHunk: vi.fn(),
     onComment: vi.fn(),
+    onUpdateComment: vi.fn(),
+    onDeleteComment: vi.fn(),
+    onFinishReview: vi.fn(),
     onStageHunk: vi.fn(),
     onDiscardHunk: vi.fn(),
     onDiscardFile: vi.fn(),
@@ -111,12 +116,40 @@ describe('useDiffKeyboard', () => {
     expect(props.onPreviousFile).toHaveBeenCalledOnce()
   })
 
-  test('c opens comment composer for the selected line', () => {
+  test('[ and ] navigate hunks', () => {
     const { props } = renderKeyboard()
 
-    dispatch('c')
+    dispatch('[')
+    dispatch(']')
+
+    expect(props.onPreviousHunk).toHaveBeenCalledOnce()
+    expect(props.onNextHunk).toHaveBeenCalledOnce()
+  })
+
+  test('i opens comment editor for the selected line', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('i')
 
     expect(props.onComment).toHaveBeenCalledOnce()
+  })
+
+  test('u and x update or delete the selected comment', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('u')
+    dispatch('x')
+
+    expect(props.onUpdateComment).toHaveBeenCalledOnce()
+    expect(props.onDeleteComment).toHaveBeenCalledOnce()
+  })
+
+  test('Y opens finish review', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('Y')
+
+    expect(props.onFinishReview).toHaveBeenCalledOnce()
   })
 
   test('s, d, and D request keyboard confirmations for hunk/file actions', () => {
@@ -269,7 +302,12 @@ describe('useDiffKeyboard', () => {
       onScrollPage: vi.fn(),
       onPreviousFile: vi.fn(),
       onNextFile: vi.fn(),
+      onPreviousHunk: vi.fn(),
+      onNextHunk: vi.fn(),
       onComment: vi.fn(),
+      onUpdateComment: vi.fn(),
+      onDeleteComment: vi.fn(),
+      onFinishReview: vi.fn(),
       onStageHunk: vi.fn(),
       onDiscardHunk: vi.fn(),
       onDiscardFile: vi.fn(),

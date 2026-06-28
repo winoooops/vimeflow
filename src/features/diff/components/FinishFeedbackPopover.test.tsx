@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
@@ -46,9 +46,12 @@ test('kind none shows no-agent message and Dismiss button calls onCancel', async
   expect(
     screen.getByText(/No coding agent is active in this workspace/)
   ).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+  expect(
+    screen.getByRole('button', { name: 'Dismiss (n)' })
+  ).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Dismiss (n)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
   expect(onSend).not.toHaveBeenCalled()
 
@@ -79,14 +82,41 @@ test('kind one shows pane info, correct copy, and buttons work', async () => {
     )
   ).toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+  await user.click(screen.getByRole('button', { name: 'Confirm (Y)' }))
   expect(onSend).toHaveBeenCalledTimes(1)
   expect(onSend).toHaveBeenCalledWith(pane)
 
   onSend.mockClear()
-  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  await user.click(screen.getByRole('button', { name: 'Cancel (n)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
   expect(onSend).not.toHaveBeenCalled()
+
+  anchor.remove()
+})
+
+test('kind one accepts Y to confirm and n to cancel', async () => {
+  const user = userEvent.setup()
+  const anchor = createAnchor()
+  const onCancel = vi.fn()
+  const onSend = vi.fn()
+  const pane = makePane()
+
+  render(
+    <FinishFeedbackPopover
+      anchor={anchor}
+      result={{ kind: 'one', pane } as ResolveResult}
+      commentCount={1}
+      fileCount={1}
+      onSend={onSend}
+      onCancel={onCancel}
+    />
+  )
+
+  fireEvent.keyDown(document, { key: 'y', code: 'KeyY', shiftKey: true })
+  expect(onSend).toHaveBeenCalledWith(pane)
+
+  await user.keyboard('n')
+  expect(onCancel).toHaveBeenCalledTimes(1)
 
   anchor.remove()
 })
@@ -135,7 +165,7 @@ test('kind many renders row per candidate and sends to correct pane', async () =
   expect(onSend).toHaveBeenCalledTimes(1)
   expect(onSend).toHaveBeenCalledWith(paneB)
 
-  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  await user.click(screen.getByRole('button', { name: 'Cancel (n)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
 
   anchor.remove()

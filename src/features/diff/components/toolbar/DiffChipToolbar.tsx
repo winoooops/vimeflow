@@ -490,6 +490,7 @@ export const DiffChipToolbar = ({
             <button
               type="button"
               aria-label={`finish feedback (${feedbackCount})`}
+              aria-keyshortcuts="Y"
               disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
               className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -500,7 +501,7 @@ export const DiffChipToolbar = ({
               >
                 check
               </span>
-              Finish
+              Finish (Y)
               <Chip
                 tone="custom"
                 radius="pill"

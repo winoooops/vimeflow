@@ -22,6 +22,8 @@ export const ReviewCommentRow = ({
         icon="edit"
         label="Edit comment"
         size="sm"
+        shortcut="u"
+        aria-keyshortcuts="u"
         onClick={(): void => onEdit()}
       />
       <IconButton
@@ -29,6 +31,8 @@ export const ReviewCommentRow = ({
         label="Delete comment"
         variant="danger"
         size="sm"
+        shortcut="x"
+        aria-keyshortcuts="x"
         onClick={(): void => onDelete()}
       />
     </div>

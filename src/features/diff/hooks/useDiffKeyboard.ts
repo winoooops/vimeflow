@@ -12,7 +12,12 @@ export interface UseDiffKeyboardOptions {
   onScrollPage: (direction: number) => void
   onPreviousFile: () => void
   onNextFile: () => void
+  onPreviousHunk: () => void
+  onNextHunk: () => void
   onComment: () => void
+  onUpdateComment: () => void
+  onDeleteComment: () => void
+  onFinishReview: () => void
   onStageHunk: () => void
   onDiscardHunk: () => void
   onDiscardFile: () => void
@@ -48,7 +53,12 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
     onScrollPage,
     onPreviousFile,
     onNextFile,
+    onPreviousHunk,
+    onNextHunk,
     onComment,
+    onUpdateComment,
+    onDeleteComment,
+    onFinishReview,
     onStageHunk,
     onDiscardHunk,
     onDiscardFile,
@@ -136,7 +146,12 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
         k: () => onMoveLine(-1),
         n: onNextFile,
         p: onPreviousFile,
-        c: onComment,
+        '[': onPreviousHunk,
+        ']': onNextHunk,
+        i: onComment,
+        u: onUpdateComment,
+        x: onDeleteComment,
+        Y: onFinishReview,
         s: onStageHunk,
         d: onDiscardHunk,
         D: onDiscardFile,
@@ -164,7 +179,12 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
     onScrollPage,
     onPreviousFile,
     onNextFile,
+    onPreviousHunk,
+    onNextHunk,
     onComment,
+    onUpdateComment,
+    onDeleteComment,
+    onFinishReview,
     onStageHunk,
     onDiscardHunk,
     onDiscardFile,
