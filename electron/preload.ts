@@ -105,6 +105,25 @@ const onCommandPaletteToggle = (callback: () => void): (() => void) => {
   }
 }
 
+const isNativeGhosttyPreloadEnabled =
+  process.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+
+const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
+  ? {
+      ghosttyNative: {
+        update: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_UPDATE, request),
+        data: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_DATA, request),
+        focus: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
+        destroy: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
+      },
+    }
+  : {}
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
@@ -188,16 +207,7 @@ contextBridge.exposeInMainWorld('vimeflow', {
       }
     },
   },
-  ghosttyNative: {
-    update: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke(GHOSTTY_NATIVE_UPDATE, request),
-    data: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke(GHOSTTY_NATIVE_DATA, request),
-    focus: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
-    destroy: (request: unknown): Promise<unknown> =>
-      ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
-  },
+  ...ghosttyNativeBridge,
   dialog: {
     pickDirectory: (): Promise<string | null> =>
       ipcRenderer.invoke(DIALOG_PICK_DIRECTORY) as Promise<string | null>,

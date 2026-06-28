@@ -216,9 +216,10 @@ describe('ghostty native parent', () => {
     }
 
     const sidecar = {
-      invoke: vi.fn(() => Promise.resolve(undefined)),
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
       shutdown: vi.fn(() => Promise.resolve()),
-    } satisfies GhosttyNativeSidecar
+    } satisfies Sidecar
 
     const controller = setupGhosttyNativeParent({
       sidecar,

@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-06-28
-ref_count: 8
+ref_count: 9
 ---
 
 # Parser Resilience
@@ -247,3 +247,20 @@ true` and drop the chunk.
 - **Finding:** Destroying the helper's current pane cleared pane identity and resize state but left partial stdout frame chunks buffered on the long-lived helper controller. A frame split across destroy and the next pane update could be completed under the new pane identity and route input or resize to the wrong PTY.
 - **Fix:** Clear the accumulated stdout parser buffer when destroying the matching current pane, while still keeping the helper process alive for later reuse.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Clearing a partial frame without resync made orphaned body bytes fatal
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The native Ghostty helper correctly cleared partial stdout bytes when
+  destroying the current pane, but the next body bytes from that old frame could
+  still arrive on the long-lived helper stdout stream. The parser treated those
+  orphaned body bytes as a malformed frame header and killed the helper process,
+  causing avoidable restart latency during pane switches.
+- **Fix:** Added a resync mode entered on pane destroy. While resyncing, malformed
+  bytes are discarded until the next valid `Content-Length:` frame start is found,
+  preserving possible partial header prefixes across chunks. The regression test
+  now asserts stale bytes are not routed to the new pane, the helper is not killed,
+  and the following valid frame still parses.
+- **Commit:** same commit as this entry

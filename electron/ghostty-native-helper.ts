@@ -59,6 +59,7 @@ interface HelperEvent {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const HEADER_END = Buffer.from('\r\n\r\n', 'ascii')
+const CONTENT_LENGTH_HEADER = Buffer.from('Content-Length:', 'ascii')
 // ponytail: Content-Length guard for a local helper; make this configurable only if real Ghostty events exceed 16 MiB.
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 
@@ -89,6 +90,8 @@ export class GhosttyNativeHelperController {
   private stdoutChunks: Buffer[] = []
 
   private stdoutLength = 0
+
+  private discardUntilFrameStart = false
 
   private lastResize: { cols: number; rows: number } | null = null
 
@@ -234,6 +237,7 @@ export class GhosttyNativeHelperController {
       this.currentWindow = null
       this.lastResize = null
       this.clearStdout()
+      this.discardUntilFrameStart = true
       this.helper?.stdin.write(
         encodeFrame({
           kind: 'command',
@@ -299,6 +303,7 @@ export class GhosttyNativeHelperController {
       this.currentPane = null
       this.currentWindow = null
       this.clearStdout()
+      this.discardUntilFrameStart = false
       this.lastResize = null
     })
 
@@ -320,6 +325,16 @@ export class GhosttyNativeHelperController {
 
   private processStdout(): void {
     while (this.stdoutLength > 0) {
+      const wasDiscarding = this.discardUntilFrameStart
+
+      if (wasDiscarding && !this.stdoutStartsWithFrameHeader()) {
+        this.discardStdoutUntilFrameStart()
+
+        if (!this.stdoutStartsWithFrameHeader()) {
+          return
+        }
+      }
+
       const headerEnd = this.indexOfHeaderEnd()
       if (headerEnd === -1) {
         return
@@ -328,10 +343,17 @@ export class GhosttyNativeHelperController {
       const header = this.readStdoutAscii(headerEnd)
       const contentLength = parseContentLength(header)
       if (contentLength === null) {
+        if (wasDiscarding) {
+          this.discardStdoutUntilFrameStart(1)
+          continue
+        }
+
         this.shutdownHelper()
 
         return
       }
+
+      this.discardUntilFrameStart = false
 
       const bodyStart = headerEnd + HEADER_END.length
       const bodyEnd = bodyStart + contentLength
@@ -409,6 +431,7 @@ export class GhosttyNativeHelperController {
     this.currentPane = null
     this.currentWindow = null
     this.clearStdout()
+    this.discardUntilFrameStart = false
     this.lastResize = null
 
     if (!helper) {
@@ -480,6 +503,38 @@ export class GhosttyNativeHelperController {
   private clearStdout(): void {
     this.stdoutChunks = []
     this.stdoutLength = 0
+  }
+
+  private stdoutStartsWithFrameHeader(): boolean {
+    if (this.stdoutLength < CONTENT_LENGTH_HEADER.length) {
+      return false
+    }
+
+    const buffer = this.consumeStdoutBuffer()
+
+    const startsWith = buffer
+      .subarray(0, CONTENT_LENGTH_HEADER.length)
+      .equals(CONTENT_LENGTH_HEADER)
+
+    this.setStdoutBuffer(buffer)
+
+    return startsWith
+  }
+
+  private discardStdoutUntilFrameStart(startOffset = 0): void {
+    const buffer = this.consumeStdoutBuffer()
+    const searchFrom = Math.min(startOffset, buffer.length)
+    const frameStart = buffer.indexOf(CONTENT_LENGTH_HEADER, searchFrom)
+
+    if (frameStart !== -1) {
+      this.setStdoutBuffer(buffer.subarray(frameStart))
+
+      return
+    }
+
+    this.setStdoutBuffer(
+      buffer.subarray(partialFrameHeaderPrefixLength(buffer))
+    )
   }
 }
 
@@ -557,6 +612,22 @@ function encodeFrame(body: Record<string, unknown>): Buffer {
   const header = Buffer.from(`Content-Length: ${json.length}\r\n\r\n`, 'ascii')
 
   return Buffer.concat([header, json])
+}
+
+function partialFrameHeaderPrefixLength(buffer: Buffer): number {
+  const maxLength = Math.min(buffer.length, CONTENT_LENGTH_HEADER.length - 1)
+
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (
+      buffer
+        .subarray(buffer.length - length)
+        .equals(CONTENT_LENGTH_HEADER.subarray(0, length))
+    ) {
+      return buffer.length - length
+    }
+  }
+
+  return buffer.length
 }
 
 function parseContentLength(header: string): number | null {

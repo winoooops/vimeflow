@@ -579,6 +579,27 @@ describe('ghostty native helper', () => {
     expect(sidecar.invoke).not.toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-2', data: 'old-pane-input' },
     })
+    expect(helper.kill).not.toHaveBeenCalled()
+
+    const nextBody = Buffer.from(
+      JSON.stringify({
+        kind: 'event',
+        event: 'pty-resize',
+        payload: { cols: 120, rows: 40 },
+      }),
+      'utf8'
+    )
+    stdout.emit(
+      'data',
+      Buffer.concat([
+        Buffer.from(`Content-Length: ${nextBody.length}\r\n\r\n`, 'ascii'),
+        nextBody,
+      ])
+    )
+
+    expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+      request: { sessionId: 'pty-2', cols: 120, rows: 40 },
+    })
 
     controller.dispose()
   })
