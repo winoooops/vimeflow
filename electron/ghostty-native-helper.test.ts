@@ -19,6 +19,7 @@ import type { Sidecar } from './sidecar'
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const webContentsSend = vi.fn()
 const otherWebContentsSend = vi.fn()
+
 const ownerWindow = {
   getContentBounds: (): {
     x: number
@@ -29,6 +30,7 @@ const ownerWindow = {
   isDestroyed: vi.fn(() => false),
   webContents: { send: webContentsSend },
 }
+
 const otherWindow = {
   isDestroyed: vi.fn(() => false),
   webContents: { send: otherWebContentsSend },
