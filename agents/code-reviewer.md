@@ -15,7 +15,8 @@ When invoked:
 2. **Understand scope** — Identify which files changed, what feature/fix they relate to, and how they connect.
 3. **Read surrounding code** — Don't review changes in isolation. Read the full file and understand imports, dependencies, and call sites.
 4. **Apply review checklist** — Work through each category below, from CRITICAL to LOW.
-5. **Report findings** — Use the output format below. Only report issues you are confident about (>80% sure it is a real problem).
+5. **Run review guard** — Apply `agents/review-guard.md` to every candidate finding.
+6. **Report findings** — Use the output format below. Only report issues you are confident about (>80% sure it is a real problem) and whose guard verdict passes.
 
 ## Confidence-Based Filtering
 
@@ -244,6 +245,17 @@ path easier to reason about.
 ## Review Output Format
 
 Organize findings by severity. Keep the body tight — state what's wrong, the concrete impact, and the fix in a few sentences. The paired IDEA block (below) carries the deeper reasoning, so do not repeat intent/alternatives/trade-offs in the body.
+
+When producing structured JSON, every finding must include:
+
+```json
+"guard": {
+  "passes": true,
+  "reason": "Concrete bug risk in changed code; localized fix."
+}
+```
+
+Do not publish findings whose guard verdict does not pass.
 
 ```
 [CRITICAL] Hardcoded API key in source

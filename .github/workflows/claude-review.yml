@@ -59,6 +59,7 @@ jobs:
 
             Read AGENTS.md and CLAUDE.md at the repo root for project context and review standards.
             Read agents/code-reviewer.md for the full review checklist and methodology.
+            Read agents/review-guard.md and run it as a final lightweight guard pass over every candidate finding.
             Read agents/security-reviewer.md for security review patterns.
 
             REVIEW QUALITY REQUIREMENTS:
@@ -78,6 +79,7 @@ jobs:
             - Exception: actively exploitable CRITICAL security vulnerabilities.
 
             Apply confidence-based and Ponytail filtering: only report issues you are >80% confident about and worth fixing before merge.
+            For every finding in the structured JSON, include a `guard` object from agents/review-guard.md. The formatter drops findings unless `guard.passes === true`, so do not include weak findings by setting the guard to true.
             Use severity levels: CRITICAL, HIGH, MEDIUM, LOW.
 
             IDEA ANALYSIS (MANDATORY — per finding):
@@ -106,6 +108,9 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - name: Checkout formatter
+        uses: actions/checkout@v5
+
       - name: Format and post Claude review
         uses: actions/github-script@v7
         env:
@@ -114,52 +119,11 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const raw = process.env.CLAUDE_STRUCTURED_OUTPUT
-            let body
-
-            try {
-              const review = JSON.parse(raw)
-              const lines = ['## Claude Code Review', '']
-
-              if (review.findings && review.findings.length > 0) {
-                const icon = { CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🔵' }
-                for (const f of review.findings) {
-                  const sev = icon[f.severity] || '⚪'
-                  lines.push(`### ${sev} [${f.severity}] ${f.title}`)
-                  lines.push('')
-                  lines.push(`📍 \`${f.code_location.absolute_file_path}\` L${f.code_location.line_range.start}-${f.code_location.line_range.end}`)
-                  lines.push(`🎯 Confidence: ${(f.confidence_score * 100).toFixed(0)}%`)
-                  lines.push('')
-                  lines.push(f.body)
-                  if (f.idea) {
-                    lines.push('')
-                    lines.push('<details><summary>💡 IDEA</summary>')
-                    lines.push('')
-                    lines.push(`- **I — Intent:** ${f.idea.intent}`)
-                    lines.push(`- **D — Danger:** ${f.idea.danger}`)
-                    lines.push(`- **E — Explain:** ${f.idea.explain}`)
-                    lines.push(`- **A — Alternatives:** ${f.idea.alternatives}`)
-                    lines.push('')
-                    lines.push('</details>')
-                  }
-                  lines.push('')
-                  lines.push('---')
-                  lines.push('')
-                }
-              } else {
-                lines.push('✅ No issues found.')
-                lines.push('')
-              }
-
-              const verdict = review.overall_correctness === 'patch is correct' ? '✅' : '⚠️'
-              lines.push('')
-              lines.push(`**Overall: ${verdict} ${review.overall_correctness}** (confidence: ${(review.overall_confidence_score * 100).toFixed(0)}%)`)
-              lines.push('')
-              lines.push(`> ${review.overall_explanation}`)
-
-              body = lines.join('\n')
-            } catch {
-              body = `## Claude Code Review\n\n${raw}`
-            }
+            const { pathToFileURL } = require('url')
+            const { formatReviewComment } = await import(
+              pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/format-review-comment.mjs`)
+            )
+            const body = formatReviewComment(raw, 'Claude Code Review')
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,

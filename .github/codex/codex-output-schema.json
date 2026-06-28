@@ -24,6 +24,21 @@
             "minimum": 0,
             "maximum": 1
           },
+          "guard": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Final review-guard verdict for whether this finding is worth publishing.",
+            "properties": {
+              "passes": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Concise reason why this finding passes or fails the confidence, scope, and Ponytail guard."
+              }
+            },
+            "required": ["passes", "reason"]
+          },
           "code_location": {
             "type": "object",
             "additionalProperties": false,
@@ -79,6 +94,7 @@
           "body",
           "severity",
           "confidence_score",
+          "guard",
           "code_location",
           "idea"
         ]

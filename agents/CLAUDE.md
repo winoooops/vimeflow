@@ -16,6 +16,7 @@ Standalone markdown specs defining purpose, tools, model, and behavior for each 
 | Agent                    | Model  | Purpose                                                   |
 | ------------------------ | ------ | --------------------------------------------------------- |
 | `code-reviewer.md`       | Sonnet | General code quality, patterns, security review           |
+| `review-guard.md`        | Haiku  | Final low-noise filter for review findings                |
 | `tdd-guide.md`           | Sonnet | TDD enforcement (Red-Green-Refactor), 80%+ coverage       |
 | `typescript-reviewer.md` | Sonnet | TypeScript/JS type safety, async correctness, sidecar IPC |
 
