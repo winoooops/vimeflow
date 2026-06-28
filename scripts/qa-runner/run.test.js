@@ -7,6 +7,7 @@ import {
   kimiInvocation,
   kimiModelArgs,
   normalizeFixerEngine,
+  staleDeterministicCiPreflight,
 } from './run.js'
 
 describe('fixer engine selection', () => {
@@ -96,5 +97,35 @@ describe('fixer timeout', () => {
     expect(() => fixerTimeoutMs({ QA_FIXER_TIMEOUT_MS: '0' })).toThrow(
       'QA_FIXER_TIMEOUT_MS'
     )
+  })
+})
+
+describe('deterministic CI preflight', () => {
+  const context = { kind: 'deterministic_ci_failure' }
+
+  test('runs when current non-review CI is still failing', () => {
+    expect(
+      staleDeterministicCiPreflight(context, [
+        { name: 'Code Quality Check', bucket: 'fail', workflow: 'CI Checks' },
+      ])
+    ).toEqual({ stale: false })
+  })
+
+  test('skips stale deterministic CI dispatches once CI is green', () => {
+    expect(
+      staleDeterministicCiPreflight(context, [
+        { name: 'Unit Tests', bucket: 'pass', workflow: 'CI Checks' },
+        { name: 'Claude Code Review', bucket: 'pending', workflow: 'Claude' },
+      ])
+    ).toMatchObject({ stale: true })
+  })
+
+  test('does not skip review adjudication fix cycles', () => {
+    expect(
+      staleDeterministicCiPreflight(
+        { kind: 'review_adjudication' },
+        [{ name: 'Unit Tests', bucket: 'pass', workflow: 'CI Checks' }]
+      )
+    ).toEqual({ stale: false })
   })
 })

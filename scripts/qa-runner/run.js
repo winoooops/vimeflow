@@ -31,6 +31,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
+import { REVIEW_CHECKS, classifyChecks } from './lib/ci-policy.js'
 import {
   decisionStorePath,
   fixCycleThreadParentId,
@@ -67,6 +68,21 @@ const sh = (cmd, args, opts = {}) =>
     maxBuffer: 32 * 1024 * 1024,
     ...opts,
   })
+
+const ghJsonAllowFailure = (args, opts = {}) => {
+  const result = spawnSync('gh', args, {
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    ...opts,
+  })
+  if (!result.stdout) {
+    throw new Error(
+      `gh ${args.join(' ')} failed: ${(result.stderr || '').trim() || result.error?.message || `exit ${result.status}`}`
+    )
+  }
+
+  return JSON.parse(result.stdout)
+}
 
 // Latest lifeline version in the plugin cache that ships the skill.
 const lifelineSkillsDir = () => {
@@ -215,6 +231,70 @@ const fixContextText = () => {
     '\n```\n' +
     'If this context describes review adjudication findings, use each finding.fix_direction as the preferred implementation direction. If it describes deterministic CI failures, inspect the linked GitHub check logs and fix those failures even when there are no unresolved review threads.'
   )
+}
+
+const parseFixContext = (env = process.env) => {
+  if (!env.QA_FIX_CONTEXT) {
+    return null
+  }
+  try {
+    return JSON.parse(env.QA_FIX_CONTEXT)
+  } catch {
+    return null
+  }
+}
+
+export const staleDeterministicCiPreflight = (fixContext, checks) => {
+  if (fixContext?.kind !== 'deterministic_ci_failure') {
+    return { stale: false }
+  }
+
+  const current = classifyChecks(checks, { reviewChecks: REVIEW_CHECKS })
+  if (current.deterministicFailures.length) {
+    return { stale: false }
+  }
+
+  return {
+    stale: true,
+    detail:
+      current.ci === 'pending'
+        ? 'current CI is pending; skip stale deterministic-CI fixer dispatch'
+        : 'current CI has no deterministic failures; skip stale deterministic-CI fixer dispatch',
+  }
+}
+
+const shouldRunFixerAfterCiPreflight = (pr, ghEnv) => {
+  const fixContext = parseFixContext()
+  if (fixContext?.kind !== 'deterministic_ci_failure') {
+    return true
+  }
+
+  let checks
+  try {
+    checks = ghJsonAllowFailure(
+      [
+        'pr',
+        'checks',
+        String(pr),
+        '--json',
+        'name,bucket,link,workflow',
+      ],
+      ghEnv
+    )
+  } catch (error) {
+    out(`QA_RUNNER_CI_PREFLIGHT_SKIP ${error.message}`)
+
+    return false
+  }
+
+  const preflight = staleDeterministicCiPreflight(fixContext, checks)
+  if (!preflight.stale) {
+    return true
+  }
+
+  out(`QA_RUNNER_STALE_CI_SKIP ${preflight.detail}`)
+
+  return false
 }
 
 export const normalizeFixerEngine = (env = process.env) => {
@@ -407,6 +487,10 @@ const run = async (pr, live) => {
       )
     }
     const branch = info.headRefName
+
+    if (live && !shouldRunFixerAfterCiPreflight(pr, ghEnv)) {
+      return
+    }
 
     const repo = JSON.parse(
       sh('gh', ['repo', 'view', '--json', 'nameWithOwner'], ghEnv)
