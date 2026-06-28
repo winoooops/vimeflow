@@ -3,7 +3,7 @@ id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
 last_updated: 2026-06-26
-ref_count: 3
+ref_count: 4
 ---
 
 # Transient UI Side Effects

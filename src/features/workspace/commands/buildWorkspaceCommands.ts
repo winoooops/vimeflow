@@ -4,6 +4,10 @@ import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRena
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 import { isMacPlatform } from '../../command-palette/shortcutConfig'
+import {
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
+} from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
 
 export type DockPositionCommandArg = 'bottom' | 'top' | 'left' | 'right'
@@ -283,9 +287,21 @@ export const buildWorkspaceCommands = (
           icon: 'grid_view',
           children: availableLayouts.map((layout) => ({
             id: `layout-${layout.id}`,
-            label: layout.title,
-            description: `Switch to the ${layout.title} layout`,
+            label:
+              layout.id === SINGLE_PANE_FOCUS_LAYOUT_ID
+                ? SINGLE_PANE_FOCUS_LABEL
+                : layout.title,
+            description:
+              layout.id === SINGLE_PANE_FOCUS_LAYOUT_ID
+                ? 'Toggle active-pane focus'
+                : `Switch to the ${layout.title} layout`,
             icon: 'grid_view',
+            shortcut:
+              layout.id === SINGLE_PANE_FOCUS_LAYOUT_ID
+                ? isMac
+                  ? ['⌘', 'Z']
+                  : ['Ctrl', 'Z']
+                : undefined,
             execute: (): void => {
               // `false` means the active session has more panes than this layout holds.
               if (pickLayout(layout.id) === false) {

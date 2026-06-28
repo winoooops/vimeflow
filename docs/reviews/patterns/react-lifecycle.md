@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-27
-ref_count: 62
+ref_count: 63
 ---
 
 # React Lifecycle

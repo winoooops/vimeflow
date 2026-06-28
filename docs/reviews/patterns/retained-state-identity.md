@@ -2,8 +2,8 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 1
+last_updated: 2026-06-28
+ref_count: 2
 ---
 
 # Retained State Identity
@@ -22,3 +22,18 @@ When a React component renders retained (stale) content while fresh data for a n
 - **Finding:** During retained-body fetching, `bodySnapshotKey` referred to the previously rendered/source pane while `snapshotKey` referred to the current target pane. The `handleScroll` callback wrote user scroll events to `bodySnapshotKey`, so scrolling retained content during the refresh window overwrote the source pane's saved scroll position and caused it to reopen at the wrong offset later.
 - **Fix:** Added an identity guard before `writeStatusScrollAnchor` that returns early when `bodySnapshotKey !== snapshotKey`, and added `snapshotKey` to the `handleScroll` `useCallback` dependencies.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Single focus-toggle restore slot is shared across sessions
+
+- **Source:** github-claude | PR #631 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The Mod+Z single-pane focus toggle stored the previous layout in
+  one ref for the whole hook. Toggling session A to focus and then toggling
+  session B overwrote A's restore layout, so returning to A left the keyboard
+  restore path as a silent no-op.
+- **Fix:** Replaced the single restore slot with a ref-held `Map` keyed by
+  session id, storing, reading, and deleting only the active session's restore
+  layout. Added a regression test covering two sessions toggled to focus mode
+  independently.
+- **Commit:** same commit as this entry

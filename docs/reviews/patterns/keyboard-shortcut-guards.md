@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-26
-ref_count: 3
+last_updated: 2026-06-28
+ref_count: 5
 ---
 
 # Keyboard Shortcut Guards
@@ -331,3 +331,35 @@ against three classes of false-fire:
 - **Fix:** Stop propagation for keyboard events that originate from nested focusable
   controls while preserving the row's own Enter/Space activation.
 - **Commit:** same commit as this entry
+
+### 25. Mod+Z focus toggle captured terminal and editor undo controls
+
+- **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The new document-level `Mod+Z` layout toggle consumed the event before focused controls could handle it, stealing terminal `Ctrl+Z` job suspension and editor/dock undo behavior.
+- **Fix:** Guarded the shortcut so it passes through when the terminal container is inactive or focus is inside editable/xterm input. Added regression coverage for focused dock and xterm helper textarea cases.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Mod+Z focus toggle lacked terminal-container ownership guard
+
+- **Source:** github-claude | PR #631 round 1 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The `KeyZ` branch did not mirror the digit-shortcut container guard, so `Ctrl+Z` / `Cmd+Z` from the focused editor dock toggled the terminal layout instead of reaching the dock.
+- **Fix:** Added an `isTerminalContainerActiveRef.current === false` pass-through before the branch can prevent default, with regression coverage for dock focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Manual layout cycle left stale Mod+Z restore state
+
+- **Source:** github-claude | PR #631 round 2 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The per-session Mod+Z restore map was cleared on restore and failed-restore
+  paths, but not when `Mod+\` manually changed the same session's layout. A user could
+  enter single-pane focus with `Mod+Z`, cycle away with `Mod+\`, later return to single,
+  and have the next `Mod+Z` consume the stale restore entry.
+- **Fix:** Clear the active session's restore entry in the `Backslash` layout-cycle branch
+  before applying the next layout. Added regression coverage for the cycle-away-then-single
+  path so `Mod+Z` returns to the single-layout no-op behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
