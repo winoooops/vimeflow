@@ -186,6 +186,36 @@ describe('review adjudicator helpers', () => {
     expect(prompt).toContain('real diff content')
   })
 
+  test('drops old review comments before dropping the latest review', () => {
+    const oldComment = {
+      ...trustedComment,
+      id: 2,
+      updated_at: '2026-06-04T00:01:00Z',
+      body: `${CLAUDE_REVIEW_HEADING}\n\nOLD_REVIEW_MARKER\n${'x'.repeat(
+        61000
+      )}`,
+    }
+    const latestComment = {
+      ...trustedComment,
+      id: 3,
+      updated_at: '2026-06-04T00:02:00Z',
+      body: `${CLAUDE_REVIEW_HEADING}\n\nLATEST_REVIEW_MARKER`,
+    }
+
+    const prompt = buildAdjudicationPrompt({
+      owner: 'owner',
+      name: 'vimeflow',
+      pr: 630,
+      headSha: 'abc',
+      reviewComments: [oldComment, latestComment],
+      diffText: 'diff --git a/file b/file',
+    })
+
+    expect(prompt).toContain('LATEST_REVIEW_MARKER')
+    expect(prompt).not.toContain('OLD_REVIEW_MARKER')
+    expect(prompt).toContain('[review comments truncated by daemon]')
+  })
+
   test('keeps PR 510-sized diffs intact for adjudication', () => {
     const diffText = `diff --git a/DockTab.tsx b/DockTab.tsx\n${'x'.repeat(
       91500

@@ -31,7 +31,7 @@ const STATE_DIR = join(SCRIPT_DIR, '.state', 'review-adjudication')
 const SCHEMA_FILE = join(SCRIPT_DIR, 'review-adjudication.schema.json')
 
 export const REVIEW_ADJUDICATION_CACHE_VERSION =
-  'review-adjudication-v2-diff-200k'
+  'review-adjudication-v3-latest-reviews'
 
 export const MAX_DIFF_CHARS = 200000
 
@@ -186,22 +186,7 @@ export const buildAdjudicationPrompt = ({
   // GitHub Actions identity proves provenance of the review comment, not that the
   // comment body is safe to obey. Serialize bodies as evidence data and make the
   // prompt treat embedded instructions as hostile reviewer text.
-  const reviews = truncate(
-    reviewComments
-      .map((comment) =>
-        JSON.stringify(
-          {
-            id: comment.id || 'unknown',
-            updatedAt: comment.updated_at || comment.updatedAt || '',
-            body: comment.body || '',
-          },
-          null,
-          2
-        )
-      )
-      .join('\n\n'),
-    MAX_REVIEW_CHARS
-  )
+  const reviews = packReviewEvidence(reviewComments, MAX_REVIEW_CHARS)
 
   return renderTemplate(
     readFileSync(join(SCRIPT_DIR, 'review-adjudication.prompt.md'), 'utf8'),
@@ -225,6 +210,63 @@ export const buildAdjudicationPrompt = ({
 
 const renderTemplate = (template, values) =>
   template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(values[key] ?? ''))
+
+export const packReviewEvidence = (
+  reviewComments = [],
+  maxChars = MAX_REVIEW_CHARS
+) => {
+  const parts = []
+  let size = 0
+  let truncated = false
+
+  for (let index = reviewComments.length - 1; index >= 0; index -= 1) {
+    const part = serializeReviewComment(reviewComments[index])
+    const extra = part.length + (parts.length ? 2 : 0)
+
+    if (size + extra <= maxChars) {
+      parts.unshift(part)
+      size += extra
+    } else {
+      truncated = true
+      if (!parts.length) {
+        const trimmed = trimReviewComment(reviewComments[index], maxChars)
+        parts.unshift(trimmed)
+        size = trimmed.length
+      }
+    }
+  }
+
+  return {
+    text: parts.join('\n\n'),
+    truncated,
+  }
+}
+
+const serializeReviewComment = (comment, body = comment.body || '') =>
+  JSON.stringify(
+    {
+      id: comment.id || 'unknown',
+      updatedAt: comment.updated_at || comment.updatedAt || '',
+      body,
+    },
+    null,
+    2
+  )
+
+const trimReviewComment = (comment, maxChars) => {
+  let body = String(comment.body || '')
+  const note = '\n[review body truncated by daemon]'
+
+  while (body.length > 0) {
+    const candidate = serializeReviewComment(comment, `${body}${note}`)
+    if (candidate.length <= maxChars) {
+      return candidate
+    }
+    body = body.slice(0, Math.floor(body.length * 0.9))
+  }
+
+  return serializeReviewComment(comment, note)
+}
 
 // Step 5: run one Codex attempt and require parseable, schema-normalized output.
 const runCodexAttempt = ({ input, key, stateDir, prompt, opts, attempt }) => {
