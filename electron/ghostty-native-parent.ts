@@ -227,13 +227,7 @@ export class GhosttyNativeParentController {
       width: payload.visible ? Math.round(payload.bounds.width) : 0,
       height: payload.visible ? Math.round(payload.bounds.height) : 0,
     }
-    addon.setFrame(
-      surface,
-      frame.x,
-      frame.y,
-      frame.width,
-      frame.height
-    )
+    addon.setFrame(surface, frame.x, frame.y, frame.width, frame.height)
     this.flushPendingData(addon, state)
 
     return { enabled: true }
