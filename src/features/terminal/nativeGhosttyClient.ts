@@ -84,7 +84,12 @@ export const updateNativeGhostty = async (
 export const sendNativeGhosttyData = async (
   request: NativeGhosttyDataRequest
 ): Promise<boolean> => {
-  const result = await nativeGhosttyApi()?.data(request)
+  const api = nativeGhosttyApi()
+  if (!api) {
+    return false
+  }
+
+  const result = await api.data(request)
 
   return !isDisabledResult(result)
 }
@@ -92,7 +97,12 @@ export const sendNativeGhosttyData = async (
 export const focusNativeGhostty = async (
   request: NativeGhosttyPaneRef
 ): Promise<boolean> => {
-  const result = await nativeGhosttyApi()?.focus(request)
+  const api = nativeGhosttyApi()
+  if (!api) {
+    return false
+  }
+
+  const result = await api.focus(request)
 
   return !isDisabledResult(result)
 }

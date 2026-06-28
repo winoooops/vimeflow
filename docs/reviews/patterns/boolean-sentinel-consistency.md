@@ -44,3 +44,12 @@ encourages future contributors to invent yet another name for the same intent.
 - **Finding:** The single-pane Ghostty helper returned `{ enabled: true }` for data and focus requests whose pane did not match `currentPane`. Renderer callers treated that as native success, so helper-flag split panes could silently drop output or focus instead of falling back.
 - **Fix:** Return `{ enabled: false }` for non-current-pane data and focus requests, preserving the existing fallback contract for panes the helper cannot service.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Native bridge helpers reported success when the API was absent
+
+- **Source:** github-codex-connector | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/nativeGhosttyClient.ts`
+- **Finding:** The native data and focus helpers used optional chaining, so a missing preload API produced `undefined`. The disabled-result check treated that as success, suppressing xterm fallback while no native bridge call happened.
+- **Fix:** Resolve the preload API into a local variable and return `false` immediately when it is absent, matching the existing update helper's fallback contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

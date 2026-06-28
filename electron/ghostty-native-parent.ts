@@ -346,7 +346,7 @@ export class GhosttyNativeParentController {
       bridgePath(),
       win.getNativeWindowHandle(),
       (data) => {
-        if (!this.surfaces.has(this.paneKey(state.pane))) {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
 
@@ -363,7 +363,7 @@ export class GhosttyNativeParentController {
         })
       },
       (cols, rows) => {
-        if (!this.surfaces.has(this.paneKey(state.pane))) {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
 

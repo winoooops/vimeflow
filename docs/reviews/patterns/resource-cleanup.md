@@ -217,3 +217,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `Destroy` tore down the Swift surface but left the input and resize threadsafe functions alive until the JS external finalizer eventually ran. Pending native callbacks could still dispatch through closures after explicit pane teardown.
 - **Fix:** Release both TSFNs with `napi_tsfn_abort` during explicit destroy after nulling the Swift surface, and null the TSFN pointers so the later finalizer remains idempotent.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Native surface callbacks can send through a destroyed BrowserWindow
+
+- **Source:** github-codex-connector | PR #630 round 5 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty input and resize callbacks captured a `BrowserWindow` and only checked pane membership before calling `win.webContents.send`. A late callback during window teardown could touch a destroyed Electron object and throw in the main process.
+- **Fix:** Guard both callback closures with `win.isDestroyed()` before accessing `webContents` or dispatching sidecar work, preserving the existing pane-liveness check for normal teardown.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
