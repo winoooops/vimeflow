@@ -3,6 +3,7 @@ import type { PaneLayoutId, Session } from '../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   type PaneLayoutRegistry,
   isKnownLayoutId,
 } from '../layout-registry/layoutRegistry'
@@ -50,6 +51,12 @@ export const usePaneShortcuts = ({
   const onTerminalZoneFocusRef = useRef(onTerminalZoneFocus)
   const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
   const layoutRegistryRef = useRef(layoutRegistry)
+
+  const lastSingleToggleLayoutRef = useRef<{
+    readonly sessionId: string
+    readonly layoutId: PaneLayoutId
+  } | null>(null)
+
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   preferModifierRef.current = preferModifier
@@ -90,6 +97,57 @@ export const usePaneShortcuts = ({
         (session) => session.id === activeId
       )
       if (!activeSession) {
+        return
+      }
+
+      if (event.code === 'KeyZ' && !event.altKey && !event.shiftKey) {
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
+        if (activeSession.layout === SINGLE_PANE_FOCUS_LAYOUT_ID) {
+          const previousLayoutId =
+            lastSingleToggleLayoutRef.current?.sessionId === activeSession.id
+              ? lastSingleToggleLayoutRef.current.layoutId
+              : null
+
+          const previousLayout =
+            previousLayoutId === null
+              ? null
+              : layoutRegistryRef.current.getLayout(previousLayoutId)
+
+          if (
+            previousLayout === null ||
+            activeSession.panes.length > previousLayout.capacity
+          ) {
+            lastSingleToggleLayoutRef.current = null
+
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          lastSingleToggleLayoutRef.current = null
+          setSessionLayout(activeSession.id, previousLayout.id)
+
+          return
+        }
+
+        const currentLayout = layoutRegistryRef.current.getLayout(
+          activeSession.layout
+        )
+        if (currentLayout === null) {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        lastSingleToggleLayoutRef.current = {
+          sessionId: activeSession.id,
+          layoutId: currentLayout.id,
+        }
+        setSessionLayout(activeSession.id, SINGLE_PANE_FOCUS_LAYOUT_ID)
+
         return
       }
 

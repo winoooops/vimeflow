@@ -96,6 +96,7 @@ import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
 import {
+  canSelectLayoutOverCapacity,
   getPaneLayoutCapacity,
   type PaneLayoutDefinition,
 } from '../terminal/layout-registry'
@@ -538,7 +539,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
     return layoutRegistry.layouts
       .filter((layout) => {
-        if (layout.id === 'single') {
+        if (canSelectLayoutOverCapacity(layout.id)) {
           return true
         }
 
@@ -558,6 +559,7 @@ const WorkspaceViewContent = (): ReactElement => {
         : layoutRegistry.layouts
             .filter(
               (layout) =>
+                !canSelectLayoutOverCapacity(layout.id) &&
                 layout.id !== activeSession.layout &&
                 activeSession.panes.length > layout.capacity
             )
@@ -1312,7 +1314,10 @@ const WorkspaceViewContent = (): ReactElement => {
         return false
       }
 
-      if (activeSession.panes.length > layoutRegistry.capacityFor(layoutId)) {
+      if (
+        !canSelectLayoutOverCapacity(layoutId) &&
+        activeSession.panes.length > layoutRegistry.capacityFor(layoutId)
+      ) {
         return false
       }
 

@@ -532,7 +532,7 @@ Rules:
 ## 6. Interactions & keyboard shortcuts
 
 - **Streaming:** terminal output is raw PTY. Agent structured output prefixes `∴` in `primary-container`; one event every ~1.3–2s while `running`, stopping the instant state leaves `running`.
-- **Shortcuts:** `Mod+1–4` focus panes · `Mod+\` cycle layout · `Mod+E` Editor · `Mod+G` Diff · `Mod+0` toggle dock · `Mod+B` (mac) / `Ctrl+Shift+B` toggle sidebar · `Ctrl/Cmd+;` command palette · `Ctrl/Cmd+L` browser address bar · `Esc` closes overlays.
+- **Shortcuts:** `Mod+1–4` focus panes · `Mod+\` cycle layout · `Mod+Z` toggle active-pane focus · `Mod+E` Editor · `Mod+G` Diff · `Mod+0` toggle dock · `Mod+B` (mac) / `Ctrl+Shift+B` toggle sidebar · `Ctrl/Cmd+;` command palette · `Ctrl/Cmd+L` browser address bar · `Esc` closes overlays.
 - **Approval:** `awaiting` surfaces an approval card (Approve gradient / Deny ghost); approving snaps to `running` and prepends a `user` event.
 - **Focus model:** `activeContainerId` routes shortcuts to the terminal vs the dock; the sidebar toggle has a focus guard so compact-close never drops focus to `<body>`.
 

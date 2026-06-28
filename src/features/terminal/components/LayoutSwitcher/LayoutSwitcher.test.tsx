@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
+import { SINGLE_PANE_FOCUS_LABEL } from '../../layout-registry'
 import { LayoutSwitcher } from './LayoutSwitcher'
 
 describe('LayoutSwitcher', () => {
@@ -27,7 +28,10 @@ describe('LayoutSwitcher', () => {
 
     const active = screen.getByRole('button', { name: 'Vertical split' })
     expect(active).toHaveAttribute('data-active', 'true')
-    const inactive = screen.getByRole('button', { name: 'Single' })
+
+    const inactive = screen.getByRole('button', {
+      name: SINGLE_PANE_FOCUS_LABEL,
+    })
     expect(inactive).not.toHaveAttribute('data-active')
   })
 
@@ -58,7 +62,10 @@ describe('LayoutSwitcher', () => {
     )
 
     expect(screen.getAllByRole('button')).toHaveLength(3)
-    expect(screen.getByRole('button', { name: 'Single' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: SINGLE_PANE_FOCUS_LABEL })
+    ).toBeInTheDocument()
+
     expect(
       screen.getByRole('button', { name: 'Main + 2 stack' })
     ).toBeInTheDocument()
@@ -203,20 +210,24 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
   })
 
-  // Layout buttons render the layout name only — no shortcut chip.
-  // `Mod+\` cycles to the NEXT layout (usePaneShortcuts), not to any
-  // specific one, so attaching the chip to individual layout buttons
-  // would advertise a per-layout shortcut that doesn't exist (Claude
-  // review on PR #224 cycle 3, MEDIUM finding). If a future refactor
-  // introduces per-layout shortcuts (e.g. Mod+1..Mod+5 picker keys),
-  // re-add the chip and flip this assertion.
-  test('hovering a layout button shows a plain tooltip (no shortcut chip)', async () => {
+  test('layout tooltips show a shortcut chip only for active-pane focus', async () => {
     const user = userEvent.setup()
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
-    await user.hover(screen.getByRole('button', { name: 'Single' }))
-    const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Single')
-    expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
+    const focusButton = screen.getByRole('button', {
+      name: SINGLE_PANE_FOCUS_LABEL,
+    })
+    await user.hover(focusButton)
+    const focusTip = await screen.findByRole('tooltip')
+    expect(focusTip).toHaveTextContent(SINGLE_PANE_FOCUS_LABEL)
+    expect(within(focusTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
+      'Z'
+    )
+    await user.unhover(focusButton)
+
+    await user.hover(screen.getByRole('button', { name: 'Quad' }))
+    const quadTip = await screen.findByRole('tooltip')
+    expect(quadTip).toHaveTextContent('Quad')
+    expect(within(quadTip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })

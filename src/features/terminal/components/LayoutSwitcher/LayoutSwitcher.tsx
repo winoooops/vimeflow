@@ -2,6 +2,8 @@ import { useMemo, type ReactElement, type ReactNode } from 'react'
 import type { PaneLayoutId } from '../../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   type LayoutShape,
 } from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
@@ -53,7 +55,9 @@ export const LayoutSwitcher = ({
   )
 
   const normalizedVisibleLayoutIds = layoutIds.filter(
-    (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
+    (layoutId) =>
+      layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID ||
+      visibleLayoutIds.includes(layoutId)
   )
 
   const renderedLayoutIds = layoutIds.filter(
@@ -86,10 +90,16 @@ export const LayoutSwitcher = ({
         value={activeLayoutId}
         options={renderedLayoutIds.map((layoutId) => {
           const name = layoutById.get(layoutId)?.name ?? layoutId
+          const isSingleFocus = layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID
 
           const disabled =
             blockedLayoutIds.includes(layoutId) && layoutId !== activeLayoutId
-          const label = disabled ? `Reduce panes to switch to ${name}` : name
+
+          const label = disabled
+            ? `Reduce panes to switch to ${name}`
+            : isSingleFocus
+              ? SINGLE_PANE_FOCUS_LABEL
+              : name
 
           return {
             value: layoutId,
@@ -99,6 +109,7 @@ export const LayoutSwitcher = ({
             // readers and on hover when the layout is blocked.
             ariaLabel: label,
             tooltip: label,
+            shortcut: isSingleFocus ? ['Mod', 'Z'] : undefined,
             disabled,
           }
         })}
