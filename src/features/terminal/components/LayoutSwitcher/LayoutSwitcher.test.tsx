@@ -29,9 +29,7 @@ describe('LayoutSwitcher', () => {
     const active = screen.getByRole('button', { name: 'Vertical split' })
     expect(active).toHaveAttribute('data-active', 'true')
 
-    const inactive = screen.getByRole('button', {
-      name: SINGLE_PANE_FOCUS_LABEL,
-    })
+    const inactive = screen.getByRole('button', { name: 'Single' })
     expect(inactive).not.toHaveAttribute('data-active')
   })
 
@@ -62,9 +60,7 @@ describe('LayoutSwitcher', () => {
     )
 
     expect(screen.getAllByRole('button')).toHaveLength(3)
-    expect(
-      screen.getByRole('button', { name: SINGLE_PANE_FOCUS_LABEL })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Single' })).toBeInTheDocument()
 
     expect(
       screen.getByRole('button', { name: 'Main + 2 stack' })
@@ -210,9 +206,32 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
   })
 
-  test('layout tooltips show a shortcut chip only for active-pane focus', async () => {
+  test('generic layout pickers keep the single layout name without a shortcut chip', async () => {
     const user = userEvent.setup()
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    const singleButton = screen.getByRole('button', { name: 'Single' })
+    await user.hover(singleButton)
+    const singleTip = await screen.findByRole('tooltip')
+    expect(singleTip).toHaveTextContent('Single')
+    expect(within(singleTip).queryByTestId('tooltip-shortcut')).toBeNull()
+    await user.unhover(singleButton)
+
+    await user.hover(screen.getByRole('button', { name: 'Quad' }))
+    const quadTip = await screen.findByRole('tooltip')
+    expect(quadTip).toHaveTextContent('Quad')
+    expect(within(quadTip).queryByTestId('tooltip-shortcut')).toBeNull()
+  })
+
+  test('workspace focus mode labels single layout as an active-pane action', async () => {
+    const user = userEvent.setup()
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        onPick={vi.fn()}
+        labelSingleAsFocusAction
+      />
+    )
 
     const focusButton = screen.getByRole('button', {
       name: SINGLE_PANE_FOCUS_LABEL,
@@ -223,11 +242,5 @@ describe('LayoutSwitcher', () => {
     expect(within(focusTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
       'Z'
     )
-    await user.unhover(focusButton)
-
-    await user.hover(screen.getByRole('button', { name: 'Quad' }))
-    const quadTip = await screen.findByRole('tooltip')
-    expect(quadTip).toHaveTextContent('Quad')
-    expect(within(quadTip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })

@@ -34,6 +34,11 @@ export interface LayoutSwitcherProps {
    * narrow Layout column. Arrow Up/Down already drive selection either way.
    */
   vertical?: boolean
+  /**
+   * Workspace chrome treats the `single` layout as the active-pane focus
+   * toggle. Generic layout pickers keep the plain layout name.
+   */
+  labelSingleAsFocusAction?: boolean
 }
 
 export const LayoutSwitcher = ({
@@ -46,6 +51,7 @@ export const LayoutSwitcher = ({
   onPick,
   trailing = undefined,
   vertical = false,
+  labelSingleAsFocusAction = false,
 }: LayoutSwitcherProps): ReactElement => {
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
 
@@ -97,7 +103,7 @@ export const LayoutSwitcher = ({
 
           const label = disabled
             ? `Reduce panes to switch to ${name}`
-            : isSingleFocus
+            : isSingleFocus && labelSingleAsFocusAction
               ? SINGLE_PANE_FOCUS_LABEL
               : name
 
@@ -109,7 +115,10 @@ export const LayoutSwitcher = ({
             // readers and on hover when the layout is blocked.
             ariaLabel: label,
             tooltip: label,
-            shortcut: isSingleFocus ? ['Mod', 'Z'] : undefined,
+            shortcut:
+              isSingleFocus && labelSingleAsFocusAction
+                ? ['Mod', 'Z']
+                : undefined,
             disabled,
           }
         })}

@@ -659,6 +659,55 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     removeFakeDock(dockElement)
   })
 
+  test('Mod+Z from focused dock passes through to focused controls', () => {
+    const setSessionLayout = vi.fn()
+    const dockElement = attachFakeDock()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus: vi.fn(),
+      })
+    )
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    removeFakeDock(dockElement)
+  })
+
+  test('Mod+Z inside xterm helper textarea passes through to terminal input', () => {
+    const setSessionLayout = vi.fn()
+    const textarea = document.createElement('textarea')
+    textarea.className = 'xterm-helper-textarea'
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        isTerminalContainerActive: true,
+        onTerminalZoneFocus: vi.fn(),
+      })
+    )
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(textarea)
+  })
+
   test('Ctrl+1 from stale dock state outside dock passes through', () => {
     const onTerminalZoneFocus = vi.fn()
     blurActiveElement()

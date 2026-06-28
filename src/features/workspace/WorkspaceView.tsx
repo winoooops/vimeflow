@@ -2741,6 +2741,7 @@ const WorkspaceViewContent = (): ReactElement => {
               layouts={layoutRegistry.layouts}
               blockedLayoutIds={blockedLayoutIds}
               onPick={handlePickLayout}
+              labelSingleAsFocusAction
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}

@@ -105,6 +105,19 @@ export const usePaneShortcuts = ({
           return
         }
 
+        if (isTerminalContainerActiveRef.current === false) {
+          return
+        }
+
+        const activeElement = document.activeElement
+        if (
+          activeElement?.closest(
+            'input, textarea, select, [contenteditable=""], [contenteditable="true"], .xterm-helper-textarea'
+          )
+        ) {
+          return
+        }
+
         if (activeSession.layout === SINGLE_PANE_FOCUS_LAYOUT_ID) {
           const previousLayoutId =
             lastSingleToggleLayoutRef.current?.sessionId === activeSession.id
