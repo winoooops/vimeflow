@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-27
+last_updated: 2026-06-28
 ref_count: 62
 ---
 
@@ -569,4 +569,18 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/command-palette/components/CommandResults.tsx`
 - **Finding:** `CommandResults` used `document.getElementById` inside an effect to find the selected option before calling `scrollIntoView`. That works for the current single palette instance, but it couples the scroll side effect to globally unique ids instead of the component's rendered subtree.
 - **Fix:** Forwarded refs through `CommandResultItem`, stored row elements in a `CommandResults`-local ref map keyed by command id, and scrolled the selected row from that map. The option ids remain in place for ARIA, while the imperative scroll target is owned by React refs. Added a regression assertion that the scroll effect no longer calls `document.getElementById`.
+- **Commit:** same commit as this entry
+
+### 60. Inline fallback callback restarted native surface effects on every render
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/TerminalBody.tsx`
+- **Finding:** `TerminalBody` passed an inline `onUnavailable` callback to
+  `GhosttyBody`. Because `GhosttyBody` includes that callback in callbacks and
+  effects that own native output attachment, ordinary parent re-renders tore
+  down and recreated the native Ghostty surface.
+- **Fix:** Wrapped the fallback transition in a stable `useCallback` and passed
+  that reference through both the focus fallback path and `GhosttyBody`, so
+  parent re-renders no longer restart the native surface lifecycle.
 - **Commit:** same commit as this entry

@@ -743,3 +743,17 @@ prevent showing previous data.
   and persist completed IDs only inside the rAF flush that applies the corresponding
   state update. Added regression coverage for unmount-before-flush.
 - **Commit:** same commit as this entry
+
+### 74. Native TSFN dispatch raced callback release during surface teardown
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `OnInput` and `OnResize` read shared `napi_threadsafe_function`
+  pointers while `ReleaseSurfaceCallbacks` could concurrently null and release
+  them during native surface destruction. A destroy-while-callback interleaving
+  could pass an invalid or null TSFN to Node-API and crash the Electron process.
+- **Fix:** Added an atomic callback-release guard plus a mutex-protected TSFN
+  acquire path. Input and resize callbacks now acquire a stable local TSFN before
+  dispatch and release that per-call reference after the nonblocking call.
+- **Commit:** same commit as this entry

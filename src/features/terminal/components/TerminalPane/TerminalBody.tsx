@@ -2,6 +2,7 @@
 // cspell:ignore Ghostty
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -60,6 +61,10 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
     const [nativeUnavailable, setNativeUnavailable] = useState(false)
     const useNativeGhostty = shouldUseNativeGhostty() && !nativeUnavailable
 
+    const handleNativeUnavailable = useCallback((): void => {
+      setNativeUnavailable(true)
+    }, [])
+
     useEffect(() => {
       setNativeUnavailable(false)
     }, [paneId, ptyId])
@@ -73,7 +78,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
               paneId,
             })
             if (!enabled) {
-              setNativeUnavailable(true)
+              handleNativeUnavailable()
             }
           })()
 
@@ -96,7 +101,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           onCwdChange={onCwdChange}
           onPaneReady={onPaneReady}
           onCommandSubmit={onCommandSubmit}
-          onUnavailable={(): void => setNativeUnavailable(true)}
+          onUnavailable={handleNativeUnavailable}
         />
       )
     }

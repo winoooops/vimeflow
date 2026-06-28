@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 62   | 2026-06-27   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 60       | 62   | 2026-06-28   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 91   | 2026-06-28   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 73       | 71   | 2026-06-28   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 74       | 71   | 2026-06-28   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |

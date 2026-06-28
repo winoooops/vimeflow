@@ -1,8 +1,10 @@
 #include <dlfcn.h>
 #include <node_api.h>
 
+#include <atomic>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,8 @@ struct SurfaceHandle {
   napi_threadsafe_function input_tsfn = nullptr;
   napi_threadsafe_function resize_tsfn = nullptr;
   void *swift_surface = nullptr;
+  std::atomic_bool callbacks_released = false;
+  std::mutex callback_mutex;
 };
 
 struct InputPayload {
@@ -120,23 +124,46 @@ SurfaceHandle *GetSurface(napi_env env, napi_value value) {
   return static_cast<SurfaceHandle *>(data);
 }
 
+napi_threadsafe_function AcquireSurfaceCallback(
+    SurfaceHandle *surface, napi_threadsafe_function SurfaceHandle::*member) {
+  if (surface->callbacks_released.load(std::memory_order_acquire)) {
+    return nullptr;
+  }
+
+  std::lock_guard<std::mutex> lock(surface->callback_mutex);
+  if (surface->callbacks_released.load(std::memory_order_relaxed)) {
+    return nullptr;
+  }
+
+  napi_threadsafe_function tsfn = surface->*member;
+  if (tsfn == nullptr ||
+      napi_acquire_threadsafe_function(tsfn) != napi_ok) {
+    return nullptr;
+  }
+
+  return tsfn;
+}
+
 void OnInput(void *context, const unsigned char *data, int length) {
   if (context == nullptr || data == nullptr || length <= 0) {
     return;
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
-  if (surface->input_tsfn == nullptr) {
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::input_tsfn);
+  if (tsfn == nullptr) {
     return;
   }
 
   auto payload = std::make_unique<InputPayload>();
   payload->data.assign(reinterpret_cast<const char *>(data),
                        static_cast<size_t>(length));
-  if (napi_call_threadsafe_function(surface->input_tsfn, payload.get(),
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
                                     napi_tsfn_nonblocking) == napi_ok) {
     payload.release();
   }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
 void OnResize(void *context, int columns, int rows) {
@@ -145,17 +172,20 @@ void OnResize(void *context, int columns, int rows) {
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
-  if (surface->resize_tsfn == nullptr) {
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::resize_tsfn);
+  if (tsfn == nullptr) {
     return;
   }
 
   auto payload = std::make_unique<ResizePayload>();
   payload->columns = columns;
   payload->rows = rows;
-  if (napi_call_threadsafe_function(surface->resize_tsfn, payload.get(),
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
                                     napi_tsfn_nonblocking) == napi_ok) {
     payload.release();
   }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
 void CallJsInput(napi_env env, napi_value callback, void *, void *data) {
@@ -228,13 +258,27 @@ void FinalizeSurface(napi_env env, void *data, void *) {
 }
 
 void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
-  if (surface->input_tsfn != nullptr) {
-    napi_release_threadsafe_function(surface->input_tsfn, napi_tsfn_abort);
-    surface->input_tsfn = nullptr;
+  bool expected = false;
+  if (!surface->callbacks_released.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel)) {
+    return;
   }
-  if (surface->resize_tsfn != nullptr) {
-    napi_release_threadsafe_function(surface->resize_tsfn, napi_tsfn_abort);
+
+  napi_threadsafe_function input_tsfn = nullptr;
+  napi_threadsafe_function resize_tsfn = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(surface->callback_mutex);
+    input_tsfn = surface->input_tsfn;
+    resize_tsfn = surface->resize_tsfn;
+    surface->input_tsfn = nullptr;
     surface->resize_tsfn = nullptr;
+  }
+
+  if (input_tsfn != nullptr) {
+    napi_release_threadsafe_function(input_tsfn, napi_tsfn_abort);
+  }
+  if (resize_tsfn != nullptr) {
+    napi_release_threadsafe_function(resize_tsfn, napi_tsfn_abort);
   }
 }
 
