@@ -15,7 +15,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 // WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
-import { themeService } from '../../../../theme'
+import { themeService, useTheme } from '../../../../theme'
 import { toXtermTheme } from '../../theme/toXtermTheme'
 import {
   useTerminal,
@@ -185,11 +185,6 @@ export interface BodyProps {
   mode?: BodyMode
 
   /**
-   * Called whenever the underlying PTY hook reports a status transition.
-   */
-  onPtyStatusChange?: (status: 'idle' | 'running' | 'exited' | 'error') => void
-
-  /**
    * Called when xterm gains or loses focus.
    */
   onFocusChange?: (focused: boolean) => void
@@ -222,7 +217,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onPaneReady = undefined,
     onCommandSubmit = undefined,
     mode = 'spawn',
-    onPtyStatusChange = undefined,
     onFocusChange = undefined,
     deferFit = false,
     enableImagePaste = false,
@@ -231,6 +225,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 ): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
+  // xterm fits to whole character rows, leaving a sub-row strip below the last
+  // row where its viewport paints raw black. Paint the surface behind xterm
+  // with the live terminal background so that strip is invisible.
+  const theme = useTheme()
   const fitAddonRef = useRef<FitAddon | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
@@ -482,20 +480,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     resizeRef.current = resize
   }, [resize])
 
-  const onPtyStatusChangeRef = useRef(onPtyStatusChange)
   const onFocusChangeRef = useRef(onFocusChange)
-
-  useEffect(() => {
-    onPtyStatusChangeRef.current = onPtyStatusChange
-  }, [onPtyStatusChange])
 
   useEffect(() => {
     onFocusChangeRef.current = onFocusChange
   }, [onFocusChange])
-
-  useEffect(() => {
-    onPtyStatusChangeRef.current?.(status)
-  }, [status])
 
   useEffect(() => {
     if (status !== 'exited' && status !== 'error') {
@@ -991,6 +980,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     <div
       data-testid="terminal-pane-body-wrapper"
       className="terminal-pane-body relative h-full w-full overflow-hidden"
+      style={{ backgroundColor: theme.terminal.background }}
     >
       <div
         ref={containerRef}

@@ -13,6 +13,12 @@ export interface GitRefChipProps {
   cwd?: string
   /** PR-A: optional, always defaults to false. PR-B wires the live value. */
   detached?: boolean
+  /**
+   * When true, the worktree segment (icon, basename, chevron) hides inside a
+   * narrow size-container so the card collapses to branch-only. Opt-in — the
+   * chip renders the full ref by default.
+   */
+  collapsibleWorktree?: boolean
 }
 
 export type GitRefCopyRowKey = 'worktree' | 'path' | 'branch'
@@ -213,6 +219,7 @@ export const GitRefChip = ({
   branch,
   cwd = undefined,
   detached = false,
+  collapsibleWorktree = false,
 }: GitRefChipProps): ReactElement | null => {
   if (branch === null || branch.length === 0) {
     return null
@@ -221,8 +228,11 @@ export const GitRefChip = ({
   const hasWorktree = worktreeName !== null && worktreeName.length > 0
   const tooltipCwd = cwd !== undefined && cwd.length > 0 ? cwd : null
 
+  // `max-w-full` + `min-w-0` cap the chip at its container's width so the
+  // branch label truncates with an ellipsis instead of the chip overflowing
+  // and being hard-clipped (the Chip primitive is `shrink-0`).
   const frameBase =
-    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border max-w-[340px] overflow-hidden'
+    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border min-w-0 max-w-full overflow-hidden'
 
   // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
   // worktree uses `text-error` (lighter coral), branch uses
@@ -232,13 +242,16 @@ export const GitRefChip = ({
     ? `${frameBase} bg-tertiary/[0.06] border-tertiary/25`
     : `${frameBase} bg-primary-container/[0.06] border-primary-container/20`
 
+  // Collapse the worktree segment to branch-only inside a narrow size-container.
+  const worktreeHideClass = collapsibleWorktree ? '@max-[280px]:hidden' : ''
+
   const wtIconClasses = `material-symbols-outlined text-[13px] shrink-0 ${
     detached ? 'text-error' : 'text-secondary-dim'
-  }`
+  } ${worktreeHideClass}`
 
   const wtLabelClasses = `font-mono text-[10.5px] max-w-[120px] shrink-0 truncate ${
     detached ? 'text-error' : 'text-secondary-dim'
-  }`
+  } ${worktreeHideClass}`
 
   const brIconClasses = `material-symbols-outlined text-[13px] shrink-0 ${
     detached ? 'text-tertiary' : 'text-primary-container'
@@ -290,7 +303,7 @@ export const GitRefChip = ({
             </span>
             <span
               data-testid="git-ref-chip-chevron"
-              className="text-outline-variant text-[11px] shrink-0"
+              className={`text-outline-variant text-[11px] shrink-0 ${worktreeHideClass}`}
             >
               ›
             </span>

@@ -14,20 +14,21 @@ import {
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
 import { useGitStatus } from '../../../diff/hooks/useGitStatus'
 import { useGitWorktree } from '../../../diff/hooks/useGitWorktree'
-import type { Pane, Session, SessionStatus } from '../../../sessions/types'
+import type { Pane, Session } from '../../../sessions/types'
 import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import { Body, type BodyHandle } from './Body'
-import { Footer } from './Footer'
 import { Header } from './Header'
-import {
-  ptyStatusToSessionStatus,
-  type PtyStatus,
-} from './ptyStatusToSessionStatus'
+import { PaneStatusBar } from './PaneStatusBar'
 import { RestartAffordance } from './RestartAffordance'
+import { usePaneWidth } from './usePaneWidth'
+
+// A pane narrower than this auto-collapses (header + status bar together) so the
+// collapsed look never drifts out of sync with a real `isCollapsed`. Tunable.
+const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
 
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
@@ -105,8 +106,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     // on first paint — otherwise its xterm stays unfocused with no transition
     // for the rising-edge branch below to catch.
     const wasActiveRef = useRef<boolean | undefined>(undefined)
-    const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
-    const [isCollapsed, setIsCollapsed] = useState(false)
+    const wrapperRef = useRef<HTMLDivElement | null>(null)
+    const [manuallyCollapsed, setManuallyCollapsed] = useState(false)
+    // Width-driven auto-collapse: a pane too narrow for the expanded chrome
+    // collapses for real (header + status bar together), so the collapsed state
+    // is always in sync with what's shown — never just the bar vanishing.
+    const paneWidth = usePaneWidth(wrapperRef)
+
+    const autoCollapsed =
+      paneWidth !== null && paneWidth < AUTO_COLLAPSE_PANE_WIDTH_PX
+    const isCollapsed = manuallyCollapsed || autoCollapsed
 
     useImperativeHandle(ref, () => ({
       focusTerminal(): boolean {
@@ -131,13 +140,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       }
       wasActiveRef.current = pane.active
     }, [pane.active])
-
-    const pipStatus: SessionStatus =
-      mode === 'awaiting-restart'
-        ? pane.status
-        : ptyStatusToSessionStatus(ptyStatus)
-
-    const isIdle = pipStatus === 'idle'
 
     const { branch } = useGitBranch(pane.cwd, {
       enabled: isActive,
@@ -169,7 +171,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     }, [pane.active])
 
     const handleToggleCollapse = useCallback((): void => {
-      setIsCollapsed((collapsed) => !collapsed)
+      setManuallyCollapsed((collapsed) => !collapsed)
     }, [])
 
     const handleClose = useCallback((): void => {
@@ -210,11 +212,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
+    const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const enableImagePaste = pane.agentType !== 'generic'
-
-    const footerPlaceholder = isAwaitingRestart
-      ? `session ended — restart to resume ${agent.short.toLowerCase()}`
-      : undefined
 
     const containerStyle = isFocusHighlightVisible
       ? {
@@ -236,6 +235,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     return (
       <div
+        ref={wrapperRef}
         data-testid="terminal-pane-wrapper"
         data-session-id={session.id}
         data-mode={mode}
@@ -248,18 +248,15 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
           opacity: isPaneActive ? 1 : 0.78,
         }}
-        className="relative isolate flex h-full w-full flex-col overflow-hidden"
+        className="@container/pane relative isolate flex h-full w-full flex-col overflow-hidden"
       >
         <Header
           agent={agent}
           session={session}
-          worktreeName={worktreeName}
-          branch={branch}
-          cwd={pane.cwd}
-          added={added}
-          removed={removed}
           isFocused={isFocusHighlightVisible}
           isCollapsed={isCollapsed}
+          autoCollapsed={autoCollapsed}
+          hideCollapseToggle={hideCollapseToggle}
           ptyId={pane.ptyId}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
@@ -296,20 +293,23 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               onPaneReady={onPaneReady}
               onCommandSubmit={onCommandSubmit}
               mode={mode}
-              onPtyStatusChange={setPtyStatus}
               deferFit={deferFit}
               enableImagePaste={enableImagePaste}
             />
           </div>
         )}
 
-        <Footer
-          agent={agent}
-          isFocused={isFocusHighlightVisible}
-          isIdle={isIdle}
-          onClickFocus={handleContainerClick}
-          placeholder={footerPlaceholder}
-        />
+        {!isAwaitingRestart && !isCollapsed && (
+          <PaneStatusBar
+            worktreeName={worktreeName}
+            branch={branch}
+            cwd={pane.cwd}
+            added={added}
+            removed={removed}
+            lastActivityAt={session.lastActivityAt}
+          />
+        )}
+
         <span
           data-testid="terminal-pane-focus-ring"
           aria-hidden="true"

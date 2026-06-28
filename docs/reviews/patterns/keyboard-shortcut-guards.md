@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-24
-ref_count: 2
+last_updated: 2026-06-28
+ref_count: 5
 ---
 
 # Keyboard Shortcut Guards
@@ -309,4 +309,57 @@ against three classes of false-fire:
 - **File:** `src/features/terminal/components/TerminalContextMenu.tsx`
 - **Finding:** On macOS, both the Paste and Paste Image context-menu rows rendered the same shortcut chip, making the menu look contradictory even though the image path has priority only when the clipboard contains an image.
 - **Fix:** Made the Paste Image shortcut chip platform-aware and omitted it on macOS while keeping the distinct `Ctrl+V` chip on non-mac platforms. Added a macOS module-load regression test for the rendered row.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Command palette shortcut stayed active inside New Session modal
+
+- **Source:** github-codex-connector | PR #624 round 1 | 2026-06-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command palette remained enabled while the New Session dialog was open,
+  so the capture-phase palette shortcut could open a second modal over the active modal.
+- **Fix:** Include `newSessionDialog.open` in the palette `enabled` guard.
+- **Commit:** same commit as this entry
+
+### 24. Nested controls inside menu rows lost their own keyboard activation
+
+- **Source:** CI | PR #624 unit test failure | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `Menu.Row` let nested button Enter key events reach menu navigation
+  plumbing, so the nested control did not receive its expected activation.
+- **Fix:** Stop propagation for keyboard events that originate from nested focusable
+  controls while preserving the row's own Enter/Space activation.
+- **Commit:** same commit as this entry
+
+### 25. Mod+Z focus toggle captured terminal and editor undo controls
+
+- **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The new document-level `Mod+Z` layout toggle consumed the event before focused controls could handle it, stealing terminal `Ctrl+Z` job suspension and editor/dock undo behavior.
+- **Fix:** Guarded the shortcut so it passes through when the terminal container is inactive or focus is inside editable/xterm input. Added regression coverage for focused dock and xterm helper textarea cases.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Mod+Z focus toggle lacked terminal-container ownership guard
+
+- **Source:** github-claude | PR #631 round 1 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The `KeyZ` branch did not mirror the digit-shortcut container guard, so `Ctrl+Z` / `Cmd+Z` from the focused editor dock toggled the terminal layout instead of reaching the dock.
+- **Fix:** Added an `isTerminalContainerActiveRef.current === false` pass-through before the branch can prevent default, with regression coverage for dock focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Manual layout cycle left stale Mod+Z restore state
+
+- **Source:** github-claude | PR #631 round 2 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The per-session Mod+Z restore map was cleared on restore and failed-restore
+  paths, but not when `Mod+\` manually changed the same session's layout. A user could
+  enter single-pane focus with `Mod+Z`, cycle away with `Mod+\`, later return to single,
+  and have the next `Mod+Z` consume the stale restore entry.
+- **Fix:** Clear the active session's restore entry in the `Backslash` layout-cycle branch
+  before applying the next layout. Added regression coverage for the cycle-away-then-single
+  path so `Mod+Z` returns to the single-layout no-op behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

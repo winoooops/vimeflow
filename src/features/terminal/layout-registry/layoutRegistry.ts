@@ -19,6 +19,13 @@ export { LAYOUTS }
 
 export const LAYOUT_CYCLE: readonly LayoutId[] = LAYOUT_IDS
 
+export const SINGLE_PANE_FOCUS_LAYOUT_ID = 'single' satisfies LayoutId
+
+export const SINGLE_PANE_FOCUS_LABEL = 'Focus active pane'
+
+export const canSelectLayoutOverCapacity = (layoutId: PaneLayoutId): boolean =>
+  layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID
+
 export interface RuntimePaneLayoutRegistrySnapshot {
   readonly layouts: readonly LayoutShape[]
   readonly rejected: readonly RejectedPaneLayoutDefinition[]
