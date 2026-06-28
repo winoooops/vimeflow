@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
@@ -21,6 +22,8 @@ const createService = (): ITerminalService =>
     onData: vi.fn(() => Promise.resolve(vi.fn())),
   }) as unknown as ITerminalService
 
+const inactive = false
+
 describe('GhosttyBody', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -29,6 +32,7 @@ describe('GhosttyBody', () => {
   test('keeps native surface mounted when pane loses focus', async () => {
     const service = createService()
     const paneRef = { sessionId: 'pty-1', paneId: 'pane-1' }
+
     const { rerender, unmount } = render(
       <GhosttyBody
         paneId="pane-1"
@@ -51,7 +55,7 @@ describe('GhosttyBody', () => {
         paneId="pane-1"
         ptyId="pty-1"
         cwd="/tmp"
-        active={false}
+        active={inactive}
         service={service}
       />
     )

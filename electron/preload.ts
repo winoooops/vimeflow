@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,

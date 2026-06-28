@@ -1,3 +1,4 @@
+// cspell:ignore ghostty Ghostty GHOSTTY
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   GHOSTTY_NATIVE_DATA,
@@ -5,6 +6,10 @@ import {
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
 import type { Sidecar } from './sidecar'
+import {
+  isGhosttyNativeParentEnabled,
+  setupGhosttyNativeParent,
+} from './ghostty-native-parent'
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
@@ -13,7 +18,7 @@ nativeHandle.writeBigUInt64LE(1n)
 vi.mock('electron', () => ({
   BrowserWindow: {
     fromWebContents: vi.fn(() => ({
-      getNativeWindowHandle: () => nativeHandle,
+      getNativeWindowHandle: (): Buffer => nativeHandle,
     })),
   },
   ipcMain: {
@@ -28,11 +33,6 @@ vi.mock('electron', () => ({
   },
 }))
 
-import {
-  isGhosttyNativeParentEnabled,
-  setupGhosttyNativeParent,
-} from './ghostty-native-parent'
-
 describe('ghostty native parent', () => {
   beforeEach(() => {
     handlers.clear()
@@ -44,6 +44,7 @@ describe('ghostty native parent', () => {
         VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
       })
     ).toBe(true)
+
     expect(
       isGhosttyNativeParentEnabled('linux', {
         VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
@@ -60,6 +61,7 @@ describe('ghostty native parent', () => {
       focus: vi.fn(),
       destroy: vi.fn(),
     }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
@@ -85,10 +87,12 @@ describe('ghostty native parent', () => {
       onResize?: (cols: number, rows: number) => void
     } = {}
     const surface = {}
+
     const addon = {
       create: vi.fn((_bridge, _handle, input, resize) => {
         callbacks.onInput = input
         callbacks.onResize = resize
+
         return surface
       }),
       setFrame: vi.fn(),
@@ -96,6 +100,7 @@ describe('ghostty native parent', () => {
       focus: vi.fn(),
       destroy: vi.fn(),
     }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
@@ -137,6 +142,7 @@ describe('ghostty native parent', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
     })
+
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 80, rows: 24 },
     })
@@ -146,11 +152,12 @@ describe('ghostty native parent', () => {
   })
 
   test('keeps separate surfaces for split panes', () => {
-    const callbacks: Array<{
+    const callbacks: {
       onInput: (data: string) => void
       onResize: (cols: number, rows: number) => void
-    }> = []
+    }[] = []
     const surfaces = [{ id: 'surface-1' }, { id: 'surface-2' }]
+
     const addon = {
       create: vi.fn((_bridge, _handle, input, resize) => {
         callbacks.push({ onInput: input, onResize: resize })
@@ -162,6 +169,7 @@ describe('ghostty native parent', () => {
       focus: vi.fn(),
       destroy: vi.fn(),
     }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
@@ -187,6 +195,7 @@ describe('ghostty native parent', () => {
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
+
     update?.(
       { sender: {} },
       {
@@ -212,12 +221,15 @@ describe('ghostty native parent', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
     })
+
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-2', data: 'b' },
     })
+
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 80, rows: 24 },
     })
+
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-2', cols: 100, rows: 30 },
     })
@@ -234,6 +246,7 @@ describe('ghostty native parent', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-2', data: 'c' },
     })
+
     expect(sidecar.invoke).not.toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'ignored' },
     })

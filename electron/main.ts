@@ -1,3 +1,4 @@
+// cspell:ignore ghostty Ghostty
 import {
   app,
   BrowserWindow,

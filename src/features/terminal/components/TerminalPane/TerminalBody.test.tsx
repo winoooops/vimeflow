@@ -1,5 +1,11 @@
+// cspell:ignore ghostty Ghostty
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { forwardRef, useImperativeHandle } from 'react'
+import {
+  forwardRef,
+  useImperativeHandle,
+  type ForwardedRef,
+  type ReactElement,
+} from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
 import { TerminalBody } from './TerminalBody'
@@ -16,25 +22,42 @@ const bodyMocks = vi.hoisted(() => ({
 
 vi.mock('../../nativeGhosttyClient', () => nativeMocks)
 
-vi.mock('./GhosttyBody', () => ({
-  GhosttyBody: (props: { onUnavailable?: () => void }) => {
-    bodyMocks.ghosttyProps = props
+vi.mock('./GhosttyBody', () => {
+  const MockGhosttyBody = ({
+    onUnavailable = undefined,
+  }: {
+    onUnavailable?: () => void
+  }): ReactElement => {
+    bodyMocks.ghosttyProps = { onUnavailable }
 
     return <div data-testid="ghostty-body" />
-  },
-}))
+  }
+  MockGhosttyBody.displayName = 'MockGhosttyBody'
 
-vi.mock('./Body', () => ({
-  Body: forwardRef((_props, ref) => {
-    useImperativeHandle(ref, () => ({
-      focusTerminal: bodyMocks.xtermFocus,
-    }))
+  return { GhosttyBody: MockGhosttyBody }
+})
 
-    return <div data-testid="xterm-body" />
-  }),
-}))
+vi.mock('./Body', () => {
+  const MockBody = forwardRef(
+    (
+      _props: unknown,
+      ref: ForwardedRef<{ focusTerminal: () => void }>
+    ): ReactElement => {
+      useImperativeHandle(ref, () => ({
+        focusTerminal: bodyMocks.xtermFocus,
+      }))
+
+      return <div data-testid="xterm-body" />
+    }
+  )
+  MockBody.displayName = 'MockBody'
+
+  return { Body: MockBody }
+})
 
 const createService = (): ITerminalService => ({}) as ITerminalService
+const deferFit = false
+const enableImagePaste = false
 
 describe('TerminalBody', () => {
   beforeEach(() => {
@@ -52,8 +75,8 @@ describe('TerminalBody', () => {
         active
         service={createService()}
         mode="attach"
-        deferFit={false}
-        enableImagePaste={false}
+        deferFit={deferFit}
+        enableImagePaste={enableImagePaste}
       />
     )
 

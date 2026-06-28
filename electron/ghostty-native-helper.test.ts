@@ -1,4 +1,9 @@
+// cspell:ignore ghostty GHOSTTY
 import { describe, expect, test, vi } from 'vitest'
+import {
+  isGhosttyNativeEnabled,
+  toGhosttyScreenFrame,
+} from './ghostty-native-helper'
 
 vi.mock('electron', () => ({
   BrowserWindow: {},
@@ -7,11 +12,6 @@ vi.mock('electron', () => ({
     removeHandler: vi.fn(),
   },
 }))
-
-import {
-  isGhosttyNativeEnabled,
-  toGhosttyScreenFrame,
-} from './ghostty-native-helper'
 
 describe('ghostty native helper', () => {
   test('enables only on macOS with the feature flag', () => {

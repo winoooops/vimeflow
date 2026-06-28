@@ -34,7 +34,7 @@ interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {
   data: string
 }
 
-type GhosttyNativePayloadByKind = {
+interface GhosttyNativePayloadByKind {
   update: GhosttyNativeUpdateRequest
   data: GhosttyNativeDataRequest
   focus: GhosttyNativePaneRequest
