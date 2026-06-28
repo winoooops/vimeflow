@@ -187,6 +187,72 @@ describe('usePaneShortcuts', () => {
     })
   })
 
+  test('Mod+Z keeps separate restore layouts for each session', () => {
+    const setSessionLayout = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ sessions, activeSessionId }) =>
+        usePaneShortcuts({
+          sessions,
+          activeSessionId,
+          setSessionActivePane: vi.fn(),
+          setSessionLayout,
+        }),
+      {
+        initialProps: {
+          sessions: [
+            makeSession('s1', 'grid3x2', ['s1-p0', 's1-p1', 's1-p2'], 1),
+            makeSession('s2', 'vsplit', ['s2-p0', 's2-p1'], 0),
+          ],
+          activeSessionId: 's1',
+        },
+      }
+    )
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith(
+      's1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      sessions: [
+        makeSession(
+          's1',
+          SINGLE_PANE_FOCUS_LAYOUT_ID,
+          ['s1-p0', 's1-p1', 's1-p2'],
+          1
+        ),
+        makeSession('s2', 'vsplit', ['s2-p0', 's2-p1'], 0),
+      ],
+      activeSessionId: 's2',
+    })
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith(
+      's2',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      sessions: [
+        makeSession(
+          's1',
+          SINGLE_PANE_FOCUS_LAYOUT_ID,
+          ['s1-p0', 's1-p1', 's1-p2'],
+          1
+        ),
+        makeSession('s2', SINGLE_PANE_FOCUS_LAYOUT_ID, ['s2-p0', 's2-p1'], 0),
+      ],
+      activeSessionId: 's1',
+    })
+
+    const restoreEvent = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).toHaveBeenLastCalledWith('s1', 'grid3x2')
+    expect(restoreEvent.preventDefaultSpy).toHaveBeenCalled()
+  })
+
   test('Mod+Z restore falls through when the previous layout no longer fits', () => {
     const setSessionLayout = vi.fn()
 

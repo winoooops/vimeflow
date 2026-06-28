@@ -52,10 +52,9 @@ export const usePaneShortcuts = ({
   const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
   const layoutRegistryRef = useRef(layoutRegistry)
 
-  const lastSingleToggleLayoutRef = useRef<{
-    readonly sessionId: string
-    readonly layoutId: PaneLayoutId
-  } | null>(null)
+  const lastSingleToggleLayoutBySessionRef = useRef(
+    new Map<string, PaneLayoutId>()
+  )
 
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
@@ -120,9 +119,8 @@ export const usePaneShortcuts = ({
 
         if (activeSession.layout === SINGLE_PANE_FOCUS_LAYOUT_ID) {
           const previousLayoutId =
-            lastSingleToggleLayoutRef.current?.sessionId === activeSession.id
-              ? lastSingleToggleLayoutRef.current.layoutId
-              : null
+            lastSingleToggleLayoutBySessionRef.current.get(activeSession.id) ??
+            null
 
           const previousLayout =
             previousLayoutId === null
@@ -133,14 +131,14 @@ export const usePaneShortcuts = ({
             previousLayout === null ||
             activeSession.panes.length > previousLayout.capacity
           ) {
-            lastSingleToggleLayoutRef.current = null
+            lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
 
             return
           }
 
           event.preventDefault()
           event.stopPropagation()
-          lastSingleToggleLayoutRef.current = null
+          lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
           setSessionLayout(activeSession.id, previousLayout.id)
 
           return
@@ -155,10 +153,10 @@ export const usePaneShortcuts = ({
 
         event.preventDefault()
         event.stopPropagation()
-        lastSingleToggleLayoutRef.current = {
-          sessionId: activeSession.id,
-          layoutId: currentLayout.id,
-        }
+        lastSingleToggleLayoutBySessionRef.current.set(
+          activeSession.id,
+          currentLayout.id
+        )
         setSessionLayout(activeSession.id, SINGLE_PANE_FOCUS_LAYOUT_ID)
 
         return
