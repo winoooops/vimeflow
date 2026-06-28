@@ -2,8 +2,8 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-06-21
-ref_count: 0
+last_updated: 2026-06-28
+ref_count: 1
 ---
 
 # Hot-Path Caching
@@ -57,4 +57,22 @@ feature.
 - **File:** `crates/backend/src/agent/adapter/opencode/model_catalog.rs`
 - **Finding:** `catalog` used `OnceLock::get_or_init` with `Catalog::new()` on missing, unreadable, malformed, or empty `models.json`. If Vimeflow decoded opencode before opencode finished refreshing the cache, every later `context_window` lookup returned the unknown sentinel until restart.
 - **Fix:** Split disk loading from cache initialization and populate the `OnceLock` only after a non-empty successful parse. Added regression tests proving missing, empty, and malformed first reads remain retryable and a later valid cache is used.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Helper stdout parser copied the accumulated buffer on every chunk
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** `appendStdout` appended each helper stdout chunk with `Buffer.concat([previous, chunk])`, turning large replay streams into quadratic buffer-copy work on the Electron main process.
+- **Fix:** Store pending stdout chunks and byte length separately, scan for the frame header delimiter across chunks, and concatenate only after a complete frame is available. Added regression coverage for frame headers split across stdout chunks.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Per-event dispatch table allocated a Map for every helper event
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** `handleHelperEvent` constructed a two-entry `Map` on every PTY input or resize event, adding avoidable allocation to a high-frequency helper event path.
+- **Fix:** Replaced the per-call `Map` with a `switch` over the known helper event names.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

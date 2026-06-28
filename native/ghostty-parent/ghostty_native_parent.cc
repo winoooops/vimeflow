@@ -207,6 +207,17 @@ void FinalizeSurface(napi_env env, void *data, void *) {
   delete surface;
 }
 
+void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
+  if (surface->input_tsfn != nullptr) {
+    napi_release_threadsafe_function(surface->input_tsfn, napi_tsfn_abort);
+    surface->input_tsfn = nullptr;
+  }
+  if (surface->resize_tsfn != nullptr) {
+    napi_release_threadsafe_function(surface->resize_tsfn, napi_tsfn_abort);
+    surface->resize_tsfn = nullptr;
+  }
+}
+
 napi_value Create(napi_env env, napi_callback_info info) {
   size_t argc = 4;
   napi_value args[4];
@@ -326,6 +337,7 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
   if (surface != nullptr && surface->swift_surface != nullptr) {
     bridge.destroy(surface->swift_surface);
     surface->swift_surface = nullptr;
+    ReleaseSurfaceCallbacks(surface);
   }
 
   return nullptr;

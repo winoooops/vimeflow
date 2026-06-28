@@ -12,28 +12,15 @@ import {
 } from './ghostty-native-channels'
 import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
-
-interface GhosttyNativeBounds {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface GhosttyNativePaneRequest {
-  sessionId: string
-  paneId: string
-}
-
-interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
-  cwd: string
-  bounds: GhosttyNativeBounds
-  visible: boolean
-}
-
-interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {
-  data: string
-}
+import {
+  isBounds,
+  isRecord,
+  isString,
+  type GhosttyNativeBounds,
+  type GhosttyNativeDataRequest,
+  type GhosttyNativePaneRequest,
+  type GhosttyNativeUpdateRequest,
+} from './ghostty-native-shared'
 
 interface GhosttyNativeFrame extends GhosttyNativeBounds {
   visible: boolean
@@ -96,7 +83,9 @@ export class GhosttyNativeHelperController {
 
   private currentPane: GhosttyNativePaneRequest | null = null
 
-  private stdoutBuffer = Buffer.alloc(0)
+  private stdoutChunks: Buffer[] = []
+
+  private stdoutLength = 0
 
   private lastResize: { cols: number; rows: number } | null = null
 
@@ -297,7 +286,7 @@ export class GhosttyNativeHelperController {
     helper.on('exit', () => {
       this.helper = null
       this.currentPane = null
-      this.stdoutBuffer = Buffer.alloc(0)
+      this.clearStdout()
       this.lastResize = null
     })
 
@@ -312,18 +301,19 @@ export class GhosttyNativeHelperController {
   }
 
   private appendStdout(chunk: Buffer): void {
-    this.stdoutBuffer = Buffer.concat([this.stdoutBuffer, chunk])
+    this.stdoutChunks.push(chunk)
+    this.stdoutLength += chunk.length
     this.processStdout()
   }
 
   private processStdout(): void {
-    while (this.stdoutBuffer.length > 0) {
-      const headerEnd = this.stdoutBuffer.indexOf(HEADER_END)
+    while (this.stdoutLength > 0) {
+      const headerEnd = this.indexOfHeaderEnd()
       if (headerEnd === -1) {
         return
       }
 
-      const header = this.stdoutBuffer.subarray(0, headerEnd).toString('ascii')
+      const header = this.readStdoutAscii(headerEnd)
       const contentLength = parseContentLength(header)
       if (contentLength === null) {
         this.shutdownHelper()
@@ -333,12 +323,13 @@ export class GhosttyNativeHelperController {
 
       const bodyStart = headerEnd + HEADER_END.length
       const bodyEnd = bodyStart + contentLength
-      if (this.stdoutBuffer.length < bodyEnd) {
+      if (this.stdoutLength < bodyEnd) {
         return
       }
 
-      const body = this.stdoutBuffer.subarray(bodyStart, bodyEnd)
-      this.stdoutBuffer = this.stdoutBuffer.subarray(bodyEnd)
+      const stdoutBuffer = this.consumeStdoutBuffer()
+      const body = stdoutBuffer.subarray(bodyStart, bodyEnd)
+      this.setStdoutBuffer(stdoutBuffer.subarray(bodyEnd))
 
       const event = parseHelperEvent(body)
       if (event) {
@@ -348,25 +339,14 @@ export class GhosttyNativeHelperController {
   }
 
   private handleHelperEvent(event: HelperEvent): void {
-    const eventHandlers = new Map<
-      string,
-      (payload: Record<string, unknown>) => void
-    >([
-      [
-        'pty-input',
-        (payload): void => {
-          this.handlePtyInput(payload)
-        },
-      ],
-      [
-        'pty-resize',
-        (payload): void => {
-          this.handlePtyResize(payload)
-        },
-      ],
-    ])
-
-    eventHandlers.get(event.event)?.(event.payload)
+    switch (event.event) {
+      case 'pty-input':
+        this.handlePtyInput(event.payload)
+        break
+      case 'pty-resize':
+        this.handlePtyResize(event.payload)
+        break
+    }
   }
 
   private handlePtyInput(payload: Record<string, unknown>): void {
@@ -415,7 +395,7 @@ export class GhosttyNativeHelperController {
     const helper = this.helper
     this.helper = null
     this.currentPane = null
-    this.stdoutBuffer = Buffer.alloc(0)
+    this.clearStdout()
     this.lastResize = null
 
     if (!helper) {
@@ -424,6 +404,64 @@ export class GhosttyNativeHelperController {
 
     helper.stdin.write(encodeFrame({ kind: 'shutdown' }))
     helper.kill()
+  }
+
+  private indexOfHeaderEnd(): number {
+    let matched = 0
+    let offset = 0
+
+    for (const chunk of this.stdoutChunks) {
+      for (const byte of chunk) {
+        if (byte === HEADER_END[matched]) {
+          matched += 1
+          if (matched === HEADER_END.length) {
+            return offset - HEADER_END.length + 1
+          }
+        } else {
+          matched = byte === HEADER_END[0] ? 1 : 0
+        }
+        offset += 1
+      }
+    }
+
+    return -1
+  }
+
+  private consumeStdoutBuffer(): Buffer {
+    const buffer =
+      this.stdoutChunks.length === 1
+        ? this.stdoutChunks[0]
+        : Buffer.concat(this.stdoutChunks, this.stdoutLength)
+    this.clearStdout()
+
+    return buffer
+  }
+
+  private readStdoutAscii(length: number): string {
+    const buffer = Buffer.alloc(length)
+    let written = 0
+
+    for (const chunk of this.stdoutChunks) {
+      if (written >= length) {
+        break
+      }
+
+      const bytesToCopy = Math.min(chunk.length, length - written)
+      chunk.copy(buffer, written, 0, bytesToCopy)
+      written += bytesToCopy
+    }
+
+    return buffer.toString('ascii')
+  }
+
+  private setStdoutBuffer(buffer: Buffer): void {
+    this.stdoutChunks = buffer.length > 0 ? [buffer] : []
+    this.stdoutLength = buffer.length
+  }
+
+  private clearStdout(): void {
+    this.stdoutChunks = []
+    this.stdoutLength = 0
   }
 }
 
@@ -482,28 +520,6 @@ function isGhosttyNativePaneRequest(
   value: unknown
 ): value is GhosttyNativePaneRequest {
   return isRecord(value) && isString(value.sessionId) && isString(value.paneId)
-}
-
-function isBounds(value: unknown): value is GhosttyNativeBounds {
-  return (
-    isRecord(value) &&
-    typeof value.x === 'number' &&
-    Number.isFinite(value.x) &&
-    typeof value.y === 'number' &&
-    Number.isFinite(value.y) &&
-    typeof value.width === 'number' &&
-    Number.isFinite(value.width) &&
-    typeof value.height === 'number' &&
-    Number.isFinite(value.height)
-  )
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
 }
 
 function helperPackageDir(): string {

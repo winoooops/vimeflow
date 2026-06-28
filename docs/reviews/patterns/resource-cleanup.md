@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-28
-ref_count: 19
+ref_count: 20
 ---
 
 # Resource Cleanup
@@ -207,4 +207,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `electron/main.ts`
 - **Finding:** Main-process setup always installed either the native parent controller or the Swift helper fallback, so Ghostty IPC channels were registered even on platforms and environments where both native flags were disabled. The handlers short-circuited, but the process-global IPC surface stayed larger than necessary.
 - **Fix:** Guarded controller creation on the parent and helper feature flags. When neither native mode is enabled, `ghosttyNativeController` remains null and no Ghostty IPC handlers are registered.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Explicit native Ghostty surface destroy left TSFNs alive until GC
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `Destroy` tore down the Swift surface but left the input and resize threadsafe functions alive until the JS external finalizer eventually ran. Pending native callbacks could still dispatch through closures after explicit pane teardown.
+- **Fix:** Release both TSFNs with `napi_tsfn_abort` during explicit destroy after nulling the Swift surface, and null the TSFN pointers so the later finalizer remains idempotent.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

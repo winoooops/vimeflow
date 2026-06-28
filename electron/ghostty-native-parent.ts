@@ -12,28 +12,14 @@ import {
 } from './ghostty-native-channels'
 import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
-
-interface GhosttyNativeBounds {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface GhosttyNativePaneRequest {
-  sessionId: string
-  paneId: string
-}
-
-interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
-  cwd: string
-  bounds: GhosttyNativeBounds
-  visible: boolean
-}
-
-interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {
-  data: string
-}
+import {
+  isBounds,
+  isRecord,
+  isString,
+  type GhosttyNativeDataRequest,
+  type GhosttyNativePaneRequest,
+  type GhosttyNativeUpdateRequest,
+} from './ghostty-native-shared'
 
 interface GhosttyNativePayloadByKind {
   update: GhosttyNativeUpdateRequest
@@ -153,28 +139,6 @@ function isPanePayload(
   return isRecord(value) && isString(value.sessionId) && isString(value.paneId)
 }
 
-function isBounds(value: unknown): value is GhosttyNativeBounds {
-  return (
-    isRecord(value) &&
-    typeof value.x === 'number' &&
-    Number.isFinite(value.x) &&
-    typeof value.y === 'number' &&
-    Number.isFinite(value.y) &&
-    typeof value.width === 'number' &&
-    Number.isFinite(value.width) &&
-    typeof value.height === 'number' &&
-    Number.isFinite(value.height)
-  )
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
 export class GhosttyNativeParentController {
   private readonly sidecar: Sidecar
 
@@ -236,6 +200,11 @@ export class GhosttyNativeParentController {
       return { enabled: false }
     }
 
+    const addon = this.getOptionalAddon()
+    if (!addon) {
+      return { enabled: false }
+    }
+
     const win = BrowserWindow.fromWebContents(sender)
     if (!win) {
       throw new Error('ghostty native parent update has no owning window')
@@ -243,21 +212,26 @@ export class GhosttyNativeParentController {
 
     const state = this.getOrCreatePaneState(payload)
 
-    const surface = this.getOrCreateSurface(win, state)
-    this.getAddon().setFrame(
+    const surface = this.getOrCreateSurface(addon, win, state)
+    addon.setFrame(
       surface,
       payload.bounds.x,
       payload.bounds.y,
       payload.visible ? payload.bounds.width : 0,
       payload.visible ? payload.bounds.height : 0
     )
-    this.flushPendingData(state)
+    this.flushPendingData(addon, state)
 
     return { enabled: true }
   }
 
   private sendData(payload: GhosttyNativeDataRequest): { enabled: boolean } {
     if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon) {
       return { enabled: false }
     }
 
@@ -274,7 +248,7 @@ export class GhosttyNativeParentController {
       return { enabled: true }
     }
 
-    this.getAddon().write(state.surface, payload.data)
+    addon.write(state.surface, payload.data)
 
     return { enabled: true }
   }
@@ -284,9 +258,14 @@ export class GhosttyNativeParentController {
       return { enabled: false }
     }
 
+    const addon = this.getOptionalAddon()
+    if (!addon) {
+      return { enabled: false }
+    }
+
     const state = this.getExistingPaneState(payload)
     if (state?.surface) {
-      this.getAddon().focus(state.surface)
+      addon.focus(state.surface)
     }
 
     return { enabled: true }
@@ -297,7 +276,12 @@ export class GhosttyNativeParentController {
       return { enabled: false }
     }
 
-    this.destroySurface(this.paneKey(payload))
+    const addon = this.getOptionalAddon()
+    if (!addon) {
+      return { enabled: false }
+    }
+
+    this.destroySurface(this.paneKey(payload), addon)
 
     return { enabled: true }
   }
@@ -310,6 +294,14 @@ export class GhosttyNativeParentController {
     this.addon ??= loadAddon()
 
     return this.addon
+  }
+
+  private getOptionalAddon(): GhosttyNativeParentAddon | null {
+    try {
+      return this.getAddon()
+    } catch {
+      return null
+    }
   }
 
   private getExistingPaneState(
@@ -342,6 +334,7 @@ export class GhosttyNativeParentController {
   }
 
   private getOrCreateSurface(
+    addon: GhosttyNativeParentAddon,
     win: BrowserWindow,
     state: GhosttyNativeSurfaceState
   ): unknown {
@@ -349,7 +342,7 @@ export class GhosttyNativeParentController {
       return state.surface
     }
 
-    state.surface = this.getAddon().create(
+    state.surface = addon.create(
       bridgePath(),
       win.getNativeWindowHandle(),
       (data) => {
@@ -392,7 +385,10 @@ export class GhosttyNativeParentController {
     return state.surface
   }
 
-  private flushPendingData(state: GhosttyNativeSurfaceState): void {
+  private flushPendingData(
+    addon: GhosttyNativeParentAddon,
+    state: GhosttyNativeSurfaceState
+  ): void {
     if (!state.surface) {
       return
     }
@@ -400,7 +396,7 @@ export class GhosttyNativeParentController {
     // PTY output can arrive before the renderer reports pane bounds. Replay
     // that small tail once the native surface exists so startup text is kept.
     for (const data of state.pendingData.splice(0)) {
-      this.getAddon().write(state.surface, data)
+      addon.write(state.surface, data)
     }
   }
 
@@ -408,14 +404,17 @@ export class GhosttyNativeParentController {
     return `${payload.sessionId}:${payload.paneId}`
   }
 
-  private destroySurface(key: string): void {
+  private destroySurface(
+    key: string,
+    addon: GhosttyNativeParentAddon | null = this.getOptionalAddon()
+  ): void {
     const state = this.surfaces.get(key)
     if (!state) {
       return
     }
 
-    if (state.surface) {
-      this.getAddon().destroy(state.surface)
+    if (state.surface && addon) {
+      addon.destroy(state.surface)
     }
     this.surfaces.delete(key)
   }

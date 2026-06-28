@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-26
-ref_count: 45
+last_updated: 2026-06-28
+ref_count: 46
 ---
 
 # Error Surfacing
@@ -177,6 +177,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `plugins/harness/skills/github-review/references/commit-trailers.md`
 - **Finding:** Step 6.8's `gh api -X POST` reply calls (both the issue-comment branch and the thread-reply branch) had no `|| { ...; continue; }` guard, while Step 6.9's `resolveReviewThread` mutation was hardened in cycle 2. If a reply call failed transiently (network, rate-limit), Step 6.8 silently moved past it and Step 6.9 still resolved the thread for that finding — the human reading the resolved thread saw it closed with no explanation. Step 1's reconciliation only checks `isResolved`, so the missing reply was undetectable to the next cycle: thread was already resolved, exited the stale set, no recovery. Same family as findings #14–#15 (incomplete propagation of a hardening pattern across paired call sites): cycle 2 extended the loud-fail discipline to 6.9 but missed 6.8, leaving an asymmetric pair where the half that depends on the other half's success runs unconditionally.
 - **Fix:** Wrapped both Step 6.8 `gh api -X POST` calls in `|| { warn; continue; }`. On reply success, append `CYCLE_ID` to a new `REPLIED_FINDING_IDS` array. Step 6.9 now derives `ELIGIBLE_THREAD_IDS` from `FINDINGS_JSON` filtered by `cycle_id ∈ REPLIED_FINDING_IDS` — cycle-id-keyed, not thread-id-keyed, so a finding-row with missing/empty `thread_id` cannot leak past a thread-id-keyed skip filter. Also added a pre-reply guard: a threaded-branch finding with an absent or empty `thread_id` is treated as a data anomaly — warn loudly and skip both reply AND resolve so the next cycle's reconciliation can handle it. Required two retries in this very cycle: the first attempt used a thread-id skip-list that codex flagged for the data-anomaly hole; the second attempt's jq projection had a `.cycle_id` scope bug inside `select($replied | index(.cycle_id))` because `.` rebound to `$replied` after the `|` — codex caught it at HIGH. Final form binds `cycle_id` to a jq variable BEFORE the pipe (`.cycle_id as $cycle_id | select(... and ($replied | index($cycle_id)))`) so `index()` resolves correctly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Missing native addon throws through IPC instead of returning disabled
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty parent controller lazy-loaded the N-API addon inside `ipcMain.handle` callbacks. When the feature flag was enabled but the addon artifacts had not been built, `loadAddon()` threw synchronously and surfaced as an IPC error instead of the graceful `{ enabled: false }` response used by the helper path.
+- **Fix:** Wrapped lazy addon access in a nullable helper and made update, data, focus, destroy, and dispose paths treat missing artifacts as disabled. Added regression coverage for all four IPC handlers.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 18. Human self-reply filter `contains("(github-review cycle ")` drops legit comments quoting prior replies

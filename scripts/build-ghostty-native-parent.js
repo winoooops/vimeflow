@@ -7,10 +7,7 @@ import { tmpdir } from 'node:os'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-const smokeDir = join(
-  repoRoot,
-  'native/ghostty-helper'
-)
+const smokeDir = join(repoRoot, 'native/ghostty-helper')
 const outputDir = join(repoRoot, 'dist-native/ghostty-parent')
 const scratchDir = join(tmpdir(), 'vimeflow-ghostty-electron-parent-swiftpm')
 

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
 import { BACKEND_EVENT } from './ipc-channels'
@@ -86,6 +87,54 @@ describe('ghostty native parent', () => {
     expect(() => data?.({}, { sessionId: 'pty-1', paneId: 'pane-1' })).toThrow(
       'invalid ghostty native parent data payload'
     )
+  })
+
+  test('returns disabled instead of throwing when addon artifacts are missing', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+    })
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+    ).toEqual({ enabled: false })
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_DATA)?.(
+        {},
+        { sessionId: 'pty-1', paneId: 'pane-1', data: 'a' }
+      )
+    ).toEqual({ enabled: false })
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_FOCUS)?.(
+        {},
+        { sessionId: 'pty-1', paneId: 'pane-1' }
+      )
+    ).toEqual({ enabled: false })
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+        {},
+        { sessionId: 'pty-1', paneId: 'pane-1' }
+      )
+    ).toEqual({ enabled: false })
   })
 
   test('creates parented surface and forwards native input plus resize', () => {

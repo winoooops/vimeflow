@@ -57,9 +57,9 @@ const stripTerminalInputControlSequences = (data: string): string =>
 const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
   Boolean(
     currentCwd &&
-      (WINDOWS_DRIVE_PATH.test(currentCwd) ||
-        currentCwd.startsWith('\\\\') ||
-        (currentCwd.startsWith('//') && !currentCwd.startsWith('///')))
+    (WINDOWS_DRIVE_PATH.test(currentCwd) ||
+      currentCwd.startsWith('\\\\') ||
+      (currentCwd.startsWith('//') && !currentCwd.startsWith('///')))
   )
 
 export const GhosttyBody = ({
