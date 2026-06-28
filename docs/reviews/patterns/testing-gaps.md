@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-25
-ref_count: 38
+last_updated: 2026-06-27
+ref_count: 39
 ---
 
 # Testing Gaps
@@ -826,3 +826,12 @@ filesystem scope restrictions).
 - **Finding:** The ClaudeCode icon needed custom rendered dimensions, but the shared `BRAND_ICONS` table changed from exact `height === size` coverage to a positive-height assertion for every icon. That let Codex, Kimi, and OpenCode regress to an incorrect rendered height without failing the only shared sizing guard.
 - **Fix:** Split the exact-height assertion into a square-icon table for Codex, Kimi, and OpenCode, and kept ClaudeCode covered by its dedicated custom-dimension test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 85. New-session handoff lost focus-claim coverage
+
+- **Source:** github-claude | PR #629 round 1 | 2026-06-27
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.test.tsx`
+- **Finding:** The new-session button path had coverage that a click appended a session, but no replacement assertion for the removed `onCreated` callback contract that terminal focus is claimed after creating the session. A future regression could call `createSession` without returning focus to the terminal.
+- **Fix:** Extended the switcher-row New session integration test to assert that the terminal zone receives focus after the button creates the new session, pinning the composed create-and-claim behavior.
+- **Commit:** same commit as this entry

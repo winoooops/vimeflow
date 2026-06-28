@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-22
-ref_count: 61
+last_updated: 2026-06-27
+ref_count: 62
 ---
 
 # React Lifecycle
@@ -561,3 +561,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The tile auto-fit `useLayoutEffect` depended on `data.count`, so every increment disconnected and recreated observers plus delayed measurement timers. The measured content width only changes when the count gains or loses a digit, making same-digit ticks unnecessary layout work.
 - **Fix:** Derived `countDigits = String(data.count).length` and used that primitive in the dependency array. The effect still remeasures at digit boundaries and on tile size changes, but avoids churn for hot same-width count updates.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 59. Command palette active-row scroll used global document lookup
+
+- **Source:** github-claude | PR #629 round 1 | 2026-06-27
+- **Severity:** LOW
+- **File:** `src/features/command-palette/components/CommandResults.tsx`
+- **Finding:** `CommandResults` used `document.getElementById` inside an effect to find the selected option before calling `scrollIntoView`. That works for the current single palette instance, but it couples the scroll side effect to globally unique ids instead of the component's rendered subtree.
+- **Fix:** Forwarded refs through `CommandResultItem`, stored row elements in a `CommandResults`-local ref map keyed by command id, and scrolled the selected row from that map. The option ids remain in place for ARIA, while the imperative scroll target is owned by React refs. Added a regression assertion that the scroll effect no longer calls `document.getElementById`.
+- **Commit:** same commit as this entry

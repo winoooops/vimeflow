@@ -1,5 +1,5 @@
 /* eslint-disable react/jsx-boolean-value */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi } from 'vitest'
 import type { Command } from '../types'
@@ -13,14 +13,13 @@ describe('CommandResultItem', () => {
   }
 
   test('renders with role option', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -29,14 +28,13 @@ describe('CommandResultItem', () => {
   })
 
   test('renders icon', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -45,25 +43,23 @@ describe('CommandResultItem', () => {
     expect(icon).toHaveClass('material-symbols-outlined')
   })
 
-  test('renders label', () => {
-    const mockOnSelect = vi.fn()
-
+  test('renders verb label', () => {
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const label = screen.getByText('Test Command')
     expect(label).toBeInTheDocument()
+    expect(label).toHaveClass('font-mono', 'text-primary')
   })
 
   test('renders description when present', () => {
-    const mockOnSelect = vi.fn()
-
     const commandWithDescription: Command = {
       ...mockCommand,
       description: 'This is a test description',
@@ -74,146 +70,187 @@ describe('CommandResultItem', () => {
         id="command-test"
         command={commandWithDescription}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const description = screen.getByText('This is a test description')
     expect(description).toBeInTheDocument()
-    expect(description).toHaveClass('text-sm')
+    expect(description).toHaveClass('text-[12.5px]')
   })
 
-  test('selected state applies bg tint and 2px left-accent border', () => {
-    const mockOnSelect = vi.fn()
+  test('renders hint text when command.hint is present', () => {
+    const commandWithHint: Command = {
+      ...mockCommand,
+      hint: 'a helpful hint',
+    }
 
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={commandWithHint}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    const hint = screen.getByText('a helpful hint')
+    expect(hint).toBeInTheDocument()
+    expect(hint).toHaveClass('text-[11px]', 'text-on-surface-muted')
+  })
+
+  test('selected state applies bg tint and full-border accent', () => {
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const option = screen.getByRole('option')
     expect(option).toHaveClass('bg-primary-container/10')
-    expect(option).toHaveClass('border-l-2')
-    expect(option).toHaveClass('border-primary-container')
+    expect(option).toHaveClass('border-primary-container/25')
   })
 
   test('selected state applies filled icon variation', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const icon = screen.getByText('description')
     expect(icon).toHaveStyle({ fontVariationSettings: '"FILL" 1' })
-    expect(icon).toHaveClass('text-primary-container')
+    expect(icon).toHaveClass('text-primary')
   })
 
-  test('unselected state applies hover background and transparent left border placeholder', () => {
-    const mockOnSelect = vi.fn()
-
+  test('unselected state applies hover background and transparent border', () => {
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const option = screen.getByRole('option')
-    expect(option).toHaveClass('hover:bg-surface-container-highest/50')
+    expect(option).toHaveClass('hover:bg-surface-container-high/40')
     expect(option).not.toHaveClass('bg-primary-container/10')
-    expect(option).toHaveClass('border-l-2')
     expect(option).toHaveClass('border-transparent')
   })
 
   test('unselected state applies outlined icon variation', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
     const icon = screen.getByText('description')
     expect(icon).toHaveStyle({ fontVariationSettings: '"FILL" 0' })
-    expect(icon).toHaveClass('text-on-surface-variant')
+    expect(icon).toHaveClass('text-on-surface-muted')
   })
 
-  test('Enter badge visible when selected', () => {
-    const mockOnSelect = vi.fn()
+  test('renders shortcut chips when command.shortcut is present', () => {
+    const commandWithShortcut: Command = {
+      ...mockCommand,
+      shortcut: ['Ctrl', 'N'],
+    }
 
     render(
       <CommandResultItem
         id="command-test"
-        command={mockCommand}
-        isSelected
-        onSelect={mockOnSelect}
+        command={commandWithShortcut}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
-    const badge = screen.getByText('Enter')
-    expect(badge).toBeInTheDocument()
-    const icon = screen.getByText('keyboard_return')
-    expect(icon).toBeInTheDocument()
+    expect(screen.getByText('Ctrl')).toBeInTheDocument()
+    expect(screen.getByText('N')).toBeInTheDocument()
+    expect(screen.getByTestId('command-shortcut')).toBeInTheDocument()
   })
 
-  test('Enter badge hidden when not selected', () => {
-    const mockOnSelect = vi.fn()
-
+  test('renders nothing on the right when command has no shortcut', () => {
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
-    const badge = screen.getByText('Enter')
-    expect(badge).toBeInTheDocument()
+    expect(screen.queryByTestId('command-shortcut')).toBeNull()
   })
 
-  test('Enter badge includes keyboard_return icon', () => {
-    const mockOnSelect = vi.fn()
+  test('brightens shortcut chips on the active row', () => {
+    const commandWithShortcut: Command = {
+      ...mockCommand,
+      shortcut: ['Ctrl', 'N'],
+    }
 
     render(
       <CommandResultItem
         id="command-test"
-        command={mockCommand}
+        command={commandWithShortcut}
         isSelected
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
-    const icon = screen.getByText('keyboard_return')
-    expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('material-symbols-outlined')
+    const chip = screen.getByText('Ctrl')
+    expect(chip).toHaveClass('text-primary')
+    expect(chip).toHaveClass('border-primary-container/40')
+  })
+
+  test('idle shortcut chips use the muted tone', () => {
+    const commandWithShortcut: Command = {
+      ...mockCommand,
+      shortcut: ['Ctrl', 'N'],
+    }
+
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={commandWithShortcut}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    const chip = screen.getByText('Ctrl')
+    expect(chip).toHaveClass('text-on-surface-muted')
+    expect(chip).toHaveClass('bg-surface-container-lowest/60')
   })
 
   test('aria-selected is true when selected', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -222,14 +259,13 @@ describe('CommandResultItem', () => {
   })
 
   test('aria-selected is false when not selected', () => {
-    const mockOnSelect = vi.fn()
-
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -237,36 +273,71 @@ describe('CommandResultItem', () => {
     expect(option).toHaveAttribute('aria-selected', 'false')
   })
 
-  test('calls onSelect when clicked', async () => {
+  test('hover selects the row via onSelect', async () => {
     const user = userEvent.setup()
-
-    const mockOnSelect = vi.fn()
+    const onSelect = vi.fn()
+    const onExecute = vi.fn()
 
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={onSelect}
+        onExecute={onExecute}
       />
     )
 
-    const option = screen.getByRole('option')
+    await user.hover(screen.getByRole('option'))
 
-    await user.click(option)
-
-    expect(mockOnSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onExecute).not.toHaveBeenCalled()
   })
 
-  test('has cursor-pointer class', () => {
-    const mockOnSelect = vi.fn()
+  test('click runs the row via onExecute', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onExecute = vi.fn()
 
     render(
       <CommandResultItem
         id="command-test"
         command={mockCommand}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={onSelect}
+        onExecute={onExecute}
+      />
+    )
+
+    await user.click(screen.getByRole('option'))
+
+    expect(onExecute).toHaveBeenCalledTimes(1)
+  })
+
+  test('prevents default on mousedown to keep input focus', () => {
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={mockCommand}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
+      />
+    )
+
+    const notCancelled = fireEvent.mouseDown(screen.getByRole('option'))
+
+    expect(notCancelled).toBe(false)
+  })
+
+  test('has cursor-pointer class', () => {
+    render(
+      <CommandResultItem
+        id="command-test"
+        command={mockCommand}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 
@@ -275,8 +346,6 @@ describe('CommandResultItem', () => {
   })
 
   test('renders different icons correctly', () => {
-    const mockOnSelect = vi.fn()
-
     const commandWithDifferentIcon: Command = {
       ...mockCommand,
       icon: 'folder',
@@ -287,7 +356,8 @@ describe('CommandResultItem', () => {
         id="command-test"
         command={commandWithDifferentIcon}
         isSelected={false}
-        onSelect={mockOnSelect}
+        onSelect={vi.fn()}
+        onExecute={vi.fn()}
       />
     )
 

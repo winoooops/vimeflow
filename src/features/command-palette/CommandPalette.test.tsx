@@ -64,25 +64,45 @@ describe('CommandPalette', () => {
     expect(option).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('calls selectIndex when a result is clicked', async () => {
+  test('renders selected command argument placeholder while waiting for args', () => {
+    renderPalette({
+      state: { isOpen: true, query: ':rename-pane ' },
+      filteredResults: [
+        {
+          id: 'rename-pane',
+          label: ':rename-pane',
+          description: 'Rename pane',
+          icon: 'edit',
+          requiresArgument: true,
+          argumentPlaceholder: '<name>',
+        },
+      ],
+      clampedSelectedIndex: 0,
+    })
+
+    expect(screen.getByText('<name>')).toBeInTheDocument()
+  })
+
+  test('calls executeAt when a result is clicked', async () => {
     const user = userEvent.setup()
 
-    const { selectIndex } = renderPalette({
+    const { executeAt } = renderPalette({
       filteredResults: [sampleCommand],
       clampedSelectedIndex: 0,
     })
 
     await user.click(screen.getByRole('option', { name: /:help/i }))
 
-    expect(selectIndex).toHaveBeenCalledWith(0)
+    expect(executeAt).toHaveBeenCalledWith(0)
   })
 
   test('renders the footer and overlay z-index', () => {
     renderPalette()
 
-    expect(screen.getByText('Navigate')).toBeInTheDocument()
-    expect(screen.getByText('Select')).toBeInTheDocument()
-    expect(screen.getByText("Type '?' for help")).toBeInTheDocument()
+    // Footer uses KeyCap spans with unicode chars (↵ run / ↑↓ navigate)
+    expect(screen.getByText('↵')).toBeInTheDocument()
+    expect(screen.getByText('↑')).toBeInTheDocument()
+    expect(screen.queryByText("Type '?' for help")).toBeNull()
     expect(screen.getByRole('dialog')).toHaveClass('z-[100]')
   })
 
