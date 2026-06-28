@@ -57,7 +57,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 7        | 1    | 2026-06-28   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 84       | 38   | 2026-06-25   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 8        | 4    | 2026-06-28   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 9        | 4    | 2026-06-28   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 91   | 2026-06-28   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
@@ -71,7 +71,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
-| [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 9        | 4    | 2026-06-13   |
+| [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 10       | 4    | 2026-06-28   |
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
@@ -95,7 +95,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 7        | 7    | 2026-06-22   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 9        | 5    | 2026-06-28   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 10       | 5    | 2026-06-28   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 13       | 8    | 2026-06-28   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |

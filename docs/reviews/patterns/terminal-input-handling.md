@@ -88,3 +88,12 @@ double execution, and paste failures.
 - **Finding:** The native Ghostty restore path replayed restored buffered bytes and registered a pane-ready drain without using `offsetStart` and `byteLen`. If live subscription output and the mount-time drain overlapped, the native surface could receive the same PTY byte range twice.
 - **Fix:** Added a cursor initialized from `replayEndOffset`, threaded byte offsets through native output callbacks and pane-ready drains, and skipped any restored, live, or drained event whose `offsetStart` is behind the cursor.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Helper-mode native Ghostty input was broadcast to every BrowserWindow
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The Swift helper path forwarded raw terminal input by iterating every Electron `BrowserWindow`. Renderer-side pane filtering prevented command tracking from acting on unrelated panes, but sensitive keystrokes were still delivered to unrelated renderer processes.
+- **Fix:** Store the owning `BrowserWindow` from the validated update IPC event and send helper input only to that live window. Added regression tests for multi-window fan-out and destroyed-window behavior.
+- **Commit:** same commit as this entry

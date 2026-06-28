@@ -1,6 +1,11 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
 import { describe, expect, test } from 'vitest'
-import { isBounds, isRecord, isString } from './ghostty-native-shared'
+import {
+  isBounds,
+  isNonEmptyString,
+  isRecord,
+  isString,
+} from './ghostty-native-shared'
 
 describe('ghostty native shared guards', () => {
   test('validates bounds records', () => {
@@ -9,10 +14,12 @@ describe('ghostty native shared guards', () => {
     expect(isBounds(null)).toBe(false)
   })
 
-  test('validates non-array records and non-empty strings', () => {
+  test('validates non-array records and string guards', () => {
     expect(isRecord({ value: true })).toBe(true)
     expect(isRecord([])).toBe(false)
     expect(isString('pane-1')).toBe(true)
-    expect(isString('')).toBe(false)
+    expect(isString('')).toBe(true)
+    expect(isNonEmptyString('pane-1')).toBe(true)
+    expect(isNonEmptyString('')).toBe(false)
   })
 })

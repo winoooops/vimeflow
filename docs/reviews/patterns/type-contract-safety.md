@@ -105,3 +105,12 @@ expands.
 - **Finding:** `isNativePayload` covered every current Ghostty payload kind but had no default arm. If a new kind were added without updating the guard and `noImplicitReturns` did not catch it, the runtime path would return `undefined` and reject otherwise valid payloads with a misleading invalid-payload error.
 - **Fix:** Added an explicit `default: return false` branch so unknown or future kinds fail closed at runtime.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Shared Ghostty string guard conflated identity and cwd semantics
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-shared.ts`
+- **Finding:** The shared `isString` guard rejected empty strings and was reused for both identity fields and `cwd` in native Ghostty IPC update payloads. A valid startup update with `cwd: ''` could be rejected, causing the renderer to mark native Ghostty unavailable and fall back to xterm for that pane.
+- **Fix:** Split the guard into plain `isString` for path-like fields and `isNonEmptyString` for `sessionId`/`paneId`, then updated both helper and parent payload validators with regression coverage for empty cwd.
+- **Commit:** same commit as this entry

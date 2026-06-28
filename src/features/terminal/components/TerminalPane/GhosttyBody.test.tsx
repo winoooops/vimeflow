@@ -9,6 +9,7 @@ import {
   sendNativeGhosttyData,
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
+import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { GhosttyBody } from './GhosttyBody'
 
 const backendListeners = new Map<string, (payload: unknown) => void>()
@@ -80,6 +81,11 @@ vi.mock('../../nativeGhosttyClient', () => {
   }
 })
 
+vi.mock('../../ptySessionMap', () => ({
+  registerPtySession: vi.fn(),
+  unregisterPtySession: vi.fn(),
+}))
+
 const createService = (): ITerminalService =>
   ({
     onData: vi.fn(
@@ -143,6 +149,37 @@ describe('GhosttyBody', () => {
     unmount()
 
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
+  })
+
+  test('registers the pty session mapping while mounted', () => {
+    const { rerender, unmount } = render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    expect(registerPtySession).toHaveBeenCalledWith('pty-1', 'pty-1', '/tmp')
+
+    rerender(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/repo"
+        active
+        service={createService()}
+      />
+    )
+
+    expect(unregisterPtySession).toHaveBeenCalledWith('pty-1')
+    expect(registerPtySession).toHaveBeenCalledWith('pty-1', 'pty-1', '/repo')
+
+    unmount()
+
+    expect(unregisterPtySession).toHaveBeenLastCalledWith('pty-1')
   })
 
   test('reports unavailable when native update is disabled', async () => {

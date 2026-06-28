@@ -14,6 +14,7 @@ import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isBounds,
+  isNonEmptyString,
   isRecord,
   isString,
   type GhosttyNativeDataRequest,
@@ -136,7 +137,11 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
 function isPanePayload(
   value: unknown
 ): value is GhosttyNativePaneRequest & Record<string, unknown> {
-  return isRecord(value) && isString(value.sessionId) && isString(value.paneId)
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.sessionId) &&
+    isNonEmptyString(value.paneId)
+  )
 }
 
 export class GhosttyNativeParentController {

@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { listen } from '../../../../lib/backend'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
+import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   attachNativeGhosttyOutput,
@@ -95,6 +96,12 @@ export const GhosttyBody = ({
   useEffect(() => {
     onCwdChangeRef.current = onCwdChange
   }, [onCwdChange])
+
+  useEffect(() => {
+    registerPtySession(ptyId, ptyId, cwd)
+
+    return (): void => unregisterPtySession(ptyId)
+  }, [cwd, ptyId])
 
   useEffect(() => {
     if (

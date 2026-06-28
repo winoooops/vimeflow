@@ -14,6 +14,7 @@ import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isBounds,
+  isNonEmptyString,
   isRecord,
   isString,
   type GhosttyNativeBounds,
@@ -83,6 +84,8 @@ export class GhosttyNativeHelperController {
 
   private currentPane: GhosttyNativePaneRequest | null = null
 
+  private currentWindow: BrowserWindow | null = null
+
   private stdoutChunks: Buffer[] = []
 
   private stdoutLength = 0
@@ -147,6 +150,7 @@ export class GhosttyNativeHelperController {
       sessionId: payload.sessionId,
       paneId: payload.paneId,
     }
+    this.currentWindow = win
 
     this.getOrStartHelper().stdin.write(
       encodeFrame({
@@ -227,6 +231,7 @@ export class GhosttyNativeHelperController {
 
     if (this.matchesCurrentPane(payload)) {
       this.currentPane = null
+      this.currentWindow = null
       this.lastResize = null
       this.clearStdout()
       this.helper?.stdin.write(
@@ -287,6 +292,7 @@ export class GhosttyNativeHelperController {
     helper.on('exit', () => {
       this.helper = null
       this.currentPane = null
+      this.currentWindow = null
       this.clearStdout()
       this.lastResize = null
     })
@@ -356,8 +362,8 @@ export class GhosttyNativeHelperController {
       return
     }
 
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(BACKEND_EVENT, {
+    if (this.currentWindow && !this.currentWindow.isDestroyed()) {
+      this.currentWindow.webContents.send(BACKEND_EVENT, {
         event: 'ghostty-native-input',
         payload: { ...this.currentPane, data },
       })
@@ -396,6 +402,7 @@ export class GhosttyNativeHelperController {
     const helper = this.helper
     this.helper = null
     this.currentPane = null
+    this.currentWindow = null
     this.clearStdout()
     this.lastResize = null
 
@@ -498,8 +505,8 @@ function isGhosttyNativeUpdateRequest(
 ): value is GhosttyNativeUpdateRequest {
   return (
     isRecord(value) &&
-    isString(value.sessionId) &&
-    isString(value.paneId) &&
+    isNonEmptyString(value.sessionId) &&
+    isNonEmptyString(value.paneId) &&
     isString(value.cwd) &&
     isBounds(value.bounds) &&
     typeof value.visible === 'boolean'
@@ -511,8 +518,8 @@ function isGhosttyNativeDataRequest(
 ): value is GhosttyNativeDataRequest {
   return (
     isRecord(value) &&
-    isString(value.sessionId) &&
-    isString(value.paneId) &&
+    isNonEmptyString(value.sessionId) &&
+    isNonEmptyString(value.paneId) &&
     typeof value.data === 'string'
   )
 }
@@ -520,7 +527,11 @@ function isGhosttyNativeDataRequest(
 function isGhosttyNativePaneRequest(
   value: unknown
 ): value is GhosttyNativePaneRequest {
-  return isRecord(value) && isString(value.sessionId) && isString(value.paneId)
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.sessionId) &&
+    isNonEmptyString(value.paneId)
+  )
 }
 
 function helperPackageDir(): string {
