@@ -90,4 +90,33 @@ describe('TerminalBody', () => {
       expect(screen.getByTestId('xterm-body')).toBeInTheDocument()
     })
   })
+
+  test('falls back to xterm when imperative native focus rejects', async () => {
+    nativeMocks.focusNativeGhostty.mockRejectedValueOnce(
+      new Error('ipc unavailable')
+    )
+    const ref = { current: null as { focusTerminal: () => void } | null }
+
+    render(
+      <TerminalBody
+        ref={ref}
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        mode="attach"
+        deferFit={deferFit}
+        enableImagePaste={enableImagePaste}
+      />
+    )
+
+    act(() => {
+      ref.current?.focusTerminal()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('xterm-body')).toBeInTheDocument()
+    })
+  })
 })

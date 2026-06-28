@@ -241,8 +241,12 @@ export const GhosttyBody = ({
 
   const sendOutputToNative = useCallback(
     async (data: string): Promise<void> => {
-      const enabled = await sendNativeGhosttyData({ ...paneRef, data })
-      if (!enabled) {
+      try {
+        const enabled = await sendNativeGhosttyData({ ...paneRef, data })
+        if (!enabled) {
+          onUnavailable?.()
+        }
+      } catch {
         onUnavailable?.()
       }
     },
@@ -250,8 +254,12 @@ export const GhosttyBody = ({
   )
 
   const focusNativeSurface = useCallback(async (): Promise<void> => {
-    const enabled = await focusNativeGhostty(paneRef)
-    if (!enabled) {
+    try {
+      const enabled = await focusNativeGhostty(paneRef)
+      if (!enabled) {
+        onUnavailable?.()
+      }
+    } catch {
       onUnavailable?.()
     }
   }, [onUnavailable, paneRef])

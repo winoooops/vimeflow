@@ -128,8 +128,12 @@ export const attachNativeGhosttyOutput = async (
     }
 
     void (async (): Promise<void> => {
-      const enabled = await sendNativeGhosttyData({ ...request, data })
-      if (!enabled) {
+      try {
+        const enabled = await sendNativeGhosttyData({ ...request, data })
+        if (!enabled) {
+          options.onUnavailable?.()
+        }
+      } catch {
         options.onUnavailable?.()
       }
     })()

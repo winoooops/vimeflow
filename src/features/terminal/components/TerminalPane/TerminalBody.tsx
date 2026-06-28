@@ -73,11 +73,15 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       focusTerminal(): void {
         if (useNativeGhostty) {
           void (async (): Promise<void> => {
-            const enabled = await focusNativeGhostty({
-              sessionId: ptyId,
-              paneId,
-            })
-            if (!enabled) {
+            try {
+              const enabled = await focusNativeGhostty({
+                sessionId: ptyId,
+                paneId,
+              })
+              if (!enabled) {
+                handleNativeUnavailable()
+              }
+            } catch {
               handleNativeUnavailable()
             }
           })()

@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-28
-ref_count: 71
+ref_count: 72
 ---
 
 # Async Race Conditions
@@ -756,4 +756,19 @@ prevent showing previous data.
 - **Fix:** Added an atomic callback-release guard plus a mutex-protected TSFN
   acquire path. Input and resize callbacks now acquire a stable local TSFN before
   dispatch and release that per-call reference after the nonblocking call.
+- **Commit:** same commit as this entry
+
+### 75. Native Ghostty IPC rejections bypassed xterm fallback
+
+- **Source:** github-claude | PR #630 round 8 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty data and focus calls handled disabled responses,
+  but rejected IPC promises skipped `onUnavailable`. Startup, hot-reload, or
+  teardown races could leave the renderer in native mode with no working surface
+  instead of falling back to xterm.
+- **Fix:** Wrap native data/focus awaits in `try`/`catch` and call the existing
+  unavailable fallback on rejection, including the fire-and-forget output
+  forwarder and the imperative `TerminalBody` focus path. Added regression tests
+  for rejected data, focus, and output-forwarding IPC.
 - **Commit:** same commit as this entry

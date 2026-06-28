@@ -230,6 +230,58 @@ describe('GhosttyBody', () => {
     })
   })
 
+  test('reports unavailable when native data IPC rejects', async () => {
+    vi.mocked(sendNativeGhosttyData).mockRejectedValueOnce(
+      new Error('ipc unavailable')
+    )
+    const onUnavailable = vi.fn()
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        restoredFrom={{
+          sessionId: 'pty-1',
+          cwd: '/tmp',
+          pid: 42,
+          replayData: 'historical output',
+          replayEndOffset: 17,
+          bufferedEvents: [],
+        }}
+        onUnavailable={onUnavailable}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onUnavailable).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  test('reports unavailable when native focus IPC rejects', async () => {
+    vi.mocked(focusNativeGhostty).mockRejectedValueOnce(
+      new Error('ipc unavailable')
+    )
+    const onUnavailable = vi.fn()
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        onUnavailable={onUnavailable}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onUnavailable).toHaveBeenCalledTimes(1)
+    })
+  })
+
   test('writes restored replay output to the native pane', async () => {
     render(
       <GhosttyBody
