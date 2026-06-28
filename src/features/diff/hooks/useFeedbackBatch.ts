@@ -10,9 +10,8 @@ export interface ReviewComment {
 
 /**
  * Sentinel annotation id for the in-progress draft comment — the one the
- * composer is editing before it is committed to the batch. Shared so
- * DiffPanelContent and the dev demo both render the composer (not a row) for
- * it from a single definition.
+ * editor is editing before it is committed to the batch. DiffPanelContent
+ * renders the comment editor instead of a row from this single definition.
  */
 export const DRAFT_ID = '__draft__'
 

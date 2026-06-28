@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
 import { Popover } from '@/components/Popover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 
@@ -11,6 +11,10 @@ interface FinishFeedbackPopoverProps {
   onCancel: () => void
 }
 
+const isCapitalY = (event: KeyboardEvent): boolean =>
+  event.key === 'Y' ||
+  (event.shiftKey && (event.key.toLowerCase() === 'y' || event.code === 'KeyY'))
+
 export const FinishFeedbackPopover = ({
   anchor,
   result,
@@ -21,6 +25,34 @@ export const FinishFeedbackPopover = ({
 }: FinishFeedbackPopoverProps): ReactElement => {
   const commentWord = commentCount === 1 ? 'comment' : 'comments'
   const fileWord = fileCount === 1 ? 'file' : 'files'
+
+  useEffect((): (() => void) => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return
+      }
+
+      if (event.key === 'n') {
+        event.preventDefault()
+        event.stopPropagation()
+        onCancel()
+
+        return
+      }
+
+      if (isCapitalY(event) && result.kind === 'one') {
+        event.preventDefault()
+        event.stopPropagation()
+        onSend(result.pane)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown, { capture: true })
+
+    return (): void => {
+      document.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [onCancel, onSend, result])
 
   return (
     <Popover
@@ -50,10 +82,11 @@ export const FinishFeedbackPopover = ({
           <div className="flex justify-end">
             <button
               type="button"
+              aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
               className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
             >
-              Dismiss
+              Dismiss (n)
             </button>
           </div>
         </div>
@@ -68,17 +101,19 @@ export const FinishFeedbackPopover = ({
           <div className="flex justify-end gap-2">
             <button
               type="button"
+              aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
               className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
             >
-              Cancel
+              Cancel (n)
             </button>
             <button
               type="button"
+              aria-keyshortcuts="Y"
               onClick={(): void => onSend(result.pane)}
               className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80"
             >
-              Confirm
+              Confirm (Y)
             </button>
           </div>
         </div>
@@ -111,10 +146,11 @@ export const FinishFeedbackPopover = ({
           <div className="flex justify-end">
             <button
               type="button"
+              aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
               className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
             >
-              Cancel
+              Cancel (n)
             </button>
           </div>
         </div>

@@ -131,6 +131,18 @@ describe('CommitInfoPanel', () => {
     expect(mockProps.onSubmitReview).toHaveBeenCalledOnce()
   })
 
+  test('calls onSubmitReview when Y is pressed inside the panel', async () => {
+    const user = userEvent.setup()
+    const onSubmitReview = vi.fn()
+
+    render(<CommitInfoPanel {...mockProps} onSubmitReview={onSubmitReview} />)
+
+    screen.getByRole('button', { name: /submit review/i }).focus()
+    await user.keyboard('{Shift>}y{/Shift}')
+
+    expect(onSubmitReview).toHaveBeenCalledOnce()
+  })
+
   test('handles missing author avatar gracefully', () => {
     const propsWithoutAvatar = { ...mockProps, authorAvatar: undefined }
     render(<CommitInfoPanel {...propsWithoutAvatar} />)

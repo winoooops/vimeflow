@@ -2203,6 +2203,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     if (currentPendingPath) {
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(currentPendingPath)
         setFileError(null)
@@ -2258,6 +2260,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     try {
+      setDockTab('editor')
+      setIsDockOpen(true)
       await editorBuffer.openFile(target)
       setFileError(null)
     } catch (error: unknown) {
@@ -2387,6 +2391,9 @@ const WorkspaceViewContent = (): ReactElement => {
       writePty: async (ptyId: string, data: string): Promise<void> => {
         await terminalService.write({ sessionId: ptyId, data })
       },
+      focusTerminal: (): void => {
+        setTimeout(() => claimTerminal(), 0)
+      },
     }
   }, [
     activePtyBackedPane,
@@ -2396,6 +2403,7 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatus.isActive,
     agentStatus.agentExited,
     agentStatus.sessionId,
+    claimTerminal,
     terminalService,
   ])
 

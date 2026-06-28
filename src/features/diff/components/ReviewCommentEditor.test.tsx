@@ -1,12 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
-import { ReviewCommentComposer } from './ReviewCommentComposer'
+import {
+  ReviewCommentEditor,
+  moveTextareaCursorVertically,
+} from './ReviewCommentEditor'
 
-describe('ReviewCommentComposer', () => {
+describe('ReviewCommentEditor', () => {
   test('renders the "Local comment" header and the R-side line reference', () => {
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={190}
         side="additions"
         onConfirm={vi.fn()}
@@ -20,7 +23,7 @@ describe('ReviewCommentComposer', () => {
 
   test('renders the L-side line reference for a deletions-side comment', () => {
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={42}
         side="deletions"
         onConfirm={vi.fn()}
@@ -33,7 +36,7 @@ describe('ReviewCommentComposer', () => {
 
   test('renders the textarea pre-filled with initialText', () => {
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="pre-filled text"
@@ -49,7 +52,7 @@ describe('ReviewCommentComposer', () => {
     const user = userEvent.setup()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         onConfirm={vi.fn()}
@@ -57,7 +60,7 @@ describe('ReviewCommentComposer', () => {
       />
     )
 
-    const textarea = screen.getByRole('textbox')
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox')
     await user.type(textarea, 'hello world')
 
     expect(textarea).toHaveValue('hello world')
@@ -68,7 +71,7 @@ describe('ReviewCommentComposer', () => {
     const handleTextChange = vi.fn()
 
     const { rerender } = render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         value="draft"
@@ -85,7 +88,7 @@ describe('ReviewCommentComposer', () => {
     expect(textarea).toHaveValue('draft')
 
     rerender(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         value="draft!"
@@ -103,7 +106,7 @@ describe('ReviewCommentComposer', () => {
     const handleConfirm = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="  my comment  "
@@ -124,7 +127,7 @@ describe('ReviewCommentComposer', () => {
     const handleConfirm = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="line one"
@@ -141,12 +144,61 @@ describe('ReviewCommentComposer', () => {
     expect(textarea).toHaveValue('line one\n')
   })
 
+  test('Ctrl+J and Ctrl+K cursor movement keeps the current column', () => {
+    const textarea = document.createElement('textarea')
+    textarea.value = 'one\ntwo\nthree'
+    document.body.append(textarea)
+    textarea.setSelectionRange(1, 1)
+
+    moveTextareaCursorVertically(textarea, 1)
+    expect(textarea.selectionStart).toBe(5)
+
+    moveTextareaCursorVertically(textarea, -1)
+    expect(textarea.selectionStart).toBe(1)
+
+    textarea.remove()
+  })
+
+  test('Ctrl+J inserts a newline and Ctrl+K moves up when the browser reports code instead of key', () => {
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText={'one\ntwo\nthree'}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const textarea = screen.getByRole('textbox')
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error('Expected textarea')
+    }
+
+    textarea.setSelectionRange(1, 1)
+
+    fireEvent.keyDown(textarea, {
+      key: 'Unidentified',
+      code: 'KeyJ',
+      ctrlKey: true,
+    })
+    expect(textarea).toHaveValue('o\nne\ntwo\nthree')
+    expect(textarea.selectionStart).toBe(2)
+
+    fireEvent.keyDown(textarea, {
+      key: 'Unidentified',
+      code: 'KeyK',
+      ctrlKey: true,
+    })
+    expect(textarea.selectionStart).toBe(0)
+  })
+
   test('Escape calls onCancel', async () => {
     const user = userEvent.setup()
     const handleCancel = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="some text"
@@ -166,7 +218,7 @@ describe('ReviewCommentComposer', () => {
     const handleCancel = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         onConfirm={vi.fn()}
@@ -181,7 +233,7 @@ describe('ReviewCommentComposer', () => {
 
   test('Comment button is disabled when text is empty', () => {
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText=""
@@ -195,7 +247,7 @@ describe('ReviewCommentComposer', () => {
 
   test('Comment button is disabled when text is whitespace only', () => {
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="   "
@@ -212,7 +264,7 @@ describe('ReviewCommentComposer', () => {
     const handleConfirm = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="   "
@@ -232,7 +284,7 @@ describe('ReviewCommentComposer', () => {
     const handleConfirm = vi.fn()
 
     render(
-      <ReviewCommentComposer
+      <ReviewCommentEditor
         lineNumber={1}
         side="additions"
         initialText="valid comment"

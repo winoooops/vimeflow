@@ -49,6 +49,20 @@ describe('ToolWell', () => {
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 
+  test('staging tooltips show keyboard shortcuts', async () => {
+    const user = userEvent.setup()
+
+    renderWell({
+      onStage: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      onDiscard: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    })
+
+    await user.hover(screen.getByRole('button', { name: /^stage$/i }))
+
+    expect(await screen.findByText('Stage hunk')).toBeInTheDocument()
+    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('s')
+  })
+
   test('staging buttons render as placeholders when no handlers provided', () => {
     renderWell()
 

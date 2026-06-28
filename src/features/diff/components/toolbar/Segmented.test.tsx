@@ -34,6 +34,26 @@ describe('Segmented', () => {
     expect(handleChange).toHaveBeenCalledWith('unified')
   })
 
+  test('renders tooltip shortcut chips when provided', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Segmented
+        value="split"
+        options={['split', 'unified'] as const}
+        onChange={vi.fn()}
+        shortcuts={{ split: 't', unified: 't' }}
+      />
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'split' }))
+
+    expect(
+      await screen.findByText('Toggle split/unified view')
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('t')
+  })
+
   test('clicking the active option still calls onChange with the same value', async () => {
     const user = userEvent.setup()
     const handleChange = vi.fn()

@@ -84,6 +84,19 @@ const CommitInfoPanel = ({
     <aside
       role="complementary"
       aria-label="Commit info panel"
+      onKeyDownCapture={(event): void => {
+        if (
+          (event.key === 'Y' ||
+            (event.shiftKey && event.key.toLowerCase() === 'y')) &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+          onSubmitReview()
+        }
+      }}
       className={`w-[320px] h-screen fixed right-0 top-0 bg-surface-container-low border-l border-outline-variant/15 z-40 overflow-y-auto transition-all duration-300 ${
         isOpen ? '' : 'translate-x-full'
       }`}
@@ -173,10 +186,12 @@ const CommitInfoPanel = ({
 
         {/* Submit Review CTA */}
         <button
+          type="button"
+          aria-keyshortcuts="Y"
           onClick={onSubmitReview}
           className="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-medium py-3 px-4 rounded-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-shadow"
         >
-          Submit Review
+          Submit Review (Y)
         </button>
       </div>
     </aside>

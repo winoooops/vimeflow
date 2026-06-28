@@ -7,6 +7,7 @@ import {
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 
 // Shared icon-button base for every button inside the tool-well (and the
 // discard-all button the parent renders into the `discardAllSlot`, so the
@@ -77,16 +78,18 @@ const WellButton = ({
   icon,
   label,
   tooltip,
+  shortcut = undefined,
   onClick,
   disabled,
 }: {
   icon: string
   label: string
   tooltip: string
+  shortcut?: ShortcutInput
   onClick: () => void
   disabled: boolean
 }): ReactElement => (
-  <Tooltip content={tooltip}>
+  <Tooltip content={tooltip} shortcut={shortcut}>
     <IconButton
       icon={icon}
       label={label}
@@ -141,6 +144,7 @@ export const ToolWell = ({
         icon="add_box"
         label="stage"
         tooltip="Stage hunk"
+        shortcut="s"
         onClick={(): void => {
           void onStage()
         }}
@@ -157,6 +161,7 @@ export const ToolWell = ({
           icon="indeterminate_check_box"
           label="unstage"
           tooltip="Unstage"
+          shortcut="s"
           onClick={(): void => {
             void onUnstage()
           }}
@@ -173,6 +178,7 @@ export const ToolWell = ({
         icon="backspace"
         label="discard"
         tooltip="Discard hunk"
+        shortcut="d"
         onClick={(): void => {
           void onDiscard()
         }}

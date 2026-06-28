@@ -278,7 +278,11 @@ export const DiffChipToolbar = ({
   // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
-      <Tooltip content="Discard all changes" disabled={discardAllOpen}>
+      <Tooltip
+        content="Discard all changes"
+        shortcut="D"
+        disabled={discardAllOpen}
+      >
         <span>
           <IconButton
             ref={setDiscardAllAnchor}
@@ -348,6 +352,7 @@ export const DiffChipToolbar = ({
       options={['split', 'unified'] as const}
       onChange={onDiffStyleChange}
       icons={{ split: 'vertical_split', unified: 'view_headline' }}
+      shortcuts={{ split: 't', unified: 't' }}
     />,
     // hairline between the view-mode control and the navigation cluster.
     <ToolbarSeparator key="sep-nav" />,
@@ -485,6 +490,7 @@ export const DiffChipToolbar = ({
             <button
               type="button"
               aria-label={`finish feedback (${feedbackCount})`}
+              aria-keyshortcuts="Y"
               disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
               className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -495,7 +501,7 @@ export const DiffChipToolbar = ({
               >
                 check
               </span>
-              Finish
+              Finish (Y)
               <Chip
                 tone="custom"
                 radius="pill"

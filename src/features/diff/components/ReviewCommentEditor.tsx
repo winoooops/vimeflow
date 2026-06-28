@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { AnnotationSide } from '@pierre/diffs'
 
-interface ReviewCommentComposerProps {
+interface ReviewCommentEditorProps {
   /** 1-based line number the comment is anchored to. */
   lineNumber: number
   /** Which side of the diff the line lives on (additions => R, deletions => L). */
@@ -13,11 +13,75 @@ interface ReviewCommentComposerProps {
   onCancel: () => void
 }
 
-// Codex-style inline comment composer. Rendered in Pierre's annotation slot
+export const moveTextareaCursorVertically = (
+  textarea: HTMLTextAreaElement,
+  direction: -1 | 1
+): void => {
+  const { value, selectionStart } = textarea
+  const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1
+  const column = selectionStart - lineStart
+
+  if (direction < 0) {
+    if (lineStart === 0) {
+      return
+    }
+
+    const previousLineEnd = lineStart - 1
+    const previousLineStart = value.lastIndexOf('\n', previousLineEnd - 1) + 1
+    const next = Math.min(previousLineStart + column, previousLineEnd)
+    textarea.setSelectionRange(next, next)
+
+    return
+  }
+
+  const lineEnd = value.indexOf('\n', selectionStart)
+  if (lineEnd === -1) {
+    return
+  }
+
+  const nextLineStart = lineEnd + 1
+  const nextLineEndIndex = value.indexOf('\n', nextLineStart)
+
+  const nextLineEnd = nextLineEndIndex === -1 ? value.length : nextLineEndIndex
+
+  const next = Math.min(nextLineStart + column, nextLineEnd)
+  textarea.setSelectionRange(next, next)
+}
+
+const isCtrlTextNavigation = (
+  event: Pick<
+    KeyboardEvent,
+    'altKey' | 'code' | 'ctrlKey' | 'key' | 'keyCode' | 'metaKey'
+  >,
+  key: 'j' | 'k'
+): boolean =>
+  event.ctrlKey &&
+  !event.metaKey &&
+  !event.altKey &&
+  (event.key.toLowerCase() === key ||
+    (key === 'j' && event.key === 'Enter') ||
+    event.code === `Key${key.toUpperCase()}` ||
+    event.keyCode === (key === 'j' ? 10 : 11) ||
+    event.keyCode === key.toUpperCase().charCodeAt(0))
+
+const insertTextareaNewline = (
+  textarea: HTMLTextAreaElement,
+  updateText: (next: string) => void
+): void => {
+  const { selectionStart, selectionEnd, value } = textarea
+  const next = `${value.slice(0, selectionStart)}\n${value.slice(selectionEnd)}`
+  const nextCursor = selectionStart + 1
+
+  textarea.value = next
+  updateText(next)
+  textarea.setSelectionRange(nextCursor, nextCursor)
+}
+
+// Codex-style inline comment editor. Rendered in Pierre's annotation slot
 // (full-width, below the target line) rather than as a floating popover, so it
 // sits in the diff flow and never chases the cursor. Enter submits, Shift+Enter
 // inserts a newline, Escape cancels.
-export const ReviewCommentComposer = ({
+export const ReviewCommentEditor = ({
   lineNumber,
   side,
   initialText = '',
@@ -25,7 +89,7 @@ export const ReviewCommentComposer = ({
   onTextChange = undefined,
   onConfirm,
   onCancel,
-}: ReviewCommentComposerProps): ReactElement => {
+}: ReviewCommentEditorProps): ReactElement => {
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const text = value ?? uncontrolledText
@@ -81,8 +145,24 @@ export const ReviewCommentComposer = ({
         ref={textareaRef}
         value={text}
         onChange={(e): void => updateText(e.target.value)}
-        onKeyDown={(e): void => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+        onKeyDownCapture={(e): void => {
+          if (isCtrlTextNavigation(e, 'j')) {
+            e.preventDefault()
+            e.stopPropagation()
+            insertTextareaNewline(e.currentTarget, updateText)
+
+            return
+          }
+
+          if (isCtrlTextNavigation(e, 'k')) {
+            e.preventDefault()
+            e.stopPropagation()
+            moveTextareaCursorVertically(e.currentTarget, -1)
+
+            return
+          }
+
+          if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
             e.preventDefault()
             submit()
           } else if (e.key === 'Escape') {

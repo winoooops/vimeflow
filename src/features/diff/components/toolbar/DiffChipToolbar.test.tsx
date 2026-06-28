@@ -712,6 +712,7 @@ describe('DiffChipToolbar', () => {
       name: /finish feedback \(3\)/i,
     })
     expect(finish).toBeInTheDocument()
+    expect(finish).toHaveAttribute('aria-keyshortcuts', 'Y')
     // The count pill surfaces the number on the button text.
     expect(finish).toHaveTextContent('3')
 
