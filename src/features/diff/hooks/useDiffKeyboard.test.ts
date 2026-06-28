@@ -1,299 +1,286 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
+import { createRef, type RefObject } from 'react'
 import { useDiffKeyboard, type UseDiffKeyboardOptions } from './useDiffKeyboard'
 
+const dispatch = (
+  key: string,
+  target?: Element,
+  init: KeyboardEventInit = {}
+): KeyboardEvent & {
+  preventDefaultSpy: ReturnType<typeof vi.spyOn>
+  stopPropagationSpy: ReturnType<typeof vi.spyOn>
+} => {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  })
+  const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+  const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+  if (target) {
+    target.dispatchEvent(event)
+  } else {
+    document.dispatchEvent(event)
+  }
+
+  return Object.assign(event, {
+    preventDefaultSpy,
+    stopPropagationSpy,
+  })
+}
+
+const appendDiffRoot = (): {
+  root: HTMLDivElement
+  ref: RefObject<HTMLElement | null>
+} => {
+  const panel = document.createElement('div')
+  panel.setAttribute('data-testid', 'diff-panel')
+  const root = document.createElement('div')
+  root.tabIndex = -1
+  panel.appendChild(root)
+  document.body.appendChild(panel)
+  root.focus()
+
+  return {
+    root,
+    ref: { current: root },
+  }
+}
+
+const renderKeyboard = (
+  overrides: Partial<UseDiffKeyboardOptions> = {}
+): {
+  root: HTMLDivElement
+  props: UseDiffKeyboardOptions
+  unmount: () => void
+} => {
+  const { root, ref } = appendDiffRoot()
+
+  const props: UseDiffKeyboardOptions = {
+    enabled: true,
+    rootRef: ref,
+    confirming: false,
+    onMoveLine: vi.fn(),
+    onScrollPage: vi.fn(),
+    onPreviousFile: vi.fn(),
+    onNextFile: vi.fn(),
+    onComment: vi.fn(),
+    onStageHunk: vi.fn(),
+    onDiscardHunk: vi.fn(),
+    onDiscardFile: vi.fn(),
+    onToggleView: vi.fn(),
+    onConfirm: vi.fn(),
+    onCancelConfirm: vi.fn(),
+    ...overrides,
+  }
+  const { unmount } = renderHook(() => useDiffKeyboard(props))
+
+  return { root, props, unmount }
+}
+
 describe('useDiffKeyboard', () => {
-  let mockHandlers: UseDiffKeyboardOptions
-
   beforeEach(() => {
-    mockHandlers = {
-      focusTarget: 'fileList',
-      filesCount: 4,
-      selectedFileIndex: 0,
-      focusedHunkIndex: 0,
-      focusedLineIndex: 0,
-      totalHunks: 2,
-      totalLinesInHunk: 10,
-      onSelectFile: vi.fn(),
-      onOpenFile: vi.fn(),
-      onFocusHunk: vi.fn(),
-      onFocusLine: vi.fn(),
-      onStage: vi.fn(),
-      onDiscard: vi.fn(),
-      onToggleStagedFilter: vi.fn(),
-      onSetFocusTarget: vi.fn(),
+    document.body.innerHTML = ''
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  test('j and k move the selected line down and up', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('j')
+    dispatch('k')
+
+    expect(props.onMoveLine).toHaveBeenNthCalledWith(1, 1)
+    expect(props.onMoveLine).toHaveBeenNthCalledWith(2, -1)
+  })
+
+  test('n and p navigate files', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('n')
+    dispatch('p')
+
+    expect(props.onNextFile).toHaveBeenCalledOnce()
+    expect(props.onPreviousFile).toHaveBeenCalledOnce()
+  })
+
+  test('c opens comment composer for the selected line', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('c')
+
+    expect(props.onComment).toHaveBeenCalledOnce()
+  })
+
+  test('s, d, and D request keyboard confirmations for hunk/file actions', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('s')
+    dispatch('d')
+    dispatch('D')
+
+    expect(props.onStageHunk).toHaveBeenCalledOnce()
+    expect(props.onDiscardHunk).toHaveBeenCalledOnce()
+    expect(props.onDiscardFile).toHaveBeenCalledOnce()
+  })
+
+  test('t toggles split/unified view', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('t')
+
+    expect(props.onToggleView).toHaveBeenCalledOnce()
+  })
+
+  test('Ctrl+D and Ctrl+U scroll the current file', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('d', undefined, { ctrlKey: true })
+    dispatch('u', undefined, { ctrlKey: true })
+
+    expect(props.onScrollPage).toHaveBeenNthCalledWith(1, 1)
+    expect(props.onScrollPage).toHaveBeenNthCalledWith(2, -1)
+  })
+
+  test('y and n confirm or cancel while a keyboard confirmation is open', () => {
+    const { props } = renderKeyboard({ confirming: true })
+
+    dispatch('y')
+    dispatch('n')
+
+    expect(props.onConfirm).toHaveBeenCalledOnce()
+    expect(props.onCancelConfirm).toHaveBeenCalledOnce()
+    expect(props.onNextFile).not.toHaveBeenCalled()
+  })
+
+  test('handled shortcuts prevent default and stop propagation', () => {
+    renderKeyboard()
+
+    const event = dispatch('j')
+
+    expect(event.preventDefaultSpy).toHaveBeenCalledOnce()
+    expect(event.stopPropagationSpy).toHaveBeenCalledOnce()
+  })
+
+  test('does nothing when disabled', () => {
+    const { props } = renderKeyboard({ enabled: false })
+
+    dispatch('j')
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores events when diff root does not own focus', () => {
+    const { props } = renderKeyboard()
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+
+    dispatch('j', outside)
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores keyboard events in text inputs', () => {
+    const { props, root } = renderKeyboard()
+    const input = document.createElement('input')
+    root.appendChild(input)
+    input.focus()
+
+    dispatch('j', input)
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores keyboard events in textarea elements', () => {
+    const { props, root } = renderKeyboard()
+    const textarea = document.createElement('textarea')
+    root.appendChild(textarea)
+    textarea.focus()
+
+    dispatch('j', textarea)
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores keyboard events in contenteditable elements', () => {
+    const { props, root } = renderKeyboard()
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    root.appendChild(editable)
+    editable.focus()
+
+    dispatch('j', editable)
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores shortcuts while a dialog is open', () => {
+    const { props } = renderKeyboard()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+
+    dispatch('j')
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('ignores shortcuts from terminal zone and CodeMirror', () => {
+    const { props } = renderKeyboard()
+
+    const terminal = document.createElement('div')
+    terminal.setAttribute('data-container-id', 'terminal')
+    document.body.appendChild(terminal)
+    terminal.focus()
+    dispatch('j', terminal)
+
+    const cm = document.createElement('div')
+    cm.className = 'cm-editor'
+    document.body.appendChild(cm)
+    cm.focus()
+    dispatch('k', cm)
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('unmount removes listener', () => {
+    const { props, unmount } = renderKeyboard()
+
+    unmount()
+    dispatch('j')
+
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  test('null root ref is ignored', () => {
+    const props: UseDiffKeyboardOptions = {
+      enabled: true,
+      rootRef: createRef<HTMLElement>(),
+      confirming: false,
+      onMoveLine: vi.fn(),
+      onScrollPage: vi.fn(),
+      onPreviousFile: vi.fn(),
+      onNextFile: vi.fn(),
+      onComment: vi.fn(),
+      onStageHunk: vi.fn(),
+      onDiscardHunk: vi.fn(),
+      onDiscardFile: vi.fn(),
+      onToggleView: vi.fn(),
+      onConfirm: vi.fn(),
+      onCancelConfirm: vi.fn(),
     }
-  })
 
-  describe('File List Focus Mode', () => {
-    test('navigates down with j key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
+    renderHook(() => useDiffKeyboard(props))
+    dispatch('j')
 
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(1)
-    })
-
-    test('navigates down with ArrowDown key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(1)
-    })
-
-    test('navigates up with k key', () => {
-      mockHandlers.selectedFileIndex = 2
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(1)
-    })
-
-    test('navigates up with ArrowUp key', () => {
-      mockHandlers.selectedFileIndex = 2
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(1)
-    })
-
-    test('clamps navigation at bottom', () => {
-      mockHandlers.selectedFileIndex = 3 // last file
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(3) // stays at 3
-    })
-
-    test('clamps navigation at top', () => {
-      mockHandlers.selectedFileIndex = 0 // first file
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k' }))
-
-      expect(mockHandlers.onSelectFile).toHaveBeenCalledWith(0) // stays at 0
-    })
-
-    test('opens file with Enter and switches focus', () => {
-      mockHandlers.selectedFileIndex = 1
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
-
-      expect(mockHandlers.onOpenFile).toHaveBeenCalledWith(1)
-      expect(mockHandlers.onSetFocusTarget).toHaveBeenCalledWith('diffViewer')
-    })
-
-    test('stages file with Space key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }))
-
-      expect(mockHandlers.onStage).toHaveBeenCalled()
-    })
-
-    test('discards file with d key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }))
-
-      expect(mockHandlers.onDiscard).toHaveBeenCalled()
-    })
-  })
-
-  describe('Diff Viewer Focus Mode', () => {
-    beforeEach(() => {
-      mockHandlers.focusTarget = 'diffViewer'
-    })
-
-    test('navigates down lines with j key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(1)
-    })
-
-    test('navigates down lines with ArrowDown key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(1)
-    })
-
-    test('navigates up lines with k key', () => {
-      mockHandlers.focusedLineIndex = 5
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(4)
-    })
-
-    test('navigates up lines with ArrowUp key', () => {
-      mockHandlers.focusedLineIndex = 5
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(4)
-    })
-
-    test('navigates to previous hunk with ArrowLeft', () => {
-      mockHandlers.focusedHunkIndex = 1
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
-
-      expect(mockHandlers.onFocusHunk).toHaveBeenCalledWith(0)
-    })
-
-    test('navigates to next hunk with ArrowRight', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'ArrowRight' })
-      )
-
-      expect(mockHandlers.onFocusHunk).toHaveBeenCalledWith(1)
-    })
-
-    test('clamps hunk navigation at start', () => {
-      mockHandlers.focusedHunkIndex = 0
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
-
-      expect(mockHandlers.onFocusHunk).toHaveBeenCalledWith(0) // stays at 0
-    })
-
-    test('clamps hunk navigation at end', () => {
-      mockHandlers.focusedHunkIndex = 1 // last hunk (totalHunks = 2)
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'ArrowRight' })
-      )
-
-      expect(mockHandlers.onFocusHunk).toHaveBeenCalledWith(1) // stays at 1
-    })
-
-    test('clamps line navigation at start', () => {
-      mockHandlers.focusedLineIndex = 0
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(0)
-    })
-
-    test('clamps line navigation at end', () => {
-      mockHandlers.focusedLineIndex = 9 // last line (totalLinesInHunk = 10)
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
-
-      expect(mockHandlers.onFocusLine).toHaveBeenCalledWith(9)
-    })
-
-    test('stages current hunk with Space key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }))
-
-      expect(mockHandlers.onStage).toHaveBeenCalled()
-    })
-
-    test('discards current hunk with d key', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }))
-
-      expect(mockHandlers.onDiscard).toHaveBeenCalled()
-    })
-
-    test('returns to file list with Escape', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-
-      expect(mockHandlers.onSetFocusTarget).toHaveBeenCalledWith('fileList')
-    })
-  })
-
-  describe('Global Behaviors', () => {
-    test('does not trap Tab key (allows native focus navigation)', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
-
-      expect(mockHandlers.onToggleStagedFilter).not.toHaveBeenCalled()
-    })
-
-    test('ignores keyboard events in input elements', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      const input = document.createElement('input')
-      document.body.appendChild(input)
-
-      const event = new KeyboardEvent('keydown', { key: 'j', bubbles: true })
-      Object.defineProperty(event, 'target', { value: input })
-
-      input.dispatchEvent(event)
-
-      expect(mockHandlers.onSelectFile).not.toHaveBeenCalled()
-
-      document.body.removeChild(input)
-    })
-
-    test('ignores keyboard events in textarea elements', () => {
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      const textarea = document.createElement('textarea')
-      document.body.appendChild(textarea)
-
-      const event = new KeyboardEvent('keydown', { key: 'j', bubbles: true })
-      Object.defineProperty(event, 'target', { value: textarea })
-
-      textarea.dispatchEvent(event)
-
-      expect(mockHandlers.onSelectFile).not.toHaveBeenCalled()
-
-      document.body.removeChild(textarea)
-    })
-  })
-
-  describe('Cleanup', () => {
-    test('removes event listener on unmount', () => {
-      const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener')
-
-      const { unmount } = renderHook(() => useDiffKeyboard(mockHandlers))
-
-      unmount()
-
-      expect(removeEventListenerSpy).toHaveBeenCalledWith(
-        'keydown',
-        expect.any(Function)
-      )
-
-      removeEventListenerSpy.mockRestore()
-    })
+    expect(props.onMoveLine).not.toHaveBeenCalled()
   })
 })

@@ -1,150 +1,175 @@
-import { useEffect } from 'react'
-import type { DiffFocusTarget } from '../types'
+import { useEffect, type RefObject } from 'react'
+import {
+  DIALOG_SELECTOR,
+  TERMINAL_CONTAINER_ID,
+} from '../../workspace/containerIds'
 
 export interface UseDiffKeyboardOptions {
-  focusTarget: DiffFocusTarget
-  filesCount: number
-  selectedFileIndex: number
-  focusedHunkIndex: number
-  focusedLineIndex: number
-  totalHunks: number
-  totalLinesInHunk: number
-  onSelectFile: (index: number) => void
-  onOpenFile: (index: number) => void
-  onFocusHunk: (index: number) => void
-  onFocusLine: (index: number) => void
-  onStage: () => void
-  onDiscard: () => void
-  onToggleStagedFilter: () => void
-  onSetFocusTarget: (target: DiffFocusTarget) => void
+  enabled: boolean
+  rootRef: RefObject<HTMLElement | null>
+  confirming: boolean
+  onMoveLine: (delta: number) => void
+  onScrollPage: (direction: number) => void
+  onPreviousFile: () => void
+  onNextFile: () => void
+  onComment: () => void
+  onStageHunk: () => void
+  onDiscardHunk: () => void
+  onDiscardFile: () => void
+  onToggleView: () => void
+  onConfirm: () => void
+  onCancelConfirm: () => void
 }
 
-/**
- * Hook for lazygit-style keyboard navigation in the diff viewer
- * Handles j/k navigation, space to stage, d to discard, etc.
- */
+const isTextEntry = (target: Element): boolean =>
+  !!target.closest('input, textarea, [contenteditable], [role="textbox"]')
+
+const isDiffScopeActive = (
+  root: HTMLElement,
+  target: Element,
+  activeElement: Element
+): boolean => {
+  const diffPanel = root.closest('[data-testid="diff-panel"]')
+
+  if (diffPanel) {
+    return diffPanel.contains(target) || diffPanel.contains(activeElement)
+  }
+
+  return root.contains(target) || root.contains(activeElement)
+}
+
+/** Focus-scoped keyboard shortcuts for the git diff viewer. */
 export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
   const {
-    focusTarget,
-    filesCount,
-    selectedFileIndex,
-    focusedHunkIndex,
-    focusedLineIndex,
-    totalHunks,
-    totalLinesInHunk,
-    onSelectFile,
-    onOpenFile,
-    onFocusHunk,
-    onFocusLine,
-    onStage,
-    onDiscard,
-    onToggleStagedFilter,
-    onSetFocusTarget,
+    enabled,
+    rootRef,
+    confirming,
+    onMoveLine,
+    onScrollPage,
+    onPreviousFile,
+    onNextFile,
+    onComment,
+    onStageHunk,
+    onDiscardHunk,
+    onDiscardFile,
+    onToggleView,
+    onConfirm,
+    onCancelConfirm,
   } = options
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Ignore keyboard events when focus is in input/textarea
-      const target = event.target as HTMLElement
+      if (!enabled) {
+        return
+      }
+
+      const root = rootRef.current
+      if (!root) {
+        return
+      }
+
+      const target =
+        event.target instanceof Element
+          ? event.target
+          : document.activeElement instanceof Element
+            ? document.activeElement
+            : document.body
+
+      const activeElement =
+        document.activeElement instanceof Element
+          ? document.activeElement
+          : target
+
+      if (confirming) {
+        const key = event.key.toLowerCase()
+
+        const handler =
+          key === 'y' ? onConfirm : key === 'n' ? onCancelConfirm : null
+
+        if (
+          handler !== null &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+          handler()
+        }
+
+        return
+      }
+
+      if (document.querySelector(DIALOG_SELECTOR)) {
+        return
+      }
+
       if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        !isDiffScopeActive(root, target, activeElement) ||
+        isTextEntry(target) ||
+        isTextEntry(activeElement) ||
+        !!target.closest(`[data-container-id="${TERMINAL_CONTAINER_ID}"]`) ||
+        !!target.closest('.cm-editor')
       ) {
         return
       }
 
-      const key = event.key
+      if (event.ctrlKey && !event.metaKey && !event.altKey) {
+        const key = event.key.toLowerCase()
+        const direction = key === 'd' ? 1 : key === 'u' ? -1 : 0
 
-      // File list focus mode
-      if (focusTarget === 'fileList') {
-        if (key === 'j' || key === 'ArrowDown') {
+        if (direction !== 0) {
           event.preventDefault()
-          if (filesCount > 0) {
-            const nextIndex = Math.min(selectedFileIndex + 1, filesCount - 1)
-            onSelectFile(nextIndex)
-          }
-        } else if (key === 'k' || key === 'ArrowUp') {
-          event.preventDefault()
-          if (filesCount > 0) {
-            const prevIndex = Math.max(selectedFileIndex - 1, 0)
-            onSelectFile(prevIndex)
-          }
-        } else if (key === 'Enter') {
-          event.preventDefault()
-          if (filesCount > 0) {
-            onOpenFile(selectedFileIndex)
-            onSetFocusTarget('diffViewer')
-          }
-        } else if (key === ' ') {
-          event.preventDefault()
-          onStage()
-        } else if (key === 'd') {
-          event.preventDefault()
-          onDiscard()
+          event.stopPropagation()
+          onScrollPage(direction)
         }
-      } else {
-        // Diff viewer focus mode
-        if (key === 'j' || key === 'ArrowDown') {
-          event.preventDefault()
-          if (totalLinesInHunk > 0) {
-            const nextLine = Math.min(
-              focusedLineIndex + 1,
-              totalLinesInHunk - 1
-            )
-            onFocusLine(nextLine)
-          }
-        } else if (key === 'k' || key === 'ArrowUp') {
-          event.preventDefault()
-          if (totalLinesInHunk > 0) {
-            const prevLine = Math.max(focusedLineIndex - 1, 0)
-            onFocusLine(prevLine)
-          }
-        } else if (key === 'ArrowLeft') {
-          event.preventDefault()
-          if (totalHunks > 0) {
-            const prevHunk = Math.max(focusedHunkIndex - 1, 0)
-            onFocusHunk(prevHunk)
-          }
-        } else if (key === 'ArrowRight') {
-          event.preventDefault()
-          if (totalHunks > 0) {
-            const nextHunk = Math.min(focusedHunkIndex + 1, totalHunks - 1)
-            onFocusHunk(nextHunk)
-          }
-        } else if (key === ' ') {
-          event.preventDefault()
-          onStage()
-        } else if (key === 'd') {
-          event.preventDefault()
-          onDiscard()
-        } else if (key === 'Escape') {
-          event.preventDefault()
-          onSetFocusTarget('fileList')
-        }
+
+        return
+      }
+
+      if (event.metaKey || event.altKey || event.ctrlKey) {
+        return
+      }
+
+      const handlers: Partial<Record<string, () => void>> = {
+        j: () => onMoveLine(1),
+        k: () => onMoveLine(-1),
+        n: onNextFile,
+        p: onPreviousFile,
+        c: onComment,
+        s: onStageHunk,
+        d: onDiscardHunk,
+        D: onDiscardFile,
+        t: onToggleView,
+      }
+
+      const handler = handlers[event.key]
+      if (handler) {
+        event.preventDefault()
+        event.stopPropagation()
+        handler()
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
-      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
   }, [
-    focusTarget,
-    filesCount,
-    selectedFileIndex,
-    focusedHunkIndex,
-    focusedLineIndex,
-    totalHunks,
-    totalLinesInHunk,
-    onSelectFile,
-    onOpenFile,
-    onFocusHunk,
-    onFocusLine,
-    onStage,
-    onDiscard,
-    onToggleStagedFilter,
-    onSetFocusTarget,
+    enabled,
+    rootRef,
+    confirming,
+    onMoveLine,
+    onScrollPage,
+    onPreviousFile,
+    onNextFile,
+    onComment,
+    onStageHunk,
+    onDiscardHunk,
+    onDiscardFile,
+    onToggleView,
+    onConfirm,
+    onCancelConfirm,
   ])
 }

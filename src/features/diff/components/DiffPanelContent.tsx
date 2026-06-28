@@ -1,5 +1,6 @@
 import {
   type ReactElement,
+  type PointerEvent as ReactPointerEvent,
   useState,
   useEffect,
   useCallback,
@@ -42,8 +43,10 @@ import {
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import { ReviewCommentRow } from './ReviewCommentRow'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
+import { useDiffKeyboard } from '../hooks/useDiffKeyboard'
 import { IconButton } from '@/components/IconButton'
-import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import { Button } from '@/components/Button'
+import { Popover } from '@/components/Popover'
 import {
   dispatchFeedbackBatch,
   type DispatchEntry,
@@ -62,6 +65,9 @@ type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
 type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
 type Overflow = NonNullable<BaseDiffOptions['overflow']>
 type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
+
+const DIFF_NATIVE_FOCUS_SELECTOR =
+  'button, input, textarea, select, [contenteditable], [role="textbox"]'
 
 // The subset of Pierre options the worker pool OWNS once a pool is active:
 // the Shiki `theme` and the intra-line word-diff algorithm (`lineDiffType`).
@@ -127,6 +133,14 @@ interface ComposerTarget {
   editId?: string
 }
 
+interface KeyboardLineTarget {
+  lineNumber: number
+  side: AnnotationSide
+  hunkIndex: number
+}
+
+type KeyboardConfirmAction = 'stage-hunk' | 'discard-hunk' | 'discard-file'
+
 const composerTargetKey = (target: ComposerTarget): string =>
   `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
     target.editId ?? 'draft'
@@ -174,6 +188,83 @@ const diffContainsComposerTarget = (
   }
 
   return false
+}
+
+const keyboardLineTargetsForDiff = (
+  fileDiff: FileDiff
+): KeyboardLineTarget[] => {
+  const targets: KeyboardLineTarget[] = []
+
+  fileDiff.hunks.forEach((hunk, hunkIndex) => {
+    let oldLine = hunk.oldStart
+    let newLine = hunk.newStart
+
+    for (const line of hunk.lines) {
+      const oldLineNumber =
+        line.oldLineNumber ?? (line.type === 'added' ? undefined : oldLine)
+
+      const newLineNumber =
+        line.newLineNumber ?? (line.type === 'removed' ? undefined : newLine)
+
+      if (line.type === 'removed') {
+        if (oldLineNumber !== undefined) {
+          targets.push({
+            lineNumber: oldLineNumber,
+            side: 'deletions',
+            hunkIndex,
+          })
+        }
+      } else if (newLineNumber !== undefined) {
+        targets.push({
+          lineNumber: newLineNumber,
+          side: 'additions',
+          hunkIndex,
+        })
+      }
+
+      if (line.type !== 'added') {
+        oldLine += 1
+      }
+
+      if (line.type !== 'removed') {
+        newLine += 1
+      }
+    }
+  })
+
+  return targets
+}
+
+const keyboardConfirmCopy = (
+  action: KeyboardConfirmAction,
+  selectedFileName: string | null,
+  staged: boolean
+): { title: string; body: string; variant: 'primary' | 'danger' } => {
+  const fileLabel = selectedFileName ?? 'this file'
+
+  if (action === 'stage-hunk') {
+    return {
+      title: staged ? 'Unstage hunk?' : 'Stage hunk?',
+      body: staged
+        ? `Move the selected hunk in ${fileLabel} out of the index?`
+        : `Stage the selected hunk in ${fileLabel}?`,
+      variant: 'primary',
+    }
+  }
+
+  if (action === 'discard-hunk') {
+    return {
+      title: 'Discard hunk?',
+      body: `Discard the selected hunk in ${fileLabel}? This cannot be undone.`,
+      variant: 'danger',
+    }
+  }
+
+  return {
+    title: 'Discard file?',
+    body: `Discard all changes in ${fileLabel}? This cannot be undone.`,
+    variant: 'danger',
+  }
 }
 
 // Small inline status cards. They previously lived as an inline JSX ladder in
@@ -366,6 +457,24 @@ export const DiffPanelContent = ({
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
+  const diffRootRef = useRef<HTMLDivElement>(null)
+  const diffScrollBodyRef = useRef<HTMLDivElement>(null)
+
+  const focusDiffRoot = useCallback((): void => {
+    diffRootRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const handleDiffRootPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(DIFF_NATIVE_FOCUS_SELECTOR) === null
+      ) {
+        focusDiffRoot()
+      }
+    },
+    [focusDiffRoot]
+  )
 
   const localFeedback = useFeedbackBatch()
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
@@ -411,6 +520,9 @@ export const DiffPanelContent = ({
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
+
+  const [keyboardConfirmAction, setKeyboardConfirmAction] =
+    useState<KeyboardConfirmAction | null>(null)
 
   // Real annotations for the currently selected file.
   const realAnnotations = feedback.annotationsForFile(
@@ -472,6 +584,12 @@ export const DiffPanelContent = ({
     activeResponse,
   ])
 
+  const closeComposer = useCallback((): void => {
+    setComposerTarget(null)
+    setComposerDraftText('')
+    focusDiffRoot()
+  }, [focusDiffRoot])
+
   const confirmComposer = useCallback(
     (text: string): void => {
       if (composerTarget === null) {
@@ -479,6 +597,8 @@ export const DiffPanelContent = ({
       }
 
       if (selectedFilePath === null) {
+        closeComposer()
+
         return
       }
 
@@ -486,8 +606,7 @@ export const DiffPanelContent = ({
         composerTarget.filePath !== selectedFilePath ||
         composerTarget.staged !== selectedFileStaged
       ) {
-        setComposerTarget(null)
-        setComposerDraftText('')
+        closeComposer()
 
         return
       }
@@ -500,8 +619,7 @@ export const DiffPanelContent = ({
           composerTarget.editId,
           { text }
         )
-        setComposerTarget(null)
-        setComposerDraftText('')
+        closeComposer()
       } else {
         const result = feedback.addAnnotation(
           cwd,
@@ -523,12 +641,12 @@ export const DiffPanelContent = ({
             'Feedback limit reached (50 comments). Finish or discard before adding more.'
           )
         } else {
-          setComposerTarget(null)
-          setComposerDraftText('')
+          closeComposer()
         }
       }
     },
     [
+      closeComposer,
       composerTarget,
       selectedFilePath,
       selectedFileStaged,
@@ -537,11 +655,6 @@ export const DiffPanelContent = ({
       notifyInfo,
     ]
   )
-
-  const closeComposer = useCallback((): void => {
-    setComposerTarget(null)
-    setComposerDraftText('')
-  }, [])
 
   const sendingFeedbackRef = useRef(false)
 
@@ -706,6 +819,51 @@ export const DiffPanelContent = ({
     setNavSelection(null)
   }, [selectedFilePath, selectedFileStaged, clearNavSelectionTimer])
 
+  const keyboardLineTargets = useMemo(
+    (): KeyboardLineTarget[] =>
+      activeResponse === null
+        ? []
+        : keyboardLineTargetsForDiff(activeResponse.fileDiff),
+    [activeResponse]
+  )
+
+  const [keyboardLineIndex, setKeyboardLineIndex] = useState(0)
+  const [keyboardLineActive, setKeyboardLineActive] = useState(false)
+
+  useEffect(() => {
+    setKeyboardLineIndex(0)
+    setKeyboardLineActive(false)
+  }, [selectedFilePath, selectedFileStaged])
+
+  useEffect(() => {
+    if (keyboardLineTargets.length === 0) {
+      setKeyboardLineIndex(0)
+      setKeyboardLineActive(false)
+
+      return
+    }
+
+    setKeyboardLineIndex((prev) =>
+      Math.min(prev, keyboardLineTargets.length - 1)
+    )
+  }, [keyboardLineTargets.length])
+
+  const keyboardLineTarget: KeyboardLineTarget | null =
+    keyboardLineTargets.length > 0
+      ? keyboardLineTargets[
+          Math.min(keyboardLineIndex, keyboardLineTargets.length - 1)
+        ]
+      : null
+
+  const keyboardSelectedLines: SelectedLineRange | null =
+    keyboardLineActive && keyboardLineTarget !== null
+      ? {
+          start: keyboardLineTarget.lineNumber,
+          end: keyboardLineTarget.lineNumber,
+          side: keyboardLineTarget.side,
+        }
+      : null
+
   const onPrevHunk = useCallback((): void => {
     if (!activeResponse) {
       return
@@ -717,6 +875,7 @@ export const DiffPanelContent = ({
     }
 
     const next = (clampedHunkIndex + hunks.length - 1) % hunks.length
+    setKeyboardLineActive(false)
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
   }, [activeResponse, clampedHunkIndex, flashHunkSelection])
@@ -732,13 +891,13 @@ export const DiffPanelContent = ({
     }
 
     const next = (clampedHunkIndex + 1) % hunks.length
+    setKeyboardLineActive(false)
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
   }, [activeResponse, clampedHunkIndex, flashHunkSelection])
 
-  // Only the transient nav flash drives Pierre's selection — see the comment on
-  // `navSelection` above for why a persistent focused-hunk selection is avoided.
-  const selectedLines: SelectedLineRange | null = navSelection
+  const selectedLines: SelectedLineRange | null =
+    keyboardSelectedLines ?? navSelection
 
   // Shared helper for all three hunk-based staging operations. Extracts the
   // focused hunk patch, calls the provided service operation, then refreshes
@@ -1103,12 +1262,193 @@ export const DiffPanelContent = ({
             effectiveFiles.length
       const file = effectiveFiles[nextIndex]
       commitSelection({ path: file.path, staged: file.staged, cwd })
+      focusDiffRoot()
     },
-    [effectiveFiles, currentFileIndex, commitSelection, cwd]
+    [effectiveFiles, currentFileIndex, commitSelection, cwd, focusDiffRoot]
   )
 
   // Toolbar shell ref for anchoring the FinishFeedbackPopover.
   const toolbarShellRef = useRef<HTMLDivElement>(null)
+
+  const scrollDiffPage = useCallback(
+    (direction: number): void => {
+      const node = diffScrollBodyRef.current
+      if (node === null) {
+        return
+      }
+
+      const distance = Math.max(Math.floor(node.clientHeight / 2), 160)
+      node.scrollTop = Math.max(0, node.scrollTop + direction * distance)
+      focusDiffRoot()
+    },
+    [focusDiffRoot]
+  )
+
+  const scrollKeyboardTargetIntoView = useCallback(
+    (target: KeyboardLineTarget): void => {
+      const node = diffScrollBodyRef.current
+      if (node === null) {
+        return
+      }
+
+      const lineType = target.side === 'deletions' ? 'removed' : 'added'
+
+      const line = node.querySelector(
+        `[data-line-type="${lineType}"][data-line="${target.lineNumber}"], ` +
+          `[data-line-type="${lineType}"][data-column-number="${target.lineNumber}"], ` +
+          `[data-line="${target.lineNumber}"], ` +
+          `[data-column-number="${target.lineNumber}"]`
+      )
+
+      if (
+        line instanceof HTMLElement &&
+        typeof line.scrollIntoView === 'function'
+      ) {
+        line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    },
+    []
+  )
+
+  const moveKeyboardLine = useCallback(
+    (delta: number): void => {
+      if (keyboardLineTargets.length === 0) {
+        return
+      }
+
+      clearNavSelectionTimer()
+      setNavSelection(null)
+      setKeyboardLineActive(true)
+      setKeyboardLineIndex((prev) => {
+        const next = Math.min(
+          Math.max(prev + delta, 0),
+          keyboardLineTargets.length - 1
+        )
+        const nextTarget = keyboardLineTargets[next]
+        setFocusedHunkIndex(nextTarget.hunkIndex)
+        scrollKeyboardTargetIntoView(nextTarget)
+
+        return next
+      })
+      focusDiffRoot()
+    },
+    [
+      clearNavSelectionTimer,
+      focusDiffRoot,
+      keyboardLineTargets,
+      scrollKeyboardTargetIntoView,
+    ]
+  )
+
+  const openKeyboardComment = useCallback((): void => {
+    if (selectedFilePath === null || keyboardLineTarget === null) {
+      notifyInfo('No diff line selected for comment.')
+
+      return
+    }
+
+    const nextTarget: ComposerTarget = {
+      lineNumber: keyboardLineTarget.lineNumber,
+      side: keyboardLineTarget.side,
+      filePath: selectedFilePath,
+      staged: selectedFileStaged,
+    }
+
+    clearNavSelectionTimer()
+    setNavSelection(null)
+    setKeyboardLineActive(true)
+    setFocusedHunkIndex(keyboardLineTarget.hunkIndex)
+    setComposerDraftText((current) =>
+      composerTarget !== null &&
+      composerTargetKey(composerTarget) === composerTargetKey(nextTarget)
+        ? current
+        : ''
+    )
+    setComposerTarget(nextTarget)
+  }, [
+    clearNavSelectionTimer,
+    composerTarget,
+    keyboardLineTarget,
+    notifyInfo,
+    selectedFilePath,
+    selectedFileStaged,
+  ])
+
+  const toggleDiffStyle = useCallback((): void => {
+    handleDiffStyleChange(diffStyle === 'split' ? 'unified' : 'split')
+  }, [diffStyle, handleDiffStyleChange])
+
+  const openKeyboardConfirm = useCallback(
+    (action: KeyboardConfirmAction): void => {
+      if (selectedFilePath === null) {
+        notifyInfo('No file selected.')
+
+        return
+      }
+
+      if (action !== 'discard-file' && focusedHunk === null) {
+        notifyInfo('No hunk selected.')
+
+        return
+      }
+
+      setKeyboardConfirmAction(action)
+    },
+    [focusedHunk, notifyInfo, selectedFilePath]
+  )
+
+  const cancelKeyboardConfirm = useCallback((): void => {
+    setKeyboardConfirmAction(null)
+    focusDiffRoot()
+  }, [focusDiffRoot])
+
+  const confirmKeyboardAction = useCallback((): void => {
+    const action = keyboardConfirmAction
+    setKeyboardConfirmAction(null)
+    focusDiffRoot()
+
+    if (action === 'stage-hunk') {
+      void (selectedFileStaged ? handleUnstage() : handleStage())
+    } else if (action === 'discard-hunk') {
+      void handleDiscard()
+    } else if (action === 'discard-file') {
+      void handleDiscardAll()
+    }
+  }, [
+    handleDiscard,
+    handleDiscardAll,
+    handleStage,
+    handleUnstage,
+    focusDiffRoot,
+    keyboardConfirmAction,
+    selectedFileStaged,
+  ])
+
+  useDiffKeyboard({
+    enabled: true,
+    rootRef: diffRootRef,
+    confirming: keyboardConfirmAction !== null,
+    onMoveLine: moveKeyboardLine,
+    onScrollPage: scrollDiffPage,
+    onPreviousFile: (): void => goToFile(-1),
+    onNextFile: (): void => goToFile(1),
+    onComment: openKeyboardComment,
+    onStageHunk: (): void => openKeyboardConfirm('stage-hunk'),
+    onDiscardHunk: (): void => openKeyboardConfirm('discard-hunk'),
+    onDiscardFile: (): void => openKeyboardConfirm('discard-file'),
+    onToggleView: toggleDiffStyle,
+    onConfirm: confirmKeyboardAction,
+    onCancelConfirm: cancelKeyboardConfirm,
+  })
+
+  const keyboardConfirm =
+    keyboardConfirmAction !== null
+      ? keyboardConfirmCopy(
+          keyboardConfirmAction,
+          selectedFilePath,
+          selectedFileStaged
+        )
+      : null
 
   // Loading state
   if (effectiveStatusLoading) {
@@ -1171,8 +1511,11 @@ export const DiffPanelContent = ({
   if (effectiveFiles.length === 0) {
     return (
       <div
+        ref={diffRootRef}
         data-testid="diff-empty-state"
-        className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant"
+        tabIndex={-1}
+        onPointerDownCapture={handleDiffRootPointerDown}
+        className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant focus:outline-none"
       >
         <div className="shrink-0">
           <DiffChipToolbar
@@ -1214,8 +1557,11 @@ export const DiffPanelContent = ({
   // Populated state (horizontal split: file list + toolbar + Pierre diff)
   return (
     <div
+      ref={diffRootRef}
       data-testid="diff-populated-state"
-      className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
+      tabIndex={-1}
+      onPointerDownCapture={handleDiffRootPointerDown}
+      className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden focus:outline-none"
     >
       {/* Left: Changed files list (~240px fixed) */}
       <div className="w-60 shrink-0 border-r border-wash-subtle overflow-y-auto">
@@ -1231,6 +1577,7 @@ export const DiffPanelContent = ({
           }
           onSelectFile={(file: ChangedFile): void => {
             commitSelection({ path: file.path, staged: file.staged, cwd })
+            focusDiffRoot()
           }}
         />
       </div>
@@ -1313,10 +1660,59 @@ export const DiffPanelContent = ({
               onSend={handleSendFeedback}
             />
           ) : null}
+          {keyboardConfirm !== null && toolbarShellRef.current !== null ? (
+            <Popover
+              anchor={toolbarShellRef.current}
+              open
+              onOpenChange={(open): void => {
+                if (!open) {
+                  cancelKeyboardConfirm()
+                }
+              }}
+              placement="bottom-end"
+              width={320}
+              aria-label={keyboardConfirm.title}
+            >
+              <div className="flex flex-col gap-3 p-4">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-sm font-medium text-on-surface">
+                    {keyboardConfirm.title}
+                  </h2>
+                  <p className="text-xs leading-5 text-on-surface-variant">
+                    {keyboardConfirm.body}
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-keyshortcuts="n"
+                    onClick={cancelKeyboardConfirm}
+                  >
+                    No (n)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={keyboardConfirm.variant}
+                    aria-keyshortcuts="y"
+                    onClick={confirmKeyboardAction}
+                  >
+                    Yes (y)
+                  </Button>
+                </div>
+              </div>
+            </Popover>
+          ) : null}
         </div>
         <div
+          ref={diffScrollBodyRef}
           data-testid="diff-scroll-body"
           className="min-h-0 flex-1 overflow-auto"
+          onPointerMove={(): void => {
+            if (keyboardLineActive) {
+              setKeyboardLineActive(false)
+            }
+          }}
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />
@@ -1367,11 +1763,13 @@ export const DiffPanelContent = ({
                     icon="add"
                     label="Add comment on this line"
                     size="sm"
-                    showTooltip={TOOLTIP_SUPPRESSED} // hover slot aria-label already exposes intent
+                    shortcut="c"
                     className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
                     onClick={(): void => {
                       const hovered = getHoveredLine()
                       if (hovered && selectedFilePath !== null) {
+                        setKeyboardLineActive(false)
+
                         const nextTarget: ComposerTarget = {
                           lineNumber: hovered.lineNumber,
                           side: hovered.side,

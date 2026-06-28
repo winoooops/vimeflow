@@ -278,7 +278,11 @@ export const DiffChipToolbar = ({
   // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
-      <Tooltip content="Discard all changes" disabled={discardAllOpen}>
+      <Tooltip
+        content="Discard all changes"
+        shortcut="D"
+        disabled={discardAllOpen}
+      >
         <span>
           <IconButton
             ref={setDiscardAllAnchor}
@@ -348,6 +352,7 @@ export const DiffChipToolbar = ({
       options={['split', 'unified'] as const}
       onChange={onDiffStyleChange}
       icons={{ split: 'vertical_split', unified: 'view_headline' }}
+      shortcuts={{ split: 't', unified: 't' }}
     />,
     // hairline between the view-mode control and the navigation cluster.
     <ToolbarSeparator key="sep-nav" />,
