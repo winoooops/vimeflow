@@ -52,6 +52,7 @@ const FIXER_ENGINES = new Set(['kimi', 'codex'])
 const KIMI_DEFAULT_MODEL = 'kimi-code/kimi-for-coding'
 const KIMI_DEFAULT_OUTPUT_FORMAT = 'stream-json'
 export const DEFAULT_LOCAL_CI_COMMAND = [
+  'npm ci',
   'npm run lint',
   'npm run format:check',
   'npm run type-check',

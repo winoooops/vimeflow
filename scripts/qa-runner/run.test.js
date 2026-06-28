@@ -74,6 +74,7 @@ describe('fixer command args', () => {
 
 describe('local CI push gate', () => {
   test('defaults to the local CI Checks workflow commands', () => {
+    expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm ci')
     expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run lint')
     expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run format:check')
     expect(DEFAULT_LOCAL_CI_COMMAND).toContain('npm run type-check')
