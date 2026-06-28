@@ -233,5 +233,8 @@ causes listener accumulation and duplicate event handling.
 - **Severity:** MEDIUM
 - **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
 - **Finding:** `GhosttyBody` voided `destroyNativeGhostty(paneRef)` during unmount cleanup without handling rejection. If Electron IPC teardown was already unavailable during quit, hot reload, or pane teardown, the renderer could emit an unhandled promise rejection from an otherwise best-effort cleanup path.
-- **Fix:** Attach a local `.catch(() => undefined)` to the unmount cleanup call so destroy failures are absorbed, and add a regression test that rejects `destroyNativeGhostty` during unmount.
+- **Fix:** Wrap the destroy call in a voided async cleanup task with local
+  `try/catch` so destroy failures are absorbed without violating
+  `promise/prefer-await-to-then`, and add a regression test that rejects
+  `destroyNativeGhostty` during unmount.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

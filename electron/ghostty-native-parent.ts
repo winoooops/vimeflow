@@ -221,11 +221,17 @@ export class GhosttyNativeParentController {
 
     const surface = this.getOrCreateSurface(addon, win, state)
 
+    const roundedWidth = Math.round(payload.bounds.width)
+    const roundedHeight = Math.round(payload.bounds.height)
+
+    const frameVisible =
+      payload.visible && roundedWidth > 0 && roundedHeight > 0
+
     const frame = {
       x: Math.round(payload.bounds.x),
       y: Math.round(payload.bounds.y),
-      width: payload.visible ? Math.round(payload.bounds.width) : 0,
-      height: payload.visible ? Math.round(payload.bounds.height) : 0,
+      width: frameVisible ? roundedWidth : 0,
+      height: frameVisible ? roundedHeight : 0,
     }
     addon.setFrame(surface, frame.x, frame.y, frame.width, frame.height)
     this.flushPendingData(addon, state)

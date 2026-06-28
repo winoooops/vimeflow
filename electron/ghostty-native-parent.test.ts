@@ -203,6 +203,59 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('suppresses visible zero-area frames', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+      dispose: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies GhosttyNativeSidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 0, height: 200 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 0, 0)
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 0 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenLastCalledWith(surface, 10, 20, 0, 0)
+
+    controller.dispose()
+  })
+
   test('creates parented surface and forwards native input plus resize', () => {
     const callbacks: {
       onInput?: (data: string) => void

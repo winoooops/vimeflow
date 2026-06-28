@@ -446,7 +446,13 @@ export const GhosttyBody = ({
       cancelled = true
       releasePaneReady?.()
       unsubscribeOutput?.()
-      void destroyNativeGhostty(paneRef).catch(() => undefined)
+      void (async (): Promise<void> => {
+        try {
+          await destroyNativeGhostty(paneRef)
+        } catch {
+          // Best-effort cleanup can race with Electron handler disposal.
+        }
+      })()
     }
   }, [
     forwardNativeOutput,
