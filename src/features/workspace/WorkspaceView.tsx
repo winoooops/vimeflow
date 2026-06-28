@@ -2192,6 +2192,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     if (currentPendingPath) {
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(currentPendingPath)
         setFileError(null)
@@ -2247,6 +2249,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     try {
+      setDockTab('editor')
+      setIsDockOpen(true)
       await editorBuffer.openFile(target)
       setFileError(null)
     } catch (error: unknown) {

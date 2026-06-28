@@ -91,7 +91,9 @@ vi.mock('./components/TerminalZone', () => ({
 }))
 
 vi.mock('./components/DockPanel', () => ({
-  default: (): ReactElement => <div data-testid="dock-panel" />,
+  default: ({ tab }: { tab: string }): ReactElement => (
+    <div data-testid="dock-panel" data-tab={tab} />
+  ),
 }))
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -104,10 +106,28 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 vi.mock('../editor/components/UnsavedChangesDialog', () => ({
   UnsavedChangesDialog: ({
     isOpen,
+    onSave,
+    onDiscard,
+    onCancel,
   }: {
     isOpen: boolean
+    onSave: () => void
+    onDiscard: () => void
+    onCancel: () => void
   }): ReactElement | null =>
-    isOpen ? <div data-testid="unsaved-changes-dialog" /> : null,
+    isOpen ? (
+      <div data-testid="unsaved-changes-dialog">
+        <button type="button" onClick={onSave}>
+          Save
+        </button>
+        <button type="button" onClick={onDiscard}>
+          Discard
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
 }))
 
 const createMockSession = (id: string, name: string): Session => ({
@@ -974,6 +994,52 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
 
     expect(openFile).not.toHaveBeenCalled()
+  })
+
+  test(':open-file surfaces the editor after dirty-buffer save', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':open-file /tmp/notes.md')
+    await user.keyboard('{Enter}')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(openFile).toHaveBeenCalledWith('/tmp/notes.md')
+    })
+
+    expect(screen.getByTestId('dock-panel')).toHaveAttribute(
+      'data-tab',
+      'editor'
+    )
   })
 
   test('does not open the palette while the unsaved dialog is active', async () => {
