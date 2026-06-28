@@ -127,6 +127,7 @@ describe('GhosttyBody', () => {
         data: 'historical output',
       })
     })
+
     expect(sendNativeGhosttyData).toHaveBeenCalledWith({
       sessionId: 'pty-1',
       paneId: 'pane-1',

@@ -15,6 +15,7 @@ import {
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
 nativeHandle.writeBigUInt64LE(1n)
+
 const { webContentsSend } = vi.hoisted(() => ({
   webContentsSend: vi.fn(),
 }))
@@ -148,6 +149,7 @@ describe('ghostty native parent', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
     })
+
     expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
       event: 'ghostty-native-input',
       payload: { sessionId: 'pty-1', paneId: 'pane-1', data: 'a' },

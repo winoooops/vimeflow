@@ -81,11 +81,13 @@ describe('ghostty native helper', () => {
 
   test('mirrors helper input to renderer command tracking before writing to pty', () => {
     const stdout = new PassThrough()
+
     const stdin = new Writable({
       write(_chunk, _encoding, callback): void {
         callback()
       },
     })
+
     const helper: {
       stdin: Writable
       stdout: PassThrough
@@ -99,11 +101,13 @@ describe('ghostty native helper', () => {
       on: vi.fn(() => helper),
       kill: vi.fn(() => true),
     }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
       shutdown: vi.fn(() => Promise.resolve()),
     } as unknown as Sidecar
+
     const controller = setupGhosttyNativeHelper({
       sidecar,
       platform: 'darwin',
@@ -122,6 +126,7 @@ describe('ghostty native helper', () => {
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
+
     const body = Buffer.from(
       JSON.stringify({
         kind: 'event',
@@ -142,6 +147,7 @@ describe('ghostty native helper', () => {
       event: 'ghostty-native-input',
       payload: { sessionId: 'pty-1', paneId: 'pane-1', data: '/clear\r' },
     })
+
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: '/clear\r' },
     })

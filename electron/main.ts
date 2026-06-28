@@ -388,11 +388,13 @@ const setupApp = async (): Promise<void> => {
   browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
   ghosttyNativeController?.dispose()
+
   const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
     process.platform,
     process.env,
     app.isPackaged
   )
+
   const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(
     process.platform,
     process.env,

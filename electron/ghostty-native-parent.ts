@@ -361,6 +361,7 @@ export class GhosttyNativeParentController {
           event: 'ghostty-native-input',
           payload: { ...state.pane, data },
         })
+
         void this.sidecar.invoke('write_pty', {
           request: {
             sessionId: state.pane.sessionId,
