@@ -446,7 +446,7 @@ export const GhosttyBody = ({
       cancelled = true
       releasePaneReady?.()
       unsubscribeOutput?.()
-      void destroyNativeGhostty(paneRef)
+      void destroyNativeGhostty(paneRef).catch(() => undefined)
     }
   }, [
     forwardNativeOutput,

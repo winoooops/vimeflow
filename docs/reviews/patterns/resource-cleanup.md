@@ -226,3 +226,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** Native Ghostty input and resize callbacks captured a `BrowserWindow` and only checked pane membership before calling `win.webContents.send`. A late callback during window teardown could touch a destroyed Electron object and throw in the main process.
 - **Fix:** Guard both callback closures with `win.isDestroyed()` before accessing `webContents` or dispatching sidecar work, preserving the existing pane-liveness check for normal teardown.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Fire-and-forget native surface cleanup dropped destroy IPC rejection
+
+- **Source:** github-codex-connector | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` voided `destroyNativeGhostty(paneRef)` during unmount cleanup without handling rejection. If Electron IPC teardown was already unavailable during quit, hot reload, or pane teardown, the renderer could emit an unhandled promise rejection from an otherwise best-effort cleanup path.
+- **Fix:** Attach a local `.catch(() => undefined)` to the unmount cleanup call so destroy failures are absorbed, and add a regression test that rejects `destroyNativeGhostty` during unmount.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

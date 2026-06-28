@@ -151,6 +151,28 @@ describe('GhosttyBody', () => {
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
   })
 
+  test('absorbs native destroy failures during unmount cleanup', async () => {
+    vi.mocked(destroyNativeGhostty).mockRejectedValueOnce(new Error('disposed'))
+
+    const { unmount } = render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    unmount()
+    await Promise.resolve()
+
+    expect(destroyNativeGhostty).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'pane-1',
+    })
+  })
+
   test('registers the pty session mapping while mounted', () => {
     const { rerender, unmount } = render(
       <GhosttyBody
