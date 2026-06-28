@@ -27,6 +27,20 @@ When invoked:
 - **Consolidate** similar issues (e.g., "5 functions missing error handling" not 5 separate findings)
 - **Prioritize** issues that could cause bugs, security vulnerabilities, or data loss
 
+## Ponytail Noise Gate
+
+Use the Ponytail rule before reporting non-security findings: the best code is
+the code never written. A finding is useful only when the proposed fix clearly
+reduces real bug risk, security risk, data loss, operational pain, or concrete
+future-change cost.
+
+- **Skip** speculative cleanup, "would be nicer if", or abstraction-for-later findings.
+- **Skip** findings whose fix is larger or riskier than the demonstrated problem.
+- **Prefer deletion, existing helpers, standard library, and native platform features** over new abstractions, dependencies, config knobs, factories, or wrappers.
+- **Do not ask for tests, memoization, splitting, docs, or type reshaping by default**; report them only when the missing piece can plausibly break this PR in real use.
+- **For every LOW/MEDIUM finding**, sanity-check: "Would a lazy senior developer fix this before merge?" If not, omit it or put it in Out-of-Scope Observations.
+- **For every suggested fix**, choose the smallest root-cause change. No scaffolding for hypothetical future needs.
+
 ## Scope Boundary (MANDATORY)
 
 Your review scope is the diff — nothing more.
