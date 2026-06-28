@@ -2,6 +2,7 @@
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
+import type { NativeGhosttyDataRequest } from '../../nativeGhosttyClient'
 import {
   destroyNativeGhostty,
   focusNativeGhostty,
@@ -22,7 +23,9 @@ vi.mock('../../../../lib/backend', () => ({
 }))
 
 vi.mock('../../nativeGhosttyClient', () => {
-  const mockSendNativeGhosttyData = vi.fn(() => Promise.resolve())
+  const mockSendNativeGhosttyData = vi.fn<
+    (request: NativeGhosttyDataRequest) => Promise<void>
+  >(() => Promise.resolve())
 
   return {
     attachNativeGhosttyOutput: vi.fn(
