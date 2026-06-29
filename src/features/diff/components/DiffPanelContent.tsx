@@ -66,11 +66,88 @@ type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
 type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
 type Overflow = NonNullable<BaseDiffOptions['overflow']>
 type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
+type HiddenSplitSide = 'origin' | 'new'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
 
 const PIERRE_DIFF_CONTAINER_SELECTOR = 'diffs-container'
+
+const HIDE_ORIGIN_SPLIT_CSS = `
+[data-diff-type="split"][data-overflow="scroll"] {
+  grid-template-columns: 1fr;
+}
+
+[data-diff-type="split"][data-overflow="scroll"] [data-deletions] {
+  display: none;
+}
+
+[data-diff-type="split"][data-overflow="scroll"] [data-additions] {
+  border-left: 0;
+}
+
+[data-diff-type="split"][data-overflow="wrap"] {
+  grid-template-columns: var(--diffs-code-grid);
+}
+
+[data-diff-type="split"][data-overflow="wrap"] [data-deletions] {
+  display: none;
+}
+
+:is([data-diff-type="split"][data-overflow="wrap"] [data-additions]) [data-gutter] {
+  border-left: 0;
+  grid-column: 1;
+}
+
+:is([data-diff-type="split"][data-overflow="wrap"] [data-additions]) [data-content] {
+  grid-column: 2;
+}
+`.trim()
+
+const HIDE_NEW_SPLIT_CSS = `
+[data-diff-type="split"][data-overflow="scroll"] {
+  grid-template-columns: 1fr;
+}
+
+[data-diff-type="split"][data-overflow="scroll"] [data-additions] {
+  display: none;
+}
+
+[data-diff-type="split"][data-overflow="scroll"] [data-deletions] {
+  border-right: 0;
+}
+
+[data-diff-type="split"][data-overflow="wrap"] {
+  grid-template-columns: var(--diffs-code-grid);
+}
+
+[data-diff-type="split"][data-overflow="wrap"] [data-additions] {
+  display: none;
+}
+
+:is([data-diff-type="split"][data-overflow="wrap"] [data-deletions]) [data-content] {
+  border-right: 0;
+}
+`.trim()
+
+const splitSideCSSFor = (
+  hiddenSide: HiddenSplitSide | null,
+  diffStyle: DiffStyle
+): string | undefined => {
+  if (diffStyle !== 'split') {
+    return undefined
+  }
+
+  if (hiddenSide === 'origin') {
+    return HIDE_ORIGIN_SPLIT_CSS
+  }
+
+  if (hiddenSide === 'new') {
+    return HIDE_NEW_SPLIT_CSS
+  }
+
+  return undefined
+}
 
 // The subset of Pierre options the worker pool OWNS once a pool is active:
 // the Shiki `theme` and the intra-line word-diff algorithm (`lineDiffType`).
@@ -1272,6 +1349,9 @@ export const DiffPanelContent = ({
   const [disableFileHeader, setDisableFileHeader] = useState(false)
   const [stickyHeader, setStickyHeader] = useState(true)
 
+  const [hiddenSplitSide, setHiddenSplitSide] =
+    useState<HiddenSplitSide | null>(null)
+
   // Pool-owned render options, gated behind the worker-pool sync below so the
   // diff remount waits until the pool actually accepts the new value.
   // `renderedTheme` / `renderedLineDiffType` read from HERE (not from `theme` /
@@ -1413,6 +1493,7 @@ export const DiffPanelContent = ({
     hasMeasuredPane && diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
   const tooNarrow = hasMeasuredPane && paneWidth < DIFF_MIN_WIDTH_PX
+  const splitSideCSS = splitSideCSSFor(hiddenSplitSide, effectiveDiffStyle)
 
   const handleDiffStyleChange = useCallback(
     (next: DiffStyle): void => {
@@ -1712,6 +1793,17 @@ export const DiffPanelContent = ({
     handleDiffStyleChange(diffStyle === 'split' ? 'unified' : 'split')
   }, [diffStyle, handleDiffStyleChange])
 
+  const toggleSplitSide = useCallback(
+    (side: HiddenSplitSide): void => {
+      if (effectiveDiffStyle !== 'split') {
+        return
+      }
+
+      setHiddenSplitSide((current) => (current === side ? null : side))
+    },
+    [effectiveDiffStyle]
+  )
+
   // Opens the y/n guard for destructive or staging keyboard actions.
   const openKeyboardConfirm = useCallback(
     (action: KeyboardConfirmAction): void => {
@@ -1856,6 +1948,8 @@ export const DiffPanelContent = ({
     onDiscardHunk: (): void => openKeyboardConfirm('discard-hunk'),
     onDiscardFile: (): void => openKeyboardConfirm('discard-file'),
     onToggleView: toggleDiffStyle,
+    onToggleOriginSection: (): void => toggleSplitSide('origin'),
+    onToggleNewSection: (): void => toggleSplitSide('new'),
     onConfirm: confirmKeyboardAction,
     onCancelConfirm: cancelKeyboardConfirm,
   })
@@ -2169,6 +2263,7 @@ export const DiffPanelContent = ({
                   disableBackground,
                   disableFileHeader,
                   stickyHeader,
+                  unsafeCSS: splitSideCSS,
                   enableGutterUtility: true,
                 }}
                 renderGutterUtility={(getHoveredLine): ReactElement => (
