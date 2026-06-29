@@ -94,7 +94,7 @@ test('kind one shows pane info, correct copy, and buttons work', async () => {
   anchor.remove()
 })
 
-test('kind one confirmation buttons do not render focus outlines', () => {
+test('kind one confirmation buttons render visible keyboard focus styles', () => {
   const anchor = createAnchor()
   const pane = makePane()
 
@@ -111,12 +111,16 @@ test('kind one confirmation buttons do not render focus outlines', () => {
 
   expect(screen.getByRole('button', { name: 'Cancel (n)' })).toHaveClass(
     'focus:outline-none',
-    'focus-visible:outline-none'
+    'focus-visible:outline-none',
+    'focus-visible:ring-1',
+    'focus-visible:ring-primary'
   )
 
   expect(screen.getByRole('button', { name: 'Confirm (Y)' })).toHaveClass(
     'focus:outline-none',
-    'focus-visible:outline-none'
+    'focus-visible:outline-none',
+    'focus-visible:ring-1',
+    'focus-visible:ring-primary'
   )
 
   anchor.remove()
@@ -188,6 +192,10 @@ test('kind many renders row per candidate and sends to correct pane', async () =
 
   const sendButtons = screen.getAllByRole('button', { name: 'Send' })
   expect(sendButtons).toHaveLength(2)
+  expect(sendButtons[0]).toHaveClass(
+    'focus-visible:ring-1',
+    'focus-visible:ring-primary'
+  )
 
   await user.click(sendButtons[1])
   expect(onSend).toHaveBeenCalledTimes(1)

@@ -2919,6 +2919,7 @@ describe('DiffPanelContent', () => {
       fireEvent.keyDown(diff, { key: 'h' })
       expect(diff.getAttribute('data-unsafe-css')).toContain('[data-deletions]')
       expect(diff.getAttribute('data-unsafe-css')).toContain('display: none')
+      expect(diff.getAttribute('data-unsafe-css')).toContain('border-left: 0')
 
       fireEvent.keyDown(diff, { key: 'h' })
       expect(diff).not.toHaveAttribute('data-unsafe-css')
@@ -2926,6 +2927,7 @@ describe('DiffPanelContent', () => {
       fireEvent.keyDown(diff, { key: 'l' })
       expect(diff.getAttribute('data-unsafe-css')).toContain('[data-additions]')
       expect(diff.getAttribute('data-unsafe-css')).toContain('display: none')
+      expect(diff.getAttribute('data-unsafe-css')).toContain('border-right: 0')
     })
 
     test('preserves comment draft text across a same-file diff refresh remount', async (): Promise<void> => {
