@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   USAGE,
@@ -109,6 +110,16 @@ describe('package-electron script', () => {
     expect(buildCommands('mac-arm64').at(-1)).toEqual([
       'electron-builder',
       ['--mac', 'dmg', '--arm64'],
+    ])
+
+    expect(buildCommands('mac-arm64')).toContainEqual([
+      'npm',
+      ['run', 'ghostty:native-parent:build'],
+    ])
+
+    expect(buildCommands('mac-arm64')).toContainEqual([
+      'npm',
+      ['run', 'ghostty:native-parent:smoke'],
     ])
   })
 

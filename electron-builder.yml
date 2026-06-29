@@ -3,6 +3,7 @@
 
 appId: io.vimeflow.app
 productName: Vimeflow
+electronVersion: 42.1.0
 
 directories:
   output: release
@@ -35,5 +36,8 @@ mac:
   category: public.app-category.developer-tools
   artifactName: vimeflow-${version}-${arch}.dmg
   icon: build/composed_icon.icon
+  extraResources:
+    - from: dist-native/ghostty-parent
+      to: ghostty-parent
 
 publish: null

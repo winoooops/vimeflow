@@ -1,4 +1,4 @@
-// cspell:ignore ghostty Ghostty swiftpm xcrun dynamiclib
+// cspell:ignore ghostty Ghostty mmacosx otool swiftpm xcrun
 import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,7 @@ const addonSource = join(
   repoRoot,
   'native/ghostty-parent/ghostty_native_parent.cc'
 )
+const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
@@ -42,24 +43,33 @@ copyFileSync(
   join(outputDir, 'libGhosttyElectronBridge.dylib')
 )
 
+// Node native addons are Mach-O bundles; N-API symbols are resolved from Node at load time.
 execFileSync(
   'xcrun',
   [
     'clang++',
     '-std=c++20',
-    '-dynamiclib',
+    '-bundle',
+    '-mmacosx-version-min=13.0',
     '-undefined',
     'dynamic_lookup',
     '-I',
     nodeIncludeDir,
     addonSource,
     '-o',
-    join(outputDir, 'ghostty_native_parent.node'),
+    addonOutput,
   ],
   {
     cwd: repoRoot,
     stdio: 'inherit',
   }
 )
+
+// Keep the packaged addon from advertising a repo-local install name in otool output.
+execFileSync('install_name_tool', [
+  '-id',
+  '@rpath/ghostty_native_parent.node',
+  addonOutput,
+])
 
 process.stdout.write(`Ghostty parent addon built in ${outputDir}\n`)

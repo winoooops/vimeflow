@@ -150,6 +150,37 @@ describe('ghostty native parent', () => {
     expect(existsSync).toHaveBeenCalledTimes(1)
   })
 
+  test('resolves packaged native artifacts from Electron resources', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      packaged: true,
+      resourcesPath: '/Applications/Vimeflow.app/Contents/Resources',
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(existsSync).toHaveBeenCalledWith(
+      '/Applications/Vimeflow.app/Contents/Resources/ghostty-parent/ghostty_native_parent.node'
+    )
+  })
+
   test('rounds fractional parent frame bounds before forwarding to AppKit', () => {
     const surface = {}
 

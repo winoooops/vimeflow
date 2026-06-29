@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from './services/terminalService'
 import {
   attachNativeGhosttyOutput,
+  shouldUseNativeGhostty,
   type NativeGhosttyApi,
 } from './nativeGhosttyClient'
 
@@ -35,6 +36,29 @@ const createService = (): {
 describe('nativeGhosttyClient', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  test('uses native Ghostty when the preload bridge is present on macOS', () => {
+    vi.stubGlobal('navigator', { platform: 'MacIntel' })
+    vi.stubGlobal('window', {
+      vimeflow: {
+        ghosttyNative: {
+          update: vi.fn(),
+          data: vi.fn(),
+          focus: vi.fn(),
+          destroy: vi.fn(),
+        },
+      },
+    })
+
+    expect(shouldUseNativeGhostty()).toBe(true)
+  })
+
+  test('keeps xterm fallback when the preload bridge is absent', () => {
+    vi.stubGlobal('navigator', { platform: 'MacIntel' })
+    vi.stubGlobal('window', { vimeflow: {} })
+
+    expect(shouldUseNativeGhostty()).toBe(false)
   })
 
   test('reports unavailable when output forwarding IPC rejects', async () => {

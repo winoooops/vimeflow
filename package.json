@@ -19,6 +19,7 @@
     "electron:build:mac:arm64": "node scripts/package-electron.mjs mac-arm64",
     "electron:dev": "npm run generate:bindings && npm run backend:build && vite --mode electron",
     "ghostty:native-parent:build": "node scripts/build-ghostty-native-parent.js",
+    "ghostty:native-parent:smoke": "node scripts/smoke-ghostty-native-parent.js",
     "prepare": "husky",
     "lint": "npm run generate:bindings:if-missing && eslint .",
     "lint:fix": "npm run generate:bindings:if-missing && eslint . --fix",

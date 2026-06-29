@@ -391,8 +391,7 @@ const setupApp = async (): Promise<void> => {
 
   const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
     process.platform,
-    process.env,
-    app.isPackaged
+    process.env
   )
 
   const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(

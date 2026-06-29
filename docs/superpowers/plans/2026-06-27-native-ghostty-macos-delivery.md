@@ -20,7 +20,7 @@ The product path is the parented macOS `NSView` addon route. The WTerm/libghostt
 
 ### Phase 1: Productize parent-host behind a flag
 
-- Move the SwiftPM Ghostty bridge out of `docs/exploration` into a production native directory, for example `native/macos/ghostty-host`.
+- Keep the SwiftPM Ghostty bridge in its production native directory, `native/ghostty-helper`; it has already moved out of `docs/exploration`.
 - Keep the parent `NSView` addon as the only product runtime path.
 - Keep the Swift helper only as a smoke/debug artifact, not as product runtime.
 - Make Electron main own native surface lifecycle: create, bounds update, focus, resize, PTY data, and destroy.
