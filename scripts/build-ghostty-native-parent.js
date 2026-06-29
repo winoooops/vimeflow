@@ -1,4 +1,4 @@
-// cspell:ignore ghostty Ghostty mmacosx otool swiftpm xcrun
+// cspell:ignore codesign ghostty Ghostty mmacosx otool swiftpm xcrun
 import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,7 @@ const addonSource = join(
   'native/ghostty-parent/ghostty_native_parent.cc'
 )
 const addonOutput = join(outputDir, 'ghostty_native_parent.node')
+const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
 
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
@@ -40,7 +41,7 @@ execFileSync(
 
 copyFileSync(
   join(scratchDir, 'debug/libGhosttyElectronBridge.dylib'),
-  join(outputDir, 'libGhosttyElectronBridge.dylib')
+  bridgeOutput
 )
 
 // Node native addons are Mach-O bundles; N-API symbols are resolved from Node at load time.
@@ -71,5 +72,9 @@ execFileSync('install_name_tool', [
   '@rpath/ghostty_native_parent.node',
   addonOutput,
 ])
+
+for (const file of [addonOutput, bridgeOutput]) {
+  execFileSync('codesign', ['--force', '--sign', '-', file])
+}
 
 process.stdout.write(`Ghostty parent addon built in ${outputDir}\n`)

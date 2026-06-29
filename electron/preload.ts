@@ -7,6 +7,15 @@ import {
   DIALOG_PICK_DIRECTORY,
 } from './ipc-channels'
 import {
+  NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_CLEAR,
+  NATIVE_OVERLAY_CLOSE,
+  NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_OPEN,
+  NATIVE_OVERLAY_READY,
+  NATIVE_OVERLAY_RENDER,
+} from './native-overlay-channels'
+import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
   BROWSER_PANE_CLOSE_TAB,
@@ -211,6 +220,64 @@ contextBridge.exposeInMainWorld('vimeflow', {
   dialog: {
     pickDirectory: (): Promise<string | null> =>
       ipcRenderer.invoke(DIALOG_PICK_DIRECTORY) as Promise<string | null>,
+  },
+  nativeOverlay: {
+    open: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_OPEN, request),
+    close: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    onAction: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_ACTION, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_ACTION, handler)
+      }
+    },
+    onClose: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_CLOSED, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_CLOSED, handler)
+      }
+    },
+  },
+  nativeOverlayHost: {
+    ready: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_READY, request),
+    action: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_ACTION, request),
+    close: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    onRender: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_RENDER, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_RENDER, handler)
+      }
+    },
+    onClear: (callback: () => void): (() => void) => {
+      const handler = (): void => {
+        callback()
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_CLEAR, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_CLEAR, handler)
+      }
+    },
   },
   workspaceLayout: {
     pushShape: (dto: unknown): Promise<unknown> =>

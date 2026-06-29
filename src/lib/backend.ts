@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import type {
   RenameAgentSessionErrorReason,
   RenameAgentSessionRequest,
@@ -24,6 +25,20 @@ export interface BackendApi {
 
   dialog?: {
     pickDirectory: () => Promise<string | null>
+  }
+
+  ghosttyNative?: {
+    update: (request: unknown) => Promise<unknown>
+    data: (request: unknown) => Promise<unknown>
+    focus: (request: unknown) => Promise<unknown>
+    destroy: (request: unknown) => Promise<unknown>
+  }
+
+  nativeOverlay?: {
+    open: (request: unknown) => Promise<{ accepted: boolean; reason?: string }>
+    close: (request: unknown) => Promise<void>
+    onAction: (callback: (event: unknown) => void) => UnlistenFn
+    onClose: (callback: (event: unknown) => void) => UnlistenFn
   }
 }
 

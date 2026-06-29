@@ -1,4 +1,4 @@
-// cspell:ignore dylib ghostty otool
+// cspell:ignore codesign dylib ghostty otool
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -10,6 +10,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const nativeDir = join(repoRoot, 'dist-native', 'ghostty-parent')
 const addonPath = join(nativeDir, 'ghostty_native_parent.node')
 const bridgePath = join(nativeDir, 'libGhosttyElectronBridge.dylib')
+
 const expectedExports = ['create', 'setFrame', 'write', 'focus', 'destroy']
 
 const requireFile = (file) => {
@@ -54,9 +55,17 @@ const smokeOtool = (file) => {
   }
 }
 
+const smokeCodesign = (file) => {
+  execFileSync('codesign', ['--verify', '--strict', file], {
+    stdio: 'inherit',
+  })
+}
+
 requireFile(addonPath)
 requireFile(bridgePath)
 smokeRequireAddon()
+smokeCodesign(addonPath)
+smokeCodesign(bridgePath)
 smokeOtool(addonPath)
 smokeOtool(bridgePath)
 

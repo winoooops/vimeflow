@@ -19,6 +19,10 @@ import { installCommandPaletteShortcutOverride } from './command-palette-shortcu
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  setupNativeOverlayIpc,
+  type NativeOverlayController,
+} from './native-overlay'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
@@ -217,6 +221,9 @@ let ghosttyNativeController:
   | GhosttyNativeHelperController
   | GhosttyNativeParentController
   | null = null
+// React DOM overlays in the main renderer can sit behind Ghostty's NSView;
+// this controller owns the separate native BrowserWindow used for those cases.
+let nativeOverlayController: NativeOverlayController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
@@ -412,6 +419,9 @@ const setupApp = async (): Promise<void> => {
   } else {
     ghosttyNativeController = null
   }
+  nativeOverlayController?.unregister()
+  nativeOverlayController = null
+  nativeOverlayController = setupNativeOverlayIpc()
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
@@ -519,6 +529,8 @@ app.on('before-quit', (event) => {
       browserPaneController = null
       ghosttyNativeController?.dispose()
       ghosttyNativeController = null
+      nativeOverlayController?.unregister()
+      nativeOverlayController = null
       workspaceLayoutController?.dispose()
       workspaceLayoutController = null
 

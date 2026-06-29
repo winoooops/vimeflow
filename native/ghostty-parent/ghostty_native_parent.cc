@@ -12,7 +12,9 @@ namespace {
 
 using InputCallback = void (*)(void *, const unsigned char *, int);
 using ResizeCallback = void (*)(void *, int, int);
-using CreateFn = void *(*)(void *, InputCallback, ResizeCallback, void *);
+using ContextMenuCallback = void (*)(void *, double, double);
+using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
+                           ContextMenuCallback, void *);
 using SetFrameFn = void (*)(void *, double, double, double, double);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
@@ -32,6 +34,7 @@ struct SurfaceHandle {
   napi_env env = nullptr;
   napi_threadsafe_function input_tsfn = nullptr;
   napi_threadsafe_function resize_tsfn = nullptr;
+  napi_threadsafe_function context_menu_tsfn = nullptr;
   void *swift_surface = nullptr;
   std::atomic_bool callbacks_released = false;
   std::mutex callback_mutex;
@@ -44,6 +47,11 @@ struct InputPayload {
 struct ResizePayload {
   int columns = 0;
   int rows = 0;
+};
+
+struct ContextMenuPayload {
+  double x = 0;
+  double y = 0;
 };
 
 BridgeApi bridge;
@@ -188,6 +196,28 @@ void OnResize(void *context, int columns, int rows) {
   napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
+void OnContextMenu(void *context, double x, double y) {
+  if (context == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::context_menu_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  auto payload = std::make_unique<ContextMenuPayload>();
+  payload->x = x;
+  payload->y = y;
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
+                                    napi_tsfn_nonblocking) == napi_ok) {
+    payload.release();
+  }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
 void CallJsInput(napi_env env, napi_value callback, void *, void *data) {
   std::unique_ptr<InputPayload> payload(static_cast<InputPayload *>(data));
   if (env == nullptr || callback == nullptr || payload == nullptr) {
@@ -215,6 +245,23 @@ void CallJsResize(napi_env env, napi_value callback, void *, void *data) {
   if (napi_get_global(env, &global) == napi_ok &&
       napi_create_int32(env, payload->columns, &argv[0]) == napi_ok &&
       napi_create_int32(env, payload->rows, &argv[1]) == napi_ok) {
+    napi_value ignored;
+    napi_call_function(env, global, callback, 2, argv, &ignored);
+  }
+}
+
+void CallJsContextMenu(napi_env env, napi_value callback, void *, void *data) {
+  std::unique_ptr<ContextMenuPayload> payload(
+      static_cast<ContextMenuPayload *>(data));
+  if (env == nullptr || callback == nullptr || payload == nullptr) {
+    return;
+  }
+
+  napi_value global;
+  napi_value argv[2];
+  if (napi_get_global(env, &global) == napi_ok &&
+      napi_create_double(env, payload->x, &argv[0]) == napi_ok &&
+      napi_create_double(env, payload->y, &argv[1]) == napi_ok) {
     napi_value ignored;
     napi_call_function(env, global, callback, 2, argv, &ignored);
   }
@@ -261,12 +308,15 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
 
   napi_threadsafe_function input_tsfn = nullptr;
   napi_threadsafe_function resize_tsfn = nullptr;
+  napi_threadsafe_function context_menu_tsfn = nullptr;
   {
     std::lock_guard<std::mutex> lock(surface->callback_mutex);
     input_tsfn = surface->input_tsfn;
     resize_tsfn = surface->resize_tsfn;
+    context_menu_tsfn = surface->context_menu_tsfn;
     surface->input_tsfn = nullptr;
     surface->resize_tsfn = nullptr;
+    surface->context_menu_tsfn = nullptr;
   }
 
   if (input_tsfn != nullptr) {
@@ -275,14 +325,19 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   if (resize_tsfn != nullptr) {
     napi_release_threadsafe_function(resize_tsfn, napi_tsfn_abort);
   }
+  if (context_menu_tsfn != nullptr) {
+    napi_release_threadsafe_function(context_menu_tsfn, napi_tsfn_abort);
+  }
 }
 
 napi_value Create(napi_env env, napi_callback_info info) {
-  size_t argc = 4;
-  napi_value args[4];
+  size_t argc = 5;
+  napi_value args[5];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (argc < 4) {
-    return Throw(env, "create(path, nativeHandle, onInput, onResize) expected");
+  if (argc < 5) {
+    return Throw(
+        env,
+        "create(path, nativeHandle, onInput, onResize, onContextMenu) expected");
   }
 
   const std::string bridge_path = GetString(env, args[0]);
@@ -308,12 +363,15 @@ napi_value Create(napi_env env, napi_callback_info info) {
   if (!CreateThreadsafeFunction(env, args[2], "vimeflow-ghostty-input",
                                 CallJsInput, &surface->input_tsfn) ||
       !CreateThreadsafeFunction(env, args[3], "vimeflow-ghostty-resize",
-                                CallJsResize, &surface->resize_tsfn)) {
+                                CallJsResize, &surface->resize_tsfn) ||
+      !CreateThreadsafeFunction(env, args[4], "vimeflow-ghostty-context-menu",
+                                CallJsContextMenu,
+                                &surface->context_menu_tsfn)) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native callbacks");
   }
   surface->swift_surface =
-      bridge.create(parent_view, OnInput, OnResize, surface);
+      bridge.create(parent_view, OnInput, OnResize, OnContextMenu, surface);
   if (surface->swift_surface == nullptr) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native surface");

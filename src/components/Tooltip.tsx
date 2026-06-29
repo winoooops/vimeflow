@@ -24,6 +24,10 @@ import {
   useRole,
   type Placement,
 } from '@floating-ui/react'
+import {
+  selectFloatingTransport,
+  warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
 interface TooltipCommonProps {
@@ -33,6 +37,7 @@ interface TooltipCommonProps {
   delayMs?: number
   disabled?: boolean
   className?: string
+  nativeOverlay?: boolean
 }
 
 /**
@@ -107,6 +112,7 @@ export const Tooltip = ({
   disabled = false,
   maxWidth = 320,
   className = '',
+  nativeOverlay = false,
   interactive = false,
   ariaLabel = undefined,
   bare = false,
@@ -118,6 +124,16 @@ export const Tooltip = ({
   const enabled = !disabled && hasContent && isValidElement(children)
 
   const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (
+      open &&
+      nativeOverlay &&
+      selectFloatingTransport(nativeOverlay) === 'native-overlay'
+    ) {
+      warnNativeOverlayFallback('tooltip native overlay is not in v0')
+    }
+  }, [nativeOverlay, open])
 
   // Reset stale open state when the tooltip becomes ineligible mid-flight
   // (consumer toggles disabled, or content drops to null/undefined). Without

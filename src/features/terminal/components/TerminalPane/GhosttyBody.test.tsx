@@ -1,5 +1,6 @@
 // cspell:ignore Ghostty
-import { act, render, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NativeGhosttyDataRequest } from '../../nativeGhosttyClient'
@@ -12,7 +13,18 @@ import {
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { GhosttyBody } from './GhosttyBody'
 
+interface MockTerminalContextMenuProps {
+  isOpen: boolean
+  position: { x: number; y: number } | null
+  onPaste: () => void
+}
+
 const backendListeners = new Map<string, (payload: unknown) => void>()
+
+const terminalMenuMock = vi.hoisted(() => ({
+  props: null as MockTerminalContextMenuProps | null,
+}))
+
 let outputListener:
   | ((
       sessionId: string,
@@ -28,6 +40,23 @@ vi.mock('../../../../lib/backend', () => ({
 
     return Promise.resolve(() => backendListeners.delete(event))
   }),
+}))
+
+vi.mock('../TerminalContextMenu', () => ({
+  TerminalContextMenu: (
+    props: MockTerminalContextMenuProps
+  ): ReactElement | null => {
+    terminalMenuMock.props = props
+
+    return props.isOpen ? (
+      <div
+        role="menu"
+        aria-label="Terminal actions"
+        data-x={props.position?.x}
+        data-y={props.position?.y}
+      />
+    ) : null
+  },
 }))
 
 vi.mock('../../nativeGhosttyClient', () => {
@@ -88,6 +117,7 @@ vi.mock('../../ptySessionMap', () => ({
 
 const createService = (): ITerminalService =>
   ({
+    write: vi.fn(() => Promise.resolve()),
     onData: vi.fn(
       (
         listener: (
@@ -110,6 +140,7 @@ describe('GhosttyBody', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     backendListeners.clear()
+    terminalMenuMock.props = null
     outputListener = null
   })
 
@@ -418,6 +449,118 @@ describe('GhosttyBody', () => {
     })
 
     expect(onCommandSubmit).toHaveBeenCalledWith('pty-1', '/clear')
+  })
+
+  test('opens terminal context menu from native right-click event', async () => {
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
+    })
+
+    act(() => {
+      backendListeners.get('ghostty-native-context-menu')?.({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        x: 40,
+        y: 50,
+      })
+    })
+
+    expect(
+      screen.getByRole('menu', { name: 'Terminal actions' })
+    ).toBeInTheDocument()
+  })
+
+  test('clamps native context menu coordinates to the renderer viewport', async () => {
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
+    })
+
+    act(() => {
+      backendListeners.get('ghostty-native-context-menu')?.({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        x: window.innerWidth + 100,
+        y: window.innerHeight + 100,
+      })
+    })
+
+    expect(terminalMenuMock.props?.position).toEqual({
+      x: window.innerWidth - 1,
+      y: window.innerHeight - 1,
+    })
+  })
+
+  test('ignores native context menu paste when clipboard read rejects', async () => {
+    const service = createService()
+
+    const originalClipboard = Object.getOwnPropertyDescriptor(
+      window.navigator,
+      'clipboard'
+    )
+
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { readText: vi.fn(() => Promise.reject(new Error('denied'))) },
+    })
+
+    try {
+      render(
+        <GhosttyBody
+          paneId="pane-1"
+          ptyId="pty-1"
+          cwd="/tmp"
+          active
+          service={service}
+        />
+      )
+
+      await waitFor(() => {
+        expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
+      })
+
+      act(() => {
+        backendListeners.get('ghostty-native-context-menu')?.({
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          x: 40,
+          y: 50,
+        })
+      })
+
+      await act(async () => {
+        terminalMenuMock.props?.onPaste()
+        await Promise.resolve()
+      })
+
+      expect(service.write).not.toHaveBeenCalled()
+    } finally {
+      if (originalClipboard === undefined) {
+        delete (window.navigator as unknown as { clipboard?: unknown })
+          .clipboard
+      } else {
+        Object.defineProperty(window.navigator, 'clipboard', originalClipboard)
+      }
+    }
   })
 
   test('tracks cwd changes from native output OSC 7 sequences', async () => {
