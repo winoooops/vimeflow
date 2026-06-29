@@ -2,8 +2,11 @@ import { useEffect, type ReactElement } from 'react'
 import { Popover } from '@/components/Popover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 
-const popoverActionFocusClass =
-  'focus:outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary'
+const popoverGhostActionFocusClass =
+  'ring-0 focus:outline-none focus-visible:bg-surface-container-high focus-visible:text-on-surface focus-visible:outline-none focus-visible:ring-0'
+
+const popoverPrimaryActionFocusClass =
+  'ring-0 focus:outline-none focus-visible:brightness-110 focus-visible:outline-none focus-visible:ring-0'
 
 interface FinishFeedbackPopoverProps {
   anchor: HTMLElement
@@ -87,7 +90,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverActionFocusClass}`}
+              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
               Dismiss (n)
             </button>
@@ -106,7 +109,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverActionFocusClass}`}
+              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
               Cancel (n)
             </button>
@@ -114,7 +117,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="Y"
               onClick={(): void => onSend(result.pane)}
-              className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverActionFocusClass}`}
+              className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverPrimaryActionFocusClass}`}
             >
               Confirm (Y)
             </button>
@@ -139,7 +142,7 @@ export const FinishFeedbackPopover = ({
                 <button
                   type="button"
                   onClick={(): void => onSend(pane)}
-                  className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverActionFocusClass}`}
+                  className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverPrimaryActionFocusClass}`}
                 >
                   Send
                 </button>
@@ -151,7 +154,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverActionFocusClass}`}
+              className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
               Cancel (n)
             </button>
