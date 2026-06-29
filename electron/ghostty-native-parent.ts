@@ -53,6 +53,7 @@ interface GhosttyNativeParentDeps {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
   packaged?: boolean
+  resourcesPath?: string
   addon?: GhosttyNativeParentAddon
 }
 
@@ -67,27 +68,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const MAX_PENDING_CHUNKS = 64
 
+// Packaging changes where artifacts are loaded from, not whether the feature is enabled.
 export const isGhosttyNativeParentEnabled = (
   platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-  packaged = false
+  env: NodeJS.ProcessEnv = process.env
 ): boolean =>
-  !packaged &&
-  platform === 'darwin' &&
-  env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+  platform === 'darwin' && env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
 
-const nativeParentDir = (): string =>
-  path.resolve(__dirname, '..', 'dist-native', 'ghostty-parent')
+const nativeParentDir = (packaged = false, resourcesPath = ''): string => {
+  if (packaged) {
+    return path.join(resourcesPath, 'ghostty-parent')
+  }
 
-const addonPath = (): string =>
-  path.join(nativeParentDir(), 'ghostty_native_parent.node')
+  return path.resolve(__dirname, '..', 'dist-native', 'ghostty-parent')
+}
 
-const bridgePath = (): string =>
-  path.join(nativeParentDir(), 'libGhosttyElectronBridge.dylib')
+const addonPath = (dir: string): string =>
+  path.join(dir, 'ghostty_native_parent.node')
 
-const loadAddon = (): GhosttyNativeParentAddon => {
-  const addon = addonPath()
-  const bridge = bridgePath()
+const bridgePath = (dir: string): string =>
+  path.join(dir, 'libGhosttyElectronBridge.dylib')
+
+const loadAddon = (dir: string): GhosttyNativeParentAddon => {
+  const addon = addonPath(dir)
+  const bridge = bridgePath(dir)
 
   if (!existsSync(addon) || !existsSync(bridge)) {
     throw new Error(
@@ -153,6 +157,8 @@ export class GhosttyNativeParentController {
 
   private readonly packaged: boolean
 
+  private readonly nativeParentDir: string
+
   private addon: GhosttyNativeParentAddon | null
 
   private addonLoadFailed = false
@@ -164,6 +170,10 @@ export class GhosttyNativeParentController {
     this.platform = deps.platform ?? process.platform
     this.env = deps.env ?? process.env
     this.packaged = deps.packaged ?? false
+    this.nativeParentDir = nativeParentDir(
+      this.packaged,
+      deps.resourcesPath ?? process.resourcesPath
+    )
     this.addon = deps.addon ?? null
   }
 
@@ -301,7 +311,7 @@ export class GhosttyNativeParentController {
   }
 
   private enabled(): boolean {
-    return isGhosttyNativeParentEnabled(this.platform, this.env, this.packaged)
+    return isGhosttyNativeParentEnabled(this.platform, this.env)
   }
 
   private getAddon(): GhosttyNativeParentAddon {
@@ -310,7 +320,7 @@ export class GhosttyNativeParentController {
     }
 
     try {
-      this.addon ??= loadAddon()
+      this.addon ??= loadAddon(this.nativeParentDir)
     } catch (error) {
       this.addonLoadFailed = true
       throw error
@@ -370,7 +380,7 @@ export class GhosttyNativeParentController {
     }
 
     state.surface = addon.create(
-      bridgePath(),
+      bridgePath(this.nativeParentDir),
       win.getNativeWindowHandle(),
       (data) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {

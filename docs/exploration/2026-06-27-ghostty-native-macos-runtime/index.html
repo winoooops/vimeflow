@@ -177,6 +177,24 @@
         color: var(--muted);
       }
 
+      .diagram {
+        margin: 16px 0 0;
+      }
+
+      .diagram img {
+        display: block;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8f8fb;
+      }
+
+      .diagram figcaption {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
       .ok {
         color: var(--green);
       }
@@ -420,10 +438,9 @@ session.receive(data) // host PTY output -> Ghostty surface</code></pre>
         <ol>
           <li>
             <strong>Phase A：standalone Swift smoke。</strong>
-            已放在
-            <code
-              >docs/exploration/2026-06-27-ghostty-native-macos-runtime/ghostty-native-macos-smoke</code
-            >。它使用 <code>libghostty-spm</code> +
+            最初放在 <code>docs/exploration</code> 下做 spike；现在已迁到
+            <code>native/ghostty-helper</code>。它使用
+            <code>libghostty-spm</code> +
             <code>InMemoryTerminalSession</code>，已验证 GhosttyTerminal native
             surface 和 host-managed I/O 的最小闭环。
           </li>
@@ -499,8 +516,13 @@ session.receive(data) // host PTY output -> Ghostty surface</code></pre>
             <tr>
               <td>Swift helper</td>
               <td>
-                <code>ElectronHostClient.swift</code> 和
-                <code>GhosttyNativeMacosSmoke.swift</code>
+                <code
+                  >native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/ElectronHostClient.swift</code
+                >
+                和
+                <code
+                  >native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/GhosttyNativeMacosSmoke.swift</code
+                >
               </td>
               <td>
                 <code>--electron-helper</code> 模式下创建 borderless floating
@@ -513,7 +535,7 @@ session.receive(data) // host PTY output -> Ghostty surface</code></pre>
               <td>
                 <code>native/ghostty-parent/ghostty_native_parent.cc</code> 和
                 <code
-                  >Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift</code
+                  >native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift</code
                 >
               </td>
               <td>
@@ -688,15 +710,16 @@ session.receive(data) // host PTY output -> Ghostty surface</code></pre>
               <td><span class="ok">feature-gated</span></td>
               <td>
                 默认 xterm 行为不变；只有 macOS 且
-                <code>VITE_GHOSTTY_NATIVE_MACOS=1</code> 时才走 native helper。
-                当前仍是 spike，不是最终多 pane 产品实现。
+                <code>VITE_GHOSTTY_NATIVE_MACOS=1</code> 或
+                <code>VITE_GHOSTTY_NATIVE_MACOS_PARENT=1</code> 时才走 native
+                Ghostty spike。产品交付方向是 parent <code>NSView</code> addon。
               </td>
             </tr>
           </tbody>
         </table>
         <pre><code>npm run backend:build
 npm run ghostty:native-parent:build
-cd docs/exploration/2026-06-27-ghostty-native-macos-runtime/ghostty-native-macos-smoke
+cd native/ghostty-helper
 swift run ghostty-native-macos-smoke
 VITE_GHOSTTY_NATIVE_MACOS=1 npm run electron:dev -- --port 5174
 VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></pre>
@@ -716,9 +739,10 @@ VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></p
             orphan cleanup。
           </li>
           <li>
-            Swift package 现在仍放在 <code>docs/exploration</code> 下，方便
-            spike 不污染产品结构。确认 parent-host 路线后，应该迁到类似
-            <code>native/macos</code> 的专用目录，再接正式 build/package 流程。
+            Swift package 已从 <code>docs/exploration</code> 迁到
+            <code>native/ghostty-helper</code>，C++ parent addon 放在
+            <code>native/ghostty-parent</code>；M7 packaging 直接使用这两个
+            production native 目录。
           </li>
           <li>
             native callback 不能直接从 Ghostty IO 线程调用 JS。所有 input/resize
@@ -838,14 +862,143 @@ VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 npm run electron:dev -- --port 5174</code></p
           </tbody>
         </table>
         <p class="note">
-          本轮还没有完成 packaged app smoke，也没有把 SwiftPM bridge 从
-          <code>docs/exploration</code> 迁到生产 native 目录；这仍属于 M6
-          后半段和 M7 的工作。
+          M6 的边界是证明 Electron 可以用 parent <code>NSView</code> 承载
+          Ghostty surface，并且保留 xterm fallback。packaging、CI 和 packaged
+          runtime 解析在 M7 中继续收敛；菜单/弹窗高于 native surface 的 z-order
+          问题仍保留给 M9。
         </p>
       </section>
 
       <section>
-        <h2>12. 证据链接</h2>
+        <h2>12. 2026-06-28 M7 更新：packaging 和 CI</h2>
+        <p>
+          M7 的目标不是继续改 renderer，而是把已经验证过的 native parent
+          路线接进 macOS packaging：开发态继续从
+          <code>dist-native/ghostty-parent</code>
+          加载，打包后从
+          <code>Contents/Resources/ghostty-parent</code> 加载同一组 native
+          artifacts。
+        </p>
+        <figure class="diagram">
+          <img
+            src="./ghostty-macos-diagram.png"
+            alt="Native Ghostty macOS package ingestion and Electron parent NSView bridge"
+          />
+          <figcaption>
+            Native Ghostty 通过 Swift package 构建 bridge dylib，再由 C++
+            Node-API addon 挂进 Electron main process，并把 Ghostty TerminalView
+            作为 BrowserWindow parent NSView 的 child view。
+          </figcaption>
+        </figure>
+        <table>
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>状态</th>
+              <th>证据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>packaged artifact layout</td>
+              <td><span class="ok">已接入</span></td>
+              <td>
+                <code>electron-builder.yml</code> 的 mac
+                <code>extraResources</code> 会把
+                <code>dist-native/ghostty-parent</code> 复制到
+                <code>Contents/Resources/ghostty-parent</code>，其中包含
+                <code>ghostty_native_parent.node</code> 和
+                <code>libGhosttyElectronBridge.dylib</code>。
+              </td>
+            </tr>
+            <tr>
+              <td>runtime path resolution</td>
+              <td><span class="ok">已接入</span></td>
+              <td>
+                Electron main 侧根据
+                <code>app.isPackaged</code> 选择路径：开发态用 repo 内
+                <code>dist-native</code>，packaged 态用
+                <code>process.resourcesPath</code>。renderer 侧只根据 preload
+                bridge 是否存在决定是否尝试 native Ghostty，避免 packaged app 被
+                Vite compile-time env 卡住。
+              </td>
+            </tr>
+            <tr>
+              <td>native addon link shape</td>
+              <td><span class="ok">已修正</span></td>
+              <td>
+                <code>ghostty_native_parent.node</code> 改为 bundle 产物，并用
+                <code>install_name_tool</code> 写入稳定 install name。
+                <code>otool -L</code> 对 packaged <code>.node</code> 只看到系统
+                <code>libc++</code> 和 <code>libSystem</code>，不再暴露
+                repo-local 路径。
+              </td>
+            </tr>
+            <tr>
+              <td>native smoke script</td>
+              <td><span class="ok">已补</span></td>
+              <td>
+                <code>npm run ghostty:native-parent:smoke</code> 会检查 native
+                artifacts 是否存在、Node 能否加载 <code>.node</code>、addon
+                exports 是否完整，并对 <code>.node</code>/<code>.dylib</code> 跑
+                <code>otool -L</code>，拒绝 <code>not found</code> 和 repo-local
+                load path。
+              </td>
+            </tr>
+            <tr>
+              <td>macOS CI</td>
+              <td><span class="ok">已规划到 workflow</span></td>
+              <td>
+                PR 到 <code>feature/ghostty-native-macos-runtime</code> 时会跑
+                macOS native smoke：install、native build、addon
+                smoke、packaging dry-run。E2E workflow 也会在该 feature
+                integration branch 上触发。
+              </td>
+            </tr>
+            <tr>
+              <td>packaged build</td>
+              <td><span class="ok">本地通过</span></td>
+              <td>
+                <code>npm run electron:build:mac:arm64</code> 通过，并生成
+                <code>release/vimeflow-0.1.0-arm64.dmg</code>。检查
+                <code>release/mac-arm64/Vimeflow.app/Contents/Resources</code>
+                可确认 native parent artifacts 已进入 app bundle。
+              </td>
+            </tr>
+            <tr>
+              <td>packaged runtime smoke</td>
+              <td><span class="ok">本地通过</span></td>
+              <td>
+                用 <code>VITE_GHOSTTY_NATIVE_MACOS_PARENT=1</code> 启动 packaged
+                app 后，<code>lsof</code> 可看到进程加载的是
+                <code
+                  >Contents/Resources/ghostty-parent/ghostty_native_parent.node</code
+                >
+                和同目录下的 <code>libGhosttyElectronBridge.dylib</code>。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="warn">
+          仍然不是 release-ready signing 状态：当前 packaging 配置使用
+          <code>identity: null</code>，electron-builder 会明确提示 arm64
+          需要签名但已跳过。 可以附带说明文档给内部测试者手动打开未签名
+          app，但这只能作为本地 QA
+          临时方案，不能作为公开发货标准。正式分发前需要补齐 app bundle、nested
+          <code>.node</code>、nested <code>.dylib</code> 的
+          codesign/notarization 验证，并确认 hardened runtime entitlement
+          不会阻断 native addon 和 Ghostty bridge 加载。
+        </p>
+        <p class="note">
+          产品默认值仍未切换。M7 只保证 feature-gated packaged native Ghostty
+          可以被构建、 加载和 smoke；是否把 macOS 默认 terminal 改成 native
+          Ghostty，应该在后续 M8 结合 fallback UI、错误上报和菜单 z-order
+          follow-up 一起推进。
+        </p>
+      </section>
+
+      <section>
+        <h2>13. 证据链接</h2>
         <ul>
           <li>
             <a href="https://ghostty.org/docs/about"

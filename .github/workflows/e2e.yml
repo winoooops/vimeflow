@@ -19,6 +19,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/ghostty-native-macos-runtime
     paths:
       - 'crates/**'
       - 'Cargo.toml'

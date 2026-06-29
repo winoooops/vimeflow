@@ -62,11 +62,9 @@ const isDisabledResult = (value: unknown): boolean =>
   'enabled' in value &&
   value.enabled === false
 
+// Renderer selection is macOS AND preload bridge; feature flags stay in preload/main.
 export const shouldUseNativeGhostty = (): boolean =>
-  (import.meta.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
-    import.meta.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1') &&
-  isMacRenderer() &&
-  Boolean(nativeGhosttyApi())
+  isMacRenderer() && Boolean(nativeGhosttyApi())
 
 export const updateNativeGhostty = async (
   request: NativeGhosttyUpdateRequest

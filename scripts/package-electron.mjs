@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -103,7 +104,12 @@ export function buildCommands(target) {
   }
 
   if (target === 'mac-arm64') {
-    return [...commands, ['electron-builder', ['--mac', 'dmg', '--arm64']]]
+    return [
+      ...commands,
+      ['npm', ['run', 'ghostty:native-parent:build']],
+      ['npm', ['run', 'ghostty:native-parent:smoke']],
+      ['electron-builder', ['--mac', 'dmg', '--arm64']],
+    ]
   }
 
   throw new Error(`unrecognized package target: ${target}`)
