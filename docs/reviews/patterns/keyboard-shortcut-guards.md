@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-28
-ref_count: 5
+last_updated: 2026-06-29
+ref_count: 6
 ---
 
 # Keyboard Shortcut Guards
@@ -363,3 +363,12 @@ against three classes of false-fire:
   before applying the next layout. Added regression coverage for the cycle-away-then-single
   path so `Mod+Z` returns to the single-layout no-op behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Unified diff navigation reused split-row skipping
+
+- **Source:** github-codex-connector | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The `j`/`k` line shortcuts always skipped sibling targets with the same split-row index, even when the active renderer was unified and `h`/`l` side navigation was disabled.
+- **Fix:** Kept same-row skipping and same-side preservation only for split mode; unified mode now steps target-by-target and uses per-line scroll indexing. Added a regression that reaches the added side of a replacement hunk in unified view.
+- **Commit:** same commit as this entry

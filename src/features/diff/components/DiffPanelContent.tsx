@@ -71,6 +71,7 @@ const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
 
 const PIERRE_DIFF_CONTAINER_SELECTOR = 'diffs-container'
+const STICKY_HEADER_SCROLL_GAP_PX = 4
 
 // The subset of Pierre options the worker pool OWNS once a pool is active:
 // the Shiki `theme` and the intra-line word-diff algorithm (`lineDiffType`).
@@ -140,6 +141,7 @@ interface KeyboardLineTarget {
   lineNumber: number
   side: AnnotationSide
   hunkIndex: number
+  splitRowIndex: number
   changed: boolean
 }
 
@@ -202,12 +204,40 @@ const keyboardLineTargetsForDiff = (
   fileDiff.hunks.forEach((hunk, hunkIndex) => {
     let oldLine = hunk.oldStart
     let newLine = hunk.newStart
+    let splitRowIndex = 0
+    let pendingDeletions: KeyboardLineTarget[] = []
+    let pendingAdditions: KeyboardLineTarget[] = []
+
+    const flushChangedRows = (): void => {
+      const rowCount = Math.max(
+        pendingDeletions.length,
+        pendingAdditions.length
+      )
+
+      for (let rowOffset = 0; rowOffset < rowCount; rowOffset += 1) {
+        const rowIndex = splitRowIndex + rowOffset
+        if (rowOffset < pendingDeletions.length) {
+          const deletion = pendingDeletions[rowOffset]
+          targets.push({ ...deletion, splitRowIndex: rowIndex })
+        }
+
+        if (rowOffset < pendingAdditions.length) {
+          const addition = pendingAdditions[rowOffset]
+          targets.push({ ...addition, splitRowIndex: rowIndex })
+        }
+      }
+
+      splitRowIndex += rowCount
+      pendingDeletions = []
+      pendingAdditions = []
+    }
 
     if (hunk.lines.length === 0) {
       targets.push({
         lineNumber: hunk.newLines === 0 ? hunk.oldStart : hunk.newStart,
         side: hunk.newLines === 0 ? 'deletions' : 'additions',
         hunkIndex,
+        splitRowIndex,
         changed: true,
       })
 
@@ -223,20 +253,38 @@ const keyboardLineTargetsForDiff = (
 
       if (line.type === 'removed') {
         if (oldLineNumber !== undefined) {
-          targets.push({
+          pendingDeletions.push({
             lineNumber: oldLineNumber,
             side: 'deletions',
             hunkIndex,
+            splitRowIndex,
             changed: true,
           })
         }
-      } else if (newLineNumber !== undefined) {
-        targets.push({
-          lineNumber: newLineNumber,
-          side: 'additions',
-          hunkIndex,
-          changed: line.type === 'added',
-        })
+      } else if (line.type === 'added') {
+        if (newLineNumber !== undefined) {
+          pendingAdditions.push({
+            lineNumber: newLineNumber,
+            side: 'additions',
+            hunkIndex,
+            splitRowIndex,
+            changed: true,
+          })
+        }
+      } else {
+        flushChangedRows()
+
+        if (newLineNumber !== undefined) {
+          targets.push({
+            lineNumber: newLineNumber,
+            side: 'additions',
+            hunkIndex,
+            splitRowIndex,
+            changed: false,
+          })
+        }
+
+        splitRowIndex += 1
       }
 
       if (line.type !== 'added') {
@@ -247,10 +295,39 @@ const keyboardLineTargetsForDiff = (
         newLine += 1
       }
     }
+
+    flushChangedRows()
   })
 
   return targets
 }
+
+const sameKeyboardRow = (
+  left: KeyboardLineTarget,
+  right: KeyboardLineTarget
+): boolean =>
+  left.hunkIndex === right.hunkIndex &&
+  left.splitRowIndex === right.splitRowIndex
+
+const keyboardRowIndexForTarget = (
+  targets: KeyboardLineTarget[],
+  targetIndex: number
+): number => {
+  let rowIndex = 0
+
+  for (let index = 1; index <= targetIndex; index += 1) {
+    if (!sameKeyboardRow(targets[index - 1], targets[index])) {
+      rowIndex += 1
+    }
+  }
+
+  return rowIndex
+}
+
+const keyboardRowCountForTargets = (targets: KeyboardLineTarget[]): number =>
+  targets.length === 0
+    ? 0
+    : keyboardRowIndexForTarget(targets, targets.length - 1) + 1
 
 // Matches Pierre's rendered rows/gutters for the current keyboard target.
 const lineSelectorForKeyboardTarget = (target: KeyboardLineTarget): string => {
@@ -352,34 +429,91 @@ const lineRangeFitsContainer = (
   return bottom - top <= container.clientHeight
 }
 
+const stickyHeaderOffsetForDiffRoot = (root: HTMLElement): number => {
+  const headers = [
+    ...root.querySelectorAll<HTMLElement>('[data-diffs-header][data-sticky]'),
+  ]
+
+  for (const container of root.querySelectorAll<HTMLElement>(
+    PIERRE_DIFF_CONTAINER_SELECTOR
+  )) {
+    if (container.shadowRoot !== null) {
+      headers.push(
+        ...container.shadowRoot.querySelectorAll<HTMLElement>(
+          '[data-diffs-header][data-sticky]'
+        )
+      )
+    }
+  }
+
+  const height = Math.max(
+    0,
+    ...headers.map((header) => header.getBoundingClientRect().height)
+  )
+
+  return height === 0 ? 0 : height + STICKY_HEADER_SCROLL_GAP_PX
+}
+
+const revealLineBelowStickyHeader = (
+  container: HTMLElement,
+  line: HTMLElement,
+  reservePreviousRow: boolean
+): void => {
+  const stickyOffset = stickyHeaderOffsetForDiffRoot(container)
+  if (stickyOffset === 0) {
+    return
+  }
+
+  const containerTop = container.getBoundingClientRect().top
+  const lineRect = line.getBoundingClientRect()
+  const rowOffset = reservePreviousRow ? lineRect.height : 0
+  const overlap = containerTop + stickyOffset + rowOffset - lineRect.top
+
+  if (overlap > 0) {
+    container.scrollTop = Math.max(0, container.scrollTop - Math.ceil(overlap))
+  }
+}
+
 const scrollLineElementIntoView = (
+  container: HTMLElement,
   line: HTMLElement,
   targetIndex: number,
   targetCount: number,
   delta: number
 ): void => {
+  if (delta === 0) {
+    line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    revealLineBelowStickyHeader(container, line, false)
+
+    return
+  }
+
   if (targetCount === 1) {
     line.scrollIntoView({
       block: delta > 0 ? 'end' : 'start',
       inline: 'nearest',
     })
+    revealLineBelowStickyHeader(container, line, delta < 0)
 
     return
   }
 
   if (targetIndex === 0) {
     line.scrollIntoView({ block: 'start', inline: 'nearest' })
+    revealLineBelowStickyHeader(container, line, delta < 0)
 
     return
   }
 
   if (targetIndex === targetCount - 1) {
     line.scrollIntoView({ block: 'end', inline: 'nearest' })
+    revealLineBelowStickyHeader(container, line, false)
 
     return
   }
 
   line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  revealLineBelowStickyHeader(container, line, delta < 0)
 }
 
 const keyboardConfirmCopy = (
@@ -1507,12 +1641,7 @@ export const DiffPanelContent = ({
 
   // Keeps j/k line navigation visible without changing the selected target.
   const scrollKeyboardTargetIntoView = useCallback(
-    (
-      target: KeyboardLineTarget,
-      targetIndex: number,
-      targetCount: number,
-      delta: number
-    ): void => {
+    (target: KeyboardLineTarget, targetIndex: number, delta: number): void => {
       const node = diffScrollBodyRef.current
       if (node === null) {
         return
@@ -1523,9 +1652,19 @@ export const DiffPanelContent = ({
         return
       }
 
-      scrollLineElementIntoView(line, targetIndex, targetCount, delta)
+      scrollLineElementIntoView(
+        node,
+        line,
+        effectiveDiffStyle === 'split'
+          ? keyboardRowIndexForTarget(keyboardLineTargets, targetIndex)
+          : targetIndex,
+        effectiveDiffStyle === 'split'
+          ? keyboardRowCountForTargets(keyboardLineTargets)
+          : keyboardLineTargets.length,
+        delta
+      )
     },
-    []
+    [effectiveDiffStyle, keyboardLineTargets]
   )
 
   // Hunk jumps reveal the hunk top, then include the end only when it fits.
@@ -1578,18 +1717,56 @@ export const DiffPanelContent = ({
       setNavSelection(null)
       setKeyboardLineActive(true)
       setKeyboardLineIndex((prev) => {
-        const next = Math.min(
-          Math.max(prev + delta, 0),
-          keyboardLineTargets.length - 1
+        const currentIndex = Math.min(prev, keyboardLineTargets.length - 1)
+        const currentTarget = keyboardLineTargets[currentIndex]
+        let rowTargetIndex = currentIndex + delta
+
+        if (
+          rowTargetIndex < 0 ||
+          rowTargetIndex >= keyboardLineTargets.length
+        ) {
+          return currentIndex
+        }
+
+        if (effectiveDiffStyle === 'split') {
+          rowTargetIndex = currentIndex
+
+          while (
+            rowTargetIndex + delta >= 0 &&
+            rowTargetIndex + delta < keyboardLineTargets.length
+          ) {
+            rowTargetIndex += delta
+
+            const rowTarget = keyboardLineTargets[rowTargetIndex]
+            if (
+              rowTarget.hunkIndex !== currentTarget.hunkIndex ||
+              rowTarget.splitRowIndex !== currentTarget.splitRowIndex
+            ) {
+              break
+            }
+          }
+        }
+
+        const rowTarget = keyboardLineTargets[rowTargetIndex]
+
+        const sameSideIndex = keyboardLineTargets.findIndex(
+          (target) =>
+            target.hunkIndex === rowTarget.hunkIndex &&
+            target.splitRowIndex === rowTarget.splitRowIndex &&
+            target.side === currentTarget.side
         )
+
+        const next =
+          effectiveDiffStyle === 'split' && sameSideIndex !== -1
+            ? sameSideIndex
+            : rowTargetIndex
+        if (next === currentIndex) {
+          return currentIndex
+        }
+
         const nextTarget = keyboardLineTargets[next]
         setFocusedHunkIndex(nextTarget.hunkIndex)
-        scrollKeyboardTargetIntoView(
-          nextTarget,
-          next,
-          keyboardLineTargets.length,
-          delta
-        )
+        scrollKeyboardTargetIntoView(nextTarget, next, delta)
 
         return next
       })
@@ -1597,6 +1774,7 @@ export const DiffPanelContent = ({
     },
     [
       clearNavSelectionTimer,
+      effectiveDiffStyle,
       focusDiffRoot,
       keyboardLineTargets,
       scrollKeyboardTargetIntoView,
@@ -1645,12 +1823,7 @@ export const DiffPanelContent = ({
       setKeyboardLineIndex(targetIndex)
       setFocusedHunkIndex(next)
       if (!scrollHunkIntoView(next)) {
-        scrollKeyboardTargetIntoView(
-          target,
-          targetIndex,
-          keyboardLineTargets.length,
-          delta
-        )
+        scrollKeyboardTargetIntoView(target, targetIndex, delta)
       }
       focusDiffRoot()
     },
@@ -1711,6 +1884,43 @@ export const DiffPanelContent = ({
   const toggleDiffStyle = useCallback((): void => {
     handleDiffStyleChange(diffStyle === 'split' ? 'unified' : 'split')
   }, [diffStyle, handleDiffStyleChange])
+
+  const moveKeyboardLineSide = useCallback(
+    (side: AnnotationSide): void => {
+      if (effectiveDiffStyle !== 'split' || keyboardLineTarget === null) {
+        return
+      }
+
+      const nextIndex = keyboardLineTargets.findIndex(
+        (target) =>
+          target.hunkIndex === keyboardLineTarget.hunkIndex &&
+          target.splitRowIndex === keyboardLineTarget.splitRowIndex &&
+          target.side === side
+      )
+
+      if (nextIndex === -1 || nextIndex === keyboardLineIndex) {
+        return
+      }
+
+      const nextTarget = keyboardLineTargets[nextIndex]
+      clearNavSelectionTimer()
+      setNavSelection(null)
+      setKeyboardLineActive(true)
+      setKeyboardLineIndex(nextIndex)
+      setFocusedHunkIndex(nextTarget.hunkIndex)
+      scrollKeyboardTargetIntoView(nextTarget, nextIndex, 0)
+      focusDiffRoot()
+    },
+    [
+      clearNavSelectionTimer,
+      effectiveDiffStyle,
+      focusDiffRoot,
+      keyboardLineIndex,
+      keyboardLineTarget,
+      keyboardLineTargets,
+      scrollKeyboardTargetIntoView,
+    ]
+  )
 
   // Opens the y/n guard for destructive or staging keyboard actions.
   const openKeyboardConfirm = useCallback(
@@ -1856,6 +2066,7 @@ export const DiffPanelContent = ({
     onDiscardHunk: (): void => openKeyboardConfirm('discard-hunk'),
     onDiscardFile: (): void => openKeyboardConfirm('discard-file'),
     onToggleView: toggleDiffStyle,
+    onMoveLineSide: moveKeyboardLineSide,
     onConfirm: confirmKeyboardAction,
     onCancelConfirm: cancelKeyboardConfirm,
   })

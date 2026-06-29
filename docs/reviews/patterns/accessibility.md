@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 81
+last_updated: 2026-06-29
+ref_count: 84
 ---
 
 # Accessibility
@@ -762,4 +762,46 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx`
 - **Finding:** `LayoutSwitcher` reused the “Focus active pane” accessible name and tooltip for every `single` layout option, including the New Session dialog where the control selects a “Single” template rather than focusing an active pane.
 - **Fix:** Made the focus-action label and shortcut chip opt-in via `labelSingleAsFocusAction`, enabled it only in workspace chrome, and kept generic pickers on the plain “Single” label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 75. Popover action buttons suppressed keyboard focus indication
+
+- **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Cancel and Confirm buttons removed the browser focus ring with `focus:outline-none focus-visible:outline-none` without replacing it, so keyboard users could not tell which action was focused before activating it.
+- **Fix:** Added the shared button focus-ring treatment (`focus-visible:ring-1 focus-visible:ring-primary`) to the popover action class and updated co-located tests to assert the visible focus styles.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 76. Multi-agent send choices had no visible Tab focus
+
+- **Source:** github-claude | PR #633 round 1 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** The multi-agent finish-feedback branch suppressed `focus-visible` outlines on each Send button even though those choices have no shortcut fallback, making Tab navigation through the agent list ambiguous.
+- **Fix:** Routed the Send buttons through the same explicit popover action focus class and added a regression assertion that multi-agent Send buttons include the visible focus ring.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 77. Confirm popover buttons suppressed the shared focus ring
+
+- **Source:** github-codex-connector + github-claude | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The hunk/file keyboard-confirm popover passed `className="focus-visible:ring-0"` to both `Button` actions, overriding the shared primitive's only visible keyboard focus indicator.
+- **Fix:** Removed the local ring suppression so the shared `Button` focus styles apply, and added co-located regression assertions for the `No (n)` and `Yes (y)` actions.
+- **Commit:** same commit as this entry
+
+### 78. Primary finish-feedback actions relied on brightness-only focus
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Confirm and multi-agent Send buttons suppressed
+  outlines and rings while using only `focus-visible:brightness-110` as the
+  keyboard focus cue. The saturated primary fill made that cue too weak for
+  keyboard-only and low-vision users, especially in the multi-agent list where
+  Tab is the selection path.
+- **Fix:** Replaced the brightness-only primary focus class with a visible
+  token-backed focus ring and updated co-located tests to reject the old
+  brightness/ring-0 treatment.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

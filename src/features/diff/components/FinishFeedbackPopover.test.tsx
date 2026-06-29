@@ -94,6 +94,45 @@ test('kind one shows pane info, correct copy, and buttons work', async () => {
   anchor.remove()
 })
 
+test('kind one confirmation buttons render visible keyboard focus styles', () => {
+  const anchor = createAnchor()
+  const pane = makePane()
+
+  render(
+    <FinishFeedbackPopover
+      anchor={anchor}
+      result={{ kind: 'one', pane } as ResolveResult}
+      commentCount={1}
+      fileCount={1}
+      onSend={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  expect(screen.getByRole('button', { name: 'Cancel (n)' })).toHaveClass(
+    'focus:outline-none',
+    'focus-visible:bg-surface-container-high',
+    'focus-visible:outline-none',
+    'focus-visible:ring-0'
+  )
+
+  expect(screen.getByRole('button', { name: 'Confirm (Y)' })).toHaveClass(
+    'focus:outline-none',
+    'focus-visible:outline-none',
+    'focus-visible:ring-2',
+    'focus-visible:ring-primary',
+    'focus-visible:ring-offset-2',
+    'focus-visible:ring-offset-surface-container'
+  )
+
+  expect(screen.getByRole('button', { name: 'Confirm (Y)' })).not.toHaveClass(
+    'focus-visible:brightness-110',
+    'focus-visible:ring-0'
+  )
+
+  anchor.remove()
+})
+
 test('kind one accepts Y to confirm and n to cancel', async () => {
   const user = userEvent.setup()
   const anchor = createAnchor()
@@ -160,6 +199,17 @@ test('kind many renders row per candidate and sends to correct pane', async () =
 
   const sendButtons = screen.getAllByRole('button', { name: 'Send' })
   expect(sendButtons).toHaveLength(2)
+  expect(sendButtons[0]).toHaveClass(
+    'focus-visible:ring-2',
+    'focus-visible:ring-primary',
+    'focus-visible:ring-offset-2',
+    'focus-visible:ring-offset-surface-container'
+  )
+
+  expect(sendButtons[0]).not.toHaveClass(
+    'focus-visible:brightness-110',
+    'focus-visible:ring-0'
+  )
 
   await user.click(sendButtons[1])
   expect(onSend).toHaveBeenCalledTimes(1)

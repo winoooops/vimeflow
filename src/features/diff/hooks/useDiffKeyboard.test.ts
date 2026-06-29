@@ -77,6 +77,7 @@ const renderKeyboard = (
     onDiscardHunk: vi.fn(),
     onDiscardFile: vi.fn(),
     onToggleView: vi.fn(),
+    onMoveLineSide: vi.fn(),
     onConfirm: vi.fn(),
     onCancelConfirm: vi.fn(),
     ...overrides,
@@ -170,6 +171,16 @@ describe('useDiffKeyboard', () => {
     dispatch('t')
 
     expect(props.onToggleView).toHaveBeenCalledOnce()
+  })
+
+  test('h and l move the keyboard line between split sides', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('h')
+    dispatch('l')
+
+    expect(props.onMoveLineSide).toHaveBeenNthCalledWith(1, 'deletions')
+    expect(props.onMoveLineSide).toHaveBeenNthCalledWith(2, 'additions')
   })
 
   test('Ctrl+D and Ctrl+U scroll the current file', () => {
@@ -312,6 +323,7 @@ describe('useDiffKeyboard', () => {
       onDiscardHunk: vi.fn(),
       onDiscardFile: vi.fn(),
       onToggleView: vi.fn(),
+      onMoveLineSide: vi.fn(),
       onConfirm: vi.fn(),
       onCancelConfirm: vi.fn(),
     }

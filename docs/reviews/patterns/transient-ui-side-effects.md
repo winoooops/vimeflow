@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-26
-ref_count: 4
+last_updated: 2026-06-29
+ref_count: 5
 ---
 
 # Transient UI Side Effects
@@ -123,4 +123,33 @@ to persistent state through a separate, explicit path.
   suppresses the status bar and threaded it through `Header` to `HeaderActions`.
   Added regression coverage for the awaiting-restart pane and header forwarding
   behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Split diff row navigation scrolled on no-op movement
+
+- **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** Split-mode `j` navigation skipped paired deletion/addition
+  targets by row, but a single-row replacement diff could resolve the next
+  target back to the current deletion target. The selection did not move, yet
+  the scroll side effect still ran with a downward movement delta.
+- **Fix:** Added an early return when resolved keyboard navigation is a no-op,
+  before focus and scroll side effects run. Added a regression test covering a
+  single-row split replacement from the deletion side.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Split side navigation reused vertical scroll positioning
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** Split-mode `h`/`l` side navigation passed `delta=0` through
+  scroll positioning written for `j`/`k`. The helper treated non-positive
+  deltas as upward navigation, so lateral moves on the only, first, or last
+  visual row could snap the viewport even though the user did not move
+  vertically.
+- **Fix:** Added an explicit `delta === 0` path that uses nearest-block
+  scrolling and sticky-header reveal without previous-row reservation. Added a
+  regression assertion for lateral movement on a single split replacement row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

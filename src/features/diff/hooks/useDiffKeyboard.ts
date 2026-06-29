@@ -22,6 +22,7 @@ export interface UseDiffKeyboardOptions {
   onDiscardHunk: () => void
   onDiscardFile: () => void
   onToggleView: () => void
+  onMoveLineSide: (side: 'deletions' | 'additions') => void
   onConfirm: () => void
   onCancelConfirm: () => void
 }
@@ -63,6 +64,7 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
     onDiscardHunk,
     onDiscardFile,
     onToggleView,
+    onMoveLineSide,
     onConfirm,
     onCancelConfirm,
   } = options
@@ -156,6 +158,8 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
         d: onDiscardHunk,
         D: onDiscardFile,
         t: onToggleView,
+        h: () => onMoveLineSide('deletions'),
+        l: () => onMoveLineSide('additions'),
       }
 
       const handler = handlers[event.key]
@@ -189,6 +193,7 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
     onDiscardHunk,
     onDiscardFile,
     onToggleView,
+    onMoveLineSide,
     onConfirm,
     onCancelConfirm,
   ])

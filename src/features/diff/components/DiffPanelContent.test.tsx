@@ -1604,8 +1604,16 @@ describe('DiffPanelContent', () => {
         name: 'Stage hunk?',
       })
       expect(stageFile).not.toHaveBeenCalled()
+      const noButton = within(confirm).getByRole('button', { name: 'No (n)' })
+      const yesButton = within(confirm).getByRole('button', { name: 'Yes (y)' })
+      expect(noButton).toHaveClass('focus-visible:ring-1')
+      expect(noButton).toHaveClass('focus-visible:ring-primary')
+      expect(noButton).not.toHaveClass('focus-visible:ring-0')
+      expect(yesButton).toHaveClass('focus-visible:ring-1')
+      expect(yesButton).toHaveClass('focus-visible:ring-primary')
+      expect(yesButton).not.toHaveClass('focus-visible:ring-0')
 
-      await user.click(within(confirm).getByRole('button', { name: 'Yes (y)' }))
+      await user.click(yesButton)
 
       await waitFor(() => expect(stageFile).toHaveBeenCalledTimes(1))
     })
@@ -2645,15 +2653,45 @@ describe('DiffPanelContent', () => {
       const shadowRoot = host.attachShadow({ mode: 'open' })
       const additions = document.createElement('div')
       additions.setAttribute('data-additions', '')
+      const stickyHeader = document.createElement('div')
+      stickyHeader.setAttribute('data-diffs-header', 'default')
+      stickyHeader.setAttribute('data-sticky', '')
       const firstLine = document.createElement('div')
       const secondLine = document.createElement('div')
       const scrollFirstIntoView = vi.fn()
       const scrollSecondIntoView = vi.fn()
 
+      const rect = (top: number, bottom: number): DOMRect => ({
+        bottom,
+        height: bottom - top,
+        left: 0,
+        right: 0,
+        top,
+        width: 0,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      })
+
       firstLine.setAttribute('data-line-type', 'context')
       firstLine.setAttribute('data-line', '1')
       secondLine.setAttribute('data-line-type', 'context')
       secondLine.setAttribute('data-line', '2')
+      Object.defineProperty(scrollBody, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => rect(0, 400),
+      })
+
+      Object.defineProperty(stickyHeader, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => rect(0, 28),
+      })
+
+      Object.defineProperty(firstLine, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => rect(20, 40),
+      })
+
       Object.defineProperty(firstLine, 'scrollIntoView', {
         configurable: true,
         value: scrollFirstIntoView,
@@ -2664,7 +2702,7 @@ describe('DiffPanelContent', () => {
         value: scrollSecondIntoView,
       })
       additions.append(firstLine, secondLine)
-      shadowRoot.append(additions)
+      shadowRoot.append(stickyHeader, additions)
       scrollBody.append(host)
 
       const diff = screen.getByTestId('multi-file-diff')
@@ -2675,11 +2713,103 @@ describe('DiffPanelContent', () => {
         inline: 'nearest',
       })
 
+      scrollBody.scrollTop = 100
+
       fireEvent.keyDown(diff, { key: 'k' })
       expect(scrollFirstIntoView).toHaveBeenCalledWith({
         block: 'start',
         inline: 'nearest',
       })
+      expect(scrollBody.scrollTop).toBe(68)
+    })
+
+    test('j does not scroll when split replacement navigation cannot leave the current row', (): void => {
+      const changedFileDiff: FileDiff = {
+        filePath: 'src/foo.ts',
+        oldPath: 'src/foo.ts',
+        newPath: 'src/foo.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -1 +1 @@',
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: [
+              { type: 'removed', oldLineNumber: 1, content: 'old beta' },
+              { type: 'added', newLineNumber: 1, content: 'new beta' },
+            ],
+          },
+        ],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: changedFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old beta\n',
+          newText: 'new beta\n',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const scrollBody = screen.getByTestId('diff-scroll-body')
+      const host = document.createElement('diffs-container')
+      const shadowRoot = host.attachShadow({ mode: 'open' })
+      const deletions = document.createElement('div')
+      const additions = document.createElement('div')
+      const deletionLine = document.createElement('div')
+      const additionLine = document.createElement('div')
+      const scrollDeletionIntoView = vi.fn()
+      const scrollAdditionIntoView = vi.fn()
+
+      deletions.setAttribute('data-deletions', '')
+      additions.setAttribute('data-additions', '')
+      deletionLine.setAttribute('data-line-type', 'change-deletion')
+      deletionLine.setAttribute('data-line', '1')
+      additionLine.setAttribute('data-line-type', 'change-addition')
+      additionLine.setAttribute('data-line', '1')
+      Object.defineProperty(deletionLine, 'scrollIntoView', {
+        configurable: true,
+        value: scrollDeletionIntoView,
+      })
+
+      Object.defineProperty(additionLine, 'scrollIntoView', {
+        configurable: true,
+        value: scrollAdditionIntoView,
+      })
+      deletions.append(deletionLine)
+      additions.append(additionLine)
+      shadowRoot.append(deletions, additions)
+      scrollBody.append(host)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'l' })
+      expect(scrollAdditionIntoView).toHaveBeenCalledWith({
+        block: 'nearest',
+        inline: 'nearest',
+      })
+
+      fireEvent.keyDown(diff, { key: 'h' })
+      scrollDeletionIntoView.mockClear()
+
+      fireEvent.keyDown(diff, { key: 'j' })
+
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
+      expect(scrollDeletionIntoView).not.toHaveBeenCalled()
     })
 
     test('i opens the inline comment editor on the keyboard-selected line', (): void => {
@@ -2898,6 +3028,147 @@ describe('DiffPanelContent', () => {
       fireEvent.keyDown(diff, { key: 't' })
 
       expect(diff).toHaveAttribute('data-diff-style', 'unified')
+    })
+
+    test('j/k move rows and h/l move the keyboard-selected comment target between split sides', (): void => {
+      const changedFileDiff: FileDiff = {
+        filePath: 'src/foo.ts',
+        oldPath: 'src/foo.ts',
+        newPath: 'src/foo.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -1,2 +1,2 @@',
+            oldStart: 1,
+            oldLines: 2,
+            newStart: 1,
+            newLines: 2,
+            lines: [
+              { type: 'removed', oldLineNumber: 1, content: 'old beta' },
+              { type: 'added', newLineNumber: 1, content: 'new beta' },
+              {
+                type: 'context',
+                oldLineNumber: 2,
+                newLineNumber: 2,
+                content: 'tail',
+              },
+            ],
+          },
+        ],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: changedFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old beta\ntail\n',
+          newText: 'new beta\ntail\n',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'k' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'h' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
+
+      fireEvent.keyDown(diff, { key: 'l' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'h' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
+
+      fireEvent.keyDown(diff, { key: 'i' })
+      expect(
+        screen.getByRole('dialog', { name: /Comment on line L1/ })
+      ).toBeInTheDocument()
+    })
+
+    test('j/k step through both replacement lines in unified view', (): void => {
+      const changedFileDiff: FileDiff = {
+        filePath: 'src/foo.ts',
+        oldPath: 'src/foo.ts',
+        newPath: 'src/foo.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -1,2 +1,2 @@',
+            oldStart: 1,
+            oldLines: 2,
+            newStart: 1,
+            newLines: 2,
+            lines: [
+              { type: 'removed', oldLineNumber: 1, content: 'old beta' },
+              { type: 'added', newLineNumber: 1, content: 'new beta' },
+              {
+                type: 'context',
+                oldLineNumber: 2,
+                newLineNumber: 2,
+                content: 'tail',
+              },
+            ],
+          },
+        ],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: changedFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old beta\ntail\n',
+          newText: 'new beta\ntail\n',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 't' })
+      expect(diff).toHaveAttribute('data-diff-style', 'unified')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'k' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
     })
 
     test('preserves comment draft text across a same-file diff refresh remount', async (): Promise<void> => {
