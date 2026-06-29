@@ -83,6 +83,7 @@ vi.mock('@pierre/diffs/react', () => ({
       diffStyle?: string
       theme?: string
       lineDiffType?: string
+      unsafeCSS?: string
       enableGutterUtility?: boolean
     }
     selectedLines?: {
@@ -123,6 +124,7 @@ vi.mock('@pierre/diffs/react', () => ({
       data-diff-style={options.diffStyle}
       data-theme={options.theme}
       data-line-diff-type={options.lineDiffType}
+      data-unsafe-css={options.unsafeCSS}
       data-selected-lines-start={
         selectedLines != null ? String(selectedLines.start) : undefined
       }
@@ -2898,6 +2900,32 @@ describe('DiffPanelContent', () => {
       fireEvent.keyDown(diff, { key: 't' })
 
       expect(diff).toHaveAttribute('data-diff-style', 'unified')
+    })
+
+    test('h and l toggle split origin and new sections', (): void => {
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff).not.toHaveAttribute('data-unsafe-css')
+
+      fireEvent.keyDown(diff, { key: 'h' })
+      expect(diff.getAttribute('data-unsafe-css')).toContain('[data-deletions]')
+      expect(diff.getAttribute('data-unsafe-css')).toContain('display: none')
+
+      fireEvent.keyDown(diff, { key: 'h' })
+      expect(diff).not.toHaveAttribute('data-unsafe-css')
+
+      fireEvent.keyDown(diff, { key: 'l' })
+      expect(diff.getAttribute('data-unsafe-css')).toContain('[data-additions]')
+      expect(diff.getAttribute('data-unsafe-css')).toContain('display: none')
     })
 
     test('preserves comment draft text across a same-file diff refresh remount', async (): Promise<void> => {

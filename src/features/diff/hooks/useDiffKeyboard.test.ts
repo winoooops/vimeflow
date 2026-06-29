@@ -77,6 +77,8 @@ const renderKeyboard = (
     onDiscardHunk: vi.fn(),
     onDiscardFile: vi.fn(),
     onToggleView: vi.fn(),
+    onToggleOriginSection: vi.fn(),
+    onToggleNewSection: vi.fn(),
     onConfirm: vi.fn(),
     onCancelConfirm: vi.fn(),
     ...overrides,
@@ -170,6 +172,16 @@ describe('useDiffKeyboard', () => {
     dispatch('t')
 
     expect(props.onToggleView).toHaveBeenCalledOnce()
+  })
+
+  test('h and l toggle split origin and new sections', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('h')
+    dispatch('l')
+
+    expect(props.onToggleOriginSection).toHaveBeenCalledOnce()
+    expect(props.onToggleNewSection).toHaveBeenCalledOnce()
   })
 
   test('Ctrl+D and Ctrl+U scroll the current file', () => {
@@ -312,6 +324,8 @@ describe('useDiffKeyboard', () => {
       onDiscardHunk: vi.fn(),
       onDiscardFile: vi.fn(),
       onToggleView: vi.fn(),
+      onToggleOriginSection: vi.fn(),
+      onToggleNewSection: vi.fn(),
       onConfirm: vi.fn(),
       onCancelConfirm: vi.fn(),
     }

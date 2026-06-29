@@ -84,7 +84,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
+              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:outline-none"
             >
               Dismiss (n)
             </button>
@@ -103,7 +103,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
+              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:outline-none"
             >
               Cancel (n)
             </button>
@@ -111,7 +111,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="Y"
               onClick={(): void => onSend(result.pane)}
-              className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80"
+              className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 focus:outline-none focus-visible:outline-none"
             >
               Confirm (Y)
             </button>
@@ -136,7 +136,7 @@ export const FinishFeedbackPopover = ({
                 <button
                   type="button"
                   onClick={(): void => onSend(pane)}
-                  className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80"
+                  className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 focus:outline-none focus-visible:outline-none"
                 >
                   Send
                 </button>
@@ -148,7 +148,7 @@ export const FinishFeedbackPopover = ({
               type="button"
               aria-keyshortcuts="n"
               onClick={(): void => onCancel()}
-              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
+              className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:outline-none"
             >
               Cancel (n)
             </button>
