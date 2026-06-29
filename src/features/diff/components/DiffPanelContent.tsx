@@ -1648,12 +1648,16 @@ export const DiffPanelContent = ({
       scrollLineElementIntoView(
         node,
         line,
-        keyboardRowIndexForTarget(keyboardLineTargets, targetIndex),
-        keyboardRowCountForTargets(keyboardLineTargets),
+        effectiveDiffStyle === 'split'
+          ? keyboardRowIndexForTarget(keyboardLineTargets, targetIndex)
+          : targetIndex,
+        effectiveDiffStyle === 'split'
+          ? keyboardRowCountForTargets(keyboardLineTargets)
+          : keyboardLineTargets.length,
         delta
       )
     },
-    [keyboardLineTargets]
+    [effectiveDiffStyle, keyboardLineTargets]
   )
 
   // Hunk jumps reveal the hunk top, then include the end only when it fits.
@@ -1708,25 +1712,32 @@ export const DiffPanelContent = ({
       setKeyboardLineIndex((prev) => {
         const currentIndex = Math.min(prev, keyboardLineTargets.length - 1)
         const currentTarget = keyboardLineTargets[currentIndex]
-        let rowTargetIndex = currentIndex
+        let rowTargetIndex = currentIndex + delta
 
-        while (
-          rowTargetIndex + delta >= 0 &&
-          rowTargetIndex + delta < keyboardLineTargets.length
+        if (
+          rowTargetIndex < 0 ||
+          rowTargetIndex >= keyboardLineTargets.length
         ) {
-          rowTargetIndex += delta
-
-          const rowTarget = keyboardLineTargets[rowTargetIndex]
-          if (
-            rowTarget.hunkIndex !== currentTarget.hunkIndex ||
-            rowTarget.splitRowIndex !== currentTarget.splitRowIndex
-          ) {
-            break
-          }
+          return currentIndex
         }
 
-        if (rowTargetIndex === currentIndex) {
-          return currentIndex
+        if (effectiveDiffStyle === 'split') {
+          rowTargetIndex = currentIndex
+
+          while (
+            rowTargetIndex + delta >= 0 &&
+            rowTargetIndex + delta < keyboardLineTargets.length
+          ) {
+            rowTargetIndex += delta
+
+            const rowTarget = keyboardLineTargets[rowTargetIndex]
+            if (
+              rowTarget.hunkIndex !== currentTarget.hunkIndex ||
+              rowTarget.splitRowIndex !== currentTarget.splitRowIndex
+            ) {
+              break
+            }
+          }
         }
 
         const rowTarget = keyboardLineTargets[rowTargetIndex]
@@ -1738,7 +1749,10 @@ export const DiffPanelContent = ({
             target.side === currentTarget.side
         )
 
-        const next = sameSideIndex === -1 ? rowTargetIndex : sameSideIndex
+        const next =
+          effectiveDiffStyle === 'split' && sameSideIndex !== -1
+            ? sameSideIndex
+            : rowTargetIndex
         const nextTarget = keyboardLineTargets[next]
         setFocusedHunkIndex(nextTarget.hunkIndex)
         scrollKeyboardTargetIntoView(nextTarget, next, delta)
@@ -1749,6 +1763,7 @@ export const DiffPanelContent = ({
     },
     [
       clearNavSelectionTimer,
+      effectiveDiffStyle,
       focusDiffRoot,
       keyboardLineTargets,
       scrollKeyboardTargetIntoView,
@@ -2289,7 +2304,6 @@ export const DiffPanelContent = ({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="focus-visible:ring-0"
                     aria-keyshortcuts="n"
                     onClick={cancelKeyboardConfirm}
                   >
@@ -2298,7 +2312,6 @@ export const DiffPanelContent = ({
                   <Button
                     size="sm"
                     variant={keyboardConfirm.variant}
-                    className="focus-visible:ring-0"
                     aria-keyshortcuts="y"
                     onClick={confirmKeyboardAction}
                   >

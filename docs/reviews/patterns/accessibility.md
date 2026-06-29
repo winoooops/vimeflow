@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-29
-ref_count: 82
+ref_count: 83
 ---
 
 # Accessibility
@@ -781,3 +781,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The multi-agent finish-feedback branch suppressed `focus-visible` outlines on each Send button even though those choices have no shortcut fallback, making Tab navigation through the agent list ambiguous.
 - **Fix:** Routed the Send buttons through the same explicit popover action focus class and added a regression assertion that multi-agent Send buttons include the visible focus ring.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 77. Confirm popover buttons suppressed the shared focus ring
+
+- **Source:** github-codex-connector + github-claude | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The hunk/file keyboard-confirm popover passed `className="focus-visible:ring-0"` to both `Button` actions, overriding the shared primitive's only visible keyboard focus indicator.
+- **Fix:** Removed the local ring suppression so the shared `Button` focus styles apply, and added co-located regression assertions for the `No (n)` and `Yes (y)` actions.
+- **Commit:** same commit as this entry

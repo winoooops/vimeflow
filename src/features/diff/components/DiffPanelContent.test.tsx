@@ -1604,8 +1604,16 @@ describe('DiffPanelContent', () => {
         name: 'Stage hunk?',
       })
       expect(stageFile).not.toHaveBeenCalled()
+      const noButton = within(confirm).getByRole('button', { name: 'No (n)' })
+      const yesButton = within(confirm).getByRole('button', { name: 'Yes (y)' })
+      expect(noButton).toHaveClass('focus-visible:ring-1')
+      expect(noButton).toHaveClass('focus-visible:ring-primary')
+      expect(noButton).not.toHaveClass('focus-visible:ring-0')
+      expect(yesButton).toHaveClass('focus-visible:ring-1')
+      expect(yesButton).toHaveClass('focus-visible:ring-primary')
+      expect(yesButton).not.toHaveClass('focus-visible:ring-0')
 
-      await user.click(within(confirm).getByRole('button', { name: 'Yes (y)' }))
+      await user.click(yesButton)
 
       await waitFor(() => expect(stageFile).toHaveBeenCalledTimes(1))
     })
@@ -3007,6 +3015,71 @@ describe('DiffPanelContent', () => {
       expect(
         screen.getByRole('dialog', { name: /Comment on line L1/ })
       ).toBeInTheDocument()
+    })
+
+    test('j/k step through both replacement lines in unified view', (): void => {
+      const changedFileDiff: FileDiff = {
+        filePath: 'src/foo.ts',
+        oldPath: 'src/foo.ts',
+        newPath: 'src/foo.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -1,2 +1,2 @@',
+            oldStart: 1,
+            oldLines: 2,
+            newStart: 1,
+            newLines: 2,
+            lines: [
+              { type: 'removed', oldLineNumber: 1, content: 'old beta' },
+              { type: 'added', newLineNumber: 1, content: 'new beta' },
+              {
+                type: 'context',
+                oldLineNumber: 2,
+                newLineNumber: 2,
+                content: 'tail',
+              },
+            ],
+          },
+        ],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: changedFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old beta\ntail\n',
+          newText: 'new beta\ntail\n',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 't' })
+      expect(diff).toHaveAttribute('data-diff-style', 'unified')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'k' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
     })
 
     test('preserves comment draft text across a same-file diff refresh remount', async (): Promise<void> => {
