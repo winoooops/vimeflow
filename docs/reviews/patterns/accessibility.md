@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-29
-ref_count: 83
+ref_count: 84
 ---
 
 # Accessibility
@@ -790,3 +790,18 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The hunk/file keyboard-confirm popover passed `className="focus-visible:ring-0"` to both `Button` actions, overriding the shared primitive's only visible keyboard focus indicator.
 - **Fix:** Removed the local ring suppression so the shared `Button` focus styles apply, and added co-located regression assertions for the `No (n)` and `Yes (y)` actions.
 - **Commit:** same commit as this entry
+
+### 78. Primary finish-feedback actions relied on brightness-only focus
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Confirm and multi-agent Send buttons suppressed
+  outlines and rings while using only `focus-visible:brightness-110` as the
+  keyboard focus cue. The saturated primary fill made that cue too weak for
+  keyboard-only and low-vision users, especially in the multi-agent list where
+  Tab is the selection path.
+- **Fix:** Replaced the brightness-only primary focus class with a visible
+  token-backed focus ring and updated co-located tests to reject the old
+  brightness/ring-0 treatment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

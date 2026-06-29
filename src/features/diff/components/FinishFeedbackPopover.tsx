@@ -6,7 +6,7 @@ const popoverGhostActionFocusClass =
   'ring-0 focus:outline-none focus-visible:bg-surface-container-high focus-visible:text-on-surface focus-visible:outline-none focus-visible:ring-0'
 
 const popoverPrimaryActionFocusClass =
-  'ring-0 focus:outline-none focus-visible:brightness-110 focus-visible:outline-none focus-visible:ring-0'
+  'ring-0 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container'
 
 interface FinishFeedbackPopoverProps {
   anchor: HTMLElement

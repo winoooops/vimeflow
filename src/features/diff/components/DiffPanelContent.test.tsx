@@ -2769,21 +2769,39 @@ describe('DiffPanelContent', () => {
       const host = document.createElement('diffs-container')
       const shadowRoot = host.attachShadow({ mode: 'open' })
       const deletions = document.createElement('div')
+      const additions = document.createElement('div')
       const deletionLine = document.createElement('div')
+      const additionLine = document.createElement('div')
       const scrollDeletionIntoView = vi.fn()
+      const scrollAdditionIntoView = vi.fn()
 
       deletions.setAttribute('data-deletions', '')
+      additions.setAttribute('data-additions', '')
       deletionLine.setAttribute('data-line-type', 'change-deletion')
       deletionLine.setAttribute('data-line', '1')
+      additionLine.setAttribute('data-line-type', 'change-addition')
+      additionLine.setAttribute('data-line', '1')
       Object.defineProperty(deletionLine, 'scrollIntoView', {
         configurable: true,
         value: scrollDeletionIntoView,
       })
+
+      Object.defineProperty(additionLine, 'scrollIntoView', {
+        configurable: true,
+        value: scrollAdditionIntoView,
+      })
       deletions.append(deletionLine)
-      shadowRoot.append(deletions)
+      additions.append(additionLine)
+      shadowRoot.append(deletions, additions)
       scrollBody.append(host)
 
       const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'l' })
+      expect(scrollAdditionIntoView).toHaveBeenCalledWith({
+        block: 'nearest',
+        inline: 'nearest',
+      })
+
       fireEvent.keyDown(diff, { key: 'h' })
       scrollDeletionIntoView.mockClear()
 

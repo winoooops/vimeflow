@@ -481,6 +481,13 @@ const scrollLineElementIntoView = (
   targetCount: number,
   delta: number
 ): void => {
+  if (delta === 0) {
+    line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    revealLineBelowStickyHeader(container, line, false)
+
+    return
+  }
+
   if (targetCount === 1) {
     line.scrollIntoView({
       block: delta > 0 ? 'end' : 'start',
