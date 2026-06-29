@@ -1753,6 +1753,10 @@ export const DiffPanelContent = ({
           effectiveDiffStyle === 'split' && sameSideIndex !== -1
             ? sameSideIndex
             : rowTargetIndex
+        if (next === currentIndex) {
+          return currentIndex
+        }
+
         const nextTarget = keyboardLineTargets[next]
         setFocusedHunkIndex(nextTarget.hunkIndex)
         scrollKeyboardTargetIntoView(nextTarget, next, delta)

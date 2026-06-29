@@ -2723,6 +2723,77 @@ describe('DiffPanelContent', () => {
       expect(scrollBody.scrollTop).toBe(68)
     })
 
+    test('j does not scroll when split replacement navigation cannot leave the current row', (): void => {
+      const changedFileDiff: FileDiff = {
+        filePath: 'src/foo.ts',
+        oldPath: 'src/foo.ts',
+        newPath: 'src/foo.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -1 +1 @@',
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: [
+              { type: 'removed', oldLineNumber: 1, content: 'old beta' },
+              { type: 'added', newLineNumber: 1, content: 'new beta' },
+            ],
+          },
+        ],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: changedFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old beta\n',
+          newText: 'new beta\n',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const scrollBody = screen.getByTestId('diff-scroll-body')
+      const host = document.createElement('diffs-container')
+      const shadowRoot = host.attachShadow({ mode: 'open' })
+      const deletions = document.createElement('div')
+      const deletionLine = document.createElement('div')
+      const scrollDeletionIntoView = vi.fn()
+
+      deletions.setAttribute('data-deletions', '')
+      deletionLine.setAttribute('data-line-type', 'change-deletion')
+      deletionLine.setAttribute('data-line', '1')
+      Object.defineProperty(deletionLine, 'scrollIntoView', {
+        configurable: true,
+        value: scrollDeletionIntoView,
+      })
+      deletions.append(deletionLine)
+      shadowRoot.append(deletions)
+      scrollBody.append(host)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'h' })
+      scrollDeletionIntoView.mockClear()
+
+      fireEvent.keyDown(diff, { key: 'j' })
+
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
+      expect(scrollDeletionIntoView).not.toHaveBeenCalled()
+    })
+
     test('i opens the inline comment editor on the keyboard-selected line', (): void => {
       render(
         <DiffPanelContent
