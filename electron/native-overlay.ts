@@ -41,7 +41,10 @@ interface NativeOverlayMenuActionItem {
   type?: 'item'
   id: string
   label: string
+  detail?: string
   icon?: string
+  feedback?: 'copy'
+  closeOnSelect?: boolean
   shortcut?: string
   disabled?: boolean
 }
@@ -91,8 +94,15 @@ interface NativeOverlayMenuSection {
 interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
+  matchAnchorWidth?: boolean
   items?: NativeOverlayMenuItem[]
   sections?: NativeOverlayMenuSection[]
+}
+
+interface NativeOverlayThemeSnapshot {
+  id?: string
+  colorScheme?: string
+  variables: Record<string, string>
 }
 
 interface NativeOverlayRequest {
@@ -101,6 +111,7 @@ interface NativeOverlayRequest {
   anchorRect: NativeOverlayRect
   placement: string
   payload: NativeOverlayMenuPayload
+  theme?: NativeOverlayThemeSnapshot
 }
 
 interface NativeOverlayCloseRequest {
@@ -111,6 +122,7 @@ interface NativeOverlayCloseRequest {
 interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
+  closeOnSelect?: boolean
 }
 
 interface NativeOverlayReadyEvent {
@@ -127,6 +139,10 @@ interface NativeOverlayRecord {
   overlayWindow: BrowserWindow
   ready: Promise<void>
   syncBounds: () => void
+  parentBlurred: () => void
+  parentHidden: () => void
+  parentMinimized: () => void
+  parentClosing: () => void
   parentClosed: () => void
   activeSurfaceId: string | null
 }
@@ -203,7 +219,11 @@ const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
     (isActionType || isCheckboxType) &&
     isString(value.id) &&
     isString(value.label) &&
+    (value.detail === undefined || typeof value.detail === 'string') &&
     (value.icon === undefined || typeof value.icon === 'string') &&
+    (value.feedback === undefined || value.feedback === 'copy') &&
+    (value.closeOnSelect === undefined ||
+      typeof value.closeOnSelect === 'boolean') &&
     (value.shortcut === undefined || typeof value.shortcut === 'string') &&
     (value.disabled === undefined || typeof value.disabled === 'boolean')
   )
@@ -222,11 +242,23 @@ const hasMenuSections = (sections: unknown): boolean =>
   sections.length > 0 &&
   sections.every(isMenuSection)
 
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isRecord(value) &&
+  Object.values(value).every((entry) => typeof entry === 'string')
+
 const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   isRecord(value) &&
   value.kind === 'menu' &&
   (value.ariaLabel === undefined || typeof value.ariaLabel === 'string') &&
+  (value.matchAnchorWidth === undefined ||
+    typeof value.matchAnchorWidth === 'boolean') &&
   (hasMenuItems(value.items) || hasMenuSections(value.sections))
+
+const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
+  isRecord(value) &&
+  (value.id === undefined || typeof value.id === 'string') &&
+  (value.colorScheme === undefined || typeof value.colorScheme === 'string') &&
+  isStringRecord(value.variables)
 
 const isNativeOverlayRequest = (
   value: unknown
@@ -236,7 +268,8 @@ const isNativeOverlayRequest = (
   value.kind === 'menu' &&
   isRect(value.anchorRect) &&
   isString(value.placement) &&
-  isMenuPayload(value.payload)
+  isMenuPayload(value.payload) &&
+  (value.theme === undefined || isThemeSnapshot(value.theme))
 
 const isCloseReason = (value: unknown): value is NativeOverlayCloseReason =>
   value === 'outside' ||
@@ -251,7 +284,11 @@ const isCloseRequest = (value: unknown): value is NativeOverlayCloseRequest =>
   (value.reason === undefined || isCloseReason(value.reason))
 
 const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
-  isRecord(value) && isString(value.surfaceId) && isString(value.actionId)
+  isRecord(value) &&
+  isString(value.surfaceId) &&
+  isString(value.actionId) &&
+  (value.closeOnSelect === undefined ||
+    typeof value.closeOnSelect === 'boolean')
 
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
@@ -295,13 +332,8 @@ export class NativeOverlayController {
     }
     this.pendingReady.clear()
 
-    for (const record of this.overlays.values()) {
-      record.parent.removeListener('resize', record.syncBounds)
-      record.parent.removeListener('move', record.syncBounds)
-      record.parent.removeListener('closed', record.parentClosed)
-      if (!record.overlayWindow.isDestroyed()) {
-        record.overlayWindow.close()
-      }
+    for (const record of [...this.overlays.values()]) {
+      this.destroyOverlayRecord(record, 'owner-closed', false)
     }
 
     this.overlays.clear()
@@ -334,7 +366,6 @@ export class NativeOverlayController {
     record.syncBounds()
     record.overlayWindow.setIgnoreMouseEvents(false)
     record.overlayWindow.showInactive()
-    record.overlayWindow.webContents.focus()
     // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
     // still land behind it. The screen-saver level reliably places this
     // transparent overlay window above that native surface while it is open.
@@ -410,7 +441,9 @@ export class NativeOverlayController {
     }
 
     const owner = surface.owner
-    this.closeSurface(payload.surfaceId, 'action', false)
+    if (payload.closeOnSelect !== false) {
+      this.closeSurface(payload.surfaceId, 'action', false)
+    }
 
     if (!owner.isDestroyed()) {
       owner.send(NATIVE_OVERLAY_ACTION, payload)
@@ -424,6 +457,7 @@ export class NativeOverlayController {
     }
 
     const overlayWindow = new BrowserWindow({
+      parent,
       show: false,
       frame: false,
       transparent: true,
@@ -436,7 +470,7 @@ export class NativeOverlayController {
       fullscreenable: false,
       skipTaskbar: true,
       acceptFirstMouse: true,
-      focusable: true,
+      focusable: false,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -457,26 +491,41 @@ export class NativeOverlayController {
       overlayWindow.setBounds(parent.getContentBounds())
     }
 
+    const closeForOwnerDeactivation = (): void => {
+      const activeSurfaceId = this.overlays.get(parent.id)?.activeSurfaceId
+      if (activeSurfaceId === undefined || activeSurfaceId === null) {
+        return
+      }
+
+      this.closeSurface(activeSurfaceId, 'outside', true, false)
+    }
+
+    const parentClosing = (): void => {
+      const record = this.overlays.get(parent.id)
+      if (!record) {
+        return
+      }
+
+      this.destroyOverlayRecord(record, 'owner-closed', true)
+    }
+
     const parentClosed = (): void => {
       const record = this.overlays.get(parent.id)
       if (!record) {
         return
       }
 
-      if (record.activeSurfaceId !== null) {
-        this.closeSurface(record.activeSurfaceId, 'owner-closed', true)
-      }
-
-      this.overlays.delete(parent.id)
-      if (!overlayWindow.isDestroyed()) {
-        overlayWindow.close()
-      }
+      this.destroyOverlayRecord(record, 'owner-closed', true)
     }
 
     overlayWindow.setIgnoreMouseEvents(true)
     overlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
+    parent.on('blur', closeForOwnerDeactivation)
+    parent.on('hide', closeForOwnerDeactivation)
+    parent.on('minimize', closeForOwnerDeactivation)
+    parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
     void overlayWindow.loadURL(this.overlayUrl)
 
@@ -485,6 +534,10 @@ export class NativeOverlayController {
       overlayWindow,
       ready,
       syncBounds,
+      parentBlurred: closeForOwnerDeactivation,
+      parentHidden: closeForOwnerDeactivation,
+      parentMinimized: closeForOwnerDeactivation,
+      parentClosing,
       parentClosed,
       activeSurfaceId: null,
     }
@@ -492,6 +545,33 @@ export class NativeOverlayController {
     this.overlays.set(parent.id, record)
 
     return record
+  }
+
+  private destroyOverlayRecord(
+    record: NativeOverlayRecord,
+    reason: NativeOverlayCloseReason,
+    notifyOwner: boolean
+  ): void {
+    if (!this.overlays.has(record.parent.id)) {
+      return
+    }
+
+    if (record.activeSurfaceId !== null) {
+      this.closeSurface(record.activeSurfaceId, reason, notifyOwner, false)
+    }
+
+    record.parent.removeListener('resize', record.syncBounds)
+    record.parent.removeListener('move', record.syncBounds)
+    record.parent.removeListener('blur', record.parentBlurred)
+    record.parent.removeListener('hide', record.parentHidden)
+    record.parent.removeListener('minimize', record.parentMinimized)
+    record.parent.removeListener('close', record.parentClosing)
+    record.parent.removeListener('closed', record.parentClosed)
+    this.overlays.delete(record.parent.id)
+
+    if (!record.overlayWindow.isDestroyed()) {
+      record.overlayWindow.close()
+    }
   }
 
   private waitForReady(surfaceId: string): Promise<boolean> {
@@ -520,7 +600,8 @@ export class NativeOverlayController {
   private closeSurface(
     surfaceId: string,
     reason: NativeOverlayCloseReason,
-    notifyOwner: boolean
+    notifyOwner: boolean,
+    restoreOwnerFocus = true
   ): void {
     const surface = this.surfaces.get(surfaceId)
     if (!surface) {
@@ -543,7 +624,7 @@ export class NativeOverlayController {
     }
 
     if (!surface.owner.isDestroyed()) {
-      if (isActiveSurface) {
+      if (isActiveSurface && restoreOwnerFocus) {
         surface.owner.focus()
       }
       if (notifyOwner) {

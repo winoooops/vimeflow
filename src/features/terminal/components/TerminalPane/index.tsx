@@ -308,6 +308,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
             worktreeName={worktreeName}
             branch={branch}
             cwd={pane.cwd}
+            nativeOverlay
             added={added}
             removed={removed}
             lastActivityAt={session.lastActivityAt}

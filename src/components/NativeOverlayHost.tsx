@@ -17,11 +17,17 @@ import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 interface NativeOverlayHostBridge {
   ready: (request: { surfaceId: string }) => Promise<unknown>
-  action: (request: { surfaceId: string; actionId: string }) => Promise<unknown>
+  action: (request: {
+    surfaceId: string
+    actionId: string
+    closeOnSelect?: boolean
+  }) => Promise<unknown>
   close: (request: { surfaceId: string; reason: 'outside' }) => Promise<unknown>
   onRender: (callback: (payload: unknown) => void) => () => void
   onClear: (callback: () => void) => () => void
 }
+
+const COPY_FEEDBACK_MS = 1300
 
 const nativeOverlayHostBridge = (): NativeOverlayHostBridge | undefined =>
   window.vimeflow?.nativeOverlayHost
@@ -34,7 +40,7 @@ const isMenuRequest = (value: unknown): value is NativeOverlayRequest =>
   (value as { payload?: { kind?: unknown } }).payload?.kind === 'menu'
 
 const OVERLAY_MENU_ROW_CLASSES =
-  'flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
+  'group flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
   'text-left text-xs text-on-surface outline-none ring-0 transition-colors ' +
   'hover:bg-on-surface/10 focus:outline-none focus-visible:bg-on-surface/10 ' +
   'aria-disabled:cursor-default aria-disabled:text-on-surface-variant/45 ' +
@@ -43,6 +49,23 @@ const OVERLAY_MENU_ROW_CLASSES =
 const OVERLAY_MENU_SHORTCUT_CLASSES =
   'shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] ' +
   'text-on-surface-variant'
+
+const OVERLAY_MENU_ITEM_TEXT_CLASSES = 'flex min-w-0 flex-1 flex-col gap-px'
+
+const OVERLAY_MENU_ITEM_LABEL_CLASSES = 'truncate'
+
+const OVERLAY_MENU_ITEM_DETAIL_CLASSES =
+  'truncate font-mono text-[10px] text-on-surface-muted'
+
+const OVERLAY_MENU_COPY_FEEDBACK_CLASSES =
+  'inline-flex shrink-0 items-center gap-1 text-on-surface-muted transition-colors ' +
+  'group-hover:text-on-surface-variant'
+
+const OVERLAY_MENU_COPY_FEEDBACK_SUCCESS_CLASSES =
+  'inline-flex shrink-0 items-center gap-1 text-success'
+
+const OVERLAY_MENU_COPY_FEEDBACK_LABEL_CLASSES =
+  'font-sans text-[10px] font-medium'
 
 const OVERLAY_MENU_COMPOSITE_PRIMARY_CLASSES =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none ' +
@@ -81,10 +104,65 @@ const isCompositeItem = (
 ): item is Extract<NativeOverlayMenuItem, { type: 'composite' }> =>
   item.type === 'composite'
 
+const applyThemeSnapshot = (
+  theme: NativeOverlayRequest['theme'] | undefined
+): void => {
+  if (theme === undefined) {
+    return
+  }
+
+  const root = document.documentElement
+  for (const [name, value] of Object.entries(theme.variables)) {
+    root.style.setProperty(name, value)
+  }
+
+  if (theme.id === undefined) {
+    delete root.dataset.theme
+  } else {
+    root.dataset.theme = theme.id
+  }
+
+  if (theme.colorScheme !== undefined) {
+    root.style.colorScheme = theme.colorScheme
+  }
+}
+
 export const NativeOverlayHost = (): ReactElement | null => {
   const [request, setRequest] = useState<NativeOverlayRequest | null>(null)
+  const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
   const requestRef = useRef<NativeOverlayRequest | null>(null)
+  const copyFeedbackTimerRef = useRef<number | null>(null)
   requestRef.current = request
+
+  const clearCopyFeedback = useCallback((): void => {
+    if (copyFeedbackTimerRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimerRef.current)
+      copyFeedbackTimerRef.current = null
+    }
+
+    setCopiedActionId(null)
+  }, [])
+
+  const showCopyFeedback = useCallback((actionId: string): void => {
+    if (copyFeedbackTimerRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimerRef.current)
+    }
+
+    setCopiedActionId(actionId)
+    copyFeedbackTimerRef.current = window.setTimeout(() => {
+      copyFeedbackTimerRef.current = null
+      setCopiedActionId(null)
+    }, COPY_FEEDBACK_MS)
+  }, [])
+
+  useEffect(
+    () => (): void => {
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current)
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     document.body.dataset.nativeOverlayHost = 'true'
@@ -102,11 +180,14 @@ export const NativeOverlayHost = (): ReactElement | null => {
 
     const cleanupRender = bridge.onRender((payload) => {
       if (isMenuRequest(payload)) {
+        applyThemeSnapshot(payload.theme)
+        clearCopyFeedback()
         setRequest(payload)
       }
     })
 
     const cleanupClear = bridge.onClear(() => {
+      clearCopyFeedback()
       setRequest(null)
     })
 
@@ -114,7 +195,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
       cleanupRender()
       cleanupClear()
     }
-  }, [])
+  }, [clearCopyFeedback])
 
   useEffect(() => {
     if (request === null) {
@@ -130,22 +211,40 @@ export const NativeOverlayHost = (): ReactElement | null => {
       return
     }
 
+    clearCopyFeedback()
     setRequest(null)
     void nativeOverlayHostBridge()?.close({
       surfaceId: current.surfaceId,
       reason: 'outside',
     })
-  }, [])
+  }, [clearCopyFeedback])
 
   if (request === null) {
     return null
   }
 
-  const dispatchAction = (actionId: string): void => {
-    setRequest(null)
+  const dispatchAction = (
+    actionId: string,
+    options: {
+      closeOnSelect?: boolean
+      feedback?: 'copy'
+    } = {}
+  ): void => {
+    const closeOnSelect = options.closeOnSelect !== false
+
+    if (options.feedback === 'copy') {
+      showCopyFeedback(actionId)
+    }
+
+    if (closeOnSelect) {
+      clearCopyFeedback()
+      setRequest(null)
+    }
+
     void nativeOverlayHostBridge()?.action({
       surfaceId: request.surfaceId,
       actionId,
+      ...(closeOnSelect ? {} : { closeOnSelect: false }),
     })
   }
 
@@ -153,6 +252,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
     <Menu.Context
       position={request.anchorRect}
       placement={request.placement as Placement}
+      matchAnchorWidth={request.payload.matchAnchorWidth === true}
       open
       onOpenChange={(open): void => {
         if (!open) {
@@ -265,6 +365,30 @@ export const NativeOverlayHost = (): ReactElement | null => {
               )
             }
 
+            const copyFeedback =
+              item.feedback === 'copy' ? (
+                <span
+                  className={
+                    copiedActionId === item.id
+                      ? OVERLAY_MENU_COPY_FEEDBACK_SUCCESS_CLASSES
+                      : OVERLAY_MENU_COPY_FEEDBACK_CLASSES
+                  }
+                  aria-live="polite"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-[15px] leading-none"
+                  >
+                    {copiedActionId === item.id ? 'check' : 'content_copy'}
+                  </span>
+                  {copiedActionId === item.id ? (
+                    <span className={OVERLAY_MENU_COPY_FEEDBACK_LABEL_CLASSES}>
+                      Copied
+                    </span>
+                  ) : null}
+                </span>
+              ) : null
+
             return (
               <Menu.Row
                 key={item.id}
@@ -273,29 +397,42 @@ export const NativeOverlayHost = (): ReactElement | null => {
                 className={OVERLAY_MENU_ROW_CLASSES}
                 onSelect={(): void => {
                   if (item.disabled !== true) {
-                    dispatchAction(item.id)
+                    dispatchAction(item.id, {
+                      closeOnSelect: item.closeOnSelect,
+                      feedback: item.feedback,
+                    })
                   }
                 }}
               >
-                <span className="flex items-center gap-2.5">
+                <span className="flex min-w-0 flex-1 items-center gap-2.5">
                   {item.icon === undefined ? null : (
                     <span
                       aria-hidden="true"
-                      className="material-symbols-outlined text-base leading-none opacity-70"
+                      className="material-symbols-outlined shrink-0 text-base leading-none opacity-70"
                     >
                       {item.icon}
                     </span>
                   )}
-                  <span>{item.label}</span>
+                  <span className={OVERLAY_MENU_ITEM_TEXT_CLASSES}>
+                    <span className={OVERLAY_MENU_ITEM_LABEL_CLASSES}>
+                      {item.label}
+                    </span>
+                    {item.detail === undefined ? null : (
+                      <span className={OVERLAY_MENU_ITEM_DETAIL_CLASSES}>
+                        {item.detail}
+                      </span>
+                    )}
+                  </span>
                 </span>
-                {item.shortcut === undefined ? null : (
-                  <kbd
-                    className={OVERLAY_MENU_SHORTCUT_CLASSES}
-                    aria-hidden="true"
-                  >
-                    {item.shortcut}
-                  </kbd>
-                )}
+                {copyFeedback ??
+                  (item.shortcut === undefined ? null : (
+                    <kbd
+                      className={OVERLAY_MENU_SHORTCUT_CLASSES}
+                      aria-hidden="true"
+                    >
+                      {item.shortcut}
+                    </kbd>
+                  ))}
               </Menu.Row>
             )
           })}

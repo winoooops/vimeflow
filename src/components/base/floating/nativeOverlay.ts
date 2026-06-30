@@ -20,11 +20,20 @@ export interface NativeOverlayRect {
   height: number
 }
 
+export interface NativeOverlayThemeSnapshot {
+  id?: string
+  colorScheme?: string
+  variables: Record<string, string>
+}
+
 export interface NativeOverlayMenuActionItem {
   type?: 'item'
   id: string
   label: string
+  detail?: string
   icon?: string
+  feedback?: 'copy'
+  closeOnSelect?: boolean
   shortcut?: string
   disabled?: boolean
 }
@@ -74,6 +83,7 @@ export interface NativeOverlayMenuSection {
 export interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
+  matchAnchorWidth?: boolean
   items?: NativeOverlayMenuItem[]
   sections?: NativeOverlayMenuSection[]
 }
@@ -89,11 +99,13 @@ export interface NativeOverlayRequest {
   anchorRect: NativeOverlayRect
   placement: string
   payload: SerializableOverlayPayload
+  theme?: NativeOverlayThemeSnapshot
 }
 
 export interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
+  closeOnSelect?: boolean
 }
 
 export interface NativeOverlayCloseEvent {
@@ -104,6 +116,37 @@ export interface NativeOverlayCloseEvent {
 export interface NativeOverlayOpenResult {
   accepted: boolean
   reason?: string
+}
+
+const THEME_VARIABLE_PREFIXES = ['--color-', '--shadow-'] as const
+
+// Native overlays render in a separate transparent BrowserWindow, so they do
+// not automatically inherit the main renderer's live CSS variables. Capture the
+// active token values when the surface opens and let the overlay host apply
+// them before rendering the shared React menu.
+export const nativeOverlayThemeSnapshot = (): NativeOverlayThemeSnapshot => {
+  const root = document.documentElement
+  const variables: Record<string, string> = {}
+
+  for (let index = 0; index < root.style.length; index += 1) {
+    const name = root.style.item(index)
+    if (!THEME_VARIABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+      continue
+    }
+
+    const value = root.style.getPropertyValue(name)
+    if (value.length > 0) {
+      variables[name] = value
+    }
+  }
+
+  return {
+    ...(root.dataset.theme === undefined ? {} : { id: root.dataset.theme }),
+    ...(root.style.colorScheme.length === 0
+      ? {}
+      : { colorScheme: root.style.colorScheme }),
+    variables,
+  }
 }
 
 // Renderer-side handle for the optional Electron preload bridge. Floating

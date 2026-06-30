@@ -8,13 +8,62 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { writeClipboardText } from '@/lib/clipboard'
 import { GitRefChip, GitRefCopyRows, composeCopyRows } from './GitRefChip'
 
 vi.mock('@/lib/clipboard', () => ({
   writeClipboardText: vi.fn().mockResolvedValue(true),
 }))
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+} => {
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close: vi.fn().mockResolvedValue(undefined),
+      onAction: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return { open }
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.clearAllMocks()
+  restorePlatform?.()
+  restorePlatform = null
+  delete window.vimeflow
+})
 
 test('renders nothing when branch is null', () => {
   render(<GitRefChip worktreeName="feat-jose" branch={null} />)
@@ -276,7 +325,7 @@ test('icons carry material-symbols-outlined class + aria-hidden', () => {
   expect(brIcon.getAttribute('aria-hidden')).toBe('true')
 })
 
-test('GitRefChip opens the copy popover from keyboard focus', async () => {
+test('GitRefChip opens the copy menu from keyboard focus', async () => {
   const user = userEvent.setup()
   render(
     <GitRefChip
@@ -288,12 +337,78 @@ test('GitRefChip opens the copy popover from keyboard focus', async () => {
 
   await user.tab()
 
-  expect(screen.getByTestId('git-ref-chip')).toHaveFocus()
   expect(screen.getByTestId('git-ref-chip')).toHaveAttribute('tabindex', '0')
   expect(
-    screen.getByRole('dialog', { name: 'Git ref details' })
+    screen.getByRole('menu', { name: 'Git ref details' })
   ).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Copy path' })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: 'Copy worktree' })).toHaveFocus()
+  expect(
+    screen.getByRole('menuitem', { name: 'Copy path' })
+  ).toBeInTheDocument()
+})
+
+test('GitRefChip sends native overlay rows with chip-width matching', async () => {
+  vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+  setNavigatorPlatform('MacIntel')
+  const nativeBridge = installNativeOverlayBridge()
+
+  render(
+    <GitRefChip
+      worktreeName="native-overlay-git-ref"
+      branch="codex/native-overlay-git-ref"
+      cwd="/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref"
+      nativeOverlay
+    />
+  )
+
+  const chip = screen.getByTestId('git-ref-chip')
+  vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({
+    x: 7,
+    y: 11,
+    width: 238,
+    height: 22,
+    top: 11,
+    left: 7,
+    right: 245,
+    bottom: 33,
+    toJSON: () => ({}),
+  } as DOMRect)
+
+  fireEvent.focus(chip)
+
+  await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+  const request = nativeBridge.open.mock.calls[0][0] as {
+    anchorRect: { x: number; y: number; width: number; height: number }
+    payload: {
+      matchAnchorWidth?: boolean
+      items?: readonly {
+        label?: string
+        detail?: string
+        icon?: string
+        feedback?: string
+        closeOnSelect?: boolean
+      }[]
+    }
+  }
+
+  expect(screen.queryByRole('menu', { name: 'Git ref details' })).toBeNull()
+  expect(request).toMatchObject({
+    anchorRect: { x: 7, y: 11, width: 238, height: 22 },
+    payload: {
+      matchAnchorWidth: true,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Copy path',
+          detail:
+            '/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref',
+          icon: 'folder_open',
+          feedback: 'copy',
+          closeOnSelect: false,
+        }),
+      ]),
+    },
+  })
 })
 
 test('GitRefCopyRows renders one copy button per row carrying its value', () => {

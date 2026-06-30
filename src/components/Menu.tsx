@@ -32,6 +32,7 @@ import {
 import {
   NATIVE_OVERLAY_KINDS,
   closeNativeOverlay,
+  nativeOverlayThemeSnapshot,
   openNativeOverlay,
   selectFloatingTransport,
   warnNativeOverlayFallback,
@@ -444,6 +445,7 @@ const MenuRoot = ({
           },
           placement,
           payload: nativeSpecRef.current.payload,
+          theme: nativeOverlayThemeSnapshot(),
         },
         {
           actions: nativeActions,
@@ -657,6 +659,9 @@ interface MenuRowProps {
   className?: string
   nativeOverlayIcon?: string
   nativeOverlayActive?: boolean
+  nativeOverlayDetail?: string
+  nativeOverlayFeedback?: 'copy'
+  nativeOverlayCloseOnSelect?: boolean
   nativeOverlayActions?: readonly MenuRowNativeOverlayAction[]
   children: ReactNode
 }
@@ -1109,6 +1114,7 @@ const MenuSubmenu = <T extends string | number>({
 interface MenuContextMenuProps {
   position: { x: number; y: number; width?: number; height?: number }
   placement?: Placement
+  matchAnchorWidth?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   'aria-label': string
@@ -1303,6 +1309,36 @@ const nativeMenuRowFromElement = (
     }
   }
 
+  if (element.props.nativeOverlayDetail !== undefined) {
+    const closeOnSelect = element.props.nativeOverlayCloseOnSelect !== false
+
+    const run = (): void => {
+      if (!disabled) {
+        element.props.onSelect?.()
+        if (closeOnSelect) {
+          close()
+        }
+      }
+    }
+
+    return {
+      item: {
+        id,
+        label: element.props.label,
+        detail: element.props.nativeOverlayDetail,
+        ...(element.props.nativeOverlayIcon === undefined
+          ? {}
+          : { icon: element.props.nativeOverlayIcon }),
+        ...(element.props.nativeOverlayFeedback === undefined
+          ? {}
+          : { feedback: element.props.nativeOverlayFeedback }),
+        ...(closeOnSelect ? {} : { closeOnSelect: false }),
+        ...(disabled ? { disabled: true } : {}),
+      },
+      action: closeOnSelect ? run : { retainSession: true, run },
+    }
+  }
+
   const texts = childTexts(element.props.children)
   if (texts === null) {
     return null
@@ -1316,6 +1352,9 @@ const nativeMenuRowFromElement = (
     item: {
       id,
       label: element.props.label,
+      ...(element.props.nativeOverlayIcon === undefined
+        ? {}
+        : { icon: element.props.nativeOverlayIcon }),
       ...(shortcut === undefined ? {} : { shortcut }),
       ...(disabled ? { disabled: true } : {}),
     },
@@ -1531,6 +1570,7 @@ const nativeAnchoredMenuSpec = (
 const nativeMenuContextSpec = (
   surfaceId: string,
   ariaLabel: string,
+  matchAnchorWidth: boolean,
   children: ReactNode,
   close: () => void
 ): NativeMenuContextSpec => {
@@ -1540,7 +1580,12 @@ const nativeMenuContextSpec = (
   for (const [index, child] of Children.toArray(children).entries()) {
     if (!isValidElement(child)) {
       return {
-        payload: { kind: NATIVE_OVERLAY_KINDS.menu, ariaLabel, items: [] },
+        payload: {
+          kind: NATIVE_OVERLAY_KINDS.menu,
+          ariaLabel,
+          ...(matchAnchorWidth ? { matchAnchorWidth: true } : {}),
+          items: [],
+        },
         actions,
         unsupportedReason: 'non-element menu child',
       }
@@ -1570,7 +1615,12 @@ const nativeMenuContextSpec = (
 
     if (nativeRow === null) {
       return {
-        payload: { kind: NATIVE_OVERLAY_KINDS.menu, ariaLabel, items: [] },
+        payload: {
+          kind: NATIVE_OVERLAY_KINDS.menu,
+          ariaLabel,
+          ...(matchAnchorWidth ? { matchAnchorWidth: true } : {}),
+          items: [],
+        },
         actions,
         unsupportedReason: 'unsupported menu content',
       }
@@ -1584,7 +1634,12 @@ const nativeMenuContextSpec = (
   }
 
   return {
-    payload: { kind: NATIVE_OVERLAY_KINDS.menu, ariaLabel, items },
+    payload: {
+      kind: NATIVE_OVERLAY_KINDS.menu,
+      ariaLabel,
+      ...(matchAnchorWidth ? { matchAnchorWidth: true } : {}),
+      items,
+    },
     actions,
     unsupportedReason: items.length === 0 ? 'empty menu' : null,
   }
@@ -1597,6 +1652,7 @@ const nativeMenuContextSpec = (
 const MenuContextMenu = ({
   position,
   placement = 'bottom-start',
+  matchAnchorWidth = false,
   open,
   onOpenChange,
   'aria-label': ariaLabel,
@@ -1630,8 +1686,12 @@ const MenuContextMenu = ({
 
   const transport = selectFloatingTransport(nativeOverlay)
 
-  const nativeSpec = nativeMenuContextSpec(surfaceId, ariaLabel, children, () =>
-    handleOpenChangeRef.current(false)
+  const nativeSpec = nativeMenuContextSpec(
+    surfaceId,
+    ariaLabel,
+    matchAnchorWidth,
+    children,
+    () => handleOpenChangeRef.current(false)
   )
   const nativeSpecRef = useRef(nativeSpec)
   nativeSpecRef.current = nativeSpec
@@ -1696,6 +1756,7 @@ const MenuContextMenu = ({
           },
           placement,
           payload: nativeSpecRef.current.payload,
+          theme: nativeOverlayThemeSnapshot(),
         },
         {
           actions: nativeActions,
@@ -1804,6 +1865,7 @@ const MenuContextMenu = ({
       floatingProps={getFloatingProps()}
       listRef={listRef}
       labelsRef={labelsRef}
+      width={matchAnchorWidth ? position.width : undefined}
       ariaLabel={ariaLabel}
       focus={{ modal: false }}
       surfaceClassName={CONTEXT_MENU_SURFACE_CLASSES}

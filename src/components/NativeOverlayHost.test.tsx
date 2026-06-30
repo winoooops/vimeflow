@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { NativeOverlayRequest } from '@/components/base/floating/nativeOverlay'
@@ -99,6 +105,38 @@ const compositeRequest: NativeOverlayRequest = {
   },
 }
 
+const detailRequest: NativeOverlayRequest = {
+  surfaceId: 'surface-4',
+  kind: 'menu',
+  anchorRect: { x: 40, y: 48, width: 196, height: 22 },
+  placement: 'bottom',
+  theme: {
+    id: 'flexoki',
+    colorScheme: 'light',
+    variables: {
+      '--color-surface-container-high': 'var(--color-test-surface-high)',
+      '--color-on-surface': 'var(--color-test-on-surface)',
+      '--shadow-menu': 'var(--shadow-test-menu)',
+    },
+  },
+  payload: {
+    kind: 'menu',
+    ariaLabel: 'Git ref details',
+    matchAnchorWidth: true,
+    items: [
+      {
+        id: 'copy-path',
+        label: 'Copy path',
+        detail:
+          '/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref',
+        icon: 'folder_open',
+        feedback: 'copy',
+        closeOnSelect: false,
+      },
+    ],
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -178,6 +216,8 @@ const installNativeOverlayHostBridge = (): {
 afterEach(() => {
   cleanupHostBridgeEvents?.()
   document.body.removeAttribute('data-native-overlay-host')
+  document.documentElement.removeAttribute('style')
+  document.documentElement.removeAttribute('data-theme')
   delete window.vimeflow
 })
 
@@ -265,6 +305,46 @@ describe('NativeOverlayHost', () => {
       actionId: 'duplicate-custom',
     })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  test('renders copy detail rows with anchor width and copied feedback', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(detailRequest)
+
+    const menu = await screen.findByRole('menu', { name: 'Git ref details' })
+    const row = screen.getByRole('menuitem', { name: 'Copy path' })
+
+    expect(menu).toHaveStyle({ width: '196px' })
+    expect(document.documentElement.dataset.theme).toBe('flexoki')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--color-surface-container-high'
+      )
+    ).toBe('var(--color-test-surface-high)')
+
+    expect(row).toHaveTextContent(
+      '/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref'
+    )
+    expect(within(row).getByText('content_copy')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(bridge.ready).toHaveBeenCalledWith({ surfaceId: 'surface-4' })
+    })
+
+    await user.click(row)
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'surface-4',
+      actionId: 'copy-path',
+      closeOnSelect: false,
+    })
+    expect(screen.getByRole('menu', { name: 'Git ref details' })).toBe(menu)
+    expect(within(row).getByText('check')).toBeInTheDocument()
+    expect(within(row).getByText('Copied')).toHaveClass('text-[10px]')
   })
 
   test('closes on Escape and clears on host clear', async () => {

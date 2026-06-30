@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
+  nativeOverlayThemeSnapshot,
   openNativeOverlay,
   type NativeOverlayActionEvent,
   type NativeOverlayRequest,
@@ -85,7 +86,29 @@ const installBridge = (
 
 afterEach(() => {
   __resetNativeOverlayForTest()
+  document.documentElement.removeAttribute('style')
+  document.documentElement.removeAttribute('data-theme')
   delete window.vimeflow
+})
+
+describe('nativeOverlayThemeSnapshot', () => {
+  test('captures the active theme tokens for the overlay renderer', () => {
+    const root = document.documentElement
+    root.dataset.theme = 'flexoki'
+    root.style.colorScheme = 'light'
+    root.style.setProperty('--color-surface', 'var(--color-test-surface)')
+    root.style.setProperty('--shadow-modal', 'var(--shadow-test-modal)')
+    root.style.setProperty('--layout-gap', '8px')
+
+    expect(nativeOverlayThemeSnapshot()).toEqual({
+      id: 'flexoki',
+      colorScheme: 'light',
+      variables: {
+        '--color-surface': 'var(--color-test-surface)',
+        '--shadow-modal': 'var(--shadow-test-modal)',
+      },
+    })
+  })
 })
 
 describe('openNativeOverlay', () => {
