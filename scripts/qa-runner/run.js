@@ -46,7 +46,7 @@ import { runUntilChange } from './lib/run-until-change.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
-const FIXER_TIMEOUT_MS = 45 * 60 * 1000
+const FIXER_TIMEOUT_MS = 90 * 60 * 1000
 const DEFAULT_FIXER_ENGINE = 'kimi'
 const FIXER_ENGINES = new Set(['kimi', 'codex'])
 const KIMI_DEFAULT_MODEL = 'kimi-code/kimi-for-coding'

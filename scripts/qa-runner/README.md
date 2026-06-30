@@ -230,7 +230,7 @@ The command receives the fixer contract through environment variables:
 | `QA_FIXER_ENGINE`             | Optional fixer engine override: `kimi` (default) or `codex`         |
 | `QA_CODEX_MODEL`              | Optional Codex model pin for Codex fixer mode                       |
 | `QA_CODEX_SANDBOX`            | Optional Codex sandbox mode, default `workspace-write`              |
-| `QA_FIXER_TIMEOUT_MS`         | Optional fixer timeout in milliseconds, default 45 minutes          |
+| `QA_FIXER_TIMEOUT_MS`         | Optional fixer timeout in milliseconds, default 90 minutes          |
 | `QA_WORKER_KEEP_ALIVE`        | `1` when the daemon owns burst-worker stop through its idle timer   |
 | `QA_WORKER_MIN_FREE_PERCENT`  | Minimum worker filesystem free percentage after cleanup, default 15 |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
@@ -297,9 +297,16 @@ supports:
 - `QA_WORKER_IDLE_STOP_SECONDS=2100` controls the daemon's idle-stop grace
   period after a keep-alive run drains the queue. The default keeps the worker
   warm through slow CI/Claude review rounds before stopping it.
-- `QA_WORKER_LEASE_WAIT_SECONDS=5400` caps how long a dispatch waits for a free
+- `QA_WORKER_TIMEOUT_SECONDS=7200` is the default SSM command cap. Keep it above
+  the 90 minute fixer timeout so checkout, cleanup, local CI, and status posting
+  have room to finish.
+- `QA_WORKER_LEASE_WAIT_SECONDS=7200` caps how long a dispatch waits for a free
   fleet slot. Stale lease files whose owning dispatch process is gone are
   removed automatically.
+- Codex fixer workers that run local CI need `t3.large` or larger. `t3.medium`
+  is acceptable only for light smoke work; under Rust/Vitest verification it can
+  wedge SSM with `ConnectionLost`, which should be treated as a worker capacity
+  or host-health problem rather than solved by increasing timeouts alone.
 - `QA_WORKER_MIN_FREE_PERCENT=15` controls the worker disk health gate. The
   worker removes stale `.claude/worktrees/qa-pr-*`, matching git metadata, and
   stale PR locks before and after each fixer pass. If free space is still below

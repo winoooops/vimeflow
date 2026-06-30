@@ -143,7 +143,7 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **Source:** github-claude | PR #349 round 1 | 2026-06-04
 - **Severity:** HIGH
 - **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
-- **Finding:** `aws ssm wait command-executed` has a built-in client-side max-attempts ceiling far below the documented `QA_WORKER_TIMEOUT_SECONDS=5400` (90 min). Once the waiter exceeds its ceiling, it exits non-zero while the SSM invocation is still `InProgress`. The dispatcher then falls back to the waiter exit code, returning a false failure to the control daemon even though the worker later succeeds. This blocks merge automation and creates misleading failure records.
+- **Finding:** `aws ssm wait command-executed` has a built-in client-side max-attempts ceiling far below the documented long-running `QA_WORKER_TIMEOUT_SECONDS`. Once the waiter exceeds its ceiling, it exits non-zero while the SSM invocation is still `InProgress`. The dispatcher then falls back to the waiter exit code, returning a false failure to the control daemon even though the worker later succeeds. This blocks merge automation and creates misleading failure records.
 - **Fix:** Replaced the one-shot waiter with a bounded polling loop that calls `get-command-invocation` on a 15-second sleep interval, stopping on any terminal SSM status (`Success`, `Failed`, `TimedOut`, `Cancelled`, etc.) or when the explicitly configured `timeoutSeconds` elapses. The worker's actual `ResponseCode` is returned when available.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 

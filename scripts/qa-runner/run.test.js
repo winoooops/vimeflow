@@ -118,8 +118,8 @@ describe('fixer prompts', () => {
 })
 
 describe('fixer timeout', () => {
-  test('defaults to 45 minutes', () => {
-    expect(fixerTimeoutMs({})).toBe(45 * 60 * 1000)
+  test('defaults to 90 minutes', () => {
+    expect(fixerTimeoutMs({})).toBe(90 * 60 * 1000)
   })
 
   test('allows a positive millisecond override', () => {

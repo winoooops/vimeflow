@@ -20,8 +20,8 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
     // follow-up (e.g. push + reply/resolve) before we terminate it. Too short
     // truncates that work; too long lets a misbehaving child start another round (2 min).
     graceMs = 120000,
-    // hard cap on total runtime — terminate even if the probe never changes (45 min).
-    timeoutMs = 45 * 60000,
+    // hard cap on total runtime — terminate even if the probe never changes (90 min).
+    timeoutMs = 90 * 60000,
     // how often to sample probe() for a change (15 s).
     pollMs = 15000,
     log = () => {

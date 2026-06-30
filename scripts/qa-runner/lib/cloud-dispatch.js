@@ -15,6 +15,7 @@ const LIB_DIR = dirname(fileURLToPath(import.meta.url))
 const STATE_DIR = join(dirname(LIB_DIR), '.state')
 const DEFAULT_WORKER_LEASE_DIR = join(STATE_DIR, 'worker-leases')
 const DEFAULT_FLEET_CAPACITY_PER_INSTANCE = 2
+const DEFAULT_WORKER_TIMEOUT_SECONDS = 7200
 
 export const CYCLE_ENV_KEYS = [
   'QA_PR',
@@ -213,7 +214,9 @@ export const ssmSendCommandArgs = ({
     '--parameters',
     JSON.stringify({
       commands: [remoteCycleCommand({ repo, env })],
-      executionTimeout: [String(timeoutSeconds || 5400)],
+      executionTimeout: [
+        String(timeoutSeconds || DEFAULT_WORKER_TIMEOUT_SECONDS),
+      ],
     }),
     '--output',
     'json',
@@ -392,7 +395,7 @@ export const acquireWorkerLease = async ({
   instanceIds,
   capacityPerInstance = DEFAULT_FLEET_CAPACITY_PER_INSTANCE,
   leaseDir = DEFAULT_WORKER_LEASE_DIR,
-  waitSeconds = 5400,
+  waitSeconds = DEFAULT_WORKER_TIMEOUT_SECONDS,
   pollIntervalMs = 5000,
   staleSeconds = 0,
   pr,
@@ -795,7 +798,9 @@ export const runSsmDispatch = async ({
     const commandId = parseCommandId(send.stdout)
 
     const startTime = Date.now()
-    const deadline = startTime + (timeoutSeconds || 5400) * 1000
+    const dispatchTimeoutSeconds =
+      timeoutSeconds || DEFAULT_WORKER_TIMEOUT_SECONDS
+    const deadline = startTime + dispatchTimeoutSeconds * 1000
 
     const terminalStatuses = new Set([
       'Success',
@@ -853,7 +858,7 @@ export const runSsmDispatch = async ({
 
     if (!terminalStatuses.has(invocation?.Status)) {
       stderr.write(
-        `SSM command ${commandId} timed out after ${timeoutSeconds || 5400}s\n`
+        `SSM command ${commandId} timed out after ${dispatchTimeoutSeconds}s\n`
       )
 
       return { code: 1, signal: null }
@@ -906,7 +911,9 @@ export const dispatchConfig = (env = process.env) => {
     capacityDefault,
     'QA_WORKER_CAPACITY_PER_INSTANCE'
   )
-  const timeoutSeconds = Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400)
+  const timeoutSeconds = Number(
+    env.QA_WORKER_TIMEOUT_SECONDS || DEFAULT_WORKER_TIMEOUT_SECONDS
+  )
 
   return {
     mode: env.QA_WORKER_MODE || 'local',

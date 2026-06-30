@@ -260,7 +260,7 @@ QA_WORKER_INSTANCE_IDS=i-xxxxxxxxxxxxxxxxx,i-yyyyyyyyyyyyyyyyy,i-zzzzzzzzzzzzzzz
 QA_WORKER_CAPACITY_PER_INSTANCE=2 \
 QA_WORKER_REGION=us-west-1 \
 QA_WORKER_REPO=/opt/vimeflow/repo \
-QA_WORKER_TIMEOUT_SECONDS=5400 \
+QA_WORKER_TIMEOUT_SECONDS=7200 \
 node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js
 ```
 
@@ -274,6 +274,10 @@ an atomic lease under the qa-runner `.state/worker-leases` directory. This
 coordinates separate dispatch processes on the control host. If all slots are
 full, dispatch waits up to `QA_WORKER_LEASE_WAIT_SECONDS` before failing; stale
 leases whose owning process is gone are removed automatically.
+
+The SSM command timeout defaults to 7200 seconds. Keep it above the runner's
+90 minute `QA_FIXER_TIMEOUT_MS` so worker checkout, cleanup, local CI, and
+Linear/GitHub status updates can finish after the fixer itself exits.
 
 For burst workers that are stopped between PR fix cycles, enable the lifecycle
 wrapper on the control host:
@@ -305,6 +309,11 @@ multiple reusable EBS-backed Spot workers, put their instance IDs in
 `QA_WORKER_INSTANCE_IDS`, and raise `QA_MAX_PARALLEL` to the fleet capacity.
 Credentials should be materialized from SSM at bootstrap time, not copied from a
 private AMI made from a live worker disk that already contains auth caches.
+Use `t3.large` or larger for Codex fixer workers that run local CI. `t3.medium`
+is only a smoke/light-worker size; under Rust/Vitest verification it can wedge
+the host or SSM session and surface as `ConnectionLost`. Treat that as worker
+capacity or host-health failure and replace/resize the worker rather than only
+raising `QA_WORKER_TIMEOUT_SECONDS`.
 
 Use `scripts/qa-runner/deploy/worker-spot-user-data.sh` as the clean Spot worker
 bootstrap user-data. Set `QA_RUNNER_REF` explicitly to the runner branch or tag
