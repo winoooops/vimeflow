@@ -1,3 +1,15 @@
+/**
+ * Fetches the currently selected file diff and keeps enough request identity to
+ * avoid showing the wrong file while React rerenders the diff panel.
+ *
+ * The diff viewer wants two behaviors that fight each other slightly:
+ * switching files should hide stale content immediately, but refreshing the
+ * same file after a git-status update should keep the old diff visible until
+ * the new response arrives. This hook records the request that produced each
+ * response, returns it only when it still matches the selected file, and lets a
+ * parent-provided refresh token force same-file revalidation without clearing
+ * the visible response.
+ */
 import { useState, useEffect, useCallback } from 'react'
 import { createGitService } from '../services/gitService'
 import type { FileDiff } from '../types'
@@ -23,6 +35,8 @@ interface FileDiffRequest {
   staged: boolean
   cwd: string
   untracked: boolean | undefined
+  /** Changes when git status succeeds so the selected file diff revalidates. */
+  refreshToken: string | undefined
   refetchKey: number
 }
 
@@ -37,12 +51,14 @@ interface FileDiffResponseState {
  * @param staged - Whether to fetch staged or unstaged diff
  * @param cwd - Working directory for git commands
  * @param untracked - Whether the selected file is known to be untracked
+ * @param refreshToken - Parent-owned invalidation token for same-file refreshes
  */
 export const useFileDiff = (
   filePath: string | null,
   staged = false,
   cwd = '.',
-  untracked?: boolean
+  untracked?: boolean,
+  refreshToken?: string
 ): UseFileDiffReturn => {
   const [responseState, setResponseState] =
     useState<FileDiffResponseState | null>(null)
@@ -70,6 +86,7 @@ export const useFileDiff = (
       staged,
       cwd,
       untracked,
+      refreshToken,
       refetchKey,
     }
 
@@ -105,16 +122,14 @@ export const useFileDiff = (
     return (): void => {
       cancelled = true
     }
-  }, [filePath, staged, untracked, cwd, refetchKey])
+  }, [filePath, staged, untracked, cwd, refreshToken, refetchKey])
 
   const response =
     filePath !== null &&
     responseState?.request.filePath === filePath &&
     responseState.request.staged === staged &&
     responseState.request.cwd === cwd &&
-    responseState.request.untracked === untracked &&
-    responseState.request.refetchKey === refetchKey &&
-    !loading
+    responseState.request.untracked === untracked
       ? responseState.response
       : null
 

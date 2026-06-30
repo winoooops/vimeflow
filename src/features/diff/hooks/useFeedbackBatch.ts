@@ -1,5 +1,18 @@
+/**
+ * Owns the in-memory review state for the diff surface.
+ *
+ * A feedback batch is the set of submitted inline review comments for one
+ * terminal-owned review. A feedback draft is different: it is the single
+ * comment editor the user has opened but not submitted yet. WorkspaceView keeps
+ * one batch and one draft per terminal owner so switching panes, closing the
+ * dock, or reopening the diff view does not lose unfinished review work.
+ *
+ * This file keeps the storage format private. Callers ask for comments by
+ * `(cwd, filePath, staged)` and summaries by owner; the hook handles map keys,
+ * optimistic updates, soft caps, owner pruning, and repo-root lookup.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { DiffLineAnnotation } from '@pierre/diffs'
+import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 
 export interface ReviewComment {
   id: string
@@ -16,7 +29,7 @@ export interface ReviewComment {
 export const DRAFT_ID = '__draft__'
 
 export type FeedbackBatch = Map<
-  /** batchKey: `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}` */
+  /** Opaque batch key produced by makeBatchKey(cwd, filePath, staged). */
   string,
   DiffLineAnnotation<ReviewComment>[]
 >
@@ -185,6 +198,7 @@ export interface FeedbackBatchSummary {
   ownerKey: string
   fileCount: number
   commentCount: number
+  draftCount: number
 }
 
 export interface FeedbackRepoRootStoreRef {
@@ -192,9 +206,25 @@ export interface FeedbackRepoRootStoreRef {
   repoRootForCwd: (cwd: string) => string
 }
 
+export interface FeedbackDraft {
+  cwd: string
+  filePath: string
+  staged: boolean
+  side: AnnotationSide
+  lineNumber: number
+  editId?: string
+  text: string
+}
+
+export interface FeedbackDraftStore {
+  draft: FeedbackDraft | null
+  setDraft: (draft: FeedbackDraft | null) => void
+}
+
 export interface UseFeedbackBatchStoreReturn {
   feedbackBatch: UseFeedbackBatchReturn
   feedbackRepoRootRef: FeedbackRepoRootStoreRef
+  feedbackDraft: FeedbackDraftStore
   summaries: FeedbackBatchSummary[]
   pruneOwners: (liveOwnerKeys: ReadonlySet<string>) => void
 }
@@ -205,6 +235,10 @@ export const useFeedbackBatchStore = (
 ): UseFeedbackBatchStoreReturn => {
   const [batchesByOwner, setBatchesByOwner] = useState<
     Map<string, FeedbackBatch>
+  >(() => new Map())
+
+  const [draftsByOwner, setDraftsByOwner] = useState<
+    Map<string, FeedbackDraft>
   >(() => new Map())
 
   // Mirrors review batches for synchronous optimistic mutations before React
@@ -218,6 +252,7 @@ export const useFeedbackBatchStore = (
   }, [batchesByOwner])
 
   const batch = batchesByOwner.get(ownerKey) ?? EMPTY_BATCH
+  const draft = draftsByOwner.get(ownerKey) ?? null
 
   const totalAnnotations = useCallback(
     (): number => countAnnotationsInBatch(batch),
@@ -377,7 +412,39 @@ export const useFeedbackBatchStore = (
 
       return next
     })
+
+    setDraftsByOwner((prev) => {
+      if (!prev.has(ownerKey)) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      next.delete(ownerKey)
+
+      return next
+    })
   }, [ownerKey])
+
+  const setDraft = useCallback(
+    (nextDraft: FeedbackDraft | null): void => {
+      setDraftsByOwner((prev) => {
+        const hasCurrent = prev.has(ownerKey)
+        if (nextDraft === null && !hasCurrent) {
+          return prev
+        }
+
+        const next = new Map(prev)
+        if (nextDraft === null) {
+          next.delete(ownerKey)
+        } else {
+          next.set(ownerKey, nextDraft)
+        }
+
+        return next
+      })
+    },
+    [ownerKey]
+  )
 
   const feedbackBatch = useMemo<UseFeedbackBatchReturn>(
     () => ({
@@ -429,17 +496,46 @@ export const useFeedbackBatchStore = (
     [cwd, ownerKey]
   )
 
-  const summaries = useMemo<FeedbackBatchSummary[]>(
-    () =>
-      [...batchesByOwner.entries()]
-        .map(([entryOwnerKey, entryBatch]) => ({
-          ownerKey: entryOwnerKey,
-          fileCount: entryBatch.size,
-          commentCount: countAnnotationsInBatch(entryBatch),
-        }))
-        .filter((summary) => summary.commentCount > 0),
-    [batchesByOwner]
+  const feedbackDraft = useMemo<FeedbackDraftStore>(
+    () => ({
+      draft,
+      setDraft,
+    }),
+    [draft, setDraft]
   )
+
+  const summaries = useMemo<FeedbackBatchSummary[]>(() => {
+    const ownerKeys = new Set([
+      ...batchesByOwner.keys(),
+      ...[...draftsByOwner.entries()]
+        .filter(([, entryDraft]) => entryDraft.text.trim().length > 0)
+        .map(([entryOwnerKey]) => entryOwnerKey),
+    ])
+
+    return [...ownerKeys]
+      .map((entryOwnerKey) => {
+        const entryBatch = batchesByOwner.get(entryOwnerKey) ?? EMPTY_BATCH
+        const entryDraft = draftsByOwner.get(entryOwnerKey) ?? null
+        const fileKeys = new Set(entryBatch.keys())
+
+        const draftCount =
+          entryDraft !== null && entryDraft.text.trim().length > 0 ? 1 : 0
+
+        if (draftCount > 0 && entryDraft !== null) {
+          fileKeys.add(
+            makeBatchKey(entryDraft.cwd, entryDraft.filePath, entryDraft.staged)
+          )
+        }
+
+        return {
+          ownerKey: entryOwnerKey,
+          fileCount: fileKeys.size,
+          commentCount: countAnnotationsInBatch(entryBatch),
+          draftCount,
+        }
+      })
+      .filter((summary) => summary.commentCount > 0 || summary.draftCount > 0)
+  }, [batchesByOwner, draftsByOwner])
 
   const pruneOwners = useCallback(
     (liveOwnerKeys: ReadonlySet<string>): void => {
@@ -468,6 +564,20 @@ export const useFeedbackBatchStore = (
       if (nextRepoRoots.size !== repoRootsRef.current.size) {
         repoRootsRef.current = nextRepoRoots
       }
+
+      setDraftsByOwner((prev) => {
+        const next = new Map(
+          [...prev.entries()].filter(([entryOwnerKey]) =>
+            liveOwnerKeys.has(entryOwnerKey)
+          )
+        )
+
+        if (next.size === prev.size) {
+          return prev
+        }
+
+        return next
+      })
     },
     []
   )
@@ -475,6 +585,7 @@ export const useFeedbackBatchStore = (
   return {
     feedbackBatch,
     feedbackRepoRootRef,
+    feedbackDraft,
     summaries,
     pruneOwners,
   }

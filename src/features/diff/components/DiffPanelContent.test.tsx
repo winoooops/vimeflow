@@ -12,6 +12,7 @@ import type { ReactElement } from 'react'
 import { DiffPanelContent } from './DiffPanelContent'
 import * as useGitStatusModule from '../hooks/useGitStatus'
 import * as useFileDiffModule from '../hooks/useFileDiff'
+import type { UseGitStatusReturn } from '../hooks/useGitStatus'
 import type { UseFileDiffReturn } from '../hooks/useFileDiff'
 import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 import type { ChangedFile, FileDiff } from '../types'
@@ -481,6 +482,7 @@ describe('DiffPanelContent', () => {
       null,
       false,
       '/home/user/project',
+      undefined,
       undefined
     )
   })
@@ -744,6 +746,7 @@ describe('DiffPanelContent', () => {
         null,
         false,
         '/repo/b',
+        undefined,
         undefined
       )
     })
@@ -959,7 +962,8 @@ describe('DiffPanelContent', () => {
         'new.ts',
         false,
         '/repo',
-        true
+        true,
+        '/repo:0:new.ts:unstaged'
       )
     })
   })
@@ -1167,7 +1171,8 @@ describe('DiffPanelContent', () => {
         'src/App.tsx',
         false,
         '/repo',
-        false
+        false,
+        '/repo:0:src/App.tsx:unstaged'
       )
     })
 
@@ -1207,7 +1212,13 @@ describe('DiffPanelContent', () => {
       const calls = useFileDiffSpy.mock.calls
       // Last call should be with the correct file after auto-select
       const lastCall = calls[calls.length - 1]
-      expect(lastCall).toEqual(['src/App.tsx', false, '/repo/b', false])
+      expect(lastCall).toEqual([
+        'src/App.tsx',
+        false,
+        '/repo/b',
+        false,
+        '/repo/b:0:src/App.tsx:unstaged',
+      ])
     })
   })
 
@@ -2514,6 +2525,57 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
     })
 
+    test('controlled mode does not clear restored selection when cwd changes during pane switches', async (): Promise<void> => {
+      const onSelectedFileChange = vi.fn()
+
+      const makeGitStatus = (filesCwd: string): UseGitStatusReturn => ({
+        files: [
+          { path: 'src/first.ts', status: 'modified', staged: false },
+          { path: 'src/multi.ts', status: 'modified', staged: false },
+        ],
+        filesCwd,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      const { rerender } = render(
+        <DiffPanelContent
+          cwd="/repo-a"
+          gitStatus={makeGitStatus('/repo-a')}
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo-a' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo-b"
+          gitStatus={makeGitStatus('/repo-b')}
+          selectedFile={{ path: 'src/first.ts', staged: false, cwd: '/repo-b' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo-a"
+          gitStatus={makeGitStatus('/repo-a')}
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo-a' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(onSelectedFileChange).not.toHaveBeenCalledWith(null)
+    })
+
     test('clamp-on-shrink: same-file refetch with fewer hunks clamps focus (valid counter, staging not blocked)', async (): Promise<void> => {
       const user = userEvent.setup()
 
@@ -3292,6 +3354,186 @@ describe('DiffPanelContent', () => {
 
       expect(screen.getByPlaceholderText('Request change')).toHaveValue(
         'Draft while agent edits'
+      )
+    })
+
+    test('preserves comment draft text when selected file temporarily clears before returning', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      const changedFile = {
+        path: 'src/foo.ts',
+        status: 'modified' as const,
+        staged: false,
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation((path) =>
+        fileDiffMock({
+          diff: path === null ? null : inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      const controlledProps = {
+        cwd: '/repo',
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const loadedGitStatus = {
+        files: [changedFile],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      const emptyGitStatus = {
+        ...loadedGitStatus,
+        files: [],
+      }
+
+      const { rerender } = render(
+        <DiffPanelContent
+          {...controlledProps}
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          gitStatus={loadedGitStatus}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line/ })
+        ).getByPlaceholderText('Request change'),
+        'Draft through transient empty selection'
+      )
+
+      rerender(
+        <DiffPanelContent
+          {...controlledProps}
+          selectedFile={null}
+          gitStatus={emptyGitStatus}
+        />
+      )
+
+      expect(screen.queryByPlaceholderText('Request change')).toBeNull()
+
+      rerender(
+        <DiffPanelContent
+          {...controlledProps}
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          gitStatus={loadedGitStatus}
+        />
+      )
+
+      expect(await screen.findByPlaceholderText('Request change')).toHaveValue(
+        'Draft through transient empty selection'
+      )
+    })
+
+    test('keeps the current same-file diff visible while a refreshed diff loads', (): void => {
+      let fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      const useFileDiffSpy = vi
+        .spyOn(useFileDiffModule, 'useFileDiff')
+        .mockImplementation(() => fileDiffState)
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const gitStatus = {
+        files: [
+          { path: 'src/foo.ts', status: 'modified' as const, staged: false },
+        ],
+        filesCwd: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      const { rerender } = render(
+        <DiffPanelContent {...props} gitStatus={gitStatus} />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-new-contents',
+        'new v1'
+      )
+
+      fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: true,
+        error: null,
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      rerender(
+        <DiffPanelContent
+          {...props}
+          gitStatus={{ ...gitStatus, revision: 2 }}
+        />
+      )
+
+      expect(screen.queryByText('Loading diff…')).not.toBeInTheDocument()
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-new-contents',
+        'new v1'
+      )
+
+      fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new v2',
+        rawDiff: '',
+      })
+
+      rerender(
+        <DiffPanelContent
+          {...props}
+          gitStatus={{ ...gitStatus, revision: 2 }}
+        />
+      )
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-new-contents',
+        'new v2'
+      )
+
+      expect(useFileDiffSpy).toHaveBeenLastCalledWith(
+        'src/foo.ts',
+        false,
+        '/repo',
+        false,
+        '/repo:2:src/foo.ts:unstaged'
       )
     })
 

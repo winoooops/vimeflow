@@ -38,6 +38,7 @@ import {
   useFeedbackBatch,
   parseBatchKey,
   DRAFT_ID,
+  type FeedbackDraftStore,
   type ReviewComment,
   type UseFeedbackBatchReturn,
 } from '../hooks/useFeedbackBatch'
@@ -57,6 +58,11 @@ import {
   type PaneCandidate,
   type FeedbackDispatchTarget,
 } from '../services/activePanePicker'
+import {
+  isSameAnnotationTarget,
+  useReviewCommentDraft,
+  type AnnotationTarget,
+} from '../hooks/useReviewCommentDraft'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
 // the raw enum literals) so a Pierre version bump that widens or renames any
@@ -113,6 +119,8 @@ interface DiffPanelContentBaseProps {
   gitStatus?: UseGitStatusReturn
   /** Optional shared feedback batch from the workspace shell. */
   feedbackBatch?: UseFeedbackBatchReturn
+  /** Optional shared open-comment draft from the workspace shell. */
+  feedbackDraft?: FeedbackDraftStore
   /** Optional shared repo-root cache for feedback dispatch path resolution. */
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
@@ -130,14 +138,6 @@ let feedbackCommentSeq = 0
 const nextFeedbackCommentId = (): string =>
   `feedback-comment-${(feedbackCommentSeq += 1)}`
 
-interface AnnotationTarget {
-  lineNumber: number
-  side: AnnotationSide
-  filePath: string
-  staged: boolean
-  editId?: string
-}
-
 interface KeyboardLineTarget {
   lineNumber: number
   side: AnnotationSide
@@ -147,55 +147,6 @@ interface KeyboardLineTarget {
 }
 
 type KeyboardConfirmAction = 'stage-hunk' | 'discard-hunk' | 'discard-file'
-
-const annotationTargetKey = (target: AnnotationTarget): string =>
-  `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
-    target.editId ?? 'draft'
-  }`
-
-const diffContainsAnnotationTarget = (
-  fileDiff: FileDiff,
-  target: AnnotationTarget
-): boolean => {
-  for (const hunk of fileDiff.hunks) {
-    let oldLine = hunk.oldStart
-    let newLine = hunk.newStart
-
-    for (const line of hunk.lines) {
-      const oldLineNumber =
-        line.oldLineNumber ?? (line.type === 'added' ? undefined : oldLine)
-
-      const newLineNumber =
-        line.newLineNumber ?? (line.type === 'removed' ? undefined : newLine)
-
-      if (
-        target.side === 'deletions' &&
-        line.type !== 'added' &&
-        oldLineNumber === target.lineNumber
-      ) {
-        return true
-      }
-
-      if (
-        target.side === 'additions' &&
-        line.type !== 'removed' &&
-        newLineNumber === target.lineNumber
-      ) {
-        return true
-      }
-
-      if (line.type !== 'added') {
-        oldLine += 1
-      }
-
-      if (line.type !== 'removed') {
-        newLine += 1
-      }
-    }
-  }
-
-  return false
-}
 
 const keyboardLineTargetsForDiff = (
   fileDiff: FileDiff
@@ -587,6 +538,7 @@ export const DiffPanelContent = ({
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
   feedbackBatch = undefined,
+  feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
 }: DiffPanelContentProps): ReactElement => {
@@ -598,6 +550,7 @@ export const DiffPanelContent = ({
   const {
     files,
     filesCwd,
+    revision: statusRevision = 0,
     loading: statusLoading,
     error: statusError,
     idle,
@@ -659,13 +612,19 @@ export const DiffPanelContent = ({
   // previously selected changed file before auto-select falls back to row 1.
   const previousSelectionCwdRef = useRef(cwd)
   useEffect(() => {
+    if (isControlled) {
+      previousSelectionCwdRef.current = cwd
+
+      return
+    }
+
     if (previousSelectionCwdRef.current === cwd) {
       return
     }
 
     previousSelectionCwdRef.current = cwd
     commitSelection(null)
-  }, [cwd, commitSelection])
+  }, [cwd, commitSelection, isControlled])
 
   // Auto-select first file when effectiveFiles changes. Gated on effectiveFiles
   // (not raw files) so filesCwd freshness check is automatic.
@@ -716,6 +675,13 @@ export const DiffPanelContent = ({
       ? undefined
       : selectedFileEntry.status === 'untracked'
 
+  const selectedFileDiffRefreshToken =
+    selectedFileEntry === undefined
+      ? undefined
+      : `${filesCwd ?? ''}:${statusRevision}:${selectedFileEntry.path}:${
+          selectedFileEntry.staged ? 'staged' : 'unstaged'
+        }`
+
   const {
     response,
     loading: diffLoading,
@@ -725,7 +691,8 @@ export const DiffPanelContent = ({
     selectedFilePath,
     selectedFileStaged,
     cwd,
-    selectedFileUntracked
+    selectedFileUntracked,
+    selectedFileDiffRefreshToken
   )
 
   const responseMatchesSelection =
@@ -733,8 +700,7 @@ export const DiffPanelContent = ({
     selectedFilePath !== null &&
     response.fileDiff.filePath === selectedFilePath
 
-  const activeResponse =
-    !diffLoading && responseMatchesSelection ? response : null
+  const activeResponse = responseMatchesSelection ? response : null
 
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
@@ -793,40 +759,41 @@ export const DiffPanelContent = ({
     }
   }, [response, repoRootRef])
 
-  // Comment editor target state: which line currently has an open comment editor.
-  // `editId` set => editing an existing comment in place; absent => a new
-  // draft on that line.
-  const [annotationTarget, setAnnotationTargetState] =
-    useState<AnnotationTarget | null>(null)
-  const [commentDraftText, setCommentDraftTextState] = useState('')
+  // Real annotations for the currently selected file.
+  const realAnnotations = feedback.annotationsForFile(
+    cwd,
+    selectedFilePath ?? '',
+    selectedFileStaged
+  )
+
+  const {
+    annotationTarget,
+    commentDraftText,
+    commentDraftIsRecoverable,
+    lineAnnotations,
+    setAnnotationTarget,
+    setCommentDraftText,
+    closeCommentDraft: closeCommentEditor,
+  } = useReviewCommentDraft({
+    cwd,
+    feedbackDraft,
+    selectedFilePath,
+    selectedFileStaged,
+    activeFileDiff: activeResponse?.fileDiff ?? null,
+    realAnnotations,
+    focusDiffRoot,
+  })
+
+  const recoverableCommentDraftTarget =
+    commentDraftIsRecoverable && annotationTarget !== null
+      ? annotationTarget
+      : null
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
 
   const [keyboardConfirmAction, setKeyboardConfirmAction] =
     useState<KeyboardConfirmAction | null>(null)
-
-  const setAnnotationTarget = useCallback(
-    (next: SetStateAction<AnnotationTarget | null>, focusDiff = true): void => {
-      if (focusDiff) {
-        focusDiffRoot()
-      }
-
-      setAnnotationTargetState(next)
-    },
-    [focusDiffRoot]
-  )
-
-  const setCommentDraftText = useCallback(
-    (next: SetStateAction<string>, focusDiff = true): void => {
-      if (focusDiff) {
-        focusDiffRoot()
-      }
-
-      setCommentDraftTextState(next)
-    },
-    [focusDiffRoot]
-  )
 
   const setKeyboardConfirm = useCallback(
     (
@@ -840,77 +807,6 @@ export const DiffPanelContent = ({
       setKeyboardConfirmAction(next)
     },
     [focusDiffRoot]
-  )
-
-  // Real annotations for the currently selected file.
-  const realAnnotations = feedback.annotationsForFile(
-    cwd,
-    selectedFilePath ?? '',
-    selectedFileStaged
-  )
-
-  const annotationTargetIsCurrentFile =
-    annotationTarget !== null &&
-    annotationTarget.filePath === selectedFilePath &&
-    annotationTarget.staged === selectedFileStaged
-
-  const annotationTargetLineExists = useMemo((): boolean => {
-    if (
-      annotationTarget === null ||
-      !annotationTargetIsCurrentFile ||
-      activeResponse === null
-    ) {
-      return false
-    }
-
-    return diffContainsAnnotationTarget(
-      activeResponse.fileDiff,
-      annotationTarget
-    )
-  }, [activeResponse, annotationTarget, annotationTargetIsCurrentFile])
-
-  const commentDraftIsRecoverable =
-    annotationTarget !== null &&
-    commentDraftText.trim().length > 0 &&
-    activeResponse !== null &&
-    (!annotationTargetIsCurrentFile || !annotationTargetLineExists)
-
-  // Merge a transient draft annotation in only while composing a NEW comment,
-  // so the comment editor renders inline below the target line. Editing reuses the
-  // existing annotation's slot, so no draft is added there. When idle we pass
-  // `realAnnotations` straight through to keep its identity stable (avoids
-  // Pierre re-tokenizing on every render).
-  const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
-    if (
-      annotationTarget !== null &&
-      annotationTarget.editId === undefined &&
-      annotationTargetIsCurrentFile &&
-      (activeResponse === null || annotationTargetLineExists)
-    ) {
-      const draft: DiffLineAnnotation<ReviewComment> = {
-        side: annotationTarget.side,
-        lineNumber: annotationTarget.lineNumber,
-        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
-      }
-
-      return [...realAnnotations, draft]
-    }
-
-    return realAnnotations
-  }, [
-    realAnnotations,
-    annotationTarget,
-    annotationTargetIsCurrentFile,
-    annotationTargetLineExists,
-    activeResponse,
-  ])
-
-  const closeCommentEditor = useCallback(
-    (focusDiff = true): void => {
-      setAnnotationTarget(null, focusDiff)
-      setCommentDraftText('', false)
-    },
-    [setCommentDraftText, setAnnotationTarget]
   )
 
   const confirmCommentEditor = useCallback(
@@ -1068,18 +964,6 @@ export const DiffPanelContent = ({
   useEffect(() => {
     setFocusedHunkIndex(0)
   }, [selectedFilePath, selectedFileStaged])
-
-  // Clear the comment editor on file changes so a draft opened on one file is
-  // not accidentally submitted against another.
-  useEffect(() => {
-    setAnnotationTarget(null, false)
-    setCommentDraftText('', false)
-  }, [
-    selectedFilePath,
-    selectedFileStaged,
-    setCommentDraftText,
-    setAnnotationTarget,
-  ])
 
   const hunkCount = activeResponse?.fileDiff.hunks.length ?? 0
 
@@ -1583,8 +1467,8 @@ export const DiffPanelContent = ({
   // bug observed during PR1 QA. Declared BEFORE the early returns below so
   // the hook order is stable across renders (rules-of-hooks).
   const pierreInputs = useMemo(
-    () => (response ? toPierreInputs(response) : null),
-    [response]
+    () => (activeResponse ? toPierreInputs(activeResponse) : null),
+    [activeResponse]
   )
 
   // File navigation — index of the selected file within effectiveFiles, or
@@ -1879,11 +1763,7 @@ export const DiffPanelContent = ({
         return ''
       }
 
-      const sameTarget =
-        annotationTargetKey(annotationTarget) ===
-        annotationTargetKey(nextTarget)
-
-      return sameTarget ? current : ''
+      return isSameAnnotationTarget(annotationTarget, nextTarget) ? current : ''
     }, false)
     setAnnotationTarget(nextTarget)
   }, [
@@ -2301,15 +2181,15 @@ export const DiffPanelContent = ({
               {notifyMessage}
             </div>
           ) : null}
-          {commentDraftIsRecoverable ? (
+          {recoverableCommentDraftTarget !== null ? (
             <div
               role="status"
               data-testid="diff-draft-recovery"
               className="mx-3 mb-2 rounded-md bg-surface-container-high/70 px-3 py-2 text-[11px] leading-4 text-on-surface-variant"
             >
               Draft preserved for line{' '}
-              {annotationTarget.side === 'deletions' ? 'L' : 'R'}
-              {annotationTarget.lineNumber}:{' '}
+              {recoverableCommentDraftTarget.side === 'deletions' ? 'L' : 'R'}
+              {recoverableCommentDraftTarget.lineNumber}:{' '}
               <span className="font-medium text-on-surface">
                 {commentDraftText}
               </span>
@@ -2372,8 +2252,6 @@ export const DiffPanelContent = ({
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />
-          ) : diffLoading ? (
-            <LoadingCard />
           ) : pierreInputs ? (
             tooNarrow ? (
               <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
@@ -2438,11 +2316,12 @@ export const DiffPanelContent = ({
                             return ''
                           }
 
-                          const sameTarget =
-                            annotationTargetKey(annotationTarget) ===
-                            annotationTargetKey(nextTarget)
-
-                          return sameTarget ? current : ''
+                          return isSameAnnotationTarget(
+                            annotationTarget,
+                            nextTarget
+                          )
+                            ? current
+                            : ''
                         }, false)
                         setAnnotationTarget(nextTarget)
                       }
@@ -2503,6 +2382,8 @@ export const DiffPanelContent = ({
                 style={{ display: 'block', width: '100%' }}
               />
             )
+          ) : diffLoading ? (
+            <LoadingCard />
           ) : null}
         </div>
       </div>

@@ -32,7 +32,10 @@ import { ToolbarButton } from '@/components/ToolbarButton'
 import { Tooltip } from '@/components/Tooltip'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
-import type { UseFeedbackBatchReturn } from '../../diff/hooks/useFeedbackBatch'
+import type {
+  FeedbackDraftStore,
+  UseFeedbackBatchReturn,
+} from '../../diff/hooks/useFeedbackBatch'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
 import type { EditorFileLifecycleStatus } from '../utils/editorFileLifecycleStatus'
@@ -53,6 +56,7 @@ export interface PendingFeedbackReview {
   label: string
   commentCount: number
   fileCount: number
+  draftCount?: number
 }
 
 interface FeedbackReviewControlsProps {
@@ -70,11 +74,23 @@ const reviewPaneId = (key: string): string => {
 const plural = (count: number, singular: string): string =>
   `${count} ${singular}${count === 1 ? '' : 's'}`
 
+const reviewProgressText = (review: PendingFeedbackReview): string => {
+  const draftCount = review.draftCount ?? 0
+  const parts: string[] = []
+
+  if (review.commentCount > 0) {
+    parts.push(plural(review.commentCount, 'comment'))
+  }
+
+  if (draftCount > 0) {
+    parts.push(plural(draftCount, 'draft'))
+  }
+
+  return parts.length > 0 ? parts.join(' + ') : '0 comments'
+}
+
 const reviewContextText = (review: PendingFeedbackReview): string =>
-  `${plural(review.commentCount, 'comment')} · ${plural(
-    review.fileCount,
-    'file'
-  )}`
+  `${reviewProgressText(review)} · ${plural(review.fileCount, 'file')}`
 
 const ReviewRowContent = ({
   review,
@@ -253,8 +269,13 @@ interface DockPanelBaseProps {
   cwd?: string
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
-  /** Optional workspace-owned inline review feedback batch. */
+  /**
+   * Workspace-owned submitted review comments for the active terminal owner.
+   * Called a "batch" because these comments are sent together on Finish Review.
+   */
   feedbackBatch?: UseFeedbackBatchReturn
+  /** Workspace-owned comment editor that has not been submitted yet. */
+  feedbackDraft?: FeedbackDraftStore
   /** Optional workspace-owned repo root cache for feedback dispatch. */
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments. */
@@ -304,6 +325,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       cwd = '.',
       gitStatus = undefined,
       feedbackBatch = undefined,
+      feedbackDraft = undefined,
       feedbackRepoRootRef = undefined,
       feedbackDispatch = undefined,
       pendingFeedbackReviews = [],
@@ -627,6 +649,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     selectedFile={selectedDiffFile}
                     onSelectedFileChange={onSelectedDiffFileChange}
                     feedbackBatch={feedbackBatch}
+                    feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
                   />
@@ -635,6 +658,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     cwd={cwd}
                     gitStatus={gitStatus}
                     feedbackBatch={feedbackBatch}
+                    feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
                   />

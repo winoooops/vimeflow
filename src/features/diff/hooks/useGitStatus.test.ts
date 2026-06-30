@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useGitStatus } from './useGitStatus'
 import { mockChangedFiles } from '../data/mockDiff'
 
@@ -64,11 +64,37 @@ describe('useGitStatus', () => {
       expect(result.current.files).toEqual(mockChangedFiles)
 
       // Call refresh (synchronous — bumps refreshKey counter)
-      result.current.refresh()
+      act(() => {
+        result.current.refresh()
+      })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
 
       // Should still have files
       expect(result.current.files).toEqual(mockChangedFiles)
       expect(result.current.error).toBeNull()
+    })
+
+    test('same-cwd refresh increments revision without showing loading', async () => {
+      const { result } = renderHook(() => useGitStatus('/home/test/project'))
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
+
+      const initialRevision = result.current.revision ?? 0
+
+      act(() => {
+        result.current.refresh()
+      })
+
+      expect(result.current.loading).toBe(false)
+
+      await waitFor(() => {
+        expect(result.current.revision).toBe(initialRevision + 1)
+      })
     })
 
     test('handles errors gracefully', async () => {
@@ -234,7 +260,9 @@ describe('useGitStatus', () => {
 
       // Fire event with matching cwd
       // cspell:disable-next-line
-      eventHandler!({ cwds: ['/home/test/project'] })
+      act(() => {
+        eventHandler!({ cwds: ['/home/test/project'] })
+      })
 
       await waitFor(() => {
         // refresh() was called, files re-fetched
@@ -300,9 +328,11 @@ describe('useGitStatus', () => {
 
       // Fire event with multiple current working directories including ours
       // cspell:disable-next-line
-      eventHandler!({
-        // cspell:disable-next-line
-        cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'],
+      act(() => {
+        eventHandler!({
+          // cspell:disable-next-line
+          cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'],
+        })
       })
 
       await waitFor(() => {
@@ -313,11 +343,15 @@ describe('useGitStatus', () => {
   })
 
   describe('filesCwd freshness tracking', () => {
-    test('filesCwd is null before first fetch resolves', () => {
+    test('filesCwd is null before first fetch resolves', async () => {
       const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
       // Before fetch completes
       expect(result.current.filesCwd).toBeNull()
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
     })
 
     test('filesCwd updates to cwd on successful fetch', async () => {

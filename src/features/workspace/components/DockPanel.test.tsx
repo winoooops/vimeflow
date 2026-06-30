@@ -7,20 +7,14 @@ import {
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import {
-  createRef,
-  forwardRef,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
+import { createRef, forwardRef, useState, type ReactElement } from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
 import * as languageServiceModule from '../../editor/services/languageService'
 import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
 import * as useFileDiffModule from '../../diff/hooks/useFileDiff'
-import { useFeedbackBatch } from '../../diff/hooks/useFeedbackBatch'
+import { useFeedbackBatchStore } from '../../diff/hooks/useFeedbackBatch'
 import type { UseFileDiffReturn } from '../../diff/hooks/useFileDiff'
 import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
@@ -143,8 +137,8 @@ const SharedFeedbackDockHarness = ({
   cwd?: string
   feedbackDispatch?: FeedbackDispatchTarget
 }): ReactElement => {
-  const feedbackBatch = useFeedbackBatch()
-  const feedbackRepoRootRef = useRef('')
+  const { feedbackBatch, feedbackDraft, feedbackRepoRootRef } =
+    useFeedbackBatchStore('session-a:p0', cwd)
   const isResizing = false
 
   if (!open) {
@@ -188,6 +182,7 @@ const SharedFeedbackDockHarness = ({
       }}
       onSelectedDiffFileChange={vi.fn()}
       feedbackBatch={feedbackBatch}
+      feedbackDraft={feedbackDraft}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
@@ -277,6 +272,22 @@ const addInlineComment = async (
   await user.keyboard('{Enter}')
 
   await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+}
+
+const openInlineCommentDraft = async (
+  user: ReturnType<typeof userEvent.setup>,
+  text: string
+): Promise<void> => {
+  const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+  await user.click(
+    within(gutterSlot).getByRole('button', {
+      name: 'Add comment on this line',
+    })
+  )
+
+  const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+  await user.type(within(dialog).getByPlaceholderText('Request change'), text)
 }
 
 const renderDockPanel = (
@@ -1084,6 +1095,44 @@ describe('DockPanel', () => {
     expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p1')
   })
 
+  test('diff header lists draft-only unfinished reviews', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p1',
+          label: 'Agent A',
+          commentCount: 0,
+          draftCount: 1,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Reviews 2' }))
+
+    const reviewItems = screen.getAllByRole('menuitem')
+    expect(within(reviewItems[0]).getByText('Agent A')).toBeInTheDocument()
+    expect(
+      within(reviewItems[0]).getByText('1 draft · 1 file')
+    ).toBeInTheDocument()
+
+    await user.click(within(reviewItems[0]).getByText('Agent A'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p1')
+  })
+
   test('narrow diff dock lists unfinished reviews in compact actions menu', async () => {
     const user = userEvent.setup()
     const onPendingFeedbackReviewSelect = vi.fn()
@@ -1288,7 +1337,8 @@ describe('DockPanel', () => {
       'src/second.ts',
       false,
       '/repo',
-      false
+      false,
+      '/repo:0:src/second.ts:unstaged'
     )
 
     const closed = false
@@ -1302,7 +1352,8 @@ describe('DockPanel', () => {
       'src/second.ts',
       false,
       '/repo',
-      false
+      false,
+      '/repo:0:src/second.ts:unstaged'
     )
 
     const selectedButton = screen
@@ -1388,6 +1439,31 @@ describe('DockPanel', () => {
     expect(screen.getByText('Survives tab switch')).toBeInTheDocument()
   })
 
+  test('keeps open inline comment draft across Editor and Diff tab switches when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await openInlineCommentDraft(user, 'Draft survives tab switch')
+
+    rerender(<SharedFeedbackDockHarness tab="editor" open />)
+
+    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(await screen.findByPlaceholderText('Request change')).toHaveValue(
+      'Draft survives tab switch'
+    )
+  })
+
   test('keeps pending inline feedback after the dock unmounts and reopens when parent-owned', async () => {
     const user = userEvent.setup()
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -1413,6 +1489,32 @@ describe('DockPanel', () => {
       await screen.findByRole('button', { name: /finish feedback \(1\)/i })
     ).toBeInTheDocument()
     expect(screen.getByText('Survives dock reopen')).toBeInTheDocument()
+  })
+
+  test('keeps open inline comment draft after the dock unmounts and reopens when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await openInlineCommentDraft(user, 'Draft survives dock reopen')
+
+    const closed = false
+    rerender(<SharedFeedbackDockHarness tab="diff" open={closed} />)
+
+    expect(screen.getByTestId('dock-closed')).toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(await screen.findByPlaceholderText('Request change')).toHaveValue(
+      'Draft survives dock reopen'
+    )
   })
 
   test('keeps absolute feedback paths after dock reopen while the diff reloads', async () => {

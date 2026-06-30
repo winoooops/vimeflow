@@ -1,7 +1,10 @@
-import { describe, test, expect } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { describe, test, expect, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useFileDiff } from './useFileDiff'
 import { mockFileDiffs } from '../data/mockDiff'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
+import type { GitService } from '../services/gitService'
+import * as gitServiceModule from '../services/gitService'
 
 describe('useFileDiff', () => {
   test('fetches diff when filePath is provided', async () => {
@@ -135,5 +138,72 @@ describe('useFileDiff', () => {
     expect(response?.rawDiff).toContain('--- a/src/components/NavBar.tsx')
     expect(response?.rawDiff).toContain('+++ b/src/components/NavBar.tsx')
     expect(response?.rawDiff).toContain('@@ -1,8 +1,10 @@')
+  })
+
+  test('keeps the current same-file response visible while refreshToken re-fetches', async () => {
+    const filePath = 'src/components/NavBar.tsx'
+    const fileDiff = mockFileDiffs[filePath]
+
+    const makeResponse = (newText: string): GetGitDiffResponse => ({
+      fileDiff: {
+        ...fileDiff,
+        oldPath: fileDiff.oldPath ?? null,
+        newPath: fileDiff.newPath ?? null,
+      },
+      oldText: 'old',
+      newText,
+      rawDiff: 'raw diff',
+      repoRoot: '/repo',
+    })
+
+    let resolveSecond!: (response: GetGitDiffResponse) => void
+
+    const secondFetch = new Promise<GetGitDiffResponse>((resolve) => {
+      resolveSecond = resolve
+    })
+
+    const getDiff = vi
+      .fn<GitService['getDiff']>()
+      .mockResolvedValueOnce(makeResponse('new v1'))
+      .mockReturnValueOnce(secondFetch)
+
+    vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue({
+      getStatus: vi.fn(),
+      getDiff,
+      stageFile: vi.fn(),
+      unstageFile: vi.fn(),
+      discardChanges: vi.fn(),
+    } as unknown as GitService)
+
+    const { result, rerender } = renderHook(
+      ({ token }) => useFileDiff(filePath, false, '/repo', false, token),
+      { initialProps: { token: 'revision-1' } }
+    )
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.response?.newText).toBe('new v1')
+
+    rerender({ token: 'revision-2' })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(true)
+    })
+
+    expect(result.current.response?.newText).toBe('new v1')
+
+    await act(async () => {
+      resolveSecond(makeResponse('new v2'))
+      await secondFetch
+    })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.response?.newText).toBe('new v2')
+    expect(getDiff).toHaveBeenCalledTimes(2)
   })
 })
