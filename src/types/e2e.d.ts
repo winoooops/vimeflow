@@ -4,18 +4,6 @@ export {}
 
 declare global {
   type BrowserPaneBoundsCapture = BrowserPaneBoundsCaptureSource
-  type E2eNativeOverlayRect = {
-    x: number
-    y: number
-    width: number
-    height: number
-  }
-
-  type E2eNativeOverlayProbeCounts = {
-    actions: number
-    closes: number
-  }
-
   interface Window {
     __VIMEFLOW_E2E__?: {
       getTerminalBuffer(): string
@@ -33,11 +21,6 @@ declare global {
       clearBrowserPaneBoundsCaptures(): void
       stopBrowserPaneBoundsCapture(): void
       getBrowserPaneBoundsCaptures(): BrowserPaneBoundsCapture[]
-      openNativeOverlayProbeMenu(
-        anchorRect: E2eNativeOverlayRect
-      ): Promise<{ accepted: boolean; reason?: string }>
-      closeNativeOverlayProbeMenu(): Promise<void>
-      getNativeOverlayProbeCounts(): E2eNativeOverlayProbeCounts
     }
   }
 }

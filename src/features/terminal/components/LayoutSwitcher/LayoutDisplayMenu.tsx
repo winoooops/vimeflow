@@ -22,6 +22,7 @@ export interface LayoutDisplayMenuProps {
   onDuplicateCustomLayout?: (layoutId: PaneLayoutId) => void
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onOpenChange?: (open: boolean) => void
+  nativeOverlay?: boolean
 }
 
 const LOCKED_DISPLAY_LAYOUT_IDS = new Set<PaneLayoutId>(['single'])
@@ -66,6 +67,83 @@ const buildNextVisibleLayoutIds = (
     : normalized.filter((candidate) => candidate !== layoutId)
 }
 
+interface LayoutDisplayNativeOverlayAction {
+  label: string
+  icon: string
+  pressed?: boolean
+  disabled?: boolean
+  onSelect: () => void
+}
+
+interface CustomLayoutNativeOverlayActionsOptions {
+  layout: LayoutShape
+  checked: boolean
+  hiddenCustomLayoutIds: readonly PaneLayoutId[]
+  onHiddenCustomLayoutIdsChange:
+    | ((next: readonly PaneLayoutId[]) => void)
+    | undefined
+  onEditCustomLayout: ((layoutId: PaneLayoutId) => void) | undefined
+  onDuplicateCustomLayout: ((layoutId: PaneLayoutId) => void) | undefined
+  onDeleteCustomLayout: ((layoutId: PaneLayoutId) => void) | undefined
+  closeMenu: () => void
+}
+
+const customLayoutNativeOverlayActions = ({
+  layout,
+  checked,
+  hiddenCustomLayoutIds,
+  onHiddenCustomLayoutIdsChange,
+  onEditCustomLayout,
+  onDuplicateCustomLayout,
+  onDeleteCustomLayout,
+  closeMenu,
+}: CustomLayoutNativeOverlayActionsOptions): readonly LayoutDisplayNativeOverlayAction[] => [
+  {
+    label: `Edit ${layout.name}`,
+    icon: 'edit',
+    onSelect: (): void => {
+      onEditCustomLayout?.(layout.id)
+      closeMenu()
+    },
+  },
+  {
+    label: `Duplicate ${layout.name}`,
+    icon: 'content_copy',
+    onSelect: (): void => {
+      onDuplicateCustomLayout?.(layout.id)
+      closeMenu()
+    },
+  },
+  {
+    label: `Delete ${layout.name}`,
+    icon: 'delete',
+    onSelect: (): void => {
+      onDeleteCustomLayout?.(layout.id)
+      closeMenu()
+    },
+  },
+  {
+    label: checked
+      ? `Hide ${layout.name} from switcher`
+      : `Show ${layout.name} in switcher`,
+    icon: checked ? 'visibility' : 'visibility_off',
+    pressed: checked,
+    disabled: onHiddenCustomLayoutIdsChange === undefined,
+    onSelect: (): void => {
+      if (onHiddenCustomLayoutIdsChange === undefined) {
+        return
+      }
+
+      onHiddenCustomLayoutIdsChange(
+        checked
+          ? [...hiddenCustomLayoutIds, layout.id]
+          : hiddenCustomLayoutIds.filter((layoutId) => layoutId !== layout.id)
+      )
+      closeMenu()
+    },
+  },
+]
+
 export const LayoutDisplayMenu = ({
   activeLayoutId,
   visibleLayoutIds,
@@ -80,6 +158,7 @@ export const LayoutDisplayMenu = ({
   onDuplicateCustomLayout = undefined,
   onDeleteCustomLayout = undefined,
   onOpenChange = undefined,
+  nativeOverlay = false,
 }: LayoutDisplayMenuProps): ReactElement => {
   const [closeSignal, setCloseSignal] = useState(0)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -108,6 +187,7 @@ export const LayoutDisplayMenu = ({
       tooltip="Configure displayed layouts"
       tooltipPlacement="bottom"
       closeSignal={closeSignal}
+      nativeOverlay={nativeOverlay}
       trigger={
         <button
           ref={triggerRef}
@@ -218,6 +298,18 @@ export const LayoutDisplayMenu = ({
                       ? 'text-on-surface-variant/45'
                       : 'hover:bg-on-surface/10'
                   }`}
+                  nativeOverlayIcon="dashboard"
+                  nativeOverlayActive={isActive}
+                  nativeOverlayActions={customLayoutNativeOverlayActions({
+                    layout,
+                    checked,
+                    hiddenCustomLayoutIds,
+                    onHiddenCustomLayoutIdsChange,
+                    onEditCustomLayout,
+                    onDuplicateCustomLayout,
+                    onDeleteCustomLayout,
+                    closeMenu,
+                  })}
                   onSelect={(): void => {
                     if (onPickLayout?.(layout.id) === true) {
                       closeMenu()

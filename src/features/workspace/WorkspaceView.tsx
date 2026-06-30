@@ -2751,6 +2751,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
+                  nativeOverlay
                 />
               }
             />

@@ -40,6 +40,14 @@ export interface BackendApi {
     onAction: (callback: (event: unknown) => void) => UnlistenFn
     onClose: (callback: (event: unknown) => void) => UnlistenFn
   }
+
+  nativeOverlayHost?: {
+    ready: (request: unknown) => Promise<unknown>
+    action: (request: unknown) => Promise<unknown>
+    close: (request: unknown) => Promise<unknown>
+    onRender: (callback: (event: unknown) => void) => UnlistenFn
+    onClear: (callback: () => void) => UnlistenFn
+  }
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

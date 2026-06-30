@@ -168,26 +168,11 @@ const captureScreen = (): DecodedPng => {
   }
 }
 
-const clickOverlayMenuItem = async (): Promise<boolean> =>
+const clickEnabledCheckedOverlayCheckbox = async (): Promise<string | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
     const overlay = electron.webContents
       .getAllWebContents()
-      .find((contents) => contents.getURL().startsWith('data:text/html'))
-
-    if (!overlay) {
-      return false
-    }
-
-    return overlay.executeJavaScript(`
-      Boolean(document.querySelector('.item')?.click() ?? true)
-    `) as Promise<boolean>
-  })
-
-const getOverlayMenuRect = async (): Promise<CssRect | null> =>
-  browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.webContents
-      .getAllWebContents()
-      .find((contents) => contents.getURL().startsWith('data:text/html'))
+      .find((contents) => contents.getURL().includes('nativeOverlay=1'))
 
     if (!overlay) {
       return null
@@ -195,7 +180,44 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
 
     return overlay.executeJavaScript(`
       (() => {
-        const rect = document.querySelector('.menu')?.getBoundingClientRect()
+        const item = Array.from(
+          document.querySelectorAll('[role="menuitemcheckbox"]')
+        ).find((element) =>
+          element.getAttribute('aria-checked') === 'true' &&
+          element.getAttribute('aria-disabled') !== 'true' &&
+          element instanceof HTMLElement
+        )
+
+        if (!(item instanceof HTMLElement)) {
+          return null
+        }
+
+        const label = item.getAttribute('aria-label')
+        if (!label) {
+          return null
+        }
+
+        item.click()
+        return label
+      })()
+    `) as Promise<string | null>
+  })
+
+const getOverlayMenuRect = async (): Promise<CssRect | null> =>
+  browser.electron.execute(async (electron: ElectronModule) => {
+    const overlay = electron.webContents
+      .getAllWebContents()
+      .find((contents) => contents.getURL().includes('nativeOverlay=1'))
+
+    if (!overlay) {
+      return null
+    }
+
+    return overlay.executeJavaScript(`
+      (() => {
+        const rect = document
+          .querySelector('[role="menu"]')
+          ?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
           : null
@@ -207,7 +229,7 @@ const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
       electron.BrowserWindow.getAllWindows().find(
-        (window) => !window.webContents.getURL().startsWith('data:text/html')
+        (window) => !window.webContents.getURL().includes('nativeOverlay=1')
       ) ?? electron.BrowserWindow.getAllWindows()[0]
 
     if (!parent) {
@@ -237,6 +259,24 @@ const mapCssRect = (rect: CssRect, mapping: PixelMapping): Bounds => ({
   ),
 })
 
+const intersectCssRect = (a: CssRect, b: CssRect): CssRect | null => {
+  const x = Math.max(a.x, b.x)
+  const y = Math.max(a.y, b.y)
+  const right = Math.min(a.x + a.width, b.x + b.width)
+  const bottom = Math.min(a.y + a.height, b.y + b.height)
+
+  if (right <= x || bottom <= y) {
+    return null
+  }
+
+  return {
+    x,
+    y,
+    width: right - x,
+    height: bottom - y,
+  }
+}
+
 const changedPixelCount = (
   before: DecodedPng,
   after: DecodedPng,
@@ -263,14 +303,127 @@ const changedPixelCount = (
   return changed
 }
 
+const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
+  await browser.waitUntil(
+    async () => {
+      const runtime = await browser.execute(() => ({
+        nativePaneCount: document.querySelectorAll(
+          '[data-testid="native-ghostty-pane"]'
+        ).length,
+        xtermCount: document.querySelectorAll('.xterm').length,
+      }))
+
+      return runtime.nativePaneCount > 0 && runtime.xtermCount === 0
+    },
+    {
+      timeout: 20_000,
+      interval: 250,
+      timeoutMsg: 'real Ghostty native pane did not replace xterm',
+    }
+  )
+
+  const nativePane = await $('[data-testid="native-ghostty-pane"]')
+  await nativePane.waitForDisplayed({ timeout: 20_000 })
+
+  const runtime = await browser.execute(() => {
+    const pane = document.querySelector<HTMLElement>(
+      '[data-testid="native-ghostty-pane"]'
+    )
+    const rect = pane?.getBoundingClientRect()
+
+    if (!pane || !rect) {
+      return null
+    }
+
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+  })
+
+  if (runtime === null) {
+    throw new Error('real Ghostty pane rect unavailable')
+  }
+
+  return runtime
+}
+
+const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
+  const trigger = await $('button[aria-label="Configure displayed layouts"]')
+  await trigger.waitForDisplayed({ timeout: 20_000 })
+
+  const runtime = await browser.execute(() => {
+    const button = document.querySelector<HTMLElement>(
+      'button[aria-label="Configure displayed layouts"]'
+    )
+    const rect = button?.getBoundingClientRect()
+
+    if (!button || !rect) {
+      return null
+    }
+
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+  })
+
+  if (runtime === null) {
+    throw new Error('layout display trigger rect unavailable')
+  }
+
+  return runtime
+}
+
+const waitForOverlayPaint = async (
+  before: DecodedPng,
+  mapping: PixelMapping,
+  targetRect: CssRect
+): Promise<void> => {
+  await browser.waitUntil(
+    async () => {
+      const menuRect = await getOverlayMenuRect()
+      if (menuRect === null) {
+        return false
+      }
+
+      const overlapRect = intersectCssRect(menuRect, targetRect)
+      if (overlapRect === null) {
+        return false
+      }
+
+      const after = captureScreen()
+      return (
+        changedPixelCount(before, after, mapCssRect(overlapRect, mapping)) > 50
+      )
+    },
+    {
+      timeout: 5_000,
+      interval: 150,
+      timeoutMsg:
+        'NativeOverlay menu did not visibly paint above the real Ghostty NSView',
+    }
+  )
+}
+
+const waitForOverlayMenu = async (): Promise<void> => {
+  await browser.waitUntil(async () => (await getOverlayMenuRect()) !== null, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'NativeOverlay menu did not render in the overlay window',
+  })
+}
+
 describe('NativeOverlay BrowserWindow layering', () => {
   afterEach(async () => {
-    await browser.execute(async () => {
-      await window.__VIMEFLOW_E2E__?.closeNativeOverlayProbeMenu()
+    await browser.electron.execute(async (electron: ElectronModule) => {
+      const overlay = electron.webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL().includes('nativeOverlay=1'))
+
+      await overlay?.executeJavaScript(`
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+        )
+      `)
     })
   })
 
-  it('renders the web NativeOverlay menu above the real Ghostty NSView', async function () {
+  it('renders a layout-pill-style web NativeOverlay menu above the real Ghostty NSView', async function () {
     if (process.platform !== 'darwin') {
       this.skip()
     }
@@ -292,93 +445,36 @@ describe('NativeOverlay BrowserWindow layering', () => {
       this.skip()
     }
 
-    await browser.waitUntil(
-      async () => {
-        const runtime = await browser.execute(() => ({
-          nativePaneCount: document.querySelectorAll(
-            '[data-testid="native-ghostty-pane"]'
-          ).length,
-          xtermCount: document.querySelectorAll('.xterm').length,
-        }))
-
-        return runtime.nativePaneCount > 0 && runtime.xtermCount === 0
-      },
-      {
-        timeout: 20_000,
-        interval: 250,
-        timeoutMsg: 'real Ghostty native pane did not replace xterm',
-      }
-    )
-
-    const nativePane = await $('[data-testid="native-ghostty-pane"]')
-    await nativePane.waitForDisplayed({ timeout: 20_000 })
-
-    const paneRect = await browser.execute(() => {
-      const rect = document
-        .querySelector('[data-testid="native-ghostty-pane"]')
-        ?.getBoundingClientRect()
-
-      return rect
-        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-        : null
-    })
-    expect(paneRect).not.toBeNull()
-
-    const anchor = {
-      x: paneRect!.x + 24,
-      y: paneRect!.y + 24,
-      width: 1,
-      height: 1,
-    }
+    const paneRect = await waitForRealNativeGhosttyPane()
+    const trigger = await $('button[aria-label="Configure displayed layouts"]')
+    await waitForLayoutDisplayAnchor()
     const before = captureScreen()
     const mapping = await mapViewportToScreenPixels()
-    const opened = await browser.execute(
-      async (anchorRect) =>
-        window.__VIMEFLOW_E2E__?.openNativeOverlayProbeMenu(anchorRect) ?? {
-          accepted: false,
-          reason: 'missing-e2e-bridge',
-        },
-      anchor
-    )
-    expect(opened).toEqual({ accepted: true })
+
+    await trigger.click()
+    await waitForOverlayMenu()
+
+    await waitForOverlayPaint(before, mapping, paneRect)
+
+    const hiddenLayoutLabel = await clickEnabledCheckedOverlayCheckbox()
+    if (hiddenLayoutLabel === null) {
+      throw new Error('NativeOverlay menu had no enabled checked layout row')
+    }
 
     await browser.waitUntil(
-      async () => {
-        const menuRect = await getOverlayMenuRect()
-        if (menuRect === null) {
-          return false
-        }
-
-        const after = captureScreen()
-        return (
-          changedPixelCount(before, after, mapCssRect(menuRect, mapping)) > 50
-        )
-      },
-      {
-        timeout: 5_000,
-        interval: 150,
-        timeoutMsg:
-          'NativeOverlay menu did not visibly paint above the real Ghostty NSView',
-      }
-    )
-
-    expect(await clickOverlayMenuItem()).toBe(true)
-    await browser.waitUntil(
-      async () => {
-        const counts = await browser.execute(
-          () =>
-            window.__VIMEFLOW_E2E__?.getNativeOverlayProbeCounts() ?? {
-              actions: 0,
-              closes: 0,
-            }
-        )
-
-        return counts.actions === 1
-      },
+      async () =>
+        browser.execute(
+          (label) =>
+            document
+              .querySelector('[data-testid="layout-switcher"]')
+              ?.querySelector(`button[aria-label="${CSS.escape(label)}"]`) ===
+            null,
+          hiddenLayoutLabel
+        ),
       {
         timeout: 5_000,
         interval: 100,
-        timeoutMsg: 'NativeOverlay action was not delivered once',
+        timeoutMsg: 'NativeOverlay layout checkbox action did not reach React',
       }
     )
   }).timeout(90_000)

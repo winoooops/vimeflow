@@ -9,34 +9,6 @@ import {
   stopBrowserPaneBoundsCapture,
 } from '../features/browser/browserBridge'
 
-interface E2eNativeOverlayRect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface E2eNativeOverlayProbeCounts {
-  actions: number
-  closes: number
-}
-
-interface E2eNativeOverlayRequest {
-  surfaceId: string
-  kind: 'menu'
-  anchorRect: E2eNativeOverlayRect
-  placement: string
-  payload: {
-    kind: 'menu'
-    ariaLabel: string
-    items: {
-      id: string
-      label: string
-      shortcut: string
-    }[]
-  }
-}
-
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
@@ -190,65 +162,6 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
-const nativeOverlayProbeCounts: E2eNativeOverlayProbeCounts = {
-  actions: 0,
-  closes: 0,
-}
-let cleanupNativeOverlayProbeAction: (() => void) | null = null
-let cleanupNativeOverlayProbeClose: (() => void) | null = null
-
-const openNativeOverlayProbeMenu = async (
-  anchorRect: E2eNativeOverlayRect
-): Promise<{ accepted: boolean; reason?: string }> => {
-  const nativeOverlay = window.vimeflow?.nativeOverlay
-  if (!nativeOverlay) {
-    return { accepted: false, reason: 'missing-native-overlay-api' }
-  }
-
-  cleanupNativeOverlayProbeAction?.()
-  cleanupNativeOverlayProbeClose?.()
-  nativeOverlayProbeCounts.actions = 0
-  nativeOverlayProbeCounts.closes = 0
-  cleanupNativeOverlayProbeAction = nativeOverlay.onAction(() => {
-    nativeOverlayProbeCounts.actions += 1
-  })
-
-  cleanupNativeOverlayProbeClose = nativeOverlay.onClose(() => {
-    nativeOverlayProbeCounts.closes += 1
-  })
-
-  const request: E2eNativeOverlayRequest = {
-    surfaceId: 'native-overlay-probe-menu',
-    kind: 'menu',
-    anchorRect,
-    placement: 'bottom-start',
-    payload: {
-      kind: 'menu',
-      ariaLabel: 'Native overlay probe',
-      items: [
-        {
-          id: 'probe-action',
-          label: 'Probe Action',
-          shortcut: 'E2E',
-        },
-      ],
-    },
-  }
-
-  return nativeOverlay.open(request)
-}
-
-const closeNativeOverlayProbeMenu = async (): Promise<void> => {
-  await window.vimeflow?.nativeOverlay?.close({
-    surfaceId: 'native-overlay-probe-menu',
-    reason: 'renderer',
-  })
-}
-
-const getNativeOverlayProbeCounts = (): E2eNativeOverlayProbeCounts => ({
-  ...nativeOverlayProbeCounts,
-})
-
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
@@ -267,8 +180,5 @@ if (import.meta.env.VITE_E2E) {
     clearBrowserPaneBoundsCaptures,
     stopBrowserPaneBoundsCapture,
     getBrowserPaneBoundsCaptures,
-    openNativeOverlayProbeMenu,
-    closeNativeOverlayProbeMenu,
-    getNativeOverlayProbeCounts,
   }
 }

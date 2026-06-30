@@ -3,7 +3,15 @@ import { createLogger } from '@/lib/log'
 
 export type FloatingTransport = 'local' | 'native-overlay'
 
-export type NativeOverlayKind = 'menu' | 'tooltip' | 'popover' | 'dialog'
+export const NATIVE_OVERLAY_KINDS = {
+  menu: 'menu',
+  tooltip: 'tooltip',
+  popover: 'popover',
+  dialog: 'dialog',
+} as const
+
+export type NativeOverlayKind =
+  (typeof NATIVE_OVERLAY_KINDS)[keyof typeof NATIVE_OVERLAY_KINDS]
 
 export interface NativeOverlayRect {
   x: number
@@ -12,22 +20,67 @@ export interface NativeOverlayRect {
   height: number
 }
 
-export interface NativeOverlayMenuItem {
+export interface NativeOverlayMenuActionItem {
+  type?: 'item'
   id: string
   label: string
+  icon?: string
   shortcut?: string
   disabled?: boolean
+}
+
+export interface NativeOverlayMenuCheckboxItem {
+  type: 'checkbox'
+  id: string
+  label: string
+  icon?: string
+  checked: boolean
+  disabled?: boolean
+}
+
+export interface NativeOverlayMenuSeparatorItem {
+  type: 'separator'
+}
+
+export interface NativeOverlayMenuSubAction {
+  id: string
+  label: string
+  icon?: string
+  pressed?: boolean
+  disabled?: boolean
+}
+
+export interface NativeOverlayMenuCompositeItem {
+  type: 'composite'
+  id: string
+  label: string
+  icon?: string
+  active?: boolean
+  disabled?: boolean
+  actions: NativeOverlayMenuSubAction[]
+}
+
+export type NativeOverlayMenuItem =
+  | NativeOverlayMenuActionItem
+  | NativeOverlayMenuCheckboxItem
+  | NativeOverlayMenuSeparatorItem
+  | NativeOverlayMenuCompositeItem
+
+export interface NativeOverlayMenuSection {
+  label?: string
+  items: NativeOverlayMenuItem[]
 }
 
 export interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
-  items: NativeOverlayMenuItem[]
+  items?: NativeOverlayMenuItem[]
+  sections?: NativeOverlayMenuSection[]
 }
 
-// v0 only serializes simple menus. Keep this named boundary so it can become a
-// discriminated union when tooltip, popover, and dialog get their own plain-data
-// payload models instead of arbitrary React children.
+// Menus are the only native overlay payload today. Keep this named boundary so
+// it can become a discriminated union when tooltip, popover, and dialog get
+// their own plain-data payload models instead of arbitrary React children.
 export type SerializableOverlayPayload = NativeOverlayMenuPayload
 
 export interface NativeOverlayRequest {
@@ -158,10 +211,9 @@ export const openNativeOverlay = async (
     return false
   }
 
-  ensureListeners(nativeBridge)
-  sessions.set(request.surfaceId, session)
-
   try {
+    ensureListeners(nativeBridge)
+    sessions.set(request.surfaceId, session)
     const result = await nativeBridge.open(request)
     if (!result.accepted) {
       sessions.delete(request.surfaceId)
@@ -179,9 +231,11 @@ export const openNativeOverlay = async (
 }
 
 export const closeNativeOverlay = (surfaceId: string): void => {
-  const nativeBridge = bridge()
-  sessions.delete(surfaceId)
-  void nativeBridge?.close({ surfaceId, reason: 'renderer' })
+  if (!sessions.delete(surfaceId)) {
+    return
+  }
+
+  void bridge()?.close({ surfaceId, reason: 'renderer' })
 }
 
 export const warnNativeOverlayFallback = (reason: string): void => {

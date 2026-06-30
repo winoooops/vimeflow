@@ -16,7 +16,6 @@ import {
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
 } from './native-overlay-channels'
-import overlayHtml from './native-overlay.html?raw'
 
 // cspell:ignore AppKit Ghostty minimizable maximizable fullscreenable NSView
 
@@ -38,17 +37,62 @@ interface NativeOverlayRect {
   height: number
 }
 
-interface NativeOverlayMenuItem {
+interface NativeOverlayMenuActionItem {
+  type?: 'item'
   id: string
   label: string
+  icon?: string
   shortcut?: string
   disabled?: boolean
+}
+
+interface NativeOverlayMenuCheckboxItem {
+  type: 'checkbox'
+  id: string
+  label: string
+  icon?: string
+  checked: boolean
+  disabled?: boolean
+}
+
+interface NativeOverlayMenuSeparatorItem {
+  type: 'separator'
+}
+
+interface NativeOverlayMenuSubAction {
+  id: string
+  label: string
+  icon?: string
+  pressed?: boolean
+  disabled?: boolean
+}
+
+interface NativeOverlayMenuCompositeItem {
+  type: 'composite'
+  id: string
+  label: string
+  icon?: string
+  active?: boolean
+  disabled?: boolean
+  actions: NativeOverlayMenuSubAction[]
+}
+
+type NativeOverlayMenuItem =
+  | NativeOverlayMenuActionItem
+  | NativeOverlayMenuCheckboxItem
+  | NativeOverlayMenuSeparatorItem
+  | NativeOverlayMenuCompositeItem
+
+interface NativeOverlayMenuSection {
+  label?: string
+  items: NativeOverlayMenuItem[]
 }
 
 interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
-  items: NativeOverlayMenuItem[]
+  items?: NativeOverlayMenuItem[]
+  sections?: NativeOverlayMenuSection[]
 }
 
 interface NativeOverlayRequest {
@@ -93,6 +137,7 @@ interface NativeOverlaySurface {
 }
 
 interface NativeOverlayControllerOptions {
+  overlayUrl: string
   platform?: NodeJS.Platform
 }
 
@@ -119,20 +164,69 @@ const isRect = (value: unknown): value is NativeOverlayRect =>
   isFiniteNumber(value.width) &&
   isFiniteNumber(value.height)
 
-const isMenuItem = (value: unknown): value is NativeOverlayMenuItem =>
+const isMenuSubAction = (value: unknown): value is NativeOverlayMenuSubAction =>
   isRecord(value) &&
   isString(value.id) &&
   isString(value.label) &&
-  (value.shortcut === undefined || typeof value.shortcut === 'string') &&
+  (value.icon === undefined || typeof value.icon === 'string') &&
+  (value.pressed === undefined || typeof value.pressed === 'boolean') &&
   (value.disabled === undefined || typeof value.disabled === 'boolean')
+
+const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  if (value.type === 'separator') {
+    return true
+  }
+
+  if (value.type === 'composite') {
+    return (
+      isString(value.id) &&
+      isString(value.label) &&
+      (value.icon === undefined || typeof value.icon === 'string') &&
+      (value.active === undefined || typeof value.active === 'boolean') &&
+      (value.disabled === undefined || typeof value.disabled === 'boolean') &&
+      Array.isArray(value.actions) &&
+      value.actions.length > 0 &&
+      value.actions.every(isMenuSubAction)
+    )
+  }
+
+  const isActionType = value.type === undefined || value.type === 'item'
+
+  const isCheckboxType =
+    value.type === 'checkbox' && typeof value.checked === 'boolean'
+
+  return (
+    (isActionType || isCheckboxType) &&
+    isString(value.id) &&
+    isString(value.label) &&
+    (value.icon === undefined || typeof value.icon === 'string') &&
+    (value.shortcut === undefined || typeof value.shortcut === 'string') &&
+    (value.disabled === undefined || typeof value.disabled === 'boolean')
+  )
+}
+
+const hasMenuItems = (items: unknown): boolean =>
+  Array.isArray(items) && items.length > 0 && items.every(isMenuItem)
+
+const isMenuSection = (value: unknown): value is NativeOverlayMenuSection =>
+  isRecord(value) &&
+  (value.label === undefined || typeof value.label === 'string') &&
+  hasMenuItems(value.items)
+
+const hasMenuSections = (sections: unknown): boolean =>
+  Array.isArray(sections) &&
+  sections.length > 0 &&
+  sections.every(isMenuSection)
 
 const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   isRecord(value) &&
   value.kind === 'menu' &&
   (value.ariaLabel === undefined || typeof value.ariaLabel === 'string') &&
-  Array.isArray(value.items) &&
-  value.items.length > 0 &&
-  value.items.every(isMenuItem)
+  (hasMenuItems(value.items) || hasMenuSections(value.sections))
 
 const isNativeOverlayRequest = (
   value: unknown
@@ -162,18 +256,16 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
 
-const overlayUrl = `data:text/html;charset=utf-8,${encodeURIComponent(
-  overlayHtml
-)}`
-
 export class NativeOverlayController {
+  private readonly overlayUrl: string
   private readonly platform: NodeJS.Platform
   private readonly overlays = new Map<number, NativeOverlayRecord>()
   private readonly surfaces = new Map<string, NativeOverlaySurface>()
   private readonly pendingReady = new Map<string, (ready: boolean) => void>()
   private registeredIpc: IpcMainLike | null = null
 
-  constructor(options: NativeOverlayControllerOptions = {}) {
+  constructor(options: NativeOverlayControllerOptions) {
+    this.overlayUrl = options.overlayUrl
     this.platform = options.platform ?? process.platform
   }
 
@@ -241,7 +333,7 @@ export class NativeOverlayController {
     await record.ready
     record.syncBounds()
     record.overlayWindow.setIgnoreMouseEvents(false)
-    record.overlayWindow.show()
+    record.overlayWindow.showInactive()
     // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
     // still land behind it. The screen-saver level reliably places this
     // transparent overlay window above that native surface while it is open.
@@ -261,8 +353,6 @@ export class NativeOverlayController {
 
       return { accepted: false, reason: 'render-timeout' }
     }
-
-    record.overlayWindow.webContents.focus()
 
     return { accepted: true }
   }
@@ -382,7 +472,7 @@ export class NativeOverlayController {
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
     parent.on('closed', parentClosed)
-    void overlayWindow.loadURL(overlayUrl)
+    void overlayWindow.loadURL(this.overlayUrl)
 
     const record: NativeOverlayRecord = {
       parent,
@@ -469,8 +559,10 @@ export class NativeOverlayController {
   }
 }
 
-export const setupNativeOverlayIpc = (): NativeOverlayController => {
-  const controller = new NativeOverlayController()
+export const setupNativeOverlayIpc = (
+  overlayUrl: string
+): NativeOverlayController => {
+  const controller = new NativeOverlayController({ overlayUrl })
   controller.register(ipcMain)
 
   return controller

@@ -41,6 +41,7 @@ interface FakeWindow {
   setAlwaysOnTop: ReturnType<typeof vi.fn>
   setIgnoreMouseEvents: ReturnType<typeof vi.fn>
   show: ReturnType<typeof vi.fn>
+  showInactive: ReturnType<typeof vi.fn>
   hide: ReturnType<typeof vi.fn>
   moveTop: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
@@ -91,6 +92,7 @@ const electronMock = vi.hoisted(() => {
       setAlwaysOnTop: vi.fn(),
       setIgnoreMouseEvents: vi.fn(),
       show: vi.fn(),
+      showInactive: vi.fn(),
       hide: vi.fn(),
       moveTop: vi.fn(),
       close: vi.fn((): void => {
@@ -128,6 +130,7 @@ const electronMock = vi.hoisted(() => {
         this.setAlwaysOnTop.mockClear()
         this.setIgnoreMouseEvents.mockClear()
         this.show.mockClear()
+        this.showInactive.mockClear()
         this.hide.mockClear()
         this.close.mockClear()
         this.loadURL.mockClear()
@@ -206,6 +209,8 @@ const request = {
   },
 } as const
 
+const overlayUrl = 'vimeflow://app/index.html?nativeOverlay=1'
+
 const handler = (channel: string): IpcHandler => {
   const registered = electronMock.handlers.get(channel)
   if (!registered) {
@@ -237,7 +242,7 @@ describe('NativeOverlayController', () => {
 
   beforeEach(() => {
     electronMock.reset()
-    controller = new NativeOverlayController({ platform: 'darwin' })
+    controller = new NativeOverlayController({ overlayUrl, platform: 'darwin' })
     controller.register()
   })
 
@@ -288,7 +293,7 @@ describe('NativeOverlayController', () => {
       overlayWindow.webContents.setWindowOpenHandler
     ).toHaveBeenCalledOnce()
 
-    expect(overlayWindow.loadURL).toHaveBeenCalledOnce()
+    expect(overlayWindow.loadURL).toHaveBeenCalledWith(overlayUrl)
 
     expect(overlayWindow.setBounds).toHaveBeenCalledWith({
       x: 5,
@@ -296,8 +301,74 @@ describe('NativeOverlayController', () => {
       width: 700,
       height: 500,
     })
-    expect(overlayWindow.show).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+  })
+
+  test('accepts sectioned menu payloads with composite rows', async () => {
+    const sectionRequest = {
+      surfaceId: 'surface-2',
+      kind: 'menu',
+      anchorRect: { x: 1080, y: 12, width: 24, height: 20 },
+      placement: 'bottom-end',
+      payload: {
+        kind: 'menu',
+        ariaLabel: 'Displayed layouts',
+        sections: [
+          {
+            label: 'Displayed layouts',
+            items: [
+              {
+                type: 'checkbox',
+                id: 'layout-single',
+                label: 'Single',
+                checked: true,
+                disabled: true,
+              },
+              { type: 'separator' },
+              {
+                id: 'layout-custom',
+                label: 'Create custom layout',
+                icon: 'dashboard_customize',
+              },
+              {
+                type: 'composite',
+                id: 'custom-main-bottom',
+                label: 'Main + bottom',
+                icon: 'dashboard',
+                active: true,
+                actions: [
+                  {
+                    id: 'duplicate-main-bottom',
+                    label: 'Duplicate Main + bottom',
+                    icon: 'content_copy',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    } as const
+
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      sectionRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await Promise.resolve()
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      sectionRequest
+    )
+
+    handler(NATIVE_OVERLAY_READY)(
+      { sender: overlayWindow.webContents },
+      { surfaceId: sectionRequest.surfaceId }
+    )
+
+    await expect(openPromise).resolves.toEqual({ accepted: true })
   })
 
   test('falls back locally and hides the overlay window when render is never acknowledged', async () => {
@@ -348,8 +419,8 @@ describe('NativeOverlayController', () => {
     overlayWindow.webContents.emit('did-finish-load')
 
     await expect(openPromise).resolves.toEqual({ accepted: true })
-    expect(overlayWindow.show).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
   })
 
   test('syncs bounds when the parent moves or resizes', async () => {
@@ -431,7 +502,7 @@ describe('NativeOverlayController', () => {
 
   test('rejects native overlay on non-macOS platforms', async () => {
     controller.unregister()
-    controller = new NativeOverlayController({ platform: 'linux' })
+    controller = new NativeOverlayController({ overlayUrl, platform: 'linux' })
     controller.register()
 
     await expect(

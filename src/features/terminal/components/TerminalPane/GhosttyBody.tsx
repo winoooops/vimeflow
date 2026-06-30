@@ -575,7 +575,6 @@ export const GhosttyBody = ({
         canCopy={NATIVE_CONTEXT_CAN_COPY}
         canPasteImage={NATIVE_CONTEXT_CAN_PASTE_IMAGE}
         showPasteImage={NATIVE_CONTEXT_SHOW_PASTE_IMAGE}
-        nativeOverlay
       />
     </>
   )

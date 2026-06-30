@@ -21,6 +21,13 @@ import {
   type UseInteractionsReturn,
 } from '@floating-ui/react'
 
+interface FloatingVirtualRect {
+  x: number
+  y: number
+  width?: number
+  height?: number
+}
+
 interface FloatingSurfaceListOptions {
   ref: MutableRefObject<(HTMLElement | null)[]>
   activeIndex: number | null
@@ -35,7 +42,7 @@ export interface FloatingSurfaceOptions {
   open: boolean
   onOpenChange: (open: boolean) => void
   // Element OR virtual cursor point (context menus); null leaves the trigger ref to wire the anchor.
-  anchor?: HTMLElement | { x: number; y: number } | null
+  anchor?: HTMLElement | FloatingVirtualRect | null
   placement?: Placement
   offset?: number
   fallbackPlacements?: Placement[]
@@ -56,21 +63,24 @@ export interface FloatingSurfaceApi {
 
 const isVirtualPoint = (
   anchor: FloatingSurfaceOptions['anchor']
-): anchor is { x: number; y: number } =>
+): anchor is FloatingVirtualRect =>
   anchor !== null && anchor !== undefined && !(anchor instanceof HTMLElement)
 
 // Builds a zero-size virtual reference rect at a cursor point (ported from
 // TerminalContextMenu's getBoundingClientRect). Used for context menus.
-const pointRect = (point: { x: number; y: number }): DOMRect => {
+const pointRect = (point: FloatingVirtualRect): DOMRect => {
+  const width = point.width ?? 0
+  const height = point.height ?? 0
+
   const rect = {
     x: point.x,
     y: point.y,
     top: point.y,
     left: point.x,
-    right: point.x,
-    bottom: point.y,
-    width: 0,
-    height: 0,
+    right: point.x + width,
+    bottom: point.y + height,
+    width,
+    height,
   }
 
   return {
@@ -107,6 +117,8 @@ export const useFloatingSurface = (
   const point = isVirtualPoint(opts.anchor) ? opts.anchor : null
   const px = point?.x
   const py = point?.y
+  const pw = point?.width
+  const ph = point?.height
   const wasVirtualPoint = useRef(false)
   useEffect(() => {
     if (px === undefined || py === undefined) {
@@ -121,9 +133,10 @@ export const useFloatingSurface = (
 
     wasVirtualPoint.current = true
     refs.setPositionReference({
-      getBoundingClientRect: (): DOMRect => pointRect({ x: px, y: py }),
+      getBoundingClientRect: (): DOMRect =>
+        pointRect({ x: px, y: py, width: pw, height: ph }),
     })
-  }, [px, py, refs])
+  }, [ph, pw, px, py, refs])
 
   const dismiss = useDismiss(context, {
     ancestorScroll: opts.middleware?.ancestorScroll !== false,

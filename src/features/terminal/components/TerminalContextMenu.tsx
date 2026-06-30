@@ -16,7 +16,6 @@ export interface TerminalContextMenuProps {
   canCopy: boolean
   canPasteImage: boolean
   showPasteImage: boolean
-  nativeOverlay?: boolean
 }
 
 // Chips reflect the active platform's handled terminal clipboard shortcuts:
@@ -57,7 +56,6 @@ export const TerminalContextMenu = ({
   canCopy,
   canPasteImage,
   showPasteImage,
-  nativeOverlay = false,
 }: TerminalContextMenuProps): ReactElement | null => {
   if (position === null) {
     return null
@@ -73,7 +71,6 @@ export const TerminalContextMenu = ({
         }
       }}
       aria-label="Terminal actions"
-      nativeOverlay={nativeOverlay}
     >
       <Menu.Row
         label="Copy"

@@ -106,6 +106,32 @@ const resolveSidecarBin = (): string => {
   return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
 
+const withNativeOverlayMode = (url: string): string => {
+  const parsedUrl = new URL(url)
+  parsedUrl.searchParams.set('nativeOverlay', '1')
+
+  return parsedUrl.toString()
+}
+
+// The overlay window loads the same renderer bundle in a host-only mode. That
+// URL boots React; the actual menu rows/actions still arrive later as a
+// serialized NativeOverlayRequest over IPC.
+const resolveNativeOverlayRendererUrl = (): string => {
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+
+  if (app.isPackaged) {
+    return withNativeOverlayMode(`${APP_ORIGIN}/index.html`)
+  }
+
+  if (devUrl !== undefined && devUrl.length > 0) {
+    return withNativeOverlayMode(devUrl)
+  }
+
+  return withNativeOverlayMode(
+    pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString()
+  )
+}
+
 const installContentSecurityPolicy = (): void => {
   if (app.isPackaged) {
     return
@@ -421,7 +447,9 @@ const setupApp = async (): Promise<void> => {
   }
   nativeOverlayController?.unregister()
   nativeOverlayController = null
-  nativeOverlayController = setupNativeOverlayIpc()
+  nativeOverlayController = setupNativeOverlayIpc(
+    resolveNativeOverlayRendererUrl()
+  )
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
