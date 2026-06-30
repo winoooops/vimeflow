@@ -103,6 +103,7 @@ type DiffPanelSelectionControl =
 
 export interface FeedbackRepoRootRef {
   current: string
+  repoRootForCwd?: (cwd: string) => string
 }
 
 interface DiffPanelContentBaseProps {
@@ -762,7 +763,7 @@ export const DiffPanelContent = ({
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
   const hasParentFeedbackBatch = feedbackBatch !== undefined
   const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
-  const localRepoRootRef = useRef('')
+  const localRepoRootRef = useRef('') as FeedbackRepoRootRef
   const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
   // Track cwd transitions that invalidate per-repo derived state. The
@@ -1006,8 +1007,23 @@ export const DiffPanelContent = ({
         // into the payload so an `MM` file (staged + unstaged both commented)
         // stays disambiguated.
         for (const [key, annotations] of feedback.batch) {
-          const { filePath: relPath, staged } = parseBatchKey(key)
-          const filePath = repoRoot ? `${repoRoot}/${relPath}` : relPath
+          const {
+            cwd: entryCwd,
+            filePath: relPath,
+            staged,
+          } = parseBatchKey(key)
+
+          const entryRepoRoot =
+            'repoRootForCwd' in repoRootRef
+              ? repoRootRef.repoRootForCwd?.(entryCwd)
+              : undefined
+
+          const resolvedRepoRoot =
+            entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
+
+          const filePath = resolvedRepoRoot
+            ? `${resolvedRepoRoot}/${relPath}`
+            : relPath
           entries.push({ filePath, staged, annotations })
         }
 
@@ -2134,6 +2150,21 @@ export const DiffPanelContent = ({
     onStickyHeaderChange: setStickyHeader,
   }
 
+  const finishFeedbackPopover: ReactElement | null =
+    finishOpen && toolbarShellRef.current !== null ? (
+      <FinishFeedbackPopover
+        anchor={toolbarShellRef.current}
+        result={resolveCandidatePanes({
+          allPanes: feedbackDispatch?.candidates ?? [],
+          diffCwd: cwd,
+        })}
+        commentCount={feedback.totalAnnotations()}
+        fileCount={feedback.batch.size}
+        onCancel={(): void => setFinishOpen(false)}
+        onSend={handleSendFeedback}
+      />
+    ) : null
+
   // Empty state (no changes): keep a DORMANT toolbar (only the settings
   // dropdowns stay live — nav arrows, tool-well + actions render disabled /
   // placeholder) above a calm "no changes" panel, so the chrome stays put when
@@ -2147,13 +2178,21 @@ export const DiffPanelContent = ({
         onPointerDownCapture={handleDiffRootPointerDown}
         className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant focus:outline-none"
       >
-        <div className="shrink-0">
+        <div
+          ref={toolbarShellRef}
+          data-testid="diff-toolbar-shell"
+          className="shrink-0"
+        >
           <DiffChipToolbar
             {...toolbarSettingsProps}
             diffMode="unstaged"
             currentFileIndex={-1}
             totalFiles={0}
+            feedbackCount={feedback.totalAnnotations()}
+            onDiscardFeedback={feedback.clearBatch}
+            onFinishFeedback={(): void => setFinishOpen(true)}
           />
+          {finishFeedbackPopover}
         </div>
         <div
           data-testid="diff-empty-panel"
@@ -2276,19 +2315,7 @@ export const DiffPanelContent = ({
               </span>
             </div>
           ) : null}
-          {finishOpen && toolbarShellRef.current !== null ? (
-            <FinishFeedbackPopover
-              anchor={toolbarShellRef.current}
-              result={resolveCandidatePanes({
-                allPanes: feedbackDispatch?.candidates ?? [],
-                diffCwd: cwd,
-              })}
-              commentCount={feedback.totalAnnotations()}
-              fileCount={feedback.batch.size}
-              onCancel={(): void => setFinishOpen(false)}
-              onSend={handleSendFeedback}
-            />
-          ) : null}
+          {finishFeedbackPopover}
           {keyboardConfirm !== null && toolbarShellRef.current !== null ? (
             <Popover
               anchor={toolbarShellRef.current}

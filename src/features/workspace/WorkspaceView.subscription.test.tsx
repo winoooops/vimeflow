@@ -439,7 +439,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedPanelProps.gitStatus).toBe(capturedDockPanelProps.gitStatus)
   })
 
-  test('DockPanel receives a workspace feedback batch that clears on cwd change', async () => {
+  test('DockPanel receives a terminal-bound feedback batch that survives cwd change', async () => {
     render(<WorkspaceView />)
 
     await openDockPanelMock()
@@ -469,13 +469,15 @@ describe('WorkspaceView lifted-subscription contract', () => {
       expect(capturedDockPanelProps.feedbackBatch?.totalAnnotations()).toBe(1)
     )
     if (feedbackRepoRootRef) {
-      feedbackRepoRootRef.current = '/repo'
+      act(() => {
+        feedbackRepoRootRef.current = '/repo'
+      })
     }
 
     fireEvent.click(screen.getByTestId('mock-terminal-cwd-change'))
 
     await waitFor(() =>
-      expect(capturedDockPanelProps.feedbackBatch?.totalAnnotations()).toBe(0)
+      expect(capturedDockPanelProps.feedbackBatch?.totalAnnotations()).toBe(1)
     )
     expect(capturedDockPanelProps.feedbackRepoRootRef?.current).toBe('')
   })

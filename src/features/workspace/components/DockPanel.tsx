@@ -27,6 +27,9 @@ import {
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
 import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
+import { Menu } from '@/components/Menu'
+import { ToolbarButton } from '@/components/ToolbarButton'
+import { Tooltip } from '@/components/Tooltip'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 import type { UseFeedbackBatchReturn } from '../../diff/hooks/useFeedbackBatch'
@@ -43,6 +46,163 @@ import { ResizeHandle } from '@/components/ResizeHandle'
 type TabType = 'editor' | 'diff'
 
 const MARKDOWN_FILE_PATTERN = /\.(md|markdown)$/i
+const REVIEW_REPORT_ICON = 'grading'
+
+export interface PendingFeedbackReview {
+  key: string
+  label: string
+  commentCount: number
+  fileCount: number
+}
+
+interface FeedbackReviewControlsProps {
+  reviews: readonly PendingFeedbackReview[]
+  activeReviewKey?: string
+  onSelect: (key: string) => void
+}
+
+const reviewPaneId = (key: string): string => {
+  const separatorIndex = key.lastIndexOf(':')
+
+  return separatorIndex === -1 ? key : key.slice(separatorIndex + 1)
+}
+
+const plural = (count: number, singular: string): string =>
+  `${count} ${singular}${count === 1 ? '' : 's'}`
+
+const reviewContextText = (review: PendingFeedbackReview): string =>
+  `${plural(review.commentCount, 'comment')} · ${plural(
+    review.fileCount,
+    'file'
+  )}`
+
+const ReviewRowContent = ({
+  review,
+}: {
+  review: PendingFeedbackReview
+}): ReactElement => (
+  <span className="flex min-w-0 flex-col gap-0.5">
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="truncate">{review.label}</span>
+      <span className="shrink-0 font-mono text-[10px] text-on-surface-variant">
+        {reviewPaneId(review.key)}
+      </span>
+    </span>
+    <span className="text-[0.65rem] leading-tight text-on-surface-variant">
+      {reviewContextText(review)}
+    </span>
+  </span>
+)
+
+const ReviewSwitcher = ({
+  reviews,
+  activeReviewKey = undefined,
+  onSelect,
+}: FeedbackReviewControlsProps): ReactElement | null => {
+  if (reviews.length === 0) {
+    return null
+  }
+
+  if (reviews.length === 1) {
+    const review = reviews[0]
+    const active = review.key === activeReviewKey
+
+    return (
+      <Tooltip
+        content={`${active ? 'Active review' : 'Open unfinished review'} · ${reviewContextText(review)}`}
+      >
+        <ToolbarButton
+          icon={REVIEW_REPORT_ICON}
+          label={reviewPaneId(review.key)}
+          pressed={active}
+          onClick={(): void => onSelect(review.key)}
+          className="h-[26px] min-w-0 rounded-lg px-2 font-mono text-[11px]"
+        />
+      </Tooltip>
+    )
+  }
+
+  const label = `Reviews ${reviews.length}`
+
+  return (
+    <Menu
+      trigger={
+        <ToolbarButton
+          icon="rate_review"
+          label={label}
+          trailingIcon="expand_more"
+          aria-label={label}
+          className="h-[26px] min-w-[7rem] justify-between rounded-lg px-2"
+        />
+      }
+      tooltip={`Switch unfinished review · ${reviews.length} panes`}
+      tooltipPlacement="bottom"
+      placement="bottom-end"
+      width={282}
+      bodyClassName="min-w-52 max-h-[28rem] overflow-auto pt-1 pb-0"
+      aria-label="Unfinished reviews"
+    >
+      <Menu.Section label="Unfinished reviews">
+        {reviews.map((review) => {
+          const active = review.key === activeReviewKey
+
+          return (
+            <Menu.Item
+              key={review.key}
+              icon={REVIEW_REPORT_ICON}
+              active={active}
+              onSelect={(): void => onSelect(review.key)}
+            >
+              <ReviewRowContent review={review} />
+            </Menu.Item>
+          )
+        })}
+      </Menu.Section>
+    </Menu>
+  )
+}
+
+const CompactReviewList = ({
+  reviews,
+  activeReviewKey = undefined,
+  onSelect,
+}: FeedbackReviewControlsProps): ReactElement | null => {
+  if (reviews.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex min-w-[220px] flex-col gap-1">
+      <div className="px-1 text-[0.65rem] font-bold uppercase tracking-wider text-on-surface-variant">
+        Unfinished reviews · {reviews.length}
+      </div>
+      {reviews.map((review) => {
+        const active = review.key === activeReviewKey
+
+        return (
+          <button
+            key={review.key}
+            type="button"
+            aria-current={active ? 'true' : undefined}
+            data-active-review={active ? 'true' : undefined}
+            onClick={(): void => onSelect(review.key)}
+            className={`flex w-full min-w-0 items-start gap-2 rounded px-2 py-1.5 text-left text-xs text-on-surface transition-colors hover:bg-on-surface/10 focus:outline-none focus-visible:bg-on-surface/10 ${
+              active ? 'bg-primary-container/15' : ''
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined mt-0.5 shrink-0 text-base leading-none text-on-surface-variant"
+            >
+              {REVIEW_REPORT_ICON}
+            </span>
+            <ReviewRowContent review={review} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 type SelectedDiffControl =
   | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
@@ -99,6 +259,10 @@ interface DockPanelBaseProps {
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments. */
   feedbackDispatch?: FeedbackDispatchTarget
+  /** Unfinished terminal-bound reviews available from other panes. */
+  pendingFeedbackReviews?: readonly PendingFeedbackReview[]
+  activeFeedbackReviewKey?: string
+  onPendingFeedbackReviewSelect?: (key: string) => void
   isFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -142,6 +306,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       feedbackBatch = undefined,
       feedbackRepoRootRef = undefined,
       feedbackDispatch = undefined,
+      pendingFeedbackReviews = [],
+      activeFeedbackReviewKey = undefined,
+      onPendingFeedbackReviewSelect = undefined,
       isFocused = false,
       onContainerFocus = undefined,
       editorFileLifecycleStatus = null,
@@ -278,6 +445,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const compactActions =
       !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
 
+    const showPendingFeedbackReviews =
+      tab === 'diff' &&
+      pendingFeedbackReviews.length > 0 &&
+      onPendingFeedbackReviewSelect !== undefined
+
     const editorPathCrumbStatus: EditorPathCrumbStatus | null = isDirty
       ? 'UNSAVED'
       : editorFileLifecycleStatus === 'DELETED'
@@ -371,6 +543,16 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
+          hasCompactMenuBadge={showPendingFeedbackReviews}
+          compactMenuLeadingContent={
+            showPendingFeedbackReviews ? (
+              <CompactReviewList
+                reviews={pendingFeedbackReviews}
+                activeReviewKey={activeFeedbackReviewKey}
+                onSelect={onPendingFeedbackReviewSelect}
+              />
+            ) : null
+          }
         >
           <div className="flex items-center gap-1">
             {isMarkdown && tab === 'editor' ? (
@@ -378,6 +560,13 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             ) : null}
             {isMarkdown && tab === 'editor' && viewMode === 'reading' ? (
               <ReadingStyleMenu />
+            ) : null}
+            {showPendingFeedbackReviews && !compactActions ? (
+              <ReviewSwitcher
+                reviews={pendingFeedbackReviews}
+                activeReviewKey={activeFeedbackReviewKey}
+                onSelect={onPendingFeedbackReviewSelect}
+              />
             ) : null}
             <DockSwitcher position={position} onPick={onPositionChange} />
           </div>

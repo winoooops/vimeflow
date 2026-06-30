@@ -1006,6 +1006,129 @@ describe('DockPanel', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('diff header switches between multiple unfinished terminal-bound reviews', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p0',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Reviews 2' }))
+
+    const reviewItems = screen.getAllByRole('menuitem')
+    expect(reviewItems).toHaveLength(2)
+    expect(within(reviewItems[0]).getByText('Agent A')).toBeInTheDocument()
+    expect(within(reviewItems[0]).getByText('p0')).toBeInTheDocument()
+    expect(within(reviewItems[0]).queryByText('Active')).not.toBeInTheDocument()
+    expect(reviewItems[0]).not.toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewItems[0]).getByText('2 comments · 1 file')
+    ).toBeInTheDocument()
+    expect(within(reviewItems[1]).getByText('Agent B')).toBeInTheDocument()
+    expect(within(reviewItems[1]).queryByText('Active')).not.toBeInTheDocument()
+    expect(reviewItems[1]).toHaveAttribute('aria-current', 'true')
+    expect(reviewItems[1]).toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewItems[1]).getByText('1 comment · 1 file')
+    ).toBeInTheDocument()
+
+    await user.click(within(reviewItems[1]).getByText('Agent B'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-b:p0')
+  })
+
+  test('diff header renders one unfinished terminal-bound review as a pane chip', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p1',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-a:p1',
+      onPendingFeedbackReviewSelect,
+    })
+
+    expect(
+      screen.queryByRole('button', { name: 'Reviews 1' })
+    ).not.toBeInTheDocument()
+
+    const reviewChip = screen.getByRole('button', { name: 'p1' })
+    expect(reviewChip).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(reviewChip)
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p1')
+  })
+
+  test('narrow diff dock lists unfinished reviews in compact actions menu', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      position: 'left',
+      horizontalSize: 360,
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p0',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+
+    const menu = screen.getByTestId('dock-actions-menu')
+    expect(within(menu).getByText('Unfinished reviews · 2')).toBeInTheDocument()
+    expect(within(menu).getByText('Agent A')).toBeInTheDocument()
+    expect(within(menu).getByText('1 comment · 1 file')).toBeInTheDocument()
+
+    const reviewButtons = within(menu).getAllByRole('button')
+    expect(reviewButtons[1]).toHaveAttribute('aria-current', 'true')
+    expect(reviewButtons[1]).toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewButtons[1]).queryByText('Active')
+    ).not.toBeInTheDocument()
+
+    await user.click(within(menu).getByText('Agent A'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p0')
+  })
+
   test('renders controlled active tab', () => {
     renderDockPanel({ tab: 'diff' })
 

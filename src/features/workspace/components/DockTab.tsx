@@ -27,6 +27,10 @@ interface DockTabProps {
   menuAlign?: 'left' | 'right'
   /** Slot rendered between the tab strip spacer and the action cluster. */
   children?: ReactNode
+  /** Extra content rendered before the regular controls inside the compact menu. */
+  compactMenuLeadingContent?: ReactNode
+  /** Whether the compact overflow trigger should show an unread-style dot. */
+  hasCompactMenuBadge?: boolean
 }
 
 const DOCK_TAB_OPTIONS = [
@@ -58,6 +62,8 @@ export const DockTab = ({
   compactActions = false,
   menuAlign = 'right',
   children = undefined,
+  compactMenuLeadingContent = undefined,
+  hasCompactMenuBadge = false,
 }: DockTabProps): ReactElement => {
   const actionsMenuId = useId()
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -180,6 +186,13 @@ export const DockTab = ({
               className="h-6 w-6 rounded-[5px] text-[16px] focus:bg-wash-subtle focus:text-primary"
             />
           </Tooltip>
+          {hasCompactMenuBadge ? (
+            <span
+              data-testid="dock-actions-badge"
+              aria-hidden="true"
+              className="pointer-events-none absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+            />
+          ) : null}
 
           {actionsOpen && (
             <div
@@ -189,6 +202,7 @@ export const DockTab = ({
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-lowest p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
+              {compactMenuLeadingContent}
               <div className="flex items-center justify-between gap-2">
                 {children}
                 <Tooltip

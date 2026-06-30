@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import {
   useFeedbackBatch,
+  useFeedbackBatchStore,
   makeBatchKey,
   parseBatchKey,
 } from './useFeedbackBatch'
@@ -255,5 +256,153 @@ describe('useFeedbackBatch', () => {
       const key = makeBatchKey(expected.cwd, expected.filePath, expected.staged)
       expect(parseBatchKey(key)).toEqual(expected)
     }
+  })
+})
+
+describe('useFeedbackBatchStore', () => {
+  test('stores unfinished reviews separately per owner key', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'session-a:p0', cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(0)
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-b',
+        'src/b.ts',
+        false,
+        makeAnnotation('owner-b')
+      )
+    })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    rerender({ ownerKey: 'session-a:p0', cwd: '/repo-a' })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    expect(
+      result.current.feedbackBatch.annotationsForFile(
+        '/repo-a',
+        'src/a.ts',
+        false
+      )[0].metadata.id
+    ).toBe('owner-a')
+  })
+
+  test('keeps an owner batch when the same terminal changes cwd', () => {
+    const { result, rerender } = renderHook(
+      ({ cwd }) => useFeedbackBatchStore('session-a:p0', cwd),
+      { initialProps: { cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('cwd-a')
+      )
+    })
+
+    rerender({ cwd: '/repo-b' })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    expect(
+      result.current.feedbackBatch.annotationsForFile(
+        '/repo-a',
+        'src/a.ts',
+        false
+      )[0].metadata.id
+    ).toBe('cwd-a')
+  })
+
+  test('tracks repo roots per owner and cwd', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'session-a:p0', cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackRepoRootRef.current = '/repo-a-root'
+    })
+
+    rerender({ ownerKey: 'session-a:p0', cwd: '/repo-b' })
+
+    expect(result.current.feedbackRepoRootRef.current).toBe('')
+
+    act(() => {
+      result.current.feedbackRepoRootRef.current = '/repo-b-root'
+    })
+
+    expect(result.current.feedbackRepoRootRef.repoRootForCwd('/repo-a')).toBe(
+      '/repo-a-root'
+    )
+
+    expect(result.current.feedbackRepoRootRef.repoRootForCwd('/repo-b')).toBe(
+      '/repo-b-root'
+    )
+
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-a' })
+
+    expect(result.current.feedbackRepoRootRef.current).toBe('')
+  })
+
+  test('prunes batches and repo roots for closed owners', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'session-a:p0', cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+      result.current.feedbackRepoRootRef.current = '/repo-a-root'
+    })
+
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-b',
+        'src/b.ts',
+        false,
+        makeAnnotation('owner-b')
+      )
+      result.current.feedbackRepoRootRef.current = '/repo-b-root'
+    })
+
+    expect(result.current.summaries.map((summary) => summary.ownerKey)).toEqual(
+      ['session-a:p0', 'session-b:p0']
+    )
+
+    act(() => {
+      result.current.pruneOwners(new Set(['session-b:p0']))
+    })
+
+    expect(result.current.summaries.map((summary) => summary.ownerKey)).toEqual(
+      ['session-b:p0']
+    )
+
+    rerender({ ownerKey: 'session-a:p0', cwd: '/repo-a' })
+
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(0)
+    expect(result.current.feedbackRepoRootRef.current).toBe('')
   })
 })
