@@ -387,6 +387,7 @@ export class NativeOverlayController {
     record.syncBounds()
     record.overlayWindow.setIgnoreMouseEvents(false)
     record.overlayWindow.showInactive()
+    record.overlayWindow.webContents.focus()
     // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
     // still land behind it. The screen-saver level reliably places this
     // transparent overlay window above that native surface while it is open.
@@ -512,7 +513,6 @@ export class NativeOverlayController {
       fullscreenable: false,
       skipTaskbar: true,
       acceptFirstMouse: true,
-      focusable: false,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

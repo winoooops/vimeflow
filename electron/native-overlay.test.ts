@@ -230,7 +230,7 @@ const finishOverlayLoad = (): FakeWindow => {
 
 const acknowledgeOverlayReady = async (
   overlayWindow: FakeWindow,
-  surfaceId = request.surfaceId
+  surfaceId: string = request.surfaceId
 ): Promise<void> => {
   await Promise.resolve()
   handler(NATIVE_OVERLAY_READY)(
@@ -264,11 +264,13 @@ describe('NativeOverlayController', () => {
     await acknowledgeOverlayReady(overlayWindow)
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalledWith(
+      expect.objectContaining({ focusable: false })
+    )
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         acceptFirstMouse: true,
         backgroundColor: '#00000000',
-        focusable: false,
         frame: false,
         hasShadow: false,
         parent: electronMock.owner,
@@ -305,7 +307,10 @@ describe('NativeOverlayController', () => {
       height: 500,
     })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.showInactive.mock.invocationCallOrder[0]).toBeLessThan(
+      overlayWindow.webContents.focus.mock.invocationCallOrder[0]
+    )
   })
 
   test('accepts sectioned menu payloads with composite rows', async () => {
@@ -453,7 +458,7 @@ describe('NativeOverlayController', () => {
 
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
   test('does not hide a newer active overlay when an older render times out', async () => {
