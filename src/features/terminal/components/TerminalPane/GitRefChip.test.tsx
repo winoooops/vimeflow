@@ -424,7 +424,7 @@ test('GitRefChip sends native overlay rows with chip-width matching', async () =
     toJSON: () => ({}),
   } as DOMRect)
 
-  fireEvent.focus(chip)
+  fireEvent.keyDown(chip, { key: 'ArrowDown' })
 
   await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
@@ -461,4 +461,22 @@ test('GitRefChip sends native overlay rows with chip-width matching', async () =
       ]),
     },
   })
+})
+
+test('GitRefChip does not open the native overlay from focus restoration', () => {
+  vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+  setNavigatorPlatform('MacIntel')
+  const nativeBridge = installNativeOverlayBridge()
+
+  render(
+    <GitRefChip
+      worktreeName="native-overlay-git-ref"
+      branch="codex/native-overlay-git-ref"
+      nativeOverlay
+    />
+  )
+
+  fireEvent.focus(screen.getByTestId('git-ref-chip'))
+
+  expect(nativeBridge.open).not.toHaveBeenCalled()
 })

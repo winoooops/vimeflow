@@ -430,9 +430,9 @@ describe('NativeOverlayHost', () => {
       )
     ).toBe('')
 
-    expect(document.documentElement.style.getPropertyValue('--shadow-menu')).toBe(
-      ''
-    )
+    expect(
+      document.documentElement.style.getPropertyValue('--shadow-menu')
+    ).toBe('')
   })
 
   test('closes on Escape and clears on host clear', async () => {

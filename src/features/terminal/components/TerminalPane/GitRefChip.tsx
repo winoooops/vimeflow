@@ -311,6 +311,10 @@ export const GitRefChip = ({
   }
 
   const handleFocus = (): void => {
+    if (nativeOverlay) {
+      return
+    }
+
     if (skipRestoredFocusRef.current) {
       skipRestoredFocusRef.current = false
       if (skipRestoredFocusTimerRef.current !== null) {
