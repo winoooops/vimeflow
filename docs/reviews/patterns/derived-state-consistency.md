@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-26
+last_updated: 2026-06-30
 ref_count: 12
 ---
 
@@ -185,4 +185,13 @@ base data is technically "correct."
 - **Finding:** The dialog passed an empty or whitespace-only session name through to
   session creation, bypassing the derived folder-name fallback used for nullish names.
 - **Fix:** Trim the submitted name and fall back to `deriveSessionName(path)` when it is blank.
+- **Commit:** same commit as this entry
+
+### 16. Empty diff toolbar ignored draft-only feedback
+
+- **Source:** github-codex-connector | PR #637 round 1 | 2026-06-30
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The empty diff state derived toolbar feedback visibility only from submitted annotations. When a non-empty draft survived after its file or hunk disappeared from git status, the workspace still had a pending draft-only review but the empty-state Discard/Finish controls were hidden.
+- **Fix:** Derive the toolbar pending-feedback count from submitted annotations plus a non-empty draft, so users can discard draft-only reviews even when the diff has no changed files. Added an empty-state regression test for a draft-only feedback store.
 - **Commit:** same commit as this entry

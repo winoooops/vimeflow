@@ -26,6 +26,7 @@ import * as gitServiceModule from './services/gitService'
 import * as pierreAdapterModule from './services/pierreAdapter'
 import * as useFeedbackBatchModule from './hooks/useFeedbackBatch'
 import {
+  type FeedbackDraftStore,
   makeBatchKey,
   type ReviewComment,
   type UseFeedbackBatchReturn,
@@ -374,6 +375,70 @@ describe('Panel', () => {
     expect(
       await screen.findByRole('dialog', { name: 'Finish feedback' })
     ).toBeInTheDocument()
+  })
+
+  test('keeps draft-only feedback discard available in the empty state', async (): Promise<void> => {
+    const user = userEvent.setup()
+    const clearBatch = vi.fn()
+    const setDraft = vi.fn()
+
+    const feedbackBatch: UseFeedbackBatchReturn = {
+      batch: new Map(),
+      annotationsForFile: () => [],
+      addAnnotation: () => 'ok',
+      updateAnnotation: vi.fn(),
+      removeAnnotation: vi.fn(),
+      clearBatch,
+      totalAnnotations: () => 0,
+    }
+
+    const feedbackDraft: FeedbackDraftStore = {
+      draft: {
+        cwd: '/repo/current',
+        filePath: 'src/removed.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 42,
+        text: 'Draft after removed file',
+      },
+      setDraft,
+    }
+
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [],
+      filesCwd: '/repo/current',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+    )
+
+    render(
+      <Panel
+        cwd="/repo/current"
+        feedbackBatch={feedbackBatch}
+        feedbackDraft={feedbackDraft}
+      />
+    )
+
+    expect(screen.getByTestId('diff-empty-state')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /finish feedback \(1\)/i })
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: /discard all feedback/i })
+    )
+
+    expect(clearBatch).toHaveBeenCalledOnce()
   })
 
   test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {

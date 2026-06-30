@@ -1793,6 +1793,8 @@ export const Panel = ({
   )
 
   const feedbackCount = feedback.totalAnnotations()
+  const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
+  const pendingFeedbackCount = feedbackCount + feedbackDraftCount
 
   const finishFeedback = {
     open: finishOpen,
@@ -1855,7 +1857,7 @@ export const Panel = ({
             diffMode: 'unstaged',
             currentFileIndex: -1,
             totalFiles: 0,
-            feedbackCount,
+            feedbackCount: pendingFeedbackCount,
             onDiscardFeedback: feedback.clearBatch,
             onFinishFeedback: (): void => setFinishOpen(true),
           }}
@@ -1946,7 +1948,7 @@ export const Panel = ({
             onDiscardAll: handleDiscardAll,
             staging,
             selectedFileName: selectedFilePath ?? undefined,
-            feedbackCount,
+            feedbackCount: pendingFeedbackCount,
             onDiscardFeedback: feedback.clearBatch,
             onFinishFeedback: (): void => setFinishOpen(true),
           }}
