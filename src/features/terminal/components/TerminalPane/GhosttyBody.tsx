@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactElement,
 } from 'react'
 import { listen } from '../../../../lib/backend'
@@ -17,6 +18,7 @@ import {
   sendNativeGhosttyData,
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
+import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
   type AgentCwdSource,
   isDescendantPath,
@@ -46,11 +48,29 @@ interface GhosttyNativeInputEvent {
   data: string
 }
 
+interface GhosttyNativeContextMenuEvent {
+  sessionId: string
+  paneId: string
+  x: number
+  y: number
+}
+
 const TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN =
   /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
+const NATIVE_CONTEXT_CAN_COPY = false
+const NATIVE_CONTEXT_CAN_PASTE_IMAGE = false
+const NATIVE_CONTEXT_SHOW_PASTE_IMAGE = false
 const OSC7_SEQUENCE_PATTERN = /\u001b\]7;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g
+
+const clampContextMenuPosition = (position: {
+  x: number
+  y: number
+}): { x: number; y: number } => ({
+  x: Math.min(Math.max(0, position.x), Math.max(0, window.innerWidth - 1)),
+  y: Math.min(Math.max(0, position.y), Math.max(0, window.innerHeight - 1)),
+})
 
 const stripTerminalInputControlSequences = (data: string): string =>
   data.replace(TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN, '')
@@ -88,6 +108,11 @@ export const GhosttyBody = ({
   const paneRef = useMemo(() => ({ sessionId: ptyId, paneId }), [paneId, ptyId])
   const onCommandSubmitRef = useRef(onCommandSubmit)
   const onCwdChangeRef = useRef(onCwdChange)
+
+  const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number
+    y: number
+  } | null>(null)
 
   useEffect(() => {
     onCommandSubmitRef.current = onCommandSubmit
@@ -264,6 +289,29 @@ export const GhosttyBody = ({
     }
   }, [onUnavailable, paneRef])
 
+  const closeContextMenu = useCallback((): void => {
+    setContextMenuPosition(null)
+  }, [])
+
+  const pasteClipboard = useCallback(async (): Promise<void> => {
+    const clipboard = window.navigator.clipboard as
+      | { readText?: () => Promise<string> }
+      | undefined
+    let text = ''
+    try {
+      text = (await clipboard?.readText?.()) ?? ''
+    } catch {
+      return
+    }
+
+    if (!text) {
+      return
+    }
+
+    await service.write({ sessionId: ptyId, data: text })
+    trackNativeInput(text)
+  }, [ptyId, service, trackNativeInput])
+
   const forwardNativeOutput = useCallback(
     (
       data: string,
@@ -392,6 +440,40 @@ export const GhosttyBody = ({
     }
   }, [paneRef, trackNativeInput])
 
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const attachContextMenuListener = async (): Promise<void> => {
+      const cleanup = await listen<GhosttyNativeContextMenuEvent>(
+        'ghostty-native-context-menu',
+        (payload) => {
+          if (
+            payload.sessionId === paneRef.sessionId &&
+            payload.paneId === paneRef.paneId
+          ) {
+            setContextMenuPosition(clampContextMenuPosition(payload))
+          }
+        }
+      )
+
+      if (cancelled) {
+        cleanup()
+
+        return
+      }
+
+      unlisten = cleanup
+    }
+
+    void attachContextMenuListener()
+
+    return (): void => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [paneRef])
+
   // Keep output attached while mounted so inactive split panes keep rendering.
   useEffect(() => {
     let releasePaneReady: (() => void) | null = null
@@ -467,18 +549,33 @@ export const GhosttyBody = ({
   ])
 
   return (
-    <div
-      ref={containerRef}
-      data-testid="native-ghostty-pane"
-      className="h-full w-full"
-      onFocus={(): void => {
-        void focusNativeSurface()
-      }}
-      onMouseDown={(): void => {
-        void focusNativeSurface()
-      }}
-      role="presentation"
-      style={{ background: 'var(--color-surface)' }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        data-testid="native-ghostty-pane"
+        className="h-full w-full"
+        onFocus={(): void => {
+          void focusNativeSurface()
+        }}
+        onMouseDown={(): void => {
+          void focusNativeSurface()
+        }}
+        role="presentation"
+        style={{ background: 'var(--color-surface)' }}
+      />
+      <TerminalContextMenu
+        isOpen={contextMenuPosition !== null}
+        position={contextMenuPosition}
+        onClose={closeContextMenu}
+        onCopy={(): void => undefined}
+        onPaste={(): void => {
+          void pasteClipboard()
+        }}
+        onPasteImage={(): void => undefined}
+        canCopy={NATIVE_CONTEXT_CAN_COPY}
+        canPasteImage={NATIVE_CONTEXT_CAN_PASTE_IMAGE}
+        showPasteImage={NATIVE_CONTEXT_SHOW_PASTE_IMAGE}
+      />
+    </>
   )
 }

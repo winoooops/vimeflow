@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 73
+last_updated: 2026-06-30
+ref_count: 75
 ---
 
 # Async Race Conditions
@@ -499,6 +499,15 @@ prevent showing previous data.
 - **Trade-off (documented in stop_with_held_gate docstring):** Between gate release and the OLD tail actually observing stop_flag (at most one POLL_INTERVAL ≈ 500ms later), a concurrent `start_or_replace` can acquire the gate and spawn a fresh tail for the same session. Briefly there are two threads emitting events; the OLD thread exits at its next stop-flag check (within ≤ one poll iteration, typically ≤2 duplicate events). Frontend has no per-tool-call dedup; brief duplicates are an acceptable cost vs holding the gate for the full join. Code-review heuristic: when teardown involves both "stop the work" and "wait for the work to finish" steps, identify whether the gate needs to be held across BOTH or only the "stop" step. The "stop" usually only needs serialization with other state mutations; the "wait" can usually happen outside any lock as long as the to-be-joined work doesn't itself touch the state being protected. This pattern recurs: signal-under-lock + join-outside-lock is the right shape for most teardown-with-join scenarios.
 - **Commit:** _(PR #302 upsource cycle 11 fix commit)_
 
+### 53. Renderer overlay open failure must not evict a newer same-surface session
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/base/floating/nativeOverlay.ts` L217-227
+- **Finding:** `openNativeOverlay` registered a session under `surfaceId`, awaited `nativeBridge.open`, then unconditionally deleted `sessions[surfaceId]` when the open was rejected or threw. If React cleanup and a rapid reopen installed a newer session for the same `surfaceId` during that await, the older failed open removed the newer session, leaving the visible native overlay unable to dispatch actions or close callbacks.
+- **Fix:** Guard both failed-open cleanup paths with `sessions.get(request.surfaceId) === session` before deleting, so only the open call that still owns the map entry can clean it up. Added `nativeOverlay.test.ts` regressions for older rejected and older thrown opens racing with a newer accepted open.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 51. Closing the in-flight-dispatch race with a per-handle `alive` token checked under the gate inside `start_or_replace`
 
 - **Source:** github-codex-connector | PR #302 round 10 | 2026-05-30
@@ -786,4 +795,21 @@ prevent showing previous data.
 - **Fix:** Call `ReleaseSurfaceCallbacks(surface)` at the start of finalization
   and remove the direct TSFN cleanup block, so both explicit destroy and GC
   fallback use the same idempotent, mutex-protected release path.
+- **Commit:** same commit as this entry
+
+### 77. Stale native overlay close reset a newer active surface
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `closeSurface` reset the shared overlay window without checking
+  whether the closing surface still owned `activeSurfaceId`. Two rapid opens
+  could both cross the async overlay-ready gap, then an older render timeout
+  could hide and clear the newer accepted overlay while the renderer still
+  believed native mode was active.
+- **Fix:** Gate active-surface bookkeeping, overlay clear/hide, always-on-top
+  reset, mouse-event reset, and owner focus restoration on
+  `record.activeSurfaceId === surfaceId`. Stale closes still delete their
+  surface record and settle pending ready promises, but they no longer disturb
+  a newer active surface.
 - **Commit:** same commit as this entry

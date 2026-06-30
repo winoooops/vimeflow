@@ -8,6 +8,10 @@ import {
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  selectFloatingTransport,
+  warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
 type DialogSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -29,6 +33,7 @@ interface DialogProps {
   backdropTestId?: string
   /** Extra classes appended to the panel (e.g. a custom width). Last-wins over the size class. */
   panelClassName?: string
+  nativeOverlay?: boolean
   children: ReactNode
 }
 
@@ -241,6 +246,7 @@ const DialogRoot = ({
   testId = undefined,
   backdropTestId = undefined,
   panelClassName = undefined,
+  nativeOverlay = false,
   children,
 }: DialogProps): ReactElement | null => {
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -248,6 +254,16 @@ const DialogRoot = ({
   const wasOpenRef = useRef(false)
   const restoreFocusRef = useRef(restoreFocus)
   restoreFocusRef.current = restoreFocus
+
+  useEffect(() => {
+    if (
+      open &&
+      nativeOverlay &&
+      selectFloatingTransport(nativeOverlay) === 'native-overlay'
+    ) {
+      warnNativeOverlayFallback('dialog native overlay is not in v0')
+    }
+  }, [nativeOverlay, open])
 
   const requestClose = useCallback((): void => {
     if (dismissDisabled) {

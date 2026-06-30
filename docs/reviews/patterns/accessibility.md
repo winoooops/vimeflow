@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-22
-ref_count: 80
+last_updated: 2026-06-30
+ref_count: 81
 ---
 
 # Accessibility
@@ -754,3 +754,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The browser-pane drag handle was promoted to `role="button"` and `tabIndex={0}`, but still only implemented pointer drag handlers. Keyboard and screen-reader users could focus a control announced as a button, then press Enter or Space with no activation path.
 - **Fix:** Removed the button role and tab stop from the browser-pane drag handle until keyboard-driven pane reorder exists. Added regression coverage that the handle remains draggable but is not exposed as a keyboard-focusable button.
 - **Commit:** same commit as this entry
+
+### 74. Native overlay menu opened without keyboard focus
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The native overlay window was shown with `showInactive()` but neither the window nor its `webContents` received focus. Keyboard-opened menus rendered above the owner window while Escape, Arrow, and Enter stayed routed to the owner or terminal.
+- **Fix:** Focused the overlay `webContents` immediately after showing the overlay window, preserving the existing owner-focus restoration in `closeSurface`. Electron controller tests now assert the overlay receives focus on open.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

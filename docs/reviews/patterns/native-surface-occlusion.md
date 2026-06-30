@@ -2,7 +2,7 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-15
+last_updated: 2026-06-30
 ref_count: 0
 ---
 
@@ -39,4 +39,13 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **File:** `src/features/workspace/overlays/useOverlayRegistration.ts`
 - **Finding:** When a consumer owns `isOpen` locally inside the overlay component, toggling it only updates `latestDescriptorRef`; the registration effect does not re-run and the provider map/context identity does not change, so already-mounted `useNativeSurface` consumers in sibling panes are not re-rendered. A newly opened global/intersecting overlay can leave an Electron `WebContentsView` visible above it until some unrelated workspace render happens.
 - **Fix:** Added `isOpen` to the `useOverlayRegistration` effect dependency array so toggles re-register the descriptor, invalidate provider state, and re-render native-surface subscribers. The descriptor getter continues to read the live ref for the current value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Serialize checkbox rows for native overlay menus
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `LayoutDisplayMenu` opted into NativeOverlay but always rendered `Menu.Checkbox` rows, and the menu serializer treated checkboxes as unsupported content. The layout-display trigger therefore fell back to the local DOM menu, so the native overlay smoke path and its `menuitemcheckbox` E2E expectation could not exercise the BrowserWindow overlay above Ghostty.
+- **Fix:** Added checkbox serialization to the shared Menu native payload path and introduced retained native action handlers so checkbox toggles stay open and resync state while normal menu actions keep the existing at-most-once close behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

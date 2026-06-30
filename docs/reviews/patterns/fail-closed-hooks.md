@@ -3,7 +3,7 @@ id: fail-closed-hooks
 category: security
 created: 2026-04-20
 last_updated: 2026-06-17
-ref_count: 1
+ref_count: 2
 ---
 
 # Fail-Closed Security Hooks

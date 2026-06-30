@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 21
+last_updated: 2026-06-30
+ref_count: 23
 ---
 
 # Resource Cleanup
@@ -237,4 +237,29 @@ causes listener accumulation and duplicate event handling.
   `try/catch` so destroy failures are absorbed without violating
   `promise/prefer-await-to-then`, and add a regression test that rejects
   `destroyNativeGhostty` during unmount.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Cancelled pending native overlay open skipped the late close IPC
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/base/floating/nativeOverlay.ts`
+- **Finding:** If a native overlay menu closed before `open()` resolved, cleanup deleted the renderer session and sent one close IPC. When the delayed open later resolved, the cancellation branch called `closeNativeOverlay` again, but the helper returned early because the session had already been deleted.
+- **Fix:** Made `closeNativeOverlay` always send the close IPC after deleting any local session. A regression test holds `open()` pending, unmounts the menu, then resolves the open and asserts the second close is sent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Native overlay close touched destroyed BrowserWindow methods
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `closeSurface` called `overlayWindow.webContents.send()`,
+  `hide()`, `setAlwaysOnTop()`, and `setIgnoreMouseEvents()` whenever a
+  surface record existed. If the overlay BrowserWindow had already been
+  destroyed while the surface remained registered, an ordinary close could
+  throw through the IPC handler and leave renderer cleanup unresolved.
+- **Fix:** Keep the surface deletion and pending-ready resolution
+  unconditional, but guard every overlay-window/webContents method behind
+  `!record.overlayWindow.isDestroyed()`. Added regression coverage for closing
+  after overlay-window destruction.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

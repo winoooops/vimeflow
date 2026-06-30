@@ -19,6 +19,10 @@ import { installCommandPaletteShortcutOverride } from './command-palette-shortcu
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  setupNativeOverlayIpc,
+  type NativeOverlayController,
+} from './native-overlay'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
@@ -100,6 +104,32 @@ const resolveSidecarBin = (): string => {
   }
 
   return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
+}
+
+const withNativeOverlayMode = (url: string): string => {
+  const parsedUrl = new URL(url)
+  parsedUrl.searchParams.set('nativeOverlay', '1')
+
+  return parsedUrl.toString()
+}
+
+// The overlay window loads the same renderer bundle in a host-only mode. That
+// URL boots React; the actual menu rows/actions still arrive later as a
+// serialized NativeOverlayRequest over IPC.
+const resolveNativeOverlayRendererUrl = (): string => {
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+
+  if (app.isPackaged) {
+    return withNativeOverlayMode(`${APP_ORIGIN}/index.html`)
+  }
+
+  if (devUrl !== undefined && devUrl.length > 0) {
+    return withNativeOverlayMode(devUrl)
+  }
+
+  return withNativeOverlayMode(
+    pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString()
+  )
 }
 
 const installContentSecurityPolicy = (): void => {
@@ -217,6 +247,9 @@ let ghosttyNativeController:
   | GhosttyNativeHelperController
   | GhosttyNativeParentController
   | null = null
+// React DOM overlays in the main renderer can sit behind Ghostty's NSView;
+// this controller owns the separate native BrowserWindow used for those cases.
+let nativeOverlayController: NativeOverlayController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
@@ -412,6 +445,11 @@ const setupApp = async (): Promise<void> => {
   } else {
     ghosttyNativeController = null
   }
+  nativeOverlayController?.unregister()
+  nativeOverlayController = null
+  nativeOverlayController = setupNativeOverlayIpc(
+    resolveNativeOverlayRendererUrl()
+  )
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
@@ -519,6 +557,8 @@ app.on('before-quit', (event) => {
       browserPaneController = null
       ghosttyNativeController?.dispose()
       ghosttyNativeController = null
+      nativeOverlayController?.unregister()
+      nativeOverlayController = null
       workspaceLayoutController?.dispose()
       workspaceLayoutController = null
 

@@ -292,13 +292,15 @@ describe('ghostty native parent', () => {
     const callbacks: {
       onInput?: (data: string) => void
       onResize?: (cols: number, rows: number) => void
+      onContextMenu?: (x: number, y: number) => void
     } = {}
     const surface = {}
 
     const addon = {
-      create: vi.fn((_bridge, _handle, input, resize) => {
+      create: vi.fn((_bridge, _handle, input, resize, contextMenu) => {
         callbacks.onInput = input
         callbacks.onResize = resize
+        callbacks.onContextMenu = contextMenu
 
         return surface
       }),
@@ -338,6 +340,7 @@ describe('ghostty native parent', () => {
       expect.stringContaining('libGhosttyElectronBridge.dylib'),
       nativeHandle,
       expect.any(Function),
+      expect.any(Function),
       expect.any(Function)
     )
     expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200)
@@ -345,6 +348,7 @@ describe('ghostty native parent', () => {
     callbacks.onInput?.('a')
     callbacks.onResize?.(80, 24)
     callbacks.onResize?.(80, 24)
+    callbacks.onContextMenu?.(15, 25)
 
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
@@ -357,6 +361,11 @@ describe('ghostty native parent', () => {
 
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 80, rows: 24 },
+    })
+
+    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
+      event: 'ghostty-native-context-menu',
+      payload: { sessionId: 'pty-1', paneId: 'pane-1', x: 15, y: 25 },
     })
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
 

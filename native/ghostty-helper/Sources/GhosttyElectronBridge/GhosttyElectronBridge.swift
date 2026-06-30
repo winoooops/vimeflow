@@ -14,6 +14,12 @@ public typealias VimeflowGhosttyResizeCallback = @convention(c) (
     Int32
 ) -> Void
 
+public typealias VimeflowGhosttyContextMenuCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    Double,
+    Double
+) -> Void
+
 private func mainActorSync<T: Sendable>(_ body: @MainActor () -> T) -> T {
     if Thread.isMainThread {
         return MainActor.assumeIsolated(body)
@@ -31,6 +37,7 @@ private struct SendablePointer: @unchecked Sendable {
 private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
+    private let contextMenuCallback: VimeflowGhosttyContextMenuCallback?
     private let callbackContext: UnsafeMutableRawPointer?
     private var lastColumns = 0
     private var lastRows = 0
@@ -38,10 +45,12 @@ private final class CallbackBox: @unchecked Sendable {
     init(
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
+        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.inputCallback = inputCallback
         self.resizeCallback = resizeCallback
+        self.contextMenuCallback = contextMenuCallback
         self.callbackContext = callbackContext
     }
 
@@ -65,6 +74,10 @@ private final class CallbackBox: @unchecked Sendable {
         lastRows = rows
         resizeCallback?(callbackContext, Int32(columns), Int32(rows))
     }
+
+    func openContextMenu(x: Double, y: Double) {
+        contextMenuCallback?(callbackContext, x, y)
+    }
 }
 
 @MainActor
@@ -72,6 +85,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private let parentView: NSView
     private let container = NSView(frame: .zero)
     private let callbacks: CallbackBox
+    private var contextMenuMonitor: Any?
 
     private lazy var controller = TerminalController()
 
@@ -100,12 +114,14 @@ private final class EmbeddedGhosttySurface: NSObject {
         parentView: NSView,
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
+        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.parentView = parentView
         self.callbacks = CallbackBox(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
+            contextMenuCallback: contextMenuCallback,
             callbackContext: callbackContext
         )
         super.init()
@@ -137,6 +153,10 @@ private final class EmbeddedGhosttySurface: NSObject {
     }
 
     func destroy() {
+        if let contextMenuMonitor {
+            NSEvent.removeMonitor(contextMenuMonitor)
+            self.contextMenuMonitor = nil
+        }
         container.removeFromSuperview()
     }
 
@@ -145,8 +165,28 @@ private final class EmbeddedGhosttySurface: NSObject {
         container.layer?.backgroundColor = NSColor.black.cgColor
         container.addSubview(terminalView)
         parentView.addSubview(container, positioned: .above, relativeTo: nil)
+        contextMenuMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+            self?.handleRightMouse(event)
+
+            return event
+        }
     }
 
+    private func handleRightMouse(_ event: NSEvent) {
+        guard let window = terminalView.window, event.window === window else {
+            return
+        }
+
+        let terminalLocation = terminalView.convert(event.locationInWindow, from: nil)
+        guard terminalView.bounds.contains(terminalLocation) else {
+            return
+        }
+
+        let parentLocation = terminalView.convert(terminalLocation, to: parentView)
+        let x = parentLocation.x
+        let y = parentView.bounds.height - parentLocation.y
+        callbacks.openContextMenu(x: x, y: y)
+    }
 }
 
 @_cdecl("vimeflow_ghostty_create")
@@ -154,6 +194,7 @@ public func vimeflowGhosttyCreate(
     _ parentViewPointer: UnsafeMutableRawPointer?,
     _ inputCallback: VimeflowGhosttyInputCallback?,
     _ resizeCallback: VimeflowGhosttyResizeCallback?,
+    _ contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
     _ callbackContext: UnsafeMutableRawPointer?
 ) -> UnsafeMutableRawPointer? {
     guard let parentViewPointer else {
@@ -170,6 +211,7 @@ public func vimeflowGhosttyCreate(
             parentView: parentView,
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
+            contextMenuCallback: contextMenuCallback,
             callbackContext: contextPointer.value
         )
 

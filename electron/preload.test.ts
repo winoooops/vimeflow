@@ -18,6 +18,16 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
+import {
+  NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_CLEAR,
+  NATIVE_OVERLAY_CLOSE,
+  NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_OPEN,
+  NATIVE_OVERLAY_READY,
+  NATIVE_OVERLAY_RENDER,
+  type NativeOverlayInvokeChannel,
+} from './native-overlay-channels'
 import './preload'
 
 const electronMock = vi.hoisted(() => {
@@ -65,6 +75,25 @@ const browserPane = (): Record<string, unknown> => {
 
   return pane as Record<string, unknown>
 }
+
+const exposedApi = (): Record<string, unknown> => {
+  const api = electronMock.exposed
+
+  if (!api || typeof api !== 'object') {
+    throw new Error('preload API not exposed')
+  }
+
+  return api
+}
+
+const nativeOverlayInvokeCases: readonly [
+  string,
+  NativeOverlayInvokeChannel,
+  Record<string, unknown>,
+][] = [
+  ['open', NATIVE_OVERLAY_OPEN, { surfaceId: 'surface-1' }],
+  ['close', NATIVE_OVERLAY_CLOSE, { surfaceId: 'surface-1' }],
+]
 
 describe('preload browserPane wiring', () => {
   beforeEach(() => {
@@ -164,5 +193,99 @@ test('exposes dialog.pickDirectory bound to the channel', async () => {
   await api.dialog.pickDirectory()
   expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
     DIALOG_PICK_DIRECTORY
+  )
+})
+
+describe('preload nativeOverlay wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  test.each(nativeOverlayInvokeCases)(
+    '%s invokes ipcRenderer.invoke with the correct channel',
+    async (
+      method: string,
+      channel: NativeOverlayInvokeChannel,
+      request: Record<string, unknown>
+    ) => {
+      const api = exposedApi() as {
+        nativeOverlay: Record<string, (request: unknown) => Promise<unknown>>
+      }
+
+      await api.nativeOverlay[method](request)
+
+      expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+        channel,
+        request
+      )
+    }
+  )
+
+  test.each([
+    ['onAction', NATIVE_OVERLAY_ACTION],
+    ['onClose', NATIVE_OVERLAY_CLOSED],
+  ])(
+    '%s registers on the correct channel',
+    (method: string, channel: string) => {
+      const api = exposedApi() as {
+        nativeOverlay: Record<string, (cb: (payload: unknown) => void) => void>
+      }
+
+      api.nativeOverlay[method](vi.fn())
+
+      expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+        channel,
+        expect.any(Function)
+      )
+    }
+  )
+
+  test.each([
+    ['ready', NATIVE_OVERLAY_READY, { surfaceId: 'surface-1' }],
+    ['action', NATIVE_OVERLAY_ACTION, { surfaceId: 'surface-1' }],
+    ['close', NATIVE_OVERLAY_CLOSE, { surfaceId: 'surface-1' }],
+  ])(
+    'host %s invokes ipcRenderer.invoke with the correct channel',
+    async (
+      method: string,
+      channel: string,
+      request: Record<string, unknown>
+    ) => {
+      const api = exposedApi() as {
+        nativeOverlayHost: Record<
+          string,
+          (request: unknown) => Promise<unknown>
+        >
+      }
+
+      await api.nativeOverlayHost[method](request)
+
+      expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+        channel,
+        request
+      )
+    }
+  )
+
+  test.each([
+    ['onRender', NATIVE_OVERLAY_RENDER],
+    ['onClear', NATIVE_OVERLAY_CLEAR],
+  ])(
+    'host %s registers on the correct channel',
+    (method: string, channel: string) => {
+      const api = exposedApi() as {
+        nativeOverlayHost: Record<
+          string,
+          (cb: (payload?: unknown) => void) => void
+        >
+      }
+
+      api.nativeOverlayHost[method](vi.fn())
+
+      expect(electronMock.ipcRenderer.on).toHaveBeenCalledWith(
+        channel,
+        expect.any(Function)
+      )
+    }
   )
 })

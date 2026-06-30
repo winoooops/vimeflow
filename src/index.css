@@ -107,6 +107,10 @@
     @apply bg-surface text-on-surface font-body overflow-hidden m-0;
   }
 
+  body[data-native-overlay-host='true'] {
+    background: transparent;
+  }
+
   .vf-app-drag-region {
     -webkit-app-region: drag;
     user-select: none;
