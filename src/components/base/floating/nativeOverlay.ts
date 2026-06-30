@@ -118,8 +118,15 @@ interface NativeOverlayBridge {
   onClose: (callback: (event: unknown) => void) => () => void
 }
 
+export type NativeOverlayActionHandler =
+  | (() => void)
+  | {
+      retainSession: true
+      run: () => void
+    }
+
 interface NativeOverlaySession {
-  actions: ReadonlyMap<string, () => void>
+  actions: ReadonlyMap<string, NativeOverlayActionHandler>
   onClose: () => void
 }
 
@@ -168,12 +175,22 @@ const handleAction = (event: unknown): void => {
   }
 
   const action = session.actions.get(event.actionId)
-  // Drop the session before running React code. Native overlay events are
-  // allowed to arrive twice or re-enter through the callback; removing first
-  // makes each surface/action id at-most-once. We intentionally do not retry
-  // callbacks because copy/paste/rename-style actions may have side effects.
-  sessions.delete(event.surfaceId)
-  action?.()
+  if (action === undefined) {
+    return
+  }
+
+  if (typeof action === 'function') {
+    // Drop the session before running React code. Native overlay events are
+    // allowed to arrive twice or re-enter through the callback; removing first
+    // makes each surface/action id at-most-once. We intentionally do not retry
+    // callbacks because copy/paste/rename-style actions may have side effects.
+    sessions.delete(event.surfaceId)
+    action()
+
+    return
+  }
+
+  action.run()
 }
 
 const handleClose = (event: unknown): void => {

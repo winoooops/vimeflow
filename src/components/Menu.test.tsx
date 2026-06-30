@@ -1055,35 +1055,158 @@ describe('Menu.Context', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  test('unsupported native overlay menu content falls back locally with a dev warning', () => {
+  test('anchored menus serialize checkboxes and keep them open for multi-select', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const nativeBridge = installNativeOverlayBridge()
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
 
     render(
-      <Menu.Context
-        position={{ x: 10, y: 20 }}
-        open
+      <Menu
+        trigger={<button type="button">Open layouts</button>}
+        placement="bottom-end"
+        aria-label="Displayed layouts"
         nativeOverlay
-        onOpenChange={vi.fn()}
-        aria-label="Terminal actions"
       >
-        <Menu.Checkbox checked onChange={vi.fn()}>
-          Word Wrap
-        </Menu.Checkbox>
-      </Menu.Context>
+        <Menu.Section label="Displayed layouts">
+          <Menu.Checkbox
+            aria-label="Quad"
+            checked
+            icon="dashboard"
+            onChange={onToggle}
+          >
+            <span>
+              <span aria-hidden="true">ignored glyph</span>
+              <span>Quad</span>
+            </span>
+          </Menu.Checkbox>
+        </Menu.Section>
+      </Menu>
     )
 
-    expect(screen.getByRole('menu')).toBeInTheDocument()
-    expect(nativeBridge.open).not.toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledWith(
-      '[vimeflow:native-overlay] falling back to local floating surface: unsupported menu content'
-    )
-    warn.mockRestore()
+    const trigger = screen.getByRole('button', { name: 'Open layouts' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      x: 11,
+      y: 22,
+      width: 33,
+      height: 44,
+      top: 22,
+      left: 11,
+      right: 44,
+      bottom: 66,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await user.click(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const checkbox = request.payload.sections?.[0]?.items[0]
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(checkbox).toMatchObject({
+      type: 'checkbox',
+      id: expect.any(String),
+      label: 'Quad',
+      icon: 'dashboard',
+      checked: true,
+    })
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: checkbox?.type === 'checkbox' ? checkbox.id : '',
+      })
+    })
+
+    expect(onToggle).toHaveBeenCalledWith(false)
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: checkbox?.type === 'checkbox' ? checkbox.id : '',
+      })
+    })
+
+    expect(onToggle).toHaveBeenCalledTimes(2)
   })
 
-  test('anchored menus with checkboxes fall back locally for multi-select', async () => {
+  test('anchored native checkbox menus resync after state changes', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    const Harness = (): ReactElement => {
+      const [checked, setChecked] = useState(true)
+
+      return (
+        <Menu
+          trigger={<button type="button">Open layouts</button>}
+          aria-label="Displayed layouts"
+          nativeOverlay
+        >
+          <Menu.Section label="Displayed layouts">
+            <Menu.Checkbox
+              aria-label="Quad"
+              checked={checked}
+              onChange={setChecked}
+            >
+              Quad
+            </Menu.Checkbox>
+          </Menu.Section>
+        </Menu>
+      )
+    }
+
+    render(<Harness />)
+
+    const trigger = screen.getByRole('button', { name: 'Open layouts' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      x: 11,
+      y: 22,
+      width: 33,
+      height: 44,
+      top: 22,
+      left: 11,
+      right: 44,
+      bottom: 66,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await user.click(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const firstRequest = nativeBridge.open.mock
+      .calls[0][0] as NativeOverlayRequest
+    const firstCheckbox = firstRequest.payload.sections?.[0]?.items[0]
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: firstRequest.surfaceId,
+        actionId: firstCheckbox?.type === 'checkbox' ? firstCheckbox.id : '',
+      })
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+
+    const secondRequest = nativeBridge.open.mock
+      .calls[1][0] as NativeOverlayRequest
+
+    expect(nativeBridge.close).toHaveBeenCalledWith({
+      surfaceId: firstRequest.surfaceId,
+      reason: 'renderer',
+    })
+
+    expect(secondRequest.payload.sections?.[0]?.items[0]).toMatchObject({
+      type: 'checkbox',
+      label: 'Quad',
+      checked: false,
+    })
+  })
+
+  test('anchored menus with unsupported content fall back locally for multi-select', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const nativeBridge = installNativeOverlayBridge()
@@ -1103,7 +1226,7 @@ describe('Menu.Context', () => {
         <Menu.Section label="Displayed layouts">
           <Menu.Checkbox checked onChange={onToggle}>
             <span>
-              <span aria-hidden="true">ignored glyph</span>
+              <strong>unsupported glyph</strong>
               <span>Quad</span>
             </span>
           </Menu.Checkbox>
@@ -1134,7 +1257,7 @@ describe('Menu.Context', () => {
     const menu = await screen.findByRole('menu')
 
     const checkbox = within(menu).getByRole('menuitemcheckbox', {
-      name: 'Quad',
+      name: /Quad/,
     })
 
     expect(nativeBridge.open).not.toHaveBeenCalled()

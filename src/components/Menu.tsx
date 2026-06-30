@@ -39,6 +39,7 @@ import {
   type NativeOverlayMenuSection,
   type NativeOverlayMenuSubAction,
   type NativeOverlayRequest,
+  type NativeOverlayActionHandler,
 } from '@/components/base/floating/nativeOverlay'
 import { OptionList, type DropdownOption } from '@/components/base/OptionList'
 import { type Placement } from '@/components/base/floating/glassSurface'
@@ -373,7 +374,7 @@ const MenuRoot = ({
 
   const nativeActionsRef = useRef<{
     payloadKey: string
-    actions: ReadonlyMap<string, () => void>
+    actions: ReadonlyMap<string, NativeOverlayActionHandler>
   } | null>(null)
   if (nativeActionsRef.current?.payloadKey !== nativePayloadKey) {
     nativeActionsRef.current = {
@@ -381,9 +382,7 @@ const MenuRoot = ({
       actions: new Map(
         Array.from(nativeSpec.actions.keys(), (actionId) => [
           actionId,
-          (): void => {
-            nativeSpecRef.current.actions.get(actionId)?.()
-          },
+          nativeMenuLiveAction(nativeSpecRef, actionId),
         ])
       ),
     }
@@ -1119,19 +1118,53 @@ interface MenuContextMenuProps {
 
 interface NativeMenuContextSpec {
   payload: NativeOverlayRequest['payload']
-  actions: ReadonlyMap<string, () => void>
+  actions: ReadonlyMap<string, NativeOverlayActionHandler>
   unsupportedReason: string | null
 }
 
 interface NativeMenuSerializedRow {
   item: NativeOverlayMenuItem
-  action: () => void
-  extraActions?: ReadonlyMap<string, () => void>
+  action: NativeOverlayActionHandler
+  extraActions?: ReadonlyMap<string, NativeOverlayActionHandler>
 }
 
 interface NativeMenuCompositeActions {
   actions: NativeOverlayMenuSubAction[]
-  extraActions: ReadonlyMap<string, () => void>
+  extraActions: ReadonlyMap<string, NativeOverlayActionHandler>
+}
+
+interface NativeMenuActionSpec {
+  actions: ReadonlyMap<string, NativeOverlayActionHandler>
+}
+
+const invokeNativeMenuAction = (
+  spec: NativeMenuActionSpec,
+  actionId: string
+): void => {
+  const action = spec.actions.get(actionId)
+  if (typeof action === 'function') {
+    action()
+
+    return
+  }
+
+  action?.run()
+}
+
+const nativeMenuLiveAction = (
+  specRef: MutableRefObject<NativeMenuActionSpec>,
+  actionId: string
+): NativeOverlayActionHandler => {
+  const action = specRef.current.actions.get(actionId)
+
+  if (typeof action === 'function') {
+    return (): void => invokeNativeMenuAction(specRef.current, actionId)
+  }
+
+  return {
+    retainSession: true,
+    run: (): void => invokeNativeMenuAction(specRef.current, actionId),
+  }
 }
 
 const nativeMenuSubActionFromRowAction = (
@@ -1332,6 +1365,41 @@ const nativeMenuItemFromElement = (
   }
 }
 
+const nativeMenuCheckboxFromElement = (
+  element: ReactElement<MenuCheckboxProps>,
+  id: string
+): NativeMenuSerializedRow | null => {
+  const label =
+    element.props['aria-label'] ??
+    textFromSerializableNode(element.props.children)
+  if (label === null || label.trim().length === 0) {
+    return null
+  }
+
+  const disabled = element.props.disabled === true
+
+  return {
+    item: {
+      type: 'checkbox',
+      id,
+      label: label.trim(),
+      ...(element.props.icon === undefined ? {} : { icon: element.props.icon }),
+      checked: element.props.checked,
+      ...(disabled ? { disabled: true } : {}),
+    },
+    action: {
+      retainSession: true,
+      run: (): void => {
+        if (disabled) {
+          return
+        }
+
+        element.props.onChange(!element.props.checked)
+      },
+    },
+  }
+}
+
 const isSerializableSeparator = (element: ReactElement): boolean =>
   element.type === 'div'
 
@@ -1342,11 +1410,11 @@ const nativeMenuSectionFromElement = (
   close: () => void
 ): {
   section: NativeOverlayMenuSection
-  actions: ReadonlyMap<string, () => void>
+  actions: ReadonlyMap<string, NativeOverlayActionHandler>
   unsupportedReason: string | null
 } => {
   const items: NativeOverlayMenuItem[] = []
-  const actions = new Map<string, () => void>()
+  const actions = new Map<string, NativeOverlayActionHandler>()
 
   for (const [itemIndex, child] of Children.toArray(
     element.props.children
@@ -1374,13 +1442,18 @@ const nativeMenuSectionFromElement = (
             id,
             close
           )
-        : child.type === MenuRow
-          ? nativeMenuRowFromElement(
-              child as ReactElement<MenuRowProps>,
-              id,
-              close
+        : child.type === MenuCheckbox
+          ? nativeMenuCheckboxFromElement(
+              child as ReactElement<MenuCheckboxProps>,
+              id
             )
-          : null
+          : child.type === MenuRow
+            ? nativeMenuRowFromElement(
+                child as ReactElement<MenuRowProps>,
+                id,
+                close
+              )
+            : null
 
     if (nativeRow === null) {
       return {
@@ -1416,7 +1489,7 @@ const nativeAnchoredMenuSpec = (
   close: () => void
 ): NativeMenuContextSpec => {
   const sections: NativeOverlayMenuSection[] = []
-  const actions = new Map<string, () => void>()
+  const actions = new Map<string, NativeOverlayActionHandler>()
 
   for (const [sectionIndex, child] of Children.toArray(children).entries()) {
     if (!isValidElement(child) || child.type !== MenuSection) {
@@ -1462,7 +1535,7 @@ const nativeMenuContextSpec = (
   close: () => void
 ): NativeMenuContextSpec => {
   const items: NativeOverlayMenuItem[] = []
-  const actions = new Map<string, () => void>()
+  const actions = new Map<string, NativeOverlayActionHandler>()
 
   for (const [index, child] of Children.toArray(children).entries()) {
     if (!isValidElement(child)) {
@@ -1482,13 +1555,18 @@ const nativeMenuContextSpec = (
             id,
             close
           )
-        : child.type === MenuItem
-          ? nativeMenuItemFromElement(
-              child as ReactElement<MenuItemProps>,
-              id,
-              close
+        : child.type === MenuCheckbox
+          ? nativeMenuCheckboxFromElement(
+              child as ReactElement<MenuCheckboxProps>,
+              id
             )
-          : null
+          : child.type === MenuItem
+            ? nativeMenuItemFromElement(
+                child as ReactElement<MenuItemProps>,
+                id,
+                close
+              )
+            : null
 
     if (nativeRow === null) {
       return {
@@ -1561,7 +1639,7 @@ const MenuContextMenu = ({
 
   const nativeActionsRef = useRef<{
     payloadKey: string
-    actions: ReadonlyMap<string, () => void>
+    actions: ReadonlyMap<string, NativeOverlayActionHandler>
   } | null>(null)
   if (nativeActionsRef.current?.payloadKey !== nativePayloadKey) {
     nativeActionsRef.current = {
@@ -1569,9 +1647,7 @@ const MenuContextMenu = ({
       actions: new Map(
         Array.from(nativeSpec.actions.keys(), (actionId) => [
           actionId,
-          (): void => {
-            nativeSpecRef.current.actions.get(actionId)?.()
-          },
+          nativeMenuLiveAction(nativeSpecRef, actionId),
         ])
       ),
     }
