@@ -1,0 +1,152 @@
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  __resetNativeOverlayForTest,
+  openNativeOverlay,
+  type NativeOverlayActionEvent,
+  type NativeOverlayRequest,
+} from './nativeOverlay'
+
+const requestForSurface = (surfaceId: string): NativeOverlayRequest => ({
+  surfaceId,
+  kind: 'menu',
+  anchorRect: {
+    x: 0,
+    y: 0,
+    width: 120,
+    height: 32,
+  },
+  placement: 'bottom-start',
+  payload: {
+    kind: 'menu',
+    items: [{ id: 'open', label: 'Open' }],
+  },
+})
+
+const deferredOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+  reject: (error: Error) => void
+} => {
+  let resolvePromise: ((value: { accepted: boolean }) => void) | null = null
+  let rejectPromise: ((error: Error) => void) | null = null
+
+  const promise = new Promise<{ accepted: boolean }>((resolve, reject) => {
+    resolvePromise = resolve
+    rejectPromise = reject
+  })
+
+  return {
+    promise,
+    resolve: (value): void => {
+      resolvePromise?.(value)
+    },
+    reject: (error): void => {
+      rejectPromise?.(error)
+    },
+  }
+}
+
+const installBridge = (
+  openResults: Promise<{ accepted: boolean }>[]
+): {
+  action: (event: NativeOverlayActionEvent) => void
+} => {
+  let actionListener: ((event: unknown) => void) | null = null
+
+  window.vimeflow = {
+    invoke: <T>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open: vi.fn(() => {
+        const result = openResults.shift()
+
+        if (result === undefined) {
+          throw new Error('unexpected native overlay open')
+        }
+
+        return result
+      }),
+      close: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        actionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return {
+    action: (event): void => {
+      actionListener?.(event)
+    },
+  }
+}
+
+afterEach(() => {
+  __resetNativeOverlayForTest()
+  delete window.vimeflow
+})
+
+describe('openNativeOverlay', () => {
+  test('does not let an older rejected open remove a newer session', async () => {
+    const olderOpen = deferredOpen()
+    const newerOpen = deferredOpen()
+    const bridge = installBridge([olderOpen.promise, newerOpen.promise])
+    const olderAction = vi.fn()
+    const newerAction = vi.fn()
+
+    const olderResult = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([['open', olderAction]]),
+      onClose: vi.fn(),
+    })
+
+    const newerResult = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([['open', newerAction]]),
+      onClose: vi.fn(),
+    })
+
+    newerOpen.resolve({ accepted: true })
+    olderOpen.resolve({ accepted: false })
+
+    await expect(newerResult).resolves.toBe(true)
+    await expect(olderResult).resolves.toBe(false)
+
+    bridge.action({ surfaceId: 'surface-1', actionId: 'open' })
+
+    expect(olderAction).not.toHaveBeenCalled()
+    expect(newerAction).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not let an older failed open remove a newer session', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const olderOpen = deferredOpen()
+    const newerOpen = deferredOpen()
+    const bridge = installBridge([olderOpen.promise, newerOpen.promise])
+    const newerAction = vi.fn()
+
+    const olderResult = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([['open', vi.fn()]]),
+      onClose: vi.fn(),
+    })
+
+    const newerResult = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([['open', newerAction]]),
+      onClose: vi.fn(),
+    })
+
+    newerOpen.resolve({ accepted: true })
+    olderOpen.reject(new Error('native open failed'))
+
+    await expect(newerResult).resolves.toBe(true)
+    await expect(olderResult).resolves.toBe(false)
+
+    bridge.action({ surfaceId: 'surface-1', actionId: 'open' })
+
+    expect(newerAction).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(
+      '[vimeflow:native-overlay] open failed',
+      expect.any(Error)
+    )
+  })
+})

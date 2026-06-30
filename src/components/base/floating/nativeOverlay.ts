@@ -216,14 +216,18 @@ export const openNativeOverlay = async (
     sessions.set(request.surfaceId, session)
     const result = await nativeBridge.open(request)
     if (!result.accepted) {
-      sessions.delete(request.surfaceId)
+      if (sessions.get(request.surfaceId) === session) {
+        sessions.delete(request.surfaceId)
+      }
 
       return false
     }
 
     return true
   } catch (error) {
-    sessions.delete(request.surfaceId)
+    if (sessions.get(request.surfaceId) === session) {
+      sessions.delete(request.surfaceId)
+    }
     log.warn('open failed', error)
 
     return false

@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-30
-ref_count: 74
+ref_count: 75
 ---
 
 # Async Race Conditions
@@ -498,6 +498,15 @@ prevent showing previous data.
 - **Fix:** Split the stop into "signal under gate, join outside gate." Added `pub(crate) fn TranscriptHandle::signal_stop(&self)` that stores true to `stop_flag` (and `aux_stop` if present) without joining. Changed `stop_with_held_gate(&str)` return type from `bool` to `Option<TranscriptHandle>`: it now removes the watcher from the map under the gate, calls `handle.signal_stop()` under the gate (so the tail thread starts winding down immediately), and returns the handle. `AgentWatcherState::insert` captures the returned handle in an OUTER-scope binding (`removed_transcript: Option<TranscriptHandle>`) so its Drop happens at end-of-function — OUTSIDE the gate's inner scope. Gate-hold time collapsed from ~500ms to ~µs.
 - **Trade-off (documented in stop_with_held_gate docstring):** Between gate release and the OLD tail actually observing stop_flag (at most one POLL_INTERVAL ≈ 500ms later), a concurrent `start_or_replace` can acquire the gate and spawn a fresh tail for the same session. Briefly there are two threads emitting events; the OLD thread exits at its next stop-flag check (within ≤ one poll iteration, typically ≤2 duplicate events). Frontend has no per-tool-call dedup; brief duplicates are an acceptable cost vs holding the gate for the full join. Code-review heuristic: when teardown involves both "stop the work" and "wait for the work to finish" steps, identify whether the gate needs to be held across BOTH or only the "stop" step. The "stop" usually only needs serialization with other state mutations; the "wait" can usually happen outside any lock as long as the to-be-joined work doesn't itself touch the state being protected. This pattern recurs: signal-under-lock + join-outside-lock is the right shape for most teardown-with-join scenarios.
 - **Commit:** _(PR #302 upsource cycle 11 fix commit)_
+
+### 53. Renderer overlay open failure must not evict a newer same-surface session
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/base/floating/nativeOverlay.ts` L217-227
+- **Finding:** `openNativeOverlay` registered a session under `surfaceId`, awaited `nativeBridge.open`, then unconditionally deleted `sessions[surfaceId]` when the open was rejected or threw. If React cleanup and a rapid reopen installed a newer session for the same `surfaceId` during that await, the older failed open removed the newer session, leaving the visible native overlay unable to dispatch actions or close callbacks.
+- **Fix:** Guard both failed-open cleanup paths with `sessions.get(request.surfaceId) === session` before deleting, so only the open call that still owns the map entry can clean it up. Added `nativeOverlay.test.ts` regressions for older rejected and older thrown opens racing with a newer accepted open.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 51. Closing the in-flight-dispatch race with a per-handle `alive` token checked under the gate inside `start_or_replace`
 
