@@ -553,6 +553,27 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test('owner close without reason defaults to renderer close without notifying the owner renderer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    handler(NATIVE_OVERLAY_CLOSE)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: request.surfaceId }
+    )
+
+    expect(overlayWindow.hide).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.anything()
+    )
+  })
+
   test('close after overlay window destruction updates owner without calling destroyed window methods', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },

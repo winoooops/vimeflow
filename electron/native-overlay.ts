@@ -370,10 +370,11 @@ export class NativeOverlayController {
       return
     }
 
+    const effectiveReason = payload.reason ?? 'renderer'
     this.closeSurface(
       payload.surfaceId,
-      payload.reason ?? 'renderer',
-      payload.reason !== 'renderer'
+      effectiveReason,
+      effectiveReason !== 'renderer'
     )
   }
 

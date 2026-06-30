@@ -2,8 +2,8 @@
 id: boolean-sentinel-consistency
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-28
-ref_count: 1
+last_updated: 2026-06-30
+ref_count: 2
 ---
 
 # Boolean Sentinel Consistency
@@ -52,4 +52,13 @@ encourages future contributors to invent yet another name for the same intent.
 - **File:** `src/features/terminal/nativeGhosttyClient.ts`
 - **Finding:** The native data and focus helpers used optional chaining, so a missing preload API produced `undefined`. The disabled-result check treated that as success, suppressing xterm fallback while no native bridge call happened.
 - **Fix:** Resolve the preload API into a local variable and return `false` immediately when it is absent, matching the existing update helper's fallback contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Optional close reason default only fed one derived branch
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** MEDIUM
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `NativeOverlayCloseRequest.reason` was optional, but `handleClose` defaulted the close reason to `renderer` while deriving the owner-notification flag from the raw optional value. An omitted reason therefore closed as renderer-initiated while still notifying the owner.
+- **Fix:** Resolve one `effectiveReason` local and use it for both the close reason and owner-notification check, with a regression test for omitted-reason closes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
