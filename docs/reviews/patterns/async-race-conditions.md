@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-30
-ref_count: 75
+ref_count: 76
 ---
 
 # Async Race Conditions
@@ -812,4 +812,18 @@ prevent showing previous data.
   `record.activeSurfaceId === surfaceId`. Stale closes still delete their
   surface record and settle pending ready promises, but they no longer disturb
   a newer active surface.
+- **Commit:** same commit as this entry
+
+### 78. Native overlay restored focus reopened the dismissed menu
+
+- **Source:** github-claude | PR #638 round 2 | 2026-06-30
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** The Git ref chip opened its native overlay from `focus`, but
+  native overlay dismissal restores focus to the owner window asynchronously.
+  If that focus event arrived before the close IPC updated the local guard, the
+  just-dismissed overlay could reopen without user intent.
+- **Fix:** Disabled focus-triggered opens for the native overlay path and kept
+  explicit click, Enter, Space, and ArrowDown activation. Added regression
+  coverage that restored focus alone does not call the native overlay bridge.
 - **Commit:** same commit as this entry

@@ -1,4 +1,4 @@
-import { clickBySelector } from '../../shared/actions.js'
+import { clickLayoutButton } from '../../shared/actions.js'
 import type { LayoutId, PaneKind } from '@/features/sessions/types'
 import {
   LAYOUTS,
@@ -208,7 +208,7 @@ const waitForPaneKinds = async (
 
 const switchToLayout = async (layout: LayoutShape): Promise<void> => {
   await waitForActiveSplitView()
-  await clickBySelector(`button[aria-label="${layout.name}"]`)
+  await clickLayoutButton(layout.name)
 
   await browser.waitUntil(
     async () =>

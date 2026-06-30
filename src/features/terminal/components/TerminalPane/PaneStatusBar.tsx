@@ -7,6 +7,7 @@ export interface PaneStatusBarProps {
   worktreeName: string | null
   branch: string | null
   cwd?: string
+  nativeOverlay?: boolean
   added: number
   removed: number
   lastActivityAt: string
@@ -30,6 +31,7 @@ export const PaneStatusBar = ({
   worktreeName,
   branch,
   cwd = undefined,
+  nativeOverlay = false,
   added,
   removed,
   lastActivityAt,
@@ -52,6 +54,7 @@ export const PaneStatusBar = ({
           branch={branch}
           cwd={cwd}
           collapsibleWorktree
+          nativeOverlay={nativeOverlay}
         />
       </div>
 

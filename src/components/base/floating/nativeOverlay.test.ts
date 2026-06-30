@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
+  nativeOverlayThemeSnapshot,
   openNativeOverlay,
   type NativeOverlayActionEvent,
   type NativeOverlayRequest,
@@ -50,8 +51,10 @@ const installBridge = (
   openResults: Promise<{ accepted: boolean }>[]
 ): {
   action: (event: NativeOverlayActionEvent) => void
+  actionResult: ReturnType<typeof vi.fn>
 } => {
   let actionListener: ((event: unknown) => void) | null = null
+  const actionResult = vi.fn(() => Promise.resolve())
 
   window.vimeflow = {
     invoke: <T>(): Promise<T> => Promise.resolve(null as T),
@@ -67,6 +70,7 @@ const installBridge = (
         return result
       }),
       close: vi.fn(() => Promise.resolve()),
+      actionResult,
       onAction: vi.fn((callback: (event: unknown) => void) => {
         actionListener = callback
 
@@ -77,6 +81,7 @@ const installBridge = (
   }
 
   return {
+    actionResult,
     action: (event): void => {
       actionListener?.(event)
     },
@@ -85,7 +90,29 @@ const installBridge = (
 
 afterEach(() => {
   __resetNativeOverlayForTest()
+  document.documentElement.removeAttribute('style')
+  document.documentElement.removeAttribute('data-theme')
   delete window.vimeflow
+})
+
+describe('nativeOverlayThemeSnapshot', () => {
+  test('captures the active theme tokens for the overlay renderer', () => {
+    const root = document.documentElement
+    root.dataset.theme = 'flexoki'
+    root.style.colorScheme = 'light'
+    root.style.setProperty('--color-surface', 'var(--color-test-surface)')
+    root.style.setProperty('--shadow-modal', 'var(--shadow-test-modal)')
+    root.style.setProperty('--layout-gap', '8px')
+
+    expect(nativeOverlayThemeSnapshot()).toEqual({
+      id: 'flexoki',
+      colorScheme: 'light',
+      variables: {
+        '--color-surface': 'var(--color-test-surface)',
+        '--shadow-modal': 'var(--shadow-test-modal)',
+      },
+    })
+  })
 })
 
 describe('openNativeOverlay', () => {
@@ -148,5 +175,82 @@ describe('openNativeOverlay', () => {
       '[vimeflow:native-overlay] open failed',
       expect.any(Error)
     )
+  })
+
+  test('reports copy feedback success only after the retained action succeeds', async () => {
+    const open = deferredOpen()
+    const bridge = installBridge([open.promise])
+    const copy = vi.fn(() => Promise.resolve(true))
+
+    const result = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([
+        [
+          'copy',
+          {
+            retainSession: true,
+            run: copy,
+          },
+        ],
+      ]),
+      onClose: vi.fn(),
+    })
+
+    open.resolve({ accepted: true })
+    await expect(result).resolves.toBe(true)
+
+    bridge.action({
+      surfaceId: 'surface-1',
+      actionId: 'copy',
+      feedback: 'copy',
+      closeOnSelect: false,
+    })
+
+    expect(bridge.actionResult).not.toHaveBeenCalled()
+    await Promise.resolve()
+
+    expect(copy).toHaveBeenCalledOnce()
+    expect(bridge.actionResult).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'copy',
+      feedback: 'copy',
+      ok: true,
+    })
+  })
+
+  test('reports copy feedback failure when the retained action fails', async () => {
+    const open = deferredOpen()
+    const bridge = installBridge([open.promise])
+
+    const result = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([
+        [
+          'copy',
+          {
+            retainSession: true,
+            run: (): boolean => false,
+          },
+        ],
+      ]),
+      onClose: vi.fn(),
+    })
+
+    open.resolve({ accepted: true })
+    await expect(result).resolves.toBe(true)
+
+    bridge.action({
+      surfaceId: 'surface-1',
+      actionId: 'copy',
+      feedback: 'copy',
+      closeOnSelect: false,
+    })
+
+    await Promise.resolve()
+
+    expect(bridge.actionResult).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'copy',
+      feedback: 'copy',
+      ok: false,
+    })
   })
 })

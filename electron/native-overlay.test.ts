@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
@@ -228,12 +229,13 @@ const finishOverlayLoad = (): FakeWindow => {
 }
 
 const acknowledgeOverlayReady = async (
-  overlayWindow: FakeWindow
+  overlayWindow: FakeWindow,
+  surfaceId: string = request.surfaceId
 ): Promise<void> => {
   await Promise.resolve()
   handler(NATIVE_OVERLAY_READY)(
     { sender: overlayWindow.webContents },
-    { surfaceId: request.surfaceId }
+    { surfaceId }
   )
 }
 
@@ -262,13 +264,17 @@ describe('NativeOverlayController', () => {
     await acknowledgeOverlayReady(overlayWindow)
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalledWith(
+      expect.objectContaining({ focusable: false })
+    )
+
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         acceptFirstMouse: true,
         backgroundColor: '#00000000',
-        focusable: true,
         frame: false,
         hasShadow: false,
+        parent: electronMock.owner,
         show: false,
         skipTaskbar: true,
         transparent: true,
@@ -303,6 +309,9 @@ describe('NativeOverlayController', () => {
     })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
     expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.showInactive.mock.invocationCallOrder[0]).toBeLessThan(
+      overlayWindow.webContents.focus.mock.invocationCallOrder[0]
+    )
   })
 
   test('accepts sectioned menu payloads with composite rows', async () => {
@@ -368,6 +377,40 @@ describe('NativeOverlayController', () => {
       { surfaceId: sectionRequest.surfaceId }
     )
 
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+  })
+
+  test('accepts themed menu payloads for the overlay renderer', async () => {
+    const themedRequest = {
+      ...request,
+      surfaceId: 'surface-themed',
+      payload: {
+        ...request.payload,
+        surfaceTone: 'primary-container-soft',
+      },
+      theme: {
+        id: 'flexoki',
+        colorScheme: 'light',
+        variables: {
+          '--color-surface-container-high': 'var(--color-test-surface-high)',
+          '--shadow-menu': 'var(--shadow-test-menu)',
+        },
+      },
+    } as const
+
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      themedRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await Promise.resolve()
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      themedRequest
+    )
+
+    await acknowledgeOverlayReady(overlayWindow, themedRequest.surfaceId)
     await expect(openPromise).resolves.toEqual({ accepted: true })
   })
 
@@ -574,6 +617,65 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test.each(['blur', 'hide', 'minimize'])(
+    'parent window %s dismisses the overlay without refocusing the owner',
+    async (eventName) => {
+      const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        request
+      )
+      const overlayWindow = finishOverlayLoad()
+      await acknowledgeOverlayReady(overlayWindow)
+      await openPromise
+
+      electronMock.owner.webContents.focus.mockClear()
+      electronMock.owner.emit(eventName)
+
+      expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLEAR
+      )
+      expect(overlayWindow.hide).toHaveBeenCalledOnce()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+      expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+      expect(electronMock.owner.webContents.focus).not.toHaveBeenCalled()
+      expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLOSED,
+        { surfaceId: request.surfaceId, reason: 'outside' }
+      )
+    }
+  )
+
+  test('parent window close tears down the overlay before it can stand alone', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    electronMock.owner.webContents.focus.mockClear()
+    electronMock.owner.emit('close')
+
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(overlayWindow.hide).toHaveBeenCalledOnce()
+    expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+    expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+    expect(overlayWindow.close).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.focus).not.toHaveBeenCalled()
+    expect(electronMock.owner.removeListener).toHaveBeenCalledWith(
+      'close',
+      expect.any(Function)
+    )
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      { surfaceId: request.surfaceId, reason: 'owner-closed' }
+    )
+  })
+
   test('close after overlay window destruction updates owner without calling destroyed window methods', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -664,6 +766,79 @@ describe('NativeOverlayController', () => {
     expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
       NATIVE_OVERLAY_ACTION,
       { surfaceId: request.surfaceId, actionId: 'copy' }
+    )
+  })
+
+  test('action can keep the overlay open for copy feedback', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    handler(NATIVE_OVERLAY_ACTION)(
+      { sender: overlayWindow.webContents },
+      {
+        surfaceId: request.surfaceId,
+        actionId: 'copy',
+        closeOnSelect: false,
+        feedback: 'copy',
+      }
+    )
+
+    handler(NATIVE_OVERLAY_ACTION)(
+      { sender: overlayWindow.webContents },
+      {
+        surfaceId: request.surfaceId,
+        actionId: 'copy',
+        closeOnSelect: false,
+        feedback: 'copy',
+      }
+    )
+
+    expect(overlayWindow.hide).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledTimes(2)
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION,
+      {
+        surfaceId: request.surfaceId,
+        actionId: 'copy',
+        closeOnSelect: false,
+        feedback: 'copy',
+      }
+    )
+
+    const result = {
+      surfaceId: request.surfaceId,
+      actionId: 'copy',
+      feedback: 'copy',
+      ok: true,
+    } as const
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: overlayWindow.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
+    )
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: electronMock.owner.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
     )
   })
 

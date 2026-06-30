@@ -18,6 +18,7 @@
     "electron:build:linux:x64": "node scripts/package-electron.mjs linux-x64",
     "electron:build:mac:arm64": "node scripts/package-electron.mjs mac-arm64",
     "electron:dev": "npm run generate:bindings && npm run backend:build && vite --mode electron",
+    "electron:dev:ghostty": "npm run ghostty:native-parent:build && cross-env VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 npm run electron:dev -- --port 5174",
     "ghostty:native-parent:build": "node scripts/build-ghostty-native-parent.js",
     "ghostty:native-parent:smoke": "node scripts/smoke-ghostty-native-parent.js",
     "prepare": "husky",

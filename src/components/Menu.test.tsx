@@ -47,6 +47,7 @@ const installNativeOverlayBridge = (): {
     nativeOverlay: {
       open,
       close,
+      actionResult: vi.fn(() => Promise.resolve()),
       onAction: vi.fn((callback: (event: unknown) => void) => {
         actionListener = callback
 
@@ -96,6 +97,8 @@ afterEach(() => {
   vi.clearAllMocks()
   restorePlatform?.()
   restorePlatform = null
+  document.documentElement.removeAttribute('style')
+  document.documentElement.removeAttribute('data-theme')
   delete window.vimeflow
 })
 
@@ -1023,6 +1026,74 @@ describe('Menu.Context', () => {
     })
 
     expect(onSelect).toHaveBeenCalledOnce()
+  })
+
+  test('serializes context menu detail rows with anchor-width matching', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const root = document.documentElement
+    root.dataset.theme = 'flexoki'
+    root.style.colorScheme = 'light'
+    root.style.setProperty(
+      '--color-surface-container-high',
+      'var(--color-test-surface-high)'
+    )
+    root.style.setProperty('--shadow-menu', 'var(--shadow-test-menu)')
+
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60, width: 180, height: 22 }}
+        open
+        nativeOverlay
+        matchAnchorWidth
+        onOpenChange={vi.fn()}
+        aria-label="Git ref details"
+      >
+        <Menu.Row
+          label="Copy path"
+          nativeOverlayIcon="folder_open"
+          nativeOverlayDetail="/Users/will/projects/vimeflow"
+          nativeOverlayFeedback="copy"
+          onSelect={vi.fn()}
+        >
+          <span aria-hidden="true">folder_open</span>
+          <span>path</span>
+          <span>/Users/will/projects/vimeflow</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+
+    expect(request).toMatchObject({
+      anchorRect: { x: 50, y: 60, width: 180, height: 22 },
+      theme: {
+        id: 'flexoki',
+        colorScheme: 'light',
+        variables: {
+          '--color-surface-container-high': 'var(--color-test-surface-high)',
+          '--shadow-menu': 'var(--shadow-test-menu)',
+        },
+      },
+      payload: {
+        kind: 'menu',
+        ariaLabel: 'Git ref details',
+        matchAnchorWidth: true,
+        items: [
+          {
+            id: expect.any(String),
+            label: 'Copy path',
+            detail: '/Users/will/projects/vimeflow',
+            icon: 'folder_open',
+            feedback: 'copy',
+            closeOnSelect: false,
+          },
+        ],
+      },
+    })
   })
 
   test('native overlay outside close flows back through onOpenChange', async () => {
