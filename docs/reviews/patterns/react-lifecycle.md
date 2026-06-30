@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 62
+last_updated: 2026-06-30
+ref_count: 63
 ---
 
 # React Lifecycle
@@ -584,3 +584,21 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
   that reference through both the focus fallback path and `GhosttyBody`, so
   parent re-renders no longer restart the native surface lifecycle.
 - **Commit:** same commit as this entry
+
+### 61. Native overlay menu effect depended on reference-unstable JSX children
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `nativeSpec` was memoized from `children`, then the native open effect depended on the resulting payload and actions. Parent renders create fresh JSX element references, so unrelated workspace updates could close and reopen the active native overlay.
+- **Fix:** Rebuilt the spec each render but keyed the native open effect on the serialized payload, with action and close callbacks routed through live refs. Identical payloads now keep the same native session across parent rerenders.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 62. Native checkbox rows closed a multi-select menu after every toggle
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** Native overlay checkbox actions called the same close callback as one-shot menu items. The layout display menu therefore dismissed after each checkbox toggle, regressing the DOM menu's multi-select behavior.
+- **Fix:** Removed checkbox serialization from the v0 native menu builder so menus containing `Menu.Checkbox` fall back to the local DOM menu. Existing DOM checkbox behavior remains open for repeated toggles.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

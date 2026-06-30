@@ -231,10 +231,7 @@ export const openNativeOverlay = async (
 }
 
 export const closeNativeOverlay = (surfaceId: string): void => {
-  if (!sessions.delete(surfaceId)) {
-    return
-  }
-
+  sessions.delete(surfaceId)
   void bridge()?.close({ surfaceId, reason: 'renderer' })
 }
 

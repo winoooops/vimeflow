@@ -356,21 +356,44 @@ const MenuRoot = ({
     },
     [onOpenChange]
   )
+  const handleOpenChangeRef = useRef(handleOpenChange)
+  handleOpenChangeRef.current = handleOpenChange
 
   const transport = selectFloatingTransport(nativeOverlay)
 
-  const nativeSpec = useMemo(
-    () =>
-      nativeAnchoredMenuSpec(surfaceId, ariaLabel, children, () =>
-        handleOpenChange(false)
-      ),
-    [ariaLabel, children, handleOpenChange, surfaceId]
+  const nativeSpec = nativeAnchoredMenuSpec(
+    surfaceId,
+    ariaLabel,
+    children,
+    () => handleOpenChangeRef.current(false)
   )
+  const nativeSpecRef = useRef(nativeSpec)
+  nativeSpecRef.current = nativeSpec
+  const nativePayloadKey = JSON.stringify(nativeSpec.payload)
+
+  const nativeActionsRef = useRef<{
+    payloadKey: string
+    actions: ReadonlyMap<string, () => void>
+  } | null>(null)
+  if (nativeActionsRef.current?.payloadKey !== nativePayloadKey) {
+    nativeActionsRef.current = {
+      payloadKey: nativePayloadKey,
+      actions: new Map(
+        Array.from(nativeSpec.actions.keys(), (actionId) => [
+          actionId,
+          (): void => {
+            nativeSpecRef.current.actions.get(actionId)?.()
+          },
+        ])
+      ),
+    }
+  }
+
+  const nativeActions = nativeActionsRef.current.actions
+  const nativeUnsupportedReason = nativeSpec.unsupportedReason
 
   const canAttemptNative =
-    open &&
-    transport === 'native-overlay' &&
-    nativeSpec.unsupportedReason === null
+    open && transport === 'native-overlay' && nativeUnsupportedReason === null
 
   // If this menu opted into NativeOverlay but contains content we cannot turn
   // into plain IPC data, keep the normal DOM menu and warn only in dev builds.
@@ -384,11 +407,11 @@ const MenuRoot = ({
     if (
       nativeOverlay &&
       transport === 'native-overlay' &&
-      nativeSpec.unsupportedReason !== null
+      nativeUnsupportedReason !== null
     ) {
-      warnNativeOverlayFallback(nativeSpec.unsupportedReason)
+      warnNativeOverlayFallback(nativeUnsupportedReason)
     }
-  }, [nativeOverlay, nativeSpec.unsupportedReason, open, transport])
+  }, [nativeOverlay, nativeUnsupportedReason, open, transport])
 
   // When the native transport is available, measure the trigger and send main a
   // serializable menu request. The local menu stays hidden unless that open
@@ -423,11 +446,11 @@ const MenuRoot = ({
             height: triggerRect.height,
           },
           placement,
-          payload: nativeSpec.payload,
+          payload: nativeSpecRef.current.payload,
         },
         {
-          actions: nativeSpec.actions,
-          onClose: (): void => handleOpenChange(false),
+          actions: nativeActions,
+          onClose: (): void => handleOpenChangeRef.current(false),
         }
       )
 
@@ -444,14 +467,7 @@ const MenuRoot = ({
       cancelled.current = true
       closeNativeOverlay(surfaceId)
     }
-  }, [
-    canAttemptNative,
-    handleOpenChange,
-    nativeSpec.actions,
-    nativeSpec.payload,
-    placement,
-    surfaceId,
-  ])
+  }, [canAttemptNative, nativeActions, nativePayloadKey, placement, surfaceId])
 
   useEffect(() => {
     if (closeSignalRef.current === closeSignal) {
@@ -1318,40 +1334,6 @@ const nativeMenuItemFromElement = (
   }
 }
 
-const nativeMenuCheckboxFromElement = (
-  element: ReactElement<MenuCheckboxProps>,
-  id: string,
-  close: () => void
-): NativeMenuSerializedRow | null => {
-  const label =
-    element.props['aria-label'] ??
-    textFromSerializableNode(element.props.children)
-  if (label === null || label.trim().length === 0) {
-    return null
-  }
-
-  const disabled = element.props.disabled === true
-
-  return {
-    item: {
-      type: 'checkbox',
-      id,
-      label: label.trim(),
-      checked: element.props.checked,
-      ...(element.props.icon === undefined ? {} : { icon: element.props.icon }),
-      ...(disabled ? { disabled: true } : {}),
-    },
-    action: (): void => {
-      if (disabled) {
-        return
-      }
-
-      element.props.onChange(!element.props.checked)
-      close()
-    },
-  }
-}
-
 const isSerializableSeparator = (element: ReactElement): boolean =>
   element.type === 'div'
 
@@ -1394,19 +1376,13 @@ const nativeMenuSectionFromElement = (
             id,
             close
           )
-        : child.type === MenuCheckbox
-          ? nativeMenuCheckboxFromElement(
-              child as ReactElement<MenuCheckboxProps>,
+        : child.type === MenuRow
+          ? nativeMenuRowFromElement(
+              child as ReactElement<MenuRowProps>,
               id,
               close
             )
-          : child.type === MenuRow
-            ? nativeMenuRowFromElement(
-                child as ReactElement<MenuRowProps>,
-                id,
-                close
-              )
-            : null
+          : null
 
     if (nativeRow === null) {
       return {
@@ -1573,21 +1549,41 @@ const MenuContextMenu = ({
     },
     [onOpenChange]
   )
+  const handleOpenChangeRef = useRef(handleOpenChange)
+  handleOpenChangeRef.current = handleOpenChange
 
   const transport = selectFloatingTransport(nativeOverlay)
 
-  const nativeSpec = useMemo(
-    () =>
-      nativeMenuContextSpec(surfaceId, ariaLabel, children, () =>
-        handleOpenChange(false)
-      ),
-    [ariaLabel, children, handleOpenChange, surfaceId]
+  const nativeSpec = nativeMenuContextSpec(surfaceId, ariaLabel, children, () =>
+    handleOpenChangeRef.current(false)
   )
+  const nativeSpecRef = useRef(nativeSpec)
+  nativeSpecRef.current = nativeSpec
+  const nativePayloadKey = JSON.stringify(nativeSpec.payload)
+
+  const nativeActionsRef = useRef<{
+    payloadKey: string
+    actions: ReadonlyMap<string, () => void>
+  } | null>(null)
+  if (nativeActionsRef.current?.payloadKey !== nativePayloadKey) {
+    nativeActionsRef.current = {
+      payloadKey: nativePayloadKey,
+      actions: new Map(
+        Array.from(nativeSpec.actions.keys(), (actionId) => [
+          actionId,
+          (): void => {
+            nativeSpecRef.current.actions.get(actionId)?.()
+          },
+        ])
+      ),
+    }
+  }
+
+  const nativeActions = nativeActionsRef.current.actions
+  const nativeUnsupportedReason = nativeSpec.unsupportedReason
 
   const canAttemptNative =
-    open &&
-    transport === 'native-overlay' &&
-    nativeSpec.unsupportedReason === null
+    open && transport === 'native-overlay' && nativeUnsupportedReason === null
 
   useEffect(() => {
     if (!open) {
@@ -1599,11 +1595,11 @@ const MenuContextMenu = ({
     if (
       nativeOverlay &&
       transport === 'native-overlay' &&
-      nativeSpec.unsupportedReason !== null
+      nativeUnsupportedReason !== null
     ) {
-      warnNativeOverlayFallback(nativeSpec.unsupportedReason)
+      warnNativeOverlayFallback(nativeUnsupportedReason)
     }
-  }, [nativeOverlay, nativeSpec.unsupportedReason, open, transport])
+  }, [nativeOverlay, nativeUnsupportedReason, open, transport])
 
   useEffect(() => {
     if (!canAttemptNative) {
@@ -1627,11 +1623,11 @@ const MenuContextMenu = ({
             height: position.height ?? 0,
           },
           placement,
-          payload: nativeSpec.payload,
+          payload: nativeSpecRef.current.payload,
         },
         {
-          actions: nativeSpec.actions,
-          onClose: (): void => handleOpenChange(false),
+          actions: nativeActions,
+          onClose: (): void => handleOpenChangeRef.current(false),
         }
       )
 
@@ -1650,9 +1646,8 @@ const MenuContextMenu = ({
     }
   }, [
     canAttemptNative,
-    handleOpenChange,
-    nativeSpec.actions,
-    nativeSpec.payload,
+    nativeActions,
+    nativePayloadKey,
     placement,
     position.x,
     position.y,

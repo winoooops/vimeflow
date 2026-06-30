@@ -43,13 +43,13 @@ When appending findings to a pattern file, label the source so future readers ca
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 8    | 2026-06-22   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 3        | 0    | 2026-06-15   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 60       | 62   | 2026-06-28   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 65       | 63   | 2026-06-30   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 24       | 21   | 2026-06-28   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 25       | 22   | 2026-06-30   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 13       | 12   | 2026-06-28   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 15       | 12   | 2026-06-26   |
@@ -59,15 +59,16 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 84       | 38   | 2026-06-25   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 9        | 4    | 2026-06-28   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 94       | 91   | 2026-06-28   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 81       | 32   | 2026-06-22   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 82       | 81   | 2026-06-30   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 76       | 73   | 2026-06-28   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
-| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 1    | 2026-06-17   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 2    | 2026-06-21   |
+| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 2    | 2026-06-17   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 3    | 2026-06-21   |
+| [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 0    | 2026-06-30   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |

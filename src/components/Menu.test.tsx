@@ -72,6 +72,24 @@ const installNativeOverlayBridge = (): {
   }
 }
 
+const deferredNativeOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolvePromise: ((value: { accepted: boolean }) => void) | null = null
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolvePromise = resolve
+  })
+
+  return {
+    promise,
+    resolve: (value): void => {
+      resolvePromise?.(value)
+    },
+  }
+}
+
 afterEach(() => {
   __resetNativeOverlayForTest()
   vi.unstubAllEnvs()
@@ -1065,7 +1083,7 @@ describe('Menu.Context', () => {
     warn.mockRestore()
   })
 
-  test('anchored menus send trigger rects and v1 section checkbox payloads', async () => {
+  test('anchored menus with checkboxes fall back locally for multi-select', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const nativeBridge = installNativeOverlayBridge()
@@ -1113,75 +1131,20 @@ describe('Menu.Context', () => {
     } as DOMRect)
 
     await user.click(trigger)
-    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const menu = await screen.findByRole('menu')
 
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(request).toMatchObject({
-      kind: 'menu',
-      anchorRect: { x: 11, y: 22, width: 33, height: 44 },
-      placement: 'bottom-end',
-      payload: {
-        kind: 'menu',
-        ariaLabel: 'Displayed layouts',
-        sections: [
-          {
-            label: 'Displayed layouts',
-            items: [
-              {
-                type: 'checkbox',
-                id: expect.any(String),
-                label: 'Quad',
-                checked: true,
-              },
-            ],
-          },
-          {
-            items: [
-              { type: 'separator' },
-              {
-                id: expect.any(String),
-                label: 'Create custom layout',
-                icon: 'dashboard_customize',
-              },
-            ],
-          },
-        ],
-      },
+    const checkbox = within(menu).getByRole('menuitemcheckbox', {
+      name: 'Quad',
     })
 
-    const checkbox = request.payload.sections?.[0]?.items[0]
-    const create = request.payload.sections?.[1]?.items[1]
+    expect(nativeBridge.open).not.toHaveBeenCalled()
 
-    act(() => {
-      nativeBridge.action({
-        surfaceId: request.surfaceId,
-        actionId:
-          checkbox?.type === 'separator' || checkbox === undefined
-            ? ''
-            : checkbox.id,
-      })
-    })
+    await user.click(checkbox)
 
     expect(onToggle).toHaveBeenCalledWith(false)
     expect(onCreate).not.toHaveBeenCalled()
-    expect(onOpenChange).toHaveBeenLastCalledWith(false)
-
-    await user.click(trigger)
-    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
-
-    const secondRequest = nativeBridge.open.mock
-      .calls[1][0] as NativeOverlayRequest
-
-    act(() => {
-      nativeBridge.action({
-        surfaceId: secondRequest.surfaceId,
-        actionId:
-          create?.type === 'separator' || create === undefined ? '' : create.id,
-      })
-    })
-
-    expect(onCreate).toHaveBeenCalledOnce()
+    expect(onOpenChange).not.toHaveBeenLastCalledWith(false)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
   test('anchored menus serialize composite rows with trailing actions', async () => {
@@ -1247,6 +1210,93 @@ describe('Menu.Context', () => {
 
     expect(onDuplicate).toHaveBeenCalledOnce()
     expect(onPick).not.toHaveBeenCalled()
+  })
+
+  test('native overlay stays open across parent rerenders with identical payload', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onPick = vi.fn()
+    const user = userEvent.setup()
+
+    const Harness = (): ReactElement => {
+      const [tick, setTick] = useState(0)
+
+      return (
+        <>
+          <button type="button" onClick={(): void => setTick(tick + 1)}>
+            Rerender {tick}
+          </button>
+          <Menu.Context
+            position={{ x: 50, y: 60 }}
+            open
+            nativeOverlay
+            onOpenChange={vi.fn()}
+            aria-label="Terminal actions"
+          >
+            <Menu.Row label="Copy" onSelect={onPick}>
+              <span>Copy</span>
+            </Menu.Row>
+          </Menu.Context>
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+
+    await user.click(screen.getByRole('button', { name: 'Rerender 0' }))
+
+    expect(nativeBridge.open).toHaveBeenCalledOnce()
+    expect(nativeBridge.close).not.toHaveBeenCalled()
+
+    act(() => {
+      const item = request.payload.items?.[0]
+
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId:
+          item === undefined || item.type === 'separator' ? '' : item.id,
+      })
+    })
+
+    expect(onPick).toHaveBeenCalledOnce()
+  })
+
+  test('cancelled pending native opens send close after the open resolves', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open.mockReturnValueOnce(pending.promise)
+
+    const { unmount } = render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    unmount()
+
+    expect(nativeBridge.close).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(2)
   })
 
   test('anchored menus fall back locally when content cannot be serialized', async () => {

@@ -334,6 +334,7 @@ export class NativeOverlayController {
     record.syncBounds()
     record.overlayWindow.setIgnoreMouseEvents(false)
     record.overlayWindow.showInactive()
+    record.overlayWindow.webContents.focus()
     // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
     // still land behind it. The screen-saver level reliably places this
     // transparent overlay window above that native surface while it is open.
@@ -358,10 +359,14 @@ export class NativeOverlayController {
   }
 
   private readonly handleClose = (
-    _event: IpcMainInvokeEvent,
+    event: IpcMainInvokeEvent,
     payload: unknown
   ): void => {
     if (!isCloseRequest(payload)) {
+      return
+    }
+
+    if (!this.surfaceFromCloseSender(payload.surfaceId, event.sender)) {
       return
     }
 
@@ -552,6 +557,28 @@ export class NativeOverlayController {
 
     const record = this.overlays.get(surface.parentId)
     if (record?.overlayWindow.webContents !== sender) {
+      return null
+    }
+
+    return surface
+  }
+
+  private surfaceFromCloseSender(
+    surfaceId: string,
+    sender: WebContents
+  ): NativeOverlaySurface | null {
+    const surface = this.surfaces.get(surfaceId)
+    if (!surface) {
+      return null
+    }
+
+    const record = this.overlays.get(surface.parentId)
+    // Close is intentionally dual-caller: the owner renderer cancels local
+    // sessions, while the overlay host closes on outside-press or Escape.
+    if (
+      surface.owner !== sender &&
+      record?.overlayWindow.webContents !== sender
+    ) {
       return null
     }
 

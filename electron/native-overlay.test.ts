@@ -302,7 +302,7 @@ describe('NativeOverlayController', () => {
       height: 500,
     })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
   test('accepts sectioned menu payloads with composite rows', async () => {
@@ -420,7 +420,7 @@ describe('NativeOverlayController', () => {
 
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
   test('syncs bounds when the parent moves or resizes', async () => {
@@ -469,6 +469,59 @@ describe('NativeOverlayController', () => {
     expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
       NATIVE_OVERLAY_CLOSED,
       { surfaceId: request.surfaceId, reason: 'outside' }
+    )
+  })
+
+  test('owner close hides the overlay without notifying the owner renderer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    handler(NATIVE_OVERLAY_CLOSE)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: request.surfaceId, reason: 'renderer' }
+    )
+
+    expect(overlayWindow.hide).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.anything()
+    )
+  })
+
+  test('rejects close requests from unrelated renderers', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    const unrelated = {
+      ...electronMock.owner.webContents,
+      id: 999,
+      send: vi.fn(),
+      focus: vi.fn(),
+    }
+
+    handler(NATIVE_OVERLAY_CLOSE)(
+      { sender: unrelated },
+      { surfaceId: request.surfaceId, reason: 'outside' }
+    )
+
+    expect(overlayWindow.hide).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.anything()
     )
   })
 
