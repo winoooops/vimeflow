@@ -1796,6 +1796,9 @@ export const Panel = ({
   const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
   const pendingFeedbackCount = feedbackCount + feedbackDraftCount
 
+  const onFinishFeedback =
+    feedbackCount > 0 ? (): void => setFinishOpen(true) : undefined
+
   const finishFeedback = {
     open: finishOpen,
     result: resolveCandidatePanes({
@@ -1859,7 +1862,7 @@ export const Panel = ({
             totalFiles: 0,
             feedbackCount: pendingFeedbackCount,
             onDiscardFeedback: feedback.clearBatch,
-            onFinishFeedback: (): void => setFinishOpen(true),
+            onFinishFeedback,
           }}
           finishFeedback={finishFeedback}
           keyboardConfirm={null}
@@ -1950,7 +1953,7 @@ export const Panel = ({
             selectedFileName: selectedFilePath ?? undefined,
             feedbackCount: pendingFeedbackCount,
             onDiscardFeedback: feedback.clearBatch,
-            onFinishFeedback: (): void => setFinishOpen(true),
+            onFinishFeedback,
           }}
           finishFeedback={finishFeedback}
           keyboardConfirm={keyboardConfirm}

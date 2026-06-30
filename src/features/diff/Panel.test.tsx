@@ -430,9 +430,18 @@ describe('Panel', () => {
     )
 
     expect(screen.getByTestId('diff-empty-state')).toBeInTheDocument()
+
+    const finishButton = screen.getByRole('button', {
+      name: /finish feedback \(1\)/i,
+    })
+
+    expect(finishButton).toBeDisabled()
+
+    await user.click(finishButton)
+
     expect(
-      screen.getByRole('button', { name: /finish feedback \(1\)/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('dialog', { name: 'Finish feedback' })
+    ).not.toBeInTheDocument()
 
     await user.click(
       screen.getByRole('button', { name: /discard all feedback/i })

@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-30
-ref_count: 12
+ref_count: 13
 ---
 
 # Derived State Consistency
@@ -194,4 +194,18 @@ base data is technically "correct."
 - **File:** `src/features/diff/Panel.tsx`
 - **Finding:** The empty diff state derived toolbar feedback visibility only from submitted annotations. When a non-empty draft survived after its file or hunk disappeared from git status, the workspace still had a pending draft-only review but the empty-state Discard/Finish controls were hidden.
 - **Fix:** Derive the toolbar pending-feedback count from submitted annotations plus a non-empty draft, so users can discard draft-only reviews even when the diff has no changed files. Added an empty-state regression test for a draft-only feedback store.
+- **Commit:** same commit as this entry
+
+### 17. Draft-only feedback enabled Finish for an empty dispatch
+
+- **Source:** github-codex-connector | PR #637 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The toolbar pending-feedback count included draft text so the
+  draft-only Discard action stayed visible, but the same count also made Finish
+  clickable even though dispatch only sends submitted annotations.
+- **Fix:** Keep the draft-inclusive count for action visibility, but only pass a
+  Finish handler when submitted annotations exist. Added a regression test that
+  draft-only empty-state feedback keeps Discard enabled while Finish is
+  disabled and cannot open the popover.
 - **Commit:** same commit as this entry
