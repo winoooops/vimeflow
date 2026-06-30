@@ -920,7 +920,7 @@ const MenuCheckbox = ({
   children,
 }: MenuCheckboxProps): ReactElement => {
   const menu = useMenuContext()
-  const label = typeof children === 'string' ? children : ''
+  const label = ariaLabel ?? (typeof children === 'string' ? children : '')
   const { index, ref } = useMenuRow(disabled, label)
 
   return (
@@ -1323,7 +1323,9 @@ const nativeMenuCheckboxFromElement = (
   id: string,
   close: () => void
 ): NativeMenuSerializedRow | null => {
-  const label = textFromSerializableNode(element.props.children)
+  const label =
+    element.props['aria-label'] ??
+    textFromSerializableNode(element.props.children)
   if (label === null || label.trim().length === 0) {
     return null
   }
