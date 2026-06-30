@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 73
+last_updated: 2026-06-30
+ref_count: 74
 ---
 
 # Async Race Conditions
@@ -786,4 +786,21 @@ prevent showing previous data.
 - **Fix:** Call `ReleaseSurfaceCallbacks(surface)` at the start of finalization
   and remove the direct TSFN cleanup block, so both explicit destroy and GC
   fallback use the same idempotent, mutex-protected release path.
+- **Commit:** same commit as this entry
+
+### 77. Stale native overlay close reset a newer active surface
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `closeSurface` reset the shared overlay window without checking
+  whether the closing surface still owned `activeSurfaceId`. Two rapid opens
+  could both cross the async overlay-ready gap, then an older render timeout
+  could hide and clear the newer accepted overlay while the renderer still
+  believed native mode was active.
+- **Fix:** Gate active-surface bookkeeping, overlay clear/hide, always-on-top
+  reset, mouse-event reset, and owner focus restoration on
+  `record.activeSurfaceId === surfaceId`. Stale closes still delete their
+  surface record and settle pending ready promises, but they no longer disturb
+  a newer active surface.
 - **Commit:** same commit as this entry

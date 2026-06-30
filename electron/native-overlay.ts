@@ -527,19 +527,24 @@ export class NativeOverlayController {
     }
 
     const record = this.overlays.get(surface.parentId)
+    const isActiveSurface = record?.activeSurfaceId === surfaceId
     this.surfaces.delete(surfaceId)
     this.resolvePendingReady(surfaceId, false)
 
-    if (record) {
+    if (record && isActiveSurface) {
       record.activeSurfaceId = null
-      record.overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
-      record.overlayWindow.hide()
-      record.overlayWindow.setAlwaysOnTop(false)
-      record.overlayWindow.setIgnoreMouseEvents(true)
+      if (!record.overlayWindow.isDestroyed()) {
+        record.overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
+        record.overlayWindow.hide()
+        record.overlayWindow.setAlwaysOnTop(false)
+        record.overlayWindow.setIgnoreMouseEvents(true)
+      }
     }
 
     if (!surface.owner.isDestroyed()) {
-      surface.owner.focus()
+      if (isActiveSurface) {
+        surface.owner.focus()
+      }
       if (notifyOwner) {
         surface.owner.send(NATIVE_OVERLAY_CLOSED, { surfaceId, reason })
       }
