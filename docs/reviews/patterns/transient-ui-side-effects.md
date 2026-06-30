@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-26
-ref_count: 3
+last_updated: 2026-06-30
+ref_count: 4
 ---
 
 # Transient UI Side Effects
@@ -123,4 +123,18 @@ to persistent state through a separate, explicit path.
   suppresses the status bar and threaded it through `Header` to `HeaderActions`.
   Added regression coverage for the awaiting-restart pane and header forwarding
   behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Native overlay host retained stale theme variables
+
+- **Source:** github-claude | PR #638 round 1 | 2026-06-30
+- **Severity:** MEDIUM
+- **File:** `src/components/NativeOverlayHost.tsx`
+- **Finding:** `applyThemeSnapshot` returned immediately when a native overlay
+  render request omitted `theme`, leaving any prior CSS variables, `data-theme`,
+  and `colorScheme` on the persistent overlay document.
+- **Fix:** Reset theme-owned `--color-*` and `--shadow-*` inline properties plus
+  theme metadata before each render, then apply the new snapshot only when one
+  is present. Added regression coverage for a themed request followed by an
+  unthemed request in the same host window.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

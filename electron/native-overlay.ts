@@ -96,6 +96,7 @@ interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
   matchAnchorWidth?: boolean
+  surfaceTone?: string
   items?: NativeOverlayMenuItem[]
   sections?: NativeOverlayMenuSection[]
 }
@@ -261,6 +262,7 @@ const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   (value.ariaLabel === undefined || typeof value.ariaLabel === 'string') &&
   (value.matchAnchorWidth === undefined ||
     typeof value.matchAnchorWidth === 'boolean') &&
+  (value.surfaceTone === undefined || typeof value.surfaceTone === 'string') &&
   (hasMenuItems(value.items) || hasMenuSections(value.sections))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>

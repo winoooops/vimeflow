@@ -397,6 +397,44 @@ describe('NativeOverlayHost', () => {
     expect(within(row).getByText('Copied')).toHaveClass('text-[10px]')
   })
 
+  test('clears prior theme tokens when a later request has no theme', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(detailRequest)
+    expect(
+      await screen.findByRole('menu', { name: 'Git ref details' })
+    ).toBeInTheDocument()
+    expect(document.documentElement.dataset.theme).toBe('flexoki')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--color-surface-container-high'
+      )
+    ).toBe('var(--color-test-surface-high)')
+
+    expect(
+      document.documentElement.style.getPropertyValue('--shadow-menu')
+    ).toBe('var(--shadow-test-menu)')
+
+    bridge.emitRender(request)
+
+    expect(
+      await screen.findByRole('menu', { name: 'Terminal actions' })
+    ).toBeInTheDocument()
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+    expect(document.documentElement.style.colorScheme).toBe('')
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--color-surface-container-high'
+      )
+    ).toBe('')
+
+    expect(document.documentElement.style.getPropertyValue('--shadow-menu')).toBe(
+      ''
+    )
+  })
+
   test('closes on Escape and clears on host clear', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()

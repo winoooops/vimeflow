@@ -107,6 +107,17 @@ const overlayMenuActionButtonClass = (pressed: boolean): string =>
       : 'text-on-surface-muted hover:bg-on-surface/10 hover:text-primary'
   }`
 
+const resetThemeSnapshot = (root: HTMLElement): void => {
+  for (const name of Array.from(root.style)) {
+    if (name.startsWith('--color-') || name.startsWith('--shadow-')) {
+      root.style.removeProperty(name)
+    }
+  }
+
+  delete root.dataset.theme
+  root.style.colorScheme = ''
+}
+
 const overlayMenuRowClass = (item: NativeOverlayMenuItem): string =>
   'detail' in item && item.detail !== undefined
     ? OVERLAY_MENU_DETAIL_ROW_CLASSES
@@ -145,11 +156,13 @@ const isCompositeItem = (
 const applyThemeSnapshot = (
   theme: NativeOverlayRequest['theme'] | undefined
 ): void => {
+  const root = document.documentElement
+  resetThemeSnapshot(root)
+
   if (theme === undefined) {
     return
   }
 
-  const root = document.documentElement
   for (const [name, value] of Object.entries(theme.variables)) {
     root.style.setProperty(name, value)
   }

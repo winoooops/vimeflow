@@ -267,6 +267,7 @@ describe('NativeOverlayController', () => {
     expect(electronMock.BrowserWindow).not.toHaveBeenCalledWith(
       expect.objectContaining({ focusable: false })
     )
+
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         acceptFirstMouse: true,
@@ -383,6 +384,10 @@ describe('NativeOverlayController', () => {
     const themedRequest = {
       ...request,
       surfaceId: 'surface-themed',
+      payload: {
+        ...request.payload,
+        surfaceTone: 'primary-container-soft',
+      },
       theme: {
         id: 'flexoki',
         colorScheme: 'light',

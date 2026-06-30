@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-28
-ref_count: 7
+last_updated: 2026-06-30
+ref_count: 8
 ---
 
 # Type Contract Safety
@@ -157,3 +157,17 @@ expands.
   `VITE_GHOSTTY_NATIVE_MACOS` or `VITE_GHOSTTY_NATIVE_MACOS_PARENT` is enabled,
   matching the main-process registration guard.
 - **Commit:** same commit as this entry
+
+### 14. Native overlay menu payload omitted `surfaceTone`
+
+- **Source:** github-claude | PR #638 round 1 | 2026-06-30
+- **Severity:** LOW
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The renderer-side native overlay payload included
+  `surfaceTone`, but the main-process `NativeOverlayMenuPayload` type and guard
+  only knew about `matchAnchorWidth`, leaving the protocol shape split across
+  process boundaries.
+- **Fix:** Added `surfaceTone?: string` to the Electron-side menu payload and
+  accepted string values in the runtime validator. Extended the themed overlay
+  controller test to pass the field through to the renderer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
