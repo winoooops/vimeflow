@@ -418,8 +418,6 @@ const MenuRoot = ({
   // attempt is rejected, which preserves the existing fallback path.
   useEffect(() => {
     if (!canAttemptNative) {
-      closeNativeOverlay(surfaceId)
-
       return
     }
 
@@ -1603,8 +1601,6 @@ const MenuContextMenu = ({
 
   useEffect(() => {
     if (!canAttemptNative) {
-      closeNativeOverlay(surfaceId)
-
       return
     }
 
