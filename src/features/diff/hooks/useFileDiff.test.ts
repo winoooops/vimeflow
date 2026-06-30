@@ -6,62 +6,51 @@ import type { FileDiff } from '../types'
 import type { GitService } from '../services/gitService'
 import * as gitServiceModule from '../services/gitService'
 
-const navBarDiff: FileDiff = {
-  filePath: 'src/components/NavBar.tsx',
-  oldPath: 'src/components/NavBar.tsx',
-  newPath: 'src/components/NavBar.tsx',
-  hunks: [
-    {
-      id: 'hunk-0',
-      header: '@@ -1 +1 @@',
-      oldStart: 1,
-      oldLines: 1,
-      newStart: 1,
-      newLines: 1,
-      lines: [
-        { type: 'removed', oldLineNumber: 1, content: 'old nav' },
-        { type: 'added', newLineNumber: 1, content: 'new nav' },
-      ],
-    },
-  ],
+const makeDiff = (
+  filePath: string,
+  oldContent: string | null,
+  newContent: string
+): FileDiff => {
+  const isNewFile = oldContent === null
+
+  return {
+    filePath,
+    oldPath: isNewFile ? '/dev/null' : filePath,
+    newPath: filePath,
+    hunks: [
+      {
+        id: 'hunk-0',
+        header: isNewFile ? '@@ -0,0 +1 @@' : '@@ -1 +1 @@',
+        oldStart: isNewFile ? 0 : 1,
+        oldLines: isNewFile ? 0 : 1,
+        newStart: 1,
+        newLines: 1,
+        lines: [
+          ...(oldContent === null
+            ? []
+            : [
+                {
+                  type: 'removed' as const,
+                  oldLineNumber: 1,
+                  content: oldContent,
+                },
+              ]),
+          { type: 'added', newLineNumber: 1, content: newContent },
+        ],
+      },
+    ],
+  }
 }
 
-const terminalDiff: FileDiff = {
-  filePath: 'src/components/TerminalPanel.tsx',
-  oldPath: 'src/components/TerminalPanel.tsx',
-  newPath: 'src/components/TerminalPanel.tsx',
-  hunks: [
-    {
-      id: 'hunk-0',
-      header: '@@ -1 +1 @@',
-      oldStart: 1,
-      oldLines: 1,
-      newStart: 1,
-      newLines: 1,
-      lines: [
-        { type: 'removed', oldLineNumber: 1, content: 'old terminal' },
-        { type: 'added', newLineNumber: 1, content: 'new terminal' },
-      ],
-    },
-  ],
-}
+const navBarDiff = makeDiff('src/components/NavBar.tsx', 'old nav', 'new nav')
 
-const apiDiff: FileDiff = {
-  filePath: 'src/utils/api-helper.rs',
-  oldPath: '/dev/null',
-  newPath: 'src/utils/api-helper.rs',
-  hunks: [
-    {
-      id: 'hunk-0',
-      header: '@@ -0,0 +1 @@',
-      oldStart: 0,
-      oldLines: 0,
-      newStart: 1,
-      newLines: 1,
-      lines: [{ type: 'added', newLineNumber: 1, content: 'use reqwest;' }],
-    },
-  ],
-}
+const terminalDiff = makeDiff(
+  'src/components/TerminalPanel.tsx',
+  'old terminal',
+  'new terminal'
+)
+
+const apiDiff = makeDiff('src/utils/api-helper.rs', null, 'use reqwest;')
 
 const fileDiffs: Record<string, FileDiff> = {
   [navBarDiff.filePath]: navBarDiff,

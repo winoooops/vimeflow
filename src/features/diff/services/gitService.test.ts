@@ -24,9 +24,11 @@ vi.mock('../../../lib/environment', () => ({
 const mockedInvoke = vi.mocked(invoke)
 const mockedIsDesktop = vi.mocked(isDesktop)
 
+const testFilePath = 'src/components/NavBar.tsx'
+
 const changedFilesFixture: ChangedFile[] = [
   {
-    path: 'src/components/NavBar.tsx',
+    path: testFilePath,
     status: 'modified',
     insertions: 1,
     deletions: 1,
@@ -34,10 +36,10 @@ const changedFilesFixture: ChangedFile[] = [
   },
 ]
 
-const fileDiffFixture: FileDiff = {
-  filePath: 'src/components/NavBar.tsx',
-  oldPath: 'src/components/NavBar.tsx',
-  newPath: 'src/components/NavBar.tsx',
+const makeFileDiff = (filePath = testFilePath): FileDiff => ({
+  filePath,
+  oldPath: filePath,
+  newPath: filePath,
   hunks: [
     {
       id: 'hunk-0',
@@ -52,19 +54,37 @@ const fileDiffFixture: FileDiff = {
       ],
     },
   ],
+})
+
+const makeDiffResponse = (filePath = testFilePath): GetGitDiffResponse => {
+  const fileDiff = makeFileDiff(filePath)
+
+  return {
+    fileDiff: {
+      ...fileDiff,
+      oldPath: fileDiff.oldPath ?? null,
+      newPath: fileDiff.newPath ?? null,
+    },
+    oldText: 'old\n',
+    newText: 'new\n',
+    rawDiff: '@@ -1 +1 @@\n-old\n+new\n',
+    repoRoot: '/repo',
+  }
 }
 
-const diffResponseFixture: GetGitDiffResponse = {
+const fileDiffFixture = makeFileDiff()
+const diffResponseFixture = makeDiffResponse()
+
+const makeInvokeDiffResponse = (): Omit<GetGitDiffResponse, 'repoRoot'> => ({
   fileDiff: {
     ...fileDiffFixture,
     oldPath: fileDiffFixture.oldPath ?? null,
     newPath: fileDiffFixture.newPath ?? null,
   },
-  oldText: 'old\n',
-  newText: 'new\n',
-  rawDiff: '@@ -1 +1 @@\n-old\n+new\n',
-  repoRoot: '/repo',
-}
+  oldText: 'old',
+  newText: 'new',
+  rawDiff: '@@',
+})
 
 beforeEach(() => {
   mockedInvoke.mockReset()
@@ -114,17 +134,15 @@ describe('HttpGitService', () => {
 
   describe('getDiff', () => {
     test('fetches diff from /api/git/diff with file param', async () => {
-      const file = 'src/components/NavBar.tsx'
-
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve(diffResponseFixture),
       })
 
-      const response = await service.getDiff(file)
+      const response = await service.getDiff(testFilePath)
 
       expect(fetchMock).toHaveBeenCalledWith(
-        `/api/git/diff?file=${encodeURIComponent(file)}&staged=false`
+        `/api/git/diff?file=${encodeURIComponent(testFilePath)}&staged=false`
       )
       expect(response).toEqual(diffResponseFixture)
     })
@@ -134,13 +152,7 @@ describe('HttpGitService', () => {
 
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () =>
-          Promise.resolve({
-            fileDiff: fileDiffFixture,
-            oldText: '',
-            newText: '',
-            rawDiff: '',
-          }),
+        json: () => Promise.resolve(makeDiffResponse(file)),
       })
 
       await service.getDiff(file, true)
@@ -151,23 +163,15 @@ describe('HttpGitService', () => {
     })
 
     test('includes untracked parameter when provided', async () => {
-      const file = 'src/components/NavBar.tsx'
-
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () =>
-          Promise.resolve({
-            fileDiff: fileDiffFixture,
-            oldText: '',
-            newText: '',
-            rawDiff: '',
-          }),
+        json: () => Promise.resolve(diffResponseFixture),
       })
 
-      await service.getDiff(file, false, true)
+      await service.getDiff(testFilePath, false, true)
 
       expect(fetchMock).toHaveBeenCalledWith(
-        `/api/git/diff?file=${encodeURIComponent(file)}&staged=false&untracked=true`
+        `/api/git/diff?file=${encodeURIComponent(testFilePath)}&staged=false&untracked=true`
       )
     })
 
@@ -371,54 +375,39 @@ describe('DesktopGitService', () => {
 
   describe('getDiff', () => {
     test('calls invoke with get_git_diff command and correct args', async () => {
-      const mockResponse = {
-        fileDiff: fileDiffFixture,
-        oldText: 'old',
-        newText: 'new',
-        rawDiff: '@@',
-      }
+      const mockResponse = makeInvokeDiffResponse()
       invokeMock.mockResolvedValueOnce(mockResponse)
 
-      const response = await service.getDiff('src/components/NavBar.tsx', false)
+      const response = await service.getDiff(testFilePath, false)
 
       expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
         cwd: '/home/user/project',
-        file: 'src/components/NavBar.tsx',
+        file: testFilePath,
         staged: false,
       })
       expect(response).toEqual(mockResponse)
     })
 
     test('calls invoke with staged=true when requested', async () => {
-      invokeMock.mockResolvedValueOnce({
-        fileDiff: fileDiffFixture,
-        oldText: '',
-        newText: '',
-        rawDiff: '',
-      })
+      invokeMock.mockResolvedValueOnce(makeInvokeDiffResponse())
 
-      await service.getDiff('src/components/NavBar.tsx', true)
+      await service.getDiff(testFilePath, true)
 
       expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
         cwd: '/home/user/project',
-        file: 'src/components/NavBar.tsx',
+        file: testFilePath,
         staged: true,
       })
     })
 
     test('passes untracked flag to get_git_diff', async () => {
-      invokeMock.mockResolvedValueOnce({
-        fileDiff: fileDiffFixture,
-        oldText: '',
-        newText: '',
-        rawDiff: '',
-      })
+      invokeMock.mockResolvedValueOnce(makeInvokeDiffResponse())
 
-      await service.getDiff('src/components/NavBar.tsx', false, true)
+      await service.getDiff(testFilePath, false, true)
 
       expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
         cwd: '/home/user/project',
-        file: 'src/components/NavBar.tsx',
+        file: testFilePath,
         staged: false,
         untracked: true,
       })
@@ -427,9 +416,7 @@ describe('DesktopGitService', () => {
     test('throws error on invoke failure', async () => {
       invokeMock.mockRejectedValueOnce(new Error('Diff failed'))
 
-      await expect(
-        service.getDiff('src/components/NavBar.tsx')
-      ).rejects.toThrow(
+      await expect(service.getDiff(testFilePath)).rejects.toThrow(
         'Failed to get diff for src/components/NavBar.tsx: Error: Diff failed'
       )
     })
