@@ -86,6 +86,10 @@ const useMenuContext = (): MenuContextValue => {
 
 const MENU_BODY_CLASSES = 'py-1 min-w-52 max-h-[28rem] overflow-auto'
 
+export const isNativeOverlayMenuTransportActive = (
+  nativeOverlay: boolean
+): boolean => selectFloatingTransport(nativeOverlay) === 'native-overlay'
+
 const CONTEXT_MENU_SURFACE_BASE_CLASSES =
   'z-[110] overflow-hidden rounded-md border shadow-lg outline-none focus:outline-none focus-visible:outline-none'
 

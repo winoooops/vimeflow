@@ -7,7 +7,7 @@ import {
   type ReactElement,
 } from 'react'
 import { Chip } from '@/components/Chip'
-import { Menu } from '@/components/Menu'
+import { Menu, isNativeOverlayMenuTransportActive } from '@/components/Menu'
 import { writeClipboardText } from '@/lib/clipboard'
 
 export interface GitRefChipProps {
@@ -240,6 +240,9 @@ export const GitRefChip = ({
   const tooltipCwd = cwd !== undefined && cwd.length > 0 ? cwd : null
   const copyRows = composeCopyRows(worktreeName, branch, tooltipCwd, detached)
 
+  const usesNativeOverlayTransport =
+    isNativeOverlayMenuTransportActive(nativeOverlay)
+
   // `max-w-full` + `min-w-0` cap the chip at its container's width so the
   // branch label truncates with an ellipsis instead of the chip overflowing
   // and being hard-clipped (the Chip primitive is `shrink-0`).
@@ -311,7 +314,7 @@ export const GitRefChip = ({
   }
 
   const handleFocus = (): void => {
-    if (nativeOverlay) {
+    if (usesNativeOverlayTransport) {
       return
     }
 

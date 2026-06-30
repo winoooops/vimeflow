@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-30
-ref_count: 82
+ref_count: 83
 ---
 
 # Accessibility
@@ -771,4 +771,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `electron/native-overlay.ts`
 - **Finding:** The native overlay `BrowserWindow` was created with `focusable: false`, so keyboard-opened menus could render above the owner window but could not receive Arrow or Enter events for row navigation and activation.
 - **Fix:** Removed the non-focusable window option and focused the overlay `webContents` immediately after `showInactive()`, preserving owner-focus restoration on close. Electron controller tests now assert the overlay is not created with `focusable: false` and receives focus after being shown.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 76. Focus auto-open was disabled in local native-overlay fallback mode
+
+- **Source:** github-claude | PR #638 round 2 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx` L313-316
+- **Finding:** `GitRefChip` suppressed focus-triggered menu opening whenever the `nativeOverlay` prop was true, but the caller now passes that prop unconditionally while the actual native overlay transport remains feature-flagged and macOS-gated. Default local fallback builds therefore lost the prior Tab-to-chip keyboard auto-open behavior.
+- **Fix:** Reused the floating transport selector for the focus guard so focus auto-open is suppressed only when the native overlay transport is actually active. Added a regression test covering `nativeOverlay={true}` with the default local fallback.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

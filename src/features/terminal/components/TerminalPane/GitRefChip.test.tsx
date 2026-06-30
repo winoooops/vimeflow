@@ -342,6 +342,25 @@ test('GitRefChip opens the copy menu from keyboard focus', async () => {
   ).toBeInTheDocument()
 })
 
+test('GitRefChip keeps focus auto-open when nativeOverlay falls back locally', async () => {
+  const user = userEvent.setup()
+  render(
+    <GitRefChip
+      worktreeName="feat-jose"
+      branch="feat/jose-auth"
+      cwd="/Users/will/projects/vimeflow/.claude/worktrees/feat-jose"
+      nativeOverlay
+    />
+  )
+
+  await user.tab()
+
+  expect(
+    screen.getByRole('menu', { name: 'Git ref details' })
+  ).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: 'Copy worktree' })).toHaveFocus()
+})
+
 test('GitRefChip closes on Escape without reopening from restored focus', async () => {
   const user = userEvent.setup()
   render(
