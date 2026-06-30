@@ -89,7 +89,7 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
-import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
+import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -148,6 +148,24 @@ const rateLimitPercentage = (
   }
 
   return Math.round(limit.usedPercentage)
+}
+
+const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
+
+const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
+  `${sessionId}:${paneId}`
+
+interface PendingFeedbackReview {
+  key: string
+  label: string
+  commentCount: number
+  fileCount: number
+}
+
+interface FeedbackOwnerTarget {
+  sessionId: string
+  paneId: string
+  label: string
 }
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
@@ -1752,18 +1770,79 @@ const WorkspaceViewContent = (): ReactElement => {
   const [selectedDiffFile, setSelectedDiffFile] =
     useState<SelectedDiffFile | null>(null)
 
-  const feedbackBatch = useFeedbackBatch()
-  const feedbackRepoRootRef = useRef('')
-  const { clearBatch: clearFeedbackBatch } = feedbackBatch
-  const previousFeedbackCwdRef = useRef(activeCwd)
+  const activeFeedbackOwnerKey =
+    activeSessionId !== null && activePtyBackedPaneId !== undefined
+      ? makeFeedbackOwnerKey(activeSessionId, activePtyBackedPaneId)
+      : UNBOUND_FEEDBACK_OWNER_KEY
 
-  useEffect(() => {
-    if (previousFeedbackCwdRef.current !== activeCwd) {
-      previousFeedbackCwdRef.current = activeCwd
-      feedbackRepoRootRef.current = ''
-      clearFeedbackBatch()
+  const {
+    feedbackBatch,
+    feedbackRepoRootRef,
+    summaries: feedbackSummaries,
+    pruneOwners: pruneFeedbackOwners,
+  } = useFeedbackBatchStore(activeFeedbackOwnerKey, activeCwd)
+
+  useLayoutEffect(() => {
+    pruneFeedbackOwners(livePaneKeys)
+  }, [livePaneKeys, pruneFeedbackOwners])
+
+  const feedbackOwnerTargets = useMemo(() => {
+    const targets = new Map<string, FeedbackOwnerTarget>()
+
+    for (const session of sessions) {
+      for (const pane of session.panes) {
+        const label =
+          pane.userLabel ??
+          pane.agentTitle ??
+          (session.panes.length > 1
+            ? `${session.name} · ${pane.id}`
+            : session.name)
+
+        targets.set(makeFeedbackOwnerKey(session.id, pane.id), {
+          sessionId: session.id,
+          paneId: pane.id,
+          label,
+        })
+      }
     }
-  }, [activeCwd, clearFeedbackBatch])
+
+    return targets
+  }, [sessions])
+
+  const pendingFeedbackReviews = useMemo<PendingFeedbackReview[]>(
+    () =>
+      feedbackSummaries.flatMap((summary) => {
+        const target = feedbackOwnerTargets.get(summary.ownerKey)
+
+        return target
+          ? [
+              {
+                key: summary.ownerKey,
+                label: target.label,
+                commentCount: summary.commentCount,
+                fileCount: summary.fileCount,
+              },
+            ]
+          : []
+      }),
+    [feedbackOwnerTargets, feedbackSummaries]
+  )
+
+  // Called by the diff dock's unfinished-review selector when the user picks a
+  // pending review owned by another terminal pane.
+  const handlePendingFeedbackReviewSelect = useCallback(
+    (key: string): void => {
+      const target = feedbackOwnerTargets.get(key)
+      if (!target) {
+        return
+      }
+
+      setActiveSessionId(target.sessionId)
+      setSessionActivePane(target.sessionId, target.paneId)
+      openDock('diff')
+    },
+    [feedbackOwnerTargets, openDock, setActiveSessionId, setSessionActivePane]
+  )
 
   const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
   const editorFileLookupCwd = parentPathForFileLookup(editorBuffer.filePath)
@@ -2448,6 +2527,9 @@ const WorkspaceViewContent = (): ReactElement => {
       feedbackBatch={feedbackBatch}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
+      pendingFeedbackReviews={pendingFeedbackReviews}
+      activeFeedbackReviewKey={activeFeedbackOwnerKey}
+      onPendingFeedbackReviewSelect={handlePendingFeedbackReviewSelect}
     />
   ) : // Closed dock renders nothing — the bottom action bar's dock toggle is
   // the single reopen affordance (the old "show panel" peek bar is gone).

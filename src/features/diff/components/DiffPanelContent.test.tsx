@@ -24,8 +24,14 @@ import type { GitService } from '../services/gitService'
 import * as gitServiceModule from '../services/gitService'
 import * as pierreAdapterModule from '../services/pierreAdapter'
 import * as useFeedbackBatchModule from '../hooks/useFeedbackBatch'
+import {
+  makeBatchKey,
+  type ReviewComment,
+  type UseFeedbackBatchReturn,
+} from '../hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from '../services/activePanePicker'
+import type { DiffLineAnnotation } from '@pierre/diffs'
 
 // Mock the hooks
 vi.mock('../hooks/useGitStatus')
@@ -299,6 +305,76 @@ describe('DiffPanelContent', () => {
     const panel = screen.getByTestId('diff-empty-panel')
     expect(panel).toHaveClass('items-center')
     expect(panel).toHaveClass('justify-center')
+  })
+
+  test('keeps feedback actions available in the empty state', async (): Promise<void> => {
+    const user = userEvent.setup()
+    const clearBatch = vi.fn()
+
+    const annotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 1,
+      metadata: {
+        id: 'comment-1',
+        text: 'Needs review',
+        author: 'self',
+        createdAt: 1000,
+      },
+    }
+
+    const batch = new Map([
+      [makeBatchKey('/repo/old', 'src/foo.ts', false), [annotation]],
+    ])
+
+    const feedbackBatch: UseFeedbackBatchReturn = {
+      batch,
+      annotationsForFile: () => [],
+      addAnnotation: () => 'ok',
+      updateAnnotation: vi.fn(),
+      removeAnnotation: vi.fn(),
+      clearBatch,
+      totalAnnotations: () => 1,
+    }
+
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [],
+      filesCwd: '/repo/current',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+    )
+
+    render(
+      <DiffPanelContent cwd="/repo/current" feedbackBatch={feedbackBatch} />
+    )
+
+    expect(screen.getByTestId('diff-empty-state')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /finish feedback \(1\)/i })
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: /discard all feedback/i })
+    )
+
+    expect(clearBatch).toHaveBeenCalledOnce()
+
+    await user.click(
+      screen.getByRole('button', { name: /finish feedback \(1\)/i })
+    )
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Finish feedback' })
+    ).toBeInTheDocument()
   })
 
   test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {

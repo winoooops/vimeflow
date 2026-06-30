@@ -284,6 +284,7 @@ interface MenuProps {
   variant?: 'default' | 'compact'
   // Opt out of scroll-dismiss where a consumer's behavior differs (spec §5.3).
   middleware?: { ancestorScroll?: boolean }
+  bodyClassName?: string
   'aria-label'?: string
   onOpenChange?: (open: boolean) => void
   children: ReactNode
@@ -306,6 +307,7 @@ const MenuRoot = ({
   width = undefined,
   variant = 'default',
   middleware = undefined,
+  bodyClassName = undefined,
   'aria-label': ariaLabel = undefined,
   onOpenChange = undefined,
   children,
@@ -465,7 +467,8 @@ const MenuRoot = ({
             variant === 'compact' ? CONTEXT_MENU_SURFACE_CLASSES : undefined
           }
           bodyClassName={
-            variant === 'compact' ? CONTEXT_MENU_BODY_CLASSES : undefined
+            bodyClassName ??
+            (variant === 'compact' ? CONTEXT_MENU_BODY_CLASSES : undefined)
           }
           ariaLabel={ariaLabel}
           contextValue={contextValue}
@@ -712,6 +715,7 @@ interface MenuItemProps {
   /** Rich leading visual (brand SVG / accent chip) for when a material-symbol `icon` isn't enough. */
   leadingIcon?: ReactNode
   shortcut?: ShortcutInput
+  active?: boolean
   disabled?: boolean
   onSelect: () => void
   children: ReactNode
@@ -721,6 +725,7 @@ const MenuItem = ({
   icon = undefined,
   leadingIcon = undefined,
   shortcut = undefined,
+  active = false,
   disabled = false,
   onSelect,
   children,
@@ -735,8 +740,11 @@ const MenuItem = ({
       role="menuitem"
       ref={ref}
       tabIndex={menu.activeIndex === index ? 0 : -1}
+      aria-current={active ? 'true' : undefined}
       aria-disabled={disabled ? true : undefined}
-      className={`${ITEM_CLASSES} ${DISABLED_ITEM_CLASSES}`}
+      className={`${ITEM_CLASSES} ${
+        active ? 'bg-primary-container/15' : ''
+      } ${DISABLED_ITEM_CLASSES}`}
       {...menu.getItemProps({
         onClick: (): void => {
           if (disabled) {
@@ -748,7 +756,7 @@ const MenuItem = ({
         },
       })}
     >
-      <span className="flex items-center gap-2.5">
+      <span className="flex min-w-0 flex-1 items-center gap-2.5">
         {leadingIcon}
         {icon !== undefined ? (
           <span aria-hidden="true" className={ITEM_ICON_CLASSES}>
