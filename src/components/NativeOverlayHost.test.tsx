@@ -123,6 +123,7 @@ const detailRequest: NativeOverlayRequest = {
     kind: 'menu',
     ariaLabel: 'Git ref details',
     matchAnchorWidth: true,
+    surfaceTone: 'primary-container-soft',
     items: [
       {
         id: 'copy-path',
@@ -146,12 +147,15 @@ const installNativeOverlayHostBridge = (): {
   ownerOverlayClose: ReturnType<typeof vi.fn>
   emitRender: (payload: unknown) => void
   emitClear: () => void
+  emitActionResult: (payload: unknown) => void
 } => {
   cleanupHostBridgeEvents?.()
   const renderEvent = 'native-overlay-host-render'
   const clearEvent = 'native-overlay-host-clear'
+  const actionResultEvent = 'native-overlay-host-action-result'
   let renderListener: ((payload: unknown) => void) | null = null
   let clearListener: (() => void) | null = null
+  let actionResultListener: ((payload: unknown) => void) | null = null
   const ready = vi.fn(() => Promise.resolve())
   const action = vi.fn(() => Promise.resolve())
   const close = vi.fn(() => Promise.resolve())
@@ -165,11 +169,17 @@ const installNativeOverlayHostBridge = (): {
     clearListener?.()
   }
 
+  const handleActionResultEvent = (event: Event): void => {
+    actionResultListener?.((event as CustomEvent<unknown>).detail)
+  }
+
   window.addEventListener(renderEvent, handleRenderEvent)
   window.addEventListener(clearEvent, handleClearEvent)
+  window.addEventListener(actionResultEvent, handleActionResultEvent)
   cleanupHostBridgeEvents = (): void => {
     window.removeEventListener(renderEvent, handleRenderEvent)
     window.removeEventListener(clearEvent, handleClearEvent)
+    window.removeEventListener(actionResultEvent, handleActionResultEvent)
     cleanupHostBridgeEvents = null
   }
 
@@ -190,10 +200,16 @@ const installNativeOverlayHostBridge = (): {
 
         return vi.fn()
       }),
+      onActionResult: vi.fn((callback: (payload: unknown) => void) => {
+        actionResultListener = callback
+
+        return vi.fn()
+      }),
     },
     nativeOverlay: {
       open: vi.fn(() => Promise.resolve({ accepted: true })),
       close: ownerOverlayClose,
+      actionResult: vi.fn(() => Promise.resolve()),
       onAction: vi.fn(() => vi.fn()),
       onClose: vi.fn(() => vi.fn()),
     },
@@ -209,6 +225,9 @@ const installNativeOverlayHostBridge = (): {
     },
     emitClear: (): void => {
       fireEvent(window, new CustomEvent(clearEvent))
+    },
+    emitActionResult: (payload): void => {
+      fireEvent(window, new CustomEvent(actionResultEvent, { detail: payload }))
     },
   }
 }
@@ -318,6 +337,7 @@ describe('NativeOverlayHost', () => {
     const row = screen.getByRole('menuitem', { name: 'Copy path' })
 
     expect(menu).toHaveStyle({ width: '196px' })
+    expect(menu).toHaveClass('vf-native-overlay-primary-container-soft')
     expect(document.documentElement.dataset.theme).toBe('flexoki')
     expect(document.documentElement.style.colorScheme).toBe('light')
     expect(
@@ -329,6 +349,17 @@ describe('NativeOverlayHost', () => {
     expect(row).toHaveTextContent(
       '/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref'
     )
+    expect(row).toHaveClass('rounded-chip')
+    expect(within(row).getByText('Copy path')).toHaveClass(
+      'text-on-surface-muted'
+    )
+
+    expect(
+      within(row).getByText(
+        '/Users/will/projects/vimeflow/worktrees/native-overlay-git-ref'
+      )
+    ).toHaveClass('text-on-surface')
+
     expect(within(row).getByText('content_copy')).toBeInTheDocument()
 
     await waitFor(() => {
@@ -341,8 +372,27 @@ describe('NativeOverlayHost', () => {
       surfaceId: 'surface-4',
       actionId: 'copy-path',
       closeOnSelect: false,
+      feedback: 'copy',
     })
     expect(screen.getByRole('menu', { name: 'Git ref details' })).toBe(menu)
+    expect(within(row).queryByText('check')).not.toBeInTheDocument()
+
+    bridge.emitActionResult({
+      surfaceId: 'surface-4',
+      actionId: 'copy-path',
+      feedback: 'copy',
+      ok: false,
+    })
+
+    expect(within(row).queryByText('check')).not.toBeInTheDocument()
+
+    bridge.emitActionResult({
+      surfaceId: 'surface-4',
+      actionId: 'copy-path',
+      feedback: 'copy',
+      ok: true,
+    })
+
     expect(within(row).getByText('check')).toBeInTheDocument()
     expect(within(row).getByText('Copied')).toHaveClass('text-[10px]')
   })

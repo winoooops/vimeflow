@@ -9,6 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
@@ -123,6 +124,14 @@ interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
   closeOnSelect?: boolean
+  feedback?: 'copy'
+}
+
+interface NativeOverlayActionResultEvent {
+  surfaceId: string
+  actionId: string
+  feedback: 'copy'
+  ok: boolean
 }
 
 interface NativeOverlayReadyEvent {
@@ -288,7 +297,17 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isString(value.surfaceId) &&
   isString(value.actionId) &&
   (value.closeOnSelect === undefined ||
-    typeof value.closeOnSelect === 'boolean')
+    typeof value.closeOnSelect === 'boolean') &&
+  (value.feedback === undefined || value.feedback === 'copy')
+
+const isActionResultEvent = (
+  value: unknown
+): value is NativeOverlayActionResultEvent =>
+  isRecord(value) &&
+  isString(value.surfaceId) &&
+  isString(value.actionId) &&
+  value.feedback === 'copy' &&
+  typeof value.ok === 'boolean'
 
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
@@ -315,6 +334,7 @@ export class NativeOverlayController {
     ipc.handle(NATIVE_OVERLAY_CLOSE, this.handleClose)
     ipc.handle(NATIVE_OVERLAY_READY, this.handleReady)
     ipc.handle(NATIVE_OVERLAY_ACTION, this.handleAction)
+    ipc.handle(NATIVE_OVERLAY_ACTION_RESULT, this.handleActionResult)
     this.registeredIpc = ipc
   }
 
@@ -324,6 +344,7 @@ export class NativeOverlayController {
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_CLOSE)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_READY)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION)
+      this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION_RESULT)
       this.registeredIpc = null
     }
 
@@ -448,6 +469,27 @@ export class NativeOverlayController {
     if (!owner.isDestroyed()) {
       owner.send(NATIVE_OVERLAY_ACTION, payload)
     }
+  }
+
+  private readonly handleActionResult = (
+    event: IpcMainInvokeEvent,
+    payload: unknown
+  ): void => {
+    if (!isActionResultEvent(payload)) {
+      return
+    }
+
+    const surface = this.surfaceFromOwnerSender(payload.surfaceId, event.sender)
+    if (!surface) {
+      return
+    }
+
+    const record = this.overlays.get(surface.parentId)
+    if (!record || record.overlayWindow.isDestroyed()) {
+      return
+    }
+
+    record.overlayWindow.webContents.send(NATIVE_OVERLAY_ACTION_RESULT, payload)
   }
 
   private getOrCreateOverlayRecord(parent: BrowserWindow): NativeOverlayRecord {
@@ -666,6 +708,18 @@ export class NativeOverlayController {
       surface.owner !== sender &&
       record?.overlayWindow.webContents !== sender
     ) {
+      return null
+    }
+
+    return surface
+  }
+
+  private surfaceFromOwnerSender(
+    surfaceId: string,
+    sender: WebContents
+  ): NativeOverlaySurface | null {
+    const surface = this.surfaces.get(surfaceId)
+    if (surface?.owner !== sender) {
       return null
     }
 

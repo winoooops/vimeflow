@@ -47,6 +47,7 @@ const installNativeOverlayBridge = (): {
     nativeOverlay: {
       open,
       close,
+      actionResult: vi.fn(() => Promise.resolve()),
       onAction: vi.fn((callback: (event: unknown) => void) => {
         actionListener = callback
 
@@ -1031,7 +1032,6 @@ describe('Menu.Context', () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const nativeBridge = installNativeOverlayBridge()
-    const closeOnSelect = false
     const root = document.documentElement
     root.dataset.theme = 'flexoki'
     root.style.colorScheme = 'light'
@@ -1055,7 +1055,6 @@ describe('Menu.Context', () => {
           nativeOverlayIcon="folder_open"
           nativeOverlayDetail="/Users/will/projects/vimeflow"
           nativeOverlayFeedback="copy"
-          nativeOverlayCloseOnSelect={closeOnSelect}
           onSelect={vi.fn()}
         >
           <span aria-hidden="true">folder_open</span>

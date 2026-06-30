@@ -99,7 +99,7 @@ const COPY_FEEDBACK_MS = 1300
 
 const useGitRefCopyFeedback = (): {
   copiedKey: GitRefCopyRowKey | null
-  handleCopy: (key: GitRefCopyRowKey, value: string) => Promise<void>
+  handleCopy: (key: GitRefCopyRowKey, value: string) => Promise<boolean>
 } => {
   const [copiedKey, setCopiedKey] = useState<GitRefCopyRowKey | null>(null)
   const timerRef = useRef<number | null>(null)
@@ -117,10 +117,10 @@ const useGitRefCopyFeedback = (): {
   const handleCopy = async (
     key: GitRefCopyRowKey,
     value: string
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const copied = await writeClipboardText(value)
     if (!copied) {
-      return
+      return false
     }
 
     setCopiedKey(key)
@@ -130,15 +130,11 @@ const useGitRefCopyFeedback = (): {
     timerRef.current = window.setTimeout(() => {
       setCopiedKey(null)
     }, COPY_FEEDBACK_MS)
+
+    return true
   }
 
   return { copiedKey, handleCopy }
-}
-
-interface GitRefCopyRowProps {
-  row: GitRefCopyRowData
-  copied: boolean
-  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<void>
 }
 
 interface GitRefCopyRowContentProps {
@@ -178,74 +174,13 @@ const GitRefCopyRowContent = ({
   </>
 )
 
-// One click-to-copy row: leading icon · stacked micro label + mono value
-// (truncates when long) · trailing copy glyph that flips to a check while
-// copied. The whole row is the button — clicking anywhere copies the value.
-const GitRefCopyRow = ({
-  row,
-  copied,
-  onCopy,
-}: GitRefCopyRowProps): ReactElement => (
-  <button
-    type="button"
-    aria-label={`Copy ${row.label}`}
-    onClick={(event) => {
-      // The popover renders in a portal, so React still bubbles this click to
-      // the pane's focus handler — stop it so copying never refocuses the pane.
-      event.stopPropagation()
-      void onCopy(row.key, row.value)
-    }}
-    className="group flex w-full items-center gap-2 rounded-chip px-[7px] py-1.5 text-left hover:bg-primary-container/[0.12]"
-  >
-    <GitRefCopyRowContent row={row} copied={copied} />
-  </button>
-)
-
-export interface GitRefCopyRowsProps {
-  worktreeName: string | null
-  branch: string
-  cwd: string | null
-  detached?: boolean
-}
-
-/**
- * Interactive content of the chip's copy popover — one click-to-copy row per
- * ref fact, with a transient green check on the row just copied. Rendered as
- * the chip's `bare interactive` Tooltip surface; exported so the row + copy
- * behavior is unit-testable without driving the floating surface's hover state
- * (the Tooltip only mounts this on hover, through a portal).
- */
-export const GitRefCopyRows = ({
-  worktreeName,
-  branch,
-  cwd,
-  detached = false,
-}: GitRefCopyRowsProps): ReactElement => {
-  const { copiedKey, handleCopy } = useGitRefCopyFeedback()
-
-  return (
-    <div className="flex flex-col">
-      {composeCopyRows(worktreeName, branch, cwd, detached).map((row) => (
-        <GitRefCopyRow
-          key={row.key}
-          row={row}
-          copied={copiedKey === row.key}
-          onCopy={handleCopy}
-        />
-      ))}
-    </div>
-  )
-}
-
 const GIT_REF_MENU_ROW_CLASSES =
   'group flex min-h-8 w-full items-center gap-2 rounded-chip px-[7px] py-1.5 text-left text-xs text-on-surface outline-none transition-colors hover:bg-primary-container/[0.12] focus-visible:bg-primary-container/[0.12]'
-
-const KEEP_GIT_REF_MENU_OPEN_ON_COPY = false
 
 interface GitRefCopyMenuRowElementsOptions {
   rows: readonly GitRefCopyRowData[]
   copiedKey: GitRefCopyRowKey | null
-  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<void>
+  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<boolean>
 }
 
 const gitRefCopyMenuRowElements = ({
@@ -261,10 +196,7 @@ const gitRefCopyMenuRowElements = ({
       nativeOverlayIcon={row.icon}
       nativeOverlayDetail={row.value}
       nativeOverlayFeedback="copy"
-      nativeOverlayCloseOnSelect={KEEP_GIT_REF_MENU_OPEN_ON_COPY}
-      onSelect={() => {
-        void onCopy(row.key, row.value)
-      }}
+      onSelect={() => onCopy(row.key, row.value)}
     >
       <GitRefCopyRowContent row={row} copied={copiedKey === row.key} />
     </Menu.Row>
@@ -279,6 +211,8 @@ export const GitRefChip = ({
   nativeOverlay = false,
 }: GitRefChipProps): ReactElement | null => {
   const chipRef = useRef<HTMLSpanElement | null>(null)
+  const skipRestoredFocusRef = useRef(false)
+  const skipRestoredFocusTimerRef = useRef<number | null>(null)
   const [open, setOpen] = useState(false)
 
   const [anchorRect, setAnchorRect] = useState({
@@ -288,6 +222,15 @@ export const GitRefChip = ({
     height: 0,
   })
   const { copiedKey, handleCopy } = useGitRefCopyFeedback()
+
+  useEffect(
+    () => (): void => {
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
+      }
+    },
+    []
+  )
 
   if (branch === null || branch.length === 0) {
     return null
@@ -301,7 +244,7 @@ export const GitRefChip = ({
   // branch label truncates with an ellipsis instead of the chip overflowing
   // and being hard-clipped (the Chip primitive is `shrink-0`).
   const frameBase =
-    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border min-w-0 max-w-full overflow-hidden'
+    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border min-w-0 max-w-full overflow-hidden outline-none focus:outline-none focus-visible:outline-none'
 
   // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
   // worktree uses `text-error` (lighter coral), branch uses
@@ -352,6 +295,35 @@ export const GitRefChip = ({
     }
   }
 
+  const handleOpenChange = (nextOpen: boolean): void => {
+    if (!nextOpen) {
+      skipRestoredFocusRef.current = true
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
+      }
+      skipRestoredFocusTimerRef.current = window.setTimeout(() => {
+        skipRestoredFocusRef.current = false
+        skipRestoredFocusTimerRef.current = null
+      }, 0)
+    }
+
+    setOpen(nextOpen)
+  }
+
+  const handleFocus = (): void => {
+    if (skipRestoredFocusRef.current) {
+      skipRestoredFocusRef.current = false
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
+        skipRestoredFocusTimerRef.current = null
+      }
+
+      return
+    }
+
+    openCopyMenu()
+  }
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLSpanElement>): void => {
     if (
       event.key !== 'Enter' &&
@@ -386,7 +358,7 @@ export const GitRefChip = ({
         onMouseDown={(event): void => {
           event.stopPropagation()
         }}
-        onFocus={openCopyMenu}
+        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
       >
         {hasWorktree && (
@@ -427,8 +399,9 @@ export const GitRefChip = ({
         position={anchorRect}
         placement="bottom"
         matchAnchorWidth
+        surfaceTone="primary-container-soft"
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={handleOpenChange}
         aria-label="Git ref details"
         nativeOverlay={nativeOverlay}
       >

@@ -8,6 +8,7 @@ import {
 } from './ipc-channels'
 import {
   NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
@@ -226,6 +227,8 @@ contextBridge.exposeInMainWorld('vimeflow', {
       ipcRenderer.invoke(NATIVE_OVERLAY_OPEN, request),
     close: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    actionResult: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_ACTION_RESULT, request),
     onAction: (callback: (payload: unknown) => void): (() => void) => {
       const handler = (_event: IpcRendererEvent, payload: unknown): void => {
         callback(payload)
@@ -276,6 +279,17 @@ contextBridge.exposeInMainWorld('vimeflow', {
 
       return (): void => {
         ipcRenderer.off(NATIVE_OVERLAY_CLEAR, handler)
+      }
+    },
+    onActionResult: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_ACTION_RESULT, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_ACTION_RESULT, handler)
       }
     },
   },

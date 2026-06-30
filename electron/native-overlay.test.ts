@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
@@ -773,6 +774,7 @@ describe('NativeOverlayController', () => {
         surfaceId: request.surfaceId,
         actionId: 'copy',
         closeOnSelect: false,
+        feedback: 'copy',
       }
     )
 
@@ -782,6 +784,7 @@ describe('NativeOverlayController', () => {
         surfaceId: request.surfaceId,
         actionId: 'copy',
         closeOnSelect: false,
+        feedback: 'copy',
       }
     )
 
@@ -797,7 +800,35 @@ describe('NativeOverlayController', () => {
         surfaceId: request.surfaceId,
         actionId: 'copy',
         closeOnSelect: false,
+        feedback: 'copy',
       }
+    )
+
+    const result = {
+      surfaceId: request.surfaceId,
+      actionId: 'copy',
+      feedback: 'copy',
+      ok: true,
+    } as const
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: overlayWindow.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
+    )
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: electronMock.owner.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
     )
   })
 

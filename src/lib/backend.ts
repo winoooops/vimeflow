@@ -37,6 +37,7 @@ export interface BackendApi {
   nativeOverlay?: {
     open: (request: unknown) => Promise<{ accepted: boolean; reason?: string }>
     close: (request: unknown) => Promise<void>
+    actionResult: (request: unknown) => Promise<void>
     onAction: (callback: (event: unknown) => void) => UnlistenFn
     onClose: (callback: (event: unknown) => void) => UnlistenFn
   }
@@ -47,6 +48,7 @@ export interface BackendApi {
     close: (request: unknown) => Promise<unknown>
     onRender: (callback: (event: unknown) => void) => UnlistenFn
     onClear: (callback: () => void) => UnlistenFn
+    onActionResult: (callback: (event: unknown) => void) => UnlistenFn
   }
 }
 

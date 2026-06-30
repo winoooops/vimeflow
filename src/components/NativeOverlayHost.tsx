@@ -21,10 +21,12 @@ interface NativeOverlayHostBridge {
     surfaceId: string
     actionId: string
     closeOnSelect?: boolean
+    feedback?: 'copy'
   }) => Promise<unknown>
   close: (request: { surfaceId: string; reason: 'outside' }) => Promise<unknown>
   onRender: (callback: (payload: unknown) => void) => () => void
   onClear: (callback: () => void) => () => void
+  onActionResult: (callback: (payload: unknown) => void) => () => void
 }
 
 const COPY_FEEDBACK_MS = 1300
@@ -39,10 +41,33 @@ const isMenuRequest = (value: unknown): value is NativeOverlayRequest =>
   (value as { kind?: unknown }).kind === 'menu' &&
   (value as { payload?: { kind?: unknown } }).payload?.kind === 'menu'
 
+const isCopyActionResult = (
+  value: unknown
+): value is {
+  surfaceId: string
+  actionId: string
+  feedback: 'copy'
+  ok: boolean
+} =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
+  typeof (value as { actionId?: unknown }).actionId === 'string' &&
+  (value as { feedback?: unknown }).feedback === 'copy' &&
+  typeof (value as { ok?: unknown }).ok === 'boolean'
+
 const OVERLAY_MENU_ROW_CLASSES =
   'group flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
   'text-left text-xs text-on-surface outline-none ring-0 transition-colors ' +
   'hover:bg-on-surface/10 focus:outline-none focus-visible:bg-on-surface/10 ' +
+  'aria-disabled:cursor-default aria-disabled:text-on-surface-variant/45 ' +
+  'aria-disabled:hover:bg-transparent aria-disabled:focus:bg-transparent'
+
+const OVERLAY_MENU_DETAIL_ROW_CLASSES =
+  'group flex min-h-8 w-full items-center gap-2 rounded-chip px-[7px] py-1.5 ' +
+  'text-left text-xs text-on-surface outline-none transition-colors ' +
+  'hover:bg-primary-container/[0.12] focus:outline-none focus-visible:bg-primary-container/[0.12] ' +
   'aria-disabled:cursor-default aria-disabled:text-on-surface-variant/45 ' +
   'aria-disabled:hover:bg-transparent aria-disabled:focus:bg-transparent'
 
@@ -54,8 +79,11 @@ const OVERLAY_MENU_ITEM_TEXT_CLASSES = 'flex min-w-0 flex-1 flex-col gap-px'
 
 const OVERLAY_MENU_ITEM_LABEL_CLASSES = 'truncate'
 
+const OVERLAY_MENU_ITEM_DETAIL_LABEL_CLASSES =
+  'font-sans text-[8.5px] uppercase tracking-[0.09em] text-on-surface-muted'
+
 const OVERLAY_MENU_ITEM_DETAIL_CLASSES =
-  'truncate font-mono text-[10px] text-on-surface-muted'
+  'truncate font-mono text-[11px] text-on-surface'
 
 const OVERLAY_MENU_COPY_FEEDBACK_CLASSES =
   'inline-flex shrink-0 items-center gap-1 text-on-surface-muted transition-colors ' +
@@ -78,6 +106,16 @@ const overlayMenuActionButtonClass = (pressed: boolean): string =>
       ? 'bg-primary text-on-primary'
       : 'text-on-surface-muted hover:bg-on-surface/10 hover:text-primary'
   }`
+
+const overlayMenuRowClass = (item: NativeOverlayMenuItem): string =>
+  'detail' in item && item.detail !== undefined
+    ? OVERLAY_MENU_DETAIL_ROW_CLASSES
+    : OVERLAY_MENU_ROW_CLASSES
+
+const overlayMenuItemLabelClass = (item: NativeOverlayMenuItem): string =>
+  'detail' in item && item.detail !== undefined
+    ? OVERLAY_MENU_ITEM_DETAIL_LABEL_CLASSES
+    : OVERLAY_MENU_ITEM_LABEL_CLASSES
 
 const sectionsForRequest = (
   request: NativeOverlayRequest
@@ -191,11 +229,25 @@ export const NativeOverlayHost = (): ReactElement | null => {
       setRequest(null)
     })
 
+    const cleanupActionResult = bridge.onActionResult((payload) => {
+      if (!isCopyActionResult(payload) || !payload.ok) {
+        return
+      }
+
+      const current = requestRef.current
+      if (current?.surfaceId !== payload.surfaceId) {
+        return
+      }
+
+      showCopyFeedback(payload.actionId)
+    })
+
     return (): void => {
       cleanupRender()
       cleanupClear()
+      cleanupActionResult()
     }
-  }, [clearCopyFeedback])
+  }, [clearCopyFeedback, showCopyFeedback])
 
   useEffect(() => {
     if (request === null) {
@@ -232,10 +284,6 @@ export const NativeOverlayHost = (): ReactElement | null => {
   ): void => {
     const closeOnSelect = options.closeOnSelect !== false
 
-    if (options.feedback === 'copy') {
-      showCopyFeedback(actionId)
-    }
-
     if (closeOnSelect) {
       clearCopyFeedback()
       setRequest(null)
@@ -245,6 +293,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
       surfaceId: request.surfaceId,
       actionId,
       ...(closeOnSelect ? {} : { closeOnSelect: false }),
+      ...(options.feedback === undefined ? {} : { feedback: options.feedback }),
     })
   }
 
@@ -253,6 +302,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
       position={request.anchorRect}
       placement={request.placement as Placement}
       matchAnchorWidth={request.payload.matchAnchorWidth === true}
+      surfaceTone={request.payload.surfaceTone}
       open
       onOpenChange={(open): void => {
         if (!open) {
@@ -394,7 +444,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
                 key={item.id}
                 label={item.label}
                 disabled={item.disabled}
-                className={OVERLAY_MENU_ROW_CLASSES}
+                className={overlayMenuRowClass(item)}
                 onSelect={(): void => {
                   if (item.disabled !== true) {
                     dispatchAction(item.id, {
@@ -414,7 +464,7 @@ export const NativeOverlayHost = (): ReactElement | null => {
                     </span>
                   )}
                   <span className={OVERLAY_MENU_ITEM_TEXT_CLASSES}>
-                    <span className={OVERLAY_MENU_ITEM_LABEL_CLASSES}>
+                    <span className={overlayMenuItemLabelClass(item)}>
                       {item.label}
                     </span>
                     {item.detail === undefined ? null : (

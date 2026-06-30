@@ -38,6 +38,8 @@ export interface NativeOverlayMenuActionItem {
   disabled?: boolean
 }
 
+export type NativeOverlayMenuSurfaceTone = 'primary-container-soft'
+
 export interface NativeOverlayMenuCheckboxItem {
   type: 'checkbox'
   id: string
@@ -84,6 +86,7 @@ export interface NativeOverlayMenuPayload {
   kind: 'menu'
   ariaLabel?: string
   matchAnchorWidth?: boolean
+  surfaceTone?: NativeOverlayMenuSurfaceTone
   items?: NativeOverlayMenuItem[]
   sections?: NativeOverlayMenuSection[]
 }
@@ -106,6 +109,14 @@ export interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
   closeOnSelect?: boolean
+  feedback?: 'copy'
+}
+
+export interface NativeOverlayActionResultEvent {
+  surfaceId: string
+  actionId: string
+  feedback: 'copy'
+  ok: boolean
 }
 
 export interface NativeOverlayCloseEvent {
@@ -157,15 +168,18 @@ export const nativeOverlayThemeSnapshot = (): NativeOverlayThemeSnapshot => {
 interface NativeOverlayBridge {
   open: (request: NativeOverlayRequest) => Promise<NativeOverlayOpenResult>
   close: (request: { surfaceId: string; reason: 'renderer' }) => Promise<void>
+  actionResult: (request: NativeOverlayActionResultEvent) => Promise<void>
   onAction: (callback: (event: unknown) => void) => () => void
   onClose: (callback: (event: unknown) => void) => () => void
 }
 
+export type NativeOverlayActionResult = boolean | void | Promise<boolean | void>
+
 export type NativeOverlayActionHandler =
-  | (() => void)
+  | (() => NativeOverlayActionResult)
   | {
       retainSession: true
-      run: () => void
+      run: () => NativeOverlayActionResult
     }
 
 interface NativeOverlaySession {
@@ -184,7 +198,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isRecord(value) &&
   typeof value.surfaceId === 'string' &&
-  typeof value.actionId === 'string'
+  typeof value.actionId === 'string' &&
+  (value.closeOnSelect === undefined ||
+    typeof value.closeOnSelect === 'boolean') &&
+  (value.feedback === undefined || value.feedback === 'copy')
 
 const isCloseEvent = (value: unknown): value is NativeOverlayCloseEvent =>
   isRecord(value) &&
@@ -193,6 +210,37 @@ const isCloseEvent = (value: unknown): value is NativeOverlayCloseEvent =>
 
 const bridge = (): NativeOverlayBridge | undefined =>
   typeof window === 'undefined' ? undefined : window.vimeflow?.nativeOverlay
+
+const reportActionResult = (
+  event: NativeOverlayActionEvent,
+  ok: boolean
+): void => {
+  if (event.feedback === undefined) {
+    return
+  }
+
+  void bridge()?.actionResult({
+    surfaceId: event.surfaceId,
+    actionId: event.actionId,
+    feedback: event.feedback,
+    ok,
+  })
+}
+
+const runActionAndReport = (
+  event: NativeOverlayActionEvent,
+  run: () => NativeOverlayActionResult
+): void => {
+  void (async (): Promise<void> => {
+    try {
+      const result = await run()
+      reportActionResult(event, result === true)
+    } catch (error) {
+      reportActionResult(event, false)
+      log.warn('action failed', error)
+    }
+  })()
+}
 
 export const isNativeOverlayFeatureEnabled = (): boolean =>
   import.meta.env.VITE_NATIVE_OVERLAY === '1'
@@ -228,12 +276,12 @@ const handleAction = (event: unknown): void => {
     // makes each surface/action id at-most-once. We intentionally do not retry
     // callbacks because copy/paste/rename-style actions may have side effects.
     sessions.delete(event.surfaceId)
-    action()
+    runActionAndReport(event, action)
 
     return
   }
 
-  action.run()
+  runActionAndReport(event, action.run)
 }
 
 const handleClose = (event: unknown): void => {

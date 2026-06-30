@@ -20,6 +20,7 @@ import {
 } from './browser-pane-channels'
 import {
   NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
@@ -93,6 +94,7 @@ const nativeOverlayInvokeCases: readonly [
 ][] = [
   ['open', NATIVE_OVERLAY_OPEN, { surfaceId: 'surface-1' }],
   ['close', NATIVE_OVERLAY_CLOSE, { surfaceId: 'surface-1' }],
+  ['actionResult', NATIVE_OVERLAY_ACTION_RESULT, { surfaceId: 'surface-1' }],
 ]
 
 describe('preload browserPane wiring', () => {
@@ -270,6 +272,7 @@ describe('preload nativeOverlay wiring', () => {
   test.each([
     ['onRender', NATIVE_OVERLAY_RENDER],
     ['onClear', NATIVE_OVERLAY_CLEAR],
+    ['onActionResult', NATIVE_OVERLAY_ACTION_RESULT],
   ])(
     'host %s registers on the correct channel',
     (method: string, channel: string) => {
