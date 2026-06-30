@@ -4,7 +4,7 @@ import {
   TERMINAL_CONTAINER_ID,
 } from '../../workspace/containerIds'
 
-export interface UseDiffKeyboardOptions {
+export interface UseKeyboardOptions {
   enabled: boolean
   rootRef: RefObject<HTMLElement | null>
   confirming: boolean
@@ -45,7 +45,7 @@ const isDiffScopeActive = (
 }
 
 /** Focus-scoped keyboard shortcuts for the git diff viewer. */
-export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
+export const useKeyboard = (options: UseKeyboardOptions): void => {
   const {
     enabled,
     rootRef,

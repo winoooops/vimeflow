@@ -1313,7 +1313,7 @@ describe('DockPanel', () => {
     expect(onPositionChange).toHaveBeenCalledWith('right')
   })
 
-  test('forwards selectedDiffFile to DiffPanelContent', () => {
+  test('forwards selectedDiffFile to Panel', () => {
     const selectedDiffFile = {
       path: 'src/test.ts',
       staged: false,
@@ -1364,7 +1364,7 @@ describe('DockPanel', () => {
     expect(selectedButton).toHaveClass('bg-surface-container-highest/40')
   })
 
-  test('forwards parent-provided gitStatus to DiffPanelContent on the unselected-file render branch', () => {
+  test('forwards parent-provided gitStatus to Panel on the unselected-file render branch', () => {
     vi.mocked(useGitStatusModule.useGitStatus).mockClear()
 
     const sharedGitStatus = {
@@ -1384,7 +1384,7 @@ describe('DockPanel', () => {
     )
   })
 
-  test('forwards parent-provided gitStatus to DiffPanelContent on the selected-file render branch', () => {
+  test('forwards parent-provided gitStatus to Panel on the selected-file render branch', () => {
     vi.mocked(useGitStatusModule.useGitStatus).mockClear()
 
     const sharedGitStatus = {

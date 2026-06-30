@@ -7,7 +7,7 @@ import type { AgentStatus } from '../agent-status/types'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
-import type { FeedbackRepoRootRef } from '../diff/components/DiffPanelContent'
+import type { FeedbackRepoRootRef } from '../diff/Panel'
 import type {
   ReviewComment,
   UseFeedbackBatchReturn,

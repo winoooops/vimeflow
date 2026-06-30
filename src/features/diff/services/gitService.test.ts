@@ -1,15 +1,14 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  MockGitService,
   HttpGitService,
   DesktopGitService,
   createGitService,
   type GitService,
 } from './gitService'
-import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 import { invoke } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
-import type { FileDiff } from '../types'
+import type { ChangedFile, FileDiff } from '../types'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 
 vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
@@ -25,255 +24,51 @@ vi.mock('../../../lib/environment', () => ({
 const mockedInvoke = vi.mocked(invoke)
 const mockedIsDesktop = vi.mocked(isDesktop)
 
+const changedFilesFixture: ChangedFile[] = [
+  {
+    path: 'src/components/NavBar.tsx',
+    status: 'modified',
+    insertions: 1,
+    deletions: 1,
+    staged: false,
+  },
+]
+
+const fileDiffFixture: FileDiff = {
+  filePath: 'src/components/NavBar.tsx',
+  oldPath: 'src/components/NavBar.tsx',
+  newPath: 'src/components/NavBar.tsx',
+  hunks: [
+    {
+      id: 'hunk-0',
+      header: '@@ -1 +1 @@',
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 1,
+      lines: [
+        { type: 'removed', oldLineNumber: 1, content: 'old' },
+        { type: 'added', newLineNumber: 1, content: 'new' },
+      ],
+    },
+  ],
+}
+
+const diffResponseFixture: GetGitDiffResponse = {
+  fileDiff: {
+    ...fileDiffFixture,
+    oldPath: fileDiffFixture.oldPath ?? null,
+    newPath: fileDiffFixture.newPath ?? null,
+  },
+  oldText: 'old\n',
+  newText: 'new\n',
+  rawDiff: '@@ -1 +1 @@\n-old\n+new\n',
+  repoRoot: '/repo',
+}
+
 beforeEach(() => {
   mockedInvoke.mockReset()
   mockedIsDesktop.mockReturnValue(false)
-})
-
-describe('MockGitService', () => {
-  let service: GitService
-
-  beforeEach(() => {
-    service = new MockGitService()
-  })
-
-  test('getStatus returns all changed files', async () => {
-    const response = await service.getStatus()
-
-    expect(response.files).toHaveLength(4)
-    expect(response.files).toEqual(mockChangedFiles)
-    expect(response.repoRoot).toBe('')
-  })
-
-  test('getDiff returns GetGitDiffResponse for existing file', async () => {
-    const response = await service.getDiff('src/components/NavBar.tsx')
-
-    expect(response.fileDiff).toEqual(
-      mockFileDiffs['src/components/NavBar.tsx']
-    )
-    expect(response.fileDiff.hunks).toHaveLength(2)
-    // MockGitService synthesizes oldText / newText / rawDiff from the fixture
-    expect(response.oldText).toContain(
-      "import { Link } from 'react-router-dom'"
-    )
-
-    expect(response.newText).toContain(
-      "import { Link, useLocation } from 'react-router-dom'"
-    )
-    expect(response.oldText.endsWith('\n')).toBe(true)
-    expect(response.newText.endsWith('\n')).toBe(true)
-    expect(response.rawDiff).toMatch(
-      /^diff --git a\/src\/components\/NavBar\.tsx b\/src\/components\/NavBar\.tsx/
-    )
-    expect(response.rawDiff).toContain('@@ -1,8 +1,10 @@')
-    expect(response.rawDiff.endsWith('\n')).toBe(true)
-  })
-
-  test('getDiff keeps real paths in diff --git header for new files', async () => {
-    const response = await service.getDiff('src/utils/api-helper.rs')
-
-    expect(response.oldText).toBe('')
-    expect(response.newText).toContain('use reqwest::Client;')
-    expect(response.rawDiff).toContain(
-      'diff --git a/src/utils/api-helper.rs b/src/utils/api-helper.rs'
-    )
-    expect(response.rawDiff).toContain('new file mode 100644\n')
-    expect(response.rawDiff).toContain('--- /dev/null\n')
-    expect(response.rawDiff).toContain('+++ b/src/utils/api-helper.rs\n')
-    expect(response.rawDiff).not.toContain('a/dev/null')
-    expect(response.fileDiff.oldPath).toBe('/dev/null')
-    expect(response.fileDiff.newPath).toBe('src/utils/api-helper.rs')
-  })
-
-  test('getDiff infers new-file patch header from all-added hunks', async () => {
-    const file = 'src/new-from-hunks.ts'
-
-    const addedDiff: FileDiff = {
-      filePath: file,
-      hunks: [
-        {
-          id: 'hunk-0',
-          header: '@@ -0,0 +1,2 @@',
-          oldStart: 0,
-          oldLines: 0,
-          newStart: 1,
-          newLines: 2,
-          lines: [
-            { type: 'added', newLineNumber: 1, content: 'export const x = 1' },
-            { type: 'added', newLineNumber: 2, content: '' },
-          ],
-        },
-      ],
-    }
-
-    mockFileDiffs[file] = addedDiff
-
-    try {
-      const response = await service.getDiff(file)
-
-      expect(response.oldText).toBe('')
-      expect(response.newText).toBe('export const x = 1\n\n')
-      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
-      expect(response.rawDiff).toContain('new file mode 100644\n')
-      expect(response.rawDiff).toContain('--- /dev/null\n')
-      expect(response.rawDiff).toContain(`+++ b/${file}\n`)
-      expect(response.fileDiff.oldPath).toBeNull()
-      expect(response.fileDiff.newPath).toBeNull()
-    } finally {
-      delete mockFileDiffs[file]
-    }
-  })
-
-  test('getDiff keeps real paths in diff --git header for deleted files', async () => {
-    const response = await service.getDiff('tsconfig.json')
-
-    expect(response.oldText).toContain('"compilerOptions"')
-    expect(response.newText).toBe('')
-    expect(response.rawDiff).toContain(
-      'diff --git a/tsconfig.json b/tsconfig.json'
-    )
-    expect(response.rawDiff).toContain('deleted file mode 100644\n')
-    expect(response.rawDiff).toContain('--- a/tsconfig.json\n')
-    expect(response.rawDiff).toContain('+++ /dev/null\n')
-    expect(response.rawDiff).not.toContain('b/dev/null')
-    expect(response.fileDiff.oldPath).toBe('tsconfig.json')
-    expect(response.fileDiff.newPath).toBe('/dev/null')
-  })
-
-  test('getDiff infers deleted-file patch header from all-removed hunks', async () => {
-    const file = 'src/deleted-from-hunks.ts'
-
-    const deletedDiff: FileDiff = {
-      filePath: file,
-      hunks: [
-        {
-          id: 'hunk-0',
-          header: '@@ -1,2 +0,0 @@',
-          oldStart: 1,
-          oldLines: 2,
-          newStart: 0,
-          newLines: 0,
-          lines: [
-            {
-              type: 'removed',
-              oldLineNumber: 1,
-              content: 'export const x = 1',
-            },
-            { type: 'removed', oldLineNumber: 2, content: '' },
-          ],
-        },
-      ],
-    }
-
-    mockFileDiffs[file] = deletedDiff
-
-    try {
-      const response = await service.getDiff(file)
-
-      expect(response.oldText).toBe('export const x = 1\n\n')
-      expect(response.newText).toBe('')
-      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
-      expect(response.rawDiff).toContain('deleted file mode 100644\n')
-      expect(response.rawDiff).toContain(`--- a/${file}\n`)
-      expect(response.rawDiff).toContain('+++ /dev/null\n')
-      expect(response.fileDiff.oldPath).toBeNull()
-      expect(response.fileDiff.newPath).toBeNull()
-    } finally {
-      delete mockFileDiffs[file]
-    }
-  })
-
-  test('getDiff preserves explicit no-newline markers in synthesized rawDiff', async () => {
-    const file = 'no-newline.txt'
-
-    const noNewlineDiff: FileDiff = {
-      filePath: file,
-      oldPath: file,
-      newPath: file,
-      hunks: [
-        {
-          id: 'hunk-0',
-          header: '@@ -1 +1 @@',
-          oldStart: 1,
-          oldLines: 1,
-          newStart: 1,
-          newLines: 1,
-          lines: [
-            {
-              type: 'removed',
-              oldLineNumber: 1,
-              content: 'before',
-              hasTrailingNewline: false,
-            },
-            {
-              type: 'added',
-              newLineNumber: 1,
-              content: 'after',
-              hasTrailingNewline: false,
-            },
-          ],
-        },
-      ],
-    }
-    mockFileDiffs[file] = noNewlineDiff
-
-    try {
-      const response = await service.getDiff(file)
-
-      expect(response.oldText).toBe('before')
-      expect(response.newText).toBe('after')
-      expect(response.rawDiff).toContain(
-        [
-          '-before',
-          '\\ No newline at end of file',
-          '+after',
-          '\\ No newline at end of file',
-        ].join('\n')
-      )
-      expect(response.rawDiff.endsWith('\n')).toBe(true)
-    } finally {
-      delete mockFileDiffs[file]
-    }
-  })
-
-  test('getDiff throws error for non-existent file', async () => {
-    await expect(service.getDiff('non-existent.ts')).rejects.toThrow(
-      'Diff not found for file: non-existent.ts'
-    )
-  })
-
-  test('stageFile resolves successfully (whole file)', async () => {
-    await expect(service.stageFile('src/test.ts')).resolves.toBeUndefined()
-  })
-
-  test('stageFile with hunk patch resolves successfully', async () => {
-    await expect(
-      service.stageFile('src/test.ts', '@@ -1,3 +1,4 @@\n context\n+added\n')
-    ).resolves.toBeUndefined()
-  })
-
-  test('unstageFile resolves successfully (whole file)', async () => {
-    await expect(service.unstageFile('src/test.ts')).resolves.toBeUndefined()
-  })
-
-  test('unstageFile with hunk patch resolves successfully', async () => {
-    await expect(
-      service.unstageFile('src/test.ts', '@@ -1,3 +1,4 @@\n context\n+added\n')
-    ).resolves.toBeUndefined()
-  })
-
-  test('discardChanges resolves successfully (whole file)', async () => {
-    await expect(service.discardChanges('src/test.ts')).resolves.toBeUndefined()
-  })
-
-  test('discardChanges with hunk patch resolves successfully', async () => {
-    await expect(
-      service.discardChanges(
-        'src/test.ts',
-        '@@ -1,3 +1,4 @@\n context\n+added\n'
-      )
-    ).resolves.toBeUndefined()
-  })
 })
 
 describe('HttpGitService', () => {
@@ -295,13 +90,13 @@ describe('HttpGitService', () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: () =>
-          Promise.resolve({ files: mockChangedFiles, repoRoot: '/repo' }),
+          Promise.resolve({ files: changedFilesFixture, repoRoot: '/repo' }),
       })
 
       const response = await service.getStatus()
 
       expect(fetchMock).toHaveBeenCalledWith('/api/git/status')
-      expect(response.files).toEqual(mockChangedFiles)
+      expect(response.files).toEqual(changedFilesFixture)
       expect(response.repoRoot).toBe('/repo')
     })
 
@@ -321,16 +116,9 @@ describe('HttpGitService', () => {
     test('fetches diff from /api/git/diff with file param', async () => {
       const file = 'src/components/NavBar.tsx'
 
-      const mockResponse = {
-        fileDiff: mockFileDiffs[file],
-        oldText: 'old',
-        newText: 'new',
-        rawDiff: '@@',
-      }
-
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve(diffResponseFixture),
       })
 
       const response = await service.getDiff(file)
@@ -338,7 +126,7 @@ describe('HttpGitService', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         `/api/git/diff?file=${encodeURIComponent(file)}&staged=false`
       )
-      expect(response).toEqual(mockResponse)
+      expect(response).toEqual(diffResponseFixture)
     })
 
     test('includes staged parameter when true', async () => {
@@ -348,7 +136,7 @@ describe('HttpGitService', () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            fileDiff: mockFileDiffs[file],
+            fileDiff: fileDiffFixture,
             oldText: '',
             newText: '',
             rawDiff: '',
@@ -369,7 +157,7 @@ describe('HttpGitService', () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            fileDiff: mockFileDiffs[file],
+            fileDiff: fileDiffFixture,
             oldText: '',
             newText: '',
             rawDiff: '',
@@ -559,7 +347,7 @@ describe('DesktopGitService', () => {
   describe('getStatus', () => {
     test('calls invoke with git_status command and correct args', async () => {
       invokeMock.mockResolvedValueOnce({
-        files: mockChangedFiles,
+        files: changedFilesFixture,
         repoRoot: '/repo',
       })
 
@@ -568,7 +356,7 @@ describe('DesktopGitService', () => {
       expect(invokeMock).toHaveBeenCalledWith('git_status', {
         cwd: '/home/user/project',
       })
-      expect(response.files).toEqual(mockChangedFiles)
+      expect(response.files).toEqual(changedFilesFixture)
       expect(response.repoRoot).toBe('/repo')
     })
 
@@ -584,7 +372,7 @@ describe('DesktopGitService', () => {
   describe('getDiff', () => {
     test('calls invoke with get_git_diff command and correct args', async () => {
       const mockResponse = {
-        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        fileDiff: fileDiffFixture,
         oldText: 'old',
         newText: 'new',
         rawDiff: '@@',
@@ -603,7 +391,7 @@ describe('DesktopGitService', () => {
 
     test('calls invoke with staged=true when requested', async () => {
       invokeMock.mockResolvedValueOnce({
-        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        fileDiff: fileDiffFixture,
         oldText: '',
         newText: '',
         rawDiff: '',
@@ -620,7 +408,7 @@ describe('DesktopGitService', () => {
 
     test('passes untracked flag to get_git_diff', async () => {
       invokeMock.mockResolvedValueOnce({
-        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        fileDiff: fileDiffFixture,
         oldText: '',
         newText: '',
         rawDiff: '',
@@ -783,9 +571,9 @@ describe('DesktopGitService', () => {
 })
 
 describe('createGitService', () => {
-  test('returns MockGitService in test mode', () => {
+  test('returns HttpGitService in test mode without desktop host', () => {
     const service = createGitService()
-    expect(service).toBeInstanceOf(MockGitService)
+    expect(service).toBeInstanceOf(HttpGitService)
   })
 
   test('returns DesktopGitService when isDesktop() is true', () => {

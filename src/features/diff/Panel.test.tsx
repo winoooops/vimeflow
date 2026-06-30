@@ -9,34 +9,34 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
-import { DiffPanelContent } from './DiffPanelContent'
-import * as useGitStatusModule from '../hooks/useGitStatus'
-import * as useFileDiffModule from '../hooks/useFileDiff'
-import type { UseGitStatusReturn } from '../hooks/useGitStatus'
-import type { UseFileDiffReturn } from '../hooks/useFileDiff'
-import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
-import type { ChangedFile, FileDiff } from '../types'
-import { DIFF_MIN_WIDTH_PX, SPLIT_MIN_WIDTH_PX } from './toolbar'
+import { Panel } from './Panel'
+import * as useGitStatusModule from './hooks/useGitStatus'
+import * as useFileDiffModule from './hooks/useFileDiff'
+import type { UseGitStatusReturn } from './hooks/useGitStatus'
+import type { UseFileDiffReturn } from './hooks/useFileDiff'
+import type { GetGitDiffResponse } from '../../bindings/GetGitDiffResponse'
+import type { ChangedFile, FileDiff } from './types'
+import { DIFF_MIN_WIDTH_PX, SPLIT_MIN_WIDTH_PX } from './components/toolbar'
 import {
   MockResizeObserver,
   installMockResizeObserver,
-} from '../../../test/mockResizeObserver'
-import type { GitService } from '../services/gitService'
-import * as gitServiceModule from '../services/gitService'
-import * as pierreAdapterModule from '../services/pierreAdapter'
-import * as useFeedbackBatchModule from '../hooks/useFeedbackBatch'
+} from '../../test/mockResizeObserver'
+import type { GitService } from './services/gitService'
+import * as gitServiceModule from './services/gitService'
+import * as pierreAdapterModule from './services/pierreAdapter'
+import * as useFeedbackBatchModule from './hooks/useFeedbackBatch'
 import {
   makeBatchKey,
   type ReviewComment,
   type UseFeedbackBatchReturn,
-} from '../hooks/useFeedbackBatch'
+} from './hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
-import type { PaneCandidate } from '../services/activePanePicker'
+import type { PaneCandidate } from './services/activePanePicker'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 
 // Mock the hooks
-vi.mock('../hooks/useGitStatus')
-vi.mock('../hooks/useFileDiff')
+vi.mock('./hooks/useGitStatus')
+vi.mock('./hooks/useFileDiff')
 
 // Stub @pierre/diffs/react: the real MultiFileDiff mounts a Pierre web
 // component and runs Shiki inside a Web Worker, neither of which jsdom
@@ -46,7 +46,7 @@ vi.mock('../hooks/useFileDiff')
 // Stub worker pool so we can assert setRenderOptions is called when the
 // theme changes — that's the contract for Pierre's main-thread theme
 // switch (DiffHunksRenderer reads its theme from the pool, not the
-// per-instance prop, see useWorkerPool wiring in DiffPanelContent.tsx).
+// per-instance prop, see useWorkerPool wiring in Panel.tsx).
 const workerPoolSetRenderOptionsMock = vi.fn(() => Promise.resolve(undefined))
 
 const workerPoolMock = {
@@ -199,12 +199,12 @@ const fileDiffMock = ({
 
 // Trigger every active ResizeObserver instance with the given width.
 //
-// DiffPanelContent installs an observer on its right-pane wrapper (the one
+// Panel installs an observer on its right-pane wrapper (the one
 // the width-band logic reads), AND PriorityPlus installs its own observer
 // inside the chip toolbar. React effect ordering means the inner
 // PriorityPlus observer is created first, so `instances[0]` is NOT the
 // pane observer. Broadcasting the width to all instances is simpler and
-// equivalent — PriorityPlus accepts any width and DiffPanelContent reads
+// equivalent — PriorityPlus accepts any width and Panel reads
 // the one it cares about. Wrapped in `act` so React flushes the state
 // update before the next assertion runs.
 const setPaneWidth = (width: number): void => {
@@ -215,7 +215,7 @@ const setPaneWidth = (width: number): void => {
   })
 }
 
-describe('DiffPanelContent', () => {
+describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     installMockResizeObserver()
@@ -239,7 +239,7 @@ describe('DiffPanelContent', () => {
       })
     )
 
-    render(<DiffPanelContent />)
+    render(<Panel />)
 
     expect(screen.getByText('Loading diff…')).toBeInTheDocument()
   })
@@ -264,7 +264,7 @@ describe('DiffPanelContent', () => {
       })
     )
 
-    render(<DiffPanelContent />)
+    render(<Panel />)
 
     const alert = screen.getByRole('alert')
     expect(alert).toBeInTheDocument()
@@ -290,7 +290,7 @@ describe('DiffPanelContent', () => {
       })
     )
 
-    render(<DiffPanelContent />)
+    render(<Panel />)
 
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
     expect(screen.getByText(/nothing to diff or annotate/i)).toBeInTheDocument()
@@ -354,9 +354,7 @@ describe('DiffPanelContent', () => {
       })
     )
 
-    render(
-      <DiffPanelContent cwd="/repo/current" feedbackBatch={feedbackBatch} />
-    )
+    render(<Panel cwd="/repo/current" feedbackBatch={feedbackBatch} />)
 
     expect(screen.getByTestId('diff-empty-state')).toBeInTheDocument()
     expect(
@@ -419,7 +417,7 @@ describe('DiffPanelContent', () => {
       })
     )
 
-    render(<DiffPanelContent />)
+    render(<Panel />)
 
     // Verify populated state is rendered
     const layout = screen.getByTestId('diff-populated-state')
@@ -471,7 +469,7 @@ describe('DiffPanelContent', () => {
         })
       )
 
-    render(<DiffPanelContent cwd="/home/user/project" />)
+    render(<Panel cwd="/home/user/project" />)
 
     expect(useGitStatusSpy).toHaveBeenCalledWith('/home/user/project', {
       watch: true,
@@ -513,7 +511,7 @@ describe('DiffPanelContent', () => {
     )
 
     render(
-      <DiffPanelContent
+      <Panel
         cwd="/repo"
         gitStatus={{
           files: [
@@ -603,14 +601,14 @@ describe('DiffPanelContent', () => {
         }
       })
 
-      const { rerender } = render(<DiffPanelContent cwd="/repo" />)
+      const { rerender } = render(<Panel cwd="/repo" />)
 
       expect(screen.getByText('Loading diff…')).toBeInTheDocument()
       expect(screen.queryByTestId('diff-right-pane')).toBeNull()
       expect(MockResizeObserver.instances).toHaveLength(0)
 
       loading = false
-      rerender(<DiffPanelContent cwd="/repo" />)
+      rerender(<Panel cwd="/repo" />)
 
       expect(screen.getByTestId('diff-right-pane')).toBeInTheDocument()
 
@@ -623,7 +621,7 @@ describe('DiffPanelContent', () => {
     })
 
     test('renders MultiFileDiff when paneWidth >= DIFF_MIN_WIDTH_PX', (): void => {
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(DIFF_MIN_WIDTH_PX + 10)
 
@@ -636,7 +634,7 @@ describe('DiffPanelContent', () => {
     })
 
     test('renders DiffNarrowPlaceholder when paneWidth < DIFF_MIN_WIDTH_PX', (): void => {
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(DIFF_MIN_WIDTH_PX - 1)
 
@@ -655,7 +653,7 @@ describe('DiffPanelContent', () => {
       // render unified, but the saved preference is untouched (we cannot
       // assert the underlying state here directly; the contract is asserted
       // via the prop flowing into MultiFileDiff).
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX - 1)
 
@@ -664,7 +662,7 @@ describe('DiffPanelContent', () => {
     })
 
     test('keeps split preference when clicking forced unified below split width', (): void => {
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX - 1)
 
@@ -683,7 +681,7 @@ describe('DiffPanelContent', () => {
     })
 
     test('renders split when paneWidth >= SPLIT_MIN_WIDTH_PX (default diffStyle)', (): void => {
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 1)
 
@@ -692,7 +690,7 @@ describe('DiffPanelContent', () => {
     })
 
     test('passes default theme + oldFile/newFile names to MultiFileDiff', (): void => {
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
@@ -734,7 +732,7 @@ describe('DiffPanelContent', () => {
 
       // selectedFile is from /repo/a but current cwd is /repo/b
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo/b"
           selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '/repo/a' }}
           onSelectedFileChange={vi.fn()}
@@ -778,7 +776,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo/a"
           selectedFile={null}
           onSelectedFileChange={onSelectedFileChange}
@@ -818,7 +816,7 @@ describe('DiffPanelContent', () => {
       )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo/b"
           selectedFile={null}
           onSelectedFileChange={vi.fn()}
@@ -866,7 +864,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo/b"
           selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '/repo/b' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -942,7 +940,7 @@ describe('DiffPanelContent', () => {
         )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'new.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1006,7 +1004,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/a.tsx', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -1028,7 +1026,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/b.tsx', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -1050,7 +1048,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/c.tsx', staged: true, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -1072,7 +1070,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/a.tsx', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -1094,7 +1092,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={null}
           onSelectedFileChange={onSelectedFileChange}
@@ -1117,7 +1115,7 @@ describe('DiffPanelContent', () => {
       const onSelectedFileChange = vi.fn()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={null}
           onSelectedFileChange={onSelectedFileChange}
@@ -1164,7 +1162,7 @@ describe('DiffPanelContent', () => {
           })
         )
 
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       // Should auto-select first file (via local state)
       expect(useFileDiffSpy).toHaveBeenCalledWith(
@@ -1202,10 +1200,10 @@ describe('DiffPanelContent', () => {
           })
         )
 
-      const { rerender } = render(<DiffPanelContent cwd="/repo/a" />)
+      const { rerender } = render(<Panel cwd="/repo/a" />)
 
       // Change cwd
-      rerender(<DiffPanelContent cwd="/repo/b" />)
+      rerender(<Panel cwd="/repo/b" />)
 
       // Initially should call with null (stale selection from old cwd)
       // Then after filesCwd updates, should auto-select
@@ -1237,9 +1235,9 @@ describe('DiffPanelContent', () => {
         fileDiffMock({ diff: null, loading: false, error: null })
       )
 
-      render(<DiffPanelContent />)
+      render(<Panel />)
 
-      // DiffPanelContent's defaults are theme 'pierre-dark' + lineDiffType
+      // Panel's defaults are theme 'pierre-dark' + lineDiffType
       // 'word'; the sync effect must push BOTH into the shared worker pool so
       // the renderer's workerManager-driven path picks them up. lineDiffType
       // matters because setRenderOptions defaults every omitted field —
@@ -1286,7 +1284,7 @@ describe('DiffPanelContent', () => {
         })
       )
 
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'Diff render sync failed: worker failed'
@@ -1330,7 +1328,7 @@ describe('DiffPanelContent', () => {
         })
       )
 
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-theme',
@@ -1403,7 +1401,7 @@ describe('DiffPanelContent', () => {
         })
       )
 
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-line-diff-type',
@@ -1482,7 +1480,7 @@ describe('DiffPanelContent', () => {
         })
       )
 
-      render(<DiffPanelContent cwd="/repo" />)
+      render(<Panel cwd="/repo" />)
 
       // The mount write fires and is left pending (unresolved).
       await waitFor(() =>
@@ -1639,7 +1637,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1678,7 +1676,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1725,7 +1723,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1764,7 +1762,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1803,7 +1801,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1860,7 +1858,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1899,7 +1897,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1937,7 +1935,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -1990,7 +1988,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: true, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2081,7 +2079,7 @@ describe('DiffPanelContent', () => {
 
     test('initial render: no persistent hunk selection (gutter + follows hover)', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2099,7 +2097,7 @@ describe('DiffPanelContent', () => {
 
     test('counter shows 1/3 on initial render', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2125,7 +2123,7 @@ describe('DiffPanelContent', () => {
       })
 
       const { rerender } = render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2148,7 +2146,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2177,7 +2175,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2193,7 +2191,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2266,7 +2264,7 @@ describe('DiffPanelContent', () => {
       )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2381,7 +2379,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2407,7 +2405,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2431,7 +2429,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2470,7 +2468,7 @@ describe('DiffPanelContent', () => {
       })
 
       const { rerender } = render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -2512,7 +2510,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -2541,7 +2539,7 @@ describe('DiffPanelContent', () => {
       })
 
       const { rerender } = render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo-a"
           gitStatus={makeGitStatus('/repo-a')}
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo-a' }}
@@ -2552,7 +2550,7 @@ describe('DiffPanelContent', () => {
       expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo-b"
           gitStatus={makeGitStatus('/repo-b')}
           selectedFile={{ path: 'src/first.ts', staged: false, cwd: '/repo-b' }}
@@ -2561,7 +2559,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo-a"
           gitStatus={makeGitStatus('/repo-a')}
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo-a' }}
@@ -2580,7 +2578,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       const { rerender } = render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2614,7 +2612,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2679,7 +2677,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2716,7 +2714,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2755,7 +2753,7 @@ describe('DiffPanelContent', () => {
 
     test('j/k move the keyboard-selected comment target within the current file', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2777,7 +2775,7 @@ describe('DiffPanelContent', () => {
 
     test('j/k scroll Pierre shadow-DOM lines into view', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2894,7 +2892,7 @@ describe('DiffPanelContent', () => {
       )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2952,7 +2950,7 @@ describe('DiffPanelContent', () => {
 
     test('i opens the inline comment editor on the keyboard-selected line', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -2974,7 +2972,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3018,7 +3016,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3055,7 +3053,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -3096,7 +3094,7 @@ describe('DiffPanelContent', () => {
       })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={onSelectedFileChange}
@@ -3124,7 +3122,7 @@ describe('DiffPanelContent', () => {
 
     test('Ctrl+D and Ctrl+U page the diff scroll body', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3151,7 +3149,7 @@ describe('DiffPanelContent', () => {
 
     test('t toggles split and unified view', (): void => {
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3207,7 +3205,7 @@ describe('DiffPanelContent', () => {
       )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3283,7 +3281,7 @@ describe('DiffPanelContent', () => {
       )
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3330,7 +3328,7 @@ describe('DiffPanelContent', () => {
         onSelectedFileChange: vi.fn(),
       } as const
 
-      const { rerender } = render(<DiffPanelContent {...props} />)
+      const { rerender } = render(<Panel {...props} />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
@@ -3350,7 +3348,7 @@ describe('DiffPanelContent', () => {
       expect(textarea).toHaveValue('Draft while agent edits')
 
       newText = 'new after agent edit'
-      rerender(<DiffPanelContent {...props} />)
+      rerender(<Panel {...props} />)
 
       expect(screen.getByPlaceholderText('Request change')).toHaveValue(
         'Draft while agent edits'
@@ -3397,7 +3395,7 @@ describe('DiffPanelContent', () => {
       }
 
       const { rerender } = render(
-        <DiffPanelContent
+        <Panel
           {...controlledProps}
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           gitStatus={loadedGitStatus}
@@ -3420,7 +3418,7 @@ describe('DiffPanelContent', () => {
       )
 
       rerender(
-        <DiffPanelContent
+        <Panel
           {...controlledProps}
           selectedFile={null}
           gitStatus={emptyGitStatus}
@@ -3430,7 +3428,7 @@ describe('DiffPanelContent', () => {
       expect(screen.queryByPlaceholderText('Request change')).toBeNull()
 
       rerender(
-        <DiffPanelContent
+        <Panel
           {...controlledProps}
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           gitStatus={loadedGitStatus}
@@ -3474,9 +3472,7 @@ describe('DiffPanelContent', () => {
         idle: false,
       }
 
-      const { rerender } = render(
-        <DiffPanelContent {...props} gitStatus={gitStatus} />
-      )
+      const { rerender } = render(<Panel {...props} gitStatus={gitStatus} />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
@@ -3494,12 +3490,7 @@ describe('DiffPanelContent', () => {
         rawDiff: '',
       })
 
-      rerender(
-        <DiffPanelContent
-          {...props}
-          gitStatus={{ ...gitStatus, revision: 2 }}
-        />
-      )
+      rerender(<Panel {...props} gitStatus={{ ...gitStatus, revision: 2 }} />)
 
       expect(screen.queryByText('Loading diff…')).not.toBeInTheDocument()
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
@@ -3516,12 +3507,7 @@ describe('DiffPanelContent', () => {
         rawDiff: '',
       })
 
-      rerender(
-        <DiffPanelContent
-          {...props}
-          gitStatus={{ ...gitStatus, revision: 2 }}
-        />
-      )
+      rerender(<Panel {...props} gitStatus={{ ...gitStatus, revision: 2 }} />)
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-new-contents',
@@ -3558,7 +3544,7 @@ describe('DiffPanelContent', () => {
         onSelectedFileChange: vi.fn(),
       } as const
 
-      const { rerender } = render(<DiffPanelContent {...props} />)
+      const { rerender } = render(<Panel {...props} />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
@@ -3579,7 +3565,7 @@ describe('DiffPanelContent', () => {
         ...inlineFileDiff,
         hunks: [],
       }
-      rerender(<DiffPanelContent {...props} />)
+      rerender(<Panel {...props} />)
 
       expect(
         screen.queryByRole('dialog', { name: /Comment on line/ })
@@ -3594,7 +3580,7 @@ describe('DiffPanelContent', () => {
       const user = userEvent.setup()
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3650,7 +3636,7 @@ describe('DiffPanelContent', () => {
       }
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
@@ -3729,7 +3715,7 @@ describe('DiffPanelContent', () => {
         })
 
       render(
-        <DiffPanelContent
+        <Panel
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}

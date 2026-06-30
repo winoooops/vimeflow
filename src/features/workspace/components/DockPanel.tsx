@@ -20,10 +20,7 @@ import {
 } from '../../editor/components/EditorPathCrumb'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
-import {
-  DiffPanelContent,
-  type FeedbackRepoRootRef,
-} from '../../diff/components/DiffPanelContent'
+import { Panel, type FeedbackRepoRootRef } from '../../diff/Panel'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
 import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
@@ -643,7 +640,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                 className="flex min-h-0 flex-1 focus:outline-none"
               >
                 {selectedDiffFile !== undefined ? (
-                  <DiffPanelContent
+                  <Panel
                     cwd={cwd}
                     gitStatus={gitStatus}
                     selectedFile={selectedDiffFile}
@@ -654,7 +651,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDispatch={feedbackDispatch}
                   />
                 ) : (
-                  <DiffPanelContent
+                  <Panel
                     cwd={cwd}
                     gitStatus={gitStatus}
                     feedbackBatch={feedbackBatch}
