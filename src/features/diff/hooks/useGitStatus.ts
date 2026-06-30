@@ -1,3 +1,14 @@
+/**
+ * Tracks changed files for a workspace cwd and optionally keeps them fresh with
+ * the backend git watcher.
+ *
+ * The hook is intentionally the only place that talks to the Rust sidecar for
+ * status polling. Consumers get the latest successful file list, the cwd that
+ * produced it, and a monotonically increasing `revision`. That revision is
+ * important even when the file list is textually identical: DiffPanelContent
+ * passes it to `useFileDiff` as a refresh token so the selected file can
+ * re-fetch after stage/discard/save events without flashing to an empty state.
+ */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { createGitService } from '../services/gitService'
@@ -24,13 +35,15 @@ export interface UseGitStatusReturn {
    * Empty string when the cwd is not inside a git repo.
    */
   repoRoot?: string | null
+  /** Increments after each successful status fetch, even when file stats match. */
+  revision?: number
   loading: boolean
   error: Error | null
   refresh: () => void
   /**
    * True when the hook is **deliberately short-circuited** — either `enabled`
    * is false (caller disabled the hook, e.g. the agent isn't active) or the
-   * `cwd` is a fallback value that would fire IPC against the Tauri process's
+   * `cwd` is a fallback value that would fire IPC against the Rust sidecar's
    * own cwd. In either case NO fetch runs and the empty state is permanent
    * until the conditions change.
    *
@@ -57,15 +70,38 @@ export const useGitStatus = (
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [filesCwd, setFilesCwd] = useState<string | null>(null)
   const [repoRoot, setRepoRoot] = useState<string | null>(null)
+  const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(() => enabled && isValidCwd(cwd))
   const [error, setError] = useState<Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   // Track unlisten function for cleanup
   const unlistenRef = useRef<UnlistenFn | null>(null)
+  const fetchingRef = useRef(false)
+  const filesCwdRef = useRef(filesCwd)
+  const cwdRef = useRef(cwd)
+  // Watcher events can arrive while a status request is already in flight.
+  // Queue one cwd-matched refresh instead of launching overlapping git calls;
+  // the follow-up success bumps `revision`, which then invalidates useFileDiff.
+  const queuedRefreshCwdRef = useRef<string | null>(null)
 
-  // Trigger a re-run of the fetch effect
+  useEffect(() => {
+    filesCwdRef.current = filesCwd
+  }, [filesCwd])
+
+  useEffect(() => {
+    cwdRef.current = cwd
+  }, [cwd])
+
+  // Trigger a re-run of the fetch effect. If a fetch is active, remember the cwd
+  // that requested refresh and run one more pass after the active fetch settles.
   const refresh = useCallback((): void => {
+    if (fetchingRef.current) {
+      queuedRefreshCwdRef.current = cwdRef.current
+
+      return
+    }
+
     setRefreshKey((k) => k + 1)
   }, [])
 
@@ -76,13 +112,16 @@ export const useGitStatus = (
   //
   // Skips the fetch entirely when:
   // - cwd is a fallback value ('.' or '~') to avoid firing IPC against
-  //   the Tauri process's CWD, which is unlikely to be the user's project directory
+  //   the Rust sidecar CWD, which is unlikely to be the user's project directory
   // - enabled is false (hook is disabled)
   useEffect(() => {
     if (!enabled || !isValidCwd(cwd)) {
+      queuedRefreshCwdRef.current = null
+      fetchingRef.current = false
       setFiles([])
       setFilesCwd(null)
       setRepoRoot(null)
+      setRevision(0)
       setLoading(false)
       setError(null)
 
@@ -93,7 +132,11 @@ export const useGitStatus = (
 
     const fetchStatus = async (): Promise<void> => {
       try {
-        setLoading(true)
+        fetchingRef.current = true
+        const shouldShowLoading = filesCwdRef.current !== cwd
+        if (shouldShowLoading) {
+          setLoading(true)
+        }
         setError(null)
 
         const {
@@ -105,6 +148,9 @@ export const useGitStatus = (
           setFiles(changedFiles)
           setFilesCwd(cwd) // Only update on success
           setRepoRoot(changedRepoRoot || null)
+          // Status success is also the diff invalidation signal. Increment even
+          // if changedFiles is structurally the same as before.
+          setRevision((current) => current + 1)
         }
       } catch (err) {
         if (!cancelled) {
@@ -115,7 +161,13 @@ export const useGitStatus = (
         }
       } finally {
         if (!cancelled) {
+          const shouldRunQueuedRefresh = queuedRefreshCwdRef.current === cwd
+          fetchingRef.current = false
+          queuedRefreshCwdRef.current = null
           setLoading(false)
+          if (shouldRunQueuedRefresh) {
+            setRefreshKey((k) => k + 1)
+          }
         }
       }
     }
@@ -124,6 +176,7 @@ export const useGitStatus = (
 
     return (): void => {
       cancelled = true
+      fetchingRef.current = false
     }
   }, [cwd, refreshKey, enabled])
 
@@ -234,6 +287,7 @@ export const useGitStatus = (
     files,
     filesCwd,
     repoRoot,
+    revision,
     loading,
     error,
     refresh,

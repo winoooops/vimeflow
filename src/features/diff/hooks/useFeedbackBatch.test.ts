@@ -405,4 +405,149 @@ describe('useFeedbackBatchStore', () => {
     expect(result.current.feedbackBatch.totalAnnotations()).toBe(0)
     expect(result.current.feedbackRepoRootRef.current).toBe('')
   })
+
+  test('stores comment drafts separately per owner key', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'session-a:p0', cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+    })
+
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
+
+    expect(result.current.feedbackDraft.draft).toBeNull()
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-b',
+        filePath: 'src/b.ts',
+        staged: true,
+        side: 'deletions',
+        lineNumber: 3,
+        text: 'draft b',
+      })
+    })
+
+    expect(result.current.feedbackDraft.draft?.text).toBe('draft b')
+
+    rerender({ ownerKey: 'session-a:p0', cwd: '/repo-a' })
+
+    expect(result.current.feedbackDraft.draft).toEqual({
+      cwd: '/repo-a',
+      filePath: 'src/a.ts',
+      staged: false,
+      side: 'additions',
+      lineNumber: 7,
+      text: 'draft a',
+    })
+  })
+
+  test('summaries include draft-only unfinished reviews', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+    })
+
+    expect(result.current.summaries).toEqual([
+      {
+        ownerKey: 'session-a:p0',
+        fileCount: 1,
+        commentCount: 0,
+        draftCount: 1,
+      },
+    ])
+  })
+
+  test('clearBatch clears the current owner draft', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    expect(result.current.feedbackDraft.draft?.text).toBe('draft a')
+
+    act(() => {
+      result.current.feedbackBatch.clearBatch()
+    })
+
+    expect(result.current.feedbackDraft.draft).toBeNull()
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(0)
+  })
+
+  test('prunes drafts for closed owners', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'session-a:p0', cwd: '/repo-a' } }
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+    })
+
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-b',
+        filePath: 'src/b.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 3,
+        text: 'draft b',
+      })
+      result.current.pruneOwners(new Set(['session-b:p0']))
+    })
+
+    rerender({ ownerKey: 'session-a:p0', cwd: '/repo-a' })
+
+    expect(result.current.feedbackDraft.draft).toBeNull()
+
+    rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
+
+    expect(result.current.feedbackDraft.draft?.text).toBe('draft b')
+  })
 })

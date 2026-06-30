@@ -5,85 +5,53 @@ import {
   useState,
   useEffect,
   useCallback,
-  useLayoutEffect,
   useMemo,
   useRef,
 } from 'react'
-import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
 import type {
   AnnotationSide,
-  BaseDiffOptions,
   DiffLineAnnotation,
-  DiffsThemeNames,
   SelectedLineRange,
 } from '@pierre/diffs'
-import { useGitStatus, type UseGitStatusReturn } from '../hooks/useGitStatus'
-import { useFileDiff } from '../hooks/useFileDiff'
-import { ChangedFilesList } from './ChangedFilesList'
-import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
-import {
-  DiffChipToolbar,
-  DIFF_MIN_WIDTH_PX,
-  SPLIT_MIN_WIDTH_PX,
-} from './toolbar'
-import { toPierreInputs, findRawDiffHunkIndex } from '../services/pierreAdapter'
-import { extractHunkPatch } from '../services/gitPatch'
-import { createGitService } from '../services/gitService'
-import { enqueuePoolWrite } from '../services/workerPoolWrites'
-import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
-import { useTheme } from '../../../theme'
-import { pierreThemeForKind } from '../pierreTheme'
-import type { ChangedFile, FileDiff, SelectedDiffFile } from '../types'
+import { useGitStatus, type UseGitStatusReturn } from './hooks/useGitStatus'
+import { useFileDiff } from './hooks/useFileDiff'
+import { ChangedFilesList } from './components/ChangedFilesList'
+import { toPierreInputs, findRawDiffHunkIndex } from './services/pierreAdapter'
+import { extractHunkPatch } from './services/gitPatch'
+import { createGitService } from './services/gitService'
+import { useNotifyInfo } from '../workspace/hooks/useNotifyInfo'
+import type { ChangedFile, FileDiff, SelectedDiffFile } from './types'
 import {
   useFeedbackBatch,
   parseBatchKey,
-  DRAFT_ID,
+  type FeedbackDraftStore,
   type ReviewComment,
   type UseFeedbackBatchReturn,
-} from '../hooks/useFeedbackBatch'
-import { ReviewCommentEditor } from './ReviewCommentEditor'
-import { ReviewCommentRow } from './ReviewCommentRow'
-import { FinishFeedbackPopover } from './FinishFeedbackPopover'
-import { useDiffKeyboard } from '../hooks/useDiffKeyboard'
-import { IconButton } from '@/components/IconButton'
-import { Button } from '@/components/Button'
-import { Popover } from '@/components/Popover'
+} from './hooks/useFeedbackBatch'
+import { useKeyboard } from './hooks/useKeyboard'
 import {
   dispatchFeedbackBatch,
   type DispatchEntry,
-} from '../services/feedbackDispatch'
+} from './services/feedbackDispatch'
 import {
   resolveCandidatePanes,
   type PaneCandidate,
   type FeedbackDispatchTarget,
-} from '../services/activePanePicker'
-
-// Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
-// the raw enum literals) so a Pierre version bump that widens or renames any
-// of these surfaces as a type error rather than a silent string-typed
-// regression.
-type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
-type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
-type Overflow = NonNullable<BaseDiffOptions['overflow']>
-type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
+} from './services/activePanePicker'
+import {
+  isSameAnnotationTarget,
+  useReviewCommentDraft,
+  type AnnotationTarget,
+} from './hooks/useReviewCommentDraft'
+import { useToolbarState } from './hooks/useToolbarState'
+import { Notifier } from './components/Notifier'
+import { PanelBody } from './components/PanelBody'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
 
 const PIERRE_DIFF_CONTAINER_SELECTOR = 'diffs-container'
 const STICKY_HEADER_SCROLL_GAP_PX = 4
-
-// The subset of Pierre options the worker pool OWNS once a pool is active:
-// the Shiki `theme` and the intra-line word-diff algorithm (`lineDiffType`).
-// `DiffHunksRenderer.getRenderOptions()` returns
-// `workerManager.getDiffRenderOptions()` wholesale under a pool (see
-// node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js), so the
-// per-instance `<MultiFileDiff options>` props for these two are ignored —
-// they must be pushed into the pool via `setRenderOptions` instead.
-interface PoolRenderOptions {
-  theme: DiffsThemeNames
-  lineDiffType: LineDiffType
-}
 
 /**
  * Controlled/uncontrolled selection pair as a discriminated union. Forces
@@ -94,7 +62,7 @@ interface PoolRenderOptions {
  * and get a silently-frozen selection — no auto-select-first, no cwd reset,
  * no stale-selection invalidation. Same pattern as `BottomDrawerProps`.
  */
-type DiffPanelSelectionControl =
+type PanelSelectionControl =
   | { selectedFile?: undefined; onSelectedFileChange?: undefined }
   | {
       selectedFile: SelectedDiffFile | null
@@ -106,21 +74,22 @@ export interface FeedbackRepoRootRef {
   repoRootForCwd?: (cwd: string) => string
 }
 
-interface DiffPanelContentBaseProps {
+interface PanelBaseProps {
   /** Working directory for git commands */
   cwd?: string
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
   /** Optional shared feedback batch from the workspace shell. */
   feedbackBatch?: UseFeedbackBatchReturn
+  /** Optional shared open-comment draft from the workspace shell. */
+  feedbackDraft?: FeedbackDraftStore
   /** Optional shared repo-root cache for feedback dispatch path resolution. */
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
 }
 
-export type DiffPanelContentProps = DiffPanelContentBaseProps &
-  DiffPanelSelectionControl
+export type PanelProps = PanelBaseProps & PanelSelectionControl
 
 // Monotonic id source. A module counter keeps comment ids stable + unique
 // without reaching for Date.now()/Math.random() in render.
@@ -129,14 +98,6 @@ let feedbackCommentSeq = 0
 
 const nextFeedbackCommentId = (): string =>
   `feedback-comment-${(feedbackCommentSeq += 1)}`
-
-interface AnnotationTarget {
-  lineNumber: number
-  side: AnnotationSide
-  filePath: string
-  staged: boolean
-  editId?: string
-}
 
 interface KeyboardLineTarget {
   lineNumber: number
@@ -147,55 +108,6 @@ interface KeyboardLineTarget {
 }
 
 type KeyboardConfirmAction = 'stage-hunk' | 'discard-hunk' | 'discard-file'
-
-const annotationTargetKey = (target: AnnotationTarget): string =>
-  `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
-    target.editId ?? 'draft'
-  }`
-
-const diffContainsAnnotationTarget = (
-  fileDiff: FileDiff,
-  target: AnnotationTarget
-): boolean => {
-  for (const hunk of fileDiff.hunks) {
-    let oldLine = hunk.oldStart
-    let newLine = hunk.newStart
-
-    for (const line of hunk.lines) {
-      const oldLineNumber =
-        line.oldLineNumber ?? (line.type === 'added' ? undefined : oldLine)
-
-      const newLineNumber =
-        line.newLineNumber ?? (line.type === 'removed' ? undefined : newLine)
-
-      if (
-        target.side === 'deletions' &&
-        line.type !== 'added' &&
-        oldLineNumber === target.lineNumber
-      ) {
-        return true
-      }
-
-      if (
-        target.side === 'additions' &&
-        line.type !== 'removed' &&
-        newLineNumber === target.lineNumber
-      ) {
-        return true
-      }
-
-      if (line.type !== 'added') {
-        oldLine += 1
-      }
-
-      if (line.type !== 'removed') {
-        newLine += 1
-      }
-    }
-  }
-
-  return false
-}
 
 const keyboardLineTargetsForDiff = (
   fileDiff: FileDiff
@@ -549,47 +461,23 @@ const keyboardConfirmCopy = (
   }
 }
 
-// Small inline status cards. They previously lived as an inline JSX ladder in
-// the right-pane block; extracting them keeps the populated-state JSX readable
-// while still avoiding their own files (each is tiny + private to this view).
-const ErrorCard = ({ message }: { message: string }): ReactElement => (
-  <div
-    className="flex h-full w-full items-center justify-center text-error"
-    role="alert"
-  >
-    <div className="text-center space-y-2">
-      <p className="text-sm font-semibold">Failed to load diff</p>
-      <p className="text-xs opacity-80">{message}</p>
-    </div>
-  </div>
-)
-
-const LoadingCard = (): ReactElement => (
-  <div
-    className="flex h-full w-full items-center justify-center text-on-surface-variant"
-    role="status"
-    aria-live="polite"
-  >
-    <p className="text-sm">Loading diff…</p>
-  </div>
-)
-
 /**
- * DiffPanelContent - Real diff viewer that replaces the placeholder
+ * Panel - Real diff viewer that replaces the placeholder
  *
  * Fetches git status and displays changed files + Pierre's <MultiFileDiff>
  * with the chip toolbar above it. Supports controlled mode for cross-
  * component selection coordination.
  */
-export const DiffPanelContent = ({
+export const Panel = ({
   cwd = '.',
   gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
   feedbackBatch = undefined,
+  feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
-}: DiffPanelContentProps): ReactElement => {
+}: PanelProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
     enabled: gitStatus === undefined,
@@ -598,6 +486,7 @@ export const DiffPanelContent = ({
   const {
     files,
     filesCwd,
+    revision: statusRevision = 0,
     loading: statusLoading,
     error: statusError,
     idle,
@@ -659,13 +548,19 @@ export const DiffPanelContent = ({
   // previously selected changed file before auto-select falls back to row 1.
   const previousSelectionCwdRef = useRef(cwd)
   useEffect(() => {
+    if (isControlled) {
+      previousSelectionCwdRef.current = cwd
+
+      return
+    }
+
     if (previousSelectionCwdRef.current === cwd) {
       return
     }
 
     previousSelectionCwdRef.current = cwd
     commitSelection(null)
-  }, [cwd, commitSelection])
+  }, [cwd, commitSelection, isControlled])
 
   // Auto-select first file when effectiveFiles changes. Gated on effectiveFiles
   // (not raw files) so filesCwd freshness check is automatic.
@@ -716,6 +611,13 @@ export const DiffPanelContent = ({
       ? undefined
       : selectedFileEntry.status === 'untracked'
 
+  const selectedFileDiffRefreshToken =
+    selectedFileEntry === undefined
+      ? undefined
+      : `${filesCwd ?? ''}:${statusRevision}:${selectedFileEntry.path}:${
+          selectedFileEntry.staged ? 'staged' : 'unstaged'
+        }`
+
   const {
     response,
     loading: diffLoading,
@@ -725,7 +627,8 @@ export const DiffPanelContent = ({
     selectedFilePath,
     selectedFileStaged,
     cwd,
-    selectedFileUntracked
+    selectedFileUntracked,
+    selectedFileDiffRefreshToken
   )
 
   const responseMatchesSelection =
@@ -733,8 +636,7 @@ export const DiffPanelContent = ({
     selectedFilePath !== null &&
     response.fileDiff.filePath === selectedFilePath
 
-  const activeResponse =
-    !diffLoading && responseMatchesSelection ? response : null
+  const activeResponse = responseMatchesSelection ? response : null
 
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
@@ -793,40 +695,41 @@ export const DiffPanelContent = ({
     }
   }, [response, repoRootRef])
 
-  // Comment editor target state: which line currently has an open comment editor.
-  // `editId` set => editing an existing comment in place; absent => a new
-  // draft on that line.
-  const [annotationTarget, setAnnotationTargetState] =
-    useState<AnnotationTarget | null>(null)
-  const [commentDraftText, setCommentDraftTextState] = useState('')
+  // Real annotations for the currently selected file.
+  const realAnnotations = feedback.annotationsForFile(
+    cwd,
+    selectedFilePath ?? '',
+    selectedFileStaged
+  )
+
+  const {
+    annotationTarget,
+    commentDraftText,
+    commentDraftIsRecoverable,
+    lineAnnotations,
+    setAnnotationTarget,
+    setCommentDraftText,
+    closeCommentDraft: closeCommentEditor,
+  } = useReviewCommentDraft({
+    cwd,
+    feedbackDraft,
+    selectedFilePath,
+    selectedFileStaged,
+    activeFileDiff: activeResponse?.fileDiff ?? null,
+    realAnnotations,
+    focusDiffRoot,
+  })
+
+  const recoverableCommentDraftTarget =
+    commentDraftIsRecoverable && annotationTarget !== null
+      ? annotationTarget
+      : null
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
 
   const [keyboardConfirmAction, setKeyboardConfirmAction] =
     useState<KeyboardConfirmAction | null>(null)
-
-  const setAnnotationTarget = useCallback(
-    (next: SetStateAction<AnnotationTarget | null>, focusDiff = true): void => {
-      if (focusDiff) {
-        focusDiffRoot()
-      }
-
-      setAnnotationTargetState(next)
-    },
-    [focusDiffRoot]
-  )
-
-  const setCommentDraftText = useCallback(
-    (next: SetStateAction<string>, focusDiff = true): void => {
-      if (focusDiff) {
-        focusDiffRoot()
-      }
-
-      setCommentDraftTextState(next)
-    },
-    [focusDiffRoot]
-  )
 
   const setKeyboardConfirm = useCallback(
     (
@@ -840,77 +743,6 @@ export const DiffPanelContent = ({
       setKeyboardConfirmAction(next)
     },
     [focusDiffRoot]
-  )
-
-  // Real annotations for the currently selected file.
-  const realAnnotations = feedback.annotationsForFile(
-    cwd,
-    selectedFilePath ?? '',
-    selectedFileStaged
-  )
-
-  const annotationTargetIsCurrentFile =
-    annotationTarget !== null &&
-    annotationTarget.filePath === selectedFilePath &&
-    annotationTarget.staged === selectedFileStaged
-
-  const annotationTargetLineExists = useMemo((): boolean => {
-    if (
-      annotationTarget === null ||
-      !annotationTargetIsCurrentFile ||
-      activeResponse === null
-    ) {
-      return false
-    }
-
-    return diffContainsAnnotationTarget(
-      activeResponse.fileDiff,
-      annotationTarget
-    )
-  }, [activeResponse, annotationTarget, annotationTargetIsCurrentFile])
-
-  const commentDraftIsRecoverable =
-    annotationTarget !== null &&
-    commentDraftText.trim().length > 0 &&
-    activeResponse !== null &&
-    (!annotationTargetIsCurrentFile || !annotationTargetLineExists)
-
-  // Merge a transient draft annotation in only while composing a NEW comment,
-  // so the comment editor renders inline below the target line. Editing reuses the
-  // existing annotation's slot, so no draft is added there. When idle we pass
-  // `realAnnotations` straight through to keep its identity stable (avoids
-  // Pierre re-tokenizing on every render).
-  const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
-    if (
-      annotationTarget !== null &&
-      annotationTarget.editId === undefined &&
-      annotationTargetIsCurrentFile &&
-      (activeResponse === null || annotationTargetLineExists)
-    ) {
-      const draft: DiffLineAnnotation<ReviewComment> = {
-        side: annotationTarget.side,
-        lineNumber: annotationTarget.lineNumber,
-        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
-      }
-
-      return [...realAnnotations, draft]
-    }
-
-    return realAnnotations
-  }, [
-    realAnnotations,
-    annotationTarget,
-    annotationTargetIsCurrentFile,
-    annotationTargetLineExists,
-    activeResponse,
-  ])
-
-  const closeCommentEditor = useCallback(
-    (focusDiff = true): void => {
-      setAnnotationTarget(null, focusDiff)
-      setCommentDraftText('', false)
-    },
-    [setCommentDraftText, setAnnotationTarget]
   )
 
   const confirmCommentEditor = useCallback(
@@ -1068,18 +900,6 @@ export const DiffPanelContent = ({
   useEffect(() => {
     setFocusedHunkIndex(0)
   }, [selectedFilePath, selectedFileStaged])
-
-  // Clear the comment editor on file changes so a draft opened on one file is
-  // not accidentally submitted against another.
-  useEffect(() => {
-    setAnnotationTarget(null, false)
-    setCommentDraftText('', false)
-  }, [
-    selectedFilePath,
-    selectedFileStaged,
-    setCommentDraftText,
-    setAnnotationTarget,
-  ])
 
   const hunkCount = activeResponse?.fileDiff.hunks.length ?? 0
 
@@ -1391,189 +1211,16 @@ export const DiffPanelContent = ({
     internalGitStatus,
   ])
 
-  // Pierre option state — every option here is a controlled-component value
-  // surfaced upward from DiffChipToolbar. Most values drive <MultiFileDiff>
-  // on the next render. `theme` and `lineDiffType` are special: the worker
-  // pool owns them (see the render-options sync effect below), so they flow
-  // through `syncedRenderOptions` and the diff remount waits for the pool to
-  // accept the new value first.
-  const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
-
-  const workspaceTheme = useTheme()
-
-  const [theme, setTheme] = useState<DiffsThemeNames>(() =>
-    pierreThemeForKind(workspaceTheme.kind)
-  )
-
-  // Workspace theme switch resets the diff theme to the mapped default,
-  // overriding any session-level dropdown choice (spec §5).
-  useEffect(() => {
-    setTheme(pierreThemeForKind(workspaceTheme.kind))
-  }, [workspaceTheme.kind])
-
-  const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
-
-  const [diffIndicators, setDiffIndicators] =
-    useState<DiffIndicators>('classic')
-
-  const [overflowOpt, setOverflowOpt] = useState<Overflow>('scroll')
-  const [disableLineNumbers, setDisableLineNumbers] = useState(false)
-  const [disableBackground, setDisableBackground] = useState(false)
-  const [disableFileHeader, setDisableFileHeader] = useState(false)
-  const [stickyHeader, setStickyHeader] = useState(true)
-
-  // Pool-owned render options, gated behind the worker-pool sync below so the
-  // diff remount waits until the pool actually accepts the new value.
-  // `renderedTheme` / `renderedLineDiffType` read from HERE (not from `theme` /
-  // `lineDiffType` directly) whenever a pool is present.
-  const [syncedRenderOptions, setSyncedRenderOptions] =
-    useState<PoolRenderOptions>({ theme, lineDiffType })
-  const syncedRenderOptionsRef = useRef<PoolRenderOptions>(syncedRenderOptions)
-
-  const [renderSyncError, setRenderSyncErrorState] = useState<string | null>(
-    null
-  )
-  const renderSyncErrorRef = useRef<string | null>(null)
-
-  const setRenderSyncError = useCallback((message: string | null): void => {
-    if (renderSyncErrorRef.current === message) {
-      return
-    }
-
-    renderSyncErrorRef.current = message
-    setRenderSyncErrorState(message)
-  }, [])
-
-  const commitSyncedRenderOptions = useCallback(
-    (next: PoolRenderOptions): void => {
-      const prev = syncedRenderOptionsRef.current
-      if (
-        prev.theme === next.theme &&
-        prev.lineDiffType === next.lineDiffType
-      ) {
-        return
-      }
-
-      syncedRenderOptionsRef.current = next
-      setSyncedRenderOptions(next)
-    },
-    []
-  )
-
-  // Responsive width tracking. The right pane drives the two width bands:
-  //   width < SPLIT_MIN_WIDTH_PX → coerce diffStyle to 'unified' (saved
-  //                                preference preserved; coercion is read-only)
-  //   width < DIFF_MIN_WIDTH_PX  → render <DiffNarrowPlaceholder> instead
-  //                                of MultiFileDiff (toolbar stays mounted)
-  // Track the actual DOM node because the populated pane mounts after the
-  // loading branch. A one-shot ref read can miss that later mount entirely.
-  const [paneNode, setPaneNode] = useState<HTMLDivElement | null>(null)
-  const [paneWidth, setPaneWidth] = useState(0)
-
-  useLayoutEffect(() => {
-    if (!paneNode) {
-      return
-    }
-
-    const observer = new ResizeObserver((entries) => {
-      setPaneWidth(entries[0].contentRect.width)
-    })
-    observer.observe(paneNode)
-
-    return (): void => observer.disconnect()
-  }, [paneNode])
-
-  // Push pool-owned render options (theme + lineDiffType) into the shared
-  // Pierre worker pool. The worker tokenizes off-main-thread AND computes
-  // word-level intra-line decorations there, and
-  // `DiffHunksRenderer.getRenderOptions()` returns
-  // `workerManager.getDiffRenderOptions()` wholesale when a pool is active (see
-  // node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js), shadowing
-  // the per-instance `<MultiFileDiff options>` props. Without this sync the
-  // toolbar's THEME and HIGHLIGHT dropdowns write local state but the diff
-  // keeps rendering with the pool's initial values (both surfaced during PR1
-  // QA). NOTE: `setRenderOptions` resets every omitted field to its default,
-  // so theme and lineDiffType must be pushed together — passing only `theme`
-  // silently reset lineDiffType back to Pierre's `word-alt` default.
-  const workerPool = useWorkerPool()
-
-  // Push pool-owned render options (theme + lineDiffType) into the shared
-  // Pierre worker pool via module-level pool-keyed serialization. Each write
-  // is enqueued after the pool's previous pending write so submissions land in
-  // order across ALL DiffPanelContent instances that share the same pool — the
-  // per-instance chain from #276 only serialized within one instance and left
-  // a race window when two panes (split layout) or an unmount/remount overlapped
-  // on the app-wide pool singleton.
-  //
-  // theme and lineDiffType are intentionally app-wide for v1: the app mounts
-  // ONE <WorkerPoolContextProvider>, so all diff panes share one pool instance
-  // which holds one set of render options. Per-pane independent themes are out
-  // of scope and would require per-pane pool topology changes.
-  //
-  // The per-run `cancelled` flag (set by the effect cleanup) is passed as the
-  // `shouldSkip` predicate so a superseded effect run silently skips its write
-  // while still letting subsequent runs proceed through the chain.
-  useEffect(() => {
-    const next: PoolRenderOptions = { theme, lineDiffType }
-
-    if (!workerPool) {
-      commitSyncedRenderOptions(next)
-
-      return
-    }
-
-    let cancelled = false
-
-    const run = async (): Promise<void> => {
-      try {
-        await enqueuePoolWrite(workerPool, next, () => cancelled)
-
-        if (!cancelled) {
-          setRenderSyncError(null)
-          commitSyncedRenderOptions(next)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setRenderSyncError(err instanceof Error ? err.message : String(err))
-        }
-      }
-    }
-
-    void run()
-
-    return (): void => {
-      cancelled = true
-    }
-  }, [
-    commitSyncedRenderOptions,
-    setRenderSyncError,
-    workerPool,
-    theme,
-    lineDiffType,
-  ])
-  const renderedTheme = workerPool ? syncedRenderOptions.theme : theme
-
-  const renderedLineDiffType = workerPool
-    ? syncedRenderOptions.lineDiffType
-    : lineDiffType
-
-  const hasMeasuredPane = paneWidth > 0
-
-  const splitForced =
-    hasMeasuredPane && diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
-  const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
-  const tooNarrow = hasMeasuredPane && paneWidth < DIFF_MIN_WIDTH_PX
-
-  const handleDiffStyleChange = useCallback(
-    (next: DiffStyle): void => {
-      if (splitForced && next === 'unified') {
-        return
-      }
-
-      setDiffStyle(next)
-    },
-    [splitForced]
-  )
+  const {
+    toolbarSettingsProps,
+    multiFileDiffOptions,
+    renderKey,
+    renderSyncError,
+    setDiffPaneElement,
+    tooNarrow,
+    effectiveDiffStyle,
+    toggleDiffStyle,
+  } = useToolbarState()
 
   // Memoize the Pierre input pair on response identity. Without this,
   // `toPierreInputs(response)` would mint fresh { oldFile, newFile } object
@@ -1583,8 +1230,8 @@ export const DiffPanelContent = ({
   // bug observed during PR1 QA. Declared BEFORE the early returns below so
   // the hook order is stable across renders (rules-of-hooks).
   const pierreInputs = useMemo(
-    () => (response ? toPierreInputs(response) : null),
-    [response]
+    () => (activeResponse ? toPierreInputs(activeResponse) : null),
+    [activeResponse]
   )
 
   // File navigation — index of the selected file within effectiveFiles, or
@@ -1637,9 +1284,6 @@ export const DiffPanelContent = ({
     },
     [effectiveFiles, currentFileIndex, selectDiffFile]
   )
-
-  // Toolbar shell ref for anchoring the FinishFeedbackPopover.
-  const toolbarShellRef = useRef<HTMLDivElement>(null)
 
   const scrollDiffPage = useCallback(
     (direction: number): void => {
@@ -1879,11 +1523,7 @@ export const DiffPanelContent = ({
         return ''
       }
 
-      const sameTarget =
-        annotationTargetKey(annotationTarget) ===
-        annotationTargetKey(nextTarget)
-
-      return sameTarget ? current : ''
+      return isSameAnnotationTarget(annotationTarget, nextTarget) ? current : ''
     }, false)
     setAnnotationTarget(nextTarget)
   }, [
@@ -1896,10 +1536,6 @@ export const DiffPanelContent = ({
     setCommentDraftText,
     setAnnotationTarget,
   ])
-
-  const toggleDiffStyle = useCallback((): void => {
-    handleDiffStyleChange(diffStyle === 'split' ? 'unified' : 'split')
-  }, [diffStyle, handleDiffStyleChange])
 
   const moveKeyboardLineSide = useCallback(
     (side: AnnotationSide): void => {
@@ -2060,7 +1696,7 @@ export const DiffPanelContent = ({
     selectedFilePath,
   ])
 
-  useDiffKeyboard({
+  useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
     confirming: keyboardConfirmAction !== null,
@@ -2096,6 +1732,85 @@ export const DiffPanelContent = ({
         )
       : null
 
+  const clearKeyboardLineActiveOnPointerMove = useCallback((): void => {
+    if (keyboardLineActive) {
+      setKeyboardLineActive(false)
+    }
+  }, [keyboardLineActive])
+
+  const handleBodyAddComment = useCallback(
+    (lineNumber: number, side: AnnotationSide): void => {
+      if (selectedFilePath === null) {
+        return
+      }
+
+      setKeyboardLineActive(false)
+
+      const nextTarget: AnnotationTarget = {
+        lineNumber,
+        side,
+        filePath: selectedFilePath,
+        staged: selectedFileStaged,
+      }
+
+      setCommentDraftText((current) => {
+        if (annotationTarget === null) {
+          return ''
+        }
+
+        return isSameAnnotationTarget(annotationTarget, nextTarget)
+          ? current
+          : ''
+      }, false)
+      setAnnotationTarget(nextTarget)
+    },
+    [
+      annotationTarget,
+      selectedFilePath,
+      selectedFileStaged,
+      setCommentDraftText,
+      setAnnotationTarget,
+    ]
+  )
+
+  const handleBodyEditComment = useCallback(
+    (annotation: DiffLineAnnotation<ReviewComment>): void => {
+      setAnnotationTarget({
+        lineNumber: annotation.lineNumber,
+        side: annotation.side,
+        filePath: selectedFilePath ?? '',
+        staged: selectedFileStaged,
+        editId: annotation.metadata.id,
+      })
+      setCommentDraftText(annotation.metadata.text, false)
+    },
+    [
+      selectedFilePath,
+      selectedFileStaged,
+      setCommentDraftText,
+      setAnnotationTarget,
+    ]
+  )
+
+  const feedbackCount = feedback.totalAnnotations()
+  const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
+  const pendingFeedbackCount = feedbackCount + feedbackDraftCount
+
+  const onFinishFeedback =
+    feedbackCount > 0 ? (): void => setFinishOpen(true) : undefined
+
+  const finishFeedback = {
+    open: finishOpen,
+    result: resolveCandidatePanes({
+      allPanes: feedbackDispatch?.candidates ?? [],
+      diffCwd: cwd,
+    }),
+    commentCount: feedbackCount,
+    fileCount: feedback.batch.size,
+    onCancel: (): void => setFinishOpen(false),
+    onSend: handleSendFeedback,
+  }
+
   // Loading state
   if (effectiveStatusLoading) {
     return (
@@ -2126,45 +1841,6 @@ export const DiffPanelContent = ({
     )
   }
 
-  // Toolbar prop bundle shared by the populated state AND the dormant empty
-  // state below. The settings dropdowns stay live in both; the file / hunk /
-  // staging / feedback props differ per branch.
-  const toolbarSettingsProps = {
-    diffStyle: effectiveDiffStyle,
-    onDiffStyleChange: handleDiffStyleChange,
-    theme,
-    onThemeChange: setTheme,
-    lineDiffType,
-    onLineDiffTypeChange: setLineDiffType,
-    diffIndicators,
-    onDiffIndicatorsChange: setDiffIndicators,
-    overflow: overflowOpt,
-    onOverflowChange: setOverflowOpt,
-    disableLineNumbers,
-    onDisableLineNumbersChange: setDisableLineNumbers,
-    disableBackground,
-    onDisableBackgroundChange: setDisableBackground,
-    disableFileHeader,
-    onDisableFileHeaderChange: setDisableFileHeader,
-    stickyHeader,
-    onStickyHeaderChange: setStickyHeader,
-  }
-
-  const finishFeedbackPopover: ReactElement | null =
-    finishOpen && toolbarShellRef.current !== null ? (
-      <FinishFeedbackPopover
-        anchor={toolbarShellRef.current}
-        result={resolveCandidatePanes({
-          allPanes: feedbackDispatch?.candidates ?? [],
-          diffCwd: cwd,
-        })}
-        commentCount={feedback.totalAnnotations()}
-        fileCount={feedback.batch.size}
-        onCancel={(): void => setFinishOpen(false)}
-        onSend={handleSendFeedback}
-      />
-    ) : null
-
   // Empty state (no changes): keep a DORMANT toolbar (only the settings
   // dropdowns stay live — nav arrows, tool-well + actions render disabled /
   // placeholder) above a calm "no changes" panel, so the chrome stays put when
@@ -2178,22 +1854,21 @@ export const DiffPanelContent = ({
         onPointerDownCapture={handleDiffRootPointerDown}
         className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant focus:outline-none"
       >
-        <div
-          ref={toolbarShellRef}
-          data-testid="diff-toolbar-shell"
-          className="shrink-0"
-        >
-          <DiffChipToolbar
-            {...toolbarSettingsProps}
-            diffMode="unstaged"
-            currentFileIndex={-1}
-            totalFiles={0}
-            feedbackCount={feedback.totalAnnotations()}
-            onDiscardFeedback={feedback.clearBatch}
-            onFinishFeedback={(): void => setFinishOpen(true)}
-          />
-          {finishFeedbackPopover}
-        </div>
+        <Notifier
+          toolbarProps={{
+            ...toolbarSettingsProps,
+            diffMode: 'unstaged',
+            currentFileIndex: -1,
+            totalFiles: 0,
+            feedbackCount: pendingFeedbackCount,
+            onDiscardFeedback: feedback.clearBatch,
+            onFinishFeedback,
+          }}
+          finishFeedback={finishFeedback}
+          keyboardConfirm={null}
+          onCancelKeyboardConfirm={cancelKeyboardConfirm}
+          onConfirmKeyboardAction={confirmKeyboardAction}
+        />
         <div
           data-testid="diff-empty-panel"
           className="flex min-h-0 flex-1 items-center justify-center p-8"
@@ -2254,257 +1929,69 @@ export const DiffPanelContent = ({
           ResizeObserver above watches THIS wrapper so both width bands
           (SPLIT_MIN / DIFF_MIN) come from one source. */}
       <div
-        ref={setPaneNode}
+        ref={setDiffPaneElement}
         data-testid="diff-right-pane"
         className="flex min-w-0 flex-1 flex-col overflow-hidden"
       >
-        <div
-          ref={toolbarShellRef}
-          data-testid="diff-toolbar-shell"
-          className="shrink-0"
-        >
-          <DiffChipToolbar
-            {...toolbarSettingsProps}
-            diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
-            totalHunks={hunkCount}
-            focusedHunkIndex={clampedHunkIndex}
-            onPrevHunk={onPrevHunk}
-            onNextHunk={onNextHunk}
-            onPrevFile={(): void => goToFile(-1)}
-            onNextFile={(): void => goToFile(1)}
-            currentFileIndex={currentFileIndex}
-            totalFiles={effectiveFiles.length}
-            onStage={handleStage}
-            onUnstage={handleUnstage}
-            onDiscard={handleDiscard}
-            onDiscardAll={handleDiscardAll}
-            staging={staging}
-            selectedFileName={selectedFilePath ?? undefined}
-            feedbackCount={feedback.totalAnnotations()}
-            onDiscardFeedback={feedback.clearBatch}
-            onFinishFeedback={(): void => setFinishOpen(true)}
-          />
-          {renderSyncError !== null ? (
-            <div
-              role="alert"
-              className="px-3 pb-2 text-[11px] leading-4 text-vcs-deleted"
-            >
-              Diff render sync failed: {renderSyncError}
-            </div>
-          ) : null}
-          {notifyMessage !== null ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="px-3 pb-2 text-[11px] leading-4 text-on-surface-variant"
-            >
-              {notifyMessage}
-            </div>
-          ) : null}
-          {commentDraftIsRecoverable ? (
-            <div
-              role="status"
-              data-testid="diff-draft-recovery"
-              className="mx-3 mb-2 rounded-md bg-surface-container-high/70 px-3 py-2 text-[11px] leading-4 text-on-surface-variant"
-            >
-              Draft preserved for line{' '}
-              {annotationTarget.side === 'deletions' ? 'L' : 'R'}
-              {annotationTarget.lineNumber}:{' '}
-              <span className="font-medium text-on-surface">
-                {commentDraftText}
-              </span>
-            </div>
-          ) : null}
-          {finishFeedbackPopover}
-          {keyboardConfirm !== null && toolbarShellRef.current !== null ? (
-            <Popover
-              anchor={toolbarShellRef.current}
-              open
-              onOpenChange={(open): void => {
-                if (!open) {
-                  cancelKeyboardConfirm()
-                }
-              }}
-              placement="bottom-end"
-              width={320}
-              aria-label={keyboardConfirm.title}
-            >
-              <div className="flex flex-col gap-3 p-4">
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-sm font-medium text-on-surface">
-                    {keyboardConfirm.title}
-                  </h2>
-                  <p className="text-xs leading-5 text-on-surface-variant">
-                    {keyboardConfirm.body}
-                  </p>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-keyshortcuts="n"
-                    onClick={cancelKeyboardConfirm}
-                  >
-                    No (n)
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={keyboardConfirm.variant}
-                    aria-keyshortcuts="y"
-                    onClick={confirmKeyboardAction}
-                  >
-                    Yes (y)
-                  </Button>
-                </div>
-              </div>
-            </Popover>
-          ) : null}
-        </div>
-        <div
-          ref={diffScrollBodyRef}
-          data-testid="diff-scroll-body"
-          className="min-h-0 flex-1 overflow-auto"
-          onPointerMove={(): void => {
-            if (keyboardLineActive) {
-              setKeyboardLineActive(false)
-            }
+        <Notifier
+          toolbarProps={{
+            ...toolbarSettingsProps,
+            diffMode: selectedFileStaged ? 'staged' : 'unstaged',
+            totalHunks: hunkCount,
+            focusedHunkIndex: clampedHunkIndex,
+            onPrevHunk,
+            onNextHunk,
+            onPrevFile: (): void => goToFile(-1),
+            onNextFile: (): void => goToFile(1),
+            currentFileIndex,
+            totalFiles: effectiveFiles.length,
+            onStage: handleStage,
+            onUnstage: handleUnstage,
+            onDiscard: handleDiscard,
+            onDiscardAll: handleDiscardAll,
+            staging,
+            selectedFileName: selectedFilePath ?? undefined,
+            feedbackCount: pendingFeedbackCount,
+            onDiscardFeedback: feedback.clearBatch,
+            onFinishFeedback,
           }}
-        >
-          {diffError ? (
-            <ErrorCard message={diffError.message} />
-          ) : diffLoading ? (
-            <LoadingCard />
-          ) : pierreInputs ? (
-            tooNarrow ? (
-              <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
-            ) : (
-              <MultiFileDiff
-                // `key` forces a clean remount after the worker pool has
-                // accepted new pool-owned options (theme + lineDiffType).
-                // Pierre's WorkerPoolManager path normally rerenders via its
-                // theme subscribers, but PR1 QA observed the second theme
-                // switch sticking. Forcing a remount is a belt-and-braces
-                // remedy: a brand-new FileDiff instance requests fresh
-                // tokenization from the pool only after `setRenderOptions`
-                // resolves. The key is built from the SYNCED values so it only
-                // changes once the pool has the new option — no flash of the
-                // prior highlighting.
-                // Cost: one extra tokenize per theme/highlight change.
-                // Acceptable for v1; revisit if perf is an issue with very
-                // large diffs.
-                key={`${renderedTheme}:${renderedLineDiffType}`}
-                oldFile={pierreInputs.oldFile}
-                newFile={pierreInputs.newFile}
-                selectedLines={selectedLines}
-                lineAnnotations={lineAnnotations}
-                options={{
-                  diffStyle: effectiveDiffStyle,
-                  theme: renderedTheme,
-                  diffIndicators,
-                  lineDiffType: renderedLineDiffType,
-                  overflow: overflowOpt,
-                  disableLineNumbers,
-                  disableBackground,
-                  disableFileHeader,
-                  stickyHeader,
-                  enableGutterUtility: true,
-                }}
-                renderGutterUtility={(getHoveredLine): ReactElement => (
-                  // Pierre wraps this button in a center-aligned slot pinned to
-                  // the gutter's right edge, so by default the "+" lands on top of
-                  // the line number. translate-x-3/4 nudges it into the gutter
-                  // gap next to the code (GitHub-style); the percentage is of the
-                  // button's own width, so it adapts to any line-number column.
-                  <IconButton
-                    icon="add"
-                    label="Add comment on this line"
-                    size="sm"
-                    shortcut="i"
-                    className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
-                    onClick={(): void => {
-                      const hovered = getHoveredLine()
-                      if (hovered && selectedFilePath !== null) {
-                        setKeyboardLineActive(false)
-
-                        const nextTarget: AnnotationTarget = {
-                          lineNumber: hovered.lineNumber,
-                          side: hovered.side,
-                          filePath: selectedFilePath,
-                          staged: selectedFileStaged,
-                        }
-
-                        setCommentDraftText((current) => {
-                          if (annotationTarget === null) {
-                            return ''
-                          }
-
-                          const sameTarget =
-                            annotationTargetKey(annotationTarget) ===
-                            annotationTargetKey(nextTarget)
-
-                          return sameTarget ? current : ''
-                        }, false)
-                        setAnnotationTarget(nextTarget)
-                      }
-                    }}
-                  />
-                )}
-                renderAnnotation={(
-                  annotation: DiffLineAnnotation<ReviewComment>
-                ): ReactElement => {
-                  const isDraft = annotation.metadata.id === DRAFT_ID
-
-                  const isEditing =
-                    annotationTarget?.editId !== undefined &&
-                    annotationTarget.editId === annotation.metadata.id
-
-                  if (isDraft || isEditing) {
-                    return (
-                      <ReviewCommentEditor
-                        // Key by target identity so switching the gutter `+` to
-                        // another line (the draft stays at the same annotation
-                        // index, so React would otherwise reuse this instance
-                        // and carry the old textarea text to the new line)
-                        // forces a remount with fresh state.
-                        key={`${annotation.lineNumber}:${annotation.side}:${
-                          isEditing ? annotation.metadata.id : 'draft'
-                        }`}
-                        lineNumber={annotation.lineNumber}
-                        side={annotation.side}
-                        value={commentDraftText}
-                        onTextChange={(text): void => {
-                          setCommentDraftText(text, false)
-                        }}
-                        onConfirm={confirmCommentEditor}
-                        onCancel={closeCommentEditor}
-                      />
-                    )
-                  }
-
-                  return (
-                    <ReviewCommentRow
-                      comment={annotation.metadata}
-                      onEdit={(): void => {
-                        setAnnotationTarget({
-                          lineNumber: annotation.lineNumber,
-                          side: annotation.side,
-                          filePath: selectedFilePath ?? '',
-                          staged: selectedFileStaged,
-                          editId: annotation.metadata.id,
-                        })
-                        setCommentDraftText(annotation.metadata.text, false)
-                      }}
-                      onDelete={(): void => {
-                        removeFeedbackAnnotation(annotation.metadata.id)
-                      }}
-                    />
-                  )
-                }}
-                style={{ display: 'block', width: '100%' }}
-              />
-            )
-          ) : null}
-        </div>
+          finishFeedback={finishFeedback}
+          keyboardConfirm={keyboardConfirm}
+          renderSyncError={renderSyncError}
+          notifyMessage={notifyMessage}
+          recoverableDraft={
+            recoverableCommentDraftTarget === null
+              ? null
+              : {
+                  target: recoverableCommentDraftTarget,
+                  text: commentDraftText,
+                }
+          }
+          onCancelKeyboardConfirm={cancelKeyboardConfirm}
+          onConfirmKeyboardAction={confirmKeyboardAction}
+        />
+        <PanelBody
+          scrollBodyRef={diffScrollBodyRef}
+          diffError={diffError}
+          diffLoading={diffLoading}
+          pierreInputs={pierreInputs}
+          tooNarrow={tooNarrow}
+          renderKey={renderKey}
+          options={multiFileDiffOptions}
+          selectedLines={selectedLines}
+          lineAnnotations={lineAnnotations}
+          annotationTarget={annotationTarget}
+          commentDraftText={commentDraftText}
+          onPointerMove={clearKeyboardLineActiveOnPointerMove}
+          onAddComment={handleBodyAddComment}
+          onEditComment={handleBodyEditComment}
+          onDeleteComment={removeFeedbackAnnotation}
+          onCommentTextChange={(text): void => {
+            setCommentDraftText(text, false)
+          }}
+          onConfirmComment={confirmCommentEditor}
+          onCancelComment={closeCommentEditor}
+        />
       </div>
     </div>
   )

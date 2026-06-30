@@ -1,12 +1,32 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useGitStatus } from './useGitStatus'
-import { mockChangedFiles } from '../data/mockDiff'
+import type { ChangedFile } from '../types'
+import * as gitServiceModule from '../services/gitService'
+import type { GitService } from '../services/gitService'
+
+const changedFilesFixture: ChangedFile[] = [
+  {
+    path: 'src/components/NavBar.tsx',
+    status: 'modified',
+    insertions: 1,
+    deletions: 1,
+    staged: false,
+  },
+]
 
 // Mock backend bridge
 const mockInvoke = vi.fn()
 const mockListen = vi.fn()
 const mockUnlisten = vi.fn()
+
+const mockGitService: GitService = {
+  getStatus: vi.fn(),
+  getDiff: vi.fn(),
+  stageFile: vi.fn(),
+  unstageFile: vi.fn(),
+  discardChanges: vi.fn(),
+}
 
 vi.mock('../../../lib/backend', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,16 +40,25 @@ describe('useGitStatus', () => {
     mockInvoke.mockReset()
     mockListen.mockReset()
     mockUnlisten.mockReset()
+    vi.mocked(mockGitService.getStatus).mockReset()
 
     // Default: listen returns an unlisten function
     mockListen.mockResolvedValue(mockUnlisten)
 
     // Default: start_git_watcher and stop_git_watcher succeed
     mockInvoke.mockResolvedValue(undefined)
+    vi.mocked(mockGitService.getStatus).mockResolvedValue({
+      files: changedFilesFixture,
+      repoRoot: '/repo',
+    })
+
+    vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(
+      mockGitService
+    )
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
   })
 
   describe('non-watch mode (existing behavior)', () => {
@@ -47,8 +76,8 @@ describe('useGitStatus', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      // Should have files from MockGitService
-      expect(result.current.files).toEqual(mockChangedFiles)
+      // Should have files from the injected test service
+      expect(result.current.files).toEqual(changedFilesFixture)
       expect(result.current.filesCwd).toBe('/home/test/project')
       expect(result.current.error).toBeNull()
     })
@@ -61,14 +90,40 @@ describe('useGitStatus', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      expect(result.current.files).toEqual(mockChangedFiles)
+      expect(result.current.files).toEqual(changedFilesFixture)
 
       // Call refresh (synchronous — bumps refreshKey counter)
-      result.current.refresh()
+      act(() => {
+        result.current.refresh()
+      })
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
 
       // Should still have files
-      expect(result.current.files).toEqual(mockChangedFiles)
+      expect(result.current.files).toEqual(changedFilesFixture)
       expect(result.current.error).toBeNull()
+    })
+
+    test('same-cwd refresh increments revision without showing loading', async () => {
+      const { result } = renderHook(() => useGitStatus('/home/test/project'))
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
+
+      const initialRevision = result.current.revision ?? 0
+
+      act(() => {
+        result.current.refresh()
+      })
+
+      expect(result.current.loading).toBe(false)
+
+      await waitFor(() => {
+        expect(result.current.revision).toBe(initialRevision + 1)
+      })
     })
 
     test('handles errors gracefully', async () => {
@@ -80,7 +135,7 @@ describe('useGitStatus', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      // In test mode, MockGitService always succeeds
+      // The default injected service succeeds
       expect(result.current.error).toBeNull()
     })
 
@@ -234,7 +289,9 @@ describe('useGitStatus', () => {
 
       // Fire event with matching cwd
       // cspell:disable-next-line
-      eventHandler!({ cwds: ['/home/test/project'] })
+      act(() => {
+        eventHandler!({ cwds: ['/home/test/project'] })
+      })
 
       await waitFor(() => {
         // refresh() was called, files re-fetched
@@ -300,24 +357,30 @@ describe('useGitStatus', () => {
 
       // Fire event with multiple current working directories including ours
       // cspell:disable-next-line
-      eventHandler!({
-        // cspell:disable-next-line
-        cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'],
+      act(() => {
+        eventHandler!({
+          // cspell:disable-next-line
+          cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'],
+        })
       })
 
       await waitFor(() => {
         // refresh() was called because our cwd is in the list
-        expect(result.current.files).toEqual(mockChangedFiles)
+        expect(result.current.files).toEqual(changedFilesFixture)
       })
     })
   })
 
   describe('filesCwd freshness tracking', () => {
-    test('filesCwd is null before first fetch resolves', () => {
+    test('filesCwd is null before first fetch resolves', async () => {
       const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
       // Before fetch completes
       expect(result.current.filesCwd).toBeNull()
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
     })
 
     test('filesCwd updates to cwd on successful fetch', async () => {
@@ -410,7 +473,7 @@ describe('useGitStatus', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      expect(result.current.files).toEqual(mockChangedFiles)
+      expect(result.current.files).toEqual(changedFilesFixture)
       expect(result.current.filesCwd).toBe('/home/test/project')
     })
 
@@ -424,7 +487,7 @@ describe('useGitStatus', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      expect(result.current.files).toEqual(mockChangedFiles)
+      expect(result.current.files).toEqual(changedFilesFixture)
 
       // Disable
       rerender({ enabled: false })

@@ -54,6 +54,7 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: 'electron',
+      'wdio:maxInstances': 1,
       'wdio:electronServiceOptions': {
         appEntryPoint,
         appArgs,

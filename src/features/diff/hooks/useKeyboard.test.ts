@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { createRef, type RefObject } from 'react'
-import { useDiffKeyboard, type UseDiffKeyboardOptions } from './useDiffKeyboard'
+import { useKeyboard, type UseKeyboardOptions } from './useKeyboard'
 
 const dispatch = (
   key: string,
@@ -51,15 +51,15 @@ const appendDiffRoot = (): {
 }
 
 const renderKeyboard = (
-  overrides: Partial<UseDiffKeyboardOptions> = {}
+  overrides: Partial<UseKeyboardOptions> = {}
 ): {
   root: HTMLDivElement
-  props: UseDiffKeyboardOptions
+  props: UseKeyboardOptions
   unmount: () => void
 } => {
   const { root, ref } = appendDiffRoot()
 
-  const props: UseDiffKeyboardOptions = {
+  const props: UseKeyboardOptions = {
     enabled: true,
     rootRef: ref,
     confirming: false,
@@ -82,12 +82,12 @@ const renderKeyboard = (
     onCancelConfirm: vi.fn(),
     ...overrides,
   }
-  const { unmount } = renderHook(() => useDiffKeyboard(props))
+  const { unmount } = renderHook(() => useKeyboard(props))
 
   return { root, props, unmount }
 }
 
-describe('useDiffKeyboard', () => {
+describe('useKeyboard', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
@@ -305,7 +305,7 @@ describe('useDiffKeyboard', () => {
   })
 
   test('null root ref is ignored', () => {
-    const props: UseDiffKeyboardOptions = {
+    const props: UseKeyboardOptions = {
       enabled: true,
       rootRef: createRef<HTMLElement>(),
       confirming: false,
@@ -328,7 +328,7 @@ describe('useDiffKeyboard', () => {
       onCancelConfirm: vi.fn(),
     }
 
-    renderHook(() => useDiffKeyboard(props))
+    renderHook(() => useKeyboard(props))
     dispatch('j')
 
     expect(props.onMoveLine).not.toHaveBeenCalled()

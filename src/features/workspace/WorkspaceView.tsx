@@ -155,11 +155,43 @@ const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
 const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
+const sameSelectedDiffFile = (
+  left: SelectedDiffFile | null,
+  right: SelectedDiffFile | null
+): boolean =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.path === right.path &&
+    left.staged === right.staged &&
+    left.cwd === right.cwd)
+
+export const updateSelectedDiffFilesByOwner = (
+  previous: Map<string, SelectedDiffFile>,
+  ownerKey: string,
+  nextSelection: SelectedDiffFile | null
+): Map<string, SelectedDiffFile> => {
+  const current = previous.get(ownerKey) ?? null
+  if (sameSelectedDiffFile(current, nextSelection)) {
+    return previous
+  }
+
+  const next = new Map(previous)
+  if (nextSelection === null) {
+    next.delete(ownerKey)
+  } else {
+    next.set(ownerKey, nextSelection)
+  }
+
+  return next
+}
+
 interface PendingFeedbackReview {
   key: string
   label: string
   commentCount: number
   fileCount: number
+  draftCount: number
 }
 
 interface FeedbackOwnerTarget {
@@ -1767,17 +1799,35 @@ const WorkspaceViewContent = (): ReactElement => {
     invert: dockPosition === 'right',
   })
 
-  const [selectedDiffFile, setSelectedDiffFile] =
-    useState<SelectedDiffFile | null>(null)
-
   const activeFeedbackOwnerKey =
     activeSessionId !== null && activePtyBackedPaneId !== undefined
       ? makeFeedbackOwnerKey(activeSessionId, activePtyBackedPaneId)
       : UNBOUND_FEEDBACK_OWNER_KEY
 
+  const [selectedDiffFilesByOwner, setSelectedDiffFilesByOwner] = useState<
+    Map<string, SelectedDiffFile>
+  >(() => new Map())
+
+  const selectedDiffFile =
+    selectedDiffFilesByOwner.get(activeFeedbackOwnerKey) ?? null
+
+  const setSelectedDiffFile = useCallback(
+    (nextSelection: SelectedDiffFile | null): void => {
+      setSelectedDiffFilesByOwner((previous) =>
+        updateSelectedDiffFilesByOwner(
+          previous,
+          activeFeedbackOwnerKey,
+          nextSelection
+        )
+      )
+    },
+    [activeFeedbackOwnerKey]
+  )
+
   const {
     feedbackBatch,
     feedbackRepoRootRef,
+    feedbackDraft,
     summaries: feedbackSummaries,
     pruneOwners: pruneFeedbackOwners,
   } = useFeedbackBatchStore(activeFeedbackOwnerKey, activeCwd)
@@ -1785,6 +1835,20 @@ const WorkspaceViewContent = (): ReactElement => {
   useLayoutEffect(() => {
     pruneFeedbackOwners(livePaneKeys)
   }, [livePaneKeys, pruneFeedbackOwners])
+
+  useLayoutEffect(() => {
+    setSelectedDiffFilesByOwner((previous) => {
+      const next = new Map(
+        [...previous.entries()].filter(
+          ([ownerKey]) =>
+            ownerKey === UNBOUND_FEEDBACK_OWNER_KEY ||
+            livePaneKeys.has(ownerKey)
+        )
+      )
+
+      return next.size === previous.size ? previous : next
+    })
+  }, [livePaneKeys])
 
   const feedbackOwnerTargets = useMemo(() => {
     const targets = new Map<string, FeedbackOwnerTarget>()
@@ -1821,6 +1885,7 @@ const WorkspaceViewContent = (): ReactElement => {
                 label: target.label,
                 commentCount: summary.commentCount,
                 fileCount: summary.fileCount,
+                draftCount: summary.draftCount,
               },
             ]
           : []
@@ -2179,6 +2244,7 @@ const WorkspaceViewContent = (): ReactElement => {
       gitStatus.filesCwd,
       gitStatus.repoRoot,
       openDock,
+      setSelectedDiffFile,
     ]
   )
 
@@ -2402,13 +2468,8 @@ const WorkspaceViewContent = (): ReactElement => {
       })
       openDock('diff')
     },
-    [activeCwd, openDock]
+    [activeCwd, openDock, setSelectedDiffFile]
   )
-
-  // Belt-and-suspenders: clear selection on cwd change
-  useEffect(() => {
-    setSelectedDiffFile(null)
-  }, [activeCwd])
 
   const dockCanvasFlexDirection: CSSProperties['flexDirection'] =
     dockPosition === 'top' || dockPosition === 'bottom' ? 'column' : 'row'
@@ -2525,6 +2586,7 @@ const WorkspaceViewContent = (): ReactElement => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
       feedbackBatch={feedbackBatch}
+      feedbackDraft={feedbackDraft}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
       pendingFeedbackReviews={pendingFeedbackReviews}

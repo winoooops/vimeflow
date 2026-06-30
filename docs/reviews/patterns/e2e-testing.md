@@ -2,7 +2,7 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-06-19
+last_updated: 2026-06-30
 ref_count: 10
 ---
 
@@ -262,4 +262,13 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
 - **Finding:** The "ingests app-data status files" scenario called `waitForVisiblePtyId()` to reuse the app's initial terminal PTY, then asserted `info.statusFile` was populated. `statusFile` is only non-null when the PTY was spawned with `enable_agent_bridge: true`. The assertion therefore depended on the E2E launch configuration rather than the test itself, and a violation would fail with a confusing "statusFile should be populated" message.
 - **Fix:** Replaced the ambient-PTY reuse with a frontend-driven new session (`button[aria-label="New session"]`), waited for the visible PTY to change, and used that dedicated bridge-enabled session for the watcher/UI assertions. Added cleanup that closes the spawned tab after the scenario.
+- **Commit:** same commit as this entry
+
+### 25. Electron WDIO suites need capability-level worker caps
+
+- **Source:** local-codex | PR #637 CI failure | 2026-06-30
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Electron core suite still planned all five spec files as workers even though the root config set `maxInstances: 1`. In CI this let multiple Electron sessions contend for the same desktop-app resources and produced deterministic startup selector failures such as missing layout buttons, `FILES`, and `editor-panel`.
+- **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
 - **Commit:** same commit as this entry
