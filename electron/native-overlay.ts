@@ -515,6 +515,7 @@ export class NativeOverlayController {
       fullscreenable: false,
       skipTaskbar: true,
       acceptFirstMouse: true,
+      focusable: true,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

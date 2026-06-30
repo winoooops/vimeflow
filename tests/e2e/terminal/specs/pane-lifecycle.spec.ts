@@ -1,4 +1,4 @@
-import { clickBySelector } from '../../shared/actions.js'
+import { clickBySelector, clickLayoutButton } from '../../shared/actions.js'
 
 const waitForPaneCount = async (expected: number): Promise<void> => {
   await browser.waitUntil(
@@ -68,7 +68,7 @@ describe('Pane lifecycle split focus', () => {
       timeout: 20_000,
     })
 
-    await clickBySelector('button[aria-label="Vertical split"]')
+    await clickLayoutButton('Vertical split')
 
     await browser.waitUntil(
       async () =>
@@ -93,7 +93,7 @@ describe('Pane lifecycle split focus', () => {
     await clickBySelector('[data-testid="split-view-slot"][data-pane-id="p1"]')
     await assertWorkspaceVisible(2, 'focusing p1')
 
-    await clickBySelector('button[aria-label="Single"]')
+    await clickLayoutButton('Single')
     await waitForPaneCount(1)
     await assertWorkspaceVisible(1, 'switching to single layout')
     await assertVisiblePaneIds(['p1'])
