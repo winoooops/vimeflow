@@ -1,4 +1,4 @@
-import { clickBySelector } from '../../shared/actions.js'
+import { createNewSessionWithDefaults } from '../../shared/actions.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -91,7 +91,7 @@ describe('Multi-tab terminal isolation', () => {
       { timeout: 15_000, timeoutMsg: 'marker A never landed in session 1' }
     )
 
-    await clickBySelector('button[aria-label="New session"]')
+    await createNewSessionWithDefaults()
     await browser.waitUntil(async () => (await allSessionIds()).length === 2, {
       timeout: 10_000,
       timeoutMsg: 'second session did not mount',

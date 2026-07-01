@@ -1504,11 +1504,18 @@ export const Panel = ({
 
   const handleBodyEditComment = useCallback(
     (annotation: DiffLineAnnotation<ReviewComment>): void => {
+      const rangeTarget =
+        annotation.metadata.target?.scope === 'range' &&
+        annotation.metadata.target.side === annotation.side
+          ? annotation.metadata.target
+          : null
+
       setAnnotationTarget({
-        lineNumber: annotation.lineNumber,
+        lineNumber: rangeTarget?.startLine ?? annotation.lineNumber,
         side: annotation.side,
         filePath: selectedFilePath ?? '',
         staged: selectedFileStaged,
+        ...(rangeTarget === null ? {} : { rangeEndLine: rangeTarget.endLine }),
         editId: annotation.metadata.id,
       })
       setCommentDraftText(annotation.metadata.text, false)

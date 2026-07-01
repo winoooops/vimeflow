@@ -3600,6 +3600,66 @@ describe('Panel', () => {
       ).not.toBeInTheDocument()
     })
 
+    test('editing a range comment preserves the range endpoint', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const updateAnnotation = vi.fn()
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map(),
+        annotationsForFile: () => [
+          {
+            lineNumber: 1,
+            side: 'additions',
+            metadata: {
+              id: 'comment-1',
+              text: 'Existing range comment',
+              author: 'self',
+              createdAt: 1000,
+              target: {
+                scope: 'range',
+                side: 'additions',
+                startLine: 1,
+                endLine: 2,
+              },
+            },
+          },
+        ],
+        addAnnotation: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        totalAnnotations: () => 1,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(screen.getByRole('button', { name: 'Edit comment' }))
+
+      const editTextarea = within(
+        screen.getByRole('dialog', { name: /Comment on lines R1-R2/ })
+      ).getByPlaceholderText('Request change')
+      await user.clear(editTextarea)
+      await user.type(editTextarea, 'Updated range comment')
+      await user.keyboard('{Enter}')
+
+      expect(updateAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        'comment-1',
+        { text: 'Updated range comment' }
+      )
+    })
+
     test('y copies the visual selection to the system clipboard', async (): Promise<void> => {
       const writeText = vi.fn().mockResolvedValue(undefined)
       const originalClipboard = window.navigator.clipboard

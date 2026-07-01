@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-01
-ref_count: 13
+ref_count: 14
 ---
 
 # E2E Testing
@@ -307,4 +307,23 @@ completely different root causes. The generic fast-failure modes:
 - **Fix:** Scope terminal-session creation clicks to
   `[data-testid="session-tabs"] button[aria-label="New session"]` so the specs
   target the tab-strip plus control.
+- **Commit:** same commit as this entry
+
+### 28. Terminal E2E must complete the new-session dialog flow
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/shared/actions.ts`,
+  `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`,
+  `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The terminal and agent smoke specs still treated "New session" as
+  a one-click session creation action. After the workspace moved creation
+  behind `NewSessionDialog`, the first click only opened the dialog, so tests
+  waited for a second PTY or bridge-enabled session that was never spawned.
+- **Fix:** Centralize E2E session creation in `createNewSessionWithDefaults`,
+  which clicks the sidebar trigger and then the visible "Create session"
+  confirmation. Updated affected specs to use the helper, and closed the
+  lifecycle test's spawned active session via the command palette `:close`
+  command before asserting the PTY count decrements.
 - **Commit:** same commit as this entry

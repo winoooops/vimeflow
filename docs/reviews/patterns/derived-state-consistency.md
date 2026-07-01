@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-07-01
-ref_count: 16
+ref_count: 17
 ---
 
 # Derived State Consistency
@@ -240,4 +240,20 @@ base data is technically "correct."
   that range; otherwise build a single-line target from the actual gutter click.
   Added a regression test that clicks line 1 while a visual range covers lines
   2-3.
+- **Commit:** same commit as this entry
+
+### 20. Editing range comments dropped the derived end-line target
+
+- **Source:** github-claude | PR #643 round 2 | 2026-07-01
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The edit-comment path rebuilt `annotationTarget` from the
+  annotation row only, preserving the start line and side but dropping
+  `metadata.target.rangeEndLine`. Editing an existing range comment therefore
+  collapsed the dialog back to a single-line target, and the subsequent update
+  could lose the range endpoint used by staleness detection.
+- **Fix:** When the annotation metadata carries a same-side range target,
+  rebuild the edit target from `startLine` plus `endLine`; otherwise keep the
+  single-line fallback. Added a regression test that opens an existing R1-R2
+  comment for edit and submits the updated text through the range dialog.
 - **Commit:** same commit as this entry
