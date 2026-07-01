@@ -353,6 +353,45 @@ describe('TerminalPane index', () => {
     expect(onClose).toHaveBeenCalledWith('s1', 'p0')
   })
 
+  test('clicking inactive pane close does not request pane activation', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const onRequestActive = vi.fn()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onClose={onClose}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'close pane' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRequestActive).not.toHaveBeenCalled()
+  })
+
+  test('clicking inactive pane collapse does not request pane activation', async () => {
+    const user = userEvent.setup()
+    const onRequestActive = vi.fn()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'collapse status' }))
+
+    expect(screen.queryByTestId('terminal-pane-status-bar')).toBeNull()
+    expect(onRequestActive).not.toHaveBeenCalled()
+  })
+
   test('active pane keeps semantic active marker without focus marker', () => {
     render(
       <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />

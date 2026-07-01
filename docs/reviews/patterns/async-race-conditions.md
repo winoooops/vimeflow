@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-30
-ref_count: 76
+last_updated: 2026-07-01
+ref_count: 77
 ---
 
 # Async Race Conditions
@@ -826,4 +826,20 @@ prevent showing previous data.
 - **Fix:** Disabled focus-triggered opens for the native overlay path and kept
   explicit click, Enter, Space, and ArrowDown activation. Added regression
   coverage that restored focus alone does not call the native overlay bridge.
+- **Commit:** same commit as this entry
+
+### 79. Pane wrapper mousedown activated inactive panes before controls clicked
+
+- **Source:** github-claude | PR #642 round 2 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** The pane wrapper activated inactive panes on every descendant
+  mousedown, while header controls only stopped click propagation. Clicking
+  Close or Collapse on a background pane could therefore activate that pane
+  before the control action ran, causing close-active-pane reassignment and
+  unexpected focus theft.
+- **Fix:** Added an interactive-descendant guard to the wrapper mousedown
+  handler so button, link, form, ARIA control, focusable, and contenteditable
+  targets keep their own event semantics without activating the pane first.
+  Added regression coverage for inactive-pane Close and Collapse clicks.
 - **Commit:** same commit as this entry

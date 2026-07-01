@@ -32,6 +32,20 @@ import { usePaneWidth } from './usePaneWidth'
 // A pane narrower than this auto-collapses the bottom status bar. Tunable.
 const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
 
+const INTERACTIVE_TARGET_SELECTOR = [
+  'button',
+  'a[href]',
+  'input',
+  'select',
+  'textarea',
+  '[role="button"]',
+  '[role="menuitem"]',
+  '[role="switch"]',
+  '[role="checkbox"]',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]',
+].join(',')
+
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
 export interface TerminalPaneProps {
@@ -181,14 +195,24 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       [pane.active]
     )
 
-    const handleContainerMouseDown = useCallback((): void => {
-      if (!pane.active) {
-        requestPaneActive()
+    const handleContainerMouseDown = useCallback(
+      (event: MouseEvent<HTMLDivElement>): void => {
+        if (
+          event.target instanceof Element &&
+          event.target.closest(INTERACTIVE_TARGET_SELECTOR)
+        ) {
+          return
+        }
 
-        return
-      }
-      bodyRef.current?.focusTerminal()
-    }, [pane.active, requestPaneActive])
+        if (!pane.active) {
+          requestPaneActive()
+
+          return
+        }
+        bodyRef.current?.focusTerminal()
+      },
+      [pane.active, requestPaneActive]
+    )
 
     const handleToggleCollapse = useCallback((): void => {
       setManuallyCollapsed((collapsed) => !collapsed)
