@@ -19,6 +19,7 @@ import {
   isString,
   type GhosttyNativeDataRequest,
   type GhosttyNativePaneRequest,
+  type GhosttyNativeShortcutContext,
   type GhosttyNativeUpdateRequest,
 } from './ghostty-native-shared'
 
@@ -35,7 +36,16 @@ interface GhosttyNativeParentAddon {
     nativeHandle: Buffer,
     onInput: (data: string) => void,
     onResize: (cols: number, rows: number) => void,
-    onContextMenu: (x: number, y: number) => void
+    onContextMenu: (x: number, y: number) => void,
+    onFocus: () => void,
+    onShortcut: (
+      key: string,
+      code: string,
+      control: boolean,
+      meta: boolean,
+      alt: boolean,
+      shift: boolean
+    ) => void
   ) => unknown
   setFrame: (
     surface: unknown,
@@ -44,6 +54,7 @@ interface GhosttyNativeParentAddon {
     width: number,
     height: number
   ) => void
+  setShortcutDigits?: (surface: unknown, digits: string) => void
   write: (surface: unknown, data: string) => void
   focus: (surface: unknown) => void
   destroy: (surface: unknown) => void
@@ -63,6 +74,15 @@ interface GhosttyNativeSurfaceState {
   surface: unknown
   pendingData: string[]
   lastResize: { cols: number; rows: number } | null
+}
+
+interface GhosttyNativeShortcutInput {
+  key: string
+  code: string
+  control: boolean
+  meta: boolean
+  alt: boolean
+  shift: boolean
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -89,6 +109,43 @@ const addonPath = (dir: string): string =>
 
 const bridgePath = (dir: string): string =>
   path.join(dir, 'libGhosttyElectronBridge.dylib')
+
+const ghosttyShortcutEventInit = (
+  input: GhosttyNativeShortcutInput
+): Record<string, boolean | string> => ({
+  key: input.key,
+  code: input.code,
+  ctrlKey: input.control,
+  metaKey: input.meta,
+  altKey: input.alt,
+  shiftKey: input.shift,
+  bubbles: true,
+  cancelable: true,
+})
+
+const isShortcutContext = (
+  value: unknown
+): value is GhosttyNativeShortcutContext =>
+  isRecord(value) &&
+  Array.isArray(value.paneIds) &&
+  value.paneIds.every(isNonEmptyString) &&
+  (value.activePaneId === null || isNonEmptyString(value.activePaneId))
+
+const shortcutDigitsForPane = (
+  paneId: string,
+  context: GhosttyNativeShortcutContext | null
+): string => {
+  if (context?.activePaneId !== paneId) {
+    return ''
+  }
+
+  return context.paneIds
+    .slice(0, 9)
+    .flatMap((targetPaneId, index) =>
+      targetPaneId === paneId ? [] : String(index + 1)
+    )
+    .join('')
+}
 
 const loadAddon = (dir: string): GhosttyNativeParentAddon => {
   const addon = addonPath(dir)
@@ -127,7 +184,9 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
       return (
         isString(value.cwd) &&
         isBounds(value.bounds) &&
-        typeof value.visible === 'boolean'
+        typeof value.visible === 'boolean' &&
+        (value.shortcutContext === undefined ||
+          isShortcutContext(value.shortcutContext))
       )
     case 'data':
       return typeof value.data === 'string'
@@ -232,6 +291,11 @@ export class GhosttyNativeParentController {
 
     const surface = this.getOrCreateSurface(addon, win, state)
 
+    const shortcutDigits = shortcutDigitsForPane(
+      state.pane.paneId,
+      payload.shortcutContext ?? null
+    )
+
     const roundedWidth = Math.round(payload.bounds.width)
     const roundedHeight = Math.round(payload.bounds.height)
 
@@ -245,6 +309,7 @@ export class GhosttyNativeParentController {
       height: frameVisible ? roundedHeight : 0,
     }
     addon.setFrame(surface, frame.x, frame.y, frame.width, frame.height)
+    addon.setShortcutDigits?.(surface, shortcutDigits)
     this.flushPendingData(addon, state)
 
     return { enabled: true }
@@ -427,10 +492,91 @@ export class GhosttyNativeParentController {
           event: 'ghostty-native-context-menu',
           payload: { ...state.pane, x, y },
         })
+      },
+      () => {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        win.webContents.send(BACKEND_EVENT, {
+          event: 'ghostty-native-focus',
+          payload: state.pane,
+        })
+      },
+      (key, code, control, meta, alt, shift) => {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        void this.forwardShortcutToAppRenderer(addon, win, state, {
+          key,
+          code,
+          control,
+          meta,
+          alt,
+          shift,
+        })
       }
     )
 
     return state.surface
+  }
+
+  private async forwardShortcutToAppRenderer(
+    addon: GhosttyNativeParentAddon,
+    win: BrowserWindow,
+    state: GhosttyNativeSurfaceState,
+    input: GhosttyNativeShortcutInput
+  ): Promise<void> {
+    if (win.isDestroyed() || win.webContents.isDestroyed() || !state.surface) {
+      return
+    }
+
+    win.webContents.focus()
+    const eventInit = JSON.stringify(ghosttyShortcutEventInit(input))
+    try {
+      const shouldRefocus: unknown = await win.webContents.executeJavaScript(
+        `(() => {
+          const existingTarget = document.querySelector('[data-vimeflow-shortcut-proxy]')
+          const target = existingTarget ?? (() => {
+            const node = document.createElement('button')
+            node.type = 'button'
+            node.tabIndex = -1
+            node.setAttribute('aria-hidden', 'true')
+            node.setAttribute('data-vimeflow-shortcut-proxy', 'true')
+            node.style.position = 'fixed'
+            node.style.width = '1px'
+            node.style.height = '1px'
+            node.style.opacity = '0'
+            node.style.pointerEvents = 'none'
+            document.body.appendChild(node)
+            return node
+          })()
+          if (target instanceof HTMLElement) {
+            target.focus({ preventScroll: true })
+          }
+          target.dispatchEvent(new KeyboardEvent('keydown', ${eventInit}))
+          return new Promise((resolve) => {
+            requestAnimationFrame(() => {
+              const activeGhosttyPane = Array.from(
+                document.querySelectorAll('[data-pane-kind="shell"][data-pane-active="true"]')
+              ).some((node) =>
+                node.getAttribute('data-pane-id') === ${JSON.stringify(state.pane.paneId)} &&
+                node.getAttribute('data-pty-id') === ${JSON.stringify(state.pane.sessionId)}
+              )
+              resolve(activeGhosttyPane)
+            })
+          })
+        })()`,
+        false
+      )
+
+      if (shouldRefocus === true) {
+        addon.focus(state.surface)
+      }
+    } catch {
+      // Best effort: native shortcut forwarding should not tear down the pane.
+    }
   }
 
   private flushPendingData(

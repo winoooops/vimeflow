@@ -23,7 +23,7 @@ const hasElement = async (selector: string): Promise<boolean> =>
   )
 
 export const clickLayoutButton = async (layoutName: string): Promise<void> => {
-  const layoutButtonSelector = `button[aria-label="${layoutName}"]`
+  const layoutButtonSelector = `[data-testid="layout-switcher"] button[aria-label="${layoutName}"]`
 
   if (!(await hasElement(layoutButtonSelector))) {
     await clickBySelector('button[aria-label="Configure displayed layouts"]')

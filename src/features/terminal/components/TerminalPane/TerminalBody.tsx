@@ -14,6 +14,7 @@ import type { ITerminalService } from '../../services/terminalService'
 import {
   focusNativeGhostty,
   shouldUseNativeGhostty,
+  type NativeGhosttyShortcutContext,
 } from '../../nativeGhosttyClient'
 import { Body as XtermBody, type BodyHandle, type BodyMode } from './Body'
 import { GhosttyBody } from './GhosttyBody'
@@ -28,6 +29,9 @@ interface TerminalBodyProps {
   onCwdChange?: (cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
+  onRequestActive?: () => void
+  onRequestFocus?: () => void
+  shortcutContext?: NativeGhosttyShortcutContext
   mode: BodyMode
   deferFit: boolean
   enableImagePaste: boolean
@@ -51,6 +55,9 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       onCwdChange = undefined,
       onPaneReady = undefined,
       onCommandSubmit = undefined,
+      onRequestActive = undefined,
+      onRequestFocus = undefined,
+      shortcutContext = undefined,
       mode,
       deferFit,
       enableImagePaste,
@@ -105,6 +112,9 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           onCwdChange={onCwdChange}
           onPaneReady={onPaneReady}
           onCommandSubmit={onCommandSubmit}
+          onRequestActive={onRequestActive}
+          onRequestFocus={onRequestFocus}
+          shortcutContext={shortcutContext}
           onUnavailable={handleNativeUnavailable}
         />
       )

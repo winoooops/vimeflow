@@ -13,10 +13,16 @@ export interface NativeGhosttyPaneRef {
   paneId: string
 }
 
+export interface NativeGhosttyShortcutContext {
+  paneIds: string[]
+  activePaneId: string | null
+}
+
 export interface NativeGhosttyUpdateRequest extends NativeGhosttyPaneRef {
   cwd: string
   bounds: NativeGhosttyBounds
   visible: boolean
+  shortcutContext?: NativeGhosttyShortcutContext
 }
 
 export interface NativeGhosttyDataRequest extends NativeGhosttyPaneRef {

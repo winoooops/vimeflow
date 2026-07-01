@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-06-26
-ref_count: 3
+last_updated: 2026-07-01
+ref_count: 4
 ---
 
 # Keyboard Shortcut Guards
@@ -330,4 +330,18 @@ against three classes of false-fire:
   plumbing, so the nested control did not receive its expected activation.
 - **Fix:** Stop propagation for keyboard events that originate from nested focusable
   controls while preserving the row's own Enter/Space activation.
+- **Commit:** same commit as this entry
+
+### 25. Native Cmd+digit shortcut used layout-sensitive characters
+
+- **Source:** github-claude | PR #642 round 1 | 2026-07-01
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
+- **Finding:** The native Ghostty keydown monitor matched Cmd+digit shortcuts from
+  `event.charactersIgnoringModifiers`, so non-US layouts could produce punctuation
+  for the physical digit row while the renderer shortcut path continued to use
+  layout-independent `KeyboardEvent.code` values.
+- **Fix:** Map AppKit `NSEvent.keyCode` values for physical ANSI digit-row keys 1
+  through 9 to the forwarded `DigitN` payload, preserving the existing
+  allowed-digit filter.
 - **Commit:** same commit as this entry

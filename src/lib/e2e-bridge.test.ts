@@ -45,7 +45,7 @@ const makeMockEntry = (rows: readonly string[], viewportY = 0): CacheEntry => {
 
 /**
  * Build a session-level wrapper containing N split-view-slots, each with
- * an inner terminal-pane-wrapper (one carrying `data-focused="true"` when
+ * an inner terminal-pane-wrapper (one carrying `data-pane-active="true"` when
  * `activeIndex` matches) and a `.xterm-rows` child with the provided
  * text content. Mirrors the post-5b DOM shape produced by SplitView →
  * TerminalPane → Body.
@@ -71,7 +71,7 @@ const buildSessionWrapper = (
     const paneWrapper = document.createElement('div')
     paneWrapper.setAttribute('data-testid', 'terminal-pane-wrapper')
     if (i === activeIndex) {
-      paneWrapper.setAttribute('data-focused', 'true')
+      paneWrapper.setAttribute('data-pane-active', 'true')
     }
 
     // Body's inner container — carries data-pty-id (terminalCache key), mirroring production DOM.
@@ -114,7 +114,7 @@ describe('readPaneBuffer', () => {
     expect(readPaneBuffer(wrapper)).toBe('solo-buf')
   })
 
-  test('falls back to first .xterm-rows when no pane carries data-focused', () => {
+  test('falls back to first .xterm-rows when no pane carries data-pane-active', () => {
     // Defensive case — invariant violation (5a guarantees exactly-one
     // active per session). The function must still return SOMETHING
     // (not throw) so e2e specs don't fail cryptically. Returns the

@@ -104,6 +104,26 @@ describe('PaneStatusBar', () => {
     )
 
     expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('terminal-pane-status-bar')).not.toHaveClass(
+      'bg-primary-container/15'
+    )
+  })
+
+  test('uses the same active surface tone as the pane header', () => {
+    render(
+      <PaneStatusBar
+        isActive
+        worktreeName={null}
+        branch={null}
+        added={0}
+        removed={0}
+        lastActivityAt={lastActivityAt}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-status-bar')).toHaveClass(
+      'bg-primary-container/15'
+    )
   })
 
   test('clips the git ref while keeping the deltas and time pinned', () => {

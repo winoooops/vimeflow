@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type MouseEvent,
   type ReactElement,
 } from 'react'
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
@@ -18,6 +19,7 @@ import type { Pane, Session } from '../../../sessions/types'
 import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
+import type { NativeGhosttyShortcutContext } from '../../nativeGhosttyClient'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import type { BodyMode } from './Body'
@@ -27,9 +29,22 @@ import { RestartAffordance } from './RestartAffordance'
 import { TerminalBody, type TerminalBodyHandle } from './TerminalBody'
 import { usePaneWidth } from './usePaneWidth'
 
-// A pane narrower than this auto-collapses (header + status bar together) so the
-// collapsed look never drifts out of sync with a real `isCollapsed`. Tunable.
+// A pane narrower than this auto-collapses the bottom status bar. Tunable.
 const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
+
+const INTERACTIVE_TARGET_SELECTOR = [
+  'button',
+  'a[href]',
+  'input',
+  'select',
+  'textarea',
+  '[role="button"]',
+  '[role="menuitem"]',
+  '[role="switch"]',
+  '[role="checkbox"]',
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]',
+].join(',')
 
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
@@ -45,6 +60,7 @@ export interface TerminalPaneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Make this pane active — the burner button focuses its pane (spec §8). */
   onRequestActive?: (sessionId: string, paneId: string) => void
+  onRequestFocus?: () => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
@@ -53,7 +69,7 @@ export interface TerminalPaneProps {
   onCommandSubmit?: (ptyId: string, command: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
-  showFocusHighlight?: boolean
+  shortcutContext?: NativeGhosttyShortcutContext
   /**
    * VIM-167: make this pane's header the drag handle for drag-into-slot. The
    * terminal body is never draggable so xterm selection keeps the pointer.
@@ -86,13 +102,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onClose = undefined,
       onBurner = undefined,
       onRequestActive = undefined,
+      onRequestFocus = undefined,
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       onCwdChange = undefined,
       onCommandSubmit = undefined,
       onRestart = undefined,
       deferFit = false,
-      showFocusHighlight = true,
+      shortcutContext = undefined,
       paneDraggable = false,
       onHeaderDragStart = undefined,
       onHeaderDragEnd = undefined,
@@ -110,8 +127,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const wrapperRef = useRef<HTMLDivElement | null>(null)
     const [manuallyCollapsed, setManuallyCollapsed] = useState(false)
     // Width-driven auto-collapse: a pane too narrow for the expanded chrome
-    // collapses for real (header + status bar together), so the collapsed state
-    // is always in sync with what's shown — never just the bar vanishing.
+    // hides the bottom status bar for real, so the button state stays in sync.
     const paneWidth = usePaneWidth(wrapperRef)
 
     const autoCollapsed =
@@ -131,7 +147,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     }))
 
     const isPaneActive = pane.active
-    const isFocusHighlightVisible = isPaneActive && showFocusHighlight
 
     useEffect(() => {
       // Fire on `undefined → true` (initial mount active) AND `false → true`
@@ -161,15 +176,43 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       [files, isFresh]
     )
 
-    const handleContainerClick = useCallback((): void => {
-      // SplitView owns click-to-focus state changes. If this pane is inactive,
-      // the slot click flips pane.active first; the rising-edge effect above
-      // moves DOM focus into xterm after React commits the active state.
+    const requestPaneActive = useCallback((): void => {
       if (!pane.active) {
-        return
+        onRequestActive?.(session.id, pane.id)
       }
-      bodyRef.current?.focusTerminal()
-    }, [pane.active])
+    }, [onRequestActive, pane.active, pane.id, session.id])
+
+    const handleContainerClick = useCallback(
+      (event: MouseEvent<HTMLDivElement>): void => {
+        if (!pane.active) {
+          event.stopPropagation()
+
+          return
+        }
+
+        bodyRef.current?.focusTerminal()
+      },
+      [pane.active]
+    )
+
+    const handleContainerMouseDown = useCallback(
+      (event: MouseEvent<HTMLDivElement>): void => {
+        if (
+          event.target instanceof Element &&
+          event.target.closest(INTERACTIVE_TARGET_SELECTOR)
+        ) {
+          return
+        }
+
+        if (!pane.active) {
+          requestPaneActive()
+
+          return
+        }
+        bodyRef.current?.focusTerminal()
+      },
+      [pane.active, requestPaneActive]
+    )
 
     const handleToggleCollapse = useCallback((): void => {
       setManuallyCollapsed((collapsed) => !collapsed)
@@ -217,22 +260,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const enableImagePaste = pane.agentType !== 'generic'
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
-    const containerStyle = isFocusHighlightVisible
-      ? {
-          boxShadow: `0 0 0 6px ${agent.accentDim}, var(--shadow-ambient)`,
-          cursor: 'default' as const,
-        }
-      : {
-          boxShadow: 'none',
-          cursor: isPaneActive ? ('default' as const) : ('pointer' as const),
-        }
-
-    const focusRingStyle = {
-      border: isFocusHighlightVisible
-        ? `2px solid ${agent.accent}`
-        : '1px solid color-mix(in srgb, var(--color-outline-variant) 22%, transparent)',
-      transition:
-        'border-color 180ms ease, box-shadow 220ms ease, opacity 220ms ease',
+    const containerStyle = {
+      boxShadow: 'none',
+      cursor: isPaneActive ? ('default' as const) : ('pointer' as const),
     }
 
     return (
@@ -241,7 +271,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         data-testid="terminal-pane-wrapper"
         data-session-id={session.id}
         data-mode={mode}
-        data-focused={isFocusHighlightVisible || undefined}
+        data-pane-active={isPaneActive || undefined}
+        onMouseDown={handleContainerMouseDown}
         onClick={handleContainerClick}
         style={{
           ...containerStyle,
@@ -255,7 +286,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         <Header
           agent={agent}
           session={session}
-          isFocused={isFocusHighlightVisible}
+          isActive={isPaneActive}
           isCollapsed={isCollapsed}
           autoCollapsed={autoCollapsed}
           hideCollapseToggle={hideCollapseToggle}
@@ -296,6 +327,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               onCwdChange={onCwdChange}
               onPaneReady={onPaneReady}
               onCommandSubmit={onCommandSubmit}
+              onRequestActive={requestPaneActive}
+              onRequestFocus={onRequestFocus}
+              shortcutContext={shortcutContext}
               mode={bodyMode}
               deferFit={deferFit}
               enableImagePaste={enableImagePaste}
@@ -305,6 +339,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
         {!isAwaitingRestart && !isCollapsed && (
           <PaneStatusBar
+            isActive={isPaneActive}
             worktreeName={worktreeName}
             branch={branch}
             cwd={pane.cwd}
@@ -316,10 +351,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         )}
 
         <span
-          data-testid="terminal-pane-focus-ring"
+          data-testid="terminal-pane-border"
           aria-hidden="true"
-          style={focusRingStyle}
-          className="pointer-events-none absolute inset-0 z-30 rounded-[10px]"
+          className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border border-outline-variant/[0.22] transition-opacity"
         />
       </div>
     )
