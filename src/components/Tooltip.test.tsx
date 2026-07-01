@@ -380,6 +380,27 @@ describe('Tooltip', () => {
     })
   })
 
+  test('falls back locally when native tooltip overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    nativeBridge.open.mockResolvedValue({ accepted: false })
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'collapse status'
+    )
+  })
+
   test('supports interactive floating content when requested', async () => {
     const user = userEvent.setup()
     const handleCopy = vi.fn()

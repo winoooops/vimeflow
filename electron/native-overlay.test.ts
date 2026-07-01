@@ -5,6 +5,7 @@ import {
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -30,8 +31,11 @@ interface FakeWebContents {
   focus: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  on: ReturnType<typeof vi.fn>
+  removeListener: ReturnType<typeof vi.fn>
   once: (event: string, handler: EventHandler) => void
   emit: (event: string, ...args: unknown[]) => void
+  reset: () => void
 }
 
 interface FakeWindow {
@@ -58,6 +62,7 @@ interface FakeWindow {
 const electronMock = vi.hoisted(() => {
   const createWebContents = (id: number): FakeWebContents => {
     const onceHandlers = new Map<string, EventHandler[]>()
+    const handlersByEvent = new Map<string, EventHandler[]>()
 
     return {
       id,
@@ -65,13 +70,33 @@ const electronMock = vi.hoisted(() => {
       focus: vi.fn(),
       isDestroyed: vi.fn(() => false),
       setWindowOpenHandler: vi.fn(),
+      on: vi.fn((event: string, handler: EventHandler): void => {
+        handlersByEvent.set(event, [
+          ...(handlersByEvent.get(event) ?? []),
+          handler,
+        ])
+      }),
+      removeListener: vi.fn((event: string, handler: EventHandler): void => {
+        handlersByEvent.set(
+          event,
+          (handlersByEvent.get(event) ?? []).filter(
+            (candidate) => candidate !== handler
+          )
+        )
+      }),
       once: (event, handler): void => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       },
       emit: (event, ...args): void => {
+        const persistentHandlersForEvent = handlersByEvent.get(event) ?? []
+        persistentHandlersForEvent.forEach((handler) => handler(...args))
         const handlersForEvent = onceHandlers.get(event) ?? []
         onceHandlers.delete(event)
         handlersForEvent.forEach((handler) => handler(...args))
+      },
+      reset: (): void => {
+        handlersByEvent.clear()
+        onceHandlers.clear()
       },
     }
   }
@@ -128,6 +153,9 @@ const electronMock = vi.hoisted(() => {
         webContents.focus.mockClear()
         webContents.isDestroyed.mockClear()
         webContents.setWindowOpenHandler.mockClear()
+        webContents.on.mockClear()
+        webContents.removeListener.mockClear()
+        webContents.reset()
         this.getContentBounds.mockClear()
         this.setBounds.mockClear()
         this.setAlwaysOnTop.mockClear()
@@ -391,6 +419,48 @@ describe('NativeOverlayController', () => {
     )
     expect(tooltipWindow.hide).toHaveBeenCalledOnce()
     expect(menuWindow.hide).not.toHaveBeenCalled()
+  })
+
+  test('relays owner menu keydown events to the non-focusable menu layer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    const event = { preventDefault: vi.fn() }
+
+    electronMock.owner.webContents.emit('before-input-event', event, {
+      type: 'keyDown',
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      isAutoRepeat: true,
+      isComposing: false,
+      shift: true,
+      control: false,
+      alt: false,
+      meta: false,
+      location: 0,
+      modifiers: ['shift', 'isAutoRepeat'],
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_KEYDOWN,
+      {
+        surfaceId: request.surfaceId,
+        key: 'ArrowDown',
+        code: 'ArrowDown',
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: true,
+        repeat: true,
+      }
+    )
   })
 
   test('parent close tears down active menu and tooltip layers together', async () => {

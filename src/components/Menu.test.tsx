@@ -4,15 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
-  type NativeOverlayMenuPayload,
+  type NativeOverlayMenuRequest,
   type NativeOverlayRequest,
 } from '@/components/base/floating/nativeOverlay'
 import { Menu } from './Menu'
-
-type NativeOverlayMenuRequest = NativeOverlayRequest & {
-  kind: 'menu'
-  payload: NativeOverlayMenuPayload
-}
 
 let restorePlatform: (() => void) | null = null
 

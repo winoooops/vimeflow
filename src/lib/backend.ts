@@ -49,6 +49,7 @@ export interface BackendApi {
     onRender: (callback: (event: unknown) => void) => UnlistenFn
     onClear: (callback: () => void) => UnlistenFn
     onActionResult: (callback: (event: unknown) => void) => UnlistenFn
+    onKeyDown: (callback: (event: unknown) => void) => UnlistenFn
   }
 }
 

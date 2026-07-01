@@ -160,14 +160,17 @@ const installNativeOverlayHostBridge = (): {
   emitRender: (payload: unknown) => void
   emitClear: () => void
   emitActionResult: (payload: unknown) => void
+  emitKeyDown: (payload: unknown) => void
 } => {
   cleanupHostBridgeEvents?.()
   const renderEvent = 'native-overlay-host-render'
   const clearEvent = 'native-overlay-host-clear'
   const actionResultEvent = 'native-overlay-host-action-result'
+  const keyDownEvent = 'native-overlay-host-keydown'
   let renderListener: ((payload: unknown) => void) | null = null
   let clearListener: (() => void) | null = null
   let actionResultListener: ((payload: unknown) => void) | null = null
+  let keyDownListener: ((payload: unknown) => void) | null = null
   const ready = vi.fn(() => Promise.resolve())
   const action = vi.fn(() => Promise.resolve())
   const close = vi.fn(() => Promise.resolve())
@@ -185,13 +188,19 @@ const installNativeOverlayHostBridge = (): {
     actionResultListener?.((event as CustomEvent<unknown>).detail)
   }
 
+  const handleKeyDownEvent = (event: Event): void => {
+    keyDownListener?.((event as CustomEvent<unknown>).detail)
+  }
+
   window.addEventListener(renderEvent, handleRenderEvent)
   window.addEventListener(clearEvent, handleClearEvent)
   window.addEventListener(actionResultEvent, handleActionResultEvent)
+  window.addEventListener(keyDownEvent, handleKeyDownEvent)
   cleanupHostBridgeEvents = (): void => {
     window.removeEventListener(renderEvent, handleRenderEvent)
     window.removeEventListener(clearEvent, handleClearEvent)
     window.removeEventListener(actionResultEvent, handleActionResultEvent)
+    window.removeEventListener(keyDownEvent, handleKeyDownEvent)
     cleanupHostBridgeEvents = null
   }
 
@@ -214,6 +223,11 @@ const installNativeOverlayHostBridge = (): {
       }),
       onActionResult: vi.fn((callback: (payload: unknown) => void) => {
         actionResultListener = callback
+
+        return vi.fn()
+      }),
+      onKeyDown: vi.fn((callback: (payload: unknown) => void) => {
+        keyDownListener = callback
 
         return vi.fn()
       }),
@@ -240,6 +254,9 @@ const installNativeOverlayHostBridge = (): {
     },
     emitActionResult: (payload): void => {
       fireEvent(window, new CustomEvent(actionResultEvent, { detail: payload }))
+    },
+    emitKeyDown: (payload): void => {
+      fireEvent(window, new CustomEvent(keyDownEvent, { detail: payload }))
     },
   }
 }
@@ -292,6 +309,34 @@ describe('NativeOverlayHost', () => {
     bridge.emitClear()
 
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('dispatches forwarded menu keydown events to the active menu', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(request)
+    expect(
+      await screen.findByRole('menu', { name: 'Terminal actions' })
+    ).toBeInTheDocument()
+
+    bridge.emitKeyDown({
+      surfaceId: request.surfaceId,
+      key: 'Escape',
+      code: 'Escape',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    await waitFor(() => {
+      expect(bridge.close).toHaveBeenCalledWith({
+        surfaceId: request.surfaceId,
+        reason: 'outside',
+      })
+    })
   })
 
   test('dispatches the selected action and hides the menu', async () => {

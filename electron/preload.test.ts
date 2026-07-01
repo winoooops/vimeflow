@@ -24,6 +24,7 @@ import {
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -273,6 +274,7 @@ describe('preload nativeOverlay wiring', () => {
     ['onRender', NATIVE_OVERLAY_RENDER],
     ['onClear', NATIVE_OVERLAY_CLEAR],
     ['onActionResult', NATIVE_OVERLAY_ACTION_RESULT],
+    ['onKeyDown', NATIVE_OVERLAY_KEYDOWN],
   ])(
     'host %s registers on the correct channel',
     (method: string, channel: string) => {

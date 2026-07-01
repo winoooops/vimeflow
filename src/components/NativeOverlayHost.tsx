@@ -30,6 +30,18 @@ interface NativeOverlayHostBridge {
   onRender: (callback: (payload: unknown) => void) => () => void
   onClear: (callback: () => void) => () => void
   onActionResult: (callback: (payload: unknown) => void) => () => void
+  onKeyDown: (callback: (payload: unknown) => void) => () => void
+}
+
+interface NativeOverlayKeyboardEvent {
+  surfaceId: string
+  key: string
+  code: string
+  altKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  repeat: boolean
 }
 
 const COPY_FEEDBACK_MS = 1300
@@ -70,6 +82,21 @@ const isCopyActionResult = (
   typeof (value as { actionId?: unknown }).actionId === 'string' &&
   (value as { feedback?: unknown }).feedback === 'copy' &&
   typeof (value as { ok?: unknown }).ok === 'boolean'
+
+const isNativeOverlayKeyboardEvent = (
+  value: unknown
+): value is NativeOverlayKeyboardEvent =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
+  typeof (value as { key?: unknown }).key === 'string' &&
+  typeof (value as { code?: unknown }).code === 'string' &&
+  typeof (value as { altKey?: unknown }).altKey === 'boolean' &&
+  typeof (value as { ctrlKey?: unknown }).ctrlKey === 'boolean' &&
+  typeof (value as { metaKey?: unknown }).metaKey === 'boolean' &&
+  typeof (value as { shiftKey?: unknown }).shiftKey === 'boolean' &&
+  typeof (value as { repeat?: unknown }).repeat === 'boolean'
 
 const OVERLAY_MENU_ROW_CLASSES =
   'group flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
@@ -195,6 +222,30 @@ const applyThemeSnapshot = (
   if (theme.colorScheme !== undefined) {
     root.style.colorScheme = theme.colorScheme
   }
+}
+
+const dispatchNativeOverlayKeyDown = (
+  event: NativeOverlayKeyboardEvent
+): void => {
+  const target =
+    document.activeElement instanceof HTMLElement &&
+    document.activeElement !== document.body
+      ? document.activeElement
+      : (document.querySelector<HTMLElement>('[role="menu"]') ?? document.body)
+
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: event.key,
+      code: event.code,
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      repeat: event.repeat,
+      bubbles: true,
+      cancelable: true,
+    })
+  )
 }
 
 const tooltipStyleForRequest = (
@@ -333,10 +384,24 @@ export const NativeOverlayHost = ({
       showCopyFeedback(payload.actionId)
     })
 
+    const cleanupKeyDown = bridge.onKeyDown((payload) => {
+      if (mode !== 'menu' || !isNativeOverlayKeyboardEvent(payload)) {
+        return
+      }
+
+      const current = requestRef.current
+      if (current?.surfaceId !== payload.surfaceId) {
+        return
+      }
+
+      dispatchNativeOverlayKeyDown(payload)
+    })
+
     return (): void => {
       cleanupRender()
       cleanupClear()
       cleanupActionResult()
+      cleanupKeyDown()
     }
   }, [clearCopyFeedback, mode, showCopyFeedback])
 

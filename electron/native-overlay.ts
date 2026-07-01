@@ -1,8 +1,10 @@
 import {
   BrowserWindow,
   ipcMain,
+  type Event as ElectronEvent,
   type IpcMain,
   type IpcMainInvokeEvent,
+  type Input,
   type WebContents,
 } from 'electron'
 import path from 'node:path'
@@ -13,6 +15,7 @@ import {
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -151,6 +154,17 @@ interface NativeOverlayReadyEvent {
   surfaceId: string
 }
 
+interface NativeOverlayKeyboardEvent {
+  surfaceId: string
+  key: string
+  code: string
+  altKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  repeat: boolean
+}
+
 interface NativeOverlayOpenResult {
   accepted: boolean
   reason?: string
@@ -171,6 +185,7 @@ interface NativeOverlayRecord {
   parentMinimized: () => void
   parentClosing: () => void
   parentClosed: () => void
+  ownerBeforeInput: (event: ElectronEvent, input: Input) => void
   activeSurfaceId: string | null
   activeTooltipSurfaceId: string | null
 }
@@ -193,6 +208,27 @@ interface IpcMainLike {
 }
 
 const OVERLAY_RENDER_TIMEOUT_MS = 1000
+
+const MENU_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
+  ' ': ' ',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  ArrowUp: 'ArrowUp',
+  Down: 'ArrowDown',
+  End: 'End',
+  Enter: 'Enter',
+  Escape: 'Escape',
+  Home: 'Home',
+  Left: 'ArrowLeft',
+  PageDown: 'PageDown',
+  PageUp: 'PageUp',
+  Return: 'Enter',
+  Right: 'ArrowRight',
+  Space: ' ',
+  Tab: 'Tab',
+  Up: 'ArrowUp',
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -348,6 +384,31 @@ const isActionResultEvent = (
 
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
+
+const menuKeyboardEventFromInput = (
+  surfaceId: string,
+  input: Input
+): NativeOverlayKeyboardEvent | null => {
+  if (input.type !== 'keyDown') {
+    return null
+  }
+
+  const key = MENU_KEY_MAP[input.key] ?? MENU_KEY_MAP[input.code]
+  if (key === undefined) {
+    return null
+  }
+
+  return {
+    surfaceId,
+    key,
+    code: input.code,
+    altKey: input.alt,
+    ctrlKey: input.control,
+    metaKey: input.meta,
+    shiftKey: input.shift,
+    repeat: input.isAutoRepeat,
+  }
+}
 
 export class NativeOverlayController {
   private readonly menuOverlayUrl: string
@@ -683,19 +744,31 @@ export class NativeOverlayController {
       }
     }
 
-    const parentBlurred = (): void => {
-      const record = this.overlays.get(parent.id)
+    const ownerBeforeInput = (event: ElectronEvent, input: Input): void => {
+      const activeRecord = this.overlays.get(parent.id)
       if (
-        record &&
-        ((!record.menu.window.isDestroyed() &&
-          record.menu.window.isFocused()) ||
-          (!record.tooltip.window.isDestroyed() &&
-            record.tooltip.window.isFocused()))
+        activeRecord?.activeSurfaceId === undefined ||
+        activeRecord.activeSurfaceId === null
       ) {
         return
       }
 
-      closeForOwnerDeactivation()
+      const surfaceId = activeRecord.activeSurfaceId
+      const surface = this.surfaces.get(surfaceId)
+      if (surface?.kind !== 'menu') {
+        return
+      }
+
+      const keyEvent = menuKeyboardEventFromInput(surfaceId, input)
+      if (keyEvent === null) {
+        return
+      }
+
+      event.preventDefault()
+      activeRecord.menu.window.webContents.send(
+        NATIVE_OVERLAY_KEYDOWN,
+        keyEvent
+      )
     }
 
     const parentClosing = (): void => {
@@ -718,22 +791,24 @@ export class NativeOverlayController {
 
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
-    parent.on('blur', parentBlurred)
+    parent.on('blur', closeForOwnerDeactivation)
     parent.on('hide', closeForOwnerDeactivation)
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
+    parent.webContents.on('before-input-event', ownerBeforeInput)
 
     const record: NativeOverlayRecord = {
       parent,
       menu,
       tooltip,
       syncBounds,
-      parentBlurred,
+      parentBlurred: closeForOwnerDeactivation,
       parentHidden: closeForOwnerDeactivation,
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
       parentClosed,
+      ownerBeforeInput,
       activeSurfaceId: null,
       activeTooltipSurfaceId: null,
     }
@@ -772,6 +847,10 @@ export class NativeOverlayController {
     record.parent.removeListener('minimize', record.parentMinimized)
     record.parent.removeListener('close', record.parentClosing)
     record.parent.removeListener('closed', record.parentClosed)
+    record.parent.webContents.removeListener(
+      'before-input-event',
+      record.ownerBeforeInput
+    )
     this.overlays.delete(record.parent.id)
 
     if (!record.menu.window.isDestroyed()) {

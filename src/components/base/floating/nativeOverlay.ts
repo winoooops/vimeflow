@@ -13,10 +13,6 @@ export const NATIVE_OVERLAY_KINDS = {
 export type NativeOverlayKind =
   (typeof NATIVE_OVERLAY_KINDS)[keyof typeof NATIVE_OVERLAY_KINDS]
 
-export type NativeOverlayLayerKind =
-  | typeof NATIVE_OVERLAY_KINDS.menu
-  | typeof NATIVE_OVERLAY_KINDS.tooltip
-
 export interface NativeOverlayRect {
   x: number
   y: number

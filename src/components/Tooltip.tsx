@@ -131,9 +131,7 @@ export const Tooltip = ({
 
   const [open, setOpen] = useState(false)
 
-  const [nativeStatus, setNativeStatus] = useState<
-    'idle' | 'opening' | 'accepted' | 'failed'
-  >('idle')
+  const [nativeFailed, setNativeFailed] = useState(false)
 
   const transport = selectFloatingTransport(nativeOverlay)
   const nativeTooltipText = typeof content === 'string' ? content : null
@@ -199,7 +197,7 @@ export const Tooltip = ({
   useEffect(() => {
     if (!canUseNativeOverlay || nativeTooltipText === null) {
       if (!open) {
-        setNativeStatus('idle')
+        setNativeFailed(false)
       }
 
       return
@@ -208,14 +206,14 @@ export const Tooltip = ({
     const reference = refs.reference.current
     if (!(reference instanceof Element)) {
       warnNativeOverlayFallback('tooltip native overlay is missing an anchor')
-      setNativeStatus('failed')
+      setNativeFailed(true)
 
       return
     }
 
     const state = { canceled: false }
     const rect = reference.getBoundingClientRect()
-    setNativeStatus('opening')
+    setNativeFailed(false)
 
     void (async (): Promise<void> => {
       const accepted = await openNativeOverlay(
@@ -252,12 +250,10 @@ export const Tooltip = ({
 
       if (!accepted) {
         warnNativeOverlayFallback('tooltip native overlay was rejected')
-        setNativeStatus('failed')
+        setNativeFailed(true)
 
         return
       }
-
-      setNativeStatus('accepted')
     })()
 
     return (): void => {
@@ -292,8 +288,7 @@ export const Tooltip = ({
     : `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
   const classes = className ? `${tooltipClasses} ${className}` : tooltipClasses
 
-  const showLocalTooltip =
-    open && (!canUseNativeOverlay || nativeStatus === 'failed')
+  const showLocalTooltip = open && (!canUseNativeOverlay || nativeFailed)
 
   const floatingSurface = (
     <div
