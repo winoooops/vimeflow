@@ -184,6 +184,11 @@ const diffContainsAnnotationTarget = (
     return true
   }
 
+  const targetLines = new Set([target.lineNumber])
+  if (target.rangeEndLine !== undefined) {
+    targetLines.add(target.rangeEndLine)
+  }
+
   for (const hunk of fileDiff.hunks) {
     let oldLine = hunk.oldStart
     let newLine = hunk.newStart
@@ -198,16 +203,20 @@ const diffContainsAnnotationTarget = (
       if (
         target.side === 'deletions' &&
         line.type !== 'added' &&
-        oldLineNumber === target.lineNumber
+        oldLineNumber !== undefined
       ) {
-        return true
+        targetLines.delete(oldLineNumber)
       }
 
       if (
         target.side === 'additions' &&
         line.type !== 'removed' &&
-        newLineNumber === target.lineNumber
+        newLineNumber !== undefined
       ) {
+        targetLines.delete(newLineNumber)
+      }
+
+      if (targetLines.size === 0) {
         return true
       }
 

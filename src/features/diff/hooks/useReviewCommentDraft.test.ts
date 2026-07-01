@@ -199,6 +199,47 @@ describe('useReviewCommentDraft', () => {
     expect(result.current.lineAnnotations[1]?.metadata.id).toBe(DRAFT_ID)
   })
 
+  test('keeps range drafts current only when both endpoints exist', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(
+        { ...target, lineNumber: 1, rangeEndLine: 3 },
+        false
+      )
+      result.current.setCommentDraftText('Range draft', false)
+    })
+
+    expect(result.current.annotationTargetLineExists).toBe(true)
+    expect(result.current.commentDraftIsRecoverable).toBe(false)
+    expect(result.current.lineAnnotations).toHaveLength(2)
+    expect(result.current.lineAnnotations[1]?.metadata).toMatchObject({
+      id: DRAFT_ID,
+      target: {
+        scope: 'range',
+        side: 'additions',
+        startLine: 1,
+        endLine: 3,
+      },
+    })
+  })
+
+  test('treats a range draft as stale when the end line is missing', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(
+        { ...target, lineNumber: 1, rangeEndLine: 20 },
+        false
+      )
+      result.current.setCommentDraftText('Range draft', false)
+    })
+
+    expect(result.current.annotationTargetLineExists).toBe(false)
+    expect(result.current.commentDraftIsRecoverable).toBe(true)
+    expect(result.current.lineAnnotations).toEqual([existingAnnotation])
+  })
+
   test('stores file-level drafts without creating a Pierre line annotation', () => {
     const { result } = renderDraftHook()
 

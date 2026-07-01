@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-30
-ref_count: 14
+last_updated: 2026-07-01
+ref_count: 15
 ---
 
 # Derived State Consistency
@@ -208,4 +208,19 @@ base data is technically "correct."
   Finish handler when submitted annotations exist. Added a regression test that
   draft-only empty-state feedback keeps Discard enabled while Finish is
   disabled and cannot open the popover.
+- **Commit:** same commit as this entry
+
+### 18. Range draft validity checked only the start line
+
+- **Source:** github-codex-connector | PR #643 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useReviewCommentDraft.ts`
+- **Finding:** Range comment drafts gained a `rangeEndLine`, but the diff
+  refresh guard still considered the draft current as soon as the start line
+  existed. If the end of the same-side range disappeared after a same-file
+  refresh, the UI could keep rendering and submitting a draft that pointed at a
+  non-existent end line.
+- **Fix:** Track every required endpoint for the target side and only keep the
+  draft current after both the start and optional range-end line have been seen.
+  Added same-side range regression tests for the valid and stale-end cases.
 - **Commit:** same commit as this entry
