@@ -25,6 +25,7 @@ import {
   movePaneToSlot,
   resolvePanePlacement,
   swapPanePlacements,
+  type PaneSlotAssignment,
 } from '../../../sessions/utils/panePlacements'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
@@ -147,6 +148,21 @@ export const resolveLayoutRatios = (
   }
 
   return layout.defaultRatios
+}
+
+export const getSlotOrderedPaneIds = (
+  assignments: readonly PaneSlotAssignment[],
+  layout: LayoutShape
+): string[] => {
+  const paneIdBySlotId = new Map(
+    assignments.map(({ pane, slotId }) => [slotId, pane.id])
+  )
+
+  return layout.definition.addOrder.flatMap((slotId) => {
+    const paneId = paneIdBySlotId.get(slotId)
+
+    return paneId === undefined ? [] : [paneId]
+  })
 }
 
 export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
@@ -286,8 +302,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const { assignments: visiblePaneAssignments, emptySlotIds } =
       resolvePanePlacement(visiblePanes, layout, session.placements)
 
-    const visibleShortcutPaneIds = visiblePaneAssignments.map(
-      ({ pane }) => pane.id
+    const visibleShortcutPaneIds = getSlotOrderedPaneIds(
+      visiblePaneAssignments,
+      layout
     )
 
     const visibleShortcutPaneIdsKey = visibleShortcutPaneIds.join('\u0000')

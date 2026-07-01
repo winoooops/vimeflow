@@ -11,6 +11,7 @@ import {
   selectVisiblePanes,
   canClosePane,
   resolveLayoutRatios,
+  getSlotOrderedPaneIds,
   type SplitViewHandle,
 } from './SplitView'
 import type {
@@ -26,6 +27,7 @@ import {
   PaneLayoutRegistry,
   type PaneLayoutDefinition,
 } from '../../layout-registry'
+import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -512,6 +514,26 @@ describe('SplitView - multi-pane layouts', () => {
     expect(slots[0]).toHaveStyle({ gridArea: 'p3' })
     expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
     expect(slots[1]).toHaveStyle({ gridArea: 'p0' })
+  })
+
+  test('shortcut pane ids follow slot order when placements reorder panes', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    const resolution = resolvePanePlacement(
+      session.panes,
+      LAYOUTS.quad,
+      session.placements
+    )
+
+    expect(getSlotOrderedPaneIds(resolution.assignments, LAYOUTS.quad)).toEqual(
+      ['p1', 'p0']
+    )
   })
 
   test('focus marker follows pane.active and inactive panes are dimmed', () => {

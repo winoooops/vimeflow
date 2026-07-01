@@ -2,7 +2,7 @@
 id: pane-slot-identity
 category: correctness
 created: 2026-06-19
-last_updated: 2026-06-22
+last_updated: 2026-07-01
 ref_count: 1
 ---
 
@@ -55,4 +55,13 @@ pass the `slotId` through every layer that needs to act on a specific cell.
 - **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L89-164
 - **Finding:** SplitView advertised focus shortcuts by visual slot after drag-to-slot placements, but `usePaneShortcuts` still mapped `Digit1` through `Digit6` to `activeSession.panes[index]`. Swapped panes could show `Mod+1` on one slot while the shortcut focused a different pane, and custom 3x3 layouts advertised `Mod+7` through `Mod+9` that were not handled.
 - **Fix:** Resolve digit shortcuts through the active layout's `addOrder` and `resolvePanePlacement`, then focus the pane assigned to the requested visual slot. The hook now accepts the workspace layout registry and supports slots 1 through 9.
+- **Commit:** same commit as this entry
+
+### 4. Native shortcut context reused pane-order assignments for slot shortcuts
+
+- **Source:** github-codex-connector | PR #642 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The native Ghostty shortcut context derived `paneIds` from `resolvePanePlacement().assignments`, whose order follows the visible pane array rather than `layout.definition.addOrder`. Explicit placements could therefore map native digit shortcuts to the wrong visual slot.
+- **Fix:** Added a slot-ordered pane-id helper that projects assignments through `layout.definition.addOrder`, used it for `NativeGhosttyShortcutContext`, and covered swapped placements with a unit regression.
 - **Commit:** same commit as this entry
