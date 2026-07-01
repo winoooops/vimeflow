@@ -40,3 +40,12 @@ When a React component renders retained or stale content while fresh data for a 
 - **Finding:** Toolbar hunk navigation deactivated the visible review cursor but left the retained `currentTarget` pointing at the previous row. Bracket-key hunk navigation then preferred that retained target over the visible `focusedHunkIndex`, so mixing toolbar and keyboard navigation could jump from a stale hunk instead of the focused hunk.
 - **Fix:** Used the hook's `activeTarget` as the hunk-navigation origin and fell back to `clampedHunkIndex` when the review cursor is inactive. Added a regression test for toolbar `next hunk` followed by `]`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Plain diff click retained hidden visual selection
+
+- **Source:** github-claude | PR #643 round 1 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useVisualSelection.ts`
+- **Finding:** `startMouse` created a persistent visual selection on pointerdown, while `stopMouse` only cleared the drag-active flag. A normal click could therefore leave a hidden one-line visual selection, and later keyboard motions or insert-comment actions could operate on an unintended range.
+- **Fix:** Tracked whether a mouse drag actually moved across diff targets and cleared the temporary single-line selection on pointerup when no movement occurred. Added hook tests for plain click cleanup and drag selection persistence.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

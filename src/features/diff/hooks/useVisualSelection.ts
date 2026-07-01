@@ -212,6 +212,7 @@ export const useVisualSelection = ({
 }: UseVisualSelectionOptions): UseVisualSelectionReturn => {
   const [selection, setSelection] = useState<VisualSelection | null>(null)
   const dragActiveRef = useRef(false)
+  const dragMovedRef = useRef(false)
 
   const selectedLines = useMemo(
     (): SelectedLineRange | null => rangeForVisualSelection(targets, selection),
@@ -221,6 +222,7 @@ export const useVisualSelection = ({
   useEffect(() => {
     setSelection(null)
     dragActiveRef.current = false
+    dragMovedRef.current = false
   }, [fileKey])
 
   useEffect(() => {
@@ -243,6 +245,7 @@ export const useVisualSelection = ({
   const cancel = useCallback(
     (focusDiff = true): void => {
       dragActiveRef.current = false
+      dragMovedRef.current = false
       setSelection(null)
       if (focusDiff) {
         focusDiffRoot()
@@ -286,6 +289,7 @@ export const useVisualSelection = ({
 
       event.preventDefault()
       dragActiveRef.current = true
+      dragMovedRef.current = false
       activateTarget(targetIndex)
       setSelection({ anchorIndex: targetIndex, focusIndex: targetIndex })
       focusDiffRoot()
@@ -312,17 +316,27 @@ export const useVisualSelection = ({
       }
 
       activateTarget(targetIndex)
-      setSelection((current) =>
-        current === null
-          ? { anchorIndex: targetIndex, focusIndex: targetIndex }
-          : { ...current, focusIndex: targetIndex }
-      )
+      setSelection((current) => {
+        if (current === null) {
+          return { anchorIndex: targetIndex, focusIndex: targetIndex }
+        }
+
+        if (targetIndex !== current.focusIndex) {
+          dragMovedRef.current = true
+        }
+
+        return { ...current, focusIndex: targetIndex }
+      })
     },
     [activateTarget, onPointerHover, targetIndexFromPointerEvent]
   )
 
   const stopMouse = useCallback((): void => {
     dragActiveRef.current = false
+    if (!dragMovedRef.current) {
+      setSelection(null)
+    }
+    dragMovedRef.current = false
   }, [])
 
   const moveLine = useCallback(

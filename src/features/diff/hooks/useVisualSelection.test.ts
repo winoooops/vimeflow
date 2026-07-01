@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { describe, expect, test, vi, beforeEach } from 'vitest'
 import { writeClipboardText } from '@/lib/clipboard'
 import type { DiffHunk } from '../types'
@@ -59,6 +60,7 @@ interface RenderedVisualSelection {
   moveTargetLine: ReturnType<typeof vi.fn>
   notifyInfo: ReturnType<typeof vi.fn>
   scrollTargetIntoView: ReturnType<typeof vi.fn>
+  targetIndexFromPointerEvent: ReturnType<typeof vi.fn>
 }
 
 const renderVisualSelection = (
@@ -101,8 +103,16 @@ const renderVisualSelection = (
     moveTargetLine,
     notifyInfo,
     scrollTargetIntoView,
+    targetIndexFromPointerEvent,
   }
 }
+
+const pointerEvent = (): ReactPointerEvent<HTMLElement> =>
+  ({
+    button: 0,
+    preventDefault: vi.fn(),
+    target: document.createElement('div'),
+  }) as unknown as ReactPointerEvent<HTMLElement>
 
 describe('useVisualSelection', () => {
   beforeEach(() => {
@@ -168,5 +178,55 @@ describe('useVisualSelection', () => {
 
     expect(moveTargetLine).toHaveBeenCalledWith(1)
     expect(focusDiffRoot).toHaveBeenCalled()
+  })
+
+  test('clears mouse selection after a plain click', () => {
+    const { result, activateTarget, targetIndexFromPointerEvent } =
+      renderVisualSelection()
+
+    targetIndexFromPointerEvent.mockReturnValue(1)
+
+    act(() => {
+      result.current.startMouse(pointerEvent())
+    })
+
+    expect(result.current.selectedLines).toEqual({
+      start: 2,
+      end: 2,
+      side: 'additions',
+    })
+    expect(activateTarget).toHaveBeenCalledWith(1)
+
+    act(() => {
+      result.current.stopMouse()
+    })
+
+    expect(result.current.active).toBe(false)
+    expect(result.current.selectedLines).toBeNull()
+  })
+
+  test('keeps mouse selection after dragging across lines', () => {
+    const { result, targetIndexFromPointerEvent } = renderVisualSelection()
+
+    targetIndexFromPointerEvent.mockReturnValueOnce(0).mockReturnValueOnce(2)
+
+    act(() => {
+      result.current.startMouse(pointerEvent())
+    })
+
+    act(() => {
+      result.current.moveMouse(pointerEvent())
+    })
+
+    act(() => {
+      result.current.stopMouse()
+    })
+
+    expect(result.current.active).toBe(true)
+    expect(result.current.selectedLines).toEqual({
+      start: 1,
+      end: 3,
+      side: 'additions',
+    })
   })
 })
