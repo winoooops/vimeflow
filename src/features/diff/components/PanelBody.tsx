@@ -1,5 +1,12 @@
-import { type ReactElement, type RefObject } from 'react'
-import { MultiFileDiff } from '@pierre/diffs/react'
+import {
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
 import type {
   AnnotationSide,
   DiffLineAnnotation,
@@ -39,6 +46,75 @@ const LoadingCard = (): ReactElement => (
   </div>
 )
 
+interface DiffCacheLike {
+  has: (cacheKey: string) => boolean
+}
+
+interface HighlightCacheWorkerPool {
+  inspectCaches: () => { diffCache: DiffCacheLike }
+  subscribeToStatChanges: (callback: () => void) => () => void
+}
+
+const isHighlightCacheWorkerPool = (
+  value: unknown
+): value is HighlightCacheWorkerPool =>
+  typeof value === 'object' &&
+  value !== null &&
+  'inspectCaches' in value &&
+  'subscribeToStatChanges' in value &&
+  typeof value.inspectCaches === 'function' &&
+  typeof value.subscribeToStatChanges === 'function'
+
+const useHighlightCacheRevision = (diffCacheKey: string | null): number => {
+  const workerPool = useWorkerPool()
+
+  const cacheWorkerPool = isHighlightCacheWorkerPool(workerPool)
+    ? workerPool
+    : null
+
+  const [revision, setRevision] = useState(0)
+  const seenCacheKeyRef = useRef<string | null>(null)
+
+  const cacheReadyDuringRender =
+    diffCacheKey !== null &&
+    (cacheWorkerPool?.inspectCaches().diffCache.has(diffCacheKey) ?? false)
+
+  useEffect(() => {
+    if (cacheWorkerPool === null || diffCacheKey === null) {
+      seenCacheKeyRef.current = null
+
+      return
+    }
+
+    const markReady = (): void => {
+      if (seenCacheKeyRef.current === diffCacheKey) {
+        return
+      }
+
+      seenCacheKeyRef.current = diffCacheKey
+      setRevision((current) => current + 1)
+    }
+
+    if (cacheWorkerPool.inspectCaches().diffCache.has(diffCacheKey)) {
+      if (!cacheReadyDuringRender) {
+        markReady()
+      } else {
+        seenCacheKeyRef.current = diffCacheKey
+      }
+
+      return
+    }
+
+    return cacheWorkerPool.subscribeToStatChanges(() => {
+      if (cacheWorkerPool.inspectCaches().diffCache.has(diffCacheKey)) {
+        markReady()
+      }
+    })
+  }, [cacheReadyDuringRender, cacheWorkerPool, diffCacheKey])
+
+  return revision
+}
+
 interface PanelBodyProps {
   scrollBodyRef: RefObject<HTMLDivElement | null>
   diffError: Error | null
@@ -51,7 +127,7 @@ interface PanelBodyProps {
   lineAnnotations: DiffLineAnnotation<ReviewComment>[]
   annotationTarget: AnnotationTarget | null
   commentDraftText: string
-  onPointerMove: () => void
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
   onAddComment: (lineNumber: number, side: AnnotationSide) => void
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
@@ -79,79 +155,86 @@ export const PanelBody = ({
   onCommentTextChange,
   onConfirmComment,
   onCancelComment,
-}: PanelBodyProps): ReactElement => (
-  <div
-    ref={scrollBodyRef}
-    data-testid="diff-scroll-body"
-    className="min-h-0 flex-1 overflow-auto"
-    onPointerMove={onPointerMove}
-  >
-    {diffError ? (
-      <ErrorCard message={diffError.message} />
-    ) : pierreInputs ? (
-      tooNarrow ? (
-        <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
-      ) : (
-        <MultiFileDiff<ReviewComment>
-          key={renderKey}
-          oldFile={pierreInputs.oldFile}
-          newFile={pierreInputs.newFile}
-          selectedLines={selectedLines}
-          lineAnnotations={lineAnnotations}
-          options={options}
-          renderGutterUtility={(getHoveredLine): ReactElement => (
-            <IconButton
-              icon="add"
-              label="Add comment on this line"
-              size="sm"
-              shortcut="i"
-              className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
-              onClick={(): void => {
-                const hovered = getHoveredLine()
-                if (hovered) {
-                  onAddComment(hovered.lineNumber, hovered.side)
-                }
-              }}
-            />
-          )}
-          renderAnnotation={(
-            annotation: DiffLineAnnotation<ReviewComment>
-          ): ReactElement => {
-            const isDraft = annotation.metadata.id === DRAFT_ID
+}: PanelBodyProps): ReactElement => {
+  const highlightCacheRevision = useHighlightCacheRevision(
+    pierreInputs?.diffCacheKey ?? null
+  )
+  const effectiveRenderKey = `${renderKey}:${highlightCacheRevision}`
 
-            const isEditing =
-              annotationTarget?.editId !== undefined &&
-              annotationTarget.editId === annotation.metadata.id
+  return (
+    <div
+      ref={scrollBodyRef}
+      data-testid="diff-scroll-body"
+      className="min-h-0 flex-1 overflow-auto"
+      onPointerMove={onPointerMove}
+    >
+      {diffError ? (
+        <ErrorCard message={diffError.message} />
+      ) : pierreInputs ? (
+        tooNarrow ? (
+          <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
+        ) : (
+          <MultiFileDiff<ReviewComment>
+            key={effectiveRenderKey}
+            oldFile={pierreInputs.oldFile}
+            newFile={pierreInputs.newFile}
+            selectedLines={selectedLines}
+            lineAnnotations={lineAnnotations}
+            options={options}
+            renderGutterUtility={(getHoveredLine): ReactElement => (
+              <IconButton
+                icon="add"
+                label="Add comment on this line"
+                size="sm"
+                shortcut="i"
+                className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
+                onClick={(): void => {
+                  const hovered = getHoveredLine()
+                  if (hovered) {
+                    onAddComment(hovered.lineNumber, hovered.side)
+                  }
+                }}
+              />
+            )}
+            renderAnnotation={(
+              annotation: DiffLineAnnotation<ReviewComment>
+            ): ReactElement => {
+              const isDraft = annotation.metadata.id === DRAFT_ID
 
-            if (isDraft || isEditing) {
+              const isEditing =
+                annotationTarget?.editId !== undefined &&
+                annotationTarget.editId === annotation.metadata.id
+
+              if (isDraft || isEditing) {
+                return (
+                  <ReviewCommentEditor
+                    key={`${annotation.lineNumber}:${annotation.side}:${
+                      isEditing ? annotation.metadata.id : 'draft'
+                    }`}
+                    lineNumber={annotation.lineNumber}
+                    side={annotation.side}
+                    value={commentDraftText}
+                    onTextChange={onCommentTextChange}
+                    onConfirm={onConfirmComment}
+                    onCancel={onCancelComment}
+                  />
+                )
+              }
+
               return (
-                <ReviewCommentEditor
-                  key={`${annotation.lineNumber}:${annotation.side}:${
-                    isEditing ? annotation.metadata.id : 'draft'
-                  }`}
-                  lineNumber={annotation.lineNumber}
-                  side={annotation.side}
-                  value={commentDraftText}
-                  onTextChange={onCommentTextChange}
-                  onConfirm={onConfirmComment}
-                  onCancel={onCancelComment}
+                <ReviewCommentRow
+                  comment={annotation.metadata}
+                  onEdit={(): void => onEditComment(annotation)}
+                  onDelete={(): void => onDeleteComment(annotation.metadata.id)}
                 />
               )
-            }
-
-            return (
-              <ReviewCommentRow
-                comment={annotation.metadata}
-                onEdit={(): void => onEditComment(annotation)}
-                onDelete={(): void => onDeleteComment(annotation.metadata.id)}
-              />
-            )
-          }}
-          style={{ display: 'block', width: '100%' }}
-        />
-      )
-    ) : diffLoading ? (
-      <LoadingCard />
-    ) : null}
-  </div>
-)
+            }}
+            style={{ display: 'block', width: '100%' }}
+          />
+        )
+      ) : diffLoading ? (
+        <LoadingCard />
+      ) : null}
+    </div>
+  )
+}

@@ -759,6 +759,21 @@ describe('DiffChipToolbar', () => {
     expect(onDiscardFeedback).toHaveBeenCalledTimes(1)
   })
 
+  test('renders active-file refresh as a pinned toolbar action', async () => {
+    const user = userEvent.setup()
+    const onRefresh = vi.fn<() => void>()
+
+    renderToolbar({
+      onRefreshActiveFile: onRefresh,
+    })
+
+    const refresh = screen.getByRole('button', { name: 'refresh diff' })
+    expect(refresh).toHaveTextContent('Refresh diff')
+
+    await user.click(refresh)
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
   test('the pinned feedback actions render outside PriorityPlus (never overflow)', () => {
     renderToolbar({ feedbackCount: 2 })
 

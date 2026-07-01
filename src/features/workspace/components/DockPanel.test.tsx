@@ -381,7 +381,9 @@ describe('DockPanel', () => {
       diff: null,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
   })
 
@@ -1420,7 +1422,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1446,7 +1450,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1471,7 +1477,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1498,7 +1506,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1526,7 +1536,9 @@ describe('DockPanel', () => {
       diff: diffLoaded ? inlineDiffResponse.fileDiff : null,
       loading: !diffLoaded,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     }))
 
     const writePty = vi.fn().mockResolvedValue(undefined)

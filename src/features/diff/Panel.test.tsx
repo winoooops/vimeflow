@@ -85,8 +85,8 @@ vi.mock('@pierre/diffs/react', () => ({
     renderGutterUtility = undefined,
     renderAnnotation = undefined,
   }: {
-    oldFile: { name: string; contents: string }
-    newFile: { name: string; contents: string }
+    oldFile: { name: string; contents: string; cacheKey?: string }
+    newFile: { name: string; contents: string; cacheKey?: string }
     options: {
       diffStyle?: string
       theme?: string
@@ -126,8 +126,10 @@ vi.mock('@pierre/diffs/react', () => ({
       data-testid="multi-file-diff"
       data-old-name={oldFile.name}
       data-old-contents={oldFile.contents}
+      data-old-cache-key={oldFile.cacheKey}
       data-new-name={newFile.name}
       data-new-contents={newFile.contents}
+      data-new-cache-key={newFile.cacheKey}
       data-diff-style={options.diffStyle}
       data-theme={options.theme}
       data-line-diff-type={options.lineDiffType}
@@ -168,6 +170,8 @@ const fileDiffMock = ({
   diff,
   loading,
   error,
+  latestDiffStatus = null,
+  acceptLatestDiff = vi.fn(),
   oldText = '',
   newText = '',
   rawDiff = '',
@@ -176,6 +180,8 @@ const fileDiffMock = ({
   diff: FileDiff | null
   loading: boolean
   error: Error | null
+  latestDiffStatus?: UseFileDiffReturn['latestDiffStatus']
+  acceptLatestDiff?: () => void
   oldText?: string
   newText?: string
   rawDiff?: string
@@ -195,7 +201,9 @@ const fileDiffMock = ({
   diff,
   loading,
   error,
+  latestDiffStatus,
   refetch: vi.fn(),
+  acceptLatestDiff,
 })
 
 // Trigger every active ResizeObserver instance with the given width.
@@ -1707,7 +1715,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: refetchSpy,
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1746,7 +1756,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1793,7 +1805,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1832,7 +1846,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1871,7 +1887,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1928,7 +1946,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -1967,7 +1987,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -2005,7 +2027,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -2058,7 +2082,9 @@ describe('Panel', () => {
         diff: hunkFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: null,
         refetch: vi.fn(),
+        acceptLatestDiff: vi.fn(),
       })
 
       render(
@@ -2447,6 +2473,36 @@ describe('Panel', () => {
       expect(
         screen.getByRole('dialog', { name: /Comment on line R20/ })
       ).toBeInTheDocument()
+    })
+
+    test('mouse-selected hunk is the start point for [] navigation', (): void => {
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      const scrollBody = screen.getByTestId('diff-scroll-body')
+      const hoveredLine = document.createElement('div')
+      hoveredLine.setAttribute('data-line-type', 'change-addition')
+      hoveredLine.setAttribute('data-line', '20')
+      scrollBody.append(hoveredLine)
+
+      fireEvent.pointerMove(hoveredLine)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff).toHaveAttribute('data-selected-lines-start', '20')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: ']' })
+
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
+      expect(diff).toHaveAttribute('data-selected-lines-start', '50')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
     })
 
     test('clicking next-hunk three times wraps from last hunk back to first', async (): Promise<void> => {
@@ -3194,7 +3250,7 @@ describe('Panel', () => {
       })
     })
 
-    test('Ctrl+D and Ctrl+U page the diff scroll body', (): void => {
+    test('Ctrl+D and Ctrl+U page the diff scroll body and cursor together', (): void => {
       render(
         <Panel
           cwd="/repo"
@@ -3206,19 +3262,52 @@ describe('Panel', () => {
       const scrollBody = screen.getByTestId('diff-scroll-body')
       Object.defineProperty(scrollBody, 'clientHeight', {
         configurable: true,
-        value: 400,
+        value: 100,
       })
-      scrollBody.scrollTop = 100
+
+      const rect = (top: number, bottom: number): DOMRect => ({
+        bottom,
+        height: bottom - top,
+        left: 0,
+        right: 0,
+        top,
+        width: 100,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      })
+
+      Object.defineProperty(scrollBody, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => rect(0, 100),
+      })
+
+      for (const line of [1, 2, 3]) {
+        const element = document.createElement('div')
+        const top = (line - 1) * 90
+
+        element.setAttribute('data-line-type', 'context')
+        element.setAttribute('data-line', String(line))
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () =>
+            rect(top - scrollBody.scrollTop, top - scrollBody.scrollTop + 20),
+        })
+        scrollBody.append(element)
+      }
 
       fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'd',
         ctrlKey: true,
       })
-      expect(scrollBody.scrollTop).toBe(300)
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(scrollBody.scrollTop).toBe(160)
+      expect(diff).toHaveAttribute('data-selected-lines-start', '3')
       expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
 
       fireEvent.keyDown(document, { key: 'u', ctrlKey: true })
-      expect(scrollBody.scrollTop).toBe(100)
+      expect(scrollBody.scrollTop).toBe(0)
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
     })
 
     test('t toggles split and unified view', (): void => {
@@ -3514,7 +3603,9 @@ describe('Panel', () => {
       )
     })
 
-    test('keeps the current same-file diff visible while a refreshed diff loads', (): void => {
+    test('shows manual refresh only when the visible active-file diff is out of sync', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const acceptLatestDiff = vi.fn()
       let fileDiffState = fileDiffMock({
         diff: inlineFileDiff,
         loading: false,
@@ -3559,6 +3650,7 @@ describe('Panel', () => {
         diff: inlineFileDiff,
         loading: true,
         error: null,
+        latestDiffStatus: 'updating',
         oldText: 'old',
         newText: 'new v1',
         rawDiff: '',
@@ -3572,12 +3664,19 @@ describe('Panel', () => {
         'new v1'
       )
 
+      expect(
+        screen.queryByRole('button', { name: 'refresh diff' })
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('Updating diff...')).not.toBeInTheDocument()
+
       fileDiffState = fileDiffMock({
         diff: inlineFileDiff,
         loading: false,
         error: null,
+        latestDiffStatus: 'ready',
+        acceptLatestDiff,
         oldText: 'old',
-        newText: 'new v2',
+        newText: 'new v1',
         rawDiff: '',
       })
 
@@ -3585,8 +3684,10 @@ describe('Panel', () => {
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-new-contents',
-        'new v2'
+        'new v1'
       )
+      await user.click(screen.getByRole('button', { name: 'refresh diff' }))
+      expect(acceptLatestDiff).toHaveBeenCalledOnce()
 
       expect(useFileDiffSpy).toHaveBeenLastCalledWith(
         'src/foo.ts',
@@ -3595,6 +3696,57 @@ describe('Panel', () => {
         false,
         '/repo:2:src/foo.ts:unstaged'
       )
+    })
+
+    test('keeps submitted comments when manual refresh swaps the diff response', async (): Promise<void> => {
+      const user = userEvent.setup()
+      let newText = 'new v1'
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() =>
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText,
+          rawDiff: '',
+        })
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const { rerender } = render(<Panel {...props} />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line/ })
+        ).getByPlaceholderText('Request change'),
+        'Comment survives refresh'
+      )
+      await user.keyboard('{Enter}')
+
+      expect(screen.getByText('Comment survives refresh')).toBeInTheDocument()
+
+      newText = 'new v2'
+      rerender(<Panel {...props} />)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-new-contents',
+        'new v2'
+      )
+      expect(screen.getByText('Comment survives refresh')).toBeInTheDocument()
     })
 
     test('keeps a recoverable draft notice when refresh removes the target line', async (): Promise<void> => {
