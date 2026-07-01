@@ -813,6 +813,7 @@ export const Panel = ({
   const {
     targets: reviewTargets,
     currentTarget: reviewTarget,
+    activeTarget: activeReviewTarget,
     currentTargetComment: reviewTargetComment,
     activeTargetIndex: reviewTargetIndex,
     activateTarget: activateReviewTarget,
@@ -980,7 +981,7 @@ export const Panel = ({
         return
       }
 
-      const currentHunkIndex = reviewTarget?.hunkIndex ?? clampedHunkIndex
+      const currentHunkIndex = activeReviewTarget?.hunkIndex ?? clampedHunkIndex
 
       const next =
         (((currentHunkIndex + delta) % hunks.length) + hunks.length) %
@@ -1007,11 +1008,11 @@ export const Panel = ({
     [
       activateReviewTarget,
       activeResponse,
+      activeReviewTarget,
       clampedHunkIndex,
       deactivateReviewTarget,
       flashHunkSelection,
       focusDiffRoot,
-      reviewTarget,
       reviewTargets,
       scrollHunkIntoView,
       scrollTargetIntoView,

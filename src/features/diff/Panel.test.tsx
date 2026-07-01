@@ -2505,6 +2505,33 @@ describe('Panel', () => {
       expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
     })
 
+    test('toolbar-selected hunk is the start point for [] navigation', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(
+        screen.getByRole('group', { name: /hunk 2\/3/i })
+      ).toBeInTheDocument()
+
+      fireEvent.keyDown(diff, { key: ']' })
+
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
+      expect(diff).toHaveAttribute('data-selected-lines-start', '50')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
+    })
+
     test('clicking next-hunk three times wraps from last hunk back to first', async (): Promise<void> => {
       const user = userEvent.setup()
 

@@ -2,8 +2,8 @@
 id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 2
+last_updated: 2026-07-01
+ref_count: 3
 ---
 
 # Stale Retained Interactions
@@ -30,4 +30,13 @@ When a React component renders retained or stale content while fresh data for a 
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.test.tsx`
 - **Finding:** The test named `makes retained body non-interactive while fetching a cold target pane` clicked `src/retained.ts`, but that text was rendered by `ActivityFeed`, while `onOpenDiff` is only wired through `FilesChanged`. Because the retained snapshot used an empty `gitStatus`, there was no `FilesChanged` row to click, so `expect(onOpenDiff).not.toHaveBeenCalled()` stayed true even if `inert` were removed from the actionable body.
 - **Fix:** Populated the retained snapshot with a `gitStatus.files` entry and changed the click target to the rendered `FilesChanged` row button. Added an inert click-blocking polyfill to the jsdom test setup because jsdom exposes the `inert` attribute but does not suppress activation of inert subtrees, so synthetic clicks on the row would otherwise still dispatch `onOpenDiff` and make the meaningful assertion fail.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. Inactive review target still seeded bracket hunk navigation
+
+- **Source:** github-codex-connector | PR #639 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** Toolbar hunk navigation deactivated the visible review cursor but left the retained `currentTarget` pointing at the previous row. Bracket-key hunk navigation then preferred that retained target over the visible `focusedHunkIndex`, so mixing toolbar and keyboard navigation could jump from a stale hunk instead of the focused hunk.
+- **Fix:** Used the hook's `activeTarget` as the hunk-navigation origin and fell back to `clampedHunkIndex` when the review cursor is inactive. Added a regression test for toolbar `next hunk` followed by `]`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
