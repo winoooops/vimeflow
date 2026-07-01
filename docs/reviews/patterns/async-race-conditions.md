@@ -843,3 +843,31 @@ prevent showing previous data.
   targets keep their own event semantics without activating the pane first.
   Added regression coverage for inactive-pane Close and Collapse clicks.
 - **Commit:** same commit as this entry
+
+### 80. Rapid dialog content updates race the single-slot overlay ready map
+
+- **Source:** github-claude | PR #644 round 1 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** Native dialog payload changes started overlapping same-surface
+  overlay opens on every command-palette update. Those concurrent opens could
+  collide with main-process ready bookkeeping and let stale completions mark a
+  working native overlay as failed.
+- **Fix:** Serialized native dialog opens through a per-dialog promise queue and
+  guarded completions with a generation token. Superseded updates no longer
+  mutate local native state after a newer generation starts.
+- **Commit:** same commit as this entry
+
+### 81. Close pending native dialog when dismissal wins the race
+
+- **Source:** github-codex-connector | PR #644 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** If the React dialog closed before its first native open resolved,
+  the immediate close request could be ignored before main registered the
+  surface. A late accepted open could leave the native command palette visible
+  after React state had dismissed it.
+- **Fix:** Reused the dialog generation guard to detect accepted stale opens
+  after dismissal or unmount and explicitly close that surface, while leaving
+  superseded same-surface content updates open for the queued replacement.
+- **Commit:** same commit as this entry

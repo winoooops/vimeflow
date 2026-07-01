@@ -83,6 +83,17 @@ const EMPTY_NATIVE_OVERLAY_ACTIONS = new Map<
   NativeOverlayActionHandler
 >()
 
+const closeAcceptedNativeOverlayIfDismissed = (
+  surfaceId: string,
+  canAttemptNativeRef: RefObject<boolean>
+): void => {
+  if (canAttemptNativeRef.current) {
+    return
+  }
+
+  closeNativeOverlay(surfaceId)
+}
+
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -276,6 +287,9 @@ const DialogRoot = ({
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
   const restoreFocusRef = useRef(restoreFocus)
+  const nativeOverlayQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const nativeOverlayGenerationRef = useRef(0)
+  const canAttemptNativeRef = useRef(false)
 
   const [nativeAttempt, setNativeAttempt] = useState<
     'idle' | 'pending' | 'active' | 'failed'
@@ -289,12 +303,14 @@ const DialogRoot = ({
 
   const canAttemptNative =
     open && transport === 'native-overlay' && nativeUnsupportedReason === null
+  canAttemptNativeRef.current = canAttemptNative
 
   const hideLocalForNative =
     nativeAttempt === 'pending' || nativeAttempt === 'active'
 
   useEffect(() => {
     if (!open) {
+      nativeOverlayGenerationRef.current += 1
       closeNativeOverlay(surfaceId)
       setNativeAttempt('idle')
 
@@ -312,6 +328,8 @@ const DialogRoot = ({
 
   useEffect(
     () => (): void => {
+      canAttemptNativeRef.current = false
+      nativeOverlayGenerationRef.current += 1
       closeNativeOverlay(surfaceId)
     },
     [surfaceId]
@@ -322,10 +340,23 @@ const DialogRoot = ({
       return
     }
 
+    const generation = nativeOverlayGenerationRef.current + 1
     const cancelled = { current: false }
+    nativeOverlayGenerationRef.current = generation
     setNativeAttempt((current) => (current === 'active' ? 'active' : 'pending'))
 
-    void (async (): Promise<void> => {
+    const openAfterPrevious = async (): Promise<void> => {
+      const previousOpen = nativeOverlayQueueRef.current
+
+      await previousOpen
+
+      if (
+        cancelled.current ||
+        nativeOverlayGenerationRef.current !== generation
+      ) {
+        return
+      }
+
       const accepted = await openNativeOverlay(
         {
           surfaceId,
@@ -346,12 +377,21 @@ const DialogRoot = ({
         }
       )
 
-      if (cancelled.current) {
+      if (nativeOverlayGenerationRef.current !== generation) {
+        if (accepted) {
+          closeAcceptedNativeOverlayIfDismissed(surfaceId, canAttemptNativeRef)
+        }
+
         return
       }
 
       setNativeAttempt(accepted ? 'active' : 'failed')
-    })()
+    }
+
+    const currentOpen = openAfterPrevious()
+
+    nativeOverlayQueueRef.current = currentOpen
+    void currentOpen
 
     return (): void => {
       cancelled.current = true

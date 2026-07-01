@@ -48,12 +48,14 @@ const setNavigatorPlatform = (platform: string): void => {
 }
 
 const installNativeOverlayBridge = (
-  accepted: boolean
+  result: boolean | Promise<{ accepted: boolean }>
 ): {
   open: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
 } => {
-  const open = vi.fn(() => Promise.resolve({ accepted }))
+  const open = vi.fn(() =>
+    typeof result === 'boolean' ? Promise.resolve({ accepted: result }) : result
+  )
   const close = vi.fn(() => Promise.resolve())
 
   window.vimeflow = {
@@ -69,6 +71,19 @@ const installNativeOverlayBridge = (
   }
 
   return { open, close }
+}
+
+const deferredOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolveOpen: (value: { accepted: boolean }) => void = () => undefined
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolveOpen = resolve
+  })
+
+  return { promise, resolve: resolveOpen }
 }
 
 afterEach(() => {
@@ -169,6 +184,101 @@ describe('Dialog', () => {
       expect(bridge.open).toHaveBeenCalledOnce()
       expect(dialog).not.toHaveClass('opacity-0')
       expect(screen.getByText('Local body')).toBeInTheDocument()
+    })
+  })
+
+  test('serializes native dialog updates for the same surface', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const firstOpen = deferredOpen()
+    const bridge = installNativeOverlayBridge(firstOpen.promise)
+
+    const updatedPayload: NativeOverlayCommandPaletteDialogPayload = {
+      ...nativeDialogPayload,
+      query: ':open',
+    }
+
+    const { rerender } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    rerender(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={updatedPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    expect(bridge.open).toHaveBeenCalledOnce()
+    firstOpen.resolve({ accepted: true })
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(2))
+    expect(bridge.close).not.toHaveBeenCalled()
+  })
+
+  test('closes a late accepted native dialog after dismissal', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const open = deferredOpen()
+    const closed = false
+    const bridge = installNativeOverlayBridge(open.promise)
+
+    const { rerender } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId: string }
+      | undefined
+
+    if (request === undefined) {
+      throw new Error('expected native overlay open request')
+    }
+
+    rerender(
+      <Dialog
+        open={closed}
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    open.resolve({ accepted: true })
+
+    await waitFor(() => {
+      expect(bridge.close).toHaveBeenCalledWith({
+        surfaceId: request.surfaceId,
+        reason: 'renderer',
+      })
     })
   })
 
