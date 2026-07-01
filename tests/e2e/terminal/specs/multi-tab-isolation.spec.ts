@@ -92,7 +92,9 @@ describe('Multi-tab terminal isolation', () => {
     )
 
     // Spawn session 2 via the SessionTabs "+" button.
-    await clickBySelector('button[aria-label="New session"]')
+    await clickBySelector(
+      '[data-testid="session-tabs"] button[aria-label="New session"]'
+    )
     await browser.waitUntil(async () => (await allSessionIds()).length === 2, {
       timeout: 10_000,
       timeoutMsg: 'second session did not mount',

@@ -48,7 +48,9 @@ describe('Terminal session lifecycle', () => {
 
     // Click the SessionTabs "+" button (aria-label="New session" since
     // step 3 replaced TerminalZone's legacy tab-bar).
-    await clickBySelector('button[aria-label="New session"]')
+    await clickBySelector(
+      '[data-testid="session-tabs"] button[aria-label="New session"]'
+    )
     await waitForCount(2, 'new tab did not register a second PTY session')
 
     // Close the most recently spawned session by finding the close control

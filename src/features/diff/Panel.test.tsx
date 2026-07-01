@@ -3494,6 +3494,42 @@ describe('Panel', () => {
       )
     })
 
+    test('gutter add comment uses the clicked line when a stale visual range is elsewhere', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'j' })
+      fireEvent.keyDown(diff, { key: 'v' })
+      fireEvent.keyDown(diff, { key: 'j' })
+
+      expect(diff).toHaveAttribute('data-selected-lines-start', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-end', '3')
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      expect(
+        screen.getByRole('dialog', { name: /Comment on line R1/ })
+      ).toBeInTheDocument()
+
+      expect(
+        screen.queryByRole('dialog', { name: /Comment on lines R2-R3/ })
+      ).not.toBeInTheDocument()
+    })
+
     test('y copies the visual selection to the system clipboard', async (): Promise<void> => {
       const writeText = vi.fn().mockResolvedValue(undefined)
       const originalClipboard = window.navigator.clipboard

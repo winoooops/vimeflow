@@ -146,11 +146,16 @@ const commentTargetForLineOrRange = (
   side: AnnotationSide,
   selectedRange: SelectedLineRange | null
 ): AnnotationTarget => {
-  if (selectedRange === null) {
+  const selectedRangeSide: AnnotationSide = selectedRange?.side ?? 'additions'
+
+  if (
+    selectedRange === null ||
+    selectedRangeSide !== side ||
+    lineNumber < selectedRange.start ||
+    lineNumber > selectedRange.end
+  ) {
     return { lineNumber, side, filePath, staged }
   }
-
-  const selectedRangeSide: AnnotationSide = selectedRange.side ?? 'additions'
 
   return {
     lineNumber: selectedRange.start,

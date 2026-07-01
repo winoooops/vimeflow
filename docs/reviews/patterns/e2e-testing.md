@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-01
-ref_count: 11
+ref_count: 12
 ---
 
 # E2E Testing
@@ -290,4 +290,21 @@ completely different root causes. The generic fast-failure modes:
   the configurator before selecting them, use the stable `aria-label="FILES"`
   selector for file-tab navigation, and explicitly open the dock plus select the
   Editor tab before waiting for the editor panel.
+- **Commit:** same commit as this entry
+
+### 27. Terminal E2E new-session selector matched the sidebar dialog trigger
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`
+- **Finding:** Terminal smoke specs clicked the first
+  `button[aria-label="New session"]` in the document. The workspace now has both
+  a sidebar New session button, which opens the dialog, and a tab-strip plus
+  button, which immediately creates a terminal session. The ambiguous selector
+  could hit the sidebar control, leaving the test waiting forever for a second
+  terminal pane that was never requested.
+- **Fix:** Scope terminal-session creation clicks to
+  `[data-testid="session-tabs"] button[aria-label="New session"]` so the specs
+  target the tab-strip plus control.
 - **Commit:** same commit as this entry

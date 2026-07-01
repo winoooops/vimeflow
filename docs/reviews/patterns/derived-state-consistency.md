@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-07-01
-ref_count: 15
+ref_count: 16
 ---
 
 # Derived State Consistency
@@ -223,4 +223,21 @@ base data is technically "correct."
 - **Fix:** Track every required endpoint for the target side and only keep the
   draft current after both the start and optional range-end line have been seen.
   Added same-side range regression tests for the valid and stale-end cases.
+- **Commit:** same commit as this entry
+
+### 19. Mouse add-comment reused a stale visual selection from another line
+
+- **Source:** github-claude | PR #643 round 1 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The gutter add-comment handler passed the clicked
+  line/side into the shared target builder, but the helper always preferred
+  `visualSelectedLines` whenever a visual range existed. A user could leave a
+  keyboard or drag visual range active, click the gutter plus on an unrelated
+  row, and silently create feedback for the old range instead of the clicked
+  line.
+- **Fix:** Only reuse the visual range when the clicked line and side are inside
+  that range; otherwise build a single-line target from the actual gutter click.
+  Added a regression test that clicks line 1 while a visual range covers lines
+  2-3.
 - **Commit:** same commit as this entry
