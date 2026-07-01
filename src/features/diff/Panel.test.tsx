@@ -3171,6 +3171,74 @@ describe('Panel', () => {
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
     })
 
+    test('v enters visual mode and j/k extend or shrink the selected range', (): void => {
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+
+      fireEvent.keyDown(diff, { key: 'v' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-end', '1')
+
+      fireEvent.keyDown(diff, { key: 'j' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-end', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.keyDown(diff, { key: 'k' })
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-end', '1')
+    })
+
+    test('mouse drag selects multiple diff rows', (): void => {
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const scrollBody = screen.getByTestId('diff-scroll-body')
+      const firstLine = document.createElement('div')
+      const secondLine = document.createElement('div')
+
+      firstLine.setAttribute('data-line-type', 'context')
+      firstLine.setAttribute('data-line', '1')
+      secondLine.setAttribute('data-line-type', 'change-addition')
+      secondLine.setAttribute('data-line', '2')
+      scrollBody.append(firstLine, secondLine)
+
+      fireEvent.pointerDown(firstLine, { button: 0 })
+      fireEvent.pointerMove(secondLine, { buttons: 1 })
+      fireEvent.pointerUp(secondLine)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff).toHaveAttribute('data-selected-lines-start', '1')
+      expect(diff).toHaveAttribute('data-selected-lines-end', '2')
+      expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
+
+      fireEvent.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      expect(
+        screen.getByRole('dialog', { name: /Comment on lines R1-R2/ })
+      ).toBeInTheDocument()
+    })
+
     test('j/k scroll Pierre shadow-DOM lines into view', (): void => {
       render(
         <Panel
@@ -3364,6 +3432,103 @@ describe('Panel', () => {
       expect(
         screen.getByRole('dialog', { name: /Comment on line R2/ })
       ).toBeInTheDocument()
+    })
+
+    test('i opens a range comment editor for the visual selection', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map(),
+        annotationsForFile: () => [],
+        addAnnotation,
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        totalAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'v' })
+      fireEvent.keyDown(diff, { key: 'j' })
+      fireEvent.keyDown(diff, { key: 'i' })
+
+      const dialog = screen.getByRole('dialog', {
+        name: /Comment on lines R1-R2/,
+      })
+
+      await user.type(
+        within(dialog).getByPlaceholderText('Request change'),
+        'Review this range'
+      )
+      await user.keyboard('{Enter}')
+
+      expect(addAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        expect.objectContaining({
+          lineNumber: 1,
+          side: 'additions',
+          metadata: expect.objectContaining({
+            text: 'Review this range',
+            target: {
+              scope: 'range',
+              side: 'additions',
+              startLine: 1,
+              endLine: 2,
+            },
+          }),
+        })
+      )
+    })
+
+    test('y copies the visual selection to the system clipboard', async (): Promise<void> => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      const originalClipboard = window.navigator.clipboard
+
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+        writable: true,
+      })
+
+      try {
+        render(
+          <Panel
+            cwd="/repo"
+            selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+            onSelectedFileChange={vi.fn()}
+          />
+        )
+
+        setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+        const diff = screen.getByTestId('multi-file-diff')
+        fireEvent.keyDown(diff, { key: 'v' })
+        fireEvent.keyDown(diff, { key: 'j' })
+        fireEvent.keyDown(diff, { key: 'y' })
+        await waitFor(() =>
+          expect(writeText).toHaveBeenCalledWith('alpha\nbeta')
+        )
+      } finally {
+        Object.defineProperty(window.navigator, 'clipboard', {
+          value: originalClipboard,
+          configurable: true,
+          writable: true,
+        })
+      }
     })
 
     test('Shift+I opens the file-level comment editor for the selected file', (): void => {

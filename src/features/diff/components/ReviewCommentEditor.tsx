@@ -12,21 +12,14 @@ interface ReviewCommentEditorBaseProps {
   onCancel: () => void
 }
 
-type ReviewCommentEditorProps = ReviewCommentEditorBaseProps &
-  (
-    | {
-        /** 1-based line number the comment is anchored to. */
-        lineNumber: number
-        /** Which side of the diff the line lives on (additions => R, deletions => L). */
-        side: CommentSide
-        targetLabel?: undefined
-      }
-    | {
-        targetLabel: string
-        lineNumber?: undefined
-        side?: undefined
-      }
-  )
+type ReviewCommentEditorProps = ReviewCommentEditorBaseProps & {
+  /** Line anchor for single-line comments and the start of range comments. */
+  lineNumber?: number
+  /** Diff side used for fallback R/L labels when targetLabel is absent. */
+  side?: CommentSide
+  /** Preformatted target text for file/range comments, e.g. "file src/a.ts". */
+  targetLabel?: string
+}
 
 export const moveTextareaCursorVertically = (
   textarea: HTMLTextAreaElement,
@@ -97,8 +90,8 @@ const insertTextareaNewline = (
 // sits in the diff flow and never chases the cursor. Enter submits, Shift+Enter
 // inserts a newline, Escape cancels.
 export const ReviewCommentEditor = ({
-  lineNumber,
-  side,
+  lineNumber = undefined,
+  side = undefined,
   targetLabel = undefined,
   chrome = 'card',
   surfaceRole = 'dialog',
@@ -138,7 +131,7 @@ export const ReviewCommentEditor = ({
   }
 
   const targetDescription =
-    targetLabel ?? `line ${side === 'deletions' ? 'L' : 'R'}${lineNumber}`
+    targetLabel ?? `line ${side === 'deletions' ? 'L' : 'R'}${lineNumber ?? ''}`
 
   const className =
     chrome === 'card'

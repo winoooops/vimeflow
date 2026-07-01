@@ -138,6 +138,35 @@ test('file-level comments emit an explicit file target instead of a line target'
   expect(payload).not.toContain('src/App.tsx:0')
 })
 
+test('range comments emit start and end line targets', () => {
+  const payload = formatFeedbackPayload([
+    {
+      filePath: 'src/App.tsx',
+      staged: false,
+      annotations: [
+        {
+          lineNumber: 4,
+          side: 'additions',
+          metadata: {
+            id: 'range-comment',
+            text: 'Review this block',
+            author: 'self',
+            createdAt: Date.now(),
+            target: {
+              scope: 'range',
+              side: 'additions',
+              startLine: 4,
+              endLine: 6,
+            },
+          },
+        },
+      ],
+    },
+  ])
+
+  expect(payload).toContain('> src/App.tsx:4-6 (additions) [unstaged]')
+})
+
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
   const writePty = vi.fn().mockResolvedValue(undefined)
 
