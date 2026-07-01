@@ -49,6 +49,7 @@ interface FakeWindow {
   loadURL: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   removeListener: ReturnType<typeof vi.fn>
+  isFocused: ReturnType<typeof vi.fn>
   isDestroyed: () => boolean
   emit: (event: string) => void
   reset: () => void
@@ -114,6 +115,7 @@ const electronMock = vi.hoisted(() => {
           )
         )
       }),
+      isFocused: vi.fn((): boolean => false),
       isDestroyed: (): boolean => destroyed,
       emit: (event: string): void => {
         const handlersForEvent = handlersByEvent.get(event) ?? []
@@ -137,6 +139,7 @@ const electronMock = vi.hoisted(() => {
         this.loadURL.mockClear()
         this.on.mockClear()
         this.removeListener.mockClear()
+        this.isFocused.mockClear()
       },
     } as FakeWindow
   }
@@ -210,7 +213,20 @@ const request = {
   },
 } as const
 
-const overlayUrl = 'vimeflow://app/index.html?nativeOverlay=1'
+const tooltipRequest = {
+  surfaceId: 'tooltip-1',
+  kind: 'tooltip',
+  anchorRect: { x: 90, y: 100, width: 30, height: 20 },
+  placement: 'top',
+  payload: {
+    kind: 'tooltip',
+    text: 'collapse status',
+    maxWidth: 320,
+  },
+} as const
+
+const menuOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=menu'
+const tooltipOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=tooltip'
 
 const handler = (channel: string): IpcHandler => {
   const registered = electronMock.handlers.get(channel)
@@ -221,8 +237,8 @@ const handler = (channel: string): IpcHandler => {
   return registered
 }
 
-const finishOverlayLoad = (): FakeWindow => {
-  const overlayWindow = electronMock.overlayWindows[0]
+const finishOverlayLoad = (index = 0): FakeWindow => {
+  const overlayWindow = electronMock.overlayWindows[index]
   overlayWindow.webContents.emit('did-finish-load')
 
   return overlayWindow
@@ -244,7 +260,11 @@ describe('NativeOverlayController', () => {
 
   beforeEach(() => {
     electronMock.reset()
-    controller = new NativeOverlayController({ overlayUrl, platform: 'darwin' })
+    controller = new NativeOverlayController({
+      menuOverlayUrl,
+      tooltipOverlayUrl,
+      platform: 'darwin',
+    })
     controller.register()
   })
 
@@ -263,10 +283,7 @@ describe('NativeOverlayController', () => {
 
     await acknowledgeOverlayReady(overlayWindow)
     await expect(openPromise).resolves.toEqual({ accepted: true })
-    expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalledWith(
-      expect.objectContaining({ focusable: false })
-    )
+    expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2)
 
     expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -274,6 +291,7 @@ describe('NativeOverlayController', () => {
         backgroundColor: '#00000000',
         frame: false,
         hasShadow: false,
+        focusable: false,
         parent: electronMock.owner,
         show: false,
         skipTaskbar: true,
@@ -284,6 +302,15 @@ describe('NativeOverlayController', () => {
           preload: expect.stringContaining('preload.mjs'),
           sandbox: true,
         }),
+      })
+    )
+
+    expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acceptFirstMouse: false,
+        focusable: false,
+        parent: electronMock.owner,
+        transparent: true,
       })
     )
 
@@ -299,7 +326,10 @@ describe('NativeOverlayController', () => {
       overlayWindow.webContents.setWindowOpenHandler
     ).toHaveBeenCalledOnce()
 
-    expect(overlayWindow.loadURL).toHaveBeenCalledWith(overlayUrl)
+    expect(overlayWindow.loadURL).toHaveBeenCalledWith(menuOverlayUrl)
+    expect(electronMock.overlayWindows[1]?.loadURL).toHaveBeenCalledWith(
+      tooltipOverlayUrl
+    )
 
     expect(overlayWindow.setBounds).toHaveBeenCalledWith({
       x: 5,
@@ -308,10 +338,93 @@ describe('NativeOverlayController', () => {
       height: 500,
     })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
-    expect(overlayWindow.showInactive.mock.invocationCallOrder[0]).toBeLessThan(
-      overlayWindow.webContents.focus.mock.invocationCallOrder[0]
+    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+  })
+
+  test('opens passive tooltip layer without replacing an active menu', async () => {
+    const menuOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
     )
+    const menuWindow = finishOverlayLoad()
+    const tooltipWindow = finishOverlayLoad(1)
+    await acknowledgeOverlayReady(menuWindow)
+    await menuOpenPromise
+
+    menuWindow.webContents.send.mockClear()
+    menuWindow.hide.mockClear()
+    menuWindow.setIgnoreMouseEvents.mockClear()
+
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    await Promise.resolve()
+
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      tooltipRequest
+    )
+
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await expect(tooltipOpenPromise).resolves.toEqual({ accepted: true })
+
+    expect(menuWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(menuWindow.hide).not.toHaveBeenCalled()
+    expect(menuWindow.setIgnoreMouseEvents).not.toHaveBeenCalledWith(true)
+    expect(tooltipWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+    expect(tooltipWindow.webContents.focus).not.toHaveBeenCalled()
+    expect(tooltipWindow.setAlwaysOnTop).toHaveBeenCalledWith(
+      true,
+      'screen-saver'
+    )
+
+    handler(NATIVE_OVERLAY_CLOSE)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: tooltipRequest.surfaceId, reason: 'renderer' }
+    )
+
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(tooltipWindow.hide).toHaveBeenCalledOnce()
+    expect(menuWindow.hide).not.toHaveBeenCalled()
+  })
+
+  test('parent close tears down active menu and tooltip layers together', async () => {
+    const menuOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const menuWindow = finishOverlayLoad()
+    const tooltipWindow = finishOverlayLoad(1)
+    await acknowledgeOverlayReady(menuWindow)
+    await menuOpenPromise
+
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await tooltipOpenPromise
+
+    electronMock.owner.webContents.focus.mockClear()
+    electronMock.owner.emit('close')
+
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(menuWindow.hide).toHaveBeenCalledOnce()
+    expect(tooltipWindow.hide).toHaveBeenCalledOnce()
+    expect(menuWindow.close).toHaveBeenCalledOnce()
+    expect(tooltipWindow.close).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.focus).not.toHaveBeenCalled()
   })
 
   test('accepts sectioned menu payloads with composite rows', async () => {
@@ -463,7 +576,7 @@ describe('NativeOverlayController', () => {
 
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
-    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
   })
 
   test('does not hide a newer active overlay when an older render times out', async () => {
@@ -844,7 +957,11 @@ describe('NativeOverlayController', () => {
 
   test('rejects native overlay on non-macOS platforms', async () => {
     controller.unregister()
-    controller = new NativeOverlayController({ overlayUrl, platform: 'linux' })
+    controller = new NativeOverlayController({
+      menuOverlayUrl,
+      tooltipOverlayUrl,
+      platform: 'linux',
+    })
     controller.register()
 
     await expect(

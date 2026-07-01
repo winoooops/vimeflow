@@ -22,6 +22,7 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import {
   setupNativeOverlayIpc,
   type NativeOverlayController,
+  type NativeOverlayKind,
 } from './native-overlay'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
@@ -106,9 +107,12 @@ const resolveSidecarBin = (): string => {
   return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
 
-const withNativeOverlayMode = (url: string): string => {
+const withNativeOverlayMode = (
+  url: string,
+  mode: NativeOverlayKind
+): string => {
   const parsedUrl = new URL(url)
-  parsedUrl.searchParams.set('nativeOverlay', '1')
+  parsedUrl.searchParams.set('nativeOverlay', mode)
 
   return parsedUrl.toString()
 }
@@ -116,19 +120,20 @@ const withNativeOverlayMode = (url: string): string => {
 // The overlay window loads the same renderer bundle in a host-only mode. That
 // URL boots React; the actual menu rows/actions still arrive later as a
 // serialized NativeOverlayRequest over IPC.
-const resolveNativeOverlayRendererUrl = (): string => {
+const resolveNativeOverlayRendererUrl = (mode: NativeOverlayKind): string => {
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
   if (app.isPackaged) {
-    return withNativeOverlayMode(`${APP_ORIGIN}/index.html`)
+    return withNativeOverlayMode(`${APP_ORIGIN}/index.html`, mode)
   }
 
   if (devUrl !== undefined && devUrl.length > 0) {
-    return withNativeOverlayMode(devUrl)
+    return withNativeOverlayMode(devUrl, mode)
   }
 
   return withNativeOverlayMode(
-    pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString()
+    pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString(),
+    mode
   )
 }
 
@@ -447,8 +452,11 @@ const setupApp = async (): Promise<void> => {
   }
   nativeOverlayController?.unregister()
   nativeOverlayController = null
+  // Menus are interactive, but tooltips must stay passive and sit above them;
+  // two overlay renderer layers keep those roles from stealing each other.
   nativeOverlayController = setupNativeOverlayIpc(
-    resolveNativeOverlayRendererUrl()
+    resolveNativeOverlayRendererUrl('menu'),
+    resolveNativeOverlayRendererUrl('tooltip')
   )
   setupDialogIpc(ipcMain)
 

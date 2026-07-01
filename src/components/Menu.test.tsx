@@ -4,9 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
+  type NativeOverlayMenuPayload,
   type NativeOverlayRequest,
 } from '@/components/base/floating/nativeOverlay'
 import { Menu } from './Menu'
+
+type NativeOverlayMenuRequest = NativeOverlayRequest & {
+  kind: 'menu'
+  payload: NativeOverlayMenuPayload
+}
 
 let restorePlatform: (() => void) | null = null
 
@@ -71,6 +77,17 @@ const installNativeOverlayBridge = (): {
       closeListener?.(event)
     },
   }
+}
+
+const nativeMenuRequestAt = (
+  open: ReturnType<typeof vi.fn>,
+  index = 0
+): NativeOverlayMenuRequest => {
+  const request = open.mock.calls[index][0] as NativeOverlayRequest
+  expect(request.kind).toBe('menu')
+  expect(request.payload.kind).toBe('menu')
+
+  return request as NativeOverlayMenuRequest
 }
 
 const deferredNativeOpen = (): {
@@ -992,7 +1009,7 @@ describe('Menu.Context', () => {
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
     const firstItem = request.payload.items?.[0]
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(request).toMatchObject({
@@ -1066,7 +1083,7 @@ describe('Menu.Context', () => {
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
 
     expect(request).toMatchObject({
       anchorRect: { x: 50, y: 60, width: 180, height: 22 },
@@ -1117,7 +1134,7 @@ describe('Menu.Context', () => {
     )
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
 
     act(() => {
       nativeBridge.closed({ surfaceId: request.surfaceId, reason: 'outside' })
@@ -1172,7 +1189,7 @@ describe('Menu.Context', () => {
     await user.click(trigger)
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
     const checkbox = request.payload.sections?.[0]?.items[0]
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -1249,8 +1266,7 @@ describe('Menu.Context', () => {
     await user.click(trigger)
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
-    const firstRequest = nativeBridge.open.mock
-      .calls[0][0] as NativeOverlayRequest
+    const firstRequest = nativeMenuRequestAt(nativeBridge.open)
     const firstCheckbox = firstRequest.payload.sections?.[0]?.items[0]
 
     act(() => {
@@ -1262,8 +1278,7 @@ describe('Menu.Context', () => {
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
 
-    const secondRequest = nativeBridge.open.mock
-      .calls[1][0] as NativeOverlayRequest
+    const secondRequest = nativeMenuRequestAt(nativeBridge.open, 1)
 
     expect(nativeBridge.close).toHaveBeenCalledWith({
       surfaceId: firstRequest.surfaceId,
@@ -1374,7 +1389,7 @@ describe('Menu.Context', () => {
     await user.click(screen.getByRole('button', { name: 'Open layouts' }))
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
     const composite = request.payload.sections?.[0]?.items[0]
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -1438,7 +1453,7 @@ describe('Menu.Context', () => {
 
     render(<Harness />)
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
-    const request = nativeBridge.open.mock.calls[0][0] as NativeOverlayRequest
+    const request = nativeMenuRequestAt(nativeBridge.open)
 
     await user.click(screen.getByRole('button', { name: 'Rerender 0' }))
 

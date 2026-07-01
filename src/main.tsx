@@ -19,11 +19,24 @@ if (!rootElement) {
   throw new Error('Root element not found')
 }
 
+const nativeOverlayMode = new URLSearchParams(window.location.search).get(
+  'nativeOverlay'
+)
+
 const isNativeOverlayWindow =
-  new URLSearchParams(window.location.search).get('nativeOverlay') === '1'
+  nativeOverlayMode === '1' ||
+  nativeOverlayMode === 'menu' ||
+  nativeOverlayMode === 'tooltip'
+
+const nativeOverlayHostMode =
+  nativeOverlayMode === 'tooltip' ? 'tooltip' : 'menu'
 
 createRoot(rootElement).render(
   <StrictMode>
-    {isNativeOverlayWindow ? <NativeOverlayHost /> : <App />}
+    {isNativeOverlayWindow ? (
+      <NativeOverlayHost mode={nativeOverlayHostMode} />
+    ) : (
+      <App />
+    )}
   </StrictMode>
 )

@@ -138,6 +138,18 @@ const detailRequest: NativeOverlayRequest = {
   },
 }
 
+const tooltipRequest: NativeOverlayRequest = {
+  surfaceId: 'tooltip-1',
+  kind: 'tooltip',
+  anchorRect: { x: 100, y: 120, width: 30, height: 20 },
+  placement: 'top',
+  payload: {
+    kind: 'tooltip',
+    text: 'collapse status',
+    maxWidth: 240,
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -256,6 +268,30 @@ describe('NativeOverlayHost', () => {
       expect(bridge.ready).toHaveBeenCalledWith({ surfaceId: 'surface-1' })
     })
     expect(bridge.ownerOverlayClose).not.toHaveBeenCalled()
+  })
+
+  test('renders a passive native overlay tooltip request in tooltip mode', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost mode="tooltip" />)
+
+    bridge.emitRender(tooltipRequest)
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('collapse status')
+    expect(tooltip).toHaveClass('whitespace-nowrap')
+    expect(tooltip).toHaveStyle({
+      left: '115px',
+      top: '114px',
+      transform: 'translate(-50%, -100%)',
+    })
+
+    await waitFor(() => {
+      expect(bridge.ready).toHaveBeenCalledWith({ surfaceId: 'tooltip-1' })
+    })
+
+    bridge.emitClear()
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   test('dispatches the selected action and hides the menu', async () => {
