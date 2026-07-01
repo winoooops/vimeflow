@@ -10,6 +10,7 @@ import {
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
 } from './native-overlay-channels'
+import { COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import { NativeOverlayController } from './native-overlay'
 
 type IpcHandler = (
@@ -253,6 +254,32 @@ const tooltipRequest = {
   },
 } as const
 
+const dialogRequest = {
+  surfaceId: 'dialog-1',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'command-palette',
+    ariaLabel: 'Command palette',
+    query: ':',
+    selectedIndex: 0,
+    results: [
+      {
+        id: 'help',
+        label: ':help',
+        description: 'Show command reference',
+        icon: 'help',
+      },
+    ],
+    actions: {
+      selectIndex: 'command-palette:select-index',
+      executeIndex: 'command-palette:execute-index',
+    },
+  },
+} as const
+
 const menuOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=menu'
 const tooltipOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=tooltip'
 
@@ -421,6 +448,27 @@ describe('NativeOverlayController', () => {
     expect(menuWindow.hide).not.toHaveBeenCalled()
   })
 
+  test('opens dialog requests on the interactive menu layer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      dialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    finishOverlayLoad(1)
+
+    await Promise.resolve()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      dialogRequest
+    )
+
+    await acknowledgeOverlayReady(menuWindow, dialogRequest.surfaceId)
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+    expect(menuWindow.loadURL).toHaveBeenCalledWith(menuOverlayUrl)
+    expect(menuWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(false)
+    expect(menuWindow.setAlwaysOnTop).toHaveBeenCalledWith(true, 'screen-saver')
+  })
+
   test('relays owner menu keydown events to the non-focusable menu layer', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -460,6 +508,47 @@ describe('NativeOverlayController', () => {
         shiftKey: true,
         repeat: true,
       }
+    )
+  })
+
+  test('dispatches command palette shortcut instead of menu key forwarding', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.webContents.focus.mockClear()
+    const event = { preventDefault: vi.fn() }
+    const isMac = process.platform === 'darwin'
+
+    electronMock.owner.webContents.emit('before-input-event', event, {
+      type: 'keyDown',
+      key: ';',
+      code: 'Semicolon',
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      control: !isMac,
+      alt: false,
+      meta: isMac,
+      location: 0,
+      modifiers: [],
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.focus).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      COMMAND_PALETTE_TOGGLE
+    )
+
+    expect(menuWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_KEYDOWN,
+      expect.anything()
     )
   })
 
