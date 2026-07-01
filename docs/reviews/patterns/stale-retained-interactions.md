@@ -3,7 +3,7 @@ id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-07-01
-ref_count: 3
+ref_count: 4
 ---
 
 # Stale Retained Interactions
@@ -48,4 +48,13 @@ When a React component renders retained or stale content while fresh data for a 
 - **File:** `src/features/diff/hooks/useVisualSelection.ts`
 - **Finding:** `startMouse` created a persistent visual selection on pointerdown, while `stopMouse` only cleared the drag-active flag. A normal click could therefore leave a hidden one-line visual selection, and later keyboard motions or insert-comment actions could operate on an unintended range.
 - **Fix:** Tracked whether a mouse drag actually moved across diff targets and cleared the temporary single-line selection on pointerup when no movement occurred. Added hook tests for plain click cleanup and drag selection persistence.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Comment edit retained stale visual selection
+
+- **Source:** github-claude | PR #643 round 2 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** Confirming an edit to an existing file or line comment closed the editor without clearing an active visual selection. The next add-comment action could silently reuse that stale range instead of the current line.
+- **Fix:** Cleared visual selection after successful `updateAnnotation` calls, matching the existing add-comment success paths. Added panel coverage for editing while a visual range is active, then opening a fresh single-line comment.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

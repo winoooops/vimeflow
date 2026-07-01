@@ -1307,6 +1307,7 @@ export const Panel = ({
             annotationTarget.editId,
             { text }
           )
+          cancelVisualSelection(false)
           closeCommentEditor()
 
           return
@@ -1364,6 +1365,7 @@ export const Panel = ({
           annotationTarget.editId,
           { text }
         )
+        cancelVisualSelection(false)
         closeCommentEditor()
       } else {
         const result = feedback.addAnnotation(
