@@ -91,10 +91,18 @@ export interface NativeOverlayMenuPayload {
   sections?: NativeOverlayMenuSection[]
 }
 
-// Menus are the only native overlay payload today. Keep this named boundary so
-// it can become a discriminated union when tooltip, popover, and dialog get
-// their own plain-data payload models instead of arbitrary React children.
-export type SerializableOverlayPayload = NativeOverlayMenuPayload
+export interface NativeOverlayTooltipPayload {
+  kind: 'tooltip'
+  text: string
+  maxWidth?: number
+}
+
+// Native overlay payloads are plain data only. Menu and tooltip are supported
+// today; popover/dialog should join this union only after they get their own
+// serializable models instead of arbitrary React children.
+export type SerializableOverlayPayload =
+  | NativeOverlayMenuPayload
+  | NativeOverlayTooltipPayload
 
 export interface NativeOverlayRequest {
   surfaceId: string
@@ -103,6 +111,16 @@ export interface NativeOverlayRequest {
   placement: string
   payload: SerializableOverlayPayload
   theme?: NativeOverlayThemeSnapshot
+}
+
+export type NativeOverlayMenuRequest = NativeOverlayRequest & {
+  kind: typeof NATIVE_OVERLAY_KINDS.menu
+  payload: NativeOverlayMenuPayload
+}
+
+export type NativeOverlayTooltipRequest = NativeOverlayRequest & {
+  kind: typeof NATIVE_OVERLAY_KINDS.tooltip
+  payload: NativeOverlayTooltipPayload
 }
 
 export interface NativeOverlayActionEvent {

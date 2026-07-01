@@ -17,4 +17,6 @@ export const NATIVE_OVERLAY_RENDER = 'native-overlay:render'
 
 export const NATIVE_OVERLAY_CLEAR = 'native-overlay:clear'
 
+export const NATIVE_OVERLAY_KEYDOWN = 'native-overlay:keydown'
+
 export const NATIVE_OVERLAY_READY = 'native-overlay:ready'

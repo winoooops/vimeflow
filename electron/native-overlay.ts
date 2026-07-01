@@ -1,8 +1,10 @@
 import {
   BrowserWindow,
   ipcMain,
+  type Event as ElectronEvent,
   type IpcMain,
   type IpcMainInvokeEvent,
+  type Input,
   type WebContents,
 } from 'electron'
 import path from 'node:path'
@@ -13,6 +15,7 @@ import {
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -22,7 +25,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-type NativeOverlayKind = 'menu' | 'tooltip' | 'popover' | 'dialog'
+// TODO: add popover/dialog here when they get serializable native overlay
+// payloads and host renderers.
+export type NativeOverlayKind = 'menu' | 'tooltip'
 
 type NativeOverlayCloseReason =
   | 'outside'
@@ -101,6 +106,16 @@ interface NativeOverlayMenuPayload {
   sections?: NativeOverlayMenuSection[]
 }
 
+interface NativeOverlayTooltipPayload {
+  kind: 'tooltip'
+  text: string
+  maxWidth?: number
+}
+
+type SerializableOverlayPayload =
+  | NativeOverlayMenuPayload
+  | NativeOverlayTooltipPayload
+
 interface NativeOverlayThemeSnapshot {
   id?: string
   colorScheme?: string
@@ -112,7 +127,7 @@ interface NativeOverlayRequest {
   kind: NativeOverlayKind
   anchorRect: NativeOverlayRect
   placement: string
-  payload: NativeOverlayMenuPayload
+  payload: SerializableOverlayPayload
   theme?: NativeOverlayThemeSnapshot
 }
 
@@ -139,31 +154,51 @@ interface NativeOverlayReadyEvent {
   surfaceId: string
 }
 
+interface NativeOverlayKeyboardEvent {
+  surfaceId: string
+  key: string
+  code: string
+  altKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  repeat: boolean
+}
+
 interface NativeOverlayOpenResult {
   accepted: boolean
   reason?: string
 }
 
+interface NativeOverlayLayerRecord {
+  window: BrowserWindow
+  ready: Promise<void>
+}
+
 interface NativeOverlayRecord {
   parent: BrowserWindow
-  overlayWindow: BrowserWindow
-  ready: Promise<void>
+  menu: NativeOverlayLayerRecord
+  tooltip: NativeOverlayLayerRecord
   syncBounds: () => void
   parentBlurred: () => void
   parentHidden: () => void
   parentMinimized: () => void
   parentClosing: () => void
   parentClosed: () => void
+  ownerBeforeInput: (event: ElectronEvent, input: Input) => void
   activeSurfaceId: string | null
+  activeTooltipSurfaceId: string | null
 }
 
 interface NativeOverlaySurface {
   owner: WebContents
   parentId: number
+  kind: NativeOverlayKind
 }
 
 interface NativeOverlayControllerOptions {
-  overlayUrl: string
+  menuOverlayUrl: string
+  tooltipOverlayUrl: string
   platform?: NodeJS.Platform
 }
 
@@ -173,6 +208,27 @@ interface IpcMainLike {
 }
 
 const OVERLAY_RENDER_TIMEOUT_MS = 1000
+
+const MENU_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
+  ' ': ' ',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  ArrowUp: 'ArrowUp',
+  Down: 'ArrowDown',
+  End: 'End',
+  Enter: 'Enter',
+  Escape: 'Escape',
+  Home: 'Home',
+  Left: 'ArrowLeft',
+  PageDown: 'PageDown',
+  PageUp: 'PageUp',
+  Return: 'Enter',
+  Right: 'ArrowRight',
+  Space: ' ',
+  Tab: 'Tab',
+  Up: 'ArrowUp',
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -265,21 +321,36 @@ const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   (value.surfaceTone === undefined || typeof value.surfaceTone === 'string') &&
   (hasMenuItems(value.items) || hasMenuSections(value.sections))
 
+const isTooltipPayload = (
+  value: unknown
+): value is NativeOverlayTooltipPayload =>
+  isRecord(value) &&
+  value.kind === 'tooltip' &&
+  isString(value.text) &&
+  (value.maxWidth === undefined || isFiniteNumber(value.maxWidth))
+
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
   isRecord(value) &&
   (value.id === undefined || typeof value.id === 'string') &&
   (value.colorScheme === undefined || typeof value.colorScheme === 'string') &&
   isStringRecord(value.variables)
 
+const isSerializablePayloadForKind = (
+  kind: unknown,
+  payload: unknown
+): payload is SerializableOverlayPayload =>
+  (kind === 'menu' && isMenuPayload(payload)) ||
+  (kind === 'tooltip' && isTooltipPayload(payload))
+
 const isNativeOverlayRequest = (
   value: unknown
 ): value is NativeOverlayRequest =>
   isRecord(value) &&
   isString(value.surfaceId) &&
-  value.kind === 'menu' &&
+  (value.kind === 'menu' || value.kind === 'tooltip') &&
   isRect(value.anchorRect) &&
   isString(value.placement) &&
-  isMenuPayload(value.payload) &&
+  isSerializablePayloadForKind(value.kind, value.payload) &&
   (value.theme === undefined || isThemeSnapshot(value.theme))
 
 const isCloseReason = (value: unknown): value is NativeOverlayCloseReason =>
@@ -314,8 +385,34 @@ const isActionResultEvent = (
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
 
+const menuKeyboardEventFromInput = (
+  surfaceId: string,
+  input: Input
+): NativeOverlayKeyboardEvent | null => {
+  if (input.type !== 'keyDown') {
+    return null
+  }
+
+  const key = MENU_KEY_MAP[input.key] ?? MENU_KEY_MAP[input.code]
+  if (key === undefined) {
+    return null
+  }
+
+  return {
+    surfaceId,
+    key,
+    code: input.code,
+    altKey: input.alt,
+    ctrlKey: input.control,
+    metaKey: input.meta,
+    shiftKey: input.shift,
+    repeat: input.isAutoRepeat,
+  }
+}
+
 export class NativeOverlayController {
-  private readonly overlayUrl: string
+  private readonly menuOverlayUrl: string
+  private readonly tooltipOverlayUrl: string
   private readonly platform: NodeJS.Platform
   private readonly overlays = new Map<number, NativeOverlayRecord>()
   private readonly surfaces = new Map<string, NativeOverlaySurface>()
@@ -323,7 +420,8 @@ export class NativeOverlayController {
   private registeredIpc: IpcMainLike | null = null
 
   constructor(options: NativeOverlayControllerOptions) {
-    this.overlayUrl = options.overlayUrl
+    this.menuOverlayUrl = options.menuOverlayUrl
+    this.tooltipOverlayUrl = options.tooltipOverlayUrl
     this.platform = options.platform ?? process.platform
   }
 
@@ -381,31 +479,82 @@ export class NativeOverlayController {
     }
 
     const record = this.getOrCreateOverlayRecord(parent)
+
+    if (payload.kind === 'tooltip') {
+      return this.openTooltipSurface(event.sender, parent, record, payload)
+    }
+
+    return this.openMenuSurface(event.sender, parent, record, payload)
+  }
+
+  private async openMenuSurface(
+    owner: WebContents,
+    parent: BrowserWindow,
+    record: NativeOverlayRecord,
+    payload: NativeOverlayRequest
+  ): Promise<NativeOverlayOpenResult> {
     if (record.activeSurfaceId !== null) {
       this.closeSurface(record.activeSurfaceId, 'replaced', true)
     }
 
-    await record.ready
+    await record.menu.ready
     record.syncBounds()
-    record.overlayWindow.setIgnoreMouseEvents(false)
-    record.overlayWindow.showInactive()
-    record.overlayWindow.webContents.focus()
+    record.menu.window.setIgnoreMouseEvents(false)
+    record.menu.window.showInactive()
     // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
     // still land behind it. The screen-saver level reliably places this
     // transparent overlay window above that native surface while it is open.
-    record.overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-    record.overlayWindow.moveTop()
+    record.menu.window.setAlwaysOnTop(true, 'screen-saver')
+    record.menu.window.moveTop()
     record.activeSurfaceId = payload.surfaceId
     this.surfaces.set(payload.surfaceId, {
-      owner: event.sender,
+      owner,
       parentId: parent.id,
+      kind: 'menu',
     })
 
     const readyPromise = this.waitForReady(payload.surfaceId)
-    record.overlayWindow.webContents.send(NATIVE_OVERLAY_RENDER, payload)
+    record.menu.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
     const ready = await readyPromise
     if (!ready || record.activeSurfaceId !== payload.surfaceId) {
       this.closeSurface(payload.surfaceId, 'renderer', false)
+
+      return { accepted: false, reason: 'render-timeout' }
+    }
+
+    return { accepted: true }
+  }
+
+  private async openTooltipSurface(
+    owner: WebContents,
+    parent: BrowserWindow,
+    record: NativeOverlayRecord,
+    payload: NativeOverlayRequest
+  ): Promise<NativeOverlayOpenResult> {
+    if (record.activeTooltipSurfaceId !== null) {
+      this.closeSurface(record.activeTooltipSurfaceId, 'replaced', true, false)
+    }
+
+    await record.tooltip.ready
+    record.syncBounds()
+    record.tooltip.window.setIgnoreMouseEvents(true)
+    record.tooltip.window.showInactive()
+    // Tooltip overlay is intentionally passive and topmost. It shares the same
+    // z-order fix as menus but never takes focus or pointer events from them.
+    record.tooltip.window.setAlwaysOnTop(true, 'screen-saver')
+    record.tooltip.window.moveTop()
+    record.activeTooltipSurfaceId = payload.surfaceId
+    this.surfaces.set(payload.surfaceId, {
+      owner,
+      parentId: parent.id,
+      kind: 'tooltip',
+    })
+
+    const readyPromise = this.waitForReady(payload.surfaceId)
+    record.tooltip.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
+    const ready = await readyPromise
+    if (!ready || record.activeTooltipSurfaceId !== payload.surfaceId) {
+      this.closeSurface(payload.surfaceId, 'renderer', false, false)
 
       return { accepted: false, reason: 'render-timeout' }
     }
@@ -464,6 +613,10 @@ export class NativeOverlayController {
       return
     }
 
+    if (surface.kind !== 'menu') {
+      return
+    }
+
     const owner = surface.owner
     if (payload.closeOnSelect !== false) {
       this.closeSurface(payload.surfaceId, 'action', false)
@@ -487,20 +640,24 @@ export class NativeOverlayController {
       return
     }
 
-    const record = this.overlays.get(surface.parentId)
-    if (!record || record.overlayWindow.isDestroyed()) {
+    if (surface.kind !== 'menu') {
       return
     }
 
-    record.overlayWindow.webContents.send(NATIVE_OVERLAY_ACTION_RESULT, payload)
-  }
-
-  private getOrCreateOverlayRecord(parent: BrowserWindow): NativeOverlayRecord {
-    const existing = this.overlays.get(parent.id)
-    if (existing) {
-      return existing
+    const record = this.overlays.get(surface.parentId)
+    if (!record || record.menu.window.isDestroyed()) {
+      return
     }
 
+    record.menu.window.webContents.send(NATIVE_OVERLAY_ACTION_RESULT, payload)
+  }
+
+  private createOverlayLayer(
+    parent: BrowserWindow,
+    url: string,
+    focusable: boolean,
+    acceptFirstMouse: boolean
+  ): NativeOverlayLayerRecord {
     const overlayWindow = new BrowserWindow({
       parent,
       show: false,
@@ -514,8 +671,8 @@ export class NativeOverlayController {
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
-      acceptFirstMouse: true,
-      focusable: true,
+      acceptFirstMouse,
+      focusable,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -528,21 +685,90 @@ export class NativeOverlayController {
       overlayWindow.webContents.once('did-finish-load', () => resolve())
     })
 
+    overlayWindow.setIgnoreMouseEvents(true)
+    overlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    void overlayWindow.loadURL(url)
+
+    return { window: overlayWindow, ready }
+  }
+
+  private getOrCreateOverlayRecord(parent: BrowserWindow): NativeOverlayRecord {
+    const existing = this.overlays.get(parent.id)
+    if (existing) {
+      return existing
+    }
+
+    // NativeOverlay owns two transparent child windows: an interactive menu
+    // layer and a passive tooltip layer above it. Keeping them separate lets a
+    // hover tooltip appear while a menu is open without replacing that menu.
+    const menu = this.createOverlayLayer(
+      parent,
+      this.menuOverlayUrl,
+      false,
+      true
+    )
+
+    const tooltip = this.createOverlayLayer(
+      parent,
+      this.tooltipOverlayUrl,
+      false,
+      false
+    )
+
     const syncBounds = (): void => {
-      if (overlayWindow.isDestroyed() || parent.isDestroyed()) {
+      if (parent.isDestroyed()) {
         return
       }
 
-      overlayWindow.setBounds(parent.getContentBounds())
+      const bounds = parent.getContentBounds()
+      if (!menu.window.isDestroyed()) {
+        menu.window.setBounds(bounds)
+      }
+      if (!tooltip.window.isDestroyed()) {
+        tooltip.window.setBounds(bounds)
+      }
     }
 
     const closeForOwnerDeactivation = (): void => {
-      const activeSurfaceId = this.overlays.get(parent.id)?.activeSurfaceId
-      if (activeSurfaceId === undefined || activeSurfaceId === null) {
+      const record = this.overlays.get(parent.id)
+      if (!record) {
         return
       }
 
-      this.closeSurface(activeSurfaceId, 'outside', true, false)
+      if (record.activeSurfaceId !== null) {
+        this.closeSurface(record.activeSurfaceId, 'outside', true, false)
+      }
+
+      if (record.activeTooltipSurfaceId !== null) {
+        this.closeSurface(record.activeTooltipSurfaceId, 'outside', true, false)
+      }
+    }
+
+    const ownerBeforeInput = (event: ElectronEvent, input: Input): void => {
+      const activeRecord = this.overlays.get(parent.id)
+      if (
+        activeRecord?.activeSurfaceId === undefined ||
+        activeRecord.activeSurfaceId === null
+      ) {
+        return
+      }
+
+      const surfaceId = activeRecord.activeSurfaceId
+      const surface = this.surfaces.get(surfaceId)
+      if (surface?.kind !== 'menu') {
+        return
+      }
+
+      const keyEvent = menuKeyboardEventFromInput(surfaceId, input)
+      if (keyEvent === null) {
+        return
+      }
+
+      event.preventDefault()
+      activeRecord.menu.window.webContents.send(
+        NATIVE_OVERLAY_KEYDOWN,
+        keyEvent
+      )
     }
 
     const parentClosing = (): void => {
@@ -563,8 +789,6 @@ export class NativeOverlayController {
       this.destroyOverlayRecord(record, 'owner-closed', true)
     }
 
-    overlayWindow.setIgnoreMouseEvents(true)
-    overlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
     parent.on('blur', closeForOwnerDeactivation)
@@ -572,19 +796,21 @@ export class NativeOverlayController {
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
-    void overlayWindow.loadURL(this.overlayUrl)
+    parent.webContents.on('before-input-event', ownerBeforeInput)
 
     const record: NativeOverlayRecord = {
       parent,
-      overlayWindow,
-      ready,
+      menu,
+      tooltip,
       syncBounds,
       parentBlurred: closeForOwnerDeactivation,
       parentHidden: closeForOwnerDeactivation,
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
       parentClosed,
+      ownerBeforeInput,
       activeSurfaceId: null,
+      activeTooltipSurfaceId: null,
     }
 
     this.overlays.set(parent.id, record)
@@ -605,6 +831,15 @@ export class NativeOverlayController {
       this.closeSurface(record.activeSurfaceId, reason, notifyOwner, false)
     }
 
+    if (record.activeTooltipSurfaceId !== null) {
+      this.closeSurface(
+        record.activeTooltipSurfaceId,
+        reason,
+        notifyOwner,
+        false
+      )
+    }
+
     record.parent.removeListener('resize', record.syncBounds)
     record.parent.removeListener('move', record.syncBounds)
     record.parent.removeListener('blur', record.parentBlurred)
@@ -612,10 +847,18 @@ export class NativeOverlayController {
     record.parent.removeListener('minimize', record.parentMinimized)
     record.parent.removeListener('close', record.parentClosing)
     record.parent.removeListener('closed', record.parentClosed)
+    record.parent.webContents.removeListener(
+      'before-input-event',
+      record.ownerBeforeInput
+    )
     this.overlays.delete(record.parent.id)
 
-    if (!record.overlayWindow.isDestroyed()) {
-      record.overlayWindow.close()
+    if (!record.menu.window.isDestroyed()) {
+      record.menu.window.close()
+    }
+
+    if (!record.tooltip.window.isDestroyed()) {
+      record.tooltip.window.close()
     }
   }
 
@@ -654,22 +897,34 @@ export class NativeOverlayController {
     }
 
     const record = this.overlays.get(surface.parentId)
-    const isActiveSurface = record?.activeSurfaceId === surfaceId
+
+    const isActiveSurface =
+      surface.kind === 'tooltip'
+        ? record?.activeTooltipSurfaceId === surfaceId
+        : record?.activeSurfaceId === surfaceId
+
     this.surfaces.delete(surfaceId)
     this.resolvePendingReady(surfaceId, false)
 
     if (record && isActiveSurface) {
-      record.activeSurfaceId = null
-      if (!record.overlayWindow.isDestroyed()) {
-        record.overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
-        record.overlayWindow.hide()
-        record.overlayWindow.setAlwaysOnTop(false)
-        record.overlayWindow.setIgnoreMouseEvents(true)
+      const overlayWindow =
+        surface.kind === 'tooltip' ? record.tooltip.window : record.menu.window
+      if (surface.kind === 'tooltip') {
+        record.activeTooltipSurfaceId = null
+      } else {
+        record.activeSurfaceId = null
+      }
+
+      if (!overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
+        overlayWindow.hide()
+        overlayWindow.setAlwaysOnTop(false)
+        overlayWindow.setIgnoreMouseEvents(true)
       }
     }
 
     if (!surface.owner.isDestroyed()) {
-      if (isActiveSurface && restoreOwnerFocus) {
+      if (surface.kind === 'menu' && isActiveSurface && restoreOwnerFocus) {
         surface.owner.focus()
       }
       if (notifyOwner) {
@@ -688,7 +943,11 @@ export class NativeOverlayController {
     }
 
     const record = this.overlays.get(surface.parentId)
-    if (record?.overlayWindow.webContents !== sender) {
+
+    const overlayWindow =
+      surface.kind === 'tooltip' ? record?.tooltip.window : record?.menu.window
+
+    if (overlayWindow?.webContents !== sender) {
       return null
     }
 
@@ -705,12 +964,13 @@ export class NativeOverlayController {
     }
 
     const record = this.overlays.get(surface.parentId)
+
+    const overlayWindow =
+      surface.kind === 'tooltip' ? record?.tooltip.window : record?.menu.window
+
     // Close is intentionally dual-caller: the owner renderer cancels local
     // sessions, while the overlay host closes on outside-press or Escape.
-    if (
-      surface.owner !== sender &&
-      record?.overlayWindow.webContents !== sender
-    ) {
+    if (surface.owner !== sender && overlayWindow?.webContents !== sender) {
       return null
     }
 
@@ -731,9 +991,13 @@ export class NativeOverlayController {
 }
 
 export const setupNativeOverlayIpc = (
-  overlayUrl: string
+  menuOverlayUrl: string,
+  tooltipOverlayUrl: string
 ): NativeOverlayController => {
-  const controller = new NativeOverlayController({ overlayUrl })
+  const controller = new NativeOverlayController({
+    menuOverlayUrl,
+    tooltipOverlayUrl,
+  })
   controller.register(ipcMain)
 
   return controller

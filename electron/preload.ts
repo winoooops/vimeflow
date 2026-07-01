@@ -12,6 +12,7 @@ import {
   NATIVE_OVERLAY_CLEAR,
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -290,6 +291,17 @@ contextBridge.exposeInMainWorld('vimeflow', {
 
       return (): void => {
         ipcRenderer.off(NATIVE_OVERLAY_ACTION_RESULT, handler)
+      }
+    },
+    onKeyDown: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_KEYDOWN, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_KEYDOWN, handler)
       }
     },
   },

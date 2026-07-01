@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
+import { Tooltip } from '@/components/Tooltip'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
   if (active) {
@@ -42,48 +44,62 @@ export const HeaderActions = ({
   onBurner = undefined,
   burnerActive = false,
   burnerShellExists = false,
-}: HeaderActionsProps): ReactElement => (
-  <>
-    {onBurner && (
-      <IconButton
-        icon="terminal"
-        label={burnerButtonLabel(burnerActive, burnerShellExists)}
-        size="sm"
-        onClick={(event) => {
-          event.stopPropagation()
-          onBurner()
-        }}
-        // Running is a status tint, not a toggle — no `pressed` (it would override the accent).
-        className={
-          burnerActive
-            ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
-            : undefined
-        }
-      />
-    )}
+}: HeaderActionsProps): ReactElement => {
+  const burnerLabel = burnerButtonLabel(burnerActive, burnerShellExists)
+  const collapseLabel = isCollapsed ? 'expand status' : 'collapse status'
 
-    {!hideCollapseToggle && (
-      <IconButton
-        icon={isCollapsed ? 'unfold_more' : 'unfold_less'}
-        label={isCollapsed ? 'expand status' : 'collapse status'}
-        size="sm"
-        onClick={(event) => {
-          event.stopPropagation()
-          onToggleCollapse()
-        }}
-      />
-    )}
+  return (
+    <>
+      {onBurner && (
+        <Tooltip content={burnerLabel} placement="bottom" nativeOverlay>
+          <IconButton
+            icon="terminal"
+            label={burnerLabel}
+            showTooltip={TOOLTIP_SUPPRESSED}
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation()
+              onBurner()
+            }}
+            // Running is a status tint, not a toggle — no `pressed` (it would override the accent).
+            className={
+              burnerActive
+                ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
+                : undefined
+            }
+          />
+        </Tooltip>
+      )}
 
-    {onClose && (
-      <IconButton
-        icon="close"
-        label="close pane"
-        size="sm"
-        onClick={(event) => {
-          event.stopPropagation()
-          onClose()
-        }}
-      />
-    )}
-  </>
-)
+      {!hideCollapseToggle && (
+        <Tooltip content={collapseLabel} placement="bottom" nativeOverlay>
+          <IconButton
+            icon={isCollapsed ? 'unfold_more' : 'unfold_less'}
+            label={collapseLabel}
+            showTooltip={TOOLTIP_SUPPRESSED}
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleCollapse()
+            }}
+          />
+        </Tooltip>
+      )}
+
+      {onClose && (
+        <Tooltip content="close pane" placement="bottom" nativeOverlay>
+          <IconButton
+            icon="close"
+            label="close pane"
+            showTooltip={TOOLTIP_SUPPRESSED}
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation()
+              onClose()
+            }}
+          />
+        </Tooltip>
+      )}
+    </>
+  )
+}

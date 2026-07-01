@@ -3,14 +3,17 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactElement,
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
 import type {
   NativeOverlayMenuItem,
+  NativeOverlayMenuRequest,
   NativeOverlayMenuSection,
   NativeOverlayRequest,
+  NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
 import type { Placement } from '@/components/base/floating/glassSurface'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -27,6 +30,18 @@ interface NativeOverlayHostBridge {
   onRender: (callback: (payload: unknown) => void) => () => void
   onClear: (callback: () => void) => () => void
   onActionResult: (callback: (payload: unknown) => void) => () => void
+  onKeyDown: (callback: (payload: unknown) => void) => () => void
+}
+
+interface NativeOverlayKeyboardEvent {
+  surfaceId: string
+  key: string
+  code: string
+  altKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  repeat: boolean
 }
 
 const COPY_FEEDBACK_MS = 1300
@@ -34,12 +49,23 @@ const COPY_FEEDBACK_MS = 1300
 const nativeOverlayHostBridge = (): NativeOverlayHostBridge | undefined =>
   window.vimeflow?.nativeOverlayHost
 
-const isMenuRequest = (value: unknown): value is NativeOverlayRequest =>
+const isMenuRequest = (value: unknown): value is NativeOverlayMenuRequest =>
   typeof value === 'object' &&
   value !== null &&
   !Array.isArray(value) &&
   (value as { kind?: unknown }).kind === 'menu' &&
   (value as { payload?: { kind?: unknown } }).payload?.kind === 'menu'
+
+const isTooltipRequest = (
+  value: unknown
+): value is NativeOverlayTooltipRequest =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  (value as { kind?: unknown }).kind === 'tooltip' &&
+  (value as { payload?: { kind?: unknown; text?: unknown } }).payload?.kind ===
+    'tooltip' &&
+  typeof (value as { payload?: { text?: unknown } }).payload?.text === 'string'
 
 const isCopyActionResult = (
   value: unknown
@@ -56,6 +82,21 @@ const isCopyActionResult = (
   typeof (value as { actionId?: unknown }).actionId === 'string' &&
   (value as { feedback?: unknown }).feedback === 'copy' &&
   typeof (value as { ok?: unknown }).ok === 'boolean'
+
+const isNativeOverlayKeyboardEvent = (
+  value: unknown
+): value is NativeOverlayKeyboardEvent =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
+  typeof (value as { key?: unknown }).key === 'string' &&
+  typeof (value as { code?: unknown }).code === 'string' &&
+  typeof (value as { altKey?: unknown }).altKey === 'boolean' &&
+  typeof (value as { ctrlKey?: unknown }).ctrlKey === 'boolean' &&
+  typeof (value as { metaKey?: unknown }).metaKey === 'boolean' &&
+  typeof (value as { shiftKey?: unknown }).shiftKey === 'boolean' &&
+  typeof (value as { repeat?: unknown }).repeat === 'boolean'
 
 const OVERLAY_MENU_ROW_CLASSES =
   'group flex min-h-8 w-full items-center justify-between gap-6 rounded px-2.5 py-1.5 ' +
@@ -95,6 +136,11 @@ const OVERLAY_MENU_COPY_FEEDBACK_SUCCESS_CLASSES =
 const OVERLAY_MENU_COPY_FEEDBACK_LABEL_CLASSES =
   'font-sans text-[10px] font-medium'
 
+const OVERLAY_TOOLTIP_CLASSES =
+  'pointer-events-none rounded-md px-3 py-1.5 text-xs text-on-surface ' +
+  'whitespace-nowrap shadow-lg bg-surface-container-high/90 backdrop-blur-md ' +
+  'backdrop-saturate-150 border border-outline-variant/20'
+
 const OVERLAY_MENU_COMPOSITE_PRIMARY_CLASSES =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none ' +
   'focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-default ' +
@@ -129,7 +175,7 @@ const overlayMenuItemLabelClass = (item: NativeOverlayMenuItem): string =>
     : OVERLAY_MENU_ITEM_LABEL_CLASSES
 
 const sectionsForRequest = (
-  request: NativeOverlayRequest
+  request: NativeOverlayMenuRequest
 ): NativeOverlayMenuSection[] => {
   if (request.payload.sections !== undefined) {
     return [...request.payload.sections]
@@ -178,7 +224,82 @@ const applyThemeSnapshot = (
   }
 }
 
-export const NativeOverlayHost = (): ReactElement | null => {
+const dispatchNativeOverlayKeyDown = (
+  event: NativeOverlayKeyboardEvent
+): void => {
+  const target =
+    document.activeElement instanceof HTMLElement &&
+    document.activeElement !== document.body
+      ? document.activeElement
+      : (document.querySelector<HTMLElement>('[role="menu"]') ?? document.body)
+
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: event.key,
+      code: event.code,
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      repeat: event.repeat,
+      bubbles: true,
+      cancelable: true,
+    })
+  )
+}
+
+const tooltipStyleForRequest = (
+  request: NativeOverlayTooltipRequest
+): CSSProperties => {
+  const gap = 6
+  const { x, y, width, height } = request.anchorRect
+  const placement = request.placement
+
+  const style: CSSProperties = {
+    position: 'fixed',
+    maxWidth: request.payload.maxWidth ?? 320,
+  }
+
+  if (placement.startsWith('bottom')) {
+    return {
+      ...style,
+      left: x + width / 2,
+      top: y + height + gap,
+      transform: 'translateX(-50%)',
+    }
+  }
+
+  if (placement.startsWith('left')) {
+    return {
+      ...style,
+      left: x - gap,
+      top: y + height / 2,
+      transform: 'translate(-100%, -50%)',
+    }
+  }
+
+  if (placement.startsWith('right')) {
+    return {
+      ...style,
+      left: x + width + gap,
+      top: y + height / 2,
+      transform: 'translateY(-50%)',
+    }
+  }
+
+  return {
+    ...style,
+    left: x + width / 2,
+    top: y - gap,
+    transform: 'translate(-50%, -100%)',
+  }
+}
+
+export const NativeOverlayHost = ({
+  mode = 'menu',
+}: {
+  mode?: 'menu' | 'tooltip'
+}): ReactElement | null => {
   const [request, setRequest] = useState<NativeOverlayRequest | null>(null)
   const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
   const requestRef = useRef<NativeOverlayRequest | null>(null)
@@ -230,7 +351,15 @@ export const NativeOverlayHost = (): ReactElement | null => {
     }
 
     const cleanupRender = bridge.onRender((payload) => {
-      if (isMenuRequest(payload)) {
+      if (mode === 'menu' && isMenuRequest(payload)) {
+        applyThemeSnapshot(payload.theme)
+        clearCopyFeedback()
+        setRequest(payload)
+
+        return
+      }
+
+      if (mode === 'tooltip' && isTooltipRequest(payload)) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
         setRequest(payload)
@@ -255,12 +384,26 @@ export const NativeOverlayHost = (): ReactElement | null => {
       showCopyFeedback(payload.actionId)
     })
 
+    const cleanupKeyDown = bridge.onKeyDown((payload) => {
+      if (mode !== 'menu' || !isNativeOverlayKeyboardEvent(payload)) {
+        return
+      }
+
+      const current = requestRef.current
+      if (current?.surfaceId !== payload.surfaceId) {
+        return
+      }
+
+      dispatchNativeOverlayKeyDown(payload)
+    })
+
     return (): void => {
       cleanupRender()
       cleanupClear()
       cleanupActionResult()
+      cleanupKeyDown()
     }
-  }, [clearCopyFeedback, showCopyFeedback])
+  }, [clearCopyFeedback, mode, showCopyFeedback])
 
   useEffect(() => {
     if (request === null) {
@@ -285,6 +428,26 @@ export const NativeOverlayHost = (): ReactElement | null => {
   }, [clearCopyFeedback])
 
   if (request === null) {
+    return null
+  }
+
+  if (mode === 'tooltip') {
+    if (!isTooltipRequest(request)) {
+      return null
+    }
+
+    return (
+      <div
+        role="tooltip"
+        className={OVERLAY_TOOLTIP_CLASSES}
+        style={tooltipStyleForRequest(request)}
+      >
+        {request.payload.text}
+      </div>
+    )
+  }
+
+  if (!isMenuRequest(request)) {
     return null
   }
 
