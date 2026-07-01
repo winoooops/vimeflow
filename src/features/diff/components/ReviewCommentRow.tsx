@@ -4,12 +4,16 @@ import type { ReviewComment } from '../hooks/useFeedbackBatch'
 
 interface ReviewCommentRowProps {
   comment: ReviewComment
+  editShortcut?: 'u' | 'Shift+U'
+  deleteShortcut?: 'x' | null
   onEdit: () => void
   onDelete: () => void
 }
 
 export const ReviewCommentRow = ({
   comment,
+  editShortcut = 'u',
+  deleteShortcut = 'x',
   onEdit,
   onDelete,
 }: ReviewCommentRowProps): ReactElement => (
@@ -22,8 +26,8 @@ export const ReviewCommentRow = ({
         icon="edit"
         label="Edit comment"
         size="sm"
-        shortcut="u"
-        aria-keyshortcuts="u"
+        shortcut={editShortcut === 'Shift+U' ? ['Shift', 'U'] : 'u'}
+        aria-keyshortcuts={editShortcut}
         onClick={(): void => onEdit()}
       />
       <IconButton
@@ -31,8 +35,8 @@ export const ReviewCommentRow = ({
         label="Delete comment"
         variant="danger"
         size="sm"
-        shortcut="x"
-        aria-keyshortcuts="x"
+        shortcut={deleteShortcut ?? undefined}
+        aria-keyshortcuts={deleteShortcut ?? undefined}
         onClick={(): void => onDelete()}
       />
     </div>

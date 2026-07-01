@@ -13,6 +13,7 @@ import type {
   DiffLineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs'
+import { Popover } from '@/components/Popover'
 import { useGitStatus, type UseGitStatusReturn } from './hooks/useGitStatus'
 import { useFileDiff } from './hooks/useFileDiff'
 import { ChangedFilesList } from './components/ChangedFilesList'
@@ -22,6 +23,9 @@ import { createGitService } from './services/gitService'
 import { useNotifyInfo } from '../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from './types'
 import {
+  FILE_COMMENT_LINE_NUMBER,
+  isFileLevelReviewAnnotation,
+  isLineLevelReviewAnnotation,
   useFeedbackBatch,
   parseBatchKey,
   type FeedbackDraftStore,
@@ -39,6 +43,7 @@ import {
   type FeedbackDispatchTarget,
 } from './services/activePanePicker'
 import {
+  isFileAnnotationTarget,
   isSameAnnotationTarget,
   useReviewCommentDraft,
   type AnnotationTarget,
@@ -47,6 +52,8 @@ import { useToolbarState } from './hooks/useToolbarState'
 import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
+import { ReviewCommentEditor } from './components/ReviewCommentEditor'
+import { ReviewCommentRow } from './components/ReviewCommentRow'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
@@ -316,6 +323,9 @@ export const Panel = ({
   const diffRootRef = useRef<HTMLDivElement>(null)
   const diffScrollBodyRef = useRef<HTMLDivElement>(null)
 
+  const [fileCommentAnchor, setFileCommentAnchor] =
+    useState<HTMLDivElement | null>(null)
+
   // Stable focus owner for handoffs before focused diff/comment nodes unmount.
   const focusDiffRoot = useCallback((): void => {
     diffRootRef.current?.focus({ preventScroll: true })
@@ -368,10 +378,30 @@ export const Panel = ({
   }, [response, repoRootRef])
 
   // Real annotations for the currently selected file.
-  const realAnnotations = feedback.annotationsForFile(
+  const annotationsForSelectedFile = feedback.annotationsForFile(
     cwd,
     selectedFilePath ?? '',
     selectedFileStaged
+  )
+
+  const realAnnotations = useMemo(
+    (): DiffLineAnnotation<ReviewComment>[] =>
+      annotationsForSelectedFile.filter(isLineLevelReviewAnnotation),
+    [annotationsForSelectedFile]
+  )
+
+  const fileCommentsForSelectedFile = useMemo(
+    (): DiffLineAnnotation<ReviewComment>[] =>
+      selectedFileEntry === undefined
+        ? []
+        : feedback
+            .annotationsForFile(
+              cwd,
+              selectedFileEntry.path,
+              selectedFileEntry.staged
+            )
+            .filter(isFileLevelReviewAnnotation),
+    [cwd, feedback, selectedFileEntry]
   )
 
   const {
@@ -392,8 +422,20 @@ export const Panel = ({
     focusDiffRoot,
   })
 
+  const fileCommentDraftTarget =
+    annotationTarget !== null && isFileAnnotationTarget(annotationTarget)
+      ? annotationTarget
+      : null
+
+  const fileCommentDraftIsVisible =
+    fileCommentDraftTarget !== null &&
+    selectedFileEntry?.path === fileCommentDraftTarget.filePath &&
+    selectedFileEntry.staged === fileCommentDraftTarget.staged
+
   const recoverableCommentDraftTarget =
-    commentDraftIsRecoverable && annotationTarget !== null
+    commentDraftIsRecoverable &&
+    annotationTarget !== null &&
+    !fileCommentDraftIsVisible
       ? annotationTarget
       : null
 
@@ -420,6 +462,48 @@ export const Panel = ({
   const confirmCommentEditor = useCallback(
     (text: string): void => {
       if (annotationTarget === null) {
+        return
+      }
+
+      if (isFileAnnotationTarget(annotationTarget)) {
+        if (annotationTarget.editId !== undefined) {
+          feedback.updateAnnotation(
+            cwd,
+            annotationTarget.filePath,
+            annotationTarget.staged,
+            annotationTarget.editId,
+            { text }
+          )
+          closeCommentEditor()
+
+          return
+        }
+
+        const result = feedback.addAnnotation(
+          cwd,
+          annotationTarget.filePath,
+          annotationTarget.staged,
+          {
+            side: 'additions',
+            lineNumber: FILE_COMMENT_LINE_NUMBER,
+            metadata: {
+              id: nextFeedbackCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+              target: { scope: 'file' },
+            },
+          }
+        )
+
+        if (result === 'cap-reached') {
+          notifyInfo(
+            'Feedback limit reached (50 comments). Finish or discard before adding more.'
+          )
+        } else {
+          closeCommentEditor()
+        }
+
         return
       }
 
@@ -1055,6 +1139,46 @@ export const Panel = ({
     setCommentDraftText,
   ])
 
+  const openFileCommentEditor = useCallback(
+    (file: Pick<ChangedFile, 'path' | 'staged'>): void => {
+      const nextTarget: AnnotationTarget = {
+        scope: 'file',
+        filePath: file.path,
+        staged: file.staged,
+      }
+
+      setCommentDraftText((current) => {
+        if (annotationTarget === null) {
+          return ''
+        }
+
+        return isSameAnnotationTarget(annotationTarget, nextTarget)
+          ? current
+          : ''
+      }, false)
+      setAnnotationTarget(nextTarget)
+    },
+    [annotationTarget, setAnnotationTarget, setCommentDraftText]
+  )
+
+  const openSelectedFileComment = useCallback((): void => {
+    if (selectedFileEntry === undefined) {
+      notifyInfo('No file selected.')
+
+      return
+    }
+
+    openFileCommentEditor(selectedFileEntry)
+  }, [notifyInfo, openFileCommentEditor, selectedFileEntry])
+
+  const handleAddFileComment = useCallback(
+    (file: ChangedFile): void => {
+      selectDiffFile(file)
+      openFileCommentEditor(file)
+    },
+    [openFileCommentEditor, selectDiffFile]
+  )
+
   const moveReviewTargetSide = useCallback(
     (side: AnnotationSide): void => {
       moveTargetSide(side)
@@ -1157,6 +1281,32 @@ export const Panel = ({
     setCommentDraftText,
   ])
 
+  const updateSelectedFileComment = useCallback((): void => {
+    if (selectedFilePath === null || fileCommentsForSelectedFile.length === 0) {
+      notifyInfo('No file comment selected.')
+
+      return
+    }
+
+    const fileCommentToEdit =
+      fileCommentsForSelectedFile[fileCommentsForSelectedFile.length - 1]
+
+    setAnnotationTarget({
+      scope: 'file',
+      filePath: selectedFilePath,
+      staged: selectedFileStaged,
+      editId: fileCommentToEdit.metadata.id,
+    })
+    setCommentDraftText(fileCommentToEdit.metadata.text, false)
+  }, [
+    fileCommentsForSelectedFile,
+    notifyInfo,
+    selectedFilePath,
+    selectedFileStaged,
+    setAnnotationTarget,
+    setCommentDraftText,
+  ])
+
   // Deletes the annotation on the selected review target.
   const deleteSelectedComment = useCallback((): void => {
     if (
@@ -1192,7 +1342,9 @@ export const Panel = ({
     onPreviousHunk: (): void => moveReviewTargetHunk(-1),
     onNextHunk: (): void => moveReviewTargetHunk(1),
     onComment: openSelectedComment,
+    onFileComment: openSelectedFileComment,
     onUpdateComment: updateSelectedComment,
+    onUpdateFileComment: updateSelectedFileComment,
     onDeleteComment: deleteSelectedComment,
     onFinishReview: (): void => {
       if (feedback.totalAnnotations() > 0) {
@@ -1387,8 +1539,11 @@ export const Panel = ({
       onPointerDownCapture={handleDiffRootPointerDown}
       className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden focus:outline-none"
     >
-      {/* Left: Changed files list (~240px fixed) */}
-      <div className="w-60 shrink-0 border-r border-wash-subtle overflow-y-auto">
+      {/* Left: Changed files list */}
+      <div
+        data-testid="changed-files-pane"
+        className="w-60 shrink-0 overflow-y-auto"
+      >
         <ChangedFilesList
           files={effectiveFiles}
           selectedFile={
@@ -1402,6 +1557,7 @@ export const Panel = ({
           onSelectFile={(file: ChangedFile): void => {
             selectDiffFile(file)
           }}
+          onAddFileComment={handleAddFileComment}
         />
       </div>
 
@@ -1452,6 +1608,77 @@ export const Panel = ({
           onCancelKeyboardConfirm={cancelKeyboardConfirm}
           onConfirmKeyboardAction={confirmKeyboardAction}
         />
+        <div
+          ref={setFileCommentAnchor}
+          data-testid="file-comment-popover-anchor"
+          className="h-0 w-0 shrink-0"
+        />
+        <Popover
+          anchor={fileCommentAnchor}
+          open={fileCommentDraftIsVisible}
+          onOpenChange={(open): void => {
+            if (!open) {
+              closeCommentEditor()
+            }
+          }}
+          placement="bottom-start"
+          width={560}
+          middleware={{ ancestorScroll: false }}
+          aria-label={
+            fileCommentDraftTarget === null
+              ? 'Comment on file'
+              : `Comment on file ${fileCommentDraftTarget.filePath}`
+          }
+        >
+          <ReviewCommentEditor
+            targetLabel={`file ${fileCommentDraftTarget?.filePath ?? ''}`}
+            chrome="plain"
+            surfaceRole="none"
+            value={commentDraftText}
+            onTextChange={(text): void => {
+              setCommentDraftText(text, false)
+            }}
+            onConfirm={confirmCommentEditor}
+            onCancel={closeCommentEditor}
+          />
+        </Popover>
+        {selectedFileEntry !== undefined &&
+        fileCommentsForSelectedFile.length > 0 ? (
+          <div
+            data-testid="file-level-comments-panel"
+            className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
+          >
+            <div className="px-2 text-xs font-medium text-on-surface-variant">
+              Commented on file
+            </div>
+            {fileCommentsForSelectedFile.map((annotation) => (
+              <ReviewCommentRow
+                key={annotation.metadata.id}
+                comment={annotation.metadata}
+                editShortcut="Shift+U"
+                deleteShortcut={null}
+                onEdit={(): void => {
+                  setAnnotationTarget({
+                    scope: 'file',
+                    filePath: selectedFileEntry.path,
+                    staged: selectedFileEntry.staged,
+                    editId: annotation.metadata.id,
+                  })
+                  setCommentDraftText(annotation.metadata.text, false)
+                }}
+                onDelete={(): void => {
+                  focusDiffRoot()
+                  feedback.removeAnnotation(
+                    cwd,
+                    selectedFileEntry.path,
+                    selectedFileEntry.staged,
+                    annotation.metadata.id
+                  )
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
         <PanelBody
           scrollBodyRef={diffScrollBodyRef}
           diffError={diffError}

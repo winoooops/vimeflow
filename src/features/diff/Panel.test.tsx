@@ -2867,6 +2867,240 @@ describe('Panel', () => {
       ).toBeInTheDocument()
     })
 
+    test('shows a changed-file cue for adding a file-level comment', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(
+        within(screen.getByTestId('changed-files-pane')).getByRole('button', {
+          name: 'Comment on file foo.ts',
+        })
+      )
+
+      expect(
+        screen.getByRole('dialog', { name: 'Comment on file src/foo.ts' })
+      ).toBeInTheDocument()
+    })
+
+    test('submitting a file-level comment stores an explicit file-scope annotation', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map(),
+        annotationsForFile: () => [],
+        addAnnotation,
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        totalAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+        />
+      )
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      expect(
+        within(screen.getByTestId('changed-files-pane')).queryByRole('textbox')
+      ).not.toBeInTheDocument()
+
+      expect(screen.getByTestId('diff-right-pane')).toContainElement(
+        screen.getByTestId('file-comment-popover-anchor')
+      )
+
+      const dialog = screen.getByRole('dialog', {
+        name: 'Comment on file src/foo.ts',
+      })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Review the whole file')
+      await user.keyboard('{Enter}')
+
+      expect(addAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        expect.objectContaining({
+          lineNumber: 0,
+          side: 'additions',
+          metadata: expect.objectContaining({
+            text: 'Review the whole file',
+            target: { scope: 'file' },
+          }),
+        })
+      )
+    })
+
+    test('renders submitted file-level comments in the right pane, not the file list', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      const dialog = screen.getByRole('dialog', {
+        name: 'Comment on file src/foo.ts',
+      })
+
+      await user.type(
+        within(dialog).getByPlaceholderText('Request change'),
+        'Review the whole file'
+      )
+      await user.keyboard('{Enter}')
+
+      const fileCommentsPanel = await screen.findByTestId(
+        'file-level-comments-panel'
+      )
+
+      expect(
+        within(fileCommentsPanel).getByText('Commented on file')
+      ).toBeInTheDocument()
+
+      expect(
+        within(fileCommentsPanel).getByText('Review the whole file')
+      ).toBeInTheDocument()
+
+      expect(
+        within(screen.getByTestId('changed-files-pane')).queryByText(
+          'Review the whole file'
+        )
+      ).not.toBeInTheDocument()
+    })
+
+    test('keyboard Shift+U edits the selected file-level comment', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', {
+            name: 'Comment on file src/foo.ts',
+          })
+        ).getByPlaceholderText('Request change'),
+        'Review the whole file'
+      )
+      await user.keyboard('{Enter}')
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'U',
+        shiftKey: true,
+      })
+
+      const editDialog = screen.getByRole('dialog', {
+        name: 'Comment on file src/foo.ts',
+      })
+      const textarea = within(editDialog).getByPlaceholderText('Request change')
+
+      expect(textarea).toHaveValue('Review the whole file')
+
+      await user.clear(textarea)
+      await user.type(textarea, 'Updated file comment')
+      await user.keyboard('{Enter}')
+
+      const fileCommentsPanel = screen.getByTestId('file-level-comments-panel')
+
+      expect(
+        within(fileCommentsPanel).getByText('Updated file comment')
+      ).toBeInTheDocument()
+
+      expect(
+        within(fileCommentsPanel).queryByText('Review the whole file')
+      ).not.toBeInTheDocument()
+    })
+
+    test('hides a file-level draft when another file is selected', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          { path: 'src/foo.ts', status: 'modified', staged: false },
+          { path: 'src/bar.ts', status: 'modified', staged: false },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      const onSelectedFileChange = vi.fn()
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange,
+      } as const
+
+      const { rerender } = render(<Panel {...props} />)
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', {
+            name: 'Comment on file src/foo.ts',
+          })
+        ).getByPlaceholderText('Request change'),
+        'Draft for foo'
+      )
+
+      rerender(
+        <Panel
+          {...props}
+          selectedFile={{ path: 'src/bar.ts', staged: false, cwd: '/repo' }}
+        />
+      )
+
+      expect(
+        screen.queryByRole('dialog', { name: 'Comment on file src/foo.ts' })
+      ).not.toBeInTheDocument()
+
+      expect(screen.getByTestId('diff-draft-recovery')).toHaveTextContent(
+        'Draft preserved for file src/foo.ts'
+      )
+    })
+
     test('Focus: stays in the Diff View for comment edit, comment editor exit, and comment delete operations', async (): Promise<void> => {
       const user = userEvent.setup()
 
@@ -3122,6 +3356,27 @@ describe('Panel', () => {
 
       expect(
         screen.getByRole('dialog', { name: /Comment on line R2/ })
+      ).toBeInTheDocument()
+    })
+
+    test('Shift+I opens the file-level comment editor for the selected file', (): void => {
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      expect(
+        screen.getByRole('dialog', { name: 'Comment on file src/foo.ts' })
       ).toBeInTheDocument()
     })
 

@@ -1,17 +1,32 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import type { AnnotationSide } from '@pierre/diffs'
 
-interface ReviewCommentEditorProps {
-  /** 1-based line number the comment is anchored to. */
-  lineNumber: number
-  /** Which side of the diff the line lives on (additions => R, deletions => L). */
-  side: AnnotationSide
+type CommentSide = 'deletions' | 'additions'
+
+interface ReviewCommentEditorBaseProps {
+  chrome?: 'card' | 'plain'
+  surfaceRole?: 'dialog' | 'none'
   initialText?: string
   value?: string
   onTextChange?: (text: string) => void
   onConfirm: (text: string) => void
   onCancel: () => void
 }
+
+type ReviewCommentEditorProps = ReviewCommentEditorBaseProps &
+  (
+    | {
+        /** 1-based line number the comment is anchored to. */
+        lineNumber: number
+        /** Which side of the diff the line lives on (additions => R, deletions => L). */
+        side: CommentSide
+        targetLabel?: undefined
+      }
+    | {
+        targetLabel: string
+        lineNumber?: undefined
+        side?: undefined
+      }
+  )
 
 export const moveTextareaCursorVertically = (
   textarea: HTMLTextAreaElement,
@@ -84,6 +99,9 @@ const insertTextareaNewline = (
 export const ReviewCommentEditor = ({
   lineNumber,
   side,
+  targetLabel = undefined,
+  chrome = 'card',
+  surfaceRole = 'dialog',
   initialText = '',
   value = undefined,
   onTextChange = undefined,
@@ -119,13 +137,20 @@ export const ReviewCommentEditor = ({
     }
   }
 
-  const lineRef = `${side === 'deletions' ? 'L' : 'R'}${lineNumber}`
+  const targetDescription =
+    targetLabel ?? `line ${side === 'deletions' ? 'L' : 'R'}${lineNumber}`
+
+  const className =
+    chrome === 'card'
+      ? 'mx-2 my-1 flex flex-col gap-2 rounded-lg bg-surface-container-high/80 p-3'
+      : 'flex flex-col gap-3 p-4'
 
   return (
     <div
-      role="dialog"
-      aria-label={`Comment on line ${lineRef}`}
-      className="mx-2 my-1 flex flex-col gap-2 rounded-lg bg-surface-container-high/80 p-3"
+      {...(surfaceRole === 'dialog'
+        ? { role: 'dialog', 'aria-label': `Comment on ${targetDescription}` }
+        : {})}
+      className={className}
     >
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-medium text-on-surface">
@@ -137,8 +162,8 @@ export const ReviewCommentEditor = ({
           </span>
           Local comment
         </span>
-        <span className="text-on-surface-variant text-[0.7rem]">
-          Comment on line {lineRef}
+        <span className="min-w-0 truncate text-right text-on-surface-variant text-[0.7rem]">
+          Comment on {targetDescription}
         </span>
       </div>
       <textarea

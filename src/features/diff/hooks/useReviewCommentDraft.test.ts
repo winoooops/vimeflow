@@ -54,6 +54,12 @@ const target: AnnotationTarget = {
   staged: false,
 }
 
+const fileTarget: AnnotationTarget = {
+  scope: 'file',
+  filePath: 'src/foo.ts',
+  staged: false,
+}
+
 interface DraftHookRender {
   result: {
     current: UseReviewCommentDraftReturn & { draft: FeedbackDraft | null }
@@ -193,6 +199,23 @@ describe('useReviewCommentDraft', () => {
     expect(result.current.lineAnnotations[1]?.metadata.id).toBe(DRAFT_ID)
   })
 
+  test('stores file-level drafts without creating a Pierre line annotation', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(fileTarget, false)
+    })
+
+    expect(result.current.draft).toEqual({
+      cwd: '/repo',
+      filePath: 'src/foo.ts',
+      staged: false,
+      scope: 'file',
+      text: '',
+    })
+    expect(result.current.lineAnnotations).toEqual([existingAnnotation])
+  })
+
   test('compares target identity by file, side, line, staged state, and edit id', () => {
     expect(isSameAnnotationTarget(target, { ...target })).toBe(true)
     expect(
@@ -201,5 +224,6 @@ describe('useReviewCommentDraft', () => {
         editId: 'comment-1',
       })
     ).toBe(false)
+    expect(isSameAnnotationTarget(fileTarget, target)).toBe(false)
   })
 })

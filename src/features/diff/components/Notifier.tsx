@@ -4,7 +4,10 @@ import { Popover } from '@/components/Popover'
 import { DiffChipToolbar, type DiffChipToolbarProps } from './toolbar'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
-import type { AnnotationTarget } from '../hooks/useReviewCommentDraft'
+import {
+  isFileAnnotationTarget,
+  type AnnotationTarget,
+} from '../hooks/useReviewCommentDraft'
 
 interface FinishFeedbackState {
   open: boolean
@@ -79,9 +82,13 @@ export const Notifier = ({
           data-testid="diff-draft-recovery"
           className="mx-3 mb-2 rounded-md bg-surface-container-high/70 px-3 py-2 text-[11px] leading-4 text-on-surface-variant"
         >
-          Draft preserved for line{' '}
-          {recoverableDraft.target.side === 'deletions' ? 'L' : 'R'}
-          {recoverableDraft.target.lineNumber}:{' '}
+          Draft preserved for{' '}
+          {isFileAnnotationTarget(recoverableDraft.target)
+            ? `file ${recoverableDraft.target.filePath}`
+            : `line ${
+                recoverableDraft.target.side === 'deletions' ? 'L' : 'R'
+              }${recoverableDraft.target.lineNumber}`}
+          :{' '}
           <span className="font-medium text-on-surface">
             {recoverableDraft.text}
           </span>

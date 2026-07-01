@@ -34,6 +34,21 @@ describe('ReviewCommentEditor', () => {
     expect(screen.getByText('Comment on line L42')).toBeInTheDocument()
   })
 
+  test('renders a file-level target label', () => {
+    render(
+      <ReviewCommentEditor
+        targetLabel="file src/foo.ts"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Comment on file src/foo.ts')).toBeInTheDocument()
+    expect(
+      screen.getByRole('dialog', { name: 'Comment on file src/foo.ts' })
+    ).toBeInTheDocument()
+  })
+
   test('renders the textarea pre-filled with initialText', () => {
     render(
       <ReviewCommentEditor
