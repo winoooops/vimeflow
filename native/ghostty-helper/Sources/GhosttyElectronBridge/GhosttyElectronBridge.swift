@@ -129,6 +129,18 @@ private final class CallbackBox: @unchecked Sendable {
 
 @MainActor
 private final class EmbeddedGhosttySurface: NSObject {
+    private static let shortcutDigitByKeyCode: [UInt16: Character] = [
+        18: "1",
+        19: "2",
+        20: "3",
+        21: "4",
+        23: "5",
+        22: "6",
+        26: "7",
+        28: "8",
+        25: "9"
+    ]
+
     private let parentView: NSView
     private let container = NSView(frame: .zero)
     private let callbacks: CallbackBox
@@ -300,12 +312,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             return false
         }
 
-        guard
-            let key = event.charactersIgnoringModifiers,
-            key.count == 1,
-            let digit = key.first,
-            ("1"..."9").contains(String(digit))
-        else {
+        guard let digit = Self.shortcutDigitByKeyCode[event.keyCode] else {
             return false
         }
 
