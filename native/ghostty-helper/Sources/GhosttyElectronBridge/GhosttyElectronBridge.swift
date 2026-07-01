@@ -20,6 +20,20 @@ public typealias VimeflowGhosttyContextMenuCallback = @convention(c) (
     Double
 ) -> Void
 
+public typealias VimeflowGhosttyFocusCallback = @convention(c) (
+    UnsafeMutableRawPointer?
+) -> Void
+
+public typealias VimeflowGhosttyShortcutCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?,
+    Bool,
+    Bool,
+    Bool,
+    Bool
+) -> Void
+
 private func mainActorSync<T: Sendable>(_ body: @MainActor () -> T) -> T {
     if Thread.isMainThread {
         return MainActor.assumeIsolated(body)
@@ -38,6 +52,8 @@ private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
     private let contextMenuCallback: VimeflowGhosttyContextMenuCallback?
+    private let focusCallback: VimeflowGhosttyFocusCallback?
+    private let shortcutCallback: VimeflowGhosttyShortcutCallback?
     private let callbackContext: UnsafeMutableRawPointer?
     private var lastColumns = 0
     private var lastRows = 0
@@ -46,11 +62,15 @@ private final class CallbackBox: @unchecked Sendable {
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
         contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
+        focusCallback: VimeflowGhosttyFocusCallback?,
+        shortcutCallback: VimeflowGhosttyShortcutCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.inputCallback = inputCallback
         self.resizeCallback = resizeCallback
         self.contextMenuCallback = contextMenuCallback
+        self.focusCallback = focusCallback
+        self.shortcutCallback = shortcutCallback
         self.callbackContext = callbackContext
     }
 
@@ -78,6 +98,33 @@ private final class CallbackBox: @unchecked Sendable {
     func openContextMenu(x: Double, y: Double) {
         contextMenuCallback?(callbackContext, x, y)
     }
+
+    func focusSurface() {
+        focusCallback?(callbackContext)
+    }
+
+    func forwardShortcut(
+        key: String,
+        code: String,
+        control: Bool,
+        meta: Bool,
+        alt: Bool,
+        shift: Bool
+    ) {
+        key.withCString { keyPointer in
+            code.withCString { codePointer in
+                shortcutCallback?(
+                    callbackContext,
+                    keyPointer,
+                    codePointer,
+                    control,
+                    meta,
+                    alt,
+                    shift
+                )
+            }
+        }
+    }
 }
 
 @MainActor
@@ -85,7 +132,10 @@ private final class EmbeddedGhosttySurface: NSObject {
     private let parentView: NSView
     private let container = NSView(frame: .zero)
     private let callbacks: CallbackBox
+    private var focusMonitor: Any?
     private var contextMenuMonitor: Any?
+    private var shortcutMonitor: Any?
+    private var shortcutDigits = Set<Character>()
 
     private lazy var controller = TerminalController()
 
@@ -115,6 +165,8 @@ private final class EmbeddedGhosttySurface: NSObject {
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
         contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
+        focusCallback: VimeflowGhosttyFocusCallback?,
+        shortcutCallback: VimeflowGhosttyShortcutCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.parentView = parentView
@@ -122,6 +174,8 @@ private final class EmbeddedGhosttySurface: NSObject {
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
             contextMenuCallback: contextMenuCallback,
+            focusCallback: focusCallback,
+            shortcutCallback: shortcutCallback,
             callbackContext: callbackContext
         )
         super.init()
@@ -144,6 +198,16 @@ private final class EmbeddedGhosttySurface: NSObject {
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
     }
 
+    func setShortcutDigits(_ digits: String) {
+        shortcutDigits = Set(digits.filter { character in
+            guard let value = character.wholeNumberValue else {
+                return false
+            }
+
+            return (1...9).contains(value)
+        })
+    }
+
     func receive(_ text: String) {
         session.receive(text)
     }
@@ -153,9 +217,17 @@ private final class EmbeddedGhosttySurface: NSObject {
     }
 
     func destroy() {
+        if let focusMonitor {
+            NSEvent.removeMonitor(focusMonitor)
+            self.focusMonitor = nil
+        }
         if let contextMenuMonitor {
             NSEvent.removeMonitor(contextMenuMonitor)
             self.contextMenuMonitor = nil
+        }
+        if let shortcutMonitor {
+            NSEvent.removeMonitor(shortcutMonitor)
+            self.shortcutMonitor = nil
         }
         container.removeFromSuperview()
     }
@@ -165,11 +237,32 @@ private final class EmbeddedGhosttySurface: NSObject {
         container.layer?.backgroundColor = NSColor.black.cgColor
         container.addSubview(terminalView)
         parentView.addSubview(container, positioned: .above, relativeTo: nil)
+        focusMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            self?.handleMouseDown(event)
+
+            return event
+        }
         contextMenuMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
             self?.handleRightMouse(event)
 
             return event
         }
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            self?.handleKeyDown(event) == true ? nil : event
+        }
+    }
+
+    private func handleMouseDown(_ event: NSEvent) {
+        guard let window = terminalView.window, event.window === window else {
+            return
+        }
+
+        let terminalLocation = terminalView.convert(event.locationInWindow, from: nil)
+        guard terminalView.bounds.contains(terminalLocation) else {
+            return
+        }
+
+        callbacks.focusSurface()
     }
 
     private func handleRightMouse(_ event: NSEvent) {
@@ -187,6 +280,50 @@ private final class EmbeddedGhosttySurface: NSObject {
         let y = parentView.bounds.height - parentLocation.y
         callbacks.openContextMenu(x: x, y: y)
     }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard let window = terminalView.window, event.window === window else {
+            return false
+        }
+
+        guard let firstResponder = window.firstResponder as? NSView else {
+            return false
+        }
+
+        if firstResponder !== terminalView,
+           !firstResponder.isDescendant(of: terminalView) {
+            return false
+        }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command), !flags.contains(.control) else {
+            return false
+        }
+
+        guard
+            let key = event.charactersIgnoringModifiers,
+            key.count == 1,
+            let digit = key.first,
+            ("1"..."9").contains(String(digit))
+        else {
+            return false
+        }
+
+        guard shortcutDigits.contains(digit) else {
+            return false
+        }
+
+        callbacks.forwardShortcut(
+            key: String(digit),
+            code: "Digit\(digit)",
+            control: flags.contains(.control),
+            meta: flags.contains(.command),
+            alt: flags.contains(.option),
+            shift: flags.contains(.shift)
+        )
+
+        return true
+    }
 }
 
 @_cdecl("vimeflow_ghostty_create")
@@ -195,6 +332,8 @@ public func vimeflowGhosttyCreate(
     _ inputCallback: VimeflowGhosttyInputCallback?,
     _ resizeCallback: VimeflowGhosttyResizeCallback?,
     _ contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
+    _ focusCallback: VimeflowGhosttyFocusCallback?,
+    _ shortcutCallback: VimeflowGhosttyShortcutCallback?,
     _ callbackContext: UnsafeMutableRawPointer?
 ) -> UnsafeMutableRawPointer? {
     guard let parentViewPointer else {
@@ -212,6 +351,8 @@ public func vimeflowGhosttyCreate(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
             contextMenuCallback: contextMenuCallback,
+            focusCallback: focusCallback,
+            shortcutCallback: shortcutCallback,
             callbackContext: contextPointer.value
         )
 
@@ -239,6 +380,25 @@ public func vimeflowGhosttySetFrame(
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
         surface.setFrame(x: x, y: y, width: width, height: height)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_shortcut_digits")
+public func vimeflowGhosttySetShortcutDigits(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ digitsPointer: UnsafePointer<CChar>?
+) {
+    guard let surfacePointer, let digitsPointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let digits = String(cString: digitsPointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.setShortcutDigits(digits)
     }
 }
 

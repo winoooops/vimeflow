@@ -532,26 +532,6 @@ describe('SplitView - multi-pane layouts', () => {
 
     expect(inactiveWrapper).not.toHaveAttribute('data-focused')
     expect(inactiveWrapper).toHaveStyle({ opacity: '0.78' })
-    expect(activeWrapper).toHaveAttribute('data-focused', 'true')
-    expect(activeWrapper).toHaveStyle({ opacity: '1' })
-  })
-
-  test('showPaneFocusHighlight=false suppresses active pane marker without dimming active pane', () => {
-    const showPaneFocusHighlight = false
-
-    render(
-      <SplitView
-        session={makeSession('vsplit', 2, 1)}
-        service={makeMockService()}
-        isActive
-        showPaneFocusHighlight={showPaneFocusHighlight}
-      />
-    )
-
-    const activeWrapper = within(
-      screen.getAllByTestId('split-view-slot')[1]
-    ).getByTestId('terminal-pane-wrapper')
-
     expect(activeWrapper).not.toHaveAttribute('data-focused')
     expect(activeWrapper).toHaveStyle({ opacity: '1' })
   })

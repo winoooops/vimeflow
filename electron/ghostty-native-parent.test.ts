@@ -17,9 +17,24 @@ const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
 nativeHandle.writeBigUInt64LE(1n)
 
-const { existsSync, isDestroyed, webContentsSend } = vi.hoisted(() => ({
+const {
+  existsSync,
+  isDestroyed,
+  webContentsExecuteJavaScript,
+  webContentsFocus,
+  webContentsIsDestroyed,
+  webContentsSend,
+} = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
   isDestroyed: vi.fn(() => false),
+  webContentsExecuteJavaScript: vi.fn((script: string, gesture?: boolean) => {
+    void script
+    void gesture
+
+    return Promise.resolve(false)
+  }),
+  webContentsFocus: vi.fn(),
+  webContentsIsDestroyed: vi.fn(() => false),
   webContentsSend: vi.fn(),
 }))
 
@@ -33,7 +48,12 @@ vi.mock('electron', () => ({
     fromWebContents: vi.fn(() => ({
       getNativeWindowHandle: (): Buffer => nativeHandle,
       isDestroyed,
-      webContents: { send: webContentsSend },
+      webContents: {
+        executeJavaScript: webContentsExecuteJavaScript,
+        focus: webContentsFocus,
+        isDestroyed: webContentsIsDestroyed,
+        send: webContentsSend,
+      },
     })),
   },
   ipcMain: {
@@ -55,6 +75,11 @@ describe('ghostty native parent', () => {
     existsSync.mockReturnValue(false)
     isDestroyed.mockReset()
     isDestroyed.mockReturnValue(false)
+    webContentsExecuteJavaScript.mockReset()
+    webContentsExecuteJavaScript.mockResolvedValue(false)
+    webContentsFocus.mockClear()
+    webContentsIsDestroyed.mockReset()
+    webContentsIsDestroyed.mockReturnValue(false)
     webContentsSend.mockClear()
   })
 
@@ -288,19 +313,83 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('updates native shortcut digits only for real pane switches', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      setShortcutDigits: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+        shortcutContext: {
+          paneIds: ['pane-1', 'pane-2', 'pane-3'],
+          activePaneId: 'pane-1',
+        },
+      }
+    )
+
+    expect(addon.setShortcutDigits).toHaveBeenLastCalledWith(surface, '23')
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+        shortcutContext: {
+          paneIds: ['pane-1', 'pane-2', 'pane-3'],
+          activePaneId: 'pane-2',
+        },
+      }
+    )
+
+    expect(addon.setShortcutDigits).toHaveBeenLastCalledWith(surface, '')
+
+    controller.dispose()
+  })
+
   test('creates parented surface and forwards native input plus resize', () => {
     const callbacks: {
       onInput?: (data: string) => void
       onResize?: (cols: number, rows: number) => void
       onContextMenu?: (x: number, y: number) => void
+      onFocus?: () => void
     } = {}
     const surface = {}
 
     const addon = {
-      create: vi.fn((_bridge, _handle, input, resize, contextMenu) => {
+      create: vi.fn((_bridge, _handle, input, resize, contextMenu, focus) => {
         callbacks.onInput = input
         callbacks.onResize = resize
         callbacks.onContextMenu = contextMenu
+        callbacks.onFocus = focus
 
         return surface
       }),
@@ -341,6 +430,8 @@ describe('ghostty native parent', () => {
       nativeHandle,
       expect.any(Function),
       expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
       expect.any(Function)
     )
     expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200)
@@ -349,6 +440,7 @@ describe('ghostty native parent', () => {
     callbacks.onResize?.(80, 24)
     callbacks.onResize?.(80, 24)
     callbacks.onContextMenu?.(15, 25)
+    callbacks.onFocus?.()
 
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
@@ -367,7 +459,82 @@ describe('ghostty native parent', () => {
       event: 'ghostty-native-context-menu',
       payload: { sessionId: 'pty-1', paneId: 'pane-1', x: 15, y: 25 },
     })
+
+    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
+      event: 'ghostty-native-focus',
+      payload: { sessionId: 'pty-1', paneId: 'pane-1' },
+    })
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+
+    controller.dispose()
+  })
+
+  test('forwards native command digit shortcuts into the app renderer', async () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _contextMenu, _focus, shortcut) => {
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    webContentsExecuteJavaScript.mockResolvedValue(true)
+    callbacks.onShortcut?.('2', 'Digit2', false, true, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('Digit2')
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('metaKey')
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
+      'data-vimeflow-shortcut-proxy'
+    )
+    expect(addon.focus).toHaveBeenCalledWith(surface)
 
     controller.dispose()
   })

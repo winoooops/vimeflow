@@ -1,5 +1,5 @@
-// cspell:ignore codesign ghostty Ghostty mmacosx otool swiftpm xcrun
-import { existsSync, mkdirSync, copyFileSync } from 'node:fs'
+// cspell:ignore codesign ghostty Ghostty libghostty mmacosx otool swiftpm xcframework xcrun
+import { existsSync, mkdirSync, copyFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -18,6 +18,12 @@ const addonSource = join(
 const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
 
+const ghosttyScratchXcframework = join(
+  scratchDir,
+  'artifacts/libghostty-spm/libghostty/GhosttyKit.xcframework'
+)
+const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
+
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
   '/usr/local/include/node',
@@ -29,6 +35,10 @@ if (!nodeIncludeDir) {
 }
 
 mkdirSync(outputDir, { recursive: true })
+
+if (existsSync(ghosttyScratchXcframework) && !existsSync(ghosttyScratchPlist)) {
+  rmSync(scratchDir, { recursive: true, force: true })
+}
 
 execFileSync(
   'swift',

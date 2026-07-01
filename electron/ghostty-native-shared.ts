@@ -11,10 +11,16 @@ export interface GhosttyNativePaneRequest {
   paneId: string
 }
 
+export interface GhosttyNativeShortcutContext {
+  paneIds: string[]
+  activePaneId: string | null
+}
+
 export interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
   cwd: string
   bounds: GhosttyNativeBounds
   visible: boolean
+  shortcutContext?: GhosttyNativeShortcutContext
 }
 
 export interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {

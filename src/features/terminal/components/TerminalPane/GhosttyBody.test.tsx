@@ -182,6 +182,30 @@ describe('GhosttyBody', () => {
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
   })
 
+  test('sends shortcut context with native frame updates', async () => {
+    const shortcutContext = {
+      paneIds: ['pane-1', 'pane-2'],
+      activePaneId: 'pane-1',
+    }
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        shortcutContext={shortcutContext}
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ shortcutContext })
+      )
+    })
+  })
+
   test('absorbs native destroy failures during unmount cleanup', async () => {
     vi.mocked(destroyNativeGhostty).mockRejectedValueOnce(new Error('disposed'))
 
@@ -449,6 +473,37 @@ describe('GhosttyBody', () => {
     })
 
     expect(onCommandSubmit).toHaveBeenCalledWith('pty-1', '/clear')
+  })
+
+  test('requests pane activation from native focus events', async () => {
+    const onRequestActive = vi.fn()
+    const onRequestFocus = vi.fn()
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active={inactive}
+        service={createService()}
+        onRequestActive={onRequestActive}
+        onRequestFocus={onRequestFocus}
+      />
+    )
+
+    await waitFor(() => {
+      expect(backendListeners.has('ghostty-native-focus')).toBe(true)
+    })
+
+    act(() => {
+      backendListeners.get('ghostty-native-focus')?.({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+      })
+    })
+
+    expect(onRequestFocus).toHaveBeenCalledOnce()
+    expect(onRequestActive).toHaveBeenCalledOnce()
   })
 
   test('opens terminal context menu from native right-click event', async () => {

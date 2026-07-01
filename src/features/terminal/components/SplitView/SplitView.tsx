@@ -5,6 +5,7 @@ import {
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -28,6 +29,7 @@ import {
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
+import type { NativeGhosttyShortcutContext } from '../../nativeGhosttyClient'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   TerminalPane,
@@ -91,7 +93,6 @@ export interface SplitViewProps {
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   deferTerminalFit?: boolean
-  showPaneFocusHighlight?: boolean
 }
 
 export interface SplitViewHandle {
@@ -169,7 +170,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       activeBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       deferTerminalFit = false,
-      showPaneFocusHighlight = true,
     }: SplitViewProps,
     ref
   ): ReactElement {
@@ -285,6 +285,26 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
     const { assignments: visiblePaneAssignments, emptySlotIds } =
       resolvePanePlacement(visiblePanes, layout, session.placements)
+
+    const visibleShortcutPaneIds = visiblePaneAssignments.map(
+      ({ pane }) => pane.id
+    )
+
+    const visibleShortcutPaneIdsKey = visibleShortcutPaneIds.join('\u0000')
+
+    const activePaneId =
+      session.panes.find((sessionPane) => sessionPane.active)?.id ?? null
+
+    const nativeShortcutContext = useMemo<NativeGhosttyShortcutContext>(
+      () => ({
+        paneIds:
+          visibleShortcutPaneIdsKey.length > 0
+            ? visibleShortcutPaneIdsKey.split('\u0000')
+            : [],
+        activePaneId,
+      }),
+      [activePaneId, visibleShortcutPaneIdsKey]
+    )
 
     const gridTemplateAreas = grid.areas
       .map((row) => `"${row.join(' ')}"`)
@@ -620,7 +640,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                             onRequestActive={onSetActivePane}
                             onRequestFocus={onRequestFocus}
                             onUrlChange={onBrowserPaneUrlChange}
-                            showFocusHighlight={showPaneFocusHighlight}
                           />
                         </>
                       ) : (
@@ -640,11 +659,12 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onClose={closeHandler}
                           onBurner={onBurner}
                           onRequestActive={onSetActivePane}
+                          onRequestFocus={onRequestFocus}
                           activeBurnerPaneKeys={activeBurnerPaneKeys}
                           runningBurnerPaneKeys={runningBurnerPaneKeys}
                           isActive={isActive}
+                          shortcutContext={nativeShortcutContext}
                           deferFit={deferTerminalFit}
-                          showFocusHighlight={showPaneFocusHighlight}
                           paneDraggable={dndEnabled}
                           onHeaderDragStart={(event): void =>
                             handlePaneDragStart(pane.id, event)

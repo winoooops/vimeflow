@@ -17,6 +17,7 @@ import {
   focusNativeGhostty,
   sendNativeGhosttyData,
   updateNativeGhostty,
+  type NativeGhosttyShortcutContext,
 } from '../../nativeGhosttyClient'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
@@ -39,6 +40,9 @@ interface GhosttyBodyProps {
   onCwdChange?: (cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
+  onRequestActive?: () => void
+  onRequestFocus?: () => void
+  shortcutContext?: NativeGhosttyShortcutContext
   onUnavailable?: () => void
 }
 
@@ -53,6 +57,11 @@ interface GhosttyNativeContextMenuEvent {
   paneId: string
   x: number
   y: number
+}
+
+interface GhosttyNativeFocusEvent {
+  sessionId: string
+  paneId: string
 }
 
 const TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN =
@@ -93,6 +102,9 @@ export const GhosttyBody = ({
   onCwdChange = undefined,
   onPaneReady = undefined,
   onCommandSubmit = undefined,
+  onRequestActive = undefined,
+  onRequestFocus = undefined,
+  shortcutContext = undefined,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -356,6 +368,7 @@ export const GhosttyBody = ({
           height: rect.height,
         },
         visible: true,
+        ...(shortcutContext ? { shortcutContext } : {}),
       })
 
       if (!enabled) {
@@ -364,7 +377,7 @@ export const GhosttyBody = ({
     } catch {
       onUnavailable?.()
     }
-  }, [cwd, onUnavailable, paneRef])
+  }, [cwd, onUnavailable, paneRef, shortcutContext])
 
   const scheduleNativeFrameUpdate = useCallback((): void => {
     if (frameIdRef.current !== null) {
@@ -405,6 +418,41 @@ export const GhosttyBody = ({
       void focusNativeSurface()
     }
   }, [active, focusNativeSurface])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const attachFocusListener = async (): Promise<void> => {
+      const cleanup = await listen<GhosttyNativeFocusEvent>(
+        'ghostty-native-focus',
+        (payload) => {
+          if (
+            payload.sessionId === paneRef.sessionId &&
+            payload.paneId === paneRef.paneId
+          ) {
+            onRequestFocus?.()
+            onRequestActive?.()
+          }
+        }
+      )
+
+      if (cancelled) {
+        cleanup()
+
+        return
+      }
+
+      unlisten = cleanup
+    }
+
+    void attachFocusListener()
+
+    return (): void => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [onRequestActive, onRequestFocus, paneRef])
 
   useEffect(() => {
     let cancelled = false

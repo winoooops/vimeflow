@@ -13,9 +13,14 @@ namespace {
 using InputCallback = void (*)(void *, const unsigned char *, int);
 using ResizeCallback = void (*)(void *, int, int);
 using ContextMenuCallback = void (*)(void *, double, double);
+using FocusCallback = void (*)(void *);
+using ShortcutCallback = void (*)(void *, const char *, const char *, bool,
+                                  bool, bool, bool);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
-                           ContextMenuCallback, void *);
+                           ContextMenuCallback, FocusCallback,
+                           ShortcutCallback, void *);
 using SetFrameFn = void (*)(void *, double, double, double, double);
+using SetShortcutDigitsFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using DestroyFn = void (*)(void *);
@@ -25,6 +30,7 @@ struct BridgeApi {
   std::string loaded_path;
   CreateFn create = nullptr;
   SetFrameFn set_frame = nullptr;
+  SetShortcutDigitsFn set_shortcut_digits = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
   DestroyFn destroy = nullptr;
@@ -35,6 +41,8 @@ struct SurfaceHandle {
   napi_threadsafe_function input_tsfn = nullptr;
   napi_threadsafe_function resize_tsfn = nullptr;
   napi_threadsafe_function context_menu_tsfn = nullptr;
+  napi_threadsafe_function focus_tsfn = nullptr;
+  napi_threadsafe_function shortcut_tsfn = nullptr;
   void *swift_surface = nullptr;
   std::atomic_bool callbacks_released = false;
   std::mutex callback_mutex;
@@ -52,6 +60,15 @@ struct ResizePayload {
 struct ContextMenuPayload {
   double x = 0;
   double y = 0;
+};
+
+struct ShortcutPayload {
+  std::string key;
+  std::string code;
+  bool control = false;
+  bool meta = false;
+  bool alt = false;
+  bool shift = false;
 };
 
 BridgeApi bridge;
@@ -99,6 +116,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.create)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_frame",
                  reinterpret_cast<void **>(&bridge.set_frame)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_shortcut_digits",
+                 reinterpret_cast<void **>(&bridge.set_shortcut_digits)) &&
       LoadSymbol(env, "vimeflow_ghostty_write",
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
@@ -218,6 +237,49 @@ void OnContextMenu(void *context, double x, double y) {
   napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
+void OnFocus(void *context) {
+  if (context == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::focus_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  napi_call_threadsafe_function(tsfn, nullptr, napi_tsfn_nonblocking);
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
+void OnShortcut(void *context, const char *key, const char *code, bool control,
+                bool meta, bool alt, bool shift) {
+  if (context == nullptr || key == nullptr || code == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::shortcut_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  auto payload = std::make_unique<ShortcutPayload>();
+  payload->key = key;
+  payload->code = code;
+  payload->control = control;
+  payload->meta = meta;
+  payload->alt = alt;
+  payload->shift = shift;
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
+                                    napi_tsfn_nonblocking) == napi_ok) {
+    payload.release();
+  }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
 void CallJsInput(napi_env env, napi_value callback, void *, void *data) {
   std::unique_ptr<InputPayload> payload(static_cast<InputPayload *>(data));
   if (env == nullptr || callback == nullptr || payload == nullptr) {
@@ -267,6 +329,40 @@ void CallJsContextMenu(napi_env env, napi_value callback, void *, void *data) {
   }
 }
 
+void CallJsFocus(napi_env env, napi_value callback, void *, void *) {
+  if (env == nullptr || callback == nullptr) {
+    return;
+  }
+
+  napi_value global;
+  if (napi_get_global(env, &global) == napi_ok) {
+    napi_value ignored;
+    napi_call_function(env, global, callback, 0, nullptr, &ignored);
+  }
+}
+
+void CallJsShortcut(napi_env env, napi_value callback, void *, void *data) {
+  std::unique_ptr<ShortcutPayload> payload(static_cast<ShortcutPayload *>(data));
+  if (env == nullptr || callback == nullptr || payload == nullptr) {
+    return;
+  }
+
+  napi_value global;
+  napi_value argv[6];
+  if (napi_get_global(env, &global) == napi_ok &&
+      napi_create_string_utf8(env, payload->key.data(), payload->key.size(),
+                              &argv[0]) == napi_ok &&
+      napi_create_string_utf8(env, payload->code.data(), payload->code.size(),
+                              &argv[1]) == napi_ok &&
+      napi_get_boolean(env, payload->control, &argv[2]) == napi_ok &&
+      napi_get_boolean(env, payload->meta, &argv[3]) == napi_ok &&
+      napi_get_boolean(env, payload->alt, &argv[4]) == napi_ok &&
+      napi_get_boolean(env, payload->shift, &argv[5]) == napi_ok) {
+    napi_value ignored;
+    napi_call_function(env, global, callback, 6, argv, &ignored);
+  }
+}
+
 bool CreateThreadsafeFunction(napi_env env, napi_value callback,
                               const char *name,
                               napi_threadsafe_function_call_js call_js,
@@ -309,14 +405,20 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   napi_threadsafe_function input_tsfn = nullptr;
   napi_threadsafe_function resize_tsfn = nullptr;
   napi_threadsafe_function context_menu_tsfn = nullptr;
+  napi_threadsafe_function focus_tsfn = nullptr;
+  napi_threadsafe_function shortcut_tsfn = nullptr;
   {
     std::lock_guard<std::mutex> lock(surface->callback_mutex);
     input_tsfn = surface->input_tsfn;
     resize_tsfn = surface->resize_tsfn;
     context_menu_tsfn = surface->context_menu_tsfn;
+    focus_tsfn = surface->focus_tsfn;
+    shortcut_tsfn = surface->shortcut_tsfn;
     surface->input_tsfn = nullptr;
     surface->resize_tsfn = nullptr;
     surface->context_menu_tsfn = nullptr;
+    surface->focus_tsfn = nullptr;
+    surface->shortcut_tsfn = nullptr;
   }
 
   if (input_tsfn != nullptr) {
@@ -328,16 +430,22 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   if (context_menu_tsfn != nullptr) {
     napi_release_threadsafe_function(context_menu_tsfn, napi_tsfn_abort);
   }
+  if (focus_tsfn != nullptr) {
+    napi_release_threadsafe_function(focus_tsfn, napi_tsfn_abort);
+  }
+  if (shortcut_tsfn != nullptr) {
+    napi_release_threadsafe_function(shortcut_tsfn, napi_tsfn_abort);
+  }
 }
 
 napi_value Create(napi_env env, napi_callback_info info) {
-  size_t argc = 5;
-  napi_value args[5];
+  size_t argc = 7;
+  napi_value args[7];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (argc < 5) {
+  if (argc < 7) {
     return Throw(
         env,
-        "create(path, nativeHandle, onInput, onResize, onContextMenu) expected");
+        "create(path, nativeHandle, onInput, onResize, onContextMenu, onFocus, onShortcut) expected");
   }
 
   const std::string bridge_path = GetString(env, args[0]);
@@ -366,12 +474,17 @@ napi_value Create(napi_env env, napi_callback_info info) {
                                 CallJsResize, &surface->resize_tsfn) ||
       !CreateThreadsafeFunction(env, args[4], "vimeflow-ghostty-context-menu",
                                 CallJsContextMenu,
-                                &surface->context_menu_tsfn)) {
+                                &surface->context_menu_tsfn) ||
+      !CreateThreadsafeFunction(env, args[5], "vimeflow-ghostty-focus",
+                                CallJsFocus, &surface->focus_tsfn) ||
+      !CreateThreadsafeFunction(env, args[6], "vimeflow-ghostty-shortcut",
+                                CallJsShortcut, &surface->shortcut_tsfn)) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native callbacks");
   }
   surface->swift_surface =
-      bridge.create(parent_view, OnInput, OnResize, OnContextMenu, surface);
+      bridge.create(parent_view, OnInput, OnResize, OnContextMenu, OnFocus,
+                    OnShortcut, surface);
   if (surface->swift_surface == nullptr) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native surface");
@@ -409,6 +522,25 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   napi_get_value_double(env, args[3], &width);
   napi_get_value_double(env, args[4], &height);
   bridge.set_frame(surface->swift_surface, x, y, width, height);
+
+  return nullptr;
+}
+
+napi_value SetShortcutDigits(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "setShortcutDigits(surface, digits) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  const std::string digits = GetString(env, args[1]);
+  bridge.set_shortcut_digits(surface->swift_surface, digits.c_str());
 
   return nullptr;
 }
@@ -466,6 +598,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr},
       {"setFrame", nullptr, SetFrame, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"setShortcutDigits", nullptr, SetShortcutDigits, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
       {"write", nullptr, Write, nullptr, nullptr, nullptr, napi_default,
        nullptr},
       {"focus", nullptr, Focus, nullptr, nullptr, nullptr, napi_default,
