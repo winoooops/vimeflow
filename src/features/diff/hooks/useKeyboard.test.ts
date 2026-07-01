@@ -70,7 +70,9 @@ const renderKeyboard = (
     onPreviousHunk: vi.fn(),
     onNextHunk: vi.fn(),
     onComment: vi.fn(),
+    onFileComment: vi.fn(),
     onUpdateComment: vi.fn(),
+    onUpdateFileComment: vi.fn(),
     onDeleteComment: vi.fn(),
     onFinishReview: vi.fn(),
     onStageHunk: vi.fn(),
@@ -135,6 +137,15 @@ describe('useKeyboard', () => {
     expect(props.onComment).toHaveBeenCalledOnce()
   })
 
+  test('Shift+I opens comment editor for the selected file', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('I')
+
+    expect(props.onFileComment).toHaveBeenCalledOnce()
+    expect(props.onComment).not.toHaveBeenCalled()
+  })
+
   test('u and x update or delete the selected comment', () => {
     const { props } = renderKeyboard()
 
@@ -143,6 +154,15 @@ describe('useKeyboard', () => {
 
     expect(props.onUpdateComment).toHaveBeenCalledOnce()
     expect(props.onDeleteComment).toHaveBeenCalledOnce()
+  })
+
+  test('Shift+U updates the selected file comment', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('U')
+
+    expect(props.onUpdateFileComment).toHaveBeenCalledOnce()
+    expect(props.onUpdateComment).not.toHaveBeenCalled()
   })
 
   test('Y opens finish review', () => {
@@ -316,7 +336,9 @@ describe('useKeyboard', () => {
       onPreviousHunk: vi.fn(),
       onNextHunk: vi.fn(),
       onComment: vi.fn(),
+      onFileComment: vi.fn(),
       onUpdateComment: vi.fn(),
+      onUpdateFileComment: vi.fn(),
       onDeleteComment: vi.fn(),
       onFinishReview: vi.fn(),
       onStageHunk: vi.fn(),

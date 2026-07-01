@@ -1,5 +1,8 @@
 import type { DiffLineAnnotation } from '@pierre/diffs'
-import type { ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  isFileLevelReviewAnnotation,
+  type ReviewComment,
+} from '../hooks/useFeedbackBatch'
 
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -32,6 +35,20 @@ export interface DispatchEntry {
   annotations: DiffLineAnnotation<ReviewComment>[]
 }
 
+const formatAnnotationTarget = (
+  entry: DispatchEntry,
+  annotation: DiffLineAnnotation<ReviewComment>
+): string => {
+  const filePath = stripControls(entry.filePath)
+  const stagedLabel = entry.staged ? 'staged' : 'unstaged'
+
+  if (isFileLevelReviewAnnotation(annotation)) {
+    return `> ${filePath} (file) [${stagedLabel}]`
+  }
+
+  return `> ${filePath}:${annotation.lineNumber} (${annotation.side}) [${stagedLabel}]`
+}
+
 export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
   const totalCount = entries.reduce((s, e) => s + e.annotations.length, 0)
   const fileCount = entries.length
@@ -44,11 +61,7 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
           .split('\n')
           .map((line) => `> ─ ${stripControls(line)}`)
 
-        return [
-          `> ${stripControls(entry.filePath)}:${a.lineNumber} (${a.side}) [${entry.staged ? 'staged' : 'unstaged'}]`,
-          ...lines,
-          '>',
-        ].join('\n')
+        return [formatAnnotationTarget(entry, a), ...lines, '>'].join('\n')
       })
     )
     .join('\n')

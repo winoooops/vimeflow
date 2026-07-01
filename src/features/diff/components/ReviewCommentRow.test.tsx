@@ -38,6 +38,31 @@ describe('ReviewCommentRow', () => {
     expect(handleEdit).toHaveBeenCalledTimes(1)
   })
 
+  test('accepts file-level shortcut overrides', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'file-1',
+          text: 'File-level comment',
+          author: 'self',
+          createdAt: 2000,
+        }}
+        editShortcut="Shift+U"
+        deleteShortcut={null}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Edit comment' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Shift+U')
+
+    expect(
+      screen.getByRole('button', { name: 'Delete comment' })
+    ).not.toHaveAttribute('aria-keyshortcuts')
+  })
+
   test('clicking Delete button fires onDelete once', async () => {
     const user = userEvent.setup()
     const handleDelete = vi.fn()

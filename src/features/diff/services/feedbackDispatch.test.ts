@@ -22,6 +22,20 @@ const makeAnnotation = (
   },
 })
 
+const makeFileAnnotation = (
+  text: string
+): DiffLineAnnotation<ReviewComment> => ({
+  lineNumber: 0,
+  side: 'additions',
+  metadata: {
+    id: 'file-comment',
+    text,
+    author: 'self',
+    createdAt: Date.now(),
+    target: { scope: 'file' },
+  },
+})
+
 test('1 comment across 1 file -> header contains singular wording', () => {
   const entries: DispatchEntry[] = [
     {
@@ -109,6 +123,19 @@ test('each entry line is labelled with its staged/unstaged diff view', () => {
   // different comparisons — the [staged]/[unstaged] tag keeps them distinct.
   expect(payload).toContain('> src/App.tsx:5 (additions) [staged]')
   expect(payload).toContain('> src/App.tsx:8 (additions) [unstaged]')
+})
+
+test('file-level comments emit an explicit file target instead of a line target', () => {
+  const payload = formatFeedbackPayload([
+    {
+      filePath: 'src/App.tsx',
+      staged: false,
+      annotations: [makeFileAnnotation('Review the module boundary')],
+    },
+  ])
+
+  expect(payload).toContain('> src/App.tsx (file) [unstaged]')
+  expect(payload).not.toContain('src/App.tsx:0')
 })
 
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {

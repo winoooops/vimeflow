@@ -27,13 +27,27 @@ import {
   type ReviewComment,
 } from './useFeedbackBatch'
 
-export interface AnnotationTarget {
+interface LineAnnotationTarget {
   lineNumber: number
   side: AnnotationSide
   filePath: string
   staged: boolean
+  scope?: 'line'
   editId?: string
 }
+
+interface FileAnnotationTarget {
+  scope: 'file'
+  filePath: string
+  staged: boolean
+  editId?: string
+}
+
+export type AnnotationTarget = LineAnnotationTarget | FileAnnotationTarget
+
+export const isFileAnnotationTarget = (
+  target: AnnotationTarget
+): target is FileAnnotationTarget => target.scope === 'file'
 
 interface UseReviewCommentDraftArgs {
   cwd: string
@@ -69,6 +83,20 @@ const resolveStateAction = <T>(next: SetStateAction<T>, current: T): T =>
 // Persisted drafts use the storage model; the renderer wants an annotation
 // target. Keep that translation in one place so component code stays declarative.
 const draftToAnnotationTarget = (draft: FeedbackDraft): AnnotationTarget => {
+  if (draft.scope === 'file') {
+    const target: AnnotationTarget = {
+      scope: 'file',
+      filePath: draft.filePath,
+      staged: draft.staged,
+    }
+
+    if (draft.editId !== undefined) {
+      target.editId = draft.editId
+    }
+
+    return target
+  }
+
   const target: AnnotationTarget = {
     lineNumber: draft.lineNumber,
     side: draft.side,
@@ -88,6 +116,22 @@ const annotationTargetToDraft = (
   target: AnnotationTarget,
   text: string
 ): FeedbackDraft => {
+  if (isFileAnnotationTarget(target)) {
+    const draft: FeedbackDraft = {
+      cwd,
+      filePath: target.filePath,
+      staged: target.staged,
+      scope: 'file',
+      text,
+    }
+
+    if (target.editId !== undefined) {
+      draft.editId = target.editId
+    }
+
+    return draft
+  }
+
   const draft: FeedbackDraft = {
     cwd,
     filePath: target.filePath,
@@ -106,10 +150,17 @@ const annotationTargetToDraft = (
 
 // This is intentionally not object identity: callers rebuild target objects
 // from keyboard navigation, gutter hover, and restored drafts.
-const annotationTargetKey = (target: AnnotationTarget): string =>
-  `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
-    target.editId ?? 'draft'
-  }`
+const annotationTargetKey = (target: AnnotationTarget): string => {
+  if (isFileAnnotationTarget(target)) {
+    return `${target.filePath}:${target.staged}:file:${
+      target.editId ?? 'draft'
+    }`
+  }
+
+  return `${target.filePath}:${target.staged}:line:${target.side}:${
+    target.lineNumber
+  }:${target.editId ?? 'draft'}`
+}
 
 export const isSameAnnotationTarget = (
   left: AnnotationTarget,
@@ -120,6 +171,10 @@ const diffContainsAnnotationTarget = (
   fileDiff: FileDiff,
   target: AnnotationTarget
 ): boolean => {
+  if (isFileAnnotationTarget(target)) {
+    return true
+  }
+
   for (const hunk of fileDiff.hunks) {
     let oldLine = hunk.oldStart
     let newLine = hunk.newStart
@@ -290,18 +345,25 @@ export const useReviewCommentDraft = ({
       return false
     }
 
+    if (isFileAnnotationTarget(annotationTarget)) {
+      return true
+    }
+
     return diffContainsAnnotationTarget(activeFileDiff, annotationTarget)
   }, [activeFileDiff, annotationTarget, annotationTargetIsCurrentFile])
 
   const commentDraftIsRecoverable =
     annotationTarget !== null &&
     commentDraftText.trim().length > 0 &&
-    activeFileDiff !== null &&
-    (!annotationTargetIsCurrentFile || !annotationTargetLineExists)
+    (isFileAnnotationTarget(annotationTarget)
+      ? !annotationTargetIsCurrentFile
+      : activeFileDiff !== null &&
+        (!annotationTargetIsCurrentFile || !annotationTargetLineExists))
 
   const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
     if (
       annotationTarget !== null &&
+      !isFileAnnotationTarget(annotationTarget) &&
       annotationTarget.editId === undefined &&
       annotationTargetIsCurrentFile &&
       (activeFileDiff === null || annotationTargetLineExists)

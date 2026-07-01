@@ -56,6 +56,9 @@ describe('ChangedFilesList', () => {
     expect(screen.getByText(/NavBar\.tsx/)).toBeInTheDocument()
     expect(screen.getByText(/api-helper\.rs/)).toBeInTheDocument()
     expect(screen.getByText(/tsconfig\.json/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /comment on file/i })
+    ).not.toBeInTheDocument()
 
     // Check file icons are rendered (Material Symbols)
     const icons = screen.getAllByRole('img', { hidden: true })
@@ -120,6 +123,30 @@ describe('ChangedFilesList', () => {
     expect(handleSelect).toHaveBeenCalledWith(mockFiles[0])
   })
 
+  test('calls onAddFileComment from the file comment affordance without selecting the file', async () => {
+    const handleSelect = vi.fn()
+    const handleAddFileComment = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <ChangedFilesList
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={handleSelect}
+        onAddFileComment={handleAddFileComment}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Comment on file NavBar.tsx',
+      })
+    )
+
+    expect(handleAddFileComment).toHaveBeenCalledWith(mockFiles[0])
+    expect(handleSelect).not.toHaveBeenCalled()
+  })
+
   test('renders files in the order provided (sorting done by parent)', () => {
     const orderedFiles: ChangedFile[] = [
       {
@@ -174,9 +201,11 @@ describe('ChangedFilesList', () => {
 
     // Check that hover classes exist
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const fileButton = container.querySelector('button')
+    const row = container.querySelector(
+      '.hover\\:bg-surface-container-highest\\/20'
+    )
 
-    expect(fileButton).toHaveClass('hover:bg-surface-container-highest/20')
+    expect(row).toBeInTheDocument()
   })
 
   test('truncates long file paths', () => {

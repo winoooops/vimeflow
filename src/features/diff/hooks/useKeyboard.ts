@@ -15,7 +15,9 @@ export interface UseKeyboardOptions {
   onPreviousHunk: () => void
   onNextHunk: () => void
   onComment: () => void
+  onFileComment: () => void
   onUpdateComment: () => void
+  onUpdateFileComment: () => void
   onDeleteComment: () => void
   onFinishReview: () => void
   onStageHunk: () => void
@@ -57,7 +59,9 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onPreviousHunk,
     onNextHunk,
     onComment,
+    onFileComment,
     onUpdateComment,
+    onUpdateFileComment,
     onDeleteComment,
     onFinishReview,
     onStageHunk,
@@ -151,7 +155,9 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         '[': onPreviousHunk,
         ']': onNextHunk,
         i: onComment,
+        I: onFileComment,
         u: onUpdateComment,
+        U: onUpdateFileComment,
         x: onDeleteComment,
         Y: onFinishReview,
         s: onStageHunk,
@@ -186,7 +192,9 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onPreviousHunk,
     onNextHunk,
     onComment,
+    onFileComment,
     onUpdateComment,
+    onUpdateFileComment,
     onDeleteComment,
     onFinishReview,
     onStageHunk,

@@ -19,6 +19,7 @@ export interface ReviewComment {
   text: string
   author: 'self'
   createdAt: number
+  target?: { scope: 'file' }
 }
 
 /**
@@ -70,6 +71,16 @@ export const parseBatchKey = (key: string): ParsedBatchKey => {
 }
 
 const SOFT_CAP = 50
+
+export const FILE_COMMENT_LINE_NUMBER = 0
+
+export const isFileLevelReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => annotation.metadata.target?.scope === 'file'
+
+export const isLineLevelReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => !isFileLevelReviewAnnotation(annotation)
 
 const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
   let count = 0
@@ -206,15 +217,23 @@ export interface FeedbackRepoRootStoreRef {
   repoRootForCwd: (cwd: string) => string
 }
 
-export interface FeedbackDraft {
+interface FeedbackDraftBase {
   cwd: string
   filePath: string
   staged: boolean
-  side: AnnotationSide
-  lineNumber: number
   editId?: string
   text: string
 }
+
+export type FeedbackDraft =
+  | (FeedbackDraftBase & {
+      scope?: 'line'
+      side: AnnotationSide
+      lineNumber: number
+    })
+  | (FeedbackDraftBase & {
+      scope: 'file'
+    })
 
 export interface FeedbackDraftStore {
   draft: FeedbackDraft | null
