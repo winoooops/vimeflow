@@ -9,6 +9,7 @@ import {
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
 import type {
+  NativeOverlayDialogRequest,
   NativeOverlayMenuItem,
   NativeOverlayMenuRequest,
   NativeOverlayMenuSection,
@@ -25,6 +26,7 @@ interface NativeOverlayHostBridge {
     actionId: string
     closeOnSelect?: boolean
     feedback?: 'copy'
+    index?: number
   }) => Promise<unknown>
   close: (request: { surfaceId: string; reason: 'outside' }) => Promise<unknown>
   onRender: (callback: (payload: unknown) => void) => () => void
@@ -66,6 +68,16 @@ const isTooltipRequest = (
   (value as { payload?: { kind?: unknown; text?: unknown } }).payload?.kind ===
     'tooltip' &&
   typeof (value as { payload?: { text?: unknown } }).payload?.text === 'string'
+
+const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  (value as { kind?: unknown }).kind === 'dialog' &&
+  (value as { payload?: { kind?: unknown; dialog?: unknown } }).payload
+    ?.kind === 'dialog' &&
+  (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+    'command-palette'
 
 const isCopyActionResult = (
   value: unknown
@@ -140,6 +152,45 @@ const OVERLAY_TOOLTIP_CLASSES =
   'pointer-events-none rounded-md px-3 py-1.5 text-xs text-on-surface ' +
   'whitespace-nowrap shadow-lg bg-surface-container-high/90 backdrop-blur-md ' +
   'backdrop-saturate-150 border border-outline-variant/20'
+
+const OVERLAY_DIALOG_BACKDROP_CLASSES =
+  'fixed inset-0 flex items-start justify-center pt-[15vh] backdrop-blur-sm ' +
+  'bg-scrim/40'
+
+const OVERLAY_COMMAND_PALETTE_CLASSES =
+  'w-full max-w-2xl mx-4 bg-surface-container/90 glass-panel rounded-2xl ' +
+  'border border-outline-variant/30 shadow-2xl overflow-hidden'
+
+const OVERLAY_COMMAND_PALETTE_INPUT_CLASSES =
+  'relative w-full flex-1 bg-transparent border-none p-0 outline-none ' +
+  'font-mono text-[13.5px] leading-[18px] placeholder:text-on-surface-muted'
+
+const OVERLAY_COMMAND_PALETTE_ROW_CLASSES =
+  'group flex items-center gap-[12px] px-[12px] py-[9px] my-[2px] ' +
+  'rounded-[8px] border transition-colors cursor-pointer'
+
+const OVERLAY_COMMAND_PALETTE_KEY_CLASSES =
+  'inline-flex min-w-[16px] h-[16px] px-[4px] items-center justify-center ' +
+  'rounded-[4px] border font-mono text-[9.5px] font-semibold'
+
+const overlayCommandPaletteRowClass = (selected: boolean): string =>
+  `${OVERLAY_COMMAND_PALETTE_ROW_CLASSES} ${
+    selected
+      ? 'bg-primary-container/10 border-primary-container/25'
+      : 'border-transparent hover:bg-surface-container-high/40'
+  }`
+
+const overlayCommandPaletteKeyClass = (selected: boolean): string =>
+  `${OVERLAY_COMMAND_PALETTE_KEY_CLASSES} ${
+    selected
+      ? 'bg-primary-container/[0.08] text-primary border-primary-container/40'
+      : 'bg-surface-container-lowest/60 text-on-surface-muted border-outline-variant/40'
+  }`
+
+const OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES =
+  'inline-flex min-w-[18px] h-[18px] px-[5px] items-center justify-center ' +
+  'rounded-[4px] border font-mono text-[10px] font-semibold ' +
+  'bg-surface-container-highest/60 text-on-surface-variant border-outline-variant/60'
 
 const OVERLAY_MENU_COMPOSITE_PRIMARY_CLASSES =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none ' +
@@ -295,6 +346,209 @@ const tooltipStyleForRequest = (
   }
 }
 
+const NativeOverlayCommandPalette = ({
+  request,
+  close,
+}: {
+  request: NativeOverlayDialogRequest
+  close: () => void
+}): ReactElement => {
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+  const payload = request.payload
+  const selectedIndex = payload.selectedIndex
+
+  const selectedCommand =
+    selectedIndex >= 0 && selectedIndex < payload.results.length
+      ? payload.results[selectedIndex]
+      : undefined
+
+  const activeDescendantId =
+    payload.activeDescendantId ??
+    (selectedCommand === undefined
+      ? undefined
+      : `command-${selectedCommand.id}`)
+
+  const showArgumentPlaceholder =
+    payload.argumentPlaceholder !== undefined && payload.query.endsWith(' ')
+
+  useEffect(() => {
+    if (selectedCommand === undefined) {
+      return
+    }
+
+    rowRefs.current
+      .get(selectedCommand.id)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [selectedCommand])
+
+  const setRowRef =
+    (commandId: string) =>
+    (node: HTMLDivElement | null): void => {
+      if (node === null) {
+        rowRefs.current.delete(commandId)
+
+        return
+      }
+
+      rowRefs.current.set(commandId, node)
+    }
+
+  const dispatchAction = (
+    actionId: string,
+    options: { index?: number } = {}
+  ): void => {
+    void nativeOverlayHostBridge()?.action({
+      surfaceId: request.surfaceId,
+      actionId,
+      closeOnSelect: false,
+      ...options,
+    })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={payload.ariaLabel}
+      className={OVERLAY_DIALOG_BACKDROP_CLASSES}
+      onMouseDown={(event): void => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault()
+          close()
+        }
+      }}
+    >
+      <div className={OVERLAY_COMMAND_PALETTE_CLASSES}>
+        <div className="flex items-center gap-[10px] px-[16px] py-[14px]">
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined text-[16px] text-primary-container"
+          >
+            terminal
+          </span>
+          <div className="relative flex-1 min-w-0">
+            {showArgumentPlaceholder ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 flex items-center font-mono text-[13.5px] leading-[18px]"
+              >
+                <span className="whitespace-pre text-on-surface">
+                  {payload.query}
+                </span>
+                <span className="text-on-surface-muted">
+                  {payload.argumentPlaceholder}
+                </span>
+              </span>
+            ) : null}
+            <input
+              type="text"
+              value={payload.query}
+              readOnly
+              className={`${OVERLAY_COMMAND_PALETTE_INPUT_CLASSES} ${
+                showArgumentPlaceholder
+                  ? 'text-transparent caret-on-surface'
+                  : 'text-on-surface'
+              }`}
+              placeholder="type a command, : prefix, or search files..."
+              role="combobox"
+              aria-label="Command palette search"
+              aria-expanded
+              aria-controls="command-palette-listbox"
+              aria-activedescendant={activeDescendantId}
+            />
+          </div>
+          <span className={OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES}>
+            ESC
+          </span>
+        </div>
+        <div className="h-px bg-outline-variant/25" />
+        <div
+          id="command-palette-listbox"
+          role="listbox"
+          className="p-[6px] overflow-y-auto max-h-[60vh]"
+        >
+          {payload.results.map((command, index) => {
+            const selected = index === selectedIndex
+
+            return (
+              <div
+                key={command.id}
+                ref={setRowRef(command.id)}
+                id={`command-${command.id}`}
+                role="option"
+                aria-selected={selected}
+                onMouseEnter={(): void => {
+                  dispatchAction(payload.actions.selectIndex, { index })
+                }}
+                onMouseDown={(event): void => event.preventDefault()}
+                onClick={(): void => {
+                  dispatchAction(payload.actions.executeIndex, { index })
+                }}
+                className={overlayCommandPaletteRowClass(selected)}
+              >
+                <span
+                  className={`material-symbols-outlined text-[15px] shrink-0 ${
+                    selected ? 'text-primary' : 'text-on-surface-muted'
+                  }`}
+                  style={{
+                    fontVariationSettings: selected ? '"FILL" 1' : '"FILL" 0',
+                  }}
+                >
+                  {command.icon}
+                </span>
+                <span className="font-mono text-[11.5px] text-primary w-[120px] shrink-0 truncate">
+                  {command.label}
+                </span>
+                <span className="text-[12.5px] text-on-surface flex-1 min-w-0 truncate">
+                  {command.description}
+                </span>
+                {command.hint === undefined ? null : (
+                  <span className="hidden text-[11px] text-on-surface-muted truncate sm:block">
+                    {command.hint}
+                  </span>
+                )}
+                {command.shortcut === undefined ||
+                command.shortcut.length === 0 ? null : (
+                  <div className="flex items-center gap-[3px] shrink-0">
+                    {command.shortcut.map((key, keyIndex) => (
+                      <span
+                        key={`${command.id}:key:${String(keyIndex)}`}
+                        className={overlayCommandPaletteKeyClass(selected)}
+                      >
+                        {key}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div className="h-px bg-outline-variant/25" />
+        <div className="flex items-center gap-[14px] px-[14px] py-[8px] bg-surface-container-lowest/50 font-mono text-[10px] text-on-surface-muted">
+          <span className="flex items-center gap-[6px]">
+            <span className={OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES}>
+              Enter
+            </span>
+            run
+          </span>
+          <span className="flex items-center gap-[6px]">
+            <span className="flex gap-[3px]">
+              <span className={OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES}>
+                Up
+              </span>
+              <span className={OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES}>
+                Down
+              </span>
+            </span>
+            navigate
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export const NativeOverlayHost = ({
   mode = 'menu',
 }: {
@@ -351,7 +605,10 @@ export const NativeOverlayHost = ({
     }
 
     const cleanupRender = bridge.onRender((payload) => {
-      if (mode === 'menu' && isMenuRequest(payload)) {
+      const isMenuLayerRequest =
+        mode === 'menu' && (isMenuRequest(payload) || isDialogRequest(payload))
+
+      if (isMenuLayerRequest) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
         setRequest(payload)
@@ -448,6 +705,10 @@ export const NativeOverlayHost = ({
   }
 
   if (!isMenuRequest(request)) {
+    if (isDialogRequest(request)) {
+      return <NativeOverlayCommandPalette request={request} close={close} />
+    }
+
     return null
   }
 

@@ -1,9 +1,10 @@
 import { globalShortcut, type BrowserWindow } from 'electron'
 import { COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 
-interface ShortcutInput {
+export interface CommandPaletteShortcutInput {
   type: string
   key: string
+  code?: string
   control: boolean
   meta: boolean
   alt: boolean
@@ -44,8 +45,11 @@ export const COMMAND_PALETTE_GLOBAL_ACCELERATORS =
 
 const SHORTCUT_TOGGLE_DEDUPLICATION_MS = 100
 
+const isSemicolonShortcut = (input: CommandPaletteShortcutInput): boolean =>
+  input.key === ';' || input.code === 'Semicolon'
+
 export const isCommandPaletteShortcutInput = (
-  input: ShortcutInput,
+  input: CommandPaletteShortcutInput,
   config: CommandPaletteShortcutConfig = commandPaletteShortcutConfigForPlatform(
     process.platform
   )
@@ -57,7 +61,7 @@ export const isCommandPaletteShortcutInput = (
   !input.alt &&
   input.shift !== true &&
   !input.isAutoRepeat &&
-  input.key === ';'
+  isSemicolonShortcut(input)
 
 const sendCommandPaletteToggle = (win: BrowserWindow): void => {
   if (win.isDestroyed()) {
@@ -100,6 +104,25 @@ export const commandPaletteToggleDispatcherForWindow = (
   return dispatcher
 }
 
+export const dispatchCommandPaletteShortcutForWindow = (
+  win: BrowserWindow,
+  input: CommandPaletteShortcutInput,
+  config: CommandPaletteShortcutConfig = commandPaletteShortcutConfigForPlatform(
+    process.platform
+  )
+): boolean => {
+  if (!isCommandPaletteShortcutInput(input, config)) {
+    return false
+  }
+
+  if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+    win.webContents.focus()
+    commandPaletteToggleDispatcherForWindow(win)()
+  }
+
+  return true
+}
+
 export const installCommandPaletteShortcutOverride = (
   win: BrowserWindow,
   options: CommandPaletteShortcutOverrideOptions = {}
@@ -140,7 +163,7 @@ export const installCommandPaletteShortcutOverride = (
     }
 
     event.preventDefault()
-    dispatchCommandPaletteToggle()
+    dispatchCommandPaletteShortcutForWindow(win, input, shortcutConfig)
   })
 
   win.on('focus', registerFocusedLinuxShortcuts)

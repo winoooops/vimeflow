@@ -97,12 +97,43 @@ export interface NativeOverlayTooltipPayload {
   maxWidth?: number
 }
 
+export interface NativeOverlayCommandPaletteItem {
+  id: string
+  label: string
+  description?: string
+  hint?: string
+  icon: string
+  shortcut?: string[]
+}
+
+export interface NativeOverlayCommandPaletteActions {
+  selectIndex: string
+  executeIndex: string
+}
+
+export interface NativeOverlayCommandPaletteDialogPayload {
+  kind: 'dialog'
+  dialog: 'command-palette'
+  ariaLabel: string
+  query: string
+  selectedIndex: number
+  activeDescendantId?: string
+  argumentPlaceholder?: string
+  results: NativeOverlayCommandPaletteItem[]
+  actions: NativeOverlayCommandPaletteActions
+}
+
+export type NativeOverlayDialogPayload =
+  NativeOverlayCommandPaletteDialogPayload
+
 // Native overlay payloads are plain data only. Menu and tooltip are supported
-// today; popover/dialog should join this union only after they get their own
-// serializable models instead of arbitrary React children.
+// today; dialog has a narrow command-palette model. Popover and future dialog
+// variants should join this union only after they get their own serializable
+// models instead of arbitrary React children.
 export type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
   | NativeOverlayTooltipPayload
+  | NativeOverlayDialogPayload
 
 export interface NativeOverlayRequest {
   surfaceId: string
@@ -123,11 +154,17 @@ export type NativeOverlayTooltipRequest = NativeOverlayRequest & {
   payload: NativeOverlayTooltipPayload
 }
 
+export type NativeOverlayDialogRequest = NativeOverlayRequest & {
+  kind: typeof NATIVE_OVERLAY_KINDS.dialog
+  payload: NativeOverlayDialogPayload
+}
+
 export interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
   closeOnSelect?: boolean
   feedback?: 'copy'
+  index?: number
 }
 
 export interface NativeOverlayActionResultEvent {
@@ -194,10 +231,10 @@ interface NativeOverlayBridge {
 export type NativeOverlayActionResult = boolean | void | Promise<boolean | void>
 
 export type NativeOverlayActionHandler =
-  | (() => NativeOverlayActionResult)
+  | ((event?: NativeOverlayActionEvent) => NativeOverlayActionResult)
   | {
       retainSession: true
-      run: () => NativeOverlayActionResult
+      run: (event?: NativeOverlayActionEvent) => NativeOverlayActionResult
     }
 
 interface NativeOverlaySession {
@@ -219,7 +256,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   typeof value.actionId === 'string' &&
   (value.closeOnSelect === undefined ||
     typeof value.closeOnSelect === 'boolean') &&
-  (value.feedback === undefined || value.feedback === 'copy')
+  (value.feedback === undefined || value.feedback === 'copy') &&
+  (value.index === undefined || typeof value.index === 'number')
 
 const isCloseEvent = (value: unknown): value is NativeOverlayCloseEvent =>
   isRecord(value) &&
@@ -247,11 +285,11 @@ const reportActionResult = (
 
 const runActionAndReport = (
   event: NativeOverlayActionEvent,
-  run: () => NativeOverlayActionResult
+  run: (event: NativeOverlayActionEvent) => NativeOverlayActionResult
 ): void => {
   void (async (): Promise<void> => {
     try {
-      const result = await run()
+      const result = await run(event)
       reportActionResult(event, result === true)
     } catch (error) {
       reportActionResult(event, false)

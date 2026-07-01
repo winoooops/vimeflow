@@ -312,6 +312,21 @@ private final class EmbeddedGhosttySurface: NSObject {
             return false
         }
 
+        if !flags.contains(.option),
+           !flags.contains(.shift),
+           event.charactersIgnoringModifiers == ";" {
+            callbacks.forwardShortcut(
+                key: ";",
+                code: "Semicolon",
+                control: flags.contains(.control),
+                meta: flags.contains(.command),
+                alt: flags.contains(.option),
+                shift: flags.contains(.shift)
+            )
+
+            return true
+        }
+
         guard let digit = Self.shortcutDigitByKeyCode[event.keyCode] else {
             return false
         }

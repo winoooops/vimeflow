@@ -150,6 +150,34 @@ const tooltipRequest: NativeOverlayRequest = {
   },
 }
 
+const commandPaletteRequest: NativeOverlayRequest = {
+  surfaceId: 'dialog-1',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'command-palette',
+    ariaLabel: 'Command palette',
+    query: ':',
+    selectedIndex: 0,
+    activeDescendantId: 'command-help',
+    results: [
+      {
+        id: 'help',
+        label: ':help',
+        description: 'Show command reference',
+        icon: 'help',
+        shortcut: ['Cmd', ';'],
+      },
+    ],
+    actions: {
+      selectIndex: 'command-palette:select-index',
+      executeIndex: 'command-palette:execute-index',
+    },
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -309,6 +337,88 @@ describe('NativeOverlayHost', () => {
     bridge.emitClear()
 
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('renders command palette dialog requests on the menu layer', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(commandPaletteRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Command palette',
+    })
+    expect(dialog).toBeInTheDocument()
+    expect(dialog).toHaveClass('bg-scrim/40')
+    expect(screen.getByRole('combobox')).toHaveValue(':')
+    expect(screen.getByRole('combobox')).toHaveAttribute('readonly')
+    expect(screen.getByRole('option', { name: /:help/i })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    await user.click(screen.getByRole('option', { name: /:help/i }))
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:execute-index',
+      closeOnSelect: false,
+      index: 0,
+    })
+
+    expect(screen.getByRole('dialog', { name: 'Command palette' })).toBe(dialog)
+  })
+
+  test('scrolls the selected command palette row into view', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    try {
+      bridge.emitRender({
+        ...commandPaletteRequest,
+        payload: {
+          kind: 'dialog',
+          dialog: 'command-palette',
+          ariaLabel: 'Command palette',
+          query: ':',
+          selectedIndex: 1,
+          activeDescendantId: 'command-open',
+          results: [
+            {
+              id: 'help',
+              label: ':help',
+              description: 'Show command reference',
+              icon: 'help',
+            },
+            {
+              id: 'open',
+              label: ':open',
+              description: 'Open file',
+              icon: 'folder_open',
+            },
+          ],
+          actions: {
+            selectIndex: 'command-palette:select-index',
+            executeIndex: 'command-palette:execute-index',
+          },
+        },
+      })
+
+      expect(
+        await screen.findByRole('option', { name: /:open/i })
+      ).toHaveAttribute('aria-selected', 'true')
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({
+          block: 'nearest',
+          inline: 'nearest',
+        })
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
   })
 
   test('dispatches forwarded menu keydown events to the active menu', async () => {

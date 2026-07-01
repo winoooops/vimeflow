@@ -20,14 +20,15 @@ import {
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
 } from './native-overlay-channels'
+import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
 
 // cspell:ignore AppKit Ghostty minimizable maximizable fullscreenable NSView
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// TODO: add popover/dialog here when they get serializable native overlay
-// payloads and host renderers.
-export type NativeOverlayKind = 'menu' | 'tooltip'
+// TODO: add popover here when it gets a serializable native overlay payload
+// and host renderer.
+export type NativeOverlayKind = 'menu' | 'tooltip' | 'dialog'
 
 type NativeOverlayCloseReason =
   | 'outside'
@@ -112,9 +113,38 @@ interface NativeOverlayTooltipPayload {
   maxWidth?: number
 }
 
+interface NativeOverlayCommandPaletteItem {
+  id: string
+  label: string
+  description?: string
+  hint?: string
+  icon: string
+  shortcut?: string[]
+}
+
+interface NativeOverlayCommandPaletteActions {
+  selectIndex: string
+  executeIndex: string
+}
+
+interface NativeOverlayCommandPaletteDialogPayload {
+  kind: 'dialog'
+  dialog: 'command-palette'
+  ariaLabel: string
+  query: string
+  selectedIndex: number
+  activeDescendantId?: string
+  argumentPlaceholder?: string
+  results: NativeOverlayCommandPaletteItem[]
+  actions: NativeOverlayCommandPaletteActions
+}
+
+type NativeOverlayDialogPayload = NativeOverlayCommandPaletteDialogPayload
+
 type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
   | NativeOverlayTooltipPayload
+  | NativeOverlayDialogPayload
 
 interface NativeOverlayThemeSnapshot {
   id?: string
@@ -141,6 +171,7 @@ interface NativeOverlayActionEvent {
   actionId: string
   closeOnSelect?: boolean
   feedback?: 'copy'
+  index?: number
 }
 
 interface NativeOverlayActionResultEvent {
@@ -329,6 +360,39 @@ const isTooltipPayload = (
   isString(value.text) &&
   (value.maxWidth === undefined || isFiniteNumber(value.maxWidth))
 
+const isCommandPaletteItem = (
+  value: unknown
+): value is NativeOverlayCommandPaletteItem =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.label) &&
+  (value.description === undefined || typeof value.description === 'string') &&
+  (value.hint === undefined || typeof value.hint === 'string') &&
+  isString(value.icon) &&
+  (value.shortcut === undefined ||
+    (Array.isArray(value.shortcut) &&
+      value.shortcut.every((entry) => typeof entry === 'string')))
+
+const isCommandPaletteActions = (
+  value: unknown
+): value is NativeOverlayCommandPaletteActions =>
+  isRecord(value) && isString(value.selectIndex) && isString(value.executeIndex)
+
+const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
+  isRecord(value) &&
+  value.kind === 'dialog' &&
+  value.dialog === 'command-palette' &&
+  isString(value.ariaLabel) &&
+  typeof value.query === 'string' &&
+  isFiniteNumber(value.selectedIndex) &&
+  (value.activeDescendantId === undefined ||
+    typeof value.activeDescendantId === 'string') &&
+  (value.argumentPlaceholder === undefined ||
+    typeof value.argumentPlaceholder === 'string') &&
+  Array.isArray(value.results) &&
+  value.results.every(isCommandPaletteItem) &&
+  isCommandPaletteActions(value.actions)
+
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
   isRecord(value) &&
   (value.id === undefined || typeof value.id === 'string') &&
@@ -340,14 +404,17 @@ const isSerializablePayloadForKind = (
   payload: unknown
 ): payload is SerializableOverlayPayload =>
   (kind === 'menu' && isMenuPayload(payload)) ||
-  (kind === 'tooltip' && isTooltipPayload(payload))
+  (kind === 'tooltip' && isTooltipPayload(payload)) ||
+  (kind === 'dialog' && isDialogPayload(payload))
 
 const isNativeOverlayRequest = (
   value: unknown
 ): value is NativeOverlayRequest =>
   isRecord(value) &&
   isString(value.surfaceId) &&
-  (value.kind === 'menu' || value.kind === 'tooltip') &&
+  (value.kind === 'menu' ||
+    value.kind === 'tooltip' ||
+    value.kind === 'dialog') &&
   isRect(value.anchorRect) &&
   isString(value.placement) &&
   isSerializablePayloadForKind(value.kind, value.payload) &&
@@ -371,7 +438,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isString(value.actionId) &&
   (value.closeOnSelect === undefined ||
     typeof value.closeOnSelect === 'boolean') &&
-  (value.feedback === undefined || value.feedback === 'copy')
+  (value.feedback === undefined || value.feedback === 'copy') &&
+  (value.index === undefined || isFiniteNumber(value.index))
 
 const isActionResultEvent = (
   value: unknown
@@ -493,7 +561,10 @@ export class NativeOverlayController {
     record: NativeOverlayRecord,
     payload: NativeOverlayRequest
   ): Promise<NativeOverlayOpenResult> {
-    if (record.activeSurfaceId !== null) {
+    if (
+      record.activeSurfaceId !== null &&
+      record.activeSurfaceId !== payload.surfaceId
+    ) {
       this.closeSurface(record.activeSurfaceId, 'replaced', true)
     }
 
@@ -510,7 +581,7 @@ export class NativeOverlayController {
     this.surfaces.set(payload.surfaceId, {
       owner,
       parentId: parent.id,
-      kind: 'menu',
+      kind: payload.kind,
     })
 
     const readyPromise = this.waitForReady(payload.surfaceId)
@@ -613,7 +684,7 @@ export class NativeOverlayController {
       return
     }
 
-    if (surface.kind !== 'menu') {
+    if (surface.kind !== 'menu' && surface.kind !== 'dialog') {
       return
     }
 
@@ -755,6 +826,12 @@ export class NativeOverlayController {
 
       const surfaceId = activeRecord.activeSurfaceId
       const surface = this.surfaces.get(surfaceId)
+      if (dispatchCommandPaletteShortcutForWindow(parent, input)) {
+        event.preventDefault()
+
+        return
+      }
+
       if (surface?.kind !== 'menu') {
         return
       }
@@ -924,7 +1001,11 @@ export class NativeOverlayController {
     }
 
     if (!surface.owner.isDestroyed()) {
-      if (surface.kind === 'menu' && isActiveSurface && restoreOwnerFocus) {
+      if (
+        (surface.kind === 'menu' || surface.kind === 'dialog') &&
+        isActiveSurface &&
+        restoreOwnerFocus
+      ) {
         surface.owner.focus()
       }
       if (notifyOwner) {

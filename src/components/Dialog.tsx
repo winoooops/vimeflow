@@ -2,15 +2,28 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  closeNativeOverlay,
+  NATIVE_OVERLAY_KINDS,
+  nativeOverlayThemeSnapshot,
+  openNativeOverlay,
   selectFloatingTransport,
+  type NativeOverlayActionHandler,
+  type NativeOverlayDialogPayload,
   warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
+
+export type {
+  NativeOverlayActionHandler,
+  NativeOverlayCommandPaletteDialogPayload,
 } from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
@@ -34,6 +47,8 @@ interface DialogProps {
   /** Extra classes appended to the panel (e.g. a custom width). Last-wins over the size class. */
   panelClassName?: string
   nativeOverlay?: boolean
+  nativeOverlayPayload?: NativeOverlayDialogPayload
+  nativeOverlayActions?: ReadonlyMap<string, NativeOverlayActionHandler>
   children: ReactNode
 }
 
@@ -62,6 +77,22 @@ const PANEL_SIZE_CLASSES: Record<DialogSize, string> = {
 const DIALOG_PANEL_CLASSES =
   'relative w-full mx-4 bg-surface-container/90 glass-panel rounded-2xl ' +
   'border border-outline-variant/30 shadow-2xl overflow-hidden'
+
+const EMPTY_NATIVE_OVERLAY_ACTIONS = new Map<
+  string,
+  NativeOverlayActionHandler
+>()
+
+const closeAcceptedNativeOverlayIfDismissed = (
+  surfaceId: string,
+  canAttemptNativeRef: RefObject<boolean>
+): void => {
+  if (canAttemptNativeRef.current) {
+    return
+  }
+
+  closeNativeOverlay(surfaceId)
+}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -247,23 +278,132 @@ const DialogRoot = ({
   backdropTestId = undefined,
   panelClassName = undefined,
   nativeOverlay = false,
+  nativeOverlayPayload = undefined,
+  nativeOverlayActions = EMPTY_NATIVE_OVERLAY_ACTIONS,
   children,
 }: DialogProps): ReactElement | null => {
+  const surfaceId = useId()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
   const restoreFocusRef = useRef(restoreFocus)
+  const nativeOverlayQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const nativeOverlayGenerationRef = useRef(0)
+  const canAttemptNativeRef = useRef(false)
+
+  const [nativeAttempt, setNativeAttempt] = useState<
+    'idle' | 'pending' | 'active' | 'failed'
+  >('idle')
   restoreFocusRef.current = restoreFocus
 
+  const transport = selectFloatingTransport(nativeOverlay)
+
+  const nativeUnsupportedReason =
+    nativeOverlayPayload === undefined ? 'unsupported dialog content' : null
+
+  const canAttemptNative =
+    open && transport === 'native-overlay' && nativeUnsupportedReason === null
+  canAttemptNativeRef.current = canAttemptNative
+
+  const hideLocalForNative =
+    nativeAttempt === 'pending' || nativeAttempt === 'active'
+
   useEffect(() => {
-    if (
-      open &&
-      nativeOverlay &&
-      selectFloatingTransport(nativeOverlay) === 'native-overlay'
-    ) {
-      warnNativeOverlayFallback('dialog native overlay is not in v0')
+    if (!open) {
+      nativeOverlayGenerationRef.current += 1
+      closeNativeOverlay(surfaceId)
+      setNativeAttempt('idle')
+
+      return
     }
-  }, [nativeOverlay, open])
+
+    if (
+      nativeOverlay &&
+      transport === 'native-overlay' &&
+      nativeUnsupportedReason !== null
+    ) {
+      warnNativeOverlayFallback(nativeUnsupportedReason)
+    }
+  }, [nativeOverlay, nativeUnsupportedReason, open, surfaceId, transport])
+
+  useEffect(
+    () => (): void => {
+      canAttemptNativeRef.current = false
+      nativeOverlayGenerationRef.current += 1
+      closeNativeOverlay(surfaceId)
+    },
+    [surfaceId]
+  )
+
+  useEffect(() => {
+    if (!canAttemptNative || nativeOverlayPayload === undefined) {
+      return
+    }
+
+    const generation = nativeOverlayGenerationRef.current + 1
+    const cancelled = { current: false }
+    nativeOverlayGenerationRef.current = generation
+    setNativeAttempt((current) => (current === 'active' ? 'active' : 'pending'))
+
+    const openAfterPrevious = async (): Promise<void> => {
+      const previousOpen = nativeOverlayQueueRef.current
+
+      await previousOpen
+
+      if (
+        cancelled.current ||
+        nativeOverlayGenerationRef.current !== generation
+      ) {
+        return
+      }
+
+      const accepted = await openNativeOverlay(
+        {
+          surfaceId,
+          kind: NATIVE_OVERLAY_KINDS.dialog,
+          anchorRect: {
+            x: 0,
+            y: 0,
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+          placement,
+          payload: nativeOverlayPayload,
+          theme: nativeOverlayThemeSnapshot(),
+        },
+        {
+          actions: nativeOverlayActions,
+          onClose: (): void => onOpenChange(false),
+        }
+      )
+
+      if (nativeOverlayGenerationRef.current !== generation) {
+        if (accepted) {
+          closeAcceptedNativeOverlayIfDismissed(surfaceId, canAttemptNativeRef)
+        }
+
+        return
+      }
+
+      setNativeAttempt(accepted ? 'active' : 'failed')
+    }
+
+    const currentOpen = openAfterPrevious()
+
+    nativeOverlayQueueRef.current = currentOpen
+    void currentOpen
+
+    return (): void => {
+      cancelled.current = true
+    }
+  }, [
+    canAttemptNative,
+    nativeOverlayActions,
+    nativeOverlayPayload,
+    onOpenChange,
+    placement,
+    surfaceId,
+  ])
 
   const requestClose = useCallback((): void => {
     if (dismissDisabled) {
@@ -361,7 +501,9 @@ const DialogRoot = ({
           aria-describedby={ariaDescribedBy}
           tabIndex={-1}
           data-testid={testId}
-          className={`fixed inset-0 z-[100] flex ${PLACEMENT_CLASSES[placement]}`}
+          className={`fixed inset-0 z-[100] flex ${PLACEMENT_CLASSES[placement]}${
+            hideLocalForNative ? ' pointer-events-none opacity-0' : ''
+          }`}
         >
           <motion.div
             aria-hidden="true"
@@ -370,7 +512,7 @@ const DialogRoot = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 backdrop-blur-sm bg-surface-container-lowest/40"
+            className="absolute inset-0 backdrop-blur-sm bg-scrim/40"
             onClick={closeOnBackdrop ? requestClose : undefined}
           />
           <motion.div

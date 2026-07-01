@@ -10,6 +10,7 @@ import {
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
+import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
 import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
@@ -505,6 +506,20 @@ export class GhosttyNativeParentController {
       },
       (key, code, control, meta, alt, shift) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (
+          dispatchCommandPaletteShortcutForWindow(win, {
+            type: 'keyDown',
+            key,
+            code,
+            control,
+            meta,
+            alt,
+            shift,
+          })
+        ) {
           return
         }
 

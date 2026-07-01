@@ -6,7 +6,7 @@ import {
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
-import { BACKEND_EVENT } from './ipc-channels'
+import { BACKEND_EVENT, COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isGhosttyNativeParentEnabled,
@@ -535,6 +535,68 @@ describe('ghostty native parent', () => {
       'data-vimeflow-shortcut-proxy'
     )
     expect(addon.focus).toHaveBeenCalledWith(surface)
+
+    controller.dispose()
+  })
+
+  test('opens command palette directly from native Ghostty shortcut', () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _contextMenu, _focus, shortcut) => {
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    const isMac = process.platform === 'darwin'
+    callbacks.onShortcut?.(';', 'Semicolon', !isMac, isMac, false, false)
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsSend).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
+    expect(webContentsExecuteJavaScript).not.toHaveBeenCalled()
+    expect(addon.focus).not.toHaveBeenCalled()
 
     controller.dispose()
   })
