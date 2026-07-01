@@ -1,7 +1,11 @@
 import { describe, test, expect } from 'vitest'
 import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 import type { DiffHunk } from '../types'
-import { toPierreInputs, findRawDiffHunkIndex } from './pierreAdapter'
+import {
+  diffIdentityForResponse,
+  toPierreInputs,
+  findRawDiffHunkIndex,
+} from './pierreAdapter'
 
 const baseFileDiff = {
   filePath: 'src/foo.ts',
@@ -33,6 +37,11 @@ describe('toPierreInputs', (): void => {
     expect(result.oldFile.contents).toBe('before contents')
     expect(result.newFile.name).toBe('src/foo.ts')
     expect(result.newFile.contents).toBe('after contents')
+    expect(result.oldFile.cacheKey).toContain(result.identity)
+    expect(result.newFile.cacheKey).toContain(result.identity)
+    expect(result.diffCacheKey).toBe(
+      `${result.oldFile.cacheKey}:${result.newFile.cacheKey}`
+    )
   })
 
   test('renamed file uses each side actual path', (): void => {
@@ -63,6 +72,15 @@ describe('toPierreInputs', (): void => {
     expect(result.oldFile.contents).toBe('')
     expect(result.newFile.name).toBe('src/untracked.ts')
     expect(result.newFile.contents).toBe('new content')
+  })
+
+  test('identity changes when raw diff changes', (): void => {
+    const first = makeResponse({ rawDiff: '@@ -1 +1 @@\n-old\n+new\n' })
+    const second = makeResponse({ rawDiff: '@@ -1 +1 @@\n-old\n+newer\n' })
+
+    expect(diffIdentityForResponse(first)).not.toBe(
+      diffIdentityForResponse(second)
+    )
   })
 })
 

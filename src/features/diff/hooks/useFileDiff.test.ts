@@ -69,7 +69,7 @@ const makeResponse = (
   },
   oldText: `old text for ${fileDiff.filePath}`,
   newText,
-  rawDiff: `${fileDiff.hunks[0].header}\n-old\n+new\n`,
+  rawDiff: `${fileDiff.hunks[0].header}\n-old\n+${newText}\n`,
   repoRoot: '/repo',
 })
 
@@ -99,6 +99,7 @@ describe('useFileDiff', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     getDiff.mockReset()
   })
@@ -206,7 +207,7 @@ describe('useFileDiff', () => {
     expect(response?.rawDiff).toContain('@@ -1 +1 @@')
   })
 
-  test('keeps the current same-file response visible while refreshToken re-fetches', async () => {
+  test('keeps same-file background updates pending until accepted', async () => {
     const filePath = navBarDiff.filePath
 
     let resolveSecond!: (response: GetGitDiffResponse) => void
@@ -229,6 +230,7 @@ describe('useFileDiff', () => {
     })
 
     expect(result.current.response?.newText).toBe('new v1')
+    expect(result.current.latestDiffStatus).toBeNull()
 
     rerender({ token: 'revision-2' })
 
@@ -237,6 +239,7 @@ describe('useFileDiff', () => {
     })
 
     expect(result.current.response?.newText).toBe('new v1')
+    expect(result.current.latestDiffStatus).toBe('updating')
 
     await act(async () => {
       resolveSecond(makeResponse(navBarDiff, 'new v2'))
@@ -247,7 +250,87 @@ describe('useFileDiff', () => {
       expect(result.current.loading).toBe(false)
     })
 
+    expect(result.current.response?.newText).toBe('new v1')
+    expect(result.current.latestDiffStatus).toBe('updating')
+
+    await waitFor(() => {
+      expect(result.current.latestDiffStatus).toBe('ready')
+    })
+
+    act(() => {
+      result.current.acceptLatestDiff()
+    })
+
     expect(result.current.response?.newText).toBe('new v2')
+    expect(result.current.latestDiffStatus).toBeNull()
     expect(getDiff).toHaveBeenCalledTimes(2)
+  })
+
+  test('keeps the latest-diff ready state visible during continuous background updates', async () => {
+    const filePath = navBarDiff.filePath
+
+    let resolveSecond!: (response: GetGitDiffResponse) => void
+    let resolveThird!: (response: GetGitDiffResponse) => void
+
+    const secondFetch = new Promise<GetGitDiffResponse>((resolve) => {
+      resolveSecond = resolve
+    })
+
+    const thirdFetch = new Promise<GetGitDiffResponse>((resolve) => {
+      resolveThird = resolve
+    })
+
+    getDiff
+      .mockResolvedValueOnce(makeResponse(navBarDiff, 'new v1'))
+      .mockReturnValueOnce(secondFetch)
+      .mockReturnValueOnce(thirdFetch)
+
+    const { result, rerender } = renderHook(
+      ({ token }) => useFileDiff(filePath, false, '/repo', false, token),
+      { initialProps: { token: 'revision-1' } }
+    )
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    rerender({ token: 'revision-2' })
+
+    await act(async () => {
+      resolveSecond(makeResponse(navBarDiff, 'new v2'))
+      await secondFetch
+    })
+
+    await waitFor(() => {
+      expect(result.current.latestDiffStatus).toBe('ready')
+    })
+
+    rerender({ token: 'revision-3' })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(true)
+    })
+
+    expect(result.current.response?.newText).toBe('new v1')
+    expect(result.current.latestDiffStatus).toBe('ready')
+
+    await act(async () => {
+      resolveThird(makeResponse(navBarDiff, 'new v3'))
+      await thirdFetch
+    })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.response?.newText).toBe('new v1')
+    expect(result.current.latestDiffStatus).toBe('ready')
+
+    act(() => {
+      result.current.acceptLatestDiff()
+    })
+
+    expect(result.current.response?.newText).toBe('new v3')
+    expect(result.current.latestDiffStatus).toBeNull()
   })
 })
