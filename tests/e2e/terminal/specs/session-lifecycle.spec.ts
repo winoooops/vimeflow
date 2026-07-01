@@ -1,4 +1,8 @@
-import { clickBySelector } from '../../shared/actions.js'
+import { createNewSessionWithDefaults } from '../../shared/actions.js'
+
+const commandPaletteSelector = '[role="dialog"][aria-label="Command palette"]'
+const commandPaletteInputSelector = '[aria-label="Command palette search"]'
+const enterKey = '\uE007'
 
 const readRustSessionCount = async (): Promise<number> => {
   const ids = await browser.execute(
@@ -17,22 +21,64 @@ const waitForCount = async (
   )
 }
 
-const clickLatestSessionTabCloseButton = async (): Promise<void> => {
-  const ok = await browser.execute(() => {
-    const tabs = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid="session-tab"]')
+const dispatchCommandPaletteShortcut = async (): Promise<void> => {
+  await browser.execute(() => {
+    const platform =
+      (
+        navigator as Navigator & {
+          userAgentData?: { platform?: string }
+        }
+      ).userAgentData?.platform ?? navigator.platform
+    const isMac = platform.toLowerCase().includes('mac')
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: ';',
+        code: 'Semicolon',
+        ctrlKey: !isMac,
+        metaKey: isMac,
+        bubbles: true,
+        cancelable: true,
+      })
     )
-    const latestTab = tabs[tabs.length - 1]
-    const closeButton = latestTab?.querySelector<HTMLButtonElement>(
-      '[data-testid="close-tab-button"]'
-    )
-    if (!closeButton) return false
-
-    closeButton.click()
-
-    return true
   })
-  if (!ok) throw new Error('could not locate close button for the spawned tab')
+}
+
+const waitForCommandPaletteClosed = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        (selector: string) => document.querySelector(selector) === null,
+        commandPaletteSelector
+      ),
+    {
+      timeout: 3_000,
+      interval: 100,
+      timeoutMsg: 'command palette did not close',
+    }
+  )
+}
+
+const closeActiveSession = async (): Promise<void> => {
+  await dispatchCommandPaletteShortcut()
+  await (
+    await $(commandPaletteSelector)
+  ).waitForDisplayed({
+    timeout: 3_000,
+  })
+
+  const input = await $(commandPaletteInputSelector)
+  await input.waitForDisplayed({ timeout: 3_000 })
+  await input.setValue(':close')
+  await browser.execute((selector: string) => {
+    document.querySelector<HTMLInputElement>(selector)?.focus()
+  }, commandPaletteInputSelector)
+  await browser.action('key').down(enterKey).up(enterKey).perform()
+  await browser.waitUntil(async () => (await readRustSessionCount()) === 1, {
+    timeout: 15_000,
+    interval: 500,
+    timeoutMsg: 'closing the spawned tab did not decrement count',
+  })
+  await waitForCommandPaletteClosed()
 }
 
 describe('Terminal session lifecycle', () => {
@@ -46,16 +92,9 @@ describe('Terminal session lifecycle', () => {
     // Baseline: useSessionManager boots with one default session.
     await waitForCount(1, 'default session never became active')
 
-    // Click the SessionTabs "+" button (aria-label="New session" since
-    // step 3 replaced TerminalZone's legacy tab-bar).
-    await clickBySelector('button[aria-label="New session"]')
+    await createNewSessionWithDefaults()
     await waitForCount(2, 'new tab did not register a second PTY session')
 
-    // Close the most recently spawned session by finding the close control
-    // inside the latest tab. The close button is intentionally hidden from
-    // the a11y tree and exposed to tests via data-testid.
-    await clickLatestSessionTabCloseButton()
-
-    await waitForCount(1, 'closing the spawned tab did not decrement count')
+    await closeActiveSession()
   })
 })

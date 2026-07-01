@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-30
-ref_count: 14
+last_updated: 2026-07-01
+ref_count: 17
 ---
 
 # Derived State Consistency
@@ -208,4 +208,52 @@ base data is technically "correct."
   Finish handler when submitted annotations exist. Added a regression test that
   draft-only empty-state feedback keeps Discard enabled while Finish is
   disabled and cannot open the popover.
+- **Commit:** same commit as this entry
+
+### 18. Range draft validity checked only the start line
+
+- **Source:** github-codex-connector | PR #643 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useReviewCommentDraft.ts`
+- **Finding:** Range comment drafts gained a `rangeEndLine`, but the diff
+  refresh guard still considered the draft current as soon as the start line
+  existed. If the end of the same-side range disappeared after a same-file
+  refresh, the UI could keep rendering and submitting a draft that pointed at a
+  non-existent end line.
+- **Fix:** Track every required endpoint for the target side and only keep the
+  draft current after both the start and optional range-end line have been seen.
+  Added same-side range regression tests for the valid and stale-end cases.
+- **Commit:** same commit as this entry
+
+### 19. Mouse add-comment reused a stale visual selection from another line
+
+- **Source:** github-claude | PR #643 round 1 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The gutter add-comment handler passed the clicked
+  line/side into the shared target builder, but the helper always preferred
+  `visualSelectedLines` whenever a visual range existed. A user could leave a
+  keyboard or drag visual range active, click the gutter plus on an unrelated
+  row, and silently create feedback for the old range instead of the clicked
+  line.
+- **Fix:** Only reuse the visual range when the clicked line and side are inside
+  that range; otherwise build a single-line target from the actual gutter click.
+  Added a regression test that clicks line 1 while a visual range covers lines
+  2-3.
+- **Commit:** same commit as this entry
+
+### 20. Editing range comments dropped the derived end-line target
+
+- **Source:** github-claude | PR #643 round 2 | 2026-07-01
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The edit-comment path rebuilt `annotationTarget` from the
+  annotation row only, preserving the start line and side but dropping
+  `metadata.target.rangeEndLine`. Editing an existing range comment therefore
+  collapsed the dialog back to a single-line target, and the subsequent update
+  could lose the range endpoint used by staleness detection.
+- **Fix:** When the annotation metadata carries a same-side range target,
+  rebuild the edit target from `startLine` plus `endLine`; otherwise keep the
+  single-line fallback. Added a regression test that opens an existing R1-R2
+  comment for edit and submits the updated text through the range dialog.
 - **Commit:** same commit as this entry

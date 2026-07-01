@@ -33,6 +33,7 @@ interface LineAnnotationTarget {
   filePath: string
   staged: boolean
   scope?: 'line'
+  rangeEndLine?: number
   editId?: string
 }
 
@@ -104,6 +105,10 @@ const draftToAnnotationTarget = (draft: FeedbackDraft): AnnotationTarget => {
     staged: draft.staged,
   }
 
+  if (draft.rangeEndLine !== undefined) {
+    target.rangeEndLine = draft.rangeEndLine
+  }
+
   if (draft.editId !== undefined) {
     target.editId = draft.editId
   }
@@ -141,6 +146,10 @@ const annotationTargetToDraft = (
     text,
   }
 
+  if (target.rangeEndLine !== undefined) {
+    draft.rangeEndLine = target.rangeEndLine
+  }
+
   if (target.editId !== undefined) {
     draft.editId = target.editId
   }
@@ -159,7 +168,7 @@ const annotationTargetKey = (target: AnnotationTarget): string => {
 
   return `${target.filePath}:${target.staged}:line:${target.side}:${
     target.lineNumber
-  }:${target.editId ?? 'draft'}`
+  }:${target.rangeEndLine ?? target.lineNumber}:${target.editId ?? 'draft'}`
 }
 
 export const isSameAnnotationTarget = (
@@ -173,6 +182,11 @@ const diffContainsAnnotationTarget = (
 ): boolean => {
   if (isFileAnnotationTarget(target)) {
     return true
+  }
+
+  const targetLines = new Set([target.lineNumber])
+  if (target.rangeEndLine !== undefined) {
+    targetLines.add(target.rangeEndLine)
   }
 
   for (const hunk of fileDiff.hunks) {
@@ -189,16 +203,20 @@ const diffContainsAnnotationTarget = (
       if (
         target.side === 'deletions' &&
         line.type !== 'added' &&
-        oldLineNumber === target.lineNumber
+        oldLineNumber !== undefined
       ) {
-        return true
+        targetLines.delete(oldLineNumber)
       }
 
       if (
         target.side === 'additions' &&
         line.type !== 'removed' &&
-        newLineNumber === target.lineNumber
+        newLineNumber !== undefined
       ) {
+        targetLines.delete(newLineNumber)
+      }
+
+      if (targetLines.size === 0) {
         return true
       }
 
@@ -373,7 +391,22 @@ export const useReviewCommentDraft = ({
       const draft: DiffLineAnnotation<ReviewComment> = {
         side: annotationTarget.side,
         lineNumber: annotationTarget.lineNumber,
-        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
+        metadata: {
+          id: DRAFT_ID,
+          text: '',
+          author: 'self',
+          createdAt: 0,
+          ...(annotationTarget.rangeEndLine === undefined
+            ? {}
+            : {
+                target: {
+                  scope: 'range' as const,
+                  side: annotationTarget.side,
+                  startLine: annotationTarget.lineNumber,
+                  endLine: annotationTarget.rangeEndLine,
+                },
+              }),
+        },
       }
 
       return [...realAnnotations, draft]

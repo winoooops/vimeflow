@@ -50,6 +50,7 @@ import {
 } from './hooks/useReviewCommentDraft'
 import { useToolbarState } from './hooks/useToolbarState'
 import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
+import { useVisualSelection } from './hooks/useVisualSelection'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
@@ -135,6 +136,35 @@ const keyboardConfirmCopy = (
     title: 'Discard file?',
     body: `Discard all changes in ${fileLabel}? This cannot be undone.`,
     variant: 'danger',
+  }
+}
+
+const commentTargetForLineOrRange = (
+  filePath: string,
+  staged: boolean,
+  lineNumber: number,
+  side: AnnotationSide,
+  selectedRange: SelectedLineRange | null
+): AnnotationTarget => {
+  const selectedRangeSide: AnnotationSide = selectedRange?.side ?? 'additions'
+
+  if (
+    selectedRange === null ||
+    selectedRangeSide !== side ||
+    lineNumber < selectedRange.start ||
+    lineNumber > selectedRange.end
+  ) {
+    return { lineNumber, side, filePath, staged }
+  }
+
+  return {
+    lineNumber: selectedRange.start,
+    side: selectedRangeSide,
+    filePath,
+    staged,
+    ...(selectedRange.end === selectedRange.start
+      ? {}
+      : { rangeEndLine: selectedRange.end }),
   }
 }
 
@@ -457,114 +487,6 @@ export const Panel = ({
       setKeyboardConfirmAction(next)
     },
     [focusDiffRoot]
-  )
-
-  const confirmCommentEditor = useCallback(
-    (text: string): void => {
-      if (annotationTarget === null) {
-        return
-      }
-
-      if (isFileAnnotationTarget(annotationTarget)) {
-        if (annotationTarget.editId !== undefined) {
-          feedback.updateAnnotation(
-            cwd,
-            annotationTarget.filePath,
-            annotationTarget.staged,
-            annotationTarget.editId,
-            { text }
-          )
-          closeCommentEditor()
-
-          return
-        }
-
-        const result = feedback.addAnnotation(
-          cwd,
-          annotationTarget.filePath,
-          annotationTarget.staged,
-          {
-            side: 'additions',
-            lineNumber: FILE_COMMENT_LINE_NUMBER,
-            metadata: {
-              id: nextFeedbackCommentId(),
-              text,
-              author: 'self',
-              createdAt: Date.now(),
-              target: { scope: 'file' },
-            },
-          }
-        )
-
-        if (result === 'cap-reached') {
-          notifyInfo(
-            'Feedback limit reached (50 comments). Finish or discard before adding more.'
-          )
-        } else {
-          closeCommentEditor()
-        }
-
-        return
-      }
-
-      if (selectedFilePath === null) {
-        closeCommentEditor()
-
-        return
-      }
-
-      if (
-        annotationTarget.filePath !== selectedFilePath ||
-        annotationTarget.staged !== selectedFileStaged
-      ) {
-        closeCommentEditor()
-
-        return
-      }
-
-      if (annotationTarget.editId !== undefined) {
-        feedback.updateAnnotation(
-          cwd,
-          selectedFilePath,
-          selectedFileStaged,
-          annotationTarget.editId,
-          { text }
-        )
-        closeCommentEditor()
-      } else {
-        const result = feedback.addAnnotation(
-          cwd,
-          selectedFilePath,
-          selectedFileStaged,
-          {
-            side: annotationTarget.side,
-            lineNumber: annotationTarget.lineNumber,
-            metadata: {
-              id: nextFeedbackCommentId(),
-              text,
-              author: 'self',
-              createdAt: Date.now(),
-            },
-          }
-        )
-        if (result === 'cap-reached') {
-          notifyInfo(
-            'Feedback limit reached (50 comments). Finish or discard before adding more.'
-          )
-        } else {
-          closeCommentEditor()
-        }
-      }
-    },
-    [
-      closeCommentEditor,
-      annotationTarget,
-      selectedFilePath,
-      selectedFileStaged,
-      feedback,
-      cwd,
-      notifyInfo,
-    ]
   )
 
   const sendingFeedbackRef = useRef(false)
@@ -909,6 +831,7 @@ export const Panel = ({
     scrollHunkIntoView,
     scrollTargetIntoView,
     selectedLines: reviewSelectedLines,
+    targetIndexFromPointerEvent,
     targetIndexForHunk,
   } = useReviewTargetNavigation({
     annotations: realAnnotations,
@@ -918,6 +841,36 @@ export const Panel = ({
     fileKey: reviewTargetFileKey,
     onHunkIndexChange: setFocusedHunkIndex,
     scrollBodyRef: diffScrollBodyRef,
+  })
+
+  const {
+    active: visualMode,
+    cancel: cancelVisualSelection,
+    moveLine: moveVisualSelectionLine,
+    moveMouse: moveMouseVisualSelection,
+    moveSide: moveVisualSelectionSide,
+    selectedLines: visualSelectedLines,
+    start: startVisualSelection,
+    startMouse: startMouseVisualSelection,
+    stopMouse: stopMouseVisualSelection,
+    yank: yankVisualSelection,
+  } = useVisualSelection({
+    activeHunks: activeResponse?.fileDiff.hunks ?? null,
+    activeTargetIndex: reviewTargetIndex,
+    activateTarget: activateReviewTarget,
+    diffStyle: effectiveDiffStyle,
+    fileKey: reviewTargetFileKey,
+    focusDiffRoot,
+    moveTargetLine,
+    moveTargetSide,
+    notifyInfo,
+    onPointerHover: handleBodyPointerMove,
+    scrollTargetIntoView,
+    shouldIgnorePointerTarget: (target): boolean =>
+      target instanceof Element &&
+      target.closest(DIFF_NATIVE_FOCUS_SELECTOR) !== null,
+    targetIndexFromPointerEvent,
+    targets: reviewTargets,
   })
 
   const onPrevHunk = useCallback((): void => {
@@ -963,7 +916,7 @@ export const Panel = ({
   ])
 
   const selectedLines: SelectedLineRange | null =
-    reviewSelectedLines ?? navSelection
+    visualSelectedLines ?? reviewSelectedLines ?? navSelection
 
   // Memoize the Pierre input pair on response identity. Without this,
   // `toPierreInputs(response)` would mint fresh { oldFile, newFile } object
@@ -1046,14 +999,6 @@ export const Panel = ({
     [activateTargetNearViewportCenter, focusDiffRoot]
   )
 
-  const moveReviewTargetLine = useCallback(
-    (delta: number): void => {
-      moveTargetLine(delta)
-      focusDiffRoot()
-    },
-    [focusDiffRoot, moveTargetLine]
-  )
-
   const moveReviewTargetHunk = useCallback(
     (delta: number): void => {
       if (!activeResponse) {
@@ -1105,20 +1050,43 @@ export const Panel = ({
   )
 
   const openSelectedComment = useCallback((): void => {
-    if (selectedFilePath === null || reviewTarget === null) {
+    const selectedRange = visualSelectedLines
+
+    if (
+      selectedFilePath === null ||
+      (selectedRange === null && reviewTarget === null)
+    ) {
       notifyInfo('No diff line selected for comment.')
 
       return
     }
 
-    const nextTarget: AnnotationTarget = {
-      lineNumber: reviewTarget.lineNumber,
-      side: reviewTarget.side,
-      filePath: selectedFilePath,
-      staged: selectedFileStaged,
+    let targetLineNumber: number
+    let targetSide: AnnotationSide
+
+    if (selectedRange === null) {
+      if (reviewTarget === null) {
+        notifyInfo('No diff line selected for comment.')
+
+        return
+      }
+
+      targetLineNumber = reviewTarget.lineNumber
+      targetSide = reviewTarget.side
+      activateReviewTarget(reviewTargetIndex)
+    } else {
+      targetLineNumber = selectedRange.start
+      targetSide = selectedRange.side ?? 'additions'
     }
 
-    activateReviewTarget(reviewTargetIndex)
+    const nextTarget = commentTargetForLineOrRange(
+      selectedFilePath,
+      selectedFileStaged,
+      targetLineNumber,
+      targetSide,
+      selectedRange
+    )
+
     setCommentDraftText((current) => {
       if (annotationTarget === null) {
         return ''
@@ -1137,6 +1105,7 @@ export const Panel = ({
     selectedFileStaged,
     setAnnotationTarget,
     setCommentDraftText,
+    visualSelectedLines,
   ])
 
   const openFileCommentEditor = useCallback(
@@ -1177,14 +1146,6 @@ export const Panel = ({
       openFileCommentEditor(file)
     },
     [openFileCommentEditor, selectDiffFile]
-  )
-
-  const moveReviewTargetSide = useCallback(
-    (side: AnnotationSide): void => {
-      moveTargetSide(side)
-      focusDiffRoot()
-    },
-    [focusDiffRoot, moveTargetSide]
   )
 
   // Opens the y/n guard for destructive or staging keyboard actions.
@@ -1331,11 +1292,139 @@ export const Panel = ({
     selectedFilePath,
   ])
 
+  const confirmCommentEditor = useCallback(
+    (text: string): void => {
+      if (annotationTarget === null) {
+        return
+      }
+
+      if (isFileAnnotationTarget(annotationTarget)) {
+        if (annotationTarget.editId !== undefined) {
+          feedback.updateAnnotation(
+            cwd,
+            annotationTarget.filePath,
+            annotationTarget.staged,
+            annotationTarget.editId,
+            { text }
+          )
+          cancelVisualSelection(false)
+          closeCommentEditor()
+
+          return
+        }
+
+        const result = feedback.addAnnotation(
+          cwd,
+          annotationTarget.filePath,
+          annotationTarget.staged,
+          {
+            side: 'additions',
+            lineNumber: FILE_COMMENT_LINE_NUMBER,
+            metadata: {
+              id: nextFeedbackCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+              target: { scope: 'file' },
+            },
+          }
+        )
+
+        if (result === 'cap-reached') {
+          notifyInfo(
+            'Feedback limit reached (50 comments). Finish or discard before adding more.'
+          )
+        } else {
+          cancelVisualSelection(false)
+          closeCommentEditor()
+        }
+
+        return
+      }
+
+      if (selectedFilePath === null) {
+        closeCommentEditor()
+
+        return
+      }
+
+      if (
+        annotationTarget.filePath !== selectedFilePath ||
+        annotationTarget.staged !== selectedFileStaged
+      ) {
+        closeCommentEditor()
+
+        return
+      }
+
+      if (annotationTarget.editId !== undefined) {
+        feedback.updateAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          annotationTarget.editId,
+          { text }
+        )
+        cancelVisualSelection(false)
+        closeCommentEditor()
+      } else {
+        const result = feedback.addAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          {
+            side: annotationTarget.side,
+            lineNumber: annotationTarget.lineNumber,
+            metadata: {
+              id: nextFeedbackCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+              ...(annotationTarget.rangeEndLine === undefined
+                ? {}
+                : {
+                    target: {
+                      scope: 'range' as const,
+                      side: annotationTarget.side,
+                      startLine: annotationTarget.lineNumber,
+                      endLine: annotationTarget.rangeEndLine,
+                    },
+                  }),
+            },
+          }
+        )
+        if (result === 'cap-reached') {
+          notifyInfo(
+            'Feedback limit reached (50 comments). Finish or discard before adding more.'
+          )
+        } else {
+          cancelVisualSelection(false)
+          closeCommentEditor()
+        }
+      }
+    },
+    [
+      annotationTarget,
+      closeCommentEditor,
+      cwd,
+      feedback,
+      notifyInfo,
+      selectedFilePath,
+      selectedFileStaged,
+      cancelVisualSelection,
+    ]
+  )
+
+  const cancelCommentEditor = useCallback((): void => {
+    cancelVisualSelection(false)
+    closeCommentEditor()
+  }, [cancelVisualSelection, closeCommentEditor])
+
   useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
     confirming: keyboardConfirmAction !== null,
-    onMoveLine: moveReviewTargetLine,
+    onMoveLine: moveVisualSelectionLine,
     onScrollPage: scrollDiffPage,
     onPreviousFile: (): void => goToFile(-1),
     onNextFile: (): void => goToFile(1),
@@ -1355,7 +1444,11 @@ export const Panel = ({
     onDiscardHunk: (): void => openKeyboardConfirm('discard-hunk'),
     onDiscardFile: (): void => openKeyboardConfirm('discard-file'),
     onToggleView: toggleDiffStyle,
-    onMoveLineSide: moveReviewTargetSide,
+    onMoveLineSide: moveVisualSelectionSide,
+    visualMode,
+    onStartVisualSelection: startVisualSelection,
+    onYankSelection: yankVisualSelection,
+    onCancelVisualSelection: cancelVisualSelection,
     onConfirm: confirmKeyboardAction,
     onCancelConfirm: cancelKeyboardConfirm,
   })
@@ -1377,12 +1470,15 @@ export const Panel = ({
 
       deactivateReviewTarget()
 
-      const nextTarget: AnnotationTarget = {
+      const selectedRange = visualSelectedLines
+
+      const nextTarget = commentTargetForLineOrRange(
+        selectedFilePath,
+        selectedFileStaged,
         lineNumber,
         side,
-        filePath: selectedFilePath,
-        staged: selectedFileStaged,
-      }
+        selectedRange
+      )
 
       setCommentDraftText((current) => {
         if (annotationTarget === null) {
@@ -1402,16 +1498,24 @@ export const Panel = ({
       selectedFileStaged,
       setCommentDraftText,
       setAnnotationTarget,
+      visualSelectedLines,
     ]
   )
 
   const handleBodyEditComment = useCallback(
     (annotation: DiffLineAnnotation<ReviewComment>): void => {
+      const rangeTarget =
+        annotation.metadata.target?.scope === 'range' &&
+        annotation.metadata.target.side === annotation.side
+          ? annotation.metadata.target
+          : null
+
       setAnnotationTarget({
-        lineNumber: annotation.lineNumber,
+        lineNumber: rangeTarget?.startLine ?? annotation.lineNumber,
         side: annotation.side,
         filePath: selectedFilePath ?? '',
         staged: selectedFileStaged,
+        ...(rangeTarget === null ? {} : { rangeEndLine: rangeTarget.endLine }),
         editId: annotation.metadata.id,
       })
       setCommentDraftText(annotation.metadata.text, false)
@@ -1618,7 +1722,7 @@ export const Panel = ({
           open={fileCommentDraftIsVisible}
           onOpenChange={(open): void => {
             if (!open) {
-              closeCommentEditor()
+              cancelCommentEditor()
             }
           }}
           placement="bottom-start"
@@ -1639,7 +1743,7 @@ export const Panel = ({
               setCommentDraftText(text, false)
             }}
             onConfirm={confirmCommentEditor}
-            onCancel={closeCommentEditor}
+            onCancel={cancelCommentEditor}
           />
         </Popover>
         {selectedFileEntry !== undefined &&
@@ -1696,7 +1800,10 @@ export const Panel = ({
           lineAnnotations={lineAnnotations}
           annotationTarget={annotationTarget}
           commentDraftText={commentDraftText}
-          onPointerMove={handleBodyPointerMove}
+          onPointerDown={startMouseVisualSelection}
+          onPointerMove={moveMouseVisualSelection}
+          onPointerUp={stopMouseVisualSelection}
+          onPointerLeave={stopMouseVisualSelection}
           onAddComment={handleBodyAddComment}
           onEditComment={handleBodyEditComment}
           onDeleteComment={removeFeedbackAnnotation}
@@ -1704,7 +1811,7 @@ export const Panel = ({
             setCommentDraftText(text, false)
           }}
           onConfirmComment={confirmCommentEditor}
-          onCancelComment={closeCommentEditor}
+          onCancelComment={cancelCommentEditor}
         />
       </div>
     </div>

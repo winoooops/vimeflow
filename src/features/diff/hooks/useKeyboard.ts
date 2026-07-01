@@ -25,6 +25,10 @@ export interface UseKeyboardOptions {
   onDiscardFile: () => void
   onToggleView: () => void
   onMoveLineSide: (side: 'deletions' | 'additions') => void
+  visualMode: boolean
+  onStartVisualSelection: () => void
+  onYankSelection: () => void
+  onCancelVisualSelection: () => void
   onConfirm: () => void
   onCancelConfirm: () => void
 }
@@ -69,6 +73,10 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onDiscardFile,
     onToggleView,
     onMoveLineSide,
+    visualMode,
+    onStartVisualSelection,
+    onYankSelection,
+    onCancelVisualSelection,
     onConfirm,
     onCancelConfirm,
   } = options
@@ -147,6 +155,14 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         return
       }
 
+      if (visualMode && event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        onCancelVisualSelection()
+
+        return
+      }
+
       const handlers: Partial<Record<string, () => void>> = {
         j: () => onMoveLine(1),
         k: () => onMoveLine(-1),
@@ -166,6 +182,8 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         t: onToggleView,
         h: () => onMoveLineSide('deletions'),
         l: () => onMoveLineSide('additions'),
+        v: onStartVisualSelection,
+        y: onYankSelection,
       }
 
       const handler = handlers[event.key]
@@ -202,6 +220,10 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onDiscardFile,
     onToggleView,
     onMoveLineSide,
+    visualMode,
+    onStartVisualSelection,
+    onYankSelection,
+    onCancelVisualSelection,
     onConfirm,
     onCancelConfirm,
   ])

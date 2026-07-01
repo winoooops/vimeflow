@@ -46,6 +46,21 @@ const LoadingCard = (): ReactElement => (
   </div>
 )
 
+const annotationTargetLabel = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): string | undefined => {
+  const target = annotation.metadata.target
+  if (target?.scope !== 'range') {
+    return undefined
+  }
+
+  const prefix = target.side === 'deletions' ? 'L' : 'R'
+
+  return target.startLine === target.endLine
+    ? `line ${prefix}${target.startLine}`
+    : `lines ${prefix}${target.startLine}-${prefix}${target.endLine}`
+}
+
 interface DiffCacheLike {
   has: (cacheKey: string) => boolean
 }
@@ -127,7 +142,10 @@ interface PanelBodyProps {
   lineAnnotations: DiffLineAnnotation<ReviewComment>[]
   annotationTarget: AnnotationTarget | null
   commentDraftText: string
+  onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerUp?: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerLeave?: (event: ReactPointerEvent<HTMLDivElement>) => void
   onAddComment: (lineNumber: number, side: AnnotationSide) => void
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
@@ -148,7 +166,10 @@ export const PanelBody = ({
   lineAnnotations,
   annotationTarget,
   commentDraftText,
+  onPointerDown = undefined,
   onPointerMove,
+  onPointerUp = undefined,
+  onPointerLeave = undefined,
   onAddComment,
   onEditComment,
   onDeleteComment,
@@ -166,7 +187,10 @@ export const PanelBody = ({
       ref={scrollBodyRef}
       data-testid="diff-scroll-body"
       className="min-h-0 flex-1 overflow-auto"
+      onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
     >
       {diffError ? (
         <ErrorCard message={diffError.message} />
@@ -213,6 +237,7 @@ export const PanelBody = ({
                     }`}
                     lineNumber={annotation.lineNumber}
                     side={annotation.side}
+                    targetLabel={annotationTargetLabel(annotation)}
                     value={commentDraftText}
                     onTextChange={onCommentTextChange}
                     onConfirm={onConfirmComment}

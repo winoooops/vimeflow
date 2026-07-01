@@ -60,6 +60,78 @@ const assertVisiblePaneIds = async (
   }
 }
 
+const switchToLayout = async (
+  menuLabel: string,
+  pillLabel = menuLabel
+): Promise<void> => {
+  const clickedVisiblePill = await browser.execute((layoutLabel: string) => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `button[aria-label="${layoutLabel}"]`
+    )
+    if (button === null) {
+      return false
+    }
+
+    button.click()
+
+    return true
+  }, pillLabel)
+
+  if (clickedVisiblePill) {
+    return
+  }
+
+  await clickBySelector('button[aria-label="Configure displayed layouts"]')
+
+  const revealed = await browser.execute((layoutLabel: string) => {
+    const row = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')
+    ).find((candidate) => (candidate.textContent ?? '').includes(layoutLabel))
+
+    if (row === undefined) {
+      return false
+    }
+
+    if (row.getAttribute('aria-checked') !== 'true') {
+      row.click()
+    }
+
+    return true
+  }, menuLabel)
+
+  if (!revealed) {
+    throw new Error(`layout display menu had no ${menuLabel} row`)
+  }
+
+  await browser.execute(() => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  })
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        (layoutLabel: string) =>
+          document.querySelector(`button[aria-label="${layoutLabel}"]`) !==
+          null,
+        pillLabel
+      ),
+    {
+      timeout: 3_000,
+      interval: 100,
+      timeoutMsg: `${pillLabel} layout pill did not become visible`,
+    }
+  )
+
+  await clickBySelector(`button[aria-label="${pillLabel}"]`)
+}
+
 describe('Pane lifecycle split focus', () => {
   it('keeps the workspace visible when focusing between added split panes', async () => {
     await (
@@ -68,7 +140,7 @@ describe('Pane lifecycle split focus', () => {
       timeout: 20_000,
     })
 
-    await clickBySelector('button[aria-label="Vertical split"]')
+    await switchToLayout('Vertical split')
 
     await browser.waitUntil(
       async () =>
@@ -93,7 +165,7 @@ describe('Pane lifecycle split focus', () => {
     await clickBySelector('[data-testid="split-view-slot"][data-pane-id="p1"]')
     await assertWorkspaceVisible(2, 'focusing p1')
 
-    await clickBySelector('button[aria-label="Single"]')
+    await switchToLayout('Single', 'Focus active pane')
     await waitForPaneCount(1)
     await assertWorkspaceVisible(1, 'switching to single layout')
     await assertVisiblePaneIds(['p1'])

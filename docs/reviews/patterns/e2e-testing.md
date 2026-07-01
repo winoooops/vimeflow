@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-06-30
-ref_count: 10
+last_updated: 2026-07-01
+ref_count: 14
 ---
 
 # E2E Testing
@@ -271,4 +271,59 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
 - **Finding:** The Electron core suite still planned all five spec files as workers even though the root config set `maxInstances: 1`. In CI this let multiple Electron sessions contend for the same desktop-app resources and produced deterministic startup selector failures such as missing layout buttons, `FILES`, and `editor-panel`.
 - **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
+- **Commit:** same commit as this entry
+
+### 26. Core E2E specs assumed visible controls that moved behind adaptive UI
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`,
+  `tests/e2e/core/specs/files-to-editor.spec.ts`,
+  `tests/e2e/core/specs/ipc-roundtrip.spec.ts`,
+  `tests/e2e/core/specs/navigation.spec.ts`
+- **Finding:** The core smoke suite still clicked layout buttons and sidebar
+  tabs by visible labels that are no longer always present. Hidden split
+  layouts now require the layout configurator before their toolbar buttons
+  appear, the file tab can render as an icon-only control with an aria-label,
+  and the editor panel is behind the dock toggle by default.
+- **Fix:** Teach the browser-pane layout helper to expose hidden layouts through
+  the configurator before selecting them, use the stable `aria-label="FILES"`
+  selector for file-tab navigation, and explicitly open the dock plus select the
+  Editor tab before waiting for the editor panel.
+- **Commit:** same commit as this entry
+
+### 27. Terminal E2E new-session selector matched the sidebar dialog trigger
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`
+- **Finding:** Terminal smoke specs clicked the first
+  `button[aria-label="New session"]` in the document. The workspace now has both
+  a sidebar New session button, which opens the dialog, and a tab-strip plus
+  button, which immediately creates a terminal session. The ambiguous selector
+  could hit the sidebar control, leaving the test waiting forever for a second
+  terminal pane that was never requested.
+- **Fix:** Scope terminal-session creation clicks to
+  `[data-testid="session-tabs"] button[aria-label="New session"]` so the specs
+  target the tab-strip plus control.
+- **Commit:** same commit as this entry
+
+### 28. Terminal E2E must complete the new-session dialog flow
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/shared/actions.ts`,
+  `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`,
+  `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The terminal and agent smoke specs still treated "New session" as
+  a one-click session creation action. After the workspace moved creation
+  behind `NewSessionDialog`, the first click only opened the dialog, so tests
+  waited for a second PTY or bridge-enabled session that was never spawned.
+- **Fix:** Centralize E2E session creation in `createNewSessionWithDefaults`,
+  which clicks the sidebar trigger and then the visible "Create session"
+  confirmation. Updated affected specs to use the helper, and closed the
+  lifecycle test's spawned active session via the command palette `:close`
+  command before asserting the PTY count decrements.
 - **Commit:** same commit as this entry

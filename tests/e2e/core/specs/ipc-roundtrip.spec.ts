@@ -5,7 +5,7 @@ describe('IPC round-trip', () => {
     // FilesView's root toggles from the Tailwind `hidden` utility class to
     // `flex` (HTML `hidden` attribute is NOT used — see SessionsView /
     // FilesView source for the Tailwind v4 cascade-layer rationale).
-    const filesTab = await $('button=FILES')
+    const filesTab = await $('button[aria-label="FILES"]')
     await filesTab.waitForDisplayed({ timeout: 15_000 })
     await filesTab.click()
 

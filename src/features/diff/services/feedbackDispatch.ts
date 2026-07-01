@@ -46,6 +46,12 @@ const formatAnnotationTarget = (
     return `> ${filePath} (file) [${stagedLabel}]`
   }
 
+  if (annotation.metadata.target?.scope === 'range') {
+    const { startLine, endLine, side } = annotation.metadata.target
+
+    return `> ${filePath}:${startLine}-${endLine} (${side}) [${stagedLabel}]`
+  }
+
   return `> ${filePath}:${annotation.lineNumber} (${annotation.side}) [${stagedLabel}]`
 }
 

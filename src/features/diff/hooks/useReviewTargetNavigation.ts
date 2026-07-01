@@ -56,6 +56,9 @@ interface UseReviewTargetNavigationReturn {
     delta: number
   ) => void
   selectedLines: SelectedLineRange | null
+  targetIndexFromPointerEvent: (
+    event: ReactPointerEvent<HTMLElement>
+  ) => number | null
   targetIndexForHunk: (hunkIndex: number) => number
   targets: ReviewNavigationTarget[]
 }
@@ -798,15 +801,21 @@ export const useReviewTargetNavigation = ({
   )
 
   // Pointer hover updates the same current target used by shortcuts.
+  const targetIndexFromPointerEvent = useCallback(
+    (event: ReactPointerEvent<HTMLElement>): number | null =>
+      reviewTargetIndexFromPointerEvent(event, targets),
+    [targets]
+  )
+
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLElement>): void => {
-      const targetIndex = reviewTargetIndexFromPointerEvent(event, targets)
+      const targetIndex = targetIndexFromPointerEvent(event)
 
       if (targetIndex !== null) {
         activateTarget(targetIndex)
       }
     },
-    [activateTarget, targets]
+    [activateTarget, targetIndexFromPointerEvent]
   )
 
   return {
@@ -823,6 +832,7 @@ export const useReviewTargetNavigation = ({
     scrollHunkIntoView,
     scrollTargetIntoView,
     selectedLines,
+    targetIndexFromPointerEvent,
     targetIndexForHunk,
     targets,
   }

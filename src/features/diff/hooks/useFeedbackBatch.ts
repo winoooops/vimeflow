@@ -19,7 +19,14 @@ export interface ReviewComment {
   text: string
   author: 'self'
   createdAt: number
-  target?: { scope: 'file' }
+  target?:
+    | { scope: 'file' }
+    | {
+        scope: 'range'
+        side: AnnotationSide
+        startLine: number
+        endLine: number
+      }
 }
 
 /**
@@ -230,6 +237,7 @@ export type FeedbackDraft =
       scope?: 'line'
       side: AnnotationSide
       lineNumber: number
+      rangeEndLine?: number
     })
   | (FeedbackDraftBase & {
       scope: 'file'

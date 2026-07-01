@@ -80,6 +80,10 @@ const renderKeyboard = (
     onDiscardFile: vi.fn(),
     onToggleView: vi.fn(),
     onMoveLineSide: vi.fn(),
+    visualMode: false,
+    onStartVisualSelection: vi.fn(),
+    onYankSelection: vi.fn(),
+    onCancelVisualSelection: vi.fn(),
     onConfirm: vi.fn(),
     onCancelConfirm: vi.fn(),
     ...overrides,
@@ -201,6 +205,31 @@ describe('useKeyboard', () => {
 
     expect(props.onMoveLineSide).toHaveBeenNthCalledWith(1, 'deletions')
     expect(props.onMoveLineSide).toHaveBeenNthCalledWith(2, 'additions')
+  })
+
+  test('v starts visual mode and y yanks the selection', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('v')
+    dispatch('y')
+
+    expect(props.onStartVisualSelection).toHaveBeenCalledOnce()
+    expect(props.onYankSelection).toHaveBeenCalledOnce()
+  })
+
+  test('Escape cancels only while visual mode is active', () => {
+    const inactive = renderKeyboard()
+
+    dispatch('Escape')
+    expect(inactive.props.onCancelVisualSelection).not.toHaveBeenCalled()
+    inactive.unmount()
+
+    const active = renderKeyboard({ visualMode: true })
+    const event = dispatch('Escape')
+
+    expect(active.props.onCancelVisualSelection).toHaveBeenCalledOnce()
+    expect(event.preventDefaultSpy).toHaveBeenCalledOnce()
+    expect(event.stopPropagationSpy).toHaveBeenCalledOnce()
   })
 
   test('Ctrl+D and Ctrl+U scroll the current file', () => {
@@ -346,6 +375,10 @@ describe('useKeyboard', () => {
       onDiscardFile: vi.fn(),
       onToggleView: vi.fn(),
       onMoveLineSide: vi.fn(),
+      visualMode: false,
+      onStartVisualSelection: vi.fn(),
+      onYankSelection: vi.fn(),
+      onCancelVisualSelection: vi.fn(),
       onConfirm: vi.fn(),
       onCancelConfirm: vi.fn(),
     }

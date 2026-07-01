@@ -208,7 +208,89 @@ const waitForPaneKinds = async (
 
 const switchToLayout = async (layout: LayoutShape): Promise<void> => {
   await waitForActiveSplitView()
-  await clickBySelector(`button[aria-label="${layout.name}"]`)
+
+  const alreadyActive = await browser.execute((layoutId: LayoutId) => {
+    const splitViews = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
+    )
+    const splitView = splitViews.find((candidate) => {
+      const rect = candidate.getBoundingClientRect()
+
+      return rect.width > 0 && rect.height > 0
+    })
+
+    return splitView?.dataset.layout === layoutId
+  }, layout.id)
+
+  if (alreadyActive) {
+    return
+  }
+
+  const clickedVisiblePill = await browser.execute((label: string) => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`
+    )
+    if (button === null) {
+      return false
+    }
+
+    button.click()
+
+    return true
+  }, layout.name)
+
+  if (!clickedVisiblePill) {
+    await clickBySelector('button[aria-label="Configure displayed layouts"]')
+
+    const revealed = await browser.execute((label: string) => {
+      const row = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          '[role="menuitemcheckbox"]'
+        )
+      ).find((candidate) => (candidate.textContent ?? '').includes(label))
+
+      if (row === undefined) {
+        return false
+      }
+
+      if (row.getAttribute('aria-checked') !== 'true') {
+        row.click()
+      }
+
+      return true
+    }, layout.name)
+
+    if (!revealed) {
+      throw new Error(`layout display menu had no ${layout.name} row`)
+    }
+
+    await browser.execute(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    })
+
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          (label: string) =>
+            document.querySelector(`button[aria-label="${label}"]`) !== null,
+          layout.name
+        ),
+      {
+        timeout: 3_000,
+        interval: 100,
+        timeoutMsg: `${layout.name} layout pill did not become visible`,
+      }
+    )
+
+    await clickBySelector(`button[aria-label="${layout.name}"]`)
+  }
 
   await browser.waitUntil(
     async () =>
