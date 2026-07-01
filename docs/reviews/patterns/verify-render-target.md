@@ -2,8 +2,8 @@
 id: verify-render-target
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-05-24
-ref_count: 0
+last_updated: 2026-07-01
+ref_count: 1
 ---
 
 # Verify Render Target
@@ -39,3 +39,19 @@ is load-bearing.
 - **Finding:** PR #264 added `thin-scrollbar` to FilesPanel's container, but `grep -rn "FilesPanel\b" --include="*.tsx" --include="*.ts" src/` finds zero call sites outside the file itself — FilesPanel uses `mockFileTree` and appears to be a stub pending the sidebar-tabs rework. The PR's test plan even said "open the sidebar Files panel", but the surface a user actually sees there is `FileExplorer` (which was correctly patched in the same PR at line 103), not FilesPanel. The class on the unmounted component had zero runtime payoff and obscured the fact that the sidebar file-tree scroll surface was already covered by the FileExplorer change.
 - **Fix:** Reverted the FilesPanel className edit. Updated the changelog to say "sidebar file explorer" (singular, naming the live surface) instead of "sidebar file panels" (plural, implying both unimported and imported components were patched). Code-review heuristic: before touching a component to fix the "X kind of UI surface", confirm the component is actually rendered — `grep -n "<\?ComponentName\b" src/` for usages, and if all hits live in the component's own file or sibling tests, the component is dead code. A styling edit on dead code is not the same fix as a styling edit on the live surface.
 - **Commit:** same commit as this entry
+
+### 3. Constrain file-level comment panel height
+
+- **Source:** github-codex-connector | PR #641 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The file-level comments panel was `shrink-0` with no maximum
+  height or internal scroll surface while its parent pane was
+  `overflow-hidden`. With many file-level comments, the panel could consume
+  the right column and squeeze or clip the diff body instead of keeping the
+  diff usable.
+- **Fix:** Added a bounded outer panel height and moved the rendered comment
+  rows into a `min-h-0 overflow-y-auto` list. Extended the existing panel test
+  to assert the bounded container and scrollable list classes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this
+  line)

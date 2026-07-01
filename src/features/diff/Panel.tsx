@@ -1646,37 +1646,42 @@ export const Panel = ({
         fileCommentsForSelectedFile.length > 0 ? (
           <div
             data-testid="file-level-comments-panel"
-            className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
+            className="flex max-h-56 shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
           >
             <div className="px-2 text-xs font-medium text-on-surface-variant">
               Commented on file
             </div>
-            {fileCommentsForSelectedFile.map((annotation) => (
-              <ReviewCommentRow
-                key={annotation.metadata.id}
-                comment={annotation.metadata}
-                editShortcut="Shift+U"
-                deleteShortcut={null}
-                onEdit={(): void => {
-                  setAnnotationTarget({
-                    scope: 'file',
-                    filePath: selectedFileEntry.path,
-                    staged: selectedFileEntry.staged,
-                    editId: annotation.metadata.id,
-                  })
-                  setCommentDraftText(annotation.metadata.text, false)
-                }}
-                onDelete={(): void => {
-                  focusDiffRoot()
-                  feedback.removeAnnotation(
-                    cwd,
-                    selectedFileEntry.path,
-                    selectedFileEntry.staged,
-                    annotation.metadata.id
-                  )
-                }}
-              />
-            ))}
+            <div
+              data-testid="file-level-comments-list"
+              className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
+            >
+              {fileCommentsForSelectedFile.map((annotation) => (
+                <ReviewCommentRow
+                  key={annotation.metadata.id}
+                  comment={annotation.metadata}
+                  editShortcut="Shift+U"
+                  deleteShortcut={null}
+                  onEdit={(): void => {
+                    setAnnotationTarget({
+                      scope: 'file',
+                      filePath: selectedFileEntry.path,
+                      staged: selectedFileEntry.staged,
+                      editId: annotation.metadata.id,
+                    })
+                    setCommentDraftText(annotation.metadata.text, false)
+                  }}
+                  onDelete={(): void => {
+                    focusDiffRoot()
+                    feedback.removeAnnotation(
+                      cwd,
+                      selectedFileEntry.path,
+                      selectedFileEntry.staged,
+                      annotation.metadata.id
+                    )
+                  }}
+                />
+              ))}
+            </div>
           </div>
         ) : null}
         <PanelBody

@@ -2978,6 +2978,10 @@ describe('Panel', () => {
         'file-level-comments-panel'
       )
 
+      const commentList = within(fileCommentsPanel).getByTestId(
+        'file-level-comments-list'
+      )
+
       expect(
         within(fileCommentsPanel).getByText('Commented on file')
       ).toBeInTheDocument()
@@ -2991,6 +2995,9 @@ describe('Panel', () => {
           'Review the whole file'
         )
       ).not.toBeInTheDocument()
+
+      expect(fileCommentsPanel).toHaveClass('max-h-56')
+      expect(commentList).toHaveClass('overflow-y-auto')
     })
 
     test('keyboard Shift+U edits the selected file-level comment', async (): Promise<void> => {
