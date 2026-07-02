@@ -62,7 +62,7 @@ export interface SplitViewProps {
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
-  onSessionRestart?: (sessionId: string) => void
+  onSessionRestart?: (sessionId: string, paneId?: string) => void
   onSetActivePane?: (sessionId: string, paneId: string) => void
   onBrowserPaneUrlChange?: (
     sessionId: string,

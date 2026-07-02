@@ -213,6 +213,7 @@ export const AgentStatusCard = ({
   return (
     <div
       data-testid="sidebar-agent-status-card"
+      data-agent-state={isShell ? 'idle' : 'active'}
       style={{
         position: 'relative',
         borderRadius: 13,

@@ -4897,6 +4897,101 @@ describe('useSessionManager', () => {
     expect(restarted.panes[0].agentType).toBe('generic')
   })
 
+  test('pane-keyed restartSession targets the requested inactive pane', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'horizontal',
+          workingDirectory: '/active',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-active',
+              cwd: '/active',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+            {
+              kind: 'shell',
+              paneId: 'p1',
+              paneIndex: 1,
+              active: false,
+              ptyId: 'pty-side',
+              cwd: '/side',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-active',
+      sessions: [
+        {
+          id: 'pty-active',
+          cwd: '/active',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'pty-side',
+          cwd: '/side',
+          status: {
+            kind: 'Exited',
+            exit_code: 0,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-side-new',
+      pid: 2,
+      cwd: '/side',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    act(() => result.current.restartSession('ws-shell', 'p1'))
+
+    await waitFor(() =>
+      expect(
+        result.current.sessions[0].panes.find((pane) => pane.id === 'p1')?.ptyId
+      ).toBe('pty-side-new')
+    )
+
+    expect(service.spawn).toHaveBeenCalledWith({
+      cwd: '/side',
+      env: {},
+      enableAgentBridge: true,
+    })
+    expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-side' })
+    expect(
+      result.current.sessions[0].panes.find((pane) => pane.id === 'p0')?.ptyId
+    ).toBe('pty-active')
+  })
+
   test('pane-keyed removeSession leaves session visible when pane kill fails', async () => {
     const service = createMockService()
     service.kill = vi.fn().mockRejectedValue(new Error('KillFailed'))

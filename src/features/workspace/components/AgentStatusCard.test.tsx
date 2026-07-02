@@ -29,6 +29,10 @@ describe('AgentStatusCard', () => {
     render(<AgentStatusCard title="claude-sonnet-4-6" />)
 
     expect(screen.getByText('claude-sonnet-4-6')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'active'
+    )
   })
 
   test('splits a "(<size> context)" title into a name + compact context badge', () => {
@@ -80,6 +84,11 @@ describe('AgentStatusCard', () => {
     expect(
       screen.getByTestId('agent-status-card-shell-body')
     ).toBeInTheDocument()
+
+    expect(screen.getByTestId('sidebar-agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'idle'
+    )
     expect(screen.getByText('No active agent')).toBeInTheDocument()
     expect(screen.getByText('Idle · zsh shell')).toBeInTheDocument()
     expect(screen.getByText('terminal')).toBeInTheDocument()

@@ -67,7 +67,7 @@ export interface TerminalPaneProps {
   runningBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onCommandSubmit?: (ptyId: string, command: string) => void
-  onRestart?: (sessionId: string) => void
+  onRestart?: (sessionId: string, paneId?: string) => void
   deferFit?: boolean
   shortcutContext?: NativeGhosttyShortcutContext
   shortcutHint?: string
@@ -236,18 +236,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
-        // TODO(#202): resume/restart-to-continue still needs paneId-aware
-        // restart. Today `useSessionManager.restartSession` targets the
-        // active pane, so a non-active clicked pane must become active before
-        // we call the existing restart path.
         if (!pane.active) {
           onRequestActive?.(session.id, pane.id)
-          window.setTimeout(() => onRestart?.(restartSessionId), 0)
+          onRestart?.(restartSessionId, pane.id)
 
           return
         }
 
-        onRestart?.(restartSessionId)
+        onRestart?.(restartSessionId, pane.id)
       },
       [onRequestActive, onRestart, pane.active, pane.id, session.id]
     )

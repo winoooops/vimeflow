@@ -122,7 +122,7 @@ export interface SessionManager {
    * No-op if the id isn't in `sessions`. Surfaces spawn errors via
    * console.warn — a future iteration may surface as a toast.
    */
-  restartSession: (id: string) => void
+  restartSession: (id: string, paneId?: string) => void
   renameSession: (id: string, name: string) => void
   /**
    * Set a per-pane user label (overrides `pane.agentTitle` and
@@ -1757,7 +1757,7 @@ export const useSessionManager = (
   // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
   // id and useTerminal mounts a fresh attach lifecycle.
   const restartSession = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string, paneId?: string): void => {
       void (async (): Promise<void> => {
         const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
         if (!oldSession) {
@@ -1766,14 +1766,28 @@ export const useSessionManager = (
           return
         }
 
-        // Restart the active shell when one is focused; only fall back to
-        // another shell when the active pane is a browser (so a browser-active
-        // session is still restartable without targeting the wrong PTY).
-        const activePane = getActivePane(oldSession)
+        const requestedPane =
+          paneId !== undefined
+            ? oldSession.panes.find((pane) => pane.id === paneId)
+            : undefined
 
-        const oldPane = isShellPane(activePane)
-          ? activePane
-          : oldSession.panes.find(isShellPane)
+        if (paneId !== undefined && requestedPane === undefined) {
+          log.warn(`restartSession: no pane ${paneId} in session ${sessionId}`)
+
+          return
+        }
+
+        // Restart the explicitly requested shell when one is supplied by pane
+        // chrome. Legacy callers without a pane id keep the active-pane
+        // behavior, falling back to another shell only when a browser is active.
+        const activePane =
+          paneId === undefined ? getActivePane(oldSession) : null
+
+        const oldPane =
+          requestedPane ??
+          (activePane !== null && isShellPane(activePane)
+            ? activePane
+            : oldSession.panes.find(isShellPane))
         if (!oldPane || !isShellPane(oldPane)) {
           log.warn('restartSession: no shell pane found')
 

@@ -239,7 +239,7 @@ describe('TerminalPane index', () => {
     ).toBeNull()
   })
 
-  test('clicking inactive restart activates the pane then restarts it', async () => {
+  test('clicking inactive restart targets that pane directly', async () => {
     const user = userEvent.setup()
     const onRequestActive = vi.fn()
     const onRestart = vi.fn()
@@ -264,7 +264,7 @@ describe('TerminalPane index', () => {
     await user.click(screen.getByRole('button', { name: /restart session/i }))
 
     expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
-    expect(onRestart).toHaveBeenCalledWith('s1')
+    expect(onRestart).toHaveBeenCalledWith('s1', 'p0')
     expect(onRequestActive.mock.invocationCallOrder[0]).toBeLessThan(
       onRestart.mock.invocationCallOrder[0]
     )

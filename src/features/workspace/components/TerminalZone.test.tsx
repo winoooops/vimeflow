@@ -82,7 +82,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
           <button
             type="button"
             data-testid={`mock-restart-${session.id}`}
-            onClick={() => onRestart(session.id)}
+            onClick={() => onRestart(session.id, pane.id)}
           >
             mock-restart
           </button>
@@ -671,8 +671,8 @@ describe('TerminalZone', () => {
 
   // F5 (round 2): the Restart click on an Exited (awaiting-restart) pane
   // must propagate through TerminalZone → TerminalPane.onRestart with the
-  // session id. Previously WorkspaceView never passed onSessionRestart, so
-  // the Restart button was a silent no-op.
+  // clicked pane id. Previously WorkspaceView never passed onSessionRestart,
+  // so the Restart button was a silent no-op.
   test('F5 (round 2): forwards onSessionRestart to TerminalPane onRestart', async () => {
     const user = userEvent.setup()
     const onSessionRestart = vi.fn()
@@ -684,7 +684,7 @@ describe('TerminalZone', () => {
     const button = screen.getByTestId('mock-restart-sess-1')
     await user.click(button)
 
-    expect(onSessionRestart).toHaveBeenCalledWith('sess-1')
+    expect(onSessionRestart).toHaveBeenCalledWith('sess-1', 'p0')
     expect(onSessionRestart).toHaveBeenCalledTimes(1)
   })
 
