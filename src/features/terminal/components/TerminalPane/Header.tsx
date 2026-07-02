@@ -17,6 +17,7 @@ export interface HeaderProps {
   ptyId: string
   paneAgentTitle?: string
   paneUserLabel?: string
+  shortcutHint?: string
   onToggleCollapse: () => void
   onClose?: () => void
   onBurner?: () => void
@@ -42,6 +43,7 @@ export const Header = ({
   ptyId,
   paneAgentTitle = undefined,
   paneUserLabel = undefined,
+  shortcutHint = undefined,
   onToggleCollapse,
   onClose = undefined,
   onBurner = undefined,
@@ -117,6 +119,7 @@ export const Header = ({
         <HeaderActions
           isCollapsed={isCollapsed}
           onToggleCollapse={onToggleCollapse}
+          shortcutHint={shortcutHint}
           hideCollapseToggle={hideCollapseToggle || autoCollapsed}
           onClose={onClose}
           onBurner={onBurner}

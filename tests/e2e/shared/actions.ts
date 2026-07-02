@@ -24,6 +24,44 @@ export const clickBySelector = async (selector: string): Promise<void> => {
   }
 }
 
+export const clickButtonByText = async (text: string): Promise<void> => {
+  const ok = await browser.execute((label: string) => {
+    const normalizedLabel = label.trim()
+    const button = Array.from(document.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim().includes(normalizedLabel)
+    )
+    if (!button) {
+      return false
+    }
+
+    button.click()
+
+    return true
+  }, text)
+
+  if (!ok) {
+    throw new Error(`clickButtonByText: no button with text ${text}`)
+  }
+}
+
+export const createNewSession = async (): Promise<void> => {
+  await clickBySelector('button[aria-label="New session"]')
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () => document.querySelector('[role="dialog"]') !== null
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'New session dialog did not open',
+    }
+  )
+
+  await clickButtonByText('Create session')
+}
+
 const hasElement = async (selector: string): Promise<boolean> =>
   await browser.execute(
     (s: string) => document.querySelector<HTMLElement>(s) !== null,

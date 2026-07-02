@@ -1,6 +1,5 @@
 // cspell:ignore Ghostty
-import { act, render, screen, waitFor } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NativeGhosttyDataRequest } from '../../nativeGhosttyClient'
@@ -11,19 +10,9 @@ import {
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
-import { GhosttyBody } from './GhosttyBody'
-
-interface MockTerminalContextMenuProps {
-  isOpen: boolean
-  position: { x: number; y: number } | null
-  onPaste: () => void
-}
+import { GhosttyBody, nativeGhosttyBoundsFromRect } from './GhosttyBody'
 
 const backendListeners = new Map<string, (payload: unknown) => void>()
-
-const terminalMenuMock = vi.hoisted(() => ({
-  props: null as MockTerminalContextMenuProps | null,
-}))
 
 let outputListener:
   | ((
@@ -40,23 +29,6 @@ vi.mock('../../../../lib/backend', () => ({
 
     return Promise.resolve(() => backendListeners.delete(event))
   }),
-}))
-
-vi.mock('../TerminalContextMenu', () => ({
-  TerminalContextMenu: (
-    props: MockTerminalContextMenuProps
-  ): ReactElement | null => {
-    terminalMenuMock.props = props
-
-    return props.isOpen ? (
-      <div
-        role="menu"
-        aria-label="Terminal actions"
-        data-x={props.position?.x}
-        data-y={props.position?.y}
-      />
-    ) : null
-  },
 }))
 
 vi.mock('../../nativeGhosttyClient', () => {
@@ -136,11 +108,18 @@ const createService = (): ITerminalService =>
 
 const inactive = false
 
+const rect = (x: number, y: number, width: number, height: number): DOMRect =>
+  ({
+    x,
+    y,
+    width,
+    height,
+  }) as DOMRect
+
 describe('GhosttyBody', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     backendListeners.clear()
-    terminalMenuMock.props = null
     outputListener = null
   })
 
@@ -180,6 +159,54 @@ describe('GhosttyBody', () => {
     unmount()
 
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
+  })
+
+  test('keeps native frame bounds unchanged when renderer CSS pixels match window points', () => {
+    expect(
+      nativeGhosttyBoundsFromRect(rect(10, 20, 300, 200), {
+        innerWidth: 1400,
+        innerHeight: 900,
+        outerWidth: 1400,
+        outerHeight: 900,
+      })
+    ).toEqual({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 200,
+    })
+  })
+
+  test('converts zoomed renderer CSS pixels to native window points', () => {
+    expect(
+      nativeGhosttyBoundsFromRect(rect(282, 85, 477, 836), {
+        innerWidth: 1533,
+        innerHeight: 985,
+        outerWidth: 1400,
+        outerHeight: 900,
+      })
+    ).toEqual({
+      x: 257.5342465753425,
+      y: 77.66497461928934,
+      width: 435.61643835616434,
+      height: 763.8578680203045,
+    })
+  })
+
+  test('falls back to unscaled native frame bounds when viewport metrics are unavailable', () => {
+    expect(
+      nativeGhosttyBoundsFromRect(rect(10, 20, 300, 200), {
+        innerWidth: 0,
+        innerHeight: Number.NaN,
+        outerWidth: 1400,
+        outerHeight: 900,
+      })
+    ).toEqual({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 200,
+    })
   })
 
   test('sends shortcut context with native frame updates', async () => {
@@ -504,118 +531,6 @@ describe('GhosttyBody', () => {
 
     expect(onRequestFocus).toHaveBeenCalledOnce()
     expect(onRequestActive).toHaveBeenCalledOnce()
-  })
-
-  test('opens terminal context menu from native right-click event', async () => {
-    render(
-      <GhosttyBody
-        paneId="pane-1"
-        ptyId="pty-1"
-        cwd="/tmp"
-        active
-        service={createService()}
-      />
-    )
-
-    await waitFor(() => {
-      expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
-    })
-
-    act(() => {
-      backendListeners.get('ghostty-native-context-menu')?.({
-        sessionId: 'pty-1',
-        paneId: 'pane-1',
-        x: 40,
-        y: 50,
-      })
-    })
-
-    expect(
-      screen.getByRole('menu', { name: 'Terminal actions' })
-    ).toBeInTheDocument()
-  })
-
-  test('clamps native context menu coordinates to the renderer viewport', async () => {
-    render(
-      <GhosttyBody
-        paneId="pane-1"
-        ptyId="pty-1"
-        cwd="/tmp"
-        active
-        service={createService()}
-      />
-    )
-
-    await waitFor(() => {
-      expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
-    })
-
-    act(() => {
-      backendListeners.get('ghostty-native-context-menu')?.({
-        sessionId: 'pty-1',
-        paneId: 'pane-1',
-        x: window.innerWidth + 100,
-        y: window.innerHeight + 100,
-      })
-    })
-
-    expect(terminalMenuMock.props?.position).toEqual({
-      x: window.innerWidth - 1,
-      y: window.innerHeight - 1,
-    })
-  })
-
-  test('ignores native context menu paste when clipboard read rejects', async () => {
-    const service = createService()
-
-    const originalClipboard = Object.getOwnPropertyDescriptor(
-      window.navigator,
-      'clipboard'
-    )
-
-    Object.defineProperty(window.navigator, 'clipboard', {
-      configurable: true,
-      value: { readText: vi.fn(() => Promise.reject(new Error('denied'))) },
-    })
-
-    try {
-      render(
-        <GhosttyBody
-          paneId="pane-1"
-          ptyId="pty-1"
-          cwd="/tmp"
-          active
-          service={service}
-        />
-      )
-
-      await waitFor(() => {
-        expect(backendListeners.has('ghostty-native-context-menu')).toBe(true)
-      })
-
-      act(() => {
-        backendListeners.get('ghostty-native-context-menu')?.({
-          sessionId: 'pty-1',
-          paneId: 'pane-1',
-          x: 40,
-          y: 50,
-        })
-      })
-
-      await act(async () => {
-        terminalMenuMock.props?.onPaste()
-        await Promise.resolve()
-      })
-
-      expect(service.write).not.toHaveBeenCalled()
-    } finally {
-      if (originalClipboard === undefined) {
-        delete (window.navigator as unknown as { clipboard?: unknown })
-          .clipboard
-      } else {
-        Object.defineProperty(window.navigator, 'clipboard', originalClipboard)
-      }
-    }
   })
 
   test('tracks cwd changes from native output OSC 7 sequences', async () => {

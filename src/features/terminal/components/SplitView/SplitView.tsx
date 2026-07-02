@@ -39,6 +39,7 @@ import {
 } from '../TerminalPane'
 import { EmptySlot } from './EmptySlot'
 import { Tooltip } from '@/components/Tooltip'
+import { formatShortcut } from '@/lib/formatShortcut'
 import { SplitDividers } from './SplitDividers'
 import { resolveGrid } from './resolveGrid'
 import {
@@ -61,7 +62,7 @@ export interface SplitViewProps {
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
-  onSessionRestart?: (sessionId: string) => void
+  onSessionRestart?: (sessionId: string, paneId?: string) => void
   onSetActivePane?: (sessionId: string, paneId: string) => void
   onBrowserPaneUrlChange?: (
     sessionId: string,
@@ -593,26 +594,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   className="relative min-h-0 min-w-0"
                   style={{ gridArea: gridAreaForSlotId(slotId) }}
                 >
-                  {/* Inner Tooltip wrapper. The motion.div above carries
-                  the click handler + grid placement; this inner Tooltip
-                  attaches floating-ui hover handlers to a plain div so
-                  the `cloneElement` merge doesn't have to negotiate
-                  with framer-motion's prop-handling. The plain div
-                  fills its parent so hover detection still covers the
-                  whole slot. Disabled when the pane is active —
-                  nothing to hint at, and overlaying an active
-                  terminal with a popover would interfere. */}
-                  <Tooltip
-                    content={`Focus pane ${slotIndex + 1}`}
-                    shortcut={['Mod', String(slotIndex + 1)]}
-                    disabled={pane.active}
-                    placement="top"
+                  <div
+                    data-testid="split-view-slot-inner"
+                    className="h-full w-full"
                   >
-                    <div
-                      data-testid="split-view-slot-inner"
-                      className="h-full w-full"
-                    >
-                      {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+                    {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
                     keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
                     clean useTerminal subtree unmount + remount whenever a
                     restartSession rotates the pane's PTY handle. Without the
@@ -621,83 +607,89 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                     nowhere until reload. The outer slot wrapper above keys
                     by `pane.id` so layout slot identity is preserved across
                     restarts. */}
-                      {isBrowserPane ? (
-                        <>
-                          {dndEnabled ? (
-                            <Tooltip
-                              content="Drag to move pane"
-                              placement="top"
+                    {isBrowserPane ? (
+                      <>
+                        {dndEnabled ? (
+                          <Tooltip content="Drag to move pane" placement="top">
+                            {/* Native DnD has no keyboard reorder path yet; keep this out of the tab order until one exists. */}
+                            <div
+                              data-testid="split-view-browser-drag-handle"
+                              data-drag-handle="true"
+                              draggable
+                              onDragStart={(event): void =>
+                                handlePaneDragStart(pane.id, event)
+                              }
+                              onDragEnd={handlePaneDragEnd}
+                              className="absolute top-1 right-1 z-40 flex h-5 w-5 cursor-grab items-center justify-center rounded bg-surface-container/80 text-on-surface-muted hover:bg-surface-container"
                             >
-                              {/* Native DnD has no keyboard reorder path yet; keep this out of the tab order until one exists. */}
-                              <div
-                                data-testid="split-view-browser-drag-handle"
-                                data-drag-handle="true"
-                                draggable
-                                onDragStart={(event): void =>
-                                  handlePaneDragStart(pane.id, event)
-                                }
-                                onDragEnd={handlePaneDragEnd}
-                                className="absolute top-1 right-1 z-40 flex h-5 w-5 cursor-grab items-center justify-center rounded bg-surface-container/80 text-on-surface-muted hover:bg-surface-container"
+                              <span
+                                className="material-symbols-outlined text-[14px] leading-none"
+                                aria-hidden="true"
                               >
-                                <span
-                                  className="material-symbols-outlined text-[14px] leading-none"
-                                  aria-hidden="true"
-                                >
-                                  drag_indicator
-                                </span>
-                              </div>
-                            </Tooltip>
-                          ) : null}
-                          <BrowserPane
-                            key={pane.ptyId}
-                            session={session}
-                            pane={pane}
-                            isActive={isActive}
-                            onClose={closeHandler}
-                            onRequestActive={onSetActivePane}
-                            onRequestFocus={onRequestFocus}
-                            onUrlChange={onBrowserPaneUrlChange}
-                          />
-                        </>
-                      ) : (
-                        <TerminalPane
+                                drag_indicator
+                              </span>
+                            </div>
+                          </Tooltip>
+                        ) : null}
+                        <BrowserPane
                           key={pane.ptyId}
-                          ref={getPaneRefSetter(pane.id)}
                           session={session}
                           pane={pane}
-                          service={service}
-                          mode={paneMode(pane)}
-                          onCwdChange={(cwd) =>
-                            onSessionCwdChange?.(session.id, pane.id, cwd)
-                          }
-                          onPaneReady={onPaneReady}
-                          onCommandSubmit={onCommandSubmit}
-                          onRestart={onSessionRestart}
+                          isActive={isActive}
                           onClose={closeHandler}
-                          onBurner={onBurner}
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
-                          activeBurnerPaneKeys={activeBurnerPaneKeys}
-                          runningBurnerPaneKeys={runningBurnerPaneKeys}
-                          isActive={isActive}
-                          shortcutContext={nativeShortcutContext}
-                          deferFit={deferTerminalFit}
-                          paneDraggable={dndEnabled}
-                          onHeaderDragStart={(event): void =>
-                            handlePaneDragStart(pane.id, event)
+                          onUrlChange={onBrowserPaneUrlChange}
+                          shortcutHint={
+                            slotIndex < 9
+                              ? formatShortcut(['Mod', String(slotIndex + 1)])
+                              : undefined
                           }
-                          onHeaderDragEnd={handlePaneDragEnd}
                         />
-                      )}
-                      {isValidDropActive(slotId) ? (
-                        <span
-                          data-testid="split-view-drop-indicator"
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border-2 border-primary bg-primary/10"
-                        />
-                      ) : null}
-                    </div>
-                  </Tooltip>
+                      </>
+                    ) : (
+                      <TerminalPane
+                        key={pane.ptyId}
+                        ref={getPaneRefSetter(pane.id)}
+                        session={session}
+                        pane={pane}
+                        service={service}
+                        mode={paneMode(pane)}
+                        onCwdChange={(cwd) =>
+                          onSessionCwdChange?.(session.id, pane.id, cwd)
+                        }
+                        onPaneReady={onPaneReady}
+                        onCommandSubmit={onCommandSubmit}
+                        onRestart={onSessionRestart}
+                        onClose={closeHandler}
+                        onBurner={onBurner}
+                        onRequestActive={onSetActivePane}
+                        onRequestFocus={onRequestFocus}
+                        activeBurnerPaneKeys={activeBurnerPaneKeys}
+                        runningBurnerPaneKeys={runningBurnerPaneKeys}
+                        isActive={isActive}
+                        shortcutContext={nativeShortcutContext}
+                        shortcutHint={
+                          slotIndex < 9
+                            ? formatShortcut(['Mod', String(slotIndex + 1)])
+                            : undefined
+                        }
+                        deferFit={deferTerminalFit}
+                        paneDraggable={dndEnabled}
+                        onHeaderDragStart={(event): void =>
+                          handlePaneDragStart(pane.id, event)
+                        }
+                        onHeaderDragEnd={handlePaneDragEnd}
+                      />
+                    )}
+                    {isValidDropActive(slotId) ? (
+                      <span
+                        data-testid="split-view-drop-indicator"
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border-2 border-primary bg-primary/10"
+                      />
+                    ) : null}
+                  </div>
                 </motion.div>
               )
             })}

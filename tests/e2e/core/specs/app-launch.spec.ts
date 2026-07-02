@@ -1,5 +1,13 @@
+type ElectronModule = typeof import('electron')
+
 describe('app launch', () => {
   it('renders workspace view with the sidebar top bar and sidebar', async () => {
+    await browser.electron.execute((electron: ElectronModule) => {
+      const win = electron.BrowserWindow.getAllWindows()[0]
+      win?.setSize(1280, 800)
+      win?.webContents.focus()
+    })
+
     const workspace = await $('[data-testid="workspace-view"]')
     await workspace.waitForDisplayed({ timeout: 15_000 })
 

@@ -239,6 +239,37 @@ describe('TerminalPane index', () => {
     ).toBeNull()
   })
 
+  test('clicking inactive restart targets that pane directly', async () => {
+    const user = userEvent.setup()
+    const onRequestActive = vi.fn()
+    const onRestart = vi.fn()
+
+    const completedSession: Session = {
+      ...session,
+      status: 'completed',
+      panes: [{ ...session.panes[0], active: false, status: 'completed' }],
+    }
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        mode="awaiting-restart"
+        session={completedSession}
+        pane={completedSession.panes[0]}
+        onRequestActive={onRequestActive}
+        onRestart={onRestart}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /restart session/i }))
+
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRestart).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRequestActive.mock.invocationCallOrder[0]).toBeLessThan(
+      onRestart.mock.invocationCallOrder[0]
+    )
+  })
+
   test('Header shows agent chip resolved from pane.agentType', () => {
     render(<TerminalPane {...baseProps} />)
 

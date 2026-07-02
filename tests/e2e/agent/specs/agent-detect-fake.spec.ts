@@ -23,7 +23,7 @@ describe('Agent detection (fake-claude)', function () {
     }
   })
 
-  it('detects a spawned fake claude process and expands the status panel', async () => {
+  it('detects a spawned fake claude process in the sidebar status card', async () => {
     const pane = await $('[data-testid="terminal-pane"]')
     await pane.waitForDisplayed({ timeout: 20_000 })
 
@@ -46,11 +46,8 @@ describe('Agent detection (fake-claude)', function () {
 
     // Detector polls /proc every ~2s for argv[0]="claude".
     const statusCard = await $(
-      '[data-testid="agent-status-card"][data-agent-state="active"]'
+      '[data-testid="sidebar-agent-status-card"][data-agent-state="active"]'
     )
     await statusCard.waitForDisplayed({ timeout: 30_000 })
-
-    const panel = await $('[data-testid="agent-status-panel"]')
-    await panel.waitForDisplayed({ timeout: 5_000 })
   })
 })

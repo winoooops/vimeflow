@@ -14,12 +14,6 @@ public typealias VimeflowGhosttyResizeCallback = @convention(c) (
     Int32
 ) -> Void
 
-public typealias VimeflowGhosttyContextMenuCallback = @convention(c) (
-    UnsafeMutableRawPointer?,
-    Double,
-    Double
-) -> Void
-
 public typealias VimeflowGhosttyFocusCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
@@ -32,6 +26,10 @@ public typealias VimeflowGhosttyShortcutCallback = @convention(c) (
     Bool,
     Bool,
     Bool
+) -> Void
+
+public typealias VimeflowGhosttyRenamePaneCallback = @convention(c) (
+    UnsafeMutableRawPointer?
 ) -> Void
 
 private func mainActorSync<T: Sendable>(_ body: @MainActor () -> T) -> T {
@@ -51,9 +49,9 @@ private struct SendablePointer: @unchecked Sendable {
 private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
-    private let contextMenuCallback: VimeflowGhosttyContextMenuCallback?
     private let focusCallback: VimeflowGhosttyFocusCallback?
     private let shortcutCallback: VimeflowGhosttyShortcutCallback?
+    private let renamePaneCallback: VimeflowGhosttyRenamePaneCallback?
     private let callbackContext: UnsafeMutableRawPointer?
     private var lastColumns = 0
     private var lastRows = 0
@@ -61,16 +59,16 @@ private final class CallbackBox: @unchecked Sendable {
     init(
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
-        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         focusCallback: VimeflowGhosttyFocusCallback?,
         shortcutCallback: VimeflowGhosttyShortcutCallback?,
+        renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.inputCallback = inputCallback
         self.resizeCallback = resizeCallback
-        self.contextMenuCallback = contextMenuCallback
         self.focusCallback = focusCallback
         self.shortcutCallback = shortcutCallback
+        self.renamePaneCallback = renamePaneCallback
         self.callbackContext = callbackContext
     }
 
@@ -93,10 +91,6 @@ private final class CallbackBox: @unchecked Sendable {
         lastColumns = columns
         lastRows = rows
         resizeCallback?(callbackContext, Int32(columns), Int32(rows))
-    }
-
-    func openContextMenu(x: Double, y: Double) {
-        contextMenuCallback?(callbackContext, x, y)
     }
 
     func focusSurface() {
@@ -125,6 +119,10 @@ private final class CallbackBox: @unchecked Sendable {
             }
         }
     }
+
+    func renamePane() {
+        renamePaneCallback?(callbackContext)
+    }
 }
 
 @MainActor
@@ -148,6 +146,31 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var contextMenuMonitor: Any?
     private var shortcutMonitor: Any?
     private var shortcutDigits = Set<Character>()
+
+    private lazy var contextMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.autoenablesItems = true
+        let renameItem = NSMenuItem(
+            title: "Change Pane Name",
+            action: #selector(changePaneName(_:)),
+            keyEquivalent: ""
+        )
+        renameItem.target = self
+        menu.addItem(renameItem)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(
+            title: "Copy",
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: ""
+        ))
+        menu.addItem(NSMenuItem(
+            title: "Paste",
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: ""
+        ))
+
+        return menu
+    }()
 
     private lazy var controller = TerminalController()
 
@@ -176,22 +199,26 @@ private final class EmbeddedGhosttySurface: NSObject {
         parentView: NSView,
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
-        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         focusCallback: VimeflowGhosttyFocusCallback?,
         shortcutCallback: VimeflowGhosttyShortcutCallback?,
+        renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
         callbackContext: UnsafeMutableRawPointer?
     ) {
         self.parentView = parentView
         self.callbacks = CallbackBox(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
-            contextMenuCallback: contextMenuCallback,
             focusCallback: focusCallback,
             shortcutCallback: shortcutCallback,
+            renamePaneCallback: renamePaneCallback,
             callbackContext: callbackContext
         )
         super.init()
         install()
+    }
+
+    @objc private func changePaneName(_ sender: Any?) {
+        callbacks.renamePane()
     }
 
     func setFrame(x: Double, y: Double, width: Double, height: Double) {
@@ -255,9 +282,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             return event
         }
         contextMenuMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-            self?.handleRightMouse(event)
-
-            return event
+            self?.handleRightMouse(event) == true ? nil : event
         }
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             self?.handleKeyDown(event) == true ? nil : event
@@ -277,20 +302,20 @@ private final class EmbeddedGhosttySurface: NSObject {
         callbacks.focusSurface()
     }
 
-    private func handleRightMouse(_ event: NSEvent) {
+    private func handleRightMouse(_ event: NSEvent) -> Bool {
         guard let window = terminalView.window, event.window === window else {
-            return
+            return false
         }
 
         let terminalLocation = terminalView.convert(event.locationInWindow, from: nil)
         guard terminalView.bounds.contains(terminalLocation) else {
-            return
+            return false
         }
 
-        let parentLocation = terminalView.convert(terminalLocation, to: parentView)
-        let x = parentLocation.x
-        let y = parentView.bounds.height - parentLocation.y
-        callbacks.openContextMenu(x: x, y: y)
+        focus()
+        NSMenu.popUpContextMenu(contextMenu, with: event, for: terminalView)
+
+        return true
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
@@ -353,9 +378,9 @@ public func vimeflowGhosttyCreate(
     _ parentViewPointer: UnsafeMutableRawPointer?,
     _ inputCallback: VimeflowGhosttyInputCallback?,
     _ resizeCallback: VimeflowGhosttyResizeCallback?,
-    _ contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
     _ focusCallback: VimeflowGhosttyFocusCallback?,
     _ shortcutCallback: VimeflowGhosttyShortcutCallback?,
+    _ renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
     _ callbackContext: UnsafeMutableRawPointer?
 ) -> UnsafeMutableRawPointer? {
     guard let parentViewPointer else {
@@ -372,9 +397,9 @@ public func vimeflowGhosttyCreate(
             parentView: parentView,
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
-            contextMenuCallback: contextMenuCallback,
             focusCallback: focusCallback,
             shortcutCallback: shortcutCallback,
+            renamePaneCallback: renamePaneCallback,
             callbackContext: contextPointer.value
         )
 

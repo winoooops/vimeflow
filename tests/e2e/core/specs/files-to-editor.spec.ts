@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { clickBySelector } from '../../shared/actions.js'
 
 const FIXTURE_NAME = 'vimeflow-e2e-fixture.txt'
 const FIXTURE_PATH = path.join(os.homedir(), FIXTURE_NAME)
@@ -26,14 +27,14 @@ describe('File explorer → editor flow', () => {
     // FilesView source for the Tailwind v4 cascade-layer rationale).
     const filesTab = await $('button[aria-label="FILES"]')
     await filesTab.waitForDisplayed({ timeout: 15_000 })
-    await filesTab.click()
+    await clickBySelector('button[aria-label="FILES"]')
 
     const explorer = await $('[data-testid="file-explorer"]')
     await explorer.waitForDisplayed({ timeout: 15_000 })
 
     const refreshButton = await $('[aria-label="Refresh file tree"]')
     await refreshButton.waitForDisplayed({ timeout: 15_000 })
-    await refreshButton.click()
+    await clickBySelector('[aria-label="Refresh file tree"]')
 
     await browser.waitUntil(
       async () => {

@@ -37,6 +37,7 @@ describe('PaneRenameInput', () => {
     expect(screen.getByRole('textbox', { name: 'Pane name' })).toHaveValue(
       'old'
     )
+    expect(screen.getByRole('textbox', { name: 'Pane name' })).toHaveFocus()
   })
 
   test('falls back to session.name when no agentTitle', () => {
@@ -113,12 +114,18 @@ describe('PaneRenameInput', () => {
     render(<ControlledRenameInput />)
 
     const input = screen.getByRole('textbox')
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'failed to send /rename: pty write failed'
-    )
+    const frame = screen.getByTestId('pane-rename-frame')
+    const alert = screen.getByRole('alert')
+    expect(frame).toHaveClass('border-error')
+    expect(alert).not.toHaveClass('sr-only')
+    expect(alert).toHaveClass('text-error')
+    expect(alert).toHaveTextContent('failed to send /rename: pty write failed')
+    expect(input).toHaveAttribute('aria-describedby', 'pane-rename-error')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
 
     fireEvent.change(input, { target: { value: 'bad\u0007' } })
 
+    expect(frame).toHaveClass('border-transparent')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -157,21 +164,39 @@ describe('PaneRenameInput', () => {
   })
 
   test('tracks pane header position when layout changes', () => {
+    const header = document.createElement('div')
     const anchor = document.createElement('div')
+    header.append(anchor)
+
+    const getHeaderBoundingClientRect = vi
+      .fn()
+      .mockReturnValueOnce({
+        top: 8,
+        left: 12,
+        width: 320,
+        height: 30,
+      })
+      .mockReturnValue({
+        top: 36,
+        left: 52,
+        width: 360,
+        height: 28,
+      })
+    header.getBoundingClientRect = getHeaderBoundingClientRect
 
     const getBoundingClientRect = vi
       .fn()
       .mockReturnValueOnce({
-        top: 12,
+        top: 15,
         left: 24,
         width: 180,
-        height: 28,
+        height: 14,
       })
       .mockReturnValue({
-        top: 40,
+        top: 43,
         left: 64,
         width: 220,
-        height: 32,
+        height: 14,
       })
     anchor.getBoundingClientRect = getBoundingClientRect
     registerPaneHeaderRef('pty-1', anchor)
@@ -187,21 +212,23 @@ describe('PaneRenameInput', () => {
 
     const frame = screen.getByTestId('pane-rename-frame')
     expect(frame).toHaveStyle({
-      top: '12px',
+      top: '23px',
       left: '24px',
       width: '180px',
-      minHeight: '28px',
+      transform: 'translateY(-50%)',
     })
+    expect(frame).not.toHaveStyle({ minHeight: '28px' })
 
     act(() => {
       window.dispatchEvent(new Event('resize'))
     })
 
     expect(frame).toHaveStyle({
-      top: '40px',
+      top: '50px',
       left: '64px',
       width: '220px',
-      minHeight: '32px',
+      transform: 'translateY(-50%)',
     })
+    expect(frame).not.toHaveStyle({ minHeight: '32px' })
   })
 })

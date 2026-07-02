@@ -161,6 +161,40 @@ describe('HeaderActions', () => {
     expect(button.className).toContain('text-on-surface-muted') // still gray, not amber
   })
 
+  test('renders visible pane shortcut hint when provided', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        shortcutHint="⌘1"
+      />
+    )
+
+    expect(screen.getByTestId('pane-shortcut-hint')).toHaveTextContent('⌘1')
+  })
+
+  test('renders shortcut hint before the burner button', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        shortcutHint="⌘1"
+      />
+    )
+
+    const hint = screen.getByTestId('pane-shortcut-hint')
+
+    const burner = screen.getByRole('button', {
+      name: /open burner terminal/i,
+    })
+
+    expect(
+      hint.compareDocumentPosition(burner) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)

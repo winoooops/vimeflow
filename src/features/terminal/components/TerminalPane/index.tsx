@@ -67,9 +67,10 @@ export interface TerminalPaneProps {
   runningBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onCommandSubmit?: (ptyId: string, command: string) => void
-  onRestart?: (sessionId: string) => void
+  onRestart?: (sessionId: string, paneId?: string) => void
   deferFit?: boolean
   shortcutContext?: NativeGhosttyShortcutContext
+  shortcutHint?: string
   /**
    * VIM-167: make this pane's header the drag handle for drag-into-slot. The
    * terminal body is never draggable so xterm selection keeps the pointer.
@@ -110,6 +111,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onRestart = undefined,
       deferFit = false,
       shortcutContext = undefined,
+      shortcutHint = undefined,
       paneDraggable = false,
       onHeaderDragStart = undefined,
       onHeaderDragEnd = undefined,
@@ -234,25 +236,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
-        // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
-        // through so `useSessionManager.restartSession` targets the clicked
-        // pane instead of `getActivePane(session)`. Deferred to 5c (production
-        // multi-pane).
-        //
-        // Until 5c lands the paneId-aware restart, gate the callback on
-        // `pane.active`. Without the guard, clicking Restart on a non-active
-        // exited pane silently restarts the active PTY (because
-        // `useSessionManager.restartSession` resolves via `getActivePane`).
-        // The guard makes non-active restarts INERT — a visible "click has
-        // no effect" is strictly safer than a wrong-pane restart with no
-        // recovery path until reload. Single-pane production has
-        // `pane.active` always true, so the guard is a no-op there.
         if (!pane.active) {
+          onRequestActive?.(session.id, pane.id)
+          onRestart?.(restartSessionId, pane.id)
+
           return
         }
-        onRestart?.(restartSessionId)
+
+        onRestart?.(restartSessionId, pane.id)
       },
-      [onRestart, pane.active]
+      [onRequestActive, onRestart, pane.active, pane.id, session.id]
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
@@ -293,6 +286,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           ptyId={pane.ptyId}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
+          shortcutHint={shortcutHint}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
           onBurner={onBurner ? handleBurner : undefined}

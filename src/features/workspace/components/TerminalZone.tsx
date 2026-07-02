@@ -43,7 +43,7 @@ export interface TerminalZoneProps {
   /**
    * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
    */
-  onSessionRestart?: (sessionId: string) => void
+  onSessionRestart?: (sessionId: string, paneId?: string) => void
   /**
    * Temporarily hold xterm fitting while surrounding workspace chrome is being
    * dragged. The active terminal gets one final fit when the drag ends.

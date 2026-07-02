@@ -55,6 +55,19 @@ import type { PersistedTab } from './workspace-layout-types'
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
+const remoteDebuggingPort = process.env.VIMEFLOW_REMOTE_DEBUGGING_PORT
+
+if (
+  !app.isPackaged &&
+  remoteDebuggingPort !== undefined &&
+  remoteDebuggingPort.length > 0
+) {
+  // Keep this opt-in for Ghostty/native-view debugging. It gives developers
+  // and agents a stable way to inspect renderer logs, DOM rects, and viewport
+  // metrics without shipping a remote debugging port in production.
+  app.commandLine.appendSwitch('remote-debugging-port', remoteDebuggingPort)
+}
+
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
 // vite-plugin-electron bundles main.ts as ESM (main.js) under
 // package.json:type=module, so we need the ESM-compatible idiom.

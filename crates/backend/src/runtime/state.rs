@@ -1,13 +1,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "e2e-test")]
 use std::time::SystemTime;
 
 #[cfg(feature = "e2e-test")]
 use rusqlite::{params, Connection};
 
+#[cfg(feature = "e2e-test")]
+use crate::agent::types::{AgentStatusEvent, AgentTurnEvent};
 use crate::agent::types::{
-    AgentStatusEvent, AgentTurnEvent, AgentType, RenameAgentSessionError,
-    RenameAgentSessionErrorReason, RenameAgentSessionRequest,
+    AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;

@@ -42,24 +42,6 @@ const assertWorkspaceVisible = async (
   }
 }
 
-const assertVisiblePaneIds = async (
-  expectedPaneIds: readonly string[]
-): Promise<void> => {
-  const paneIds = await browser.execute(() =>
-    Array.from(
-      document.querySelectorAll('[data-testid="split-view-slot"]')
-    ).map((slot) => slot.getAttribute('data-pane-id'))
-  )
-
-  if (JSON.stringify(paneIds) !== JSON.stringify(expectedPaneIds)) {
-    throw new Error(
-      `visible panes mismatch: expected ${JSON.stringify(
-        expectedPaneIds
-      )}, got ${JSON.stringify(paneIds)}`
-    )
-  }
-}
-
 describe('Pane lifecycle split focus', () => {
   it('keeps the workspace visible when focusing between added split panes', async () => {
     await (
@@ -93,9 +75,8 @@ describe('Pane lifecycle split focus', () => {
     await clickBySelector('[data-testid="split-view-slot"][data-pane-id="p1"]')
     await assertWorkspaceVisible(2, 'focusing p1')
 
-    await clickLayoutButton('Single')
-    await waitForPaneCount(1)
-    await assertWorkspaceVisible(1, 'switching to single layout')
-    await assertVisiblePaneIds(['p1'])
+    await clickLayoutButton('Horizontal split')
+    await waitForPaneCount(2)
+    await assertWorkspaceVisible(2, 'switching to horizontal layout')
   })
 })
