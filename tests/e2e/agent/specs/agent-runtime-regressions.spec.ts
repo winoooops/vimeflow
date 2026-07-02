@@ -320,6 +320,19 @@ const textForSelector = async (selector: string): Promise<string> =>
     return el?.textContent ?? ''
   }, selector)
 
+const terminalHeaderTextForPty = async (ptyId: string): Promise<string> =>
+  await browser.execute((targetPtyId: string) => {
+    const escaped = CSS.escape(targetPtyId)
+    const slot = document.querySelector<HTMLElement>(
+      `[data-testid="split-view-slot"][data-pty-id="${escaped}"]`
+    )
+    const header = slot?.querySelector<HTMLElement>(
+      '[data-testid="terminal-pane-header"]'
+    )
+
+    return header?.textContent ?? ''
+  }, ptyId)
+
 const bufferHasExactLine = (buffer: string, expected: string): boolean =>
   buffer
     .replaceAll('\r', '\n')
@@ -677,9 +690,7 @@ describe('Agent runtime regressions', () => {
       if (!(await isCompactViewport())) {
         await browser.waitUntil(
           async () => {
-            const headerText = await textForSelector(
-              '[data-testid="terminal-pane-header"]'
-            )
+            const headerText = await terminalHeaderTextForPty(ptyId)
 
             return headerText.includes(title)
           },
