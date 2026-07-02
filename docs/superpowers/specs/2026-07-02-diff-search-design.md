@@ -1,6 +1,6 @@
 # Single-File Diff Search — Design Spec
 
-**Status:** Complete — whole-spec codex pass pending
+**Status:** Complete — codex-reviewed (footer below)
 **Issue:** [VIM-252](https://linear.app/vimeflow/issue/VIM-252) — feat(diff): add single-file diff search and collapsible snippets (search half)
 **Date:** 2026-07-02
 **Branch:** `feature/vim-252`
@@ -158,3 +158,5 @@ Acceptance-criteria mapping (Linear): "search operates within one file and jumps
 - **Collapse half of VIM-252** — its own spec/PR. Pierre's native `collapsedContextThreshold`/`expandUnchanged`/`expansionLineCount` make it mostly configuration; that spec must define the search↔collapse interplay (mockup precedent: searching auto-expands blocks containing matches) and the §2 recompute rules already accommodate it (hunk expand = same-file recompute).
 - **Not in this feature**: regex/smart-case, replace, cross-file/workspace search, persisted search state, sidebar match badges.
 - **Upstream watch**: pierre #884 (span decorations — would delete our paint layer) and #846 (built-in search — decision record before adopting). Exit strategy in §5.
+
+<!-- codex-reviewed: 2026-07-02T15:11:34Z -->
