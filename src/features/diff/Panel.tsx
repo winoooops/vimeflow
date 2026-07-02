@@ -456,20 +456,21 @@ export const Panel = ({
     }, FILES_LIST_CLOSE_DELAY_MS)
   }, [clearFilesListHideTimer, filesListPinnedOpen])
 
+  // Stable focus owner for handoffs before focused diff/comment nodes unmount.
+  const focusDiffRoot = useCallback((): void => {
+    diffRootRef.current?.focus({ preventScroll: true })
+  }, [])
+
   const toggleFilesListPinned = useCallback((): void => {
     clearFilesListHideTimer()
+    focusDiffRoot()
     setFilesListRevealed(true)
 
     const next = !filesListPinnedOpen
 
     writeFilesListPinnedOpen(next)
     setFilesListPinnedOpen(next)
-  }, [clearFilesListHideTimer, filesListPinnedOpen])
-
-  // Stable focus owner for handoffs before focused diff/comment nodes unmount.
-  const focusDiffRoot = useCallback((): void => {
-    diffRootRef.current?.focus({ preventScroll: true })
-  }, [])
+  }, [clearFilesListHideTimer, filesListPinnedOpen, focusDiffRoot])
 
   const handleDiffRootPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {

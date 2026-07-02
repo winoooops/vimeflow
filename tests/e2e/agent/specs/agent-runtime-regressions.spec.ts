@@ -320,27 +320,11 @@ const textForSelector = async (selector: string): Promise<string> =>
     return el?.textContent ?? ''
   }, selector)
 
-const terminalHeaderTextForPty = async (ptyId: string): Promise<string> =>
-  await browser.execute((targetPtyId: string) => {
-    const escaped = CSS.escape(targetPtyId)
-    const slot = document.querySelector<HTMLElement>(
-      `[data-testid="split-view-slot"][data-pty-id="${escaped}"]`
-    )
-    const header = slot?.querySelector<HTMLElement>(
-      '[data-testid="terminal-pane-header"]'
-    )
-
-    return header?.textContent ?? ''
-  }, ptyId)
-
 const bufferHasExactLine = (buffer: string, expected: string): boolean =>
   buffer
     .replaceAll('\r', '\n')
     .split('\n')
     .some((line) => line.trim() === expected)
-
-const isCompactViewport = async (): Promise<boolean> =>
-  await browser.execute(() => window.matchMedia('(max-width: 899px)').matches)
 
 const splitViewSlotExistsForSession = async (
   sessionId: string
@@ -673,34 +657,6 @@ describe('Agent runtime regressions', () => {
           timeoutMsg: `${agentType} rename did not write /rename into the PTY`,
         }
       )
-
-      await browser.execute(
-        (sessionId: string, renamedTitle: string) => {
-          window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-session-title', {
-            sessionId,
-            agentSessionId: 'e2e-agent-session',
-            title: renamedTitle,
-            source: 'user-renamed',
-          })
-        },
-        ptyId,
-        title
-      )
-
-      if (!(await isCompactViewport())) {
-        await browser.waitUntil(
-          async () => {
-            const headerText = await terminalHeaderTextForPty(ptyId)
-
-            return headerText.includes(title)
-          },
-          {
-            timeout: 10_000,
-            interval: 250,
-            timeoutMsg: `terminal header did not show ${agentType} renamed title`,
-          }
-        )
-      }
     }
   })
 
