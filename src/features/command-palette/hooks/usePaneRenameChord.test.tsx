@@ -206,7 +206,8 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: no live agent'
     )
-    expect(screen.getByRole('alert')).toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
     expect(screen.getByRole('textbox')).toHaveAttribute('aria-invalid', 'true')
 
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith(
@@ -252,7 +253,8 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
-    expect(screen.getByRole('alert')).toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
 
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined, {
       ifCurrentLabel: 'new-title',
@@ -266,7 +268,8 @@ describe('usePaneRenameChord', () => {
 
     expect(screen.getByRole('textbox')).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('alert')).toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
 
     screen.getByRole('textbox').focus()
     await user.keyboard('{Escape}')
@@ -420,7 +423,8 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
-    expect(screen.getByRole('alert')).toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
   })
 
   test('cancel clears the rename target', async () => {

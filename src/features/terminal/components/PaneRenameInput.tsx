@@ -179,7 +179,11 @@ export const PaneRenameInput = ({
         className="block w-full bg-transparent px-1.5 py-1.5 font-mono text-[10.5px] leading-none text-on-surface outline-none"
       />
       {errorText && (
-        <div id={errorId} role="alert" className="sr-only">
+        <div
+          id={errorId}
+          role="alert"
+          className="max-w-full px-1.5 pb-1.5 font-mono text-[10px] leading-tight text-error"
+        >
           {errorText}
         </div>
       )}

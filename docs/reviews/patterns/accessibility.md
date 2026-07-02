@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-07-02
-ref_count: 83
+ref_count: 84
 ---
 
 # Accessibility
@@ -789,4 +789,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
 - **Finding:** Removing the shared inactive-pane focus tooltip also removed the only visible `Mod+N` focus shortcut hint from browser panes, while the replacement compact badge was wired only through terminal-pane chrome.
 - **Fix:** Threaded the same slot-ordered shortcut hint into `BrowserPane`, rendered the compact badge in browser tab chrome, and added regression coverage for both direct browser-pane rendering and `SplitView` browser-pane prop forwarding.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 78. Rename validation error was hidden from sighted users
+
+- **Source:** github-claude | PR #646 round 2 | 2026-07-02
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/PaneRenameInput.tsx`
+- **Finding:** Rename validation and backend error text rendered only inside `sr-only`, so sighted users received only color and border feedback when a pane rename failed.
+- **Fix:** Rendered a compact visible `role="alert"` message in `text-error` while preserving `aria-describedby`; updated regression coverage to assert the alert is not `sr-only`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
