@@ -381,3 +381,16 @@ against three classes of false-fire:
 - **Finding:** The changed-files pin/unpin button flipped the pinned state while the button itself lived inside the subtree that changes shape between pinned and floating modes. Removing the focused button left focus on `body`, so the diff panel's keyboard-scope guard ignored subsequent `j`/`k`/`e` shortcuts until the user clicked back into the diff.
 - **Fix:** Move focus to the stable diff root before toggling the pinned state, matching other handlers that close or remount diff side surfaces. Added a regression test that clicks both pin and unpin and asserts focus remains on `diff-populated-state`.
 - **Commit:** same commit as this entry
+
+### 30. Plain changed-files toggle dropped diff keyboard scope
+
+- **Source:** github-claude | PR #645 round 5 | 2026-07-02
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The plain `e` changed-files toggle could close or unpin the changed-files
+  surface while focus was inside that surface. Removing the focused row or button left
+  focus on `body`, so later diff keyboard shortcuts were ignored until the user clicked
+  back into the diff panel.
+- **Fix:** Move focus to the stable diff root at the start of `toggleFilesList`, mirroring
+  the pinned-toggle handoff before any changed-files subtree is hidden or remounted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

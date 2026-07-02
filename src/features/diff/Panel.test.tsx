@@ -657,6 +657,58 @@ describe('Panel', () => {
     expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
   })
 
+  test('plain e toggle restores diff focus when closing the changed-files surface', (): void => {
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+      ],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+
+    const pinButton = within(
+      screen.getByTestId('changed-files-pane')
+    ).getByRole('button', { name: /^pin changed files/i })
+    act(() => {
+      pinButton.focus()
+    })
+    expect(pinButton).toHaveFocus()
+
+    fireEvent.keyDown(pinButton, { key: 'e' })
+
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+    expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
+  })
+
   test('hovering the left edge reveals the changed-files panel and selecting a file closes it', async (): Promise<void> => {
     const user = userEvent.setup()
     const onSelectedFileChange = vi.fn()
