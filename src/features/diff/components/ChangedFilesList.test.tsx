@@ -41,10 +41,10 @@ describe('ChangedFilesList', () => {
     const header = screen.getByText(/Changed Files/i)
 
     expect(header).toBeInTheDocument()
-    expect(header).toHaveClass('text-primary-container')
+    expect(header).toHaveClass('text-on-surface-variant')
   })
 
-  test('renders file list with icons and names', () => {
+  test('renders file list with status glyphs, names, and directories', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
@@ -60,10 +60,10 @@ describe('ChangedFilesList', () => {
       screen.queryByRole('button', { name: /comment on file/i })
     ).not.toBeInTheDocument()
 
-    // Check file icons are rendered (Material Symbols)
-    const icons = screen.getAllByRole('img', { hidden: true })
-
-    expect(icons.length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Modified')).toHaveTextContent('M')
+    expect(screen.getByLabelText('Added')).toHaveTextContent('A')
+    expect(screen.getByLabelText('Deleted')).toHaveTextContent('D')
+    expect(screen.getByText('src/components')).toBeInTheDocument()
   })
 
   test('displays insertion and deletion counts', () => {
@@ -87,7 +87,7 @@ describe('ChangedFilesList', () => {
   })
 
   test('applies active file highlighting when selected', () => {
-    const { container } = render(
+    render(
       <ChangedFilesList
         files={mockFiles}
         selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
@@ -95,13 +95,34 @@ describe('ChangedFilesList', () => {
       />
     )
 
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const activeFile = container.querySelector(
-      '.bg-surface-container-highest\\/40'
+    const activeFile = screen.getByRole('button', {
+      name: /NavBar\.tsx/i,
+      current: 'page',
+    })
+
+    expect(activeFile).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('pin button toggles the pinned state when provided', async () => {
+    const user = userEvent.setup()
+    const onTogglePinned = vi.fn()
+
+    render(
+      <ChangedFilesList
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+        onTogglePinned={onTogglePinned}
+      />
     )
 
-    expect(activeFile).toBeInTheDocument()
-    expect(activeFile).toHaveTextContent('NavBar.tsx')
+    const pinButton = screen.getByRole('button', { name: /pin changed files/i })
+
+    expect(pinButton).toHaveAttribute('aria-keyshortcuts', 'Shift+E')
+
+    await user.click(pinButton)
+
+    expect(onTogglePinned).toHaveBeenCalledOnce()
   })
 
   test('calls onSelectFile when file is clicked', async () => {
@@ -143,7 +164,10 @@ describe('ChangedFilesList', () => {
       })
     )
 
-    expect(handleAddFileComment).toHaveBeenCalledWith(mockFiles[0])
+    expect(handleAddFileComment).toHaveBeenCalledWith(
+      mockFiles[0],
+      expect.any(HTMLElement)
+    )
     expect(handleSelect).not.toHaveBeenCalled()
   })
 
@@ -191,7 +215,7 @@ describe('ChangedFilesList', () => {
   })
 
   test('applies hover state styling', () => {
-    const { container } = render(
+    render(
       <ChangedFilesList
         files={mockFiles}
         selectedFile={null}
@@ -199,13 +223,14 @@ describe('ChangedFilesList', () => {
       />
     )
 
-    // Check that hover classes exist
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const row = container.querySelector(
-      '.hover\\:bg-surface-container-highest\\/20'
-    )
+    const fileButton = screen.getByRole('button', {
+      name: /NavBar\.tsx/i,
+    })
 
-    expect(row).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- row wrapper owns the hover background class
+    const row = fileButton.parentElement
+
+    expect(row?.className).toContain('hover:bg-surface-container-high/60')
   })
 
   test('truncates long file paths', () => {

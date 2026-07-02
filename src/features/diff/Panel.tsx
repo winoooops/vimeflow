@@ -16,7 +16,7 @@ import type {
 import { Popover } from '@/components/Popover'
 import { useGitStatus, type UseGitStatusReturn } from './hooks/useGitStatus'
 import { useFileDiff } from './hooks/useFileDiff'
-import { ChangedFilesList } from './components/ChangedFilesList'
+import { ChangedFilesListSurface } from './components/ChangedFilesList'
 import { toPierreInputs, findRawDiffHunkIndex } from './services/pierreAdapter'
 import { extractHunkPatch } from './services/gitPatch'
 import { createGitService } from './services/gitService'
@@ -58,6 +58,53 @@ import { ReviewCommentRow } from './components/ReviewCommentRow'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
+const FILES_LIST_STORAGE_KEY = 'vf-diff-files-open'
+const FILES_LIST_CLOSE_DELAY_MS = 220
+
+const getFilesListStorage = (): Storage | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const readFilesListPinnedOpen = (): boolean => {
+  const storage = getFilesListStorage()
+
+  if (storage === null) {
+    return false
+  }
+
+  try {
+    return storage.getItem(FILES_LIST_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeFilesListPinnedOpen = (open: boolean): void => {
+  const storage = getFilesListStorage()
+
+  if (storage === null) {
+    return
+  }
+
+  try {
+    storage.setItem(FILES_LIST_STORAGE_KEY, open ? '1' : '0')
+  } catch {
+    // Quota exceeded / private mode — the current panel state still works.
+  }
+}
+
+interface FileCommentAnchorPoint {
+  left: number
+  top: number
+}
 
 /**
  * Controlled/uncontrolled selection pair as a discriminated union. Forces
@@ -353,8 +400,71 @@ export const Panel = ({
   const diffRootRef = useRef<HTMLDivElement>(null)
   const diffScrollBodyRef = useRef<HTMLDivElement>(null)
 
+  const filesListHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  )
+
+  const [filesListPinnedOpen, setFilesListPinnedOpen] = useState(
+    readFilesListPinnedOpen
+  )
+  const [filesListRevealed, setFilesListRevealed] = useState(false)
+
   const [fileCommentAnchor, setFileCommentAnchor] =
     useState<HTMLDivElement | null>(null)
+
+  const [fileCommentAnchorPoint, setFileCommentAnchorPoint] =
+    useState<FileCommentAnchorPoint | null>(null)
+
+  const clearFilesListHideTimer = useCallback((): void => {
+    if (filesListHideTimerRef.current !== null) {
+      clearTimeout(filesListHideTimerRef.current)
+      filesListHideTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => clearFilesListHideTimer, [clearFilesListHideTimer])
+
+  const revealFilesList = useCallback((): void => {
+    clearFilesListHideTimer()
+    setFilesListRevealed(true)
+  }, [clearFilesListHideTimer])
+
+  const toggleFilesList = useCallback((): void => {
+    clearFilesListHideTimer()
+
+    if (filesListPinnedOpen) {
+      writeFilesListPinnedOpen(false)
+      setFilesListPinnedOpen(false)
+      setFilesListRevealed(false)
+
+      return
+    }
+
+    setFilesListRevealed((open) => !open)
+  }, [clearFilesListHideTimer, filesListPinnedOpen])
+
+  const scheduleHideFilesList = useCallback((): void => {
+    clearFilesListHideTimer()
+
+    if (filesListPinnedOpen) {
+      return
+    }
+
+    filesListHideTimerRef.current = setTimeout(() => {
+      setFilesListRevealed(false)
+      filesListHideTimerRef.current = null
+    }, FILES_LIST_CLOSE_DELAY_MS)
+  }, [clearFilesListHideTimer, filesListPinnedOpen])
+
+  const toggleFilesListPinned = useCallback((): void => {
+    clearFilesListHideTimer()
+    setFilesListRevealed(true)
+
+    const next = !filesListPinnedOpen
+
+    writeFilesListPinnedOpen(next)
+    setFilesListPinnedOpen(next)
+  }, [clearFilesListHideTimer, filesListPinnedOpen])
 
   // Stable focus owner for handoffs before focused diff/comment nodes unmount.
   const focusDiffRoot = useCallback((): void => {
@@ -960,6 +1070,18 @@ export const Panel = ({
     [commitSelection, cwd, focusDiffRoot]
   )
 
+  const handleSelectDiffFileFromList = useCallback(
+    (file: ChangedFile): void => {
+      selectDiffFile(file)
+
+      if (!filesListPinnedOpen) {
+        clearFilesListHideTimer()
+        setFilesListRevealed(false)
+      }
+    },
+    [clearFilesListHideTimer, filesListPinnedOpen, selectDiffFile]
+  )
+
   // Step the selection by `delta` files with wrap-around. Declared BEFORE the
   // early-return ladder below so the hook order stays stable across renders
   // (rules-of-hooks — a recent regression added a hook after an early return
@@ -1109,7 +1231,17 @@ export const Panel = ({
   ])
 
   const openFileCommentEditor = useCallback(
-    (file: Pick<ChangedFile, 'path' | 'staged'>): void => {
+    (
+      file: Pick<ChangedFile, 'path' | 'staged'>,
+      anchor: HTMLElement | null = null
+    ): void => {
+      if (anchor === null) {
+        setFileCommentAnchorPoint(null)
+      } else {
+        const rect = anchor.getBoundingClientRect()
+        setFileCommentAnchorPoint({ left: rect.left, top: rect.bottom })
+      }
+
       const nextTarget: AnnotationTarget = {
         scope: 'file',
         filePath: file.path,
@@ -1141,11 +1273,22 @@ export const Panel = ({
   }, [notifyInfo, openFileCommentEditor, selectedFileEntry])
 
   const handleAddFileComment = useCallback(
-    (file: ChangedFile): void => {
+    (file: ChangedFile, anchor: HTMLElement): void => {
       selectDiffFile(file)
-      openFileCommentEditor(file)
+
+      if (!filesListPinnedOpen) {
+        clearFilesListHideTimer()
+        setFilesListRevealed(false)
+      }
+
+      openFileCommentEditor(file, anchor)
     },
-    [openFileCommentEditor, selectDiffFile]
+    [
+      clearFilesListHideTimer,
+      filesListPinnedOpen,
+      openFileCommentEditor,
+      selectDiffFile,
+    ]
   )
 
   // Opens the y/n guard for destructive or staging keyboard actions.
@@ -1252,6 +1395,7 @@ export const Panel = ({
     const fileCommentToEdit =
       fileCommentsForSelectedFile[fileCommentsForSelectedFile.length - 1]
 
+    setFileCommentAnchorPoint(null)
     setAnnotationTarget({
       scope: 'file',
       filePath: selectedFilePath,
@@ -1308,6 +1452,7 @@ export const Panel = ({
             { text }
           )
           cancelVisualSelection(false)
+          setFileCommentAnchorPoint(null)
           closeCommentEditor()
 
           return
@@ -1336,6 +1481,7 @@ export const Panel = ({
           )
         } else {
           cancelVisualSelection(false)
+          setFileCommentAnchorPoint(null)
           closeCommentEditor()
         }
 
@@ -1417,6 +1563,7 @@ export const Panel = ({
 
   const cancelCommentEditor = useCallback((): void => {
     cancelVisualSelection(false)
+    setFileCommentAnchorPoint(null)
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
@@ -1428,6 +1575,8 @@ export const Panel = ({
     onScrollPage: scrollDiffPage,
     onPreviousFile: (): void => goToFile(-1),
     onNextFile: (): void => goToFile(1),
+    onToggleFilesList: toggleFilesList,
+    onToggleFilesListPinned: toggleFilesListPinned,
     onPreviousHunk: (): void => moveReviewTargetHunk(-1),
     onNextHunk: (): void => moveReviewTargetHunk(1),
     onComment: openSelectedComment,
@@ -1634,21 +1783,60 @@ export const Panel = ({
     )
   }
 
-  // Populated state (horizontal split: file list + toolbar + Pierre diff)
+  // Populated state: toolbar + full-width diff body. The changed-files list
+  // floats over the body on demand instead of permanently consuming width.
   return (
     <div
       ref={diffRootRef}
       data-testid="diff-populated-state"
       tabIndex={-1}
       onPointerDownCapture={handleDiffRootPointerDown}
-      className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden focus:outline-none"
+      className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden focus:outline-none"
     >
-      {/* Left: Changed files list */}
+      <Notifier
+        toolbarProps={{
+          ...toolbarSettingsProps,
+          diffMode: selectedFileStaged ? 'staged' : 'unstaged',
+          totalHunks: hunkCount,
+          focusedHunkIndex: clampedHunkIndex,
+          onPrevHunk,
+          onNextHunk,
+          onPrevFile: (): void => goToFile(-1),
+          onNextFile: (): void => goToFile(1),
+          currentFileIndex,
+          totalFiles: effectiveFiles.length,
+          onStage: handleStage,
+          onUnstage: handleUnstage,
+          onDiscard: handleDiscard,
+          onDiscardAll: handleDiscardAll,
+          staging,
+          selectedFileName: selectedFilePath ?? undefined,
+          feedbackCount: pendingFeedbackCount,
+          onDiscardFeedback: feedback.clearBatch,
+          onFinishFeedback,
+          onRefreshActiveFile:
+            latestDiffStatus === 'ready' ? acceptLatestDiff : undefined,
+        }}
+        finishFeedback={finishFeedback}
+        keyboardConfirm={keyboardConfirm}
+        renderSyncError={renderSyncError}
+        notifyMessage={notifyMessage}
+        recoverableDraft={
+          recoverableCommentDraftTarget === null
+            ? null
+            : {
+                target: recoverableCommentDraftTarget,
+                text: commentDraftText,
+              }
+        }
+        onCancelKeyboardConfirm={cancelKeyboardConfirm}
+        onConfirmKeyboardAction={confirmKeyboardAction}
+      />
       <div
-        data-testid="changed-files-pane"
-        className="w-60 shrink-0 overflow-y-auto"
+        data-testid="diff-body-region"
+        className="relative flex min-h-0 flex-1 overflow-hidden"
       >
-        <ChangedFilesList
+        <ChangedFilesListSurface
           files={effectiveFiles}
           selectedFile={
             effectiveSelectedFile !== null
@@ -1658,161 +1846,135 @@ export const Panel = ({
                 }
               : null
           }
-          onSelectFile={(file: ChangedFile): void => {
-            selectDiffFile(file)
-          }}
+          pinned={filesListPinnedOpen}
+          revealed={filesListRevealed}
+          onReveal={revealFilesList}
+          onToggle={toggleFilesList}
+          onScheduleHide={scheduleHideFilesList}
+          onTogglePinned={toggleFilesListPinned}
+          onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
         />
-      </div>
-
-      {/* Right: chip toolbar (top) + Pierre MultiFileDiff (bottom). The
-          ResizeObserver above watches THIS wrapper so both width bands
-          (SPLIT_MIN / DIFF_MIN) come from one source. */}
-      <div
-        ref={setDiffPaneElement}
-        data-testid="diff-right-pane"
-        className="flex min-w-0 flex-1 flex-col overflow-hidden"
-      >
-        <Notifier
-          toolbarProps={{
-            ...toolbarSettingsProps,
-            diffMode: selectedFileStaged ? 'staged' : 'unstaged',
-            totalHunks: hunkCount,
-            focusedHunkIndex: clampedHunkIndex,
-            onPrevHunk,
-            onNextHunk,
-            onPrevFile: (): void => goToFile(-1),
-            onNextFile: (): void => goToFile(1),
-            currentFileIndex,
-            totalFiles: effectiveFiles.length,
-            onStage: handleStage,
-            onUnstage: handleUnstage,
-            onDiscard: handleDiscard,
-            onDiscardAll: handleDiscardAll,
-            staging,
-            selectedFileName: selectedFilePath ?? undefined,
-            feedbackCount: pendingFeedbackCount,
-            onDiscardFeedback: feedback.clearBatch,
-            onFinishFeedback,
-            onRefreshActiveFile:
-              latestDiffStatus === 'ready' ? acceptLatestDiff : undefined,
-          }}
-          finishFeedback={finishFeedback}
-          keyboardConfirm={keyboardConfirm}
-          renderSyncError={renderSyncError}
-          notifyMessage={notifyMessage}
-          recoverableDraft={
-            recoverableCommentDraftTarget === null
-              ? null
-              : {
-                  target: recoverableCommentDraftTarget,
-                  text: commentDraftText,
-                }
-          }
-          onCancelKeyboardConfirm={cancelKeyboardConfirm}
-          onConfirmKeyboardAction={confirmKeyboardAction}
-        />
         <div
-          ref={setFileCommentAnchor}
-          data-testid="file-comment-popover-anchor"
-          className="h-0 w-0 shrink-0"
-        />
-        <Popover
-          anchor={fileCommentAnchor}
-          open={fileCommentDraftIsVisible}
-          onOpenChange={(open): void => {
-            if (!open) {
-              cancelCommentEditor()
-            }
-          }}
-          placement="bottom-start"
-          width={560}
-          middleware={{ ancestorScroll: false }}
-          aria-label={
-            fileCommentDraftTarget === null
-              ? 'Comment on file'
-              : `Comment on file ${fileCommentDraftTarget.filePath}`
-          }
+          ref={setDiffPaneElement}
+          data-testid="diff-right-pane"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
-          <ReviewCommentEditor
-            targetLabel={`file ${fileCommentDraftTarget?.filePath ?? ''}`}
-            chrome="plain"
-            surfaceRole="none"
-            value={commentDraftText}
-            onTextChange={(text): void => {
+          <div
+            ref={setFileCommentAnchor}
+            data-testid="file-comment-popover-anchor"
+            className={
+              fileCommentAnchorPoint === null
+                ? 'h-0 w-0 shrink-0'
+                : 'fixed h-0 w-0'
+            }
+            style={
+              fileCommentAnchorPoint === null
+                ? undefined
+                : {
+                    left: fileCommentAnchorPoint.left,
+                    top: fileCommentAnchorPoint.top,
+                  }
+            }
+          />
+          <Popover
+            anchor={fileCommentAnchor}
+            open={fileCommentDraftIsVisible}
+            onOpenChange={(open): void => {
+              if (!open) {
+                cancelCommentEditor()
+              }
+            }}
+            placement="bottom-start"
+            width={560}
+            middleware={{ ancestorScroll: false }}
+            aria-label={
+              fileCommentDraftTarget === null
+                ? 'Comment on file'
+                : `Comment on file ${fileCommentDraftTarget.filePath}`
+            }
+          >
+            <ReviewCommentEditor
+              targetLabel={`file ${fileCommentDraftTarget?.filePath ?? ''}`}
+              chrome="plain"
+              surfaceRole="none"
+              value={commentDraftText}
+              onTextChange={(text): void => {
+                setCommentDraftText(text, false)
+              }}
+              onConfirm={confirmCommentEditor}
+              onCancel={cancelCommentEditor}
+            />
+          </Popover>
+          {selectedFileEntry !== undefined &&
+          fileCommentsForSelectedFile.length > 0 ? (
+            <div
+              data-testid="file-level-comments-panel"
+              className="flex max-h-56 shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
+            >
+              <div className="px-2 text-xs font-medium text-on-surface-variant">
+                Commented on file
+              </div>
+              <div
+                data-testid="file-level-comments-list"
+                className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
+              >
+                {fileCommentsForSelectedFile.map((annotation) => (
+                  <ReviewCommentRow
+                    key={annotation.metadata.id}
+                    comment={annotation.metadata}
+                    editShortcut="Shift+U"
+                    deleteShortcut={null}
+                    onEdit={(): void => {
+                      setFileCommentAnchorPoint(null)
+                      setAnnotationTarget({
+                        scope: 'file',
+                        filePath: selectedFileEntry.path,
+                        staged: selectedFileEntry.staged,
+                        editId: annotation.metadata.id,
+                      })
+                      setCommentDraftText(annotation.metadata.text, false)
+                    }}
+                    onDelete={(): void => {
+                      focusDiffRoot()
+                      feedback.removeAnnotation(
+                        cwd,
+                        selectedFileEntry.path,
+                        selectedFileEntry.staged,
+                        annotation.metadata.id
+                      )
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <PanelBody
+            scrollBodyRef={diffScrollBodyRef}
+            diffError={diffError}
+            diffLoading={diffLoading}
+            pierreInputs={pierreInputs}
+            tooNarrow={tooNarrow}
+            renderKey={panelRenderKey}
+            options={multiFileDiffOptions}
+            selectedLines={selectedLines}
+            lineAnnotations={lineAnnotations}
+            annotationTarget={annotationTarget}
+            commentDraftText={commentDraftText}
+            onPointerDown={startMouseVisualSelection}
+            onPointerMove={moveMouseVisualSelection}
+            onPointerUp={stopMouseVisualSelection}
+            onPointerLeave={stopMouseVisualSelection}
+            onAddComment={handleBodyAddComment}
+            onEditComment={handleBodyEditComment}
+            onDeleteComment={removeFeedbackAnnotation}
+            onCommentTextChange={(text): void => {
               setCommentDraftText(text, false)
             }}
-            onConfirm={confirmCommentEditor}
-            onCancel={cancelCommentEditor}
+            onConfirmComment={confirmCommentEditor}
+            onCancelComment={cancelCommentEditor}
           />
-        </Popover>
-        {selectedFileEntry !== undefined &&
-        fileCommentsForSelectedFile.length > 0 ? (
-          <div
-            data-testid="file-level-comments-panel"
-            className="flex max-h-56 shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
-          >
-            <div className="px-2 text-xs font-medium text-on-surface-variant">
-              Commented on file
-            </div>
-            <div
-              data-testid="file-level-comments-list"
-              className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
-            >
-              {fileCommentsForSelectedFile.map((annotation) => (
-                <ReviewCommentRow
-                  key={annotation.metadata.id}
-                  comment={annotation.metadata}
-                  editShortcut="Shift+U"
-                  deleteShortcut={null}
-                  onEdit={(): void => {
-                    setAnnotationTarget({
-                      scope: 'file',
-                      filePath: selectedFileEntry.path,
-                      staged: selectedFileEntry.staged,
-                      editId: annotation.metadata.id,
-                    })
-                    setCommentDraftText(annotation.metadata.text, false)
-                  }}
-                  onDelete={(): void => {
-                    focusDiffRoot()
-                    feedback.removeAnnotation(
-                      cwd,
-                      selectedFileEntry.path,
-                      selectedFileEntry.staged,
-                      annotation.metadata.id
-                    )
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <PanelBody
-          scrollBodyRef={diffScrollBodyRef}
-          diffError={diffError}
-          diffLoading={diffLoading}
-          pierreInputs={pierreInputs}
-          tooNarrow={tooNarrow}
-          renderKey={panelRenderKey}
-          options={multiFileDiffOptions}
-          selectedLines={selectedLines}
-          lineAnnotations={lineAnnotations}
-          annotationTarget={annotationTarget}
-          commentDraftText={commentDraftText}
-          onPointerDown={startMouseVisualSelection}
-          onPointerMove={moveMouseVisualSelection}
-          onPointerUp={stopMouseVisualSelection}
-          onPointerLeave={stopMouseVisualSelection}
-          onAddComment={handleBodyAddComment}
-          onEditComment={handleBodyEditComment}
-          onDeleteComment={removeFeedbackAnnotation}
-          onCommentTextChange={(text): void => {
-            setCommentDraftText(text, false)
-          }}
-          onConfirmComment={confirmCommentEditor}
-          onCancelComment={cancelCommentEditor}
-        />
+        </div>
       </div>
     </div>
   )

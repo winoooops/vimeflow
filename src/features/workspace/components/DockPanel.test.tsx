@@ -1358,12 +1358,11 @@ describe('DockPanel', () => {
       '/repo:0:src/second.ts:unstaged'
     )
 
-    const selectedButton = screen
-      .getAllByText('second.ts')
-      // eslint-disable-next-line testing-library/no-node-access -- find selected file-list row
-      .map((label) => label.closest('button'))
-      .find((button): button is HTMLButtonElement => button !== null)
-    expect(selectedButton).toHaveClass('bg-surface-container-highest/40')
+    fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+
+    expect(
+      screen.getByRole('button', { name: /second\.ts/i, current: 'page' })
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   test('forwards parent-provided gitStatus to Panel on the unselected-file render branch', () => {

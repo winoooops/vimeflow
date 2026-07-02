@@ -67,6 +67,8 @@ const renderKeyboard = (
     onScrollPage: vi.fn(),
     onPreviousFile: vi.fn(),
     onNextFile: vi.fn(),
+    onToggleFilesList: vi.fn(),
+    onToggleFilesListPinned: vi.fn(),
     onPreviousHunk: vi.fn(),
     onNextHunk: vi.fn(),
     onComment: vi.fn(),
@@ -131,6 +133,23 @@ describe('useKeyboard', () => {
 
     expect(props.onPreviousHunk).toHaveBeenCalledOnce()
     expect(props.onNextHunk).toHaveBeenCalledOnce()
+  })
+
+  test('e toggles the changed-files list', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('e')
+
+    expect(props.onToggleFilesList).toHaveBeenCalledOnce()
+  })
+
+  test('Shift+E toggles the sticky changed-files list', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('E')
+
+    expect(props.onToggleFilesListPinned).toHaveBeenCalledOnce()
+    expect(props.onToggleFilesList).not.toHaveBeenCalled()
   })
 
   test('i opens comment editor for the selected line', () => {
@@ -362,6 +381,8 @@ describe('useKeyboard', () => {
       onScrollPage: vi.fn(),
       onPreviousFile: vi.fn(),
       onNextFile: vi.fn(),
+      onToggleFilesList: vi.fn(),
+      onToggleFilesListPinned: vi.fn(),
       onPreviousHunk: vi.fn(),
       onNextHunk: vi.fn(),
       onComment: vi.fn(),
