@@ -1,4 +1,4 @@
-import { clickBySelector } from '../../shared/actions.js'
+import { createNewSession } from '../../shared/actions.js'
 
 const readRustSessionCount = async (): Promise<number> => {
   const ids = await browser.execute(
@@ -17,22 +17,46 @@ const waitForCount = async (
   )
 }
 
-const clickLatestSessionTabCloseButton = async (): Promise<void> => {
-  const ok = await browser.execute(() => {
-    const tabs = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid="session-tab"]')
+const removeLatestSessionRow = async (): Promise<void> => {
+  const opened = await browser.execute(() => {
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="session-row"]')
     )
-    const latestTab = tabs[tabs.length - 1]
-    const closeButton = latestTab?.querySelector<HTMLButtonElement>(
-      '[data-testid="close-tab-button"]'
+    const latestRow = rows[rows.length - 1]
+    const actionsButton = latestRow?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Session actions"]'
     )
-    if (!closeButton) return false
+    if (!actionsButton) return false
 
-    closeButton.click()
+    actionsButton.click()
 
     return true
   })
-  if (!ok) throw new Error('could not locate close button for the spawned tab')
+
+  if (!opened) {
+    throw new Error('could not open actions menu for the spawned session')
+  }
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(() =>
+        Array.from(document.querySelectorAll('button')).some(
+          (button) => button.textContent?.trim().includes('Remove') ?? false
+        )
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'could not locate remove action for the spawned session',
+    }
+  )
+
+  await browser.execute(() => {
+    const removeButton = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim().includes('Remove') ?? false
+    )
+    removeButton?.click()
+  })
 }
 
 describe('Terminal session lifecycle', () => {
@@ -46,15 +70,10 @@ describe('Terminal session lifecycle', () => {
     // Baseline: useSessionManager boots with one default session.
     await waitForCount(1, 'default session never became active')
 
-    // Click the SessionTabs "+" button (aria-label="New session" since
-    // step 3 replaced TerminalZone's legacy tab-bar).
-    await clickBySelector('button[aria-label="New session"]')
+    await createNewSession()
     await waitForCount(2, 'new tab did not register a second PTY session')
 
-    // Close the most recently spawned session by finding the close control
-    // inside the latest tab. The close button is intentionally hidden from
-    // the a11y tree and exposed to tests via data-testid.
-    await clickLatestSessionTabCloseButton()
+    await removeLatestSessionRow()
 
     await waitForCount(1, 'closing the spawned tab did not decrement count')
   })
