@@ -4,19 +4,54 @@ const commandPaletteSelector = '[role="dialog"][aria-label="Command palette"]'
 const commandPaletteInputSelector = '[aria-label="Command palette search"]'
 const enterKey = '\uE007'
 
-const readRustSessionCount = async (): Promise<number> => {
+const readRustSessionIds = async (): Promise<string[]> => {
   const ids = await browser.execute(
     async () => (await window.__VIMEFLOW_E2E__?.listActivePtySessions()) ?? []
   )
-  return ids.length
+
+  return ids
 }
 
-const waitForCount = async (
-  expected: number,
+const readVisiblePtyId = async (): Promise<string | null> =>
+  browser.execute(() => window.__VIMEFLOW_E2E__?.getVisiblePtyId() ?? null)
+
+const waitForVisiblePtyId = async (
+  timeoutMsg: string,
+  predicate: (ptyId: string) => boolean = () => true
+): Promise<string> => {
+  let matchedPtyId: string | null = null
+
+  await browser.waitUntil(
+    async () => {
+      const visiblePtyId = await readVisiblePtyId()
+      if (!visiblePtyId || !predicate(visiblePtyId)) {
+        return false
+      }
+
+      matchedPtyId = visiblePtyId
+
+      return true
+    },
+    {
+      timeout: 15_000,
+      interval: 500,
+      timeoutMsg,
+    }
+  )
+
+  if (matchedPtyId === null) {
+    throw new Error(timeoutMsg)
+  }
+
+  return matchedPtyId
+}
+
+const waitForBackendSession = async (
+  ptyId: string,
   timeoutMsg: string
 ): Promise<void> => {
   await browser.waitUntil(
-    async () => (await readRustSessionCount()) === expected,
+    async () => (await readRustSessionIds()).includes(ptyId),
     { timeout: 15_000, interval: 500, timeoutMsg }
   )
 }
@@ -58,7 +93,7 @@ const waitForCommandPaletteClosed = async (): Promise<void> => {
   )
 }
 
-const closeActiveSession = async (): Promise<void> => {
+const closeActiveSession = async (closedPtyId: string): Promise<void> => {
   await dispatchCommandPaletteShortcut()
   await (
     await $(commandPaletteSelector)
@@ -73,11 +108,14 @@ const closeActiveSession = async (): Promise<void> => {
     document.querySelector<HTMLInputElement>(selector)?.focus()
   }, commandPaletteInputSelector)
   await browser.action('key').down(enterKey).up(enterKey).perform()
-  await browser.waitUntil(async () => (await readRustSessionCount()) === 1, {
-    timeout: 15_000,
-    interval: 500,
-    timeoutMsg: 'closing the spawned tab did not decrement count',
-  })
+  await browser.waitUntil(
+    async () => !(await readRustSessionIds()).includes(closedPtyId),
+    {
+      timeout: 15_000,
+      interval: 500,
+      timeoutMsg: 'closing the spawned tab did not kill its PTY',
+    }
+  )
   await waitForCommandPaletteClosed()
 }
 
@@ -89,12 +127,24 @@ describe('Terminal session lifecycle', () => {
       timeout: 20_000,
     })
 
-    // Baseline: useSessionManager boots with one default session.
-    await waitForCount(1, 'default session never became active')
+    const initialPtyId = await waitForVisiblePtyId(
+      'default session never became visible'
+    )
+    await waitForBackendSession(
+      initialPtyId,
+      'default session never became active in the backend'
+    )
 
     await createNewSessionWithDefaults()
-    await waitForCount(2, 'new tab did not register a second PTY session')
+    const spawnedPtyId = await waitForVisiblePtyId(
+      'new tab never became the visible PTY session',
+      (ptyId) => ptyId !== initialPtyId
+    )
+    await waitForBackendSession(
+      spawnedPtyId,
+      'new tab did not register its PTY in the backend'
+    )
 
-    await closeActiveSession()
+    await closeActiveSession(spawnedPtyId)
   })
 })

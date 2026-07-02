@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import type { ChangedFile } from '../types'
-import { ChangedFilesList } from './ChangedFilesList'
+import { ChangedFilesList, ChangedFilesListSurface } from './ChangedFilesList'
 
 describe('ChangedFilesList', () => {
   const mockFiles: ChangedFile[] = [
@@ -41,10 +41,10 @@ describe('ChangedFilesList', () => {
     const header = screen.getByText(/Changed Files/i)
 
     expect(header).toBeInTheDocument()
-    expect(header).toHaveClass('text-primary-container')
+    expect(header).toHaveClass('text-on-surface-variant')
   })
 
-  test('renders file list with icons and names', () => {
+  test('renders file list with status glyphs, names, and directories', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
@@ -60,10 +60,10 @@ describe('ChangedFilesList', () => {
       screen.queryByRole('button', { name: /comment on file/i })
     ).not.toBeInTheDocument()
 
-    // Check file icons are rendered (Material Symbols)
-    const icons = screen.getAllByRole('img', { hidden: true })
-
-    expect(icons.length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Modified')).toHaveTextContent('M')
+    expect(screen.getByLabelText('Added')).toHaveTextContent('A')
+    expect(screen.getByLabelText('Deleted')).toHaveTextContent('D')
+    expect(screen.getByText('src/components')).toBeInTheDocument()
   })
 
   test('displays insertion and deletion counts', () => {
@@ -87,7 +87,7 @@ describe('ChangedFilesList', () => {
   })
 
   test('applies active file highlighting when selected', () => {
-    const { container } = render(
+    render(
       <ChangedFilesList
         files={mockFiles}
         selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
@@ -95,13 +95,34 @@ describe('ChangedFilesList', () => {
       />
     )
 
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const activeFile = container.querySelector(
-      '.bg-surface-container-highest\\/40'
+    const activeFile = screen.getByRole('button', {
+      name: /NavBar\.tsx/i,
+      current: 'page',
+    })
+
+    expect(activeFile).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('pin button toggles the pinned state when provided', async () => {
+    const user = userEvent.setup()
+    const onTogglePinned = vi.fn()
+
+    render(
+      <ChangedFilesList
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+        onTogglePinned={onTogglePinned}
+      />
     )
 
-    expect(activeFile).toBeInTheDocument()
-    expect(activeFile).toHaveTextContent('NavBar.tsx')
+    const pinButton = screen.getByRole('button', { name: /pin changed files/i })
+
+    expect(pinButton).toHaveAttribute('aria-keyshortcuts', 'Shift+E')
+
+    await user.click(pinButton)
+
+    expect(onTogglePinned).toHaveBeenCalledOnce()
   })
 
   test('calls onSelectFile when file is clicked', async () => {
@@ -143,7 +164,10 @@ describe('ChangedFilesList', () => {
       })
     )
 
-    expect(handleAddFileComment).toHaveBeenCalledWith(mockFiles[0])
+    expect(handleAddFileComment).toHaveBeenCalledWith(
+      mockFiles[0],
+      expect.any(HTMLElement)
+    )
     expect(handleSelect).not.toHaveBeenCalled()
   })
 
@@ -191,7 +215,7 @@ describe('ChangedFilesList', () => {
   })
 
   test('applies hover state styling', () => {
-    const { container } = render(
+    render(
       <ChangedFilesList
         files={mockFiles}
         selectedFile={null}
@@ -199,13 +223,14 @@ describe('ChangedFilesList', () => {
       />
     )
 
-    // Check that hover classes exist
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const row = container.querySelector(
-      '.hover\\:bg-surface-container-highest\\/20'
-    )
+    const fileButton = screen.getByRole('button', {
+      name: /NavBar\.tsx/i,
+    })
 
-    expect(row).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- row wrapper owns the hover background class
+    const row = fileButton.parentElement
+
+    expect(row?.className).toContain('hover:bg-surface-container-high/60')
   })
 
   test('truncates long file paths', () => {
@@ -358,5 +383,99 @@ describe('ChangedFilesList', () => {
     const fileButtons = screen.getAllByText('both.ts')
 
     expect(fileButtons).toHaveLength(2)
+  })
+})
+
+describe('ChangedFilesListSurface', () => {
+  const mockFiles: ChangedFile[] = [
+    {
+      path: 'src/components/NavBar.tsx',
+      status: 'modified',
+      insertions: 12,
+      deletions: 3,
+      staged: false,
+    },
+  ]
+
+  test('keeps the panel open when activating after focus reveal', async () => {
+    const user = userEvent.setup()
+    const onReveal = vi.fn()
+    const onToggle = vi.fn()
+    const unpinned = false
+    const hidden = false
+
+    render(
+      <ChangedFilesListSurface
+        files={mockFiles}
+        selectedFile={null}
+        pinned={unpinned}
+        revealed={hidden}
+        onReveal={onReveal}
+        onToggle={onToggle}
+        onScheduleHide={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onSelectFile={vi.fn()}
+        onAddFileComment={vi.fn()}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /show changed files \(1\)/i })
+    )
+
+    expect(onReveal).toHaveBeenCalled()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  test('schedules hide only after focus leaves the unpinned surface', async () => {
+    const user = userEvent.setup()
+    const onScheduleHide = vi.fn()
+    const unpinned = false
+    const shown = true
+
+    render(
+      <>
+        <ChangedFilesListSurface
+          files={mockFiles}
+          selectedFile={null}
+          pinned={unpinned}
+          revealed={shown}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={onScheduleHide}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+        <button type="button">Outside diff</button>
+      </>
+    )
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /hide changed files \(1\)/i })
+    ).toHaveFocus()
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /pin changed files/i })
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(
+      screen.getAllByRole('button', { name: /NavBar\.tsx/i })[0]
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /comment on file/i })
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: /outside diff/i })).toHaveFocus()
+    expect(onScheduleHide).toHaveBeenCalledOnce()
   })
 })

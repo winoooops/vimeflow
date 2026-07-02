@@ -227,6 +227,7 @@ const setPaneWidth = (width: number): void => {
 describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     installMockResizeObserver()
   })
 
@@ -458,7 +459,7 @@ describe('Panel', () => {
     expect(clearBatch).toHaveBeenCalledOnce()
   })
 
-  test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {
+  test('renders full-width diff with a hover cue when changes exist', (): void => {
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [
         {
@@ -513,6 +514,15 @@ describe('Panel', () => {
     // Initial pane width is the unmeasured sentinel, so MultiFileDiff mounts
     // immediately before a ResizeObserver trigger without forcing narrow mode.
     expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+    expect(screen.getByTestId('changed-files-edge-hint')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('changed-files-hot-zone')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /show changed files \(2\)/i })
+    ).toHaveAttribute('aria-keyshortcuts', 'e')
 
     // Chip toolbar (controlled component) is mounted alongside.
     expect(
@@ -527,6 +537,381 @@ describe('Panel', () => {
     expect(toolbarShell).toHaveClass('shrink-0')
     expect(scrollBody).toHaveClass('overflow-auto')
     expect(scrollBody).not.toContainElement(toolbar)
+  })
+
+  test('pressing e toggles the changed-files panel and Shift+E toggles sticky', (): void => {
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+      ],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+
+    expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'E' })
+
+    expect(window.localStorage.getItem('vf-diff-files-open')).toBe('1')
+    expect(screen.getByTestId('changed-files-pane')).toHaveClass('h-full')
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'E' })
+
+    expect(window.localStorage.getItem('vf-diff-files-open')).toBe('0')
+    expect(screen.getByTestId('changed-files-pane')).toHaveClass('absolute')
+  })
+
+  test('pin button restores diff focus when the changed-files surface remounts', async (): Promise<void> => {
+    const user = userEvent.setup()
+
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+      ],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+
+    await user.click(
+      within(screen.getByTestId('changed-files-pane')).getByRole('button', {
+        name: /^pin changed files/i,
+      })
+    )
+
+    expect(window.localStorage.getItem('vf-diff-files-open')).toBe('1')
+    expect(screen.getByTestId('changed-files-pane')).toHaveClass('h-full')
+    expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
+
+    await user.click(
+      within(screen.getByTestId('changed-files-pane')).getByRole('button', {
+        name: /^unpin changed files/i,
+      })
+    )
+
+    expect(window.localStorage.getItem('vf-diff-files-open')).toBe('0')
+    expect(screen.getByTestId('changed-files-pane')).toHaveClass('absolute')
+    expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
+  })
+
+  test('plain e toggle restores diff focus when closing the changed-files surface', (): void => {
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+      ],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+
+    const pinButton = within(
+      screen.getByTestId('changed-files-pane')
+    ).getByRole('button', { name: /^pin changed files/i })
+    act(() => {
+      pinButton.focus()
+    })
+    expect(pinButton).toHaveFocus()
+
+    fireEvent.keyDown(pinButton, { key: 'e' })
+
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+    expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
+  })
+
+  test('hovering the left edge reveals the changed-files panel and selecting a file closes it', async (): Promise<void> => {
+    const user = userEvent.setup()
+    const onSelectedFileChange = vi.fn()
+
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+        {
+          path: 'src/lib.ts',
+          status: 'added',
+          insertions: 10,
+          deletions: 0,
+          staged: true,
+        },
+      ],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(
+      <Panel
+        selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '.' }}
+        onSelectedFileChange={onSelectedFileChange}
+      />
+    )
+
+    fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+    expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+    await user.click(
+      within(screen.getByTestId('changed-files-pane')).getByText('lib.ts')
+    )
+
+    expect(onSelectedFileChange).toHaveBeenCalledWith({
+      path: 'src/lib.ts',
+      staged: true,
+      cwd: '.',
+    })
+    expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+  })
+
+  test('hover reveal waits before closing on mouse leave', (): void => {
+    vi.useFakeTimers()
+
+    try {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '.',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      render(<Panel />)
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+      expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(screen.getByTestId('changed-files-edge-hint'))
+      act(() => {
+        vi.advanceTimersByTime(219)
+      })
+      expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('pinning the changed-files panel persists and prevents hover close', (): void => {
+    vi.useFakeTimers()
+
+    try {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '.',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      render(<Panel />)
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+      fireEvent.click(
+        screen.getByRole('button', { name: /pin changed files/i })
+      )
+
+      expect(window.localStorage.getItem('vf-diff-files-open')).toBe('1')
+
+      expect(screen.getByTestId('diff-populated-state')).toHaveClass('flex-col')
+
+      expect(screen.getByTestId('changed-files-pane')).toHaveClass(
+        'h-full',
+        'w-64',
+        'shrink-0'
+      )
+
+      expect(screen.getByTestId('diff-body-region')).toContainElement(
+        screen.getByTestId('changed-files-pane')
+      )
+
+      expect(screen.getByTestId('diff-body-region')).toContainElement(
+        screen.getByTestId('diff-right-pane')
+      )
+
+      expect(screen.getByTestId('changed-files-pane')).not.toContainElement(
+        screen.getByTestId('diff-toolbar-shell')
+      )
+
+      expect(screen.getByTestId('diff-right-pane')).toHaveClass('flex-1')
+
+      fireEvent.mouseLeave(screen.getByTestId('changed-files-pane'))
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /unpin changed files/i })
+      )
+
+      expect(window.localStorage.getItem('vf-diff-files-open')).toBe('0')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('passes cwd to useGitStatus and useFileDiff hooks', (): void => {
@@ -909,7 +1294,9 @@ describe('Panel', () => {
       expect(screen.getByText('Loading diff…')).toBeInTheDocument()
     })
 
-    test('commitSelection tags with current cwd on click', (): void => {
+    test('commitSelection tags with current cwd on click', async (): Promise<void> => {
+      const user = userEvent.setup()
+
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: [
           {
@@ -953,9 +1340,11 @@ describe('Panel', () => {
         />
       )
 
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
       // Find and click a different file row
       const otherFileRow = screen.getByText('Other.tsx')
-      otherFileRow.click()
+      await user.click(otherFileRow)
 
       // Should call with cwd tag
       expect(onSelectedFileChange).toHaveBeenCalledWith({
@@ -2878,11 +3267,36 @@ describe('Panel', () => {
         />
       )
 
-      await user.click(
-        within(screen.getByTestId('changed-files-pane')).getByRole('button', {
-          name: 'Comment on file foo.ts',
-        })
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+      const commentButton = within(
+        screen.getByTestId('changed-files-pane')
+      ).getByRole('button', {
+        name: 'Comment on file foo.ts',
+      })
+
+      vi.spyOn(commentButton, 'getBoundingClientRect').mockReturnValue({
+        x: 42,
+        y: 56,
+        left: 42,
+        top: 56,
+        right: 64,
+        bottom: 78,
+        width: 22,
+        height: 22,
+        toJSON: () => ({}),
+      } as DOMRect)
+
+      await user.click(commentButton)
+
+      expect(screen.getByTestId('file-comment-popover-anchor')).toHaveClass(
+        'fixed'
       )
+
+      expect(screen.getByTestId('file-comment-popover-anchor')).toHaveStyle({
+        left: '42px',
+        top: '78px',
+      })
 
       expect(
         screen.getByRole('dialog', { name: 'Comment on file src/foo.ts' })
@@ -2917,9 +3331,7 @@ describe('Panel', () => {
         shiftKey: true,
       })
 
-      expect(
-        within(screen.getByTestId('changed-files-pane')).queryByRole('textbox')
-      ).not.toBeInTheDocument()
+      expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
 
       expect(screen.getByTestId('diff-right-pane')).toContainElement(
         screen.getByTestId('file-comment-popover-anchor')
@@ -2989,6 +3401,8 @@ describe('Panel', () => {
       expect(
         within(fileCommentsPanel).getByText('Review the whole file')
       ).toBeInTheDocument()
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       expect(
         within(screen.getByTestId('changed-files-pane')).queryByText(

@@ -12,6 +12,8 @@ export interface UseKeyboardOptions {
   onScrollPage: (direction: number) => void
   onPreviousFile: () => void
   onNextFile: () => void
+  onToggleFilesList: () => void
+  onToggleFilesListPinned: () => void
   onPreviousHunk: () => void
   onNextHunk: () => void
   onComment: () => void
@@ -60,6 +62,8 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onScrollPage,
     onPreviousFile,
     onNextFile,
+    onToggleFilesList,
+    onToggleFilesListPinned,
     onPreviousHunk,
     onNextHunk,
     onComment,
@@ -168,6 +172,8 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         k: () => onMoveLine(-1),
         n: onNextFile,
         p: onPreviousFile,
+        e: onToggleFilesList,
+        E: onToggleFilesListPinned,
         '[': onPreviousHunk,
         ']': onNextHunk,
         i: onComment,
@@ -207,6 +213,8 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onScrollPage,
     onPreviousFile,
     onNextFile,
+    onToggleFilesList,
+    onToggleFilesListPinned,
     onPreviousHunk,
     onNextHunk,
     onComment,
