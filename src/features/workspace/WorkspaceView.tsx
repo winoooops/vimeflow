@@ -1,4 +1,4 @@
-// cspell:ignore worktree
+// cspell:ignore worktree Ghostty ghostty
 import type { CSSProperties, ReactElement } from 'react'
 import {
   useCallback,
@@ -60,7 +60,7 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { renameAgentSession } from '../../lib/backend'
+import { listen, renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 import {
@@ -218,6 +218,11 @@ const readCompactViewport = (): boolean =>
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
   window.matchMedia(COMPACT_WORKSPACE_QUERY).matches
+
+interface GhosttyNativeRenamePaneEvent {
+  sessionId: string
+  paneId: string
+}
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
@@ -1113,10 +1118,69 @@ const WorkspaceViewContent = (): ReactElement => {
     return { pane: activePane, session: activeSession }
   }, [activePane, activeSession])
 
-  const { renderNode: paneRenameNode } = usePaneRenameChord(
+  const { renderNode: paneRenameNode, openPaneRename } = usePaneRenameChord(
     resolveFocusedPane,
     setPaneUserLabel
   )
+
+  const sessionsRef = useRef(sessions)
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.vimeflow) {
+      return
+    }
+
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const attachNativeRenameListener = async (): Promise<void> => {
+      const cleanup = await listen<GhosttyNativeRenamePaneEvent>(
+        'ghostty-native-rename-pane',
+        (payload) => {
+          // Ghostty names this field `sessionId`, but the native surface is
+          // keyed by the PTY id that backs a pane.
+          const session = sessionsRef.current.find((candidate) =>
+            candidate.panes.some(
+              (pane) =>
+                pane.id === payload.paneId && pane.ptyId === payload.sessionId
+            )
+          )
+
+          const pane = session?.panes.find(
+            (candidate) =>
+              candidate.id === payload.paneId &&
+              candidate.ptyId === payload.sessionId
+          )
+
+          if (!session || !pane || (pane.kind ?? 'shell') !== 'shell') {
+            return
+          }
+
+          setActiveSessionId(session.id)
+          setSessionActivePane(session.id, pane.id)
+          openPaneRename({ session, pane })
+        }
+      )
+
+      if (cancelled) {
+        cleanup()
+
+        return
+      }
+
+      unlisten = cleanup
+    }
+
+    void attachNativeRenameListener()
+
+    return (): void => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [openPaneRename, setActiveSessionId, setSessionActivePane])
 
   // Burner terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
   const [burnerReapDone, setBurnerReapDone] = useState(false)

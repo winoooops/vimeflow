@@ -811,9 +811,7 @@ describe('SplitView - click-to-focus', () => {
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
 
-  test('hovering an inactive pane shows a focus tooltip with the Mod+N shortcut chip', async () => {
-    const user = userEvent.setup()
-
+  test('renders visible pane shortcut hints instead of focus tooltips', async () => {
     render(
       <SplitView
         session={makeSession('vsplit', 2)}
@@ -822,14 +820,24 @@ describe('SplitView - click-to-focus', () => {
       />
     )
 
+    expect(screen.getAllByTestId('pane-shortcut-hint')).toHaveLength(2)
+    expect(screen.getAllByTestId('pane-shortcut-hint')[0]).toHaveTextContent(
+      '1'
+    )
+
+    expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
+      '2'
+    )
+
+    const user = userEvent.setup()
     const inners = screen.getAllByTestId('split-view-slot-inner')
     await user.hover(inners[1])
 
-    const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Focus pane 2')
-    // Assertion is platform-safe: `formatShortcut` renders `⌘2` on
-    // macOS and `Ctrl+2` elsewhere — both contain the digit.
-    expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('2')
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300)
+    })
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   test('hovering the active pane does not show a focus tooltip', async () => {

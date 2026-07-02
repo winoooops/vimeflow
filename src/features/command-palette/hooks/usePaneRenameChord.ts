@@ -4,6 +4,7 @@ import { renameAgentSession } from '../../../lib/backend'
 import type { Pane, Session } from '../../sessions/types'
 import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import { PaneRenameInput } from '../../terminal/components/PaneRenameInput'
+import { focusNativeGhostty } from '../../terminal/nativeGhosttyClient'
 import { registerChord } from '../chordRegistry'
 
 export interface FocusedPaneRef {
@@ -17,6 +18,8 @@ type RenameTarget = {
   pane: Pane
   initialValue: string
 } | null
+
+type ActiveRenameTarget = Exclude<RenameTarget, null>
 
 type SetPaneUserLabel = (
   ptyId: string,
@@ -33,7 +36,10 @@ const errorMessageForRenameFailure = (error: unknown): string => {
 export const usePaneRenameChord = (
   resolveFocusedPane: () => FocusedPaneRef | null,
   setPaneUserLabel: SetPaneUserLabel
-): { renderNode: ReactNode } => {
+): {
+  renderNode: ReactNode
+  openPaneRename: (focused: FocusedPaneRef) => boolean
+} => {
   const [target, setTarget] = useState<RenameTarget>(null)
   const [error, setError] = useState<string | null>(null)
   const targetRef = useRef<RenameTarget>(null)
@@ -53,45 +59,64 @@ export const usePaneRenameChord = (
     setError(nextError)
   }, [])
 
+  const restorePaneFocus = useCallback(
+    (renameTarget: ActiveRenameTarget): void => {
+      void focusNativeGhostty({
+        sessionId: renameTarget.ptyId,
+        paneId: renameTarget.pane.id,
+      })
+    },
+    []
+  )
+
+  const openPaneRename = useCallback(
+    (focused: FocusedPaneRef): boolean => {
+      if (pendingSubmitCountRef.current > 0) {
+        return false
+      }
+
+      nextRequestIdRef.current += 1
+      setRenameTarget({
+        requestId: nextRequestIdRef.current,
+        ptyId: focused.pane.ptyId,
+        pane: focused.pane,
+        initialValue:
+          focused.pane.userLabel ??
+          focused.pane.agentTitle ??
+          focused.session.name,
+      })
+      setRenameError(null)
+
+      return true
+    },
+    [setRenameError, setRenameTarget]
+  )
+
   const clearRenameTargetIfCurrent = useCallback(
     (requestId: number): void => {
-      if (targetRef.current?.requestId !== requestId) {
+      const current = targetRef.current
+      if (current?.requestId !== requestId) {
         return
       }
 
       setRenameTarget(null)
       setRenameError(null)
+      restorePaneFocus(current)
     },
-    [setRenameError, setRenameTarget]
+    [restorePaneFocus, setRenameError, setRenameTarget]
   )
 
   useEffect(
     () =>
       registerChord('r', () => {
-        if (pendingSubmitCountRef.current > 0) {
-          return false
-        }
-
         const focused = resolverRef.current()
         if (!focused) {
           return false
         }
 
-        nextRequestIdRef.current += 1
-        setRenameTarget({
-          requestId: nextRequestIdRef.current,
-          ptyId: focused.pane.ptyId,
-          pane: focused.pane,
-          initialValue:
-            focused.pane.userLabel ??
-            focused.pane.agentTitle ??
-            focused.session.name,
-        })
-        setRenameError(null)
-
-        return true
+        return openPaneRename(focused)
       }),
-    [setRenameError, setRenameTarget]
+    [openPaneRename]
   )
 
   const handleSubmit = useCallback(
@@ -141,15 +166,22 @@ export const usePaneRenameChord = (
       return
     }
 
+    const current = targetRef.current
+    if (!current) {
+      return
+    }
+
     setRenameTarget(null)
     setRenameError(null)
-  }, [setRenameError, setRenameTarget])
+    restorePaneFocus(current)
+  }, [restorePaneFocus, setRenameError, setRenameTarget])
 
   const handleExternalErrorDismiss = useCallback((): void => {
     setRenameError(null)
   }, [setRenameError])
 
   return {
+    openPaneRename,
     renderNode: target
       ? createElement(PaneRenameInput, {
           key: target.requestId,

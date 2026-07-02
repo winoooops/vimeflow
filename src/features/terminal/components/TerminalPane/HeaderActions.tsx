@@ -18,6 +18,7 @@ const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
 export interface HeaderActionsProps {
   isCollapsed: boolean
   onToggleCollapse: () => void
+  shortcutHint?: string
   /** Hide when the status bar cannot render for this pane state. */
   hideCollapseToggle?: boolean
   onClose?: () => void
@@ -39,6 +40,7 @@ export interface HeaderActionsProps {
 export const HeaderActions = ({
   isCollapsed,
   onToggleCollapse,
+  shortcutHint = undefined,
   hideCollapseToggle = false,
   onClose = undefined,
   onBurner = undefined,
@@ -50,6 +52,15 @@ export const HeaderActions = ({
 
   return (
     <>
+      {shortcutHint && (
+        <span
+          data-testid="pane-shortcut-hint"
+          className="shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-on-surface-variant"
+        >
+          {shortcutHint}
+        </span>
+      )}
+
       {onBurner && (
         <Tooltip content={burnerLabel} placement="bottom" nativeOverlay>
           <IconButton

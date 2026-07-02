@@ -23,32 +23,17 @@ interface AnchorRect {
   top: number
   left: number
   width: number
-  height: number
 }
 
 const rectFromAnchor = (anchor: HTMLElement): AnchorRect => {
   const rect = anchor.getBoundingClientRect()
+  const verticalRect = anchor.parentElement?.getBoundingClientRect() ?? rect
 
   return {
-    top: rect.top,
+    top: verticalRect.top + verticalRect.height / 2,
     left: rect.left,
     width: rect.width,
-    height: rect.height,
   }
-}
-
-const errorMessageForValue = (value: string): string | null => {
-  const validation = validateTitle(value)
-
-  if (validation.kind === 'empty') {
-    return 'title cannot be empty'
-  }
-
-  if (validation.kind === 'invalid') {
-    return 'title is too long (max 200 bytes)'
-  }
-
-  return null
 }
 
 export const PaneRenameInput = ({
@@ -66,6 +51,7 @@ export const PaneRenameInput = ({
   const validation = validateTitle(value)
 
   useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true })
     inputRef.current?.select()
   }, [])
 
@@ -148,7 +134,7 @@ export const PaneRenameInput = ({
         top: anchorRect.top,
         left: anchorRect.left,
         width: anchorRect.width,
-        minHeight: anchorRect.height,
+        transform: 'translateY(-50%)',
       }
     : {
         position: 'fixed',
@@ -158,8 +144,17 @@ export const PaneRenameInput = ({
         transform: 'translate(-50%, -50%)',
       }
 
-  const errorMessage = errorMessageForValue(value)
-  const displayedError = externalError ?? errorMessage
+  const hasError = validation.kind !== 'valid' || Boolean(externalError)
+
+  const errorText =
+    externalError ??
+    (validation.kind === 'empty'
+      ? 'title cannot be empty'
+      : validation.kind === 'invalid'
+        ? 'title is too long (max 200 bytes)'
+        : null)
+
+  const errorId = 'pane-rename-error'
 
   return createPortal(
     <div
@@ -167,7 +162,9 @@ export const PaneRenameInput = ({
       data-testid="pane-rename-frame"
       data-workspace-overlay-id="pane-rename"
       style={style}
-      className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--color-scrim)_42%,transparent)] backdrop-blur-md"
+      className={`z-50 rounded-sm border bg-surface-container/90 shadow-[0_12px_40px_color-mix(in_srgb,var(--color-scrim)_42%,transparent)] backdrop-blur-md ${
+        hasError ? 'border-error' : 'border-transparent'
+      }`}
     >
       <input
         ref={inputRef}
@@ -177,12 +174,13 @@ export const PaneRenameInput = ({
         onBlur={externalError ? undefined : onCancel}
         onKeyDown={handleKeyDown}
         aria-label="Pane name"
-        aria-invalid={validation.kind !== 'valid' || Boolean(externalError)}
-        className="w-full bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-on-surface outline-none"
+        aria-describedby={errorText ? errorId : undefined}
+        aria-invalid={hasError}
+        className="block w-full bg-transparent px-1.5 py-1.5 font-mono text-[10.5px] leading-none text-on-surface outline-none"
       />
-      {displayedError && (
-        <div role="alert" className="mt-1 text-[10px] text-error">
-          {displayedError}
+      {errorText && (
+        <div id={errorId} role="alert" className="sr-only">
+          {errorText}
         </div>
       )}
     </div>,

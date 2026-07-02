@@ -16,9 +16,10 @@ using ContextMenuCallback = void (*)(void *, double, double);
 using FocusCallback = void (*)(void *);
 using ShortcutCallback = void (*)(void *, const char *, const char *, bool,
                                   bool, bool, bool);
+using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            ContextMenuCallback, FocusCallback,
-                           ShortcutCallback, void *);
+                           ShortcutCallback, RenamePaneCallback, void *);
 using SetFrameFn = void (*)(void *, double, double, double, double);
 using SetShortcutDigitsFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
@@ -43,6 +44,7 @@ struct SurfaceHandle {
   napi_threadsafe_function context_menu_tsfn = nullptr;
   napi_threadsafe_function focus_tsfn = nullptr;
   napi_threadsafe_function shortcut_tsfn = nullptr;
+  napi_threadsafe_function rename_pane_tsfn = nullptr;
   void *swift_surface = nullptr;
   std::atomic_bool callbacks_released = false;
   std::mutex callback_mutex;
@@ -280,6 +282,22 @@ void OnShortcut(void *context, const char *key, const char *code, bool control,
   napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
+void OnRenamePane(void *context) {
+  if (context == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSurfaceCallback(surface, &SurfaceHandle::rename_pane_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  napi_call_threadsafe_function(tsfn, nullptr, napi_tsfn_nonblocking);
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
 void CallJsInput(napi_env env, napi_value callback, void *, void *data) {
   std::unique_ptr<InputPayload> payload(static_cast<InputPayload *>(data));
   if (env == nullptr || callback == nullptr || payload == nullptr) {
@@ -407,6 +425,7 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   napi_threadsafe_function context_menu_tsfn = nullptr;
   napi_threadsafe_function focus_tsfn = nullptr;
   napi_threadsafe_function shortcut_tsfn = nullptr;
+  napi_threadsafe_function rename_pane_tsfn = nullptr;
   {
     std::lock_guard<std::mutex> lock(surface->callback_mutex);
     input_tsfn = surface->input_tsfn;
@@ -414,11 +433,13 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
     context_menu_tsfn = surface->context_menu_tsfn;
     focus_tsfn = surface->focus_tsfn;
     shortcut_tsfn = surface->shortcut_tsfn;
+    rename_pane_tsfn = surface->rename_pane_tsfn;
     surface->input_tsfn = nullptr;
     surface->resize_tsfn = nullptr;
     surface->context_menu_tsfn = nullptr;
     surface->focus_tsfn = nullptr;
     surface->shortcut_tsfn = nullptr;
+    surface->rename_pane_tsfn = nullptr;
   }
 
   if (input_tsfn != nullptr) {
@@ -436,16 +457,19 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   if (shortcut_tsfn != nullptr) {
     napi_release_threadsafe_function(shortcut_tsfn, napi_tsfn_abort);
   }
+  if (rename_pane_tsfn != nullptr) {
+    napi_release_threadsafe_function(rename_pane_tsfn, napi_tsfn_abort);
+  }
 }
 
 napi_value Create(napi_env env, napi_callback_info info) {
-  size_t argc = 7;
-  napi_value args[7];
+  size_t argc = 8;
+  napi_value args[8];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (argc < 7) {
+  if (argc < 8) {
     return Throw(
         env,
-        "create(path, nativeHandle, onInput, onResize, onContextMenu, onFocus, onShortcut) expected");
+        "create(path, nativeHandle, onInput, onResize, onContextMenu, onFocus, onShortcut, onRenamePane) expected");
   }
 
   const std::string bridge_path = GetString(env, args[0]);
@@ -478,13 +502,15 @@ napi_value Create(napi_env env, napi_callback_info info) {
       !CreateThreadsafeFunction(env, args[5], "vimeflow-ghostty-focus",
                                 CallJsFocus, &surface->focus_tsfn) ||
       !CreateThreadsafeFunction(env, args[6], "vimeflow-ghostty-shortcut",
-                                CallJsShortcut, &surface->shortcut_tsfn)) {
+                                CallJsShortcut, &surface->shortcut_tsfn) ||
+      !CreateThreadsafeFunction(env, args[7], "vimeflow-ghostty-rename-pane",
+                                CallJsFocus, &surface->rename_pane_tsfn)) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native callbacks");
   }
   surface->swift_surface =
       bridge.create(parent_view, OnInput, OnResize, OnContextMenu, OnFocus,
-                    OnShortcut, surface);
+                    OnShortcut, OnRenamePane, surface);
   if (surface->swift_surface == nullptr) {
     FinalizeSurface(env, surface, nullptr);
     return Throw(env, "failed to create Ghostty native surface");

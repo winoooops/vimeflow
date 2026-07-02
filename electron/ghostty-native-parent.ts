@@ -46,7 +46,8 @@ interface GhosttyNativeParentAddon {
       meta: boolean,
       alt: boolean,
       shift: boolean
-    ) => void
+    ) => void,
+    onRenamePane: () => void
   ) => unknown
   setFrame: (
     surface: unknown,
@@ -531,6 +532,20 @@ export class GhosttyNativeParentController {
           alt,
           shift,
         })
+      },
+      () => {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.focus()
+        }
+
+        win.webContents.send(BACKEND_EVENT, {
+          event: 'ghostty-native-rename-pane',
+          payload: state.pane,
+        })
       }
     )
 
@@ -573,13 +588,15 @@ export class GhosttyNativeParentController {
           target.dispatchEvent(new KeyboardEvent('keydown', ${eventInit}))
           return new Promise((resolve) => {
             requestAnimationFrame(() => {
+              const renameInputOpen =
+                document.querySelector('[data-workspace-overlay-id="pane-rename"]') !== null
               const activeGhosttyPane = Array.from(
                 document.querySelectorAll('[data-pane-kind="shell"][data-pane-active="true"]')
               ).some((node) =>
                 node.getAttribute('data-pane-id') === ${JSON.stringify(state.pane.paneId)} &&
                 node.getAttribute('data-pty-id') === ${JSON.stringify(state.pane.sessionId)}
               )
-              resolve(activeGhosttyPane)
+              resolve(!renameInputOpen && activeGhosttyPane)
             })
           })
         })()`,

@@ -381,18 +381,31 @@ describe('ghostty native parent', () => {
       onResize?: (cols: number, rows: number) => void
       onContextMenu?: (x: number, y: number) => void
       onFocus?: () => void
+      onRenamePane?: () => void
     } = {}
     const surface = {}
 
     const addon = {
-      create: vi.fn((_bridge, _handle, input, resize, contextMenu, focus) => {
-        callbacks.onInput = input
-        callbacks.onResize = resize
-        callbacks.onContextMenu = contextMenu
-        callbacks.onFocus = focus
+      create: vi.fn(
+        (
+          _bridge,
+          _handle,
+          input,
+          resize,
+          contextMenu,
+          focus,
+          _shortcut,
+          renamePane
+        ) => {
+          callbacks.onInput = input
+          callbacks.onResize = resize
+          callbacks.onContextMenu = contextMenu
+          callbacks.onFocus = focus
+          callbacks.onRenamePane = renamePane
 
-        return surface
-      }),
+          return surface
+        }
+      ),
       setFrame: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
@@ -432,6 +445,7 @@ describe('ghostty native parent', () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
+      expect.any(Function),
       expect.any(Function)
     )
     expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200)
@@ -441,6 +455,7 @@ describe('ghostty native parent', () => {
     callbacks.onResize?.(80, 24)
     callbacks.onContextMenu?.(15, 25)
     callbacks.onFocus?.()
+    callbacks.onRenamePane?.()
 
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'pty-1', data: 'a' },
@@ -464,6 +479,12 @@ describe('ghostty native parent', () => {
       event: 'ghostty-native-focus',
       payload: { sessionId: 'pty-1', paneId: 'pane-1' },
     })
+
+    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
+      event: 'ghostty-native-rename-pane',
+      payload: { sessionId: 'pty-1', paneId: 'pane-1' },
+    })
+    expect(webContentsFocus).toHaveBeenCalledOnce()
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
 
     controller.dispose()
@@ -484,7 +505,17 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (_bridge, _handle, _input, _resize, _contextMenu, _focus, shortcut) => {
+        (
+          _bridge,
+          _handle,
+          _input,
+          _resize,
+          _contextMenu,
+          _focus,
+          shortcut,
+          _renamePane
+        ) => {
+          void _renamePane
           callbacks.onShortcut = shortcut
 
           return surface
@@ -534,6 +565,10 @@ describe('ghostty native parent', () => {
     expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
       'data-vimeflow-shortcut-proxy'
     )
+
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
+      'data-workspace-overlay-id="pane-rename"'
+    )
     expect(addon.focus).toHaveBeenCalledWith(surface)
 
     controller.dispose()
@@ -554,7 +589,17 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (_bridge, _handle, _input, _resize, _contextMenu, _focus, shortcut) => {
+        (
+          _bridge,
+          _handle,
+          _input,
+          _resize,
+          _contextMenu,
+          _focus,
+          shortcut,
+          _renamePane
+        ) => {
+          void _renamePane
           callbacks.onShortcut = shortcut
 
           return surface
@@ -609,12 +654,27 @@ describe('ghostty native parent', () => {
     const surface = { id: 'surface-1' }
 
     const addon = {
-      create: vi.fn((_bridge, _handle, input, resize) => {
-        callbacks.onInput = input
-        callbacks.onResize = resize
+      create: vi.fn(
+        (
+          _bridge,
+          _handle,
+          input,
+          resize,
+          _contextMenu,
+          _focus,
+          _shortcut,
+          _renamePane
+        ) => {
+          void _contextMenu
+          void _focus
+          void _shortcut
+          void _renamePane
+          callbacks.onInput = input
+          callbacks.onResize = resize
 
-        return surface
-      }),
+          return surface
+        }
+      ),
       setFrame: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
@@ -671,11 +731,26 @@ describe('ghostty native parent', () => {
     const surfaces = [{ id: 'surface-1' }, { id: 'surface-2' }]
 
     const addon = {
-      create: vi.fn((_bridge, _handle, input, resize) => {
-        callbacks.push({ onInput: input, onResize: resize })
+      create: vi.fn(
+        (
+          _bridge,
+          _handle,
+          input,
+          resize,
+          _contextMenu,
+          _focus,
+          _shortcut,
+          _renamePane
+        ) => {
+          void _contextMenu
+          void _focus
+          void _shortcut
+          void _renamePane
+          callbacks.push({ onInput: input, onResize: resize })
 
-        return surfaces[callbacks.length - 1]
-      }),
+          return surfaces[callbacks.length - 1]
+        }
+      ),
       setFrame: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
