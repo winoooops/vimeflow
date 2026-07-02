@@ -516,7 +516,10 @@ describe('Panel', () => {
     expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
     expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
     expect(screen.getByTestId('changed-files-edge-hint')).toBeInTheDocument()
-    expect(screen.getByTestId('changed-files-hot-zone')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('changed-files-hot-zone')
+    ).not.toBeInTheDocument()
+
     expect(
       screen.getByRole('button', { name: /show changed files \(2\)/i })
     ).toHaveAttribute('aria-keyshortcuts', 'e')
@@ -644,7 +647,7 @@ describe('Panel', () => {
       />
     )
 
-    fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+    fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
     expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
 
@@ -697,10 +700,10 @@ describe('Panel', () => {
 
       render(<Panel />)
 
-      fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
       expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
 
-      fireEvent.mouseLeave(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseLeave(screen.getByTestId('changed-files-edge-hint'))
       act(() => {
         vi.advanceTimersByTime(219)
       })
@@ -753,7 +756,7 @@ describe('Panel', () => {
 
       render(<Panel />)
 
-      fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
       fireEvent.click(
         screen.getByRole('button', { name: /pin changed files/i })
       )
@@ -1224,7 +1227,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       // Find and click a different file row
       const otherFileRow = screen.getByText('Other.tsx')
@@ -3151,7 +3154,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       const commentButton = within(
         screen.getByTestId('changed-files-pane')
@@ -3286,7 +3289,7 @@ describe('Panel', () => {
         within(fileCommentsPanel).getByText('Review the whole file')
       ).toBeInTheDocument()
 
-      fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       expect(
         within(screen.getByTestId('changed-files-pane')).queryByText(

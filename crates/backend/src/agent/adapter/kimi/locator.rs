@@ -82,6 +82,7 @@ pub(crate) struct KimiLocator {
     // `Some("/proc")` on Linux (or a tempdir in tests); `None` on macOS,
     // where the proc-fd / proc-environ fast-paths skip themselves.
     proc_root: Option<PathBuf>,
+    honor_proc_env_home: bool,
     // The session dir of the LAST successful `locate`, shared with the
     // decoder (same Arc) so it can read sibling `agents/agent-*` wires.
     resolved_session_dir: Arc<Mutex<Option<PathBuf>>>,
@@ -130,17 +131,29 @@ impl UsageState {
 }
 
 impl KimiLocator {
+    #[cfg(test)]
     pub(crate) fn new(
         kimi_home: PathBuf,
         agent_pid: u32,
         pty_start: SystemTime,
         proc_root: Option<PathBuf>,
     ) -> Self {
+        Self::with_proc_env_home(kimi_home, agent_pid, pty_start, proc_root, true)
+    }
+
+    pub(crate) fn with_proc_env_home(
+        kimi_home: PathBuf,
+        agent_pid: u32,
+        pty_start: SystemTime,
+        proc_root: Option<PathBuf>,
+        honor_proc_env_home: bool,
+    ) -> Self {
         Self {
             kimi_home,
             agent_pid,
             pty_start,
             proc_root,
+            honor_proc_env_home,
             resolved_session_dir: Arc::new(Mutex::new(None)),
             resolved_cwd: Arc::new(Mutex::new(None)),
             usage: Arc::new(Mutex::new(UsageState::default())),
@@ -253,10 +266,15 @@ impl KimiLocator {
     /// else the constructor `kimi_home`. Shared with the validator so the
     /// trust root is resolved from one source.
     pub(crate) fn effective_home(&self) -> PathBuf {
-        self.proc_root
-            .as_deref()
-            .and_then(|root| kimi_home_from_proc_environ(root, self.agent_pid))
-            .unwrap_or_else(|| self.kimi_home.clone())
+        if self.honor_proc_env_home {
+            return self
+                .proc_root
+                .as_deref()
+                .and_then(|root| kimi_home_from_proc_environ(root, self.agent_pid))
+                .unwrap_or_else(|| self.kimi_home.clone());
+        }
+
+        self.kimi_home.clone()
     }
 
     fn session_index_path(&self, home: &Path) -> PathBuf {

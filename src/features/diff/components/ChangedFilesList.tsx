@@ -130,19 +130,43 @@ const ChangedFileItem = ({
   )
 }
 
-const ChangedFilesEdgeHint = ({ count }: { count: number }): ReactElement => (
-  <div
-    aria-hidden="true"
+interface ChangedFilesEdgeHintProps {
+  count: number
+  revealed: boolean
+  onReveal: () => void
+  onToggle: () => void
+  onScheduleHide: () => void
+}
+
+const ChangedFilesEdgeHint = ({
+  count,
+  revealed,
+  onReveal,
+  onToggle,
+  onScheduleHide,
+}: ChangedFilesEdgeHintProps): ReactElement => (
+  <button
+    type="button"
+    aria-label={`${revealed ? 'Hide' : 'Show'} changed files (${count})`}
+    aria-keyshortcuts="e"
+    aria-expanded={revealed}
     data-testid="changed-files-edge-hint"
-    className="pointer-events-none absolute left-0 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-r-xl border border-l-0 border-outline-variant/25 bg-surface-container-high/70 px-1.5 py-2 text-on-surface shadow-xl backdrop-blur-[14px] backdrop-saturate-150 transition-all duration-200"
+    className="absolute left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-r-xl border border-l-0 border-outline-variant/25 bg-surface-container-high/70 px-1.5 py-2 text-on-surface shadow-xl backdrop-blur-[14px] backdrop-saturate-150 transition-all duration-200 hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    onClick={onToggle}
+    onFocus={onReveal}
+    onMouseEnter={onReveal}
+    onMouseLeave={onScheduleHide}
   >
-    <span className="material-symbols-outlined text-[17px] leading-none">
+    <span
+      aria-hidden="true"
+      className="material-symbols-outlined text-[17px] leading-none"
+    >
       chevron_right
     </span>
     <span className="rounded-full bg-primary/20 px-1.5 py-px font-mono text-[9.5px] font-extrabold text-primary">
       {count}
     </span>
-  </div>
+  </button>
 )
 
 /**
@@ -244,19 +268,13 @@ export const ChangedFilesListSurface = ({
 
   return (
     <>
-      <button
-        type="button"
-        aria-label={`${revealed ? 'Hide' : 'Show'} changed files (${files.length})`}
-        aria-keyshortcuts="e"
-        aria-expanded={revealed}
-        data-testid="changed-files-hot-zone"
-        className="absolute left-0 top-0 z-30 h-full w-[26px] border-0 bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        onClick={onToggle}
-        onFocus={onReveal}
-        onMouseEnter={onReveal}
-        onMouseLeave={onScheduleHide}
+      <ChangedFilesEdgeHint
+        count={files.length}
+        revealed={revealed}
+        onReveal={onReveal}
+        onToggle={onToggle}
+        onScheduleHide={onScheduleHide}
       />
-      {!revealed ? <ChangedFilesEdgeHint count={files.length} /> : null}
       {revealed ? (
         <div
           data-testid="changed-files-pane"

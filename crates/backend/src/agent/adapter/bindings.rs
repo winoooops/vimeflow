@@ -201,11 +201,12 @@ impl AgentBindings {
                 // Pass pid + pty_start + proc_root so the locator can read
                 // the kimi process's own fds / environ (proc-fd, proc-environ);
                 // `kimi_home` stays the env/provider/default fallback home.
-                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::new(
+                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::with_proc_env_home(
                     kimi_home,
                     ctx.agent_pid,
                     ctx.pty_start,
                     ctx.proc_root.clone(),
+                    ctx.provider_home_override.is_none(),
                 ));
                 let locator: Arc<dyn StatusSourceLocator> = kimi_locator.clone();
                 let adapter: Arc<KimiAdapter> = Arc::new(KimiAdapter::with_locator(kimi_locator));
@@ -589,6 +590,62 @@ mod tests {
             "status_path must resolve under $KIMI_CODE_HOME, got {}",
             located.status_path.display(),
         );
+    }
+
+    /// An explicit provider-home override is stronger than the detected
+    /// process's own `$KIMI_CODE_HOME`. E2E uses this to keep watcher fixtures
+    /// hermetic even when the runner process has a real Kimi home in its
+    /// environment.
+    #[test]
+    fn for_attach_kimi_provider_home_override_beats_proc_environ_home() {
+        let env_home = tempfile::tempdir().expect("env home");
+        let override_home = tempfile::tempdir().expect("override home");
+        let proc_root = tempfile::tempdir().expect("proc root");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_pid_dir = proc_root.path().join("2");
+        std::fs::create_dir_all(&proc_pid_dir).expect("mkdir proc pid");
+        std::fs::write(
+            proc_pid_dir.join("environ"),
+            format!("KIMI_CODE_HOME={}\0", env_home.path().display()),
+        )
+        .expect("write proc environ");
+
+        for (home, session_id) in [
+            (env_home.path(), "session_env"),
+            (override_home.path(), "session_override"),
+        ] {
+            let session_dir = home.join("sessions").join("wd_x").join(session_id);
+            let wire = session_dir.join("agents").join("main").join("wire.jsonl");
+            std::fs::create_dir_all(wire.parent().expect("wire parent")).expect("mkdir wire");
+            std::fs::write(&wire, b"{\"type\":\"metadata\"}\n").expect("write wire");
+            std::fs::write(
+                home.join("session_index.jsonl"),
+                format!(
+                    "{{\"sessionId\":\"{}\",\"sessionDir\":\"{}\",\"workDir\":\"{}\"}}\n",
+                    session_id,
+                    session_dir.display(),
+                    work.path().display(),
+                ),
+            )
+            .expect("write index");
+        }
+
+        let mut ctx = kimi_ctx(Some(PathBuf::from("/bogus/provider")));
+        ctx.provider_home_override = Some(override_home.path().to_path_buf());
+        ctx.proc_root = Some(proc_root.path().to_path_buf());
+
+        let bindings = AgentBindings::for_attach(&ctx).expect("kimi binds");
+        let located = bindings
+            .locator
+            .locate(work.path(), "pty-1")
+            .expect("locate under explicit override home");
+
+        assert!(
+            located.status_path.starts_with(override_home.path()),
+            "status_path must resolve under the explicit override home, got {}",
+            located.status_path.display(),
+        );
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_override"));
     }
 
     // NOTE: the B' shared-`Arc` regression test

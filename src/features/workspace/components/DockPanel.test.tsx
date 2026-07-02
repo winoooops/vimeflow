@@ -1358,7 +1358,7 @@ describe('DockPanel', () => {
       '/repo:0:src/second.ts:unstaged'
     )
 
-    fireEvent.mouseEnter(screen.getByTestId('changed-files-hot-zone'))
+    fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
     expect(
       screen.getByRole('button', { name: /second\.ts/i, current: 'page' })
