@@ -160,7 +160,7 @@ Expected: PASS (4 tests)
 
 ```bash
 git add src/features/diff/search/matchDiffLines.ts src/features/diff/search/matchDiffLines.test.ts
-git commit -m "feat(diff): add pure search matcher for diff lines"
+git commit -m "feat(diff): add pure search matcher for diff lines" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -351,7 +351,7 @@ Expected: PASS (6 tests)
 
 ```bash
 git add src/features/diff/search/diffSearchDom.ts src/features/diff/search/diffSearchDom.test.ts
-git commit -m "feat(diff): collect searchable lines from pierre shadow DOM"
+git commit -m "feat(diff): collect searchable lines from pierre shadow DOM" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -598,7 +598,7 @@ Expected: PASS (all)
 
 ```bash
 git add src/features/diff/search/diffSearchDom.ts src/features/diff/search/diffSearchDom.test.ts
-git commit -m "feat(diff): paint search matches via CSS Highlight API"
+git commit -m "feat(diff): paint search matches via CSS Highlight API" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -643,11 +643,11 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const render = (fileKey: string | null = 'a.ts:unstaged') => {
+const render = (fileKey: string | null = 'a.ts:unstaged', paintEnabled = true) => {
   const focusPanel = vi.fn()
   const hook = renderHook(
-    ({ key }) => useDiffSearch({ fileKey: key, paintEnabled: true, focusPanel }),
-    { initialProps: { key: fileKey } }
+    ({ key, paint }) => useDiffSearch({ fileKey: key, paintEnabled: paint, focusPanel }),
+    { initialProps: { key: fileKey, paint: paintEnabled } }
   )
   // Simulate pierre's first onPostRender so lines are collected.
   act(() => hook.result.current.handlePostRender(document.createElement('div')))
@@ -708,12 +708,12 @@ describe('useDiffSearch', () => {
     act(() => result.current.step(1))
     expect(result.current.activeOrdinal).toBe(2)
 
-    rerender({ key: 'b.ts:unstaged' })
+    rerender({ key: 'b.ts:unstaged', paint: true })
     act(() => result.current.handlePostRender(document.createElement('div')))
     expect(result.current.activeOrdinal).toBe(1)
     expect(result.current.isOpen).toBe(true)
 
-    rerender({ key: null })
+    rerender({ key: null, paint: true })
     expect(result.current.isOpen).toBe(false)
     expect(result.current.query).toBe('')
     expect(dom.clearPaint).toHaveBeenCalled()
@@ -736,6 +736,36 @@ describe('useDiffSearch', () => {
     act(() => result.current.setQuery('search'))
     unmount()
     expect(dom.clearPaint).toHaveBeenCalled()
+  })
+
+  test('open is a no-op while fileKey is null (narrow/empty — spec §2)', () => {
+    const { result } = render(null)
+    act(() => result.current.open())
+    expect(result.current.isOpen).toBe(false)
+  })
+
+  test('paintEnabled turning false clears paint (authority loss — spec §5)', () => {
+    const { result, rerender } = render()
+    act(() => result.current.open())
+    act(() => result.current.setQuery('search'))
+
+    rerender({ key: 'a.ts:unstaged', paint: false })
+
+    expect(dom.clearPaint).toHaveBeenCalled()
+  })
+
+  test('same-file repaint preserves then clamps the active index (spec §2)', () => {
+    const { result } = render()
+    act(() => result.current.open())
+    act(() => result.current.setQuery('search'))
+    act(() => result.current.step(1))
+    expect(result.current.activeOrdinal).toBe(2)
+
+    vi.mocked(dom.collectLines).mockReturnValue({ lines: [lines[0]], elements: new Map() })
+    act(() => result.current.handlePostRender(document.createElement('div')))
+
+    expect(result.current.activeOrdinal).toBe(1)
+    expect(result.current.matchCount).toBe(1)
   })
 })
 ```
@@ -878,13 +908,19 @@ export const useDiffSearch = ({
   }, [focusPanel])
 
   const open = useCallback((): void => {
+    // Never open without a searchable file (narrow placeholder / empty diff —
+    // spec §2: search is never open while its UI is unrenderable).
+    if (fileKey === null) {
+      return
+    }
+
     setIsOpen(true)
     // Focus + select happens after the popup renders.
     requestAnimationFrame(() => {
       inputRef.current?.focus()
       inputRef.current?.select()
     })
-  }, [])
+  }, [fileKey])
 
   const setQuery = useCallback(
     (next: string): void => {
@@ -988,7 +1024,7 @@ Expected: PASS (8 tests)
 
 ```bash
 git add src/features/diff/hooks/useDiffSearch.ts src/features/diff/hooks/useDiffSearch.test.ts
-git commit -m "feat(diff): add useDiffSearch state hook"
+git commit -m "feat(diff): add useDiffSearch state hook" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -1062,7 +1098,7 @@ Expected: PASS
 
 ```bash
 git add src/features/diff/components/DiffSearchButton.tsx src/features/diff/components/DiffSearchButton.test.tsx
-git commit -m "feat(diff): add floating search button"
+git commit -m "feat(diff): add floating search button" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -1251,7 +1287,7 @@ Expected: PASS (5 tests)
 
 ```bash
 git add src/features/diff/components/DiffSearchPopup.tsx src/features/diff/components/DiffSearchPopup.test.tsx
-git commit -m "feat(diff): add glass search popup"
+git commit -m "feat(diff): add glass search popup" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -1421,7 +1457,7 @@ Expected: PASS — all existing tests plus the 6 new ones
 
 ```bash
 git add src/features/diff/hooks/useKeyboard.ts src/features/diff/hooks/useKeyboard.test.ts
-git commit -m "feat(diff): add modal search keys to diff keyboard"
+git commit -m "feat(diff): add modal search keys to diff keyboard" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -1473,8 +1509,20 @@ describe('diff search wiring', () => {
     clearFiles()
 
     await waitFor(() => {
-      expect(screen.getByRole('search')).toHaveAttribute('inert')
+      expect(screen.queryByRole('search')).not.toBeInTheDocument()
     })
+  })
+
+  test('narrow panel: no search button and / does not open search', () => {
+    renderPanel({ tooNarrow: true })
+
+    expect(
+      screen.queryByRole('button', { name: /search in diff/i })
+    ).not.toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: '/' })
+
+    expect(screen.queryByRole('search')).not.toBeInTheDocument()
   })
 })
 ```
@@ -1503,7 +1551,9 @@ import { DiffSearchPopup } from './components/DiffSearchPopup'
   const diffSearchFileKey =
     selectedFilePath === null || tooNarrow
       ? null
-      : `${selectedFilePath}:${selectedFileStaged ? 'staged' : 'unstaged'}`
+      : // Repo root + path + lane (spec §2 identity) — a cwd switch with the
+        // same relative path must reset, not preserve+clamp.
+        `${cwd}:${selectedFilePath}:${selectedFileStaged ? 'staged' : 'unstaged'}`
 
   const diffSearch = useDiffSearch({
     fileKey: diffSearchFileKey,
@@ -1551,20 +1601,26 @@ import { DiffSearchPopup } from './components/DiffSearchPopup'
 **(e)** In the populated JSX, inside the `relative` wrapper that hosts the `ChangedFilesList` overlay and `PanelBody`, render (button hidden while open — spec §2):
 
 ```tsx
-          {!diffSearch.isOpen && <DiffSearchButton onOpen={diffSearch.open} />}
-          <DiffSearchPopup
-            open={diffSearch.isOpen}
-            query={diffSearch.query}
-            matchCount={diffSearch.matchCount}
-            activeOrdinal={diffSearch.activeOrdinal}
-            confirming={keyboardConfirmAction !== null}
-            inputRef={diffSearch.inputRef}
-            onQueryChange={diffSearch.setQuery}
-            onCommit={diffSearch.commit}
-            onStep={diffSearch.step}
-            onClose={diffSearch.close}
-          />
+          {diffSearchFileKey !== null && (
+            <>
+              {!diffSearch.isOpen && <DiffSearchButton onOpen={diffSearch.open} />}
+              <DiffSearchPopup
+                open={diffSearch.isOpen}
+                query={diffSearch.query}
+                matchCount={diffSearch.matchCount}
+                activeOrdinal={diffSearch.activeOrdinal}
+                confirming={keyboardConfirmAction !== null}
+                inputRef={diffSearch.inputRef}
+                onQueryChange={diffSearch.setQuery}
+                onCommit={diffSearch.commit}
+                onStep={diffSearch.step}
+                onClose={diffSearch.close}
+              />
+            </>
+          )}
 ```
+
+The `diffSearchFileKey !== null` gate plus the hook's `open()` guard together enforce the spec §2 rule: no search surface and no search mode while the diff is empty or the narrow placeholder is engaged (`/` becomes a no-op because `open()` bails on a null key).
 
 If that wrapper lacks `relative`, add it (the `ChangedFilesList` unpinned overlay already requires one — verify with the browser devtools if unsure which div it is).
 
@@ -1582,7 +1638,7 @@ Expected: PASS
 
 ```bash
 git add src/features/diff/Panel.tsx src/features/diff/Panel.test.tsx
-git commit -m "feat(diff): wire vim-modal search into diff panel"
+git commit -m "feat(diff): wire vim-modal search into diff panel" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
@@ -1617,7 +1673,7 @@ Expected: PASS (known unrelated local failure: `editorFileLifecycleStatus` home-
 
 ```bash
 git add docs/design/UNIFIED.md
-git commit -m "docs(design): record in-pane tool layer exception for diff search"
+git commit -m "docs(design): record in-pane tool layer exception for diff search" -m "Co-Authored-By: codex <codex@openai.com>"
 ```
 
 ---
