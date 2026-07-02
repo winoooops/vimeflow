@@ -640,6 +640,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
                           onUrlChange={onBrowserPaneUrlChange}
+                          shortcutHint={
+                            slotIndex < 9
+                              ? formatShortcut(['Mod', String(slotIndex + 1)])
+                              : undefined
+                          }
                         />
                       </>
                     ) : (

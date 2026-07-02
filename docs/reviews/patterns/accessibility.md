@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-30
+last_updated: 2026-07-02
 ref_count: 83
 ---
 
@@ -780,4 +780,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx` L313-316
 - **Finding:** `GitRefChip` suppressed focus-triggered menu opening whenever the `nativeOverlay` prop was true, but the caller now passes that prop unconditionally while the actual native overlay transport remains feature-flagged and macOS-gated. Default local fallback builds therefore lost the prior Tab-to-chip keyboard auto-open behavior.
 - **Fix:** Reused the floating transport selector for the focus guard so focus auto-open is suppressed only when the native overlay transport is actually active. Added a regression test covering `nativeOverlay={true}` with the default local fallback.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 77. Browser panes lost pane-focus shortcut discoverability
+
+- **Source:** github-codex-connector | PR #646 round 1 | 2026-07-02
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** Removing the shared inactive-pane focus tooltip also removed the only visible `Mod+N` focus shortcut hint from browser panes, while the replacement compact badge was wired only through terminal-pane chrome.
+- **Fix:** Threaded the same slot-ordered shortcut hint into `BrowserPane`, rendered the compact badge in browser tab chrome, and added regression coverage for both direct browser-pane rendering and `SplitView` browser-pane prop forwarding.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

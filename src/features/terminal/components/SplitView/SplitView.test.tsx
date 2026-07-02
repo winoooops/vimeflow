@@ -87,8 +87,22 @@ vi.mock('../../../browser', async () => {
   const React = await import('react')
 
   return {
-    BrowserPane: (): React.ReactElement =>
-      React.createElement('div', { 'data-testid': 'browser-pane-mock' }),
+    BrowserPane: ({
+      shortcutHint = undefined,
+    }: {
+      shortcutHint?: string
+    }): React.ReactElement =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'browser-pane-mock' },
+        shortcutHint
+          ? React.createElement(
+              'span',
+              { 'data-testid': 'pane-shortcut-hint' },
+              shortcutHint
+            )
+          : null
+      ),
     focusBrowserPane: vi.fn(() => Promise.resolve(undefined)),
   }
 })
@@ -838,6 +852,28 @@ describe('SplitView - click-to-focus', () => {
     })
 
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('passes visible pane shortcut hints to browser panes', () => {
+    const session = {
+      ...makeSession('vsplit', 2),
+      panes: [
+        { ...makeSession('vsplit', 2).panes[0], active: false },
+        {
+          ...makeSession('vsplit', 2).panes[1],
+          kind: 'browser',
+          active: true,
+          browserUrl: 'https://example.com/',
+        },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    expect(screen.getByTestId('browser-pane-mock')).toBeInTheDocument()
+    expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
+      '2'
+    )
   })
 
   test('hovering the active pane does not show a focus tooltip', async () => {
