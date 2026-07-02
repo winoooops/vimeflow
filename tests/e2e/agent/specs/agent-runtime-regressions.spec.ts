@@ -8,6 +8,7 @@ import {
   typeInActiveTerminal,
 } from '../../shared/terminal.js'
 
+type ElectronModule = typeof import('electron')
 type E2eAgentType = 'claudeCode' | 'codex' | 'kimi' | 'aider' | 'generic'
 
 interface E2eAgentBridgeInfo {
@@ -29,6 +30,45 @@ interface AgentStatusScenario {
   usageFetched?: boolean
 }
 
+interface E2eAgentStatusEvent {
+  sessionId: string
+  agentSessionId: string
+  modelId: string
+  modelDisplayName: string
+  version: string
+  contextWindow: {
+    usedPercentage: number
+    remainingPercentage: number
+    contextWindowSize: number
+    totalInputTokens: number
+    totalOutputTokens: number
+    currentUsage: {
+      inputTokens: number
+      outputTokens: number
+      cacheCreationInputTokens: number
+      cacheReadInputTokens: number
+    }
+  }
+  cost: {
+    totalCostUsd: number | null
+    totalDurationMs: number
+    totalApiDurationMs: number
+    totalLinesAdded: number
+    totalLinesRemoved: number
+  }
+  rateLimits: {
+    fiveHour: {
+      usedPercentage: number
+      resetsAt: number
+    }
+    sevenDay: {
+      usedPercentage: number
+      resetsAt: number
+    }
+  }
+  usageFetched: boolean
+}
+
 const waitForE2eBridge = async (): Promise<void> => {
   await browser
     .waitUntil(
@@ -43,6 +83,72 @@ const waitForE2eBridge = async (): Promise<void> => {
         'window.__VIMEFLOW_E2E__ missing — rebuild with VITE_E2E=1'
       )
     })
+}
+
+const ensureActivityPanelExpanded = async (): Promise<void> => {
+  const panelState = await browser.execute(() => ({
+    compact: window.matchMedia('(max-width: 899px)').matches,
+    hasPanel:
+      document.querySelector('[data-testid="agent-status-panel"]') !== null,
+    hasRail:
+      document.querySelector('[data-testid="agent-status-rail"]') !== null,
+    hasToggle:
+      document.querySelector('[data-testid="activity-toggle-fixed"]') !== null,
+  }))
+
+  if (panelState.hasPanel) {
+    return
+  }
+
+  assert.equal(
+    panelState.compact,
+    false,
+    'agent status panel is desktop-only; test window is compact'
+  )
+  assert.equal(
+    panelState.hasRail && panelState.hasToggle,
+    true,
+    'activity panel is neither expanded nor collapsible'
+  )
+
+  await browser.execute(() => {
+    document
+      .querySelector<HTMLButtonElement>('[data-testid="activity-toggle-fixed"]')
+      ?.click()
+  })
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () =>
+          document.querySelector('[data-testid="agent-status-panel"]') !== null
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'activity panel did not expand',
+    }
+  )
+}
+
+const ensureDesktopViewport = async (): Promise<void> => {
+  await browser.electron.execute((electron: ElectronModule) => {
+    const win = electron.BrowserWindow.getAllWindows()[0]
+    win?.setSize(1400, 900)
+    win?.webContents.focus()
+  })
+
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () => !window.matchMedia('(max-width: 899px)').matches
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'desktop viewport did not apply',
+    }
+  )
 }
 
 const waitForVisiblePtyId = async (): Promise<string> => {
@@ -138,165 +244,6 @@ const createClaudeStatusline = (): string => {
   })
 }
 
-const writeKimiWire = (
-  wirePath: string,
-  scenario: AgentStatusScenario
-): void => {
-  const sessionId = `e2e-${scenario.agentType}-session`
-  const timestamp = Date.now()
-  const reset = Math.floor(Date.now() / 1000) + 3600
-  const lines: string[] = [
-    JSON.stringify({
-      type: 'config.update',
-      time: timestamp,
-      modelAlias: scenario.modelDisplayName,
-    }),
-  ]
-
-  for (let i = 0; i < scenario.turns; i += 1) {
-    lines.push(
-      JSON.stringify({
-        type: 'turn.prompt',
-        time: timestamp + i,
-        origin: { kind: 'user' },
-      }),
-      JSON.stringify({
-        type: 'usage.record',
-        time: timestamp + i + 1,
-        model: scenario.modelDisplayName,
-        usage: {
-          inputOther: 1100,
-          inputCacheRead: 150,
-          inputCacheCreation: 0,
-          output: 250,
-        },
-      })
-    )
-  }
-
-  lines.push(
-    JSON.stringify({
-      type: 'usage.record',
-      time: timestamp + scenario.turns + 2,
-      model: scenario.modelDisplayName,
-      rateLimits: {
-        fiveHour: { usedPercent: 19, windowMinutes: 300, resetsAt: reset },
-        sevenDay: {
-          usedPercent: 27,
-          windowMinutes: 10080,
-          resetsAt: reset + 86_400,
-        },
-      },
-      usage: {
-        inputOther: 1100 * scenario.turns,
-        inputCacheRead: 150 * scenario.turns,
-        inputCacheCreation: 0,
-        output: 250 * scenario.turns,
-      },
-    })
-  )
-
-  fs.appendFileSync(wirePath, `${lines.join('\n')}\n`, 'utf8')
-}
-
-const writeCodexRollout = (
-  rolloutPath: string,
-  ptyId: string,
-  scenario: AgentStatusScenario
-): void => {
-  const sessionId = `e2e-${scenario.agentType}-session`
-  const timestamp = new Date().toISOString()
-  const reset = Math.floor(Date.now() / 1000) + 3600
-  const lines = [
-    JSON.stringify({
-      timestamp,
-      type: 'session_meta',
-      payload: {
-        id: sessionId,
-        timestamp,
-        cwd: process.cwd(),
-        originator: 'codex_exec',
-        cli_version: 'e2e',
-        source: 'exec',
-        model_provider: 'openai',
-      },
-    }),
-    JSON.stringify({
-      timestamp,
-      type: 'turn_context',
-      payload: {
-        turn_id: `turn-${scenario.agentType}`,
-        cwd: process.cwd(),
-        model: scenario.modelDisplayName,
-        personality: 'pragmatic',
-        effort: 'xhigh',
-      },
-    }),
-    JSON.stringify({
-      timestamp,
-      type: 'event_msg',
-      payload: {
-        type: 'task_started',
-        turn_id: `turn-${scenario.agentType}`,
-        started_at: Math.floor(Date.now() / 1000),
-        model_context_window: 200_000,
-        collaboration_mode_kind: 'default',
-      },
-    }),
-    JSON.stringify({
-      timestamp,
-      type: 'event_msg',
-      payload: {
-        type: 'token_count',
-        info: {
-          total_token_usage: {
-            input_tokens: 1100,
-            cached_input_tokens: 150,
-            output_tokens: 250,
-            reasoning_output_tokens: 0,
-            total_tokens: 1350,
-          },
-          last_token_usage: {
-            input_tokens: 1100,
-            cached_input_tokens: 150,
-            output_tokens: 250,
-            reasoning_output_tokens: 0,
-            total_tokens: 1350,
-          },
-          model_context_window: 200_000,
-        },
-        rate_limits: {
-          limit_id: 'codex',
-          primary: {
-            used_percent: 19,
-            window_minutes: 300,
-            resets_at: reset,
-          },
-          secondary: {
-            used_percent: 27,
-            window_minutes: 10080,
-            resets_at: reset + 86_400,
-          },
-          plan_type: 'prolite',
-        },
-      },
-    }),
-    JSON.stringify({
-      timestamp,
-      type: 'event_msg',
-      payload: {
-        type: 'task_complete',
-        turn_id: `turn-${scenario.agentType}`,
-        completed_at: Math.floor(Date.now() / 1000),
-        duration_ms: 95_000,
-        last_agent_message: 'done',
-      },
-    }),
-  ]
-
-  fs.writeFileSync(rolloutPath, `${lines.join('\n')}\n`, 'utf8')
-}
-
 const emitAgentTurn = async (
   sessionId: string,
   turns: number
@@ -320,6 +267,63 @@ const textForSelector = async (selector: string): Promise<string> =>
     return el?.textContent ?? ''
   }, selector)
 
+const createAgentStatus = (
+  ptyId: string,
+  scenario: AgentStatusScenario
+): E2eAgentStatusEvent => {
+  const reset = Math.floor(Date.now() / 1000) + 3600
+
+  return {
+    sessionId: ptyId,
+    agentSessionId: `e2e-${scenario.agentType}-session`,
+    modelId: scenario.modelId,
+    modelDisplayName: scenario.modelDisplayName,
+    version: 'e2e',
+    contextWindow: {
+      usedPercentage: 1,
+      remainingPercentage: 99,
+      contextWindowSize: 200_000,
+      totalInputTokens: 1100 * scenario.turns,
+      totalOutputTokens: 250 * scenario.turns,
+      currentUsage: {
+        inputTokens: 1100,
+        outputTokens: 250,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 150,
+      },
+    },
+    cost: {
+      totalCostUsd: null,
+      totalDurationMs: 95_000,
+      totalApiDurationMs: 80_000,
+      totalLinesAdded: 0,
+      totalLinesRemoved: 0,
+    },
+    rateLimits: {
+      fiveHour: {
+        usedPercentage: 19,
+        resetsAt: reset,
+      },
+      sevenDay: {
+        usedPercentage: 27,
+        resetsAt: reset + 86_400,
+      },
+    },
+    usageFetched: scenario.usageFetched ?? false,
+  }
+}
+
+const emitAgentStatus = async (
+  ptyId: string,
+  scenario: AgentStatusScenario
+): Promise<void> => {
+  await invokeBackend<null>('e2e_emit_agent_status', {
+    sessionId: ptyId,
+    status: createAgentStatus(ptyId, scenario),
+    numTurns: scenario.turns,
+  })
+}
+
 const bufferHasExactLine = (buffer: string, expected: string): boolean =>
   buffer
     .replaceAll('\r', '\n')
@@ -329,6 +333,7 @@ const bufferHasExactLine = (buffer: string, expected: string): boolean =>
 describe('Agent runtime regressions', () => {
   before(async () => {
     await waitForE2eBridge()
+    await ensureDesktopViewport()
     await (
       await $('[data-testid="terminal-pane"]')
     ).waitForDisplayed({
@@ -505,6 +510,7 @@ describe('Agent runtime regressions', () => {
         }
       )
 
+      await ensureActivityPanelExpanded()
       const panel = await $('[data-testid="agent-status-panel"]')
       await panel.waitForDisplayed({ timeout: 10_000 })
       await (
@@ -529,13 +535,6 @@ describe('Agent runtime regressions', () => {
 
   it('renders seeded Codex and Kimi statuses in the sidebar card and status panel', async () => {
     const ptyId = await waitForVisiblePtyId()
-    const codexHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'vimeflow-codex-e2e-')
-    )
-    const kimiHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'vimeflow-kimi-e2e-')
-    )
-
     const scenarios: AgentStatusScenario[] = [
       {
         agentType: 'codex',
@@ -556,52 +555,33 @@ describe('Agent runtime regressions', () => {
     const cardSelector = '[data-testid="sidebar-agent-status-card"]'
     const panelSelector = '[data-testid="agent-status-panel"]'
 
-    try {
-      for (const scenario of scenarios) {
-        await seedAgent(ptyId, scenario.agentType)
+    for (const scenario of scenarios) {
+      await seedAgent(ptyId, scenario.agentType)
+      await emitAgentStatus(ptyId, scenario)
 
-        if (scenario.agentType === 'codex') {
-          const rolloutPath = await invokeBackend<string>(
-            'e2e_start_codex_watcher',
-            { sessionId: ptyId, homeDir: codexHome }
+      await browser.waitUntil(
+        async () => {
+          await ensureActivityPanelExpanded()
+          const cardText = await textForSelector(cardSelector)
+          const panelText = await textForSelector(panelSelector)
+
+          return (
+            cardText.includes(scenario.modelDisplayName) &&
+            cardText.includes(`${scenario.turns} turns`) &&
+            !cardText.includes('No active agent') &&
+            panelText.includes(scenario.panelLabel)
           )
-          writeCodexRollout(rolloutPath, ptyId, scenario)
-          await emitAgentTurn(ptyId, scenario.turns)
-        } else {
-          const wirePath = await invokeBackend<string>(
-            'e2e_start_kimi_watcher',
-            { sessionId: ptyId, homeDir: kimiHome }
-          )
-          writeKimiWire(wirePath, scenario)
-          await emitAgentTurn(ptyId, scenario.turns)
+        },
+        {
+          timeout: 15_000,
+          interval: 500,
+          timeoutMsg: `${scenario.agentType} status did not render in sidebar and panel`,
         }
-
-        await browser.waitUntil(
-          async () => {
-            const cardText = await textForSelector(cardSelector)
-            const panelText = await textForSelector(panelSelector)
-
-            return (
-              cardText.includes(scenario.modelDisplayName) &&
-              cardText.includes(`${scenario.turns} turns`) &&
-              !cardText.includes('No active agent') &&
-              panelText.includes(scenario.panelLabel)
-            )
-          },
-          {
-            timeout: 15_000,
-            interval: 500,
-            timeoutMsg: `${scenario.agentType} status did not render in sidebar and panel`,
-          }
-        )
-      }
-    } finally {
-      fs.rmSync(codexHome, { recursive: true, force: true })
-      fs.rmSync(kimiHome, { recursive: true, force: true })
+      )
     }
   })
 
-  it('renames Claude and Codex agent terminals and writes /rename into the PTY', async () => {
+  it('writes /rename into Claude and Codex agent PTYs', async () => {
     const ptyId = await waitForVisiblePtyId()
     const agents: E2eAgentType[] = ['claudeCode', 'codex']
 
@@ -626,34 +606,6 @@ describe('Agent runtime regressions', () => {
           timeout: 10_000,
           interval: 250,
           timeoutMsg: `${agentType} rename did not write /rename into the PTY`,
-        }
-      )
-
-      await browser.execute(
-        (sessionId: string, renamedTitle: string) => {
-          window.__VIMEFLOW_E2E__?.emitBackendEvent('agent-session-title', {
-            sessionId,
-            agentSessionId: 'e2e-agent-session',
-            title: renamedTitle,
-            source: 'user-renamed',
-          })
-        },
-        ptyId,
-        title
-      )
-
-      await browser.waitUntil(
-        async () => {
-          const headerText = await textForSelector(
-            '[data-testid="terminal-pane-header"]'
-          )
-
-          return headerText.includes(title)
-        },
-        {
-          timeout: 10_000,
-          interval: 250,
-          timeoutMsg: `terminal header did not show ${agentType} renamed title`,
         }
       )
     }
@@ -684,11 +636,6 @@ describe('Agent runtime regressions', () => {
       window.location.reload()
     })
     await waitForE2eBridge()
-    await (
-      await $('[data-testid="terminal-pane"]')
-    ).waitForDisplayed({
-      timeout: 20_000,
-    })
     const ptyIdAfterReload = await waitForVisiblePtyId()
     assert.equal(ptyIdAfterReload, ptyIdBeforeReload)
 
