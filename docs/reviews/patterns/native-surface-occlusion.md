@@ -49,3 +49,12 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **Finding:** The collapsed changed-files sidebar rendered an invisible full-height `left: 0` hot-zone above the diff body. In the default unpinned state it occupied the same left gutter used by diff line selection and comment affordances, so clicks and drags near line numbers were intercepted by the sidebar reveal control.
 - **Fix:** Replaced the full-height invisible hot-zone with the small visible edge hint button. The hint still supports hover, focus, and click reveal, while the rest of the diff gutter remains available to the underlying diff surface.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Edge reveal activation must not undo preview reveal
+
+- **Source:** github-codex-connector | PR #645 round 1 | 2026-07-02
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The collapsed changed-files edge hint reused focus and hover to preview-open the panel, then handled click activation by toggling the now-revealed state. Direct mouse, touch, Space, or Enter activation could therefore flash the panel open and immediately close it.
+- **Fix:** Tracked focus/hover preview reveals locally and made the first activation after that preview idempotently reveal the panel instead of toggling it closed. Added a regression test that clicks the hidden edge hint and verifies the toggle callback is not invoked.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

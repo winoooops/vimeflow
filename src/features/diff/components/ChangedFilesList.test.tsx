@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import type { ChangedFile } from '../types'
-import { ChangedFilesList } from './ChangedFilesList'
+import { ChangedFilesList, ChangedFilesListSurface } from './ChangedFilesList'
 
 describe('ChangedFilesList', () => {
   const mockFiles: ChangedFile[] = [
@@ -383,5 +383,99 @@ describe('ChangedFilesList', () => {
     const fileButtons = screen.getAllByText('both.ts')
 
     expect(fileButtons).toHaveLength(2)
+  })
+})
+
+describe('ChangedFilesListSurface', () => {
+  const mockFiles: ChangedFile[] = [
+    {
+      path: 'src/components/NavBar.tsx',
+      status: 'modified',
+      insertions: 12,
+      deletions: 3,
+      staged: false,
+    },
+  ]
+
+  test('keeps the panel open when activating after focus reveal', async () => {
+    const user = userEvent.setup()
+    const onReveal = vi.fn()
+    const onToggle = vi.fn()
+    const unpinned = false
+    const hidden = false
+
+    render(
+      <ChangedFilesListSurface
+        files={mockFiles}
+        selectedFile={null}
+        pinned={unpinned}
+        revealed={hidden}
+        onReveal={onReveal}
+        onToggle={onToggle}
+        onScheduleHide={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onSelectFile={vi.fn()}
+        onAddFileComment={vi.fn()}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /show changed files \(1\)/i })
+    )
+
+    expect(onReveal).toHaveBeenCalled()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  test('schedules hide only after focus leaves the unpinned surface', async () => {
+    const user = userEvent.setup()
+    const onScheduleHide = vi.fn()
+    const unpinned = false
+    const shown = true
+
+    render(
+      <>
+        <ChangedFilesListSurface
+          files={mockFiles}
+          selectedFile={null}
+          pinned={unpinned}
+          revealed={shown}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={onScheduleHide}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+        <button type="button">Outside diff</button>
+      </>
+    )
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /hide changed files \(1\)/i })
+    ).toHaveFocus()
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /pin changed files/i })
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(
+      screen.getAllByRole('button', { name: /NavBar\.tsx/i })[0]
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: /comment on file/i })
+    ).toHaveFocus()
+    expect(onScheduleHide).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: /outside diff/i })).toHaveFocus()
+    expect(onScheduleHide).toHaveBeenCalledOnce()
   })
 })

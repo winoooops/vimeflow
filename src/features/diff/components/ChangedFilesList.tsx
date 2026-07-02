@@ -1,4 +1,5 @@
-import type { ReactElement } from 'react'
+import { useRef } from 'react'
+import type { FocusEvent, ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { sumLines } from '../utils/sumLines'
 import type { ChangedFile } from '../types'
@@ -144,30 +145,58 @@ const ChangedFilesEdgeHint = ({
   onReveal,
   onToggle,
   onScheduleHide,
-}: ChangedFilesEdgeHintProps): ReactElement => (
-  <button
-    type="button"
-    aria-label={`${revealed ? 'Hide' : 'Show'} changed files (${count})`}
-    aria-keyshortcuts="e"
-    aria-expanded={revealed}
-    data-testid="changed-files-edge-hint"
-    className="absolute left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-r-xl border border-l-0 border-outline-variant/25 bg-surface-container-high/70 px-1.5 py-2 text-on-surface shadow-xl backdrop-blur-[14px] backdrop-saturate-150 transition-all duration-200 hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-    onClick={onToggle}
-    onFocus={onReveal}
-    onMouseEnter={onReveal}
-    onMouseLeave={onScheduleHide}
-  >
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-[17px] leading-none"
+}: ChangedFilesEdgeHintProps): ReactElement => {
+  const previewRevealRef = useRef(false)
+
+  const handlePreviewReveal = (): void => {
+    if (!revealed) {
+      previewRevealRef.current = true
+    }
+
+    onReveal()
+  }
+
+  const handleActivate = (): void => {
+    if (!revealed || previewRevealRef.current) {
+      previewRevealRef.current = false
+      onReveal()
+
+      return
+    }
+
+    onToggle()
+  }
+
+  const handleScheduleHide = (): void => {
+    previewRevealRef.current = false
+    onScheduleHide()
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`${revealed ? 'Hide' : 'Show'} changed files (${count})`}
+      aria-keyshortcuts="e"
+      aria-expanded={revealed}
+      data-testid="changed-files-edge-hint"
+      className="absolute left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-r-xl border border-l-0 border-outline-variant/25 bg-surface-container-high/70 px-1.5 py-2 text-on-surface shadow-xl backdrop-blur-[14px] backdrop-saturate-150 transition-all duration-200 hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      onClick={handleActivate}
+      onFocus={handlePreviewReveal}
+      onMouseEnter={handlePreviewReveal}
+      onMouseLeave={handleScheduleHide}
     >
-      chevron_right
-    </span>
-    <span className="rounded-full bg-primary/20 px-1.5 py-px font-mono text-[9.5px] font-extrabold text-primary">
-      {count}
-    </span>
-  </button>
-)
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-[17px] leading-none"
+      >
+        chevron_right
+      </span>
+      <span className="rounded-full bg-primary/20 px-1.5 py-px font-mono text-[9.5px] font-extrabold text-primary">
+        {count}
+      </span>
+    </button>
+  )
+}
 
 /**
  * ChangedFilesList component for the diff view sidebar.
@@ -244,6 +273,19 @@ export const ChangedFilesListSurface = ({
   onSelectFile,
   onAddFileComment,
 }: ChangedFilesListSurfaceProps): ReactElement => {
+  const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const nextTarget = event.relatedTarget
+
+    if (
+      nextTarget instanceof Node &&
+      event.currentTarget.contains(nextTarget)
+    ) {
+      return
+    }
+
+    onScheduleHide()
+  }
+
   const list = (
     <ChangedFilesList
       files={files}
@@ -267,7 +309,7 @@ export const ChangedFilesListSurface = ({
   }
 
   return (
-    <>
+    <div className="contents" onBlur={handleBlur}>
       <ChangedFilesEdgeHint
         count={files.length}
         revealed={revealed}
@@ -285,6 +327,6 @@ export const ChangedFilesListSurface = ({
           {list}
         </div>
       ) : null}
-    </>
+    </div>
   )
 }

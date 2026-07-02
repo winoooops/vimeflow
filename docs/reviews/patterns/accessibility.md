@@ -805,3 +805,12 @@ handlers must not trap focus without implementing the promised behavior.
   token-backed focus ring and updated co-located tests to reject the old
   brightness/ring-0 treatment.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 79. Focus-opened floating panel lacked focus-out dismissal
+
+- **Source:** github-claude | PR #645 round 1 | 2026-07-02
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The unpinned changed-files edge hint opened the floating panel on keyboard focus, but only mouse leave scheduled dismissal. Tabbing to the hint could leave the absolute panel mounted over the diff until the user manually toggled it or happened to hover and leave.
+- **Fix:** Wrapped the unpinned hint and panel in a focus boundary that schedules hide when focus leaves the surface while preserving tab movement into the panel controls. Added regression coverage for tabbing through the hint, pin button, file row, file-comment button, and then out of the surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
