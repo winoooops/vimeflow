@@ -533,24 +533,6 @@ describe('GhosttyBody', () => {
     expect(onRequestActive).toHaveBeenCalledOnce()
   })
 
-  test('does not subscribe to native context-menu events', async () => {
-    render(
-      <GhosttyBody
-        paneId="pane-1"
-        ptyId="pty-1"
-        cwd="/tmp"
-        active
-        service={createService()}
-      />
-    )
-
-    await waitFor(() => {
-      expect(backendListeners.has('ghostty-native-focus')).toBe(true)
-    })
-
-    expect(backendListeners.has('ghostty-native-context-menu')).toBe(false)
-  })
-
   test('tracks cwd changes from native output OSC 7 sequences', async () => {
     const onCwdChange = vi.fn()
 

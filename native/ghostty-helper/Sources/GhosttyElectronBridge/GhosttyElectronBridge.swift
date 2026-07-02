@@ -14,12 +14,6 @@ public typealias VimeflowGhosttyResizeCallback = @convention(c) (
     Int32
 ) -> Void
 
-public typealias VimeflowGhosttyContextMenuCallback = @convention(c) (
-    UnsafeMutableRawPointer?,
-    Double,
-    Double
-) -> Void
-
 public typealias VimeflowGhosttyFocusCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
@@ -55,7 +49,6 @@ private struct SendablePointer: @unchecked Sendable {
 private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
-    private let contextMenuCallback: VimeflowGhosttyContextMenuCallback?
     private let focusCallback: VimeflowGhosttyFocusCallback?
     private let shortcutCallback: VimeflowGhosttyShortcutCallback?
     private let renamePaneCallback: VimeflowGhosttyRenamePaneCallback?
@@ -66,7 +59,6 @@ private final class CallbackBox: @unchecked Sendable {
     init(
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
-        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         focusCallback: VimeflowGhosttyFocusCallback?,
         shortcutCallback: VimeflowGhosttyShortcutCallback?,
         renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
@@ -74,7 +66,6 @@ private final class CallbackBox: @unchecked Sendable {
     ) {
         self.inputCallback = inputCallback
         self.resizeCallback = resizeCallback
-        self.contextMenuCallback = contextMenuCallback
         self.focusCallback = focusCallback
         self.shortcutCallback = shortcutCallback
         self.renamePaneCallback = renamePaneCallback
@@ -100,10 +91,6 @@ private final class CallbackBox: @unchecked Sendable {
         lastColumns = columns
         lastRows = rows
         resizeCallback?(callbackContext, Int32(columns), Int32(rows))
-    }
-
-    func openContextMenu(x: Double, y: Double) {
-        contextMenuCallback?(callbackContext, x, y)
     }
 
     func focusSurface() {
@@ -212,7 +199,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         parentView: NSView,
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
-        contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
         focusCallback: VimeflowGhosttyFocusCallback?,
         shortcutCallback: VimeflowGhosttyShortcutCallback?,
         renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
@@ -222,7 +208,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         self.callbacks = CallbackBox(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
-            contextMenuCallback: contextMenuCallback,
             focusCallback: focusCallback,
             shortcutCallback: shortcutCallback,
             renamePaneCallback: renamePaneCallback,
@@ -393,7 +378,6 @@ public func vimeflowGhosttyCreate(
     _ parentViewPointer: UnsafeMutableRawPointer?,
     _ inputCallback: VimeflowGhosttyInputCallback?,
     _ resizeCallback: VimeflowGhosttyResizeCallback?,
-    _ contextMenuCallback: VimeflowGhosttyContextMenuCallback?,
     _ focusCallback: VimeflowGhosttyFocusCallback?,
     _ shortcutCallback: VimeflowGhosttyShortcutCallback?,
     _ renamePaneCallback: VimeflowGhosttyRenamePaneCallback?,
@@ -413,7 +397,6 @@ public func vimeflowGhosttyCreate(
             parentView: parentView,
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
-            contextMenuCallback: contextMenuCallback,
             focusCallback: focusCallback,
             shortcutCallback: shortcutCallback,
             renamePaneCallback: renamePaneCallback,

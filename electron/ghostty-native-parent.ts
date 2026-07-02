@@ -37,7 +37,6 @@ interface GhosttyNativeParentAddon {
     nativeHandle: Buffer,
     onInput: (data: string) => void,
     onResize: (cols: number, rows: number) => void,
-    onContextMenu: (x: number, y: number) => void,
     onFocus: () => void,
     onShortcut: (
       key: string,
@@ -483,16 +482,6 @@ export class GhosttyNativeParentController {
             cols,
             rows,
           },
-        })
-      },
-      (x, y) => {
-        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
-          return
-        }
-
-        win.webContents.send(BACKEND_EVENT, {
-          event: 'ghostty-native-context-menu',
-          payload: { ...state.pane, x, y },
         })
       },
       () => {

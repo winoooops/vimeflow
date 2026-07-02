@@ -19,8 +19,6 @@ type RenameTarget = {
   initialValue: string
 } | null
 
-type ActiveRenameTarget = Exclude<RenameTarget, null>
-
 type SetPaneUserLabel = (
   ptyId: string,
   label: string | undefined,
@@ -60,7 +58,7 @@ export const usePaneRenameChord = (
   }, [])
 
   const restorePaneFocus = useCallback(
-    (renameTarget: ActiveRenameTarget): void => {
+    (renameTarget: NonNullable<RenameTarget>): void => {
       void focusNativeGhostty({
         sessionId: renameTarget.ptyId,
         paneId: renameTarget.pane.id,

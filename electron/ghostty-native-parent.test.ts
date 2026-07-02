@@ -379,7 +379,6 @@ describe('ghostty native parent', () => {
     const callbacks: {
       onInput?: (data: string) => void
       onResize?: (cols: number, rows: number) => void
-      onContextMenu?: (x: number, y: number) => void
       onFocus?: () => void
       onRenamePane?: () => void
     } = {}
@@ -387,19 +386,9 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (
-          _bridge,
-          _handle,
-          input,
-          resize,
-          contextMenu,
-          focus,
-          _shortcut,
-          renamePane
-        ) => {
+        (_bridge, _handle, input, resize, focus, _shortcut, renamePane) => {
           callbacks.onInput = input
           callbacks.onResize = resize
-          callbacks.onContextMenu = contextMenu
           callbacks.onFocus = focus
           callbacks.onRenamePane = renamePane
 
@@ -445,7 +434,6 @@ describe('ghostty native parent', () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function),
       expect.any(Function)
     )
     expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200)
@@ -453,7 +441,6 @@ describe('ghostty native parent', () => {
     callbacks.onInput?.('a')
     callbacks.onResize?.(80, 24)
     callbacks.onResize?.(80, 24)
-    callbacks.onContextMenu?.(15, 25)
     callbacks.onFocus?.()
     callbacks.onRenamePane?.()
 
@@ -468,11 +455,6 @@ describe('ghostty native parent', () => {
 
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 80, rows: 24 },
-    })
-
-    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
-      event: 'ghostty-native-context-menu',
-      payload: { sessionId: 'pty-1', paneId: 'pane-1', x: 15, y: 25 },
     })
 
     expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
@@ -505,16 +487,7 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (
-          _bridge,
-          _handle,
-          _input,
-          _resize,
-          _contextMenu,
-          _focus,
-          shortcut,
-          _renamePane
-        ) => {
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
           void _renamePane
           callbacks.onShortcut = shortcut
 
@@ -589,16 +562,7 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (
-          _bridge,
-          _handle,
-          _input,
-          _resize,
-          _contextMenu,
-          _focus,
-          shortcut,
-          _renamePane
-        ) => {
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
           void _renamePane
           callbacks.onShortcut = shortcut
 
@@ -655,17 +619,7 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (
-          _bridge,
-          _handle,
-          input,
-          resize,
-          _contextMenu,
-          _focus,
-          _shortcut,
-          _renamePane
-        ) => {
-          void _contextMenu
+        (_bridge, _handle, input, resize, _focus, _shortcut, _renamePane) => {
           void _focus
           void _shortcut
           void _renamePane
@@ -732,17 +686,7 @@ describe('ghostty native parent', () => {
 
     const addon = {
       create: vi.fn(
-        (
-          _bridge,
-          _handle,
-          input,
-          resize,
-          _contextMenu,
-          _focus,
-          _shortcut,
-          _renamePane
-        ) => {
-          void _contextMenu
+        (_bridge, _handle, input, resize, _focus, _shortcut, _renamePane) => {
           void _focus
           void _shortcut
           void _renamePane
