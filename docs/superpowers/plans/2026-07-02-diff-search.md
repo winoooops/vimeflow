@@ -1684,3 +1684,5 @@ git commit -m "docs(design): record in-pane tool layer exception for diff search
 - `/` opens, `Esc` closes, `n`/`p` modal navigation, count in the bar → Tasks 4, 6, 7, 8.
 - Tests cover search navigation → Tasks 1, 4, 7 test suites; collapsed-region interaction is explicitly the follow-up collapse spec's criterion, not this PR's.
 - After merge: PR via `/lifeline:request-pr` from `feature/vim-252`; CHANGELOG.md + CHANGELOG.zh-CN.md entries ride with the PR per repo convention.
+
+<!-- codex-reviewed: 2026-07-02T15:34:42Z -->
