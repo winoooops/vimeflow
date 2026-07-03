@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -31,6 +32,8 @@ describe('Agent detection (fake-claude)', function () {
   })
 
   it('detects a spawned fake claude process and expands the status panel', async () => {
+    await waitForE2eBridge()
+
     const pane = await $('[data-testid="terminal-pane"]')
     await pane.waitForDisplayed({ timeout: 20_000 })
 

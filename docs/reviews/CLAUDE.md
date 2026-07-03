@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 5        | 1    | 2026-07-02   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 6        | 1    | 2026-07-03   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 64   | 2026-06-27   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 86       | 40   | 2026-06-29   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 90   | 2026-06-25   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 87       | 84   | 2026-07-02   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 91       | 87   | 2026-07-03   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 70   | 2026-06-26   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
@@ -72,18 +72,18 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
 | [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 9        | 4    | 2026-06-13   |
-| [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
+| [Git Operations](patterns/git-operations.md)                                                         | correctness        | 27       | 12   | 2026-07-03   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 45       | 45   | 2026-06-26   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 28       | 14   | 2026-07-01   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 30       | 16   | 2026-07-03   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-25   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 30       | 6    | 2026-07-02   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 15       | 9    | 2026-06-20   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 21       | 14   | 2026-07-03   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 14       | 8    | 2026-06-22   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 14       | 7    | 2026-06-23   |
