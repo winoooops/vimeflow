@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-03
-ref_count: 11
+ref_count: 12
 ---
 
 # UI Visual Regression
@@ -190,4 +190,18 @@ test case for the state that triggers the collision.
 - **Fix:** Assigned `surface-container` to a distinct intermediate value that
   still passes the label contrast guard, and added a regression test asserting
   lower adjacent surface rungs remain distinct.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Top-tier surface rungs collapse in Gruvbox Dark and Tokyo Night
+
+- **Source:** github-codex-connector | PR #647 round 5 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** Gruvbox Dark and Tokyo Night reused the same accessible color for
+  `surface-container-high`, `surface-container-highest`, and `surface-bright`,
+  so controls using high-to-highest hover or elevation feedback rendered without
+  a visible state change in those themes.
+- **Fix:** Chose distinct accessible top-rung surface values for both themes and
+  added a shared regression test asserting the three interactive top rungs stay
+  pairwise distinct.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
