@@ -1994,6 +1994,16 @@ mod tests {
     use super::test_helpers::{configure_test_git, create_main_repo_with_worktrees, home_tempdir};
     use super::*;
 
+    fn fixture_git_command() -> std::process::Command {
+        let git_path = std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|path| path.join("git"))
+                .find(|path| path.is_file() && !path.to_string_lossy().contains(".qa-runner/bin"))
+        });
+
+        std::process::Command::new(git_path.unwrap_or_else(|| "git".into()))
+    }
+
     #[test]
     fn test_raw_diff_is_deletion_ignores_hunk_content() {
         let raw = "\
@@ -2987,7 +2997,7 @@ copy to copy.txt
             .current_dir(&seed)
             .output()
             .expect("git commit failed");
-        std::process::Command::new("git")
+        fixture_git_command()
             .args(["push", "origin", "main"])
             .current_dir(&seed)
             .output()
@@ -3044,7 +3054,7 @@ copy to copy.txt
             .current_dir(&seed)
             .output()
             .expect("git commit failed");
-        std::process::Command::new("git")
+        fixture_git_command()
             .args(["push", "origin", "main"])
             .current_dir(&seed)
             .output()
