@@ -269,7 +269,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         onClick={handleContainerClick}
         style={{
           ...containerStyle,
-          background: 'var(--color-surface)',
+          background: 'var(--color-surface-container-lowest)',
           borderRadius: 10,
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
           opacity: isPaneActive ? 1 : 0.78,

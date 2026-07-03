@@ -1,6 +1,7 @@
 // cspell:ignore Ghostty
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { flexoki, obsidianLens, themeService } from '../../../../theme'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NativeGhosttyDataRequest } from '../../nativeGhosttyClient'
 import {
@@ -121,6 +122,7 @@ describe('GhosttyBody', () => {
     vi.clearAllMocks()
     backendListeners.clear()
     outputListener = null
+    themeService.apply('obsidian-lens')
   })
 
   test('keeps native surface mounted when pane loses focus', async () => {
@@ -159,6 +161,40 @@ describe('GhosttyBody', () => {
     unmount()
 
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
+  })
+
+  test('sends displayed theme background to native frame updates', async () => {
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backgroundColor: obsidianLens.terminal.background,
+        })
+      )
+    })
+
+    vi.mocked(updateNativeGhostty).mockClear()
+    act(() => {
+      themeService.preview('flexoki')
+    })
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backgroundColor: flexoki.terminal.background,
+        })
+      )
+    })
+    expect(themeService.current().id).toBe('obsidian-lens')
   })
 
   test('keeps native frame bounds unchanged when renderer CSS pixels match window points', () => {

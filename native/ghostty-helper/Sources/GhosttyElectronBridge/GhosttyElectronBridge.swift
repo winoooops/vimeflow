@@ -46,6 +46,32 @@ private struct SendablePointer: @unchecked Sendable {
     let value: UnsafeMutableRawPointer?
 }
 
+private extension NSColor {
+    static func vimeflowGhosttyHexColor(_ hexColor: String) -> String? {
+        let hex = hexColor
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+
+        return hex.count == 6 && Int(hex, radix: 16) != nil ? hex : nil
+    }
+
+    convenience init?(vimeflowHexColor hexColor: String) {
+        guard
+            let hex = Self.vimeflowGhosttyHexColor(hexColor),
+            let value = Int(hex, radix: 16)
+        else {
+            return nil
+        }
+
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255,
+            alpha: 1
+        )
+    }
+}
+
 private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
@@ -247,6 +273,21 @@ private final class EmbeddedGhosttySurface: NSObject {
         })
     }
 
+    func setBackgroundColor(_ hexColor: String) {
+        guard
+            let color = NSColor(vimeflowHexColor: hexColor),
+            let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor)
+        else {
+            return
+        }
+
+        container.layer?.backgroundColor = color.cgColor
+        controller.setTheme(TerminalTheme(
+            light: TerminalConfiguration().background(ghosttyHex),
+            dark: TerminalConfiguration().background(ghosttyHex)
+        ))
+    }
+
     func receive(_ text: String) {
         session.receive(text)
     }
@@ -446,6 +487,25 @@ public func vimeflowGhosttySetShortcutDigits(
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
         surface.setShortcutDigits(digits)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_background_color")
+public func vimeflowGhosttySetBackgroundColor(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ colorPointer: UnsafePointer<CChar>?
+) {
+    guard let surfacePointer, let colorPointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let color = String(cString: colorPointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.setBackgroundColor(color)
     }
 }
 

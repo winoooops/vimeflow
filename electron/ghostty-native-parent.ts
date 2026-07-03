@@ -15,6 +15,7 @@ import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isBounds,
+  isHexColor,
   isNonEmptyString,
   isRecord,
   isString,
@@ -56,6 +57,7 @@ interface GhosttyNativeParentAddon {
     height: number
   ) => void
   setShortcutDigits?: (surface: unknown, digits: string) => void
+  setBackgroundColor?: (surface: unknown, color: string) => void
   write: (surface: unknown, data: string) => void
   focus: (surface: unknown) => void
   destroy: (surface: unknown) => void
@@ -185,6 +187,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
       return (
         isString(value.cwd) &&
         isBounds(value.bounds) &&
+        (value.backgroundColor === undefined ||
+          isHexColor(value.backgroundColor)) &&
         typeof value.visible === 'boolean' &&
         (value.shortcutContext === undefined ||
           isShortcutContext(value.shortcutContext))
@@ -308,6 +312,9 @@ export class GhosttyNativeParentController {
       y: Math.round(payload.bounds.y),
       width: frameVisible ? roundedWidth : 0,
       height: frameVisible ? roundedHeight : 0,
+    }
+    if (isHexColor(payload.backgroundColor)) {
+      addon.setBackgroundColor?.(surface, payload.backgroundColor)
     }
     addon.setFrame(surface, frame.x, frame.y, frame.width, frame.height)
     addon.setShortcutDigits?.(surface, shortcutDigits)

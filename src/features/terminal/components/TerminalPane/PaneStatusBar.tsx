@@ -43,7 +43,7 @@ export const PaneStatusBar = ({
   return (
     <div
       data-testid="terminal-pane-status-bar"
-      className={`flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] px-3 py-1 font-mono text-[10.5px] [container-type:inline-size] ${
+      className={`flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] bg-surface-container-lowest px-3 py-1 font-mono text-[10.5px] [container-type:inline-size] ${
         isActive ? 'bg-primary-container/15' : ''
       }`}
     >

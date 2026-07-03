@@ -316,6 +316,10 @@ describe('TerminalPane index', () => {
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveClass(
       '@container/pane'
     )
+
+    expect(
+      screen.getByTestId('terminal-pane-wrapper').getAttribute('style')
+    ).toContain('background: var(--color-surface-container-lowest)')
   })
 
   test('collapsing the pane hides the status bar', async () => {

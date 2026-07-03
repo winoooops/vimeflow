@@ -2,6 +2,32 @@ import AppKit
 import Foundation
 import GhosttyTerminal
 
+private extension NSColor {
+    static func vimeflowGhosttyHexColor(_ hexColor: String) -> String? {
+        let hex = hexColor
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+
+        return hex.count == 6 && Int(hex, radix: 16) != nil ? hex : nil
+    }
+
+    convenience init?(vimeflowHexColor hexColor: String) {
+        guard
+            let hex = Self.vimeflowGhosttyHexColor(hexColor),
+            let value = Int(hex, radix: 16)
+        else {
+            return nil
+        }
+
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255,
+            alpha: 1
+        )
+    }
+}
+
 // ponytail: helper-window spike; replace with an NSView addon if z-order/focus must be product-grade.
 private final class GhosttyHelperWindow: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -17,6 +43,7 @@ final class GhosttyNativeMacosSmoke:
     TerminalSurfaceCloseDelegate
 {
     private var window: NSWindow?
+    private var containerView: NSView?
     private var terminalView: TerminalView?
     private var backendClient: VimeflowBackendClient?
     private var electronHostClient: ElectronHostClient?
@@ -106,6 +133,7 @@ final class GhosttyNativeMacosSmoke:
         ])
 
         self.window = window
+        self.containerView = container
         self.terminalView = terminalView
 
         if helperMode {
@@ -269,6 +297,8 @@ final class GhosttyNativeMacosSmoke:
     private func applyHelperFrame(_ frame: GhosttyNativeFrame) {
         guard let window else { return }
 
+        setBackgroundColor(frame.backgroundColor)
+
         if !frame.visible || frame.width <= 0 || frame.height <= 0 {
             window.orderOut(nil)
             return
@@ -277,6 +307,21 @@ final class GhosttyNativeMacosSmoke:
         let appKitFrame = appKitFrameFromTopLeft(frame)
         window.setFrame(appKitFrame, display: true)
         window.orderFront(nil)
+    }
+
+    private func setBackgroundColor(_ hexColor: String) {
+        guard
+            let color = NSColor(vimeflowHexColor: hexColor),
+            let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor)
+        else {
+            return
+        }
+
+        containerView?.layer?.backgroundColor = color.cgColor
+        controller.setTheme(TerminalTheme(
+            light: TerminalConfiguration().background(ghosttyHex),
+            dark: TerminalConfiguration().background(ghosttyHex)
+        ))
     }
 
     private func focusHelperWindow() {

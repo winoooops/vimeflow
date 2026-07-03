@@ -46,6 +46,7 @@ const DEFAULT_THEME = obsidianLens
 type Listener = (theme: ThemeDefinition) => void
 
 let active: ThemeDefinition = DEFAULT_THEME
+let displayed: ThemeDefinition = DEFAULT_THEME
 
 const listeners = new Set<Listener>()
 
@@ -64,6 +65,7 @@ const apply = (id: ThemeId): void => {
   const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
 
   active = next
+  displayed = next
   writeDom(next)
   window.localStorage.setItem(THEME_STORAGE_KEY, next.id)
   listeners.forEach((listener) => listener(next))
@@ -72,6 +74,7 @@ const apply = (id: ThemeId): void => {
 const preview = (id: ThemeId): void => {
   const next = themes.find((t) => t.id === id) ?? DEFAULT_THEME
 
+  displayed = next
   writeDom(next)
   listeners.forEach((listener) => listener(next))
 }
@@ -80,6 +83,7 @@ export const themeService = {
   apply,
   preview,
   current: (): ThemeDefinition => active,
+  displayed: (): ThemeDefinition => displayed,
   list: (): readonly ThemeDefinition[] => themes,
   subscribe: (listener: Listener): (() => void) => {
     listeners.add(listener)

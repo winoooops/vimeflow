@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   isBounds,
+  isHexColor,
   isNonEmptyString,
   isRecord,
   isString,
@@ -21,5 +22,12 @@ describe('ghostty native shared guards', () => {
     expect(isString('')).toBe(true)
     expect(isNonEmptyString('pane-1')).toBe(true)
     expect(isNonEmptyString('')).toBe(false)
+  })
+
+  test('validates serialized theme hex colors', () => {
+    expect(isHexColor('#1e1e2e')).toBe(true)
+    expect(isHexColor('1e1e2e')).toBe(false)
+    expect(isHexColor('#fff')).toBe(false)
+    expect(isHexColor('#12345z')).toBe(false)
   })
 })

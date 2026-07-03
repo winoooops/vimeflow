@@ -21,6 +21,7 @@ export interface NativeGhosttyShortcutContext {
 export interface NativeGhosttyUpdateRequest extends NativeGhosttyPaneRef {
   cwd: string
   bounds: NativeGhosttyBounds
+  backgroundColor: string
   visible: boolean
   shortcutContext?: NativeGhosttyShortcutContext
 }

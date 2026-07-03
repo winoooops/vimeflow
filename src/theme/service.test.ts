@@ -21,6 +21,7 @@ test('apply persists and current() reflects the active theme', () => {
   themeService.apply('flexoki')
   expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('flexoki')
   expect(themeService.current().id).toBe('flexoki')
+  expect(themeService.displayed().id).toBe('flexoki')
 })
 
 test('subscribers are notified once per apply with the new theme', () => {
@@ -43,11 +44,22 @@ test('preview updates the displayed theme and subscribers without persisting', (
   themeService.preview('flexoki')
 
   expect(themeService.current().id).toBe('obsidian-lens')
+  expect(themeService.displayed().id).toBe('flexoki')
   expect(document.documentElement.dataset.theme).toBe('flexoki')
   expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('obsidian-lens')
   expect(seen).toHaveBeenCalledTimes(1)
   expect((seen.mock.calls[0][0] as ThemeDefinition).id).toBe('flexoki')
   unsubscribe()
+})
+
+test('apply commits the displayed preview theme', () => {
+  themeService.apply('obsidian-lens')
+  themeService.preview('flexoki')
+
+  themeService.apply('flexoki')
+
+  expect(themeService.current().id).toBe('flexoki')
+  expect(themeService.displayed().id).toBe('flexoki')
 })
 
 test('init falls back to obsidian-lens for unknown stored ids', () => {

@@ -14,6 +14,7 @@ import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isBounds,
+  isHexColor,
   isNonEmptyString,
   isRecord,
   isString,
@@ -159,6 +160,9 @@ export class GhosttyNativeHelperController {
       encodeFrame({
         kind: 'command',
         command: 'set-frame',
+        backgroundColor: isHexColor(payload.backgroundColor)
+          ? payload.backgroundColor
+          : '#000000',
         ...toGhosttyScreenFrame(
           win.getContentBounds(),
           payload.bounds,
@@ -574,6 +578,8 @@ function isGhosttyNativeUpdateRequest(
     isNonEmptyString(value.paneId) &&
     isString(value.cwd) &&
     isBounds(value.bounds) &&
+    (value.backgroundColor === undefined ||
+      isHexColor(value.backgroundColor)) &&
     typeof value.visible === 'boolean'
   )
 }

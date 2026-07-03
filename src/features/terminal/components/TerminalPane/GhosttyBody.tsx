@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from 'react'
 import { listen } from '../../../../lib/backend'
+import { useTheme } from '../../../../theme'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import type { ITerminalService } from '../../services/terminalService'
@@ -121,6 +122,8 @@ export const GhosttyBody = ({
   shortcutContext = undefined,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
+  const theme = useTheme()
+  const backgroundColor = theme.terminal.background
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const submittedInputLineRef = useRef('')
@@ -348,6 +351,7 @@ export const GhosttyBody = ({
         ...paneRef,
         cwd,
         bounds,
+        backgroundColor,
         visible: true,
         ...(shortcutContext ? { shortcutContext } : {}),
       })
@@ -358,7 +362,7 @@ export const GhosttyBody = ({
     } catch {
       onUnavailable?.()
     }
-  }, [cwd, onUnavailable, paneRef, shortcutContext])
+  }, [backgroundColor, cwd, onUnavailable, paneRef, shortcutContext])
 
   const scheduleNativeFrameUpdate = useCallback((): void => {
     if (frameIdRef.current !== null) {
@@ -555,7 +559,7 @@ export const GhosttyBody = ({
         void focusNativeSurface()
       }}
       role="presentation"
-      style={{ background: 'var(--color-surface)' }}
+      style={{ backgroundColor }}
     />
   )
 }
