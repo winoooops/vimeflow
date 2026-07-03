@@ -20,6 +20,15 @@ const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const webContentsSend = vi.fn()
 const otherWebContentsSend = vi.fn()
 
+const decodeHelperWrite = (chunk: Buffer | string): Record<string, unknown> => {
+  const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk
+
+  return JSON.parse(text.slice(text.indexOf('\r\n\r\n') + 4)) as Record<
+    string,
+    unknown
+  >
+}
+
 const ownerWindow = {
   getContentBounds: (): {
     x: number
@@ -236,13 +245,7 @@ describe('ghostty native helper', () => {
 
     const stdin = new Writable({
       write(chunk, _encoding, callback): void {
-        const text = (chunk as Buffer).toString('utf8')
-        writes.push(
-          JSON.parse(text.slice(text.indexOf('\r\n\r\n') + 4)) as Record<
-            string,
-            unknown
-          >
-        )
+        writes.push(decodeHelperWrite(chunk as Buffer))
         callback()
       },
     })
@@ -570,9 +573,11 @@ describe('ghostty native helper', () => {
 
   test('clears partial helper stdout when destroying the current pane', () => {
     const stdout = new PassThrough()
+    const writes: Record<string, unknown>[] = []
 
     const stdin = new Writable({
-      write(_chunk, _encoding, callback): void {
+      write(chunk, _encoding, callback): void {
+        writes.push(decodeHelperWrite(chunk as Buffer))
         callback()
       },
     })
@@ -633,6 +638,17 @@ describe('ghostty native helper', () => {
 
     stdout.emit('data', frame.subarray(0, 12))
     destroy?.({}, { sessionId: 'pty-1', paneId: 'pane-1' })
+    expect(writes.at(-1)).toEqual({
+      kind: 'command',
+      command: 'set-frame',
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      visible: false,
+      backgroundColor: '#000000',
+    })
+
     update?.(
       { sender: {} },
       {

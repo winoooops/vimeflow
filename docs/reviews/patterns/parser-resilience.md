@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-28
-ref_count: 9
+last_updated: 2026-07-03
+ref_count: 10
 ---
 
 # Parser Resilience
@@ -263,4 +263,18 @@ true` and drop the chunk.
   preserving possible partial header prefixes across chunks. The regression test
   now asserts stale bytes are not routed to the new pane, the helper is not killed,
   and the following valid frame still parses.
+- **Commit:** same commit as this entry
+
+### 17. Helper destroy frame missed a newly required parser field
+
+- **Source:** github-claude | PR #651 round 1 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The standalone Ghostty helper parser started requiring
+  `backgroundColor` for every `set-frame` command, but the pane destroy path
+  still sent the previous minimal hide/reset frame. Swift rejected that command,
+  so destroying a pane could leave the helper window visible with stale content.
+- **Fix:** Added the same fallback background color used by normal update frames
+  to the destroy hide/reset payload and asserted the serialized destroy command
+  in the helper regression test.
 - **Commit:** same commit as this entry
