@@ -72,10 +72,17 @@ export const useDockShortcuts = ({
 
       const key = event.key.toLowerCase()
 
-      // Ctrl+e / Ctrl+g: do not steal vim/readline shortcuts when xterm or
-      // CodeMirror has focus. Ctrl+b is exempt — it only fires when dock is
-      // active (checked below), so it can never originate from either surface.
-      if ((key === 'e' || key === 'g') && (inTerminalZone || inCodeMirror)) {
+      // Ctrl+e / Ctrl+g would clobber vim/readline (both Ctrl-based) in xterm,
+      // and Cmd/Ctrl+g is find-next inside CodeMirror — keep those guarded. But
+      // Cmd+e / Cmd+g don't collide with the terminal (macOS terminals drive
+      // vim/readline with Ctrl), so let them out of the terminal zone to reach
+      // the dock from anywhere. Ctrl+b is exempt — it only fires when the dock
+      // is active (checked below), so it can never originate from either surface.
+      const modifierCollidesWithTerminal = modKeyRef.current === 'Ctrl'
+      if (
+        (key === 'e' || key === 'g') &&
+        (inCodeMirror || (inTerminalZone && modifierCollidesWithTerminal))
+      ) {
         return
       }
 
