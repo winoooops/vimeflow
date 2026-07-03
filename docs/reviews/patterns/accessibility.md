@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-07-03
-ref_count: 86
+ref_count: 87
 ---
 
 # Accessibility
@@ -840,4 +840,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/tokyo-night.ts`
 - **Finding:** The surface ladder shift also moved `surface-container` and `surface-container-high` to values that paired with `on-surface-variant` below the 4.5:1 AA threshold in Gruvbox Dark and Tokyo Night, affecting common panel, notification, changed-file, review, and test-result rows.
 - **Fix:** Chose darker accessible mid-tier surface values for Gruvbox Dark and Tokyo Night, corrected the same compact-surface contrast gap exposed by the widened test in Gruvbox Light, and expanded the shared contrast regression test to cover `surface-container` and `surface-container-high` alongside the top rungs.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 83. Gruvbox surface ladders inverted elevation ordering
+
+- **Source:** github-claude | PR #647 round 6 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
+- **Finding:** The final Gruvbox token choices preserved compact-label contrast but left the dark theme with `surface-container` and `surface-bright` duplicated, and both Gruvbox themes with elevated rungs that moved opposite the theme-kind elevation direction. Nested panels and hover states could therefore render flat or visually inverted.
+- **Fix:** Re-picked nearby Gruvbox surface values so the dark ladder increases in luminance, the light ladder decreases in luminance, and all compact surface rungs still meet the existing AA contrast guard. Added a Gruvbox-specific regression test that checks the full surface ladder ordering by theme kind.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

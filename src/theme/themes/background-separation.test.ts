@@ -105,3 +105,34 @@ test('interactive top surface rungs keep distinct hover and elevation states', (
     expect(new Set(topSurfaceValues).size).toBe(topSurfaceValues.length)
   }
 })
+
+test('gruvbox surface ladders preserve elevation ordering', () => {
+  const gruvboxThemes = [gruvboxDark, gruvboxLight] as const
+
+  const surfaceRungs = [
+    'surface',
+    'surface-container-lowest',
+    'surface-container-low',
+    'surface-container',
+    'surface-container-high',
+    'surface-container-highest',
+    'surface-bright',
+  ] as const
+
+  for (const theme of gruvboxThemes) {
+    const surfaceLuminance = surfaceRungs.map((rung) =>
+      luminance(theme.ui[rung])
+    )
+
+    for (let index = 1; index < surfaceLuminance.length; index += 1) {
+      const previousLuminance = surfaceLuminance[index - 1]
+      const currentLuminance = surfaceLuminance[index]
+
+      if (theme.kind === 'dark') {
+        expect(currentLuminance).toBeGreaterThan(previousLuminance)
+      } else {
+        expect(currentLuminance).toBeLessThan(previousLuminance)
+      }
+    }
+  }
+})
