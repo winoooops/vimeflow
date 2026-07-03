@@ -1,5 +1,6 @@
 import {
   type ReactElement,
+  type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   useState,
@@ -403,6 +404,8 @@ export const Panel = ({
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
   const diffRootRef = useRef<HTMLDivElement>(null)
+  // Chromium does not dispatch blur/focusout when a focused child unmounts.
+  const focusWasInsidePanelRef = useRef(false)
   const diffScrollBodyRef = useRef<HTMLDivElement>(null)
 
   const filesListHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -480,6 +483,10 @@ export const Panel = ({
 
   const handleDiffRootPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {
+      // DockPanel steals non-interactive pointerdown focus to its section; diff
+      // selection prevents the browser default focus handoff from correcting it.
+      event.stopPropagation()
+
       if (
         event.target instanceof Element &&
         event.target.closest(DIFF_NATIVE_FOCUS_SELECTOR) === null
@@ -489,6 +496,82 @@ export const Panel = ({
     },
     [focusDiffRoot]
   )
+
+  const handleDiffRootFocus = useCallback((): void => {
+    focusWasInsidePanelRef.current = true
+  }, [])
+
+  const handleDiffRootBlur = useCallback(
+    (event: ReactFocusEvent<HTMLDivElement>): void => {
+      if (event.relatedTarget !== null) {
+        const nextTarget = event.relatedTarget
+
+        if (
+          !(nextTarget instanceof Node) ||
+          !event.currentTarget.contains(nextTarget)
+        ) {
+          focusWasInsidePanelRef.current = false
+        }
+
+        return
+      }
+
+      if (!document.hasFocus()) {
+        return
+      }
+
+      requestAnimationFrame(() => {
+        if (
+          focusWasInsidePanelRef.current &&
+          document.activeElement === document.body
+        ) {
+          focusDiffRoot()
+        }
+      })
+    },
+    [focusDiffRoot]
+  )
+
+  useEffect(() => {
+    const clearPanelFocusOnOutsidePointerDown = (event: PointerEvent): void => {
+      const root = diffRootRef.current
+
+      if (
+        root !== null &&
+        event.target instanceof Node &&
+        !root.contains(event.target)
+      ) {
+        focusWasInsidePanelRef.current = false
+      }
+    }
+
+    document.addEventListener(
+      'pointerdown',
+      clearPanelFocusOnOutsidePointerDown,
+      {
+        capture: true,
+      }
+    )
+
+    return (): void => {
+      document.removeEventListener(
+        'pointerdown',
+        clearPanelFocusOnOutsidePointerDown,
+        { capture: true }
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    // No dependency array: focused child removal is caused by render, so every
+    // committed render checks for Chromium's silent body-focus handoff.
+    if (
+      focusWasInsidePanelRef.current &&
+      document.activeElement === document.body
+    ) {
+      focusDiffRoot()
+    }
+  })
 
   const localFeedback = useFeedbackBatch()
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
@@ -1615,6 +1698,12 @@ export const Panel = ({
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
+  const refreshDiffFromKeyboard = useCallback((): void => {
+    if (latestDiffStatus === 'ready') {
+      acceptLatestDiff()
+    }
+  }, [acceptLatestDiff, latestDiffStatus])
+
   useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
@@ -1625,6 +1714,7 @@ export const Panel = ({
     onNextFile: (): void => goToFile(1),
     onToggleFilesList: toggleFilesList,
     onToggleFilesListPinned: toggleFilesListPinned,
+    onRefreshDiff: refreshDiffFromKeyboard,
     searchOpen: diffSearch.isOpen,
     onOpenSearch: diffSearch.open,
     onCloseSearch: diffSearch.close,
@@ -1789,7 +1879,7 @@ export const Panel = ({
         ref={diffRootRef}
         data-testid="diff-empty-state"
         tabIndex={-1}
-        onPointerDownCapture={handleDiffRootPointerDown}
+        onPointerDown={handleDiffRootPointerDown}
         className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant focus:outline-none"
       >
         <Notifier
@@ -1843,7 +1933,9 @@ export const Panel = ({
       ref={diffRootRef}
       data-testid="diff-populated-state"
       tabIndex={-1}
-      onPointerDownCapture={handleDiffRootPointerDown}
+      onPointerDown={handleDiffRootPointerDown}
+      onFocus={handleDiffRootFocus}
+      onBlurCapture={handleDiffRootBlur}
       className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden focus:outline-none"
     >
       <Notifier

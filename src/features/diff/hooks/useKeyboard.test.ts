@@ -69,6 +69,7 @@ const renderKeyboard = (
     onNextFile: vi.fn(),
     onToggleFilesList: vi.fn(),
     onToggleFilesListPinned: vi.fn(),
+    onRefreshDiff: vi.fn(),
     searchOpen: false,
     onOpenSearch: vi.fn(),
     onCloseSearch: vi.fn(),
@@ -155,6 +156,14 @@ describe('useKeyboard', () => {
 
     expect(props.onToggleFilesListPinned).toHaveBeenCalledOnce()
     expect(props.onToggleFilesList).not.toHaveBeenCalled()
+  })
+
+  test('r refreshes the diff', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('r')
+
+    expect(props.onRefreshDiff).toHaveBeenCalledOnce()
   })
 
   test('i opens comment editor for the selected line', () => {
@@ -277,6 +286,14 @@ describe('useKeyboard', () => {
     expect(props.onNextFile).not.toHaveBeenCalled()
   })
 
+  test('r is inert while a keyboard confirmation is open', () => {
+    const { props } = renderKeyboard({ confirming: true })
+
+    dispatch('r')
+
+    expect(props.onRefreshDiff).not.toHaveBeenCalled()
+  })
+
   test('handled shortcuts prevent default and stop propagation', () => {
     renderKeyboard()
 
@@ -388,6 +405,7 @@ describe('useKeyboard', () => {
       onNextFile: vi.fn(),
       onToggleFilesList: vi.fn(),
       onToggleFilesListPinned: vi.fn(),
+      onRefreshDiff: vi.fn(),
       searchOpen: false,
       onOpenSearch: vi.fn(),
       onCloseSearch: vi.fn(),
@@ -501,6 +519,15 @@ describe('useKeyboard', () => {
       dispatch('s')
 
       expect(onStageHunk).toHaveBeenCalledTimes(1)
+    })
+
+    test('r still refreshes the diff while search is open', () => {
+      const onRefreshDiff = vi.fn()
+      renderKeyboard({ searchOpen: true, onRefreshDiff })
+
+      dispatch('r')
+
+      expect(onRefreshDiff).toHaveBeenCalledTimes(1)
     })
   })
 })

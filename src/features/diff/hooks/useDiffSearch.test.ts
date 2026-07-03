@@ -137,8 +137,25 @@ describe('useDiffSearch', () => {
     expect(dom.clearPaint).toHaveBeenCalled()
   })
 
+  test('file-key null does not focus the panel when search was never open', () => {
+    const { rerender, focusPanel } = render()
+
+    rerender({ key: null, paint: true })
+
+    expect(focusPanel).not.toHaveBeenCalled()
+  })
+
+  test('file-key null focuses the panel when closing an open search', () => {
+    const { result, rerender, focusPanel } = render()
+
+    act(() => result.current.open())
+    rerender({ key: null, paint: true })
+
+    expect(focusPanel).toHaveBeenCalledOnce()
+  })
+
   test('close clears query, paint, and reverts state', () => {
-    const { result } = render()
+    const { result, focusPanel } = render()
     act(() => result.current.open())
     act(() => result.current.setQuery('search'))
     act(() => result.current.close())
@@ -146,6 +163,7 @@ describe('useDiffSearch', () => {
     expect(result.current.isOpen).toBe(false)
     expect(result.current.query).toBe('')
     expect(dom.clearPaint).toHaveBeenCalled()
+    expect(focusPanel).toHaveBeenCalledOnce()
   })
 
   test('unmount clears paint', () => {

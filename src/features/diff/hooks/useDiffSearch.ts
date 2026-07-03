@@ -53,6 +53,7 @@ export const useDiffSearch = ({
   const [matches, setMatches] = useState<DiffSearchMatch[]>([])
 
   const activeIndexRef = useRef(activeIndex)
+  const isOpenRef = useRef(isOpen)
 
   const collectedRef = useRef<CollectedDiffLines>({
     lines: [],
@@ -72,6 +73,7 @@ export const useDiffSearch = ({
   const rafRef = useRef<number | null>(null)
 
   activeIndexRef.current = activeIndex
+  isOpenRef.current = isOpen
   queryRef.current = query
 
   // The "pending frame" is a scheduled-but-not-yet-run rAF callback from
@@ -146,6 +148,8 @@ export const useDiffSearch = ({
   )
 
   const close = useCallback((): void => {
+    const wasOpen = isOpenRef.current
+    isOpenRef.current = false
     generationRef.current += 1
     cancelPendingFrame()
     setIsOpen(false)
@@ -155,7 +159,9 @@ export const useDiffSearch = ({
     setActive(0)
     hasNavigatedRef.current = false
     clearPaint()
-    focusPanel()
+    if (wasOpen) {
+      focusPanel()
+    }
   }, [cancelPendingFrame, focusPanel, setActive])
 
   const open = useCallback((): void => {
@@ -163,6 +169,7 @@ export const useDiffSearch = ({
       return
     }
 
+    isOpenRef.current = true
     setIsOpen(true)
     requestAnimationFrame(() => {
       inputRef.current?.focus()

@@ -14,6 +14,7 @@ export interface UseKeyboardOptions {
   onNextFile: () => void
   onToggleFilesList: () => void
   onToggleFilesListPinned: () => void
+  onRefreshDiff: () => void
   searchOpen: boolean
   onOpenSearch: () => void
   onCloseSearch: () => void
@@ -69,6 +70,7 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onNextFile,
     onToggleFilesList,
     onToggleFilesListPinned,
+    onRefreshDiff,
     searchOpen,
     onOpenSearch,
     onCloseSearch,
@@ -195,6 +197,7 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         '/': onOpenSearch,
         e: onToggleFilesList,
         E: onToggleFilesListPinned,
+        r: onRefreshDiff,
         '[': onPreviousHunk,
         ']': onNextHunk,
         i: onComment,
@@ -236,6 +239,7 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onNextFile,
     onToggleFilesList,
     onToggleFilesListPinned,
+    onRefreshDiff,
     searchOpen,
     onOpenSearch,
     onCloseSearch,

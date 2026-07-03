@@ -4296,6 +4296,58 @@ describe('Panel', () => {
       })
     })
 
+    test('keeps diff content clicks from bubbling to the dock focus steal', (): void => {
+      const onSelectedFileChange = vi.fn()
+      const dockPointerDown = vi.fn()
+
+      render(
+        <div
+          data-testid="dock-panel"
+          tabIndex={-1}
+          onPointerDown={(event): void => {
+            dockPointerDown()
+            event.currentTarget.focus()
+          }}
+        >
+          <div data-testid="diff-panel">
+            <Panel
+              cwd="/repo"
+              gitStatus={{
+                files: [
+                  { path: 'src/foo.ts', status: 'modified', staged: false },
+                  { path: 'src/bar.ts', status: 'modified', staged: false },
+                ],
+                filesCwd: '/repo',
+                loading: false,
+                error: null,
+                refresh: vi.fn(),
+                idle: false,
+              }}
+              selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+              onSelectedFileChange={onSelectedFileChange}
+            />
+          </div>
+        </div>
+      )
+
+      fireEvent.pointerDown(screen.getByTestId('multi-file-diff'))
+
+      expect(dockPointerDown).not.toHaveBeenCalled()
+      expect(
+        within(screen.getByTestId('diff-panel')).getByTestId(
+          'diff-populated-state'
+        )
+      ).toHaveFocus()
+
+      fireEvent.keyDown(document, { key: 'n' })
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/bar.ts',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
     test('Ctrl+D and Ctrl+U page the diff scroll body and cursor together', (): void => {
       render(
         <Panel
@@ -4742,6 +4794,433 @@ describe('Panel', () => {
         false,
         '/repo:2:src/foo.ts:unstaged'
       )
+    })
+
+    test('r refreshes the active diff when the latest diff is ready', (): void => {
+      const acceptLatestDiff = vi.fn()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          latestDiffStatus: 'ready',
+          acceptLatestDiff,
+          oldText: 'old',
+          newText: 'new v1',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
+
+      expect(acceptLatestDiff).toHaveBeenCalledOnce()
+    })
+
+    test('r does not refresh the active diff until the latest diff is ready', (): void => {
+      const acceptLatestDiff = vi.fn()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          latestDiffStatus: 'updating',
+          acceptLatestDiff,
+          oldText: 'old',
+          newText: 'new v1',
+          rawDiff: '',
+        })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
+
+      expect(acceptLatestDiff).not.toHaveBeenCalled()
+    })
+
+    test('reclaims focus when a focused element unmounts silently', async (): Promise<void> => {
+      const onSelectedFileChange = vi.fn()
+      const acceptLatestDiff = vi.fn()
+      let fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: false,
+        error: null,
+        latestDiffStatus: 'ready',
+        acceptLatestDiff,
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(
+        () => fileDiffState
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange,
+      } as const
+
+      const gitStatus = {
+        files: [
+          {
+            path: 'src/foo.ts',
+            status: 'modified' as const,
+            staged: false,
+          },
+          {
+            path: 'src/bar.ts',
+            status: 'modified' as const,
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      const { rerender } = render(
+        <div data-testid="diff-panel">
+          <Panel {...props} gitStatus={gitStatus} />
+        </div>
+      )
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const refreshButton = screen.getByRole('button', {
+        name: 'refresh diff',
+      })
+      refreshButton.focus()
+      fireEvent.focusIn(refreshButton)
+      expect(refreshButton).toHaveFocus()
+
+      fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: true,
+        error: null,
+        latestDiffStatus: 'updating',
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      rerender(
+        <div data-testid="diff-panel">
+          <Panel
+            {...props}
+            gitStatus={{ ...gitStatus, revision: gitStatus.revision + 1 }}
+          />
+        </div>
+      )
+
+      expect(
+        screen.queryByRole('button', { name: 'refresh diff' })
+      ).not.toBeInTheDocument()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('diff-panel')).toContainElement(
+          // eslint-disable-next-line testing-library/no-node-access -- asserting focus stayed inside the diff panel
+          document.activeElement as HTMLElement
+        )
+      })
+
+      fireEvent.keyDown(document, { key: 'n' })
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/bar.ts',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
+    test('does not reclaim focus after an outside pointerdown', (): void => {
+      const onSelectedFileChange = vi.fn()
+      const acceptLatestDiff = vi.fn()
+      let fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: false,
+        error: null,
+        latestDiffStatus: 'ready',
+        acceptLatestDiff,
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(
+        () => fileDiffState
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange,
+      } as const
+
+      const gitStatus = {
+        files: [
+          {
+            path: 'src/foo.ts',
+            status: 'modified' as const,
+            staged: false,
+          },
+          {
+            path: 'src/bar.ts',
+            status: 'modified' as const,
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      const { rerender } = render(
+        <>
+          <button type="button">Outside</button>
+          <div data-testid="diff-panel">
+            <Panel {...props} gitStatus={gitStatus} />
+          </div>
+        </>
+      )
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const refreshButton = screen.getByRole('button', {
+        name: 'refresh diff',
+      })
+      refreshButton.focus()
+      fireEvent.focusIn(refreshButton)
+      expect(refreshButton).toHaveFocus()
+
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Outside' }))
+
+      fileDiffState = fileDiffMock({
+        diff: inlineFileDiff,
+        loading: true,
+        error: null,
+        latestDiffStatus: 'updating',
+        oldText: 'old',
+        newText: 'new v1',
+        rawDiff: '',
+      })
+
+      rerender(
+        <>
+          <button type="button">Outside</button>
+          <div data-testid="diff-panel">
+            <Panel
+              {...props}
+              gitStatus={{ ...gitStatus, revision: gitStatus.revision + 1 }}
+            />
+          </div>
+        </>
+      )
+
+      // eslint-disable-next-line testing-library/no-node-access -- asserting the browser body-focus handoff was not reclaimed
+      expect(document.activeElement).toBe(document.body)
+
+      fireEvent.keyDown(document, { key: 'n' })
+
+      expect(onSelectedFileChange).not.toHaveBeenCalled()
+    })
+
+    test('restores diff focus when a focused refresh chip unmounts', (): void => {
+      const onSelectedFileChange = vi.fn()
+      const acceptLatestDiff = vi.fn()
+      const rafCallbacks: FrameRequestCallback[] = []
+      const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+
+      vi.stubGlobal(
+        'requestAnimationFrame',
+        (callback: FrameRequestCallback): number => {
+          rafCallbacks.push(callback)
+
+          return rafCallbacks.length
+        }
+      )
+
+      try {
+        let fileDiffState = fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          latestDiffStatus: 'ready',
+          acceptLatestDiff,
+          oldText: 'old',
+          newText: 'new v1',
+          rawDiff: '',
+        })
+
+        vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(
+          () => fileDiffState
+        )
+
+        const props = {
+          cwd: '/repo',
+          selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+          onSelectedFileChange,
+        } as const
+
+        const gitStatus = {
+          files: [
+            {
+              path: 'src/foo.ts',
+              status: 'modified' as const,
+              staged: false,
+            },
+            {
+              path: 'src/bar.ts',
+              status: 'modified' as const,
+              staged: false,
+            },
+          ],
+          filesCwd: '/repo',
+          revision: 1,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+          idle: false,
+        }
+
+        const { rerender } = render(<Panel {...props} gitStatus={gitStatus} />)
+        setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+        const refreshButton = screen.getByRole('button', {
+          name: 'refresh diff',
+        })
+        refreshButton.focus()
+        expect(refreshButton).toHaveFocus()
+
+        fireEvent.blur(refreshButton, { relatedTarget: null })
+
+        fileDiffState = fileDiffMock({
+          diff: inlineFileDiff,
+          loading: true,
+          error: null,
+          latestDiffStatus: 'updating',
+          oldText: 'old',
+          newText: 'new v1',
+          rawDiff: '',
+        })
+
+        rerender(
+          <Panel
+            {...props}
+            gitStatus={{ ...gitStatus, revision: gitStatus.revision + 1 }}
+          />
+        )
+
+        expect(
+          screen.queryByRole('button', { name: 'refresh diff' })
+        ).not.toBeInTheDocument()
+
+        act(() => {
+          for (const callback of rafCallbacks) {
+            callback(0)
+          }
+        })
+
+        expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
+
+        fireEvent.keyDown(document, { key: 'n' })
+
+        expect(onSelectedFileChange).toHaveBeenCalledWith({
+          path: 'src/bar.ts',
+          staged: false,
+          cwd: '/repo',
+        })
+      } finally {
+        hasFocusSpy.mockRestore()
+        vi.unstubAllGlobals()
+      }
+    })
+
+    test('does not restore diff focus after an outside non-focusable pointerdown blur', (): void => {
+      const rafCallbacks: FrameRequestCallback[] = []
+      const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+
+      vi.stubGlobal(
+        'requestAnimationFrame',
+        (callback: FrameRequestCallback): number => {
+          rafCallbacks.push(callback)
+
+          return rafCallbacks.length
+        }
+      )
+
+      try {
+        vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+          fileDiffMock({
+            diff: inlineFileDiff,
+            loading: false,
+            error: null,
+            latestDiffStatus: 'ready',
+            oldText: 'old',
+            newText: 'new v1',
+            rawDiff: '',
+          })
+        )
+
+        render(
+          <>
+            <div data-testid="outside-non-focusable" />
+            <Panel
+              cwd="/repo"
+              selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+              onSelectedFileChange={vi.fn()}
+            />
+          </>
+        )
+        setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+        const diffRoot = screen.getByTestId('diff-populated-state')
+        diffRoot.focus()
+        fireEvent.focusIn(diffRoot)
+        expect(diffRoot).toHaveFocus()
+
+        fireEvent.pointerDown(screen.getByTestId('outside-non-focusable'))
+        act(() => {
+          diffRoot.blur()
+        })
+
+        expect(rafCallbacks).toHaveLength(1)
+        // eslint-disable-next-line testing-library/no-node-access -- asserting the body-focus handoff is not reclaimed
+        expect(document.activeElement).toBe(document.body)
+
+        act(() => {
+          for (const callback of rafCallbacks) {
+            callback(0)
+          }
+        })
+
+        // eslint-disable-next-line testing-library/no-node-access -- asserting focus was not pulled back into the diff panel
+        expect(document.activeElement).toBe(document.body)
+      } finally {
+        hasFocusSpy.mockRestore()
+        vi.unstubAllGlobals()
+      }
     })
 
     test('keeps submitted comments when manual refresh swaps the diff response', async (): Promise<void> => {
