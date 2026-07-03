@@ -31,11 +31,13 @@ describe('run-e2e-agent script', () => {
   test('frees CI cargo intermediates before and after the agent suite', () => {
     process.env.CI = 'true'
     const calls = []
+
     const spawner = vi.fn(() => {
       calls.push('wdio')
 
       return { status: 0 }
     })
+
     const rmSync = vi.fn((targetPath) => {
       calls.push(targetPath)
     })
