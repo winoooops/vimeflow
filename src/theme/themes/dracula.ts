@@ -38,7 +38,7 @@ export const dracula: ThemeDefinition = {
     'surface-container-highest': '#5f6588',
     'surface-bright': '#5f6588',
     'surface-tint': draculaPalette.pink,
-    'browser-bar': draculaPalette.bgLow,
+    'browser-bar': '#2e303d',
     'browser-tab-active': draculaPalette.bgMid,
     primary: draculaPalette.pink,
     'primary-container': '#8a3a70',

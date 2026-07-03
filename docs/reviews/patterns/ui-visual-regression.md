@@ -253,3 +253,21 @@ test case for the state that triggers the collision.
   steps and added a shared regression test asserting every shipped theme keeps
   `browser-bar` distinct from `surface`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Browser bar chrome collided with adjacent toolbar surface
+
+- **Source:** github-codex-connector | PR #647 round 11 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/dracula.ts`, `src/theme/themes/flexoki.ts`,
+  `src/theme/themes/gruvbox/gruvbox-light.ts`,
+  `src/theme/themes/tokyo-night.ts`,
+  `src/theme/themes/background-separation.test.ts`
+- **Finding:** Dracula, Flexoki, Gruvbox Light, and Tokyo Night kept
+  `ui['browser-bar']` equal to `ui['surface-container-lowest']`, the toolbar
+  row adjacent to the browser tab row. The browser tab bar and toolbar could
+  visually merge in those shipped themes even though the terminal and parent
+  surface collision guards passed.
+- **Fix:** Moved the four `browser-bar` tokens to distinct neighboring theme
+  values and added a regression test asserting `browser-bar` remains distinct
+  from `surface-container-lowest` in every shipped theme.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

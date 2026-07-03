@@ -16,7 +16,7 @@ export const flexoki: ThemeDefinition = {
     'surface-container-highest': '#9f9d96',
     'surface-bright': '#9f9d96',
     'surface-tint': '#8b7ec8',
-    'browser-bar': '#e6e4d9',
+    'browser-bar': '#ece9dd',
     'browser-tab-active': '#fffcf0',
     primary: '#5e409d',
     'primary-container': '#8b7ec8',

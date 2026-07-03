@@ -68,6 +68,14 @@ test('browser bar chrome stays distinct from its app surface parent', () => {
   }
 })
 
+test('browser bar chrome stays distinct from adjacent toolbar surface', () => {
+  for (const theme of themes) {
+    expect(theme.ui['browser-bar']).not.toBe(
+      theme.ui['surface-container-lowest']
+    )
+  }
+})
+
 test('nested app surface rungs stay distinct from adjacent lower rungs', () => {
   const adjacentSurfaceRungs = [
     'surface',
