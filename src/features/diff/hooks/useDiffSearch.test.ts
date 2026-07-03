@@ -119,7 +119,7 @@ describe('useDiffSearch', () => {
     expect(dom.scrollToMatch).not.toHaveBeenCalled()
   })
 
-  test('file-key change resets the active match; null key closes and clears', () => {
+  test('file-key change clears stale matches; null key closes and clears', () => {
     const { result, rerender } = render()
     act(() => result.current.open())
     act(() => result.current.setQuery('search'))
@@ -127,8 +127,12 @@ describe('useDiffSearch', () => {
     expect(result.current.activeOrdinal).toBe(2)
 
     rerender({ key: 'b.ts:unstaged', paint: true })
+    expect(result.current.matchCount).toBe(0)
+    expect(result.current.activeOrdinal).toBe(0)
+
     act(() => result.current.handlePostRender(document.createElement('div')))
     expect(result.current.activeOrdinal).toBe(1)
+    expect(result.current.matchCount).toBe(2)
     expect(result.current.isOpen).toBe(true)
 
     rerender({ key: null, paint: true })
