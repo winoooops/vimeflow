@@ -63,6 +63,8 @@ const TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN =
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 const OSC7_SEQUENCE_PATTERN = /\u001b\]7;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g
+// ponytail: rAF resize-tracking loop; revert to one-shot scheduling if manual Ghostty testing shows IPC churn/jitter.
+const NATIVE_RESIZE_TRACKING_QUIET_MS = 120
 
 const stripTerminalInputControlSequences = (data: string): string =>
   data.replace(TERMINAL_INPUT_CONTROL_SEQUENCE_PATTERN, '')
@@ -133,6 +135,7 @@ export const GhosttyBody = ({
   const backgroundColor = theme.terminal.background
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
+  const resizeTrackingUntilRef = useRef(0)
   const submittedInputLineRef = useRef('')
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
@@ -384,14 +387,25 @@ export const GhosttyBody = ({
   ])
 
   const scheduleNativeFrameUpdate = useCallback((): void => {
+    resizeTrackingUntilRef.current =
+      Date.now() + NATIVE_RESIZE_TRACKING_QUIET_MS
+
     if (frameIdRef.current !== null) {
       return
     }
 
-    frameIdRef.current = window.requestAnimationFrame(() => {
+    const runFrameUpdate = (): void => {
       frameIdRef.current = null
       void updateNativeFrame()
-    })
+
+      if (Date.now() >= resizeTrackingUntilRef.current) {
+        return
+      }
+
+      frameIdRef.current = window.requestAnimationFrame(runFrameUpdate)
+    }
+
+    frameIdRef.current = window.requestAnimationFrame(runFrameUpdate)
   }, [updateNativeFrame])
 
   // Keep the parented NSView aligned; resize events only schedule rAF updates.
@@ -411,6 +425,7 @@ export const GhosttyBody = ({
         window.cancelAnimationFrame(frameIdRef.current)
         frameIdRef.current = null
       }
+      resizeTrackingUntilRef.current = 0
       observer.disconnect()
       window.removeEventListener('resize', scheduleNativeFrameUpdate)
     }

@@ -331,6 +331,95 @@ describe('GhosttyBody', () => {
     })
   })
 
+  test('tracks native frame updates until resize callbacks go quiet', async () => {
+    let resizeCallback: ResizeObserverCallback | null = null
+    let now = 1_000
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((callback: ResizeObserverCallback) => {
+        resizeCallback = callback
+
+        return {
+          observe: vi.fn(),
+          unobserve: vi.fn(),
+          disconnect: vi.fn(),
+        }
+      })
+    )
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    })
+    vi.mocked(updateNativeGhostty).mockClear()
+
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+      resizeCallback?.([], {} as ResizeObserver)
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      now = 1_016
+      frameCallbacks.shift()?.(0)
+      await Promise.resolve()
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+    act(() => {
+      now = 1_060
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      now = 1_130
+      frameCallbacks.shift()?.(16)
+      await Promise.resolve()
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(2)
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(3)
+
+    await act(async () => {
+      now = 1_195
+      frameCallbacks.shift()?.(32)
+      await Promise.resolve()
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(3)
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(3)
+
+    dateNowSpy.mockRestore()
+    requestAnimationFrameSpy.mockRestore()
+  })
+
   test('absorbs native destroy failures during unmount cleanup', async () => {
     vi.mocked(destroyNativeGhostty).mockRejectedValueOnce(new Error('disposed'))
 
