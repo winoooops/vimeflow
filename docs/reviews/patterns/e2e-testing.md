@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-01
-ref_count: 14
+last_updated: 2026-07-03
+ref_count: 15
 ---
 
 # E2E Testing
@@ -327,3 +327,18 @@ completely different root causes. The generic fast-failure modes:
   lifecycle test's spawned active session via the command palette `:close`
   command before asserting the PTY count decrements.
 - **Commit:** same commit as this entry
+
+### 29. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+
+- **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Linux E2E workflow passed all core, terminal, and agent specs
+  but failed during post-job cleanup with `No space left on device` while
+  writing the runner diagnostic log. The job log was dominated by INFO-level
+  WebDriver command payloads, including large key-action arrays and repeated
+  terminal-buffer reads.
+- **Fix:** Set each E2E WDIO config's `logLevel` to `warn`, preserving spec
+  reporter output and warnings/errors while suppressing high-volume command
+  traces that can exhaust the hosted runner's disk.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

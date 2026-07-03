@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-03
-ref_count: 12
+ref_count: 13
 ---
 
 # UI Visual Regression
@@ -204,4 +204,20 @@ test case for the state that triggers the collision.
 - **Fix:** Chose distinct accessible top-rung surface values for both themes and
   added a shared regression test asserting the three interactive top rungs stay
   pairwise distinct.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Terminal-canvas guard skipped surface rungs used at the canvas edge
+
+- **Source:** github-claude | PR #647 round 7 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/background-separation.test.ts`
+- **Finding:** The terminal-background collision guard checked only `surface`,
+  `surface-container-lowest`, and `surface-container`, omitting
+  `surface-container-low`, `surface-container-high`, `surface-container-highest`,
+  and `surface-bright`. The omitted low rung is used by the workspace chrome
+  adjacent to the terminal canvas, so a future theme edit could recreate the
+  disappearing-canvas-edge regression without failing the test.
+- **Fix:** Replaced the three explicit assertions with a full surface-rung list
+  and loop, so every shipped surface background stays distinct from each
+  theme's terminal canvas background.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

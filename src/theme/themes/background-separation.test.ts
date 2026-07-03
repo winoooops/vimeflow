@@ -44,14 +44,20 @@ const contrastRatio = (foreground: string, background: string): number => {
 }
 
 test('app surface backgrounds stay distinct from terminal canvas backgrounds', () => {
+  const surfaceRungs = [
+    'surface',
+    'surface-container-lowest',
+    'surface-container-low',
+    'surface-container',
+    'surface-container-high',
+    'surface-container-highest',
+    'surface-bright',
+  ] as const
+
   for (const theme of themes) {
-    expect(theme.ui.surface).not.toBe(theme.terminal.background)
-
-    expect(theme.ui['surface-container-lowest']).not.toBe(
-      theme.terminal.background
-    )
-
-    expect(theme.ui['surface-container']).not.toBe(theme.terminal.background)
+    for (const surface of surfaceRungs) {
+      expect(theme.ui[surface]).not.toBe(theme.terminal.background)
+    }
   }
 })
 
