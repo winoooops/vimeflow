@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-01
-ref_count: 10
+last_updated: 2026-07-03
+ref_count: 16
 ---
 
 # E2E Testing
@@ -272,3 +272,49 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
 - **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
 - **Commit:** same commit as this entry
+
+### 29. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+
+- **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Linux E2E workflow passed all core, terminal, and agent specs
+  but failed during post-job cleanup with `No space left on device` while
+  writing the runner diagnostic log. The job log was dominated by INFO-level
+  WebDriver command payloads, including large key-action arrays and repeated
+  terminal-buffer reads.
+- **Fix:** Set each E2E WDIO config's `logLevel` to `warn`, preserving spec
+  reporter output and warnings/errors while suppressing high-volume command
+  traces that can exhaust the hosted runner's disk.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Final E2E suite should free bulky build intermediates before post-job cleanup
+
+- **Source:** deterministic CI failure | PR #647 round 8 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `package.json`, `scripts/run-e2e-agent.mjs`
+- **Finding:** The Linux E2E job concluded `failure` after the agent suite
+  started, while the step never received a normal failed conclusion and the run
+  log archive was incomplete. The job had already built the sidecar, leaving a
+  large `target/debug/{build,deps,incremental}` tree in place for GitHub
+  post-job cache and diagnostic phases even though the diagnostics artifact only
+  needs `target/debug/vimeflow-backend`.
+- **Fix:** Route the final agent E2E suite through a small Node runner that
+  preserves WDIO's exit status but, on CI, removes bulky Cargo intermediates
+  after the suite returns. The sidecar binary remains available for diagnostics
+  while post-job steps have materially more disk headroom.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Final E2E suite may need disk cleanup before running specs
+
+- **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `scripts/run-e2e-agent.mjs`
+- **Finding:** The Linux E2E job exhausted disk while the agent suite was still
+  running, before the after-suite Cargo cleanup could execute. The failing spec
+  could not create its app-data status file and then failed on the missing
+  `statusFile` assertion.
+- **Fix:** Run the same CI-only Cargo intermediate cleanup before launching the
+  agent WDIO suite, while preserving the after-suite cleanup for post-job
+  headroom.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

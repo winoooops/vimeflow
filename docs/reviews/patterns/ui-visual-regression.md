@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-28
-ref_count: 10
+last_updated: 2026-07-03
+ref_count: 14
 ---
 
 # UI Visual Regression
@@ -195,4 +195,106 @@ test case for the state that triggers the collision.
 - **Fix:** Compute `frameVisible` from `visible` plus positive rounded width
   and height, and send a hidden 0x0 frame whenever the measured pane area is
   zero. Added a parent-controller regression test for visible zero-area bounds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Surface-bright collision hides hover affordances
+
+- **Source:** github-claude | PR #647 round 1 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-light.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface elevation shift updated `surface-container-highest` in Gruvbox Light and Tokyo Night but left `surface-bright` on the previous rung, making it collide with `surface-container-high`. Hover backgrounds over panels already using the high surface could become visually invisible.
+- **Fix:** Re-pointed `surface-bright` to the same top step as `surface-container-highest` in both themes and added focused assertions so the intended pairing is guarded.
+- **Commit:** same commit as this entry
+
+### 19. Adjacent Gruvbox Dark surface rungs collapsed
+
+- **Source:** github-claude | PR #647 round 4 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** `surface-container-low` and `surface-container` both resolved to
+  `#504945`, so nested panels using the adjacent semantic rungs rendered as one
+  flat surface in Gruvbox Dark.
+- **Fix:** Assigned `surface-container` to a distinct intermediate value that
+  still passes the label contrast guard, and added a regression test asserting
+  lower adjacent surface rungs remain distinct.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Top-tier surface rungs collapse in Gruvbox Dark and Tokyo Night
+
+- **Source:** github-codex-connector | PR #647 round 5 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** Gruvbox Dark and Tokyo Night reused the same accessible color for
+  `surface-container-high`, `surface-container-highest`, and `surface-bright`,
+  so controls using high-to-highest hover or elevation feedback rendered without
+  a visible state change in those themes.
+- **Fix:** Chose distinct accessible top-rung surface values for both themes and
+  added a shared regression test asserting the three interactive top rungs stay
+  pairwise distinct.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Terminal-canvas guard skipped surface rungs used at the canvas edge
+
+- **Source:** github-claude | PR #647 round 7 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/background-separation.test.ts`
+- **Finding:** The terminal-background collision guard checked only `surface`,
+  `surface-container-lowest`, and `surface-container`, omitting
+  `surface-container-low`, `surface-container-high`, `surface-container-highest`,
+  and `surface-bright`. The omitted low rung is used by the workspace chrome
+  adjacent to the terminal canvas, so a future theme edit could recreate the
+  disappearing-canvas-edge regression without failing the test.
+- **Fix:** Replaced the three explicit assertions with a full surface-rung list
+  and loop, so every shipped surface background stays distinct from each
+  theme's terminal canvas background.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Top-rung surface guard omitted a previously broken theme
+
+- **Source:** github-claude | PR #647 round 8 | 2026-07-03
+- **Severity:** LOW
+- **File:** `src/theme/themes/background-separation.test.ts`
+- **Finding:** The top-rung distinctness guard covered Gruvbox Dark and Tokyo
+  Night but omitted Gruvbox Light, even though Gruvbox Light hit the same
+  `surface-bright` collision class earlier in the PR. Future edits could
+  collapse `surface-container-high`, `surface-container-highest`, or
+  `surface-bright` in that theme without failing the regression test.
+- **Fix:** Added Gruvbox Light to the shared top-surface theme matrix so every
+  theme that has previously hit this collision class is guarded by the same
+  pairwise-distinctness assertion.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Browser bar chrome collided with app surface
+
+- **Source:** github-claude | PR #647 round 9 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/dracula.ts`, `src/theme/themes/flexoki.ts`,
+  `src/theme/themes/gruvbox/gruvbox-dark.ts`,
+  `src/theme/themes/gruvbox/gruvbox-light.ts`,
+  `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface ladder shift moved `ui.surface` onto palette values
+  already used by `ui['browser-bar']` in five shipped themes. Browser tab-bar
+  chrome could therefore blend into its `bg-surface` browser pane parent,
+  recreating the disappearing-boundary issue for native browser panes.
+- **Fix:** Moved the affected `browser-bar` tokens to distinct adjacent palette
+  steps and added a shared regression test asserting every shipped theme keeps
+  `browser-bar` distinct from `surface`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Browser bar chrome collided with adjacent toolbar surface
+
+- **Source:** github-codex-connector | PR #647 round 11 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/dracula.ts`, `src/theme/themes/flexoki.ts`,
+  `src/theme/themes/gruvbox/gruvbox-light.ts`,
+  `src/theme/themes/tokyo-night.ts`,
+  `src/theme/themes/background-separation.test.ts`
+- **Finding:** Dracula, Flexoki, Gruvbox Light, and Tokyo Night kept
+  `ui['browser-bar']` equal to `ui['surface-container-lowest']`, the toolbar
+  row adjacent to the browser tab row. The browser tab bar and toolbar could
+  visually merge in those shipped themes even though the terminal and parent
+  surface collision guards passed.
+- **Fix:** Moved the four `browser-bar` tokens to distinct neighboring theme
+  values and added a regression test asserting `browser-bar` remains distinct
+  from `surface-container-lowest` in every shipped theme.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

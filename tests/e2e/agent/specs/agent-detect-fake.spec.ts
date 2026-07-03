@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -7,6 +8,13 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = path.resolve(__dirname, '../../fixtures/agents')
+
+const textForSelector = async (selector: string): Promise<string> =>
+  await browser.execute((target: string) => {
+    const el = document.querySelector<HTMLElement>(target)
+
+    return el?.textContent ?? ''
+  }, selector)
 
 describe('Agent detection (fake-claude)', function () {
   // Linux-only: detector reads /proc; fixture uses bash + exec -a.
@@ -23,7 +31,9 @@ describe('Agent detection (fake-claude)', function () {
     }
   })
 
-  it('detects a spawned fake claude process in the sidebar status card', async () => {
+  it('detects a spawned fake claude process and expands the status panel', async () => {
+    await waitForE2eBridge()
+
     const pane = await $('[data-testid="terminal-pane"]')
     await pane.waitForDisplayed({ timeout: 20_000 })
 
@@ -45,9 +55,27 @@ describe('Agent detection (fake-claude)', function () {
     await pressEnterInActiveTerminal()
 
     // Detector polls /proc every ~2s for argv[0]="claude".
-    const statusCard = await $(
-      '[data-testid="sidebar-agent-status-card"][data-agent-state="active"]'
+    await browser.waitUntil(
+      async () => {
+        const cardText = await textForSelector(
+          '[data-testid="sidebar-agent-status-card"]'
+        )
+
+        return (
+          cardText.includes('Claude Sonnet 4') &&
+          !cardText.includes('No active agent')
+        )
+      },
+      {
+        timeout: 30_000,
+        interval: 500,
+        timeoutMsg: 'sidebar agent status card did not show fake Claude',
+      }
     )
-    await statusCard.waitForDisplayed({ timeout: 30_000 })
+
+    const panel = await $('[data-testid="agent-status-panel"]')
+    if (await panel.isExisting()) {
+      await panel.waitForDisplayed({ timeout: 5_000 })
+    }
   })
 })

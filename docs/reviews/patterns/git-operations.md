@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-06-13
-ref_count: 11
+last_updated: 2026-07-03
+ref_count: 12
 ---
 
 # Git Operations
@@ -248,3 +248,15 @@ between display and mutation operations.
 - **Finding:** `handleFileViewDiff` computed `relativePath` from `activeCwd`, but the git backend normalizes status and diff to the repository top level. For terminals in a subdirectory, this produced a repo-root-relative path that missed the nested prefix and targeted the wrong file.
 - **Fix:** Extended `git_status_inner` to return the repository root (`repoRoot`) and updated `useGitStatus` / `WorkspaceView` to compute diff paths relative to `repoRoot` when available, falling back to `activeCwd`.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 27. Test git helper hid QA shim bypass rationale
+
+- **Source:** github-claude | PR #647 round 4 | 2026-07-03
+- **Severity:** LOW
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** The test helper filtered PATH entries containing
+  `.qa-runner/bin` without documenting that the external review harness installs
+  a push-intercepting git shim there.
+- **Fix:** Added a focused comment explaining that fixture repositories need
+  the real git binary so local push tests bypass the QA runner shim.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

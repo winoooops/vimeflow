@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-02
-ref_count: 84
+last_updated: 2026-07-03
+ref_count: 87
 ---
 
 # Accessibility
@@ -798,4 +798,40 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/PaneRenameInput.tsx`
 - **Finding:** Rename validation and backend error text rendered only inside `sr-only`, so sighted users received only color and border feedback when a pane rename failed.
 - **Fix:** Rendered a compact visible `role="alert"` message in `text-error` while preserving `aria-describedby`; updated regression coverage to assert the alert is not `sr-only`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 80. Dracula highest surface fell below small-label contrast
+
+- **Source:** github-codex-connector | PR #647 round 1 | 2026-07-03
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/themes/dracula.ts`
+- **Finding:** `surface-container-highest` and `surface-bright` were moved to Dracula's muted comment color, which paired with `on-surface-variant` at about 2.4:1 contrast. Existing compact labels and keycaps using `bg-surface-container-highest text-on-surface-variant` became hard to read.
+- **Fix:** Mapped both elevated Dracula surface tokens to `#5f6588`, a darker surface step that preserves the highest/bright pairing while restoring small-label contrast, and added theme assertions for the reviewed tokens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 81. Theme top-rung surfaces regressed compact-label contrast
+
+- **Source:** github-claude | PR #647 round 2 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/tokyo-night.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`, `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** The shifted `surface-container-highest` and `surface-bright` values in Tokyo Night and Gruvbox paired with `on-surface-variant` below the 4.5:1 AA threshold used by compact keycaps, badges, and neutral chips.
+- **Fix:** Chose accessible top-rung surface values for the three affected themes and added a shared contrast regression test for `surface-container-highest`/`surface-bright` against `on-surface-variant`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 82. Theme mid-tier surfaces regressed compact-label contrast
+
+- **Source:** github-claude | PR #647 round 3 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface ladder shift also moved `surface-container` and `surface-container-high` to values that paired with `on-surface-variant` below the 4.5:1 AA threshold in Gruvbox Dark and Tokyo Night, affecting common panel, notification, changed-file, review, and test-result rows.
+- **Fix:** Chose darker accessible mid-tier surface values for Gruvbox Dark and Tokyo Night, corrected the same compact-surface contrast gap exposed by the widened test in Gruvbox Light, and expanded the shared contrast regression test to cover `surface-container` and `surface-container-high` alongside the top rungs.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 83. Gruvbox surface ladders inverted elevation ordering
+
+- **Source:** github-claude | PR #647 round 6 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
+- **Finding:** The final Gruvbox token choices preserved compact-label contrast but left the dark theme with `surface-container` and `surface-bright` duplicated, and both Gruvbox themes with elevated rungs that moved opposite the theme-kind elevation direction. Nested panels and hover states could therefore render flat or visually inverted.
+- **Fix:** Re-picked nearby Gruvbox surface values so the dark ladder increases in luminance, the light ladder decreases in luminance, and all compact surface rungs still meet the existing AA contrast guard. Added a Gruvbox-specific regression test that checks the full surface ladder ordering by theme kind.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
