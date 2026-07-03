@@ -17,7 +17,7 @@ export const obsidianLens: ThemeDefinition = {
     surface: '#121221',
     'surface-container-lowest': '#0d0d1c',
     'surface-container-low': '#1a1a2a',
-    'surface-container': '#1e1e2e',
+    'surface-container': '#23233b',
     'surface-container-high': '#292839',
     'surface-container-highest': '#333344',
     'surface-bright': '#383849',

@@ -14,7 +14,7 @@ test('apply writes CSS vars, data-theme, and color-scheme', () => {
   const root = document.documentElement
   expect(root.dataset.theme).toBe('flexoki')
   expect(root.style.colorScheme).toBe('light')
-  expect(root.style.getPropertyValue('--color-surface')).toBe('#fffcf0')
+  expect(root.style.getPropertyValue('--color-surface')).toBe('#f2f0e5')
 })
 
 test('apply persists and current() reflects the active theme', () => {

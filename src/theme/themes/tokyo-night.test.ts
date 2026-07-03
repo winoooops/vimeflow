@@ -5,7 +5,7 @@ test('tokyo night uses the Terminal Colors default dark palette', () => {
   expect(tokyoNightTheme.id).toBe('tokyo-night')
   expect(tokyoNightTheme.label).toBe('Tokyo Night')
   expect(tokyoNightTheme.kind).toBe('dark')
-  expect(tokyoNightTheme.ui.surface).toBe('#1a1b26')
+  expect(tokyoNightTheme.ui.surface).toBe('#15161e')
   expect(tokyoNightTheme.ui.primary).toBe('#7aa2f7')
   expect(tokyoNightTheme.ui['on-surface']).toBe('#c0caf5')
   expect(tokyoNightTheme.terminal.background).toBe('#1a1b26')

@@ -19,7 +19,7 @@ describe('Color Tokens: Catppuccin theme', () => {
     expect(obsidianLens.ui.surface).toBe('#121221')
     expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')
     expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
-    expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+    expect(obsidianLens.ui['surface-container']).toBe('#23233b')
     expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
     expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
     expect(obsidianLens.ui['surface-bright']).toBe('#383849')
