@@ -41,6 +41,7 @@ docs/design/UNIFIED.md             # Task 9 — in-pane tool layer exception not
 ### Task 1: Pure matcher — `matchDiffLines`
 
 **Files:**
+
 - Create: `src/features/diff/search/matchDiffLines.ts`
 - Test: `src/features/diff/search/matchDiffLines.test.ts`
 
@@ -58,13 +59,29 @@ const line = (
 
 describe('matchDiffLines', () => {
   test('returns empty for empty query', () => {
-    expect(matchDiffLines([line('additions', 0, 'const search = 1')], '')).toEqual([])
+    expect(
+      matchDiffLines([line('additions', 0, 'const search = 1')], '')
+    ).toEqual([])
   })
 
   test('matches case-insensitively with column offsets', () => {
-    expect(matchDiffLines([line('additions', 0, 'const Search = search')], 'search')).toEqual([
-      { key: 'additions:0', side: 'additions', lineIndex: 0, start: 6, end: 12 },
-      { key: 'additions:0', side: 'additions', lineIndex: 0, start: 15, end: 21 },
+    expect(
+      matchDiffLines([line('additions', 0, 'const Search = search')], 'search')
+    ).toEqual([
+      {
+        key: 'additions:0',
+        side: 'additions',
+        lineIndex: 0,
+        start: 6,
+        end: 12,
+      },
+      {
+        key: 'additions:0',
+        side: 'additions',
+        lineIndex: 0,
+        start: 15,
+        end: 21,
+      },
     ])
   })
 
@@ -81,7 +98,11 @@ describe('matchDiffLines', () => {
       ],
       'foo'
     )
-    expect(matches.map((m) => m.key)).toEqual(['deletions:1', 'additions:1', 'additions:2'])
+    expect(matches.map((m) => m.key)).toEqual([
+      'deletions:1',
+      'additions:1',
+      'additions:2',
+    ])
   })
 })
 ```
@@ -168,6 +189,7 @@ git commit -m "feat(diff): add pure search matcher for diff lines" -m "Co-Author
 ### Task 2: DOM adapter — constants, feature guard, `collectLines`
 
 **Files:**
+
 - Create: `src/features/diff/search/diffSearchDom.ts`
 - Test: `src/features/diff/search/diffSearchDom.test.ts`
 
@@ -179,7 +201,11 @@ Pierre DOM facts this task encodes (verified against `@pierre/diffs@1.2.2` dist 
 import { describe, test, expect } from 'vitest'
 import { collectLines, supportsHighlightApi } from './diffSearchDom'
 
-const buildLine = (lineIndex: number, type: string, text: string): HTMLElement => {
+const buildLine = (
+  lineIndex: number,
+  type: string,
+  text: string
+): HTMLElement => {
   const el = document.createElement('div')
   el.setAttribute('data-line', '')
   el.setAttribute('data-line-index', String(lineIndex))
@@ -188,7 +214,9 @@ const buildLine = (lineIndex: number, type: string, text: string): HTMLElement =
   return el
 }
 
-const buildColumn = (kind: 'unified' | 'deletions' | 'additions'): {
+const buildColumn = (
+  kind: 'unified' | 'deletions' | 'additions'
+): {
   code: HTMLElement
   content: HTMLElement
 } => {
@@ -320,7 +348,9 @@ export const collectLines = (container: Element | null): CollectedDiffLines => {
   const lines: DiffSearchLine[] = []
   const elements = new Map<string, HTMLElement>()
 
-  for (const el of root.querySelectorAll<HTMLElement>('[data-content] [data-line]')) {
+  for (const el of root.querySelectorAll<HTMLElement>(
+    '[data-content] [data-line]'
+  )) {
     const lineIndex = Number(el.getAttribute('data-line-index'))
     if (Number.isNaN(lineIndex)) {
       continue
@@ -359,6 +389,7 @@ git commit -m "feat(diff): collect searchable lines from pierre shadow DOM" -m "
 ### Task 3: DOM adapter — ranges, paint, clear, scroll
 
 **Files:**
+
 - Modify: `src/features/diff/search/diffSearchDom.ts` (append)
 - Test: `src/features/diff/search/diffSearchDom.test.ts` (append)
 
@@ -405,7 +436,10 @@ describe('rangeForMatch', () => {
 
 describe('paintMatches / clearPaint (stubbed registry)', () => {
   const registry = new Map<string, unknown>()
-  const HighlightStub = vi.fn(function (this: { ranges: unknown[] }, ...ranges: unknown[]) {
+  const HighlightStub = vi.fn(function (
+    this: { ranges: unknown[] },
+    ...ranges: unknown[]
+  ) {
     this.ranges = ranges
   })
 
@@ -559,7 +593,8 @@ export const paintMatches = (
   CSS.highlights.set(DIFF_SEARCH_HIGHLIGHT, new Highlight(...bulkRanges))
 
   const active = matches[activeIndex]
-  const activeEl = active === undefined ? undefined : collected.elements.get(active.key)
+  const activeEl =
+    active === undefined ? undefined : collected.elements.get(active.key)
   const activeRange =
     activeEl === undefined || !activeEl.isConnected
       ? null
@@ -606,6 +641,7 @@ git commit -m "feat(diff): paint search matches via CSS Highlight API" -m "Co-Au
 ### Task 4: State owner — `useDiffSearch`
 
 **Files:**
+
 - Create: `src/features/diff/hooks/useDiffSearch.ts`
 - Test: `src/features/diff/hooks/useDiffSearch.test.ts`
 
@@ -620,8 +656,18 @@ import { useDiffSearch } from './useDiffSearch'
 import * as dom from '../search/diffSearchDom'
 
 const lines = [
-  { key: 'additions:0', side: 'additions' as const, lineIndex: 0, text: 'search alpha' },
-  { key: 'additions:1', side: 'additions' as const, lineIndex: 1, text: 'search beta' },
+  {
+    key: 'additions:0',
+    side: 'additions' as const,
+    lineIndex: 0,
+    text: 'search alpha',
+  },
+  {
+    key: 'additions:1',
+    side: 'additions' as const,
+    lineIndex: 1,
+    text: 'search beta',
+  },
 ]
 
 const collected = { lines, elements: new Map<string, HTMLElement>() }
@@ -643,10 +689,14 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const render = (fileKey: string | null = 'a.ts:unstaged', paintEnabled = true) => {
+const render = (
+  fileKey: string | null = 'a.ts:unstaged',
+  paintEnabled = true
+) => {
   const focusPanel = vi.fn()
   const hook = renderHook(
-    ({ key, paint }) => useDiffSearch({ fileKey: key, paintEnabled: paint, focusPanel }),
+    ({ key, paint }) =>
+      useDiffSearch({ fileKey: key, paintEnabled: paint, focusPanel }),
     { initialProps: { key: fileKey, paint: paintEnabled } }
   )
   // Simulate pierre's first onPostRender so lines are collected.
@@ -761,7 +811,10 @@ describe('useDiffSearch', () => {
     act(() => result.current.step(1))
     expect(result.current.activeOrdinal).toBe(2)
 
-    vi.mocked(dom.collectLines).mockReturnValue({ lines: [lines[0]], elements: new Map() })
+    vi.mocked(dom.collectLines).mockReturnValue({
+      lines: [lines[0]],
+      elements: new Map(),
+    })
     act(() => result.current.handlePostRender(document.createElement('div')))
 
     expect(result.current.activeOrdinal).toBe(1)
@@ -832,7 +885,10 @@ export const useDiffSearch = ({
   const [activeIndex, setActiveIndex] = useState(0)
   const [matches, setMatches] = useState<DiffSearchMatch[]>([])
 
-  const collectedRef = useRef<CollectedDiffLines>({ lines: [], elements: new Map() })
+  const collectedRef = useRef<CollectedDiffLines>({
+    lines: [],
+    elements: new Map(),
+  })
   const containerRef = useRef<Element | null>(null)
   const hasNavigatedRef = useRef(false)
   const generationRef = useRef(0)
@@ -949,7 +1005,8 @@ export const useDiffSearch = ({
     (direction: 1 | -1): void => {
       if (matches.length > 0) {
         if (hasNavigatedRef.current) {
-          const next = (activeIndex + direction + matches.length) % matches.length
+          const next =
+            (activeIndex + direction + matches.length) % matches.length
           setActiveIndex(next)
           scrollToMatch(matches[next], collectedRef.current.elements)
         } else {
@@ -1008,7 +1065,18 @@ export const useDiffSearch = ({
       handlePostRender,
       inputRef,
     }),
-    [isOpen, query, matches.length, activeOrdinal, open, close, setQuery, step, commit, handlePostRender]
+    [
+      isOpen,
+      query,
+      matches.length,
+      activeOrdinal,
+      open,
+      close,
+      setQuery,
+      step,
+      commit,
+      handlePostRender,
+    ]
   )
 }
 ```
@@ -1032,6 +1100,7 @@ git commit -m "feat(diff): add useDiffSearch state hook" -m "Co-Authored-By: cod
 ### Task 5: `DiffSearchButton`
 
 **Files:**
+
 - Create: `src/features/diff/components/DiffSearchButton.tsx`
 - Test: `src/features/diff/components/DiffSearchButton.test.tsx`
 
@@ -1068,23 +1137,30 @@ import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 
 interface DiffSearchButtonProps {
+  fileHeaderVisible: boolean
   onOpen: () => void
 }
 
 /** Floating search entry point — anchored by Panel 4px under the toolbar,
- * 22px off the right edge (spec §2). Hover tints the icon only. */
+ * offset from the right edge around Pierre's file header. Hover tints the icon
+ * only. */
 export const DiffSearchButton = ({
+  fileHeaderVisible,
   onOpen,
-}: DiffSearchButtonProps): ReactElement => (
-  <IconButton
-    icon="search"
-    label="Search in diff"
-    shortcut="/"
-    size="md"
-    className="absolute right-[22px] top-1 z-30 h-[34px] w-[34px] rounded-xl border border-outline-variant/25 bg-surface-container-high/30 text-on-surface-muted shadow-md backdrop-blur-[14px] backdrop-saturate-150 hover:bg-surface-container-high/30 hover:text-primary"
-    onClick={onOpen}
-  />
-)
+}: DiffSearchButtonProps): ReactElement => {
+  const rightOffsetClass = fileHeaderVisible ? 'right-[72px]' : 'right-[22px]'
+
+  return (
+    <IconButton
+      icon="search"
+      label="Search in diff"
+      shortcut="/"
+      size="md"
+      className={`absolute ${rightOffsetClass} top-1 z-30 h-[34px] w-[34px] rounded-xl border border-outline-variant/25 bg-surface-container-high/30 text-on-surface-muted shadow-md backdrop-blur-[14px] backdrop-saturate-150 hover:bg-surface-container-high/30 hover:text-primary`}
+      onClick={onOpen}
+    />
+  )
+}
 ```
 
 (If `IconButton`'s hover styles fight the override, check its variant classes and neutralize with explicit `hover:bg-…` as above; the contract is: fill/border never change on hover, icon color does.)
@@ -1106,6 +1182,7 @@ git commit -m "feat(diff): add floating search button" -m "Co-Authored-By: codex
 ### Task 6: `DiffSearchPopup`
 
 **Files:**
+
 - Create: `src/features/diff/components/DiffSearchPopup.tsx`
 - Test: `src/features/diff/components/DiffSearchPopup.test.tsx`
 
@@ -1200,6 +1277,7 @@ import { IconButton } from '@/components/IconButton'
 
 interface DiffSearchPopupProps {
   open: boolean
+  fileHeaderVisible: boolean
   query: string
   matchCount: number
   activeOrdinal: number
@@ -1215,6 +1293,7 @@ interface DiffSearchPopupProps {
  * NOT the shared Popover (spec §2 primitive-choice + UNIFIED.md exception). */
 export const DiffSearchPopup = ({
   open,
+  fileHeaderVisible,
   query,
   matchCount,
   activeOrdinal,
@@ -1239,11 +1318,13 @@ export const DiffSearchPopup = ({
     }
   }
 
+  const rightOffsetClass = fileHeaderVisible ? 'right-[72px]' : 'right-[22px]'
+
   return (
     <div
       role="search"
       inert={!open}
-      className={`absolute right-[22px] top-1 z-30 flex w-[330px] max-w-[calc(100%-24px)] origin-top-right items-center gap-1.5 rounded-2xl border border-outline-variant/30 bg-surface-container-high/85 p-2 shadow-2xl backdrop-blur-[34px] backdrop-brightness-110 backdrop-saturate-[180%] motion-safe:transition-[opacity,transform] motion-safe:duration-200 motion-safe:ease-out ${
+      className={`absolute ${rightOffsetClass} top-1 z-30 flex w-[330px] max-w-[calc(100%-24px)] origin-top-right items-center gap-1.5 rounded-2xl border border-outline-variant/30 bg-surface-container-high/70 p-2 shadow-2xl backdrop-blur-[34px] backdrop-brightness-110 backdrop-saturate-[180%] motion-safe:transition-[opacity,transform] motion-safe:duration-200 motion-safe:ease-out ${
         open
           ? 'opacity-100 scale-100 translate-y-0'
           : 'pointer-events-none opacity-0 scale-[0.92] -translate-y-1.5'
@@ -1295,6 +1376,7 @@ git commit -m "feat(diff): add glass search popup" -m "Co-Authored-By: codex <co
 ### Task 7: Modal keys in `useKeyboard`
 
 **Files:**
+
 - Modify: `src/features/diff/hooks/useKeyboard.ts`
 - Test: `src/features/diff/hooks/useKeyboard.test.ts` (extend — reuse the file's `dispatch`/`appendDiffRoot` helpers and its existing `baseOptions` pattern)
 
@@ -1320,7 +1402,13 @@ describe('search mode', () => {
     const { ref } = appendDiffRoot()
     renderHook(() =>
       useKeyboard(
-        options({ rootRef: ref, searchOpen: true, onNextMatch, onPreviousMatch, onNextFile })
+        options({
+          rootRef: ref,
+          searchOpen: true,
+          onNextMatch,
+          onPreviousMatch,
+          onNextFile,
+        })
       )
     )
 
@@ -1337,7 +1425,9 @@ describe('search mode', () => {
     const onNextMatch = vi.fn()
     const { ref } = appendDiffRoot()
     renderHook(() =>
-      useKeyboard(options({ rootRef: ref, searchOpen: false, onNextFile, onNextMatch }))
+      useKeyboard(
+        options({ rootRef: ref, searchOpen: false, onNextFile, onNextMatch })
+      )
     )
 
     dispatch('n')
@@ -1374,7 +1464,13 @@ describe('search mode', () => {
     const { ref } = appendDiffRoot()
     renderHook(() =>
       useKeyboard(
-        options({ rootRef: ref, confirming: true, searchOpen: true, onCloseSearch, onOpenSearch })
+        options({
+          rootRef: ref,
+          confirming: true,
+          searchOpen: true,
+          onCloseSearch,
+          onOpenSearch,
+        })
       )
     )
 
@@ -1388,7 +1484,9 @@ describe('search mode', () => {
   test('other diff keys stay bound while search is open', () => {
     const onStageHunk = vi.fn()
     const { ref } = appendDiffRoot()
-    renderHook(() => useKeyboard(options({ rootRef: ref, searchOpen: true, onStageHunk })))
+    renderHook(() =>
+      useKeyboard(options({ rootRef: ref, searchOpen: true, onStageHunk }))
+    )
 
     dispatch('s')
 
@@ -1419,23 +1517,23 @@ Expected: FAIL — new options unknown / handlers not firing
 **(b)** Replace the visual-mode Escape block (currently `if (visualMode && event.key === 'Escape') { … }`) with the spec §3 priority chain (this code runs after the confirming branch and dialog gate, so both already take precedence):
 
 ```typescript
-      if (event.key === 'Escape') {
-        if (searchOpen) {
-          event.preventDefault()
-          event.stopPropagation()
-          onCloseSearch()
+if (event.key === 'Escape') {
+  if (searchOpen) {
+    event.preventDefault()
+    event.stopPropagation()
+    onCloseSearch()
 
-          return
-        }
+    return
+  }
 
-        if (visualMode) {
-          event.preventDefault()
-          event.stopPropagation()
-          onCancelVisualSelection()
+  if (visualMode) {
+    event.preventDefault()
+    event.stopPropagation()
+    onCancelVisualSelection()
 
-          return
-        }
-      }
+    return
+  }
+}
 ```
 
 **(c)** In the `handlers` map, remap `n`/`p` and add `/`:
@@ -1465,10 +1563,12 @@ git commit -m "feat(diff): add modal search keys to diff keyboard" -m "Co-Author
 ### Task 8: Panel wiring
 
 **Files:**
+
 - Modify: `src/features/diff/Panel.tsx`
 - Test: `src/features/diff/Panel.test.tsx` (extend — reuse its existing render harness/mocks)
 
 Anchors in current `Panel.tsx` (line numbers from `feature/vim-252` @ `58bf8e00` — re-locate by symbol if drifted):
+
 - `useToolbarState()` destructure: ~line 910 (`multiFileDiffOptions`)
 - `reviewTargetFileKey` derivation: ~line 926 (the file-identity pattern to mirror)
 - `useKeyboard({ … })` call: ~line 1572
@@ -1548,40 +1648,40 @@ import { DiffSearchPopup } from './components/DiffSearchPopup'
 **(b)** After the `useToolbarState()` destructure, mount the hook + compose options (mirror the `reviewTargetFileKey` pattern; `tooNarrow → null` implements the spec §2 narrow-close rule):
 
 ```typescript
-  const diffSearchFileKey =
-    selectedFilePath === null || tooNarrow
-      ? null
-      : // Repo root + path + lane (spec §2 identity) — a cwd switch with the
-        // same relative path must reset, not preserve+clamp.
-        `${cwd}:${selectedFilePath}:${selectedFileStaged ? 'staged' : 'unstaged'}`
+const diffSearchFileKey =
+  selectedFilePath === null || tooNarrow
+    ? null
+    : // Repo root + path + lane (spec §2 identity) — a cwd switch with the
+      // same relative path must reset, not preserve+clamp.
+      `${cwd}:${selectedFilePath}:${selectedFileStaged ? 'staged' : 'unstaged'}`
 
-  const diffSearch = useDiffSearch({
-    fileKey: diffSearchFileKey,
-    // Mount ⇔ visible: DockPanel renders the diff tab conditionally, so a
-    // mounted Panel is the one visible painter (spec §5 authority).
-    paintEnabled: true,
-    focusPanel: focusDiffRoot,
-  })
+const diffSearch = useDiffSearch({
+  fileKey: diffSearchFileKey,
+  // Mount ⇔ visible: DockPanel renders the diff tab conditionally, so a
+  // mounted Panel is the one visible painter (spec §5 authority).
+  paintEnabled: true,
+  focusPanel: focusDiffRoot,
+})
 
-  const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
-  diffSearchPostRenderRef.current = diffSearch.handlePostRender
-  const handleDiffPostRender = useCallback<
-    NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>
-  >((node, instance) => {
-    diffSearchPostRenderRef.current(node)
-    // Compose-don't-replace (spec §4): if multiFileDiffOptions ever grows its
-    // own onPostRender, forward to it here.
-    void instance
-  }, [])
+const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
+diffSearchPostRenderRef.current = diffSearch.handlePostRender
+const handleDiffPostRender = useCallback<
+  NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>
+>((node, instance) => {
+  diffSearchPostRenderRef.current(node)
+  // Compose-don't-replace (spec §4): if multiFileDiffOptions ever grows its
+  // own onPostRender, forward to it here.
+  void instance
+}, [])
 
-  const diffOptionsWithSearch = useMemo<FileDiffOptions<ReviewComment>>(
-    () => ({
-      ...multiFileDiffOptions,
-      unsafeCSS: DIFF_SEARCH_UNSAFE_CSS,
-      onPostRender: handleDiffPostRender,
-    }),
-    [multiFileDiffOptions, handleDiffPostRender]
-  )
+const diffOptionsWithSearch = useMemo<FileDiffOptions<ReviewComment>>(
+  () => ({
+    ...multiFileDiffOptions,
+    unsafeCSS: DIFF_SEARCH_UNSAFE_CSS,
+    onPostRender: handleDiffPostRender,
+  }),
+  [multiFileDiffOptions, handleDiffPostRender]
+)
 ```
 
 (Adjust the `onPostRender` callback signature to whatever `FileDiffOptions['onPostRender']` actually declares — pierre types it as `(node, instance) => void`; if the generic import is awkward use `Parameters<NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>>`.)
@@ -1601,23 +1701,25 @@ import { DiffSearchPopup } from './components/DiffSearchPopup'
 **(e)** In the populated JSX, inside the `relative` wrapper that hosts the `ChangedFilesList` overlay and `PanelBody`, render (button hidden while open — spec §2):
 
 ```tsx
-          {diffSearchFileKey !== null && (
-            <>
-              {!diffSearch.isOpen && <DiffSearchButton onOpen={diffSearch.open} />}
-              <DiffSearchPopup
-                open={diffSearch.isOpen}
-                query={diffSearch.query}
-                matchCount={diffSearch.matchCount}
-                activeOrdinal={diffSearch.activeOrdinal}
-                confirming={keyboardConfirmAction !== null}
-                inputRef={diffSearch.inputRef}
-                onQueryChange={diffSearch.setQuery}
-                onCommit={diffSearch.commit}
-                onStep={diffSearch.step}
-                onClose={diffSearch.close}
-              />
-            </>
-          )}
+{
+  diffSearchFileKey !== null && (
+    <>
+      {!diffSearch.isOpen && <DiffSearchButton onOpen={diffSearch.open} />}
+      <DiffSearchPopup
+        open={diffSearch.isOpen}
+        query={diffSearch.query}
+        matchCount={diffSearch.matchCount}
+        activeOrdinal={diffSearch.activeOrdinal}
+        confirming={keyboardConfirmAction !== null}
+        inputRef={diffSearch.inputRef}
+        onQueryChange={diffSearch.setQuery}
+        onCommit={diffSearch.commit}
+        onStep={diffSearch.step}
+        onClose={diffSearch.close}
+      />
+    </>
+  )
+}
 ```
 
 The `diffSearchFileKey !== null` gate plus the hook's `open()` guard together enforce the spec §2 rule: no search surface and no search mode while the diff is empty or the narrow placeholder is engaged (`/` becomes a no-op because `open()` bails on a null key).
@@ -1646,13 +1748,14 @@ git commit -m "feat(diff): wire vim-modal search into diff panel" -m "Co-Authore
 ### Task 9: Design-system exception note + quality gate
 
 **Files:**
+
 - Modify: `docs/design/UNIFIED.md` (floating-surface / component-contract section)
 
 - [ ] **Step 1: Add the exception note** — locate the floating-surface rule in `docs/design/UNIFIED.md` (the "compose `Dropdown`/`Menu`/`Popover`, don't hand-roll" contract) and append:
 
 ```markdown
 > **In-pane tool layers (exception).** Absolutely-positioned surfaces that live
-> *inside* a feature panel's subtree — the diff changed-files overlay (#645) and
+> _inside_ a feature panel's subtree — the diff changed-files overlay (#645) and
 > the diff search popup (VIM-252) — are not floating surfaces in this contract's
 > sense: they are modeless, non-portaled, anchored to the panel (not a trigger),
 > and must stay inside the panel for keyboard-scope containment. They reuse the
