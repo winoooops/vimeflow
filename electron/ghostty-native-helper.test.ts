@@ -230,6 +230,76 @@ describe('ghostty native helper', () => {
     controller.dispose()
   })
 
+  test('forwards bottom corner radius to the helper frame', () => {
+    const stdout = new PassThrough()
+    const writes: Record<string, unknown>[] = []
+
+    const stdin = new Writable({
+      write(chunk, _encoding, callback): void {
+        const text = (chunk as Buffer).toString('utf8')
+        writes.push(
+          JSON.parse(text.slice(text.indexOf('\r\n\r\n') + 4)) as Record<
+            string,
+            unknown
+          >
+        )
+        callback()
+      },
+    })
+
+    const helper: {
+      stdin: Writable
+      stdout: PassThrough
+      stderr: null
+      on: ReturnType<typeof vi.fn>
+      kill: ReturnType<typeof vi.fn>
+    } = {
+      stdin,
+      stdout,
+      stderr: null,
+      on: vi.fn(() => helper),
+      kill: vi.fn(() => true),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeHelper({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
+      spawnFn: vi.fn(() => helper),
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    expect(
+      update?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          bottomCornerRadius: 10,
+        }
+      )
+    ).toEqual({ enabled: true })
+
+    expect(writes.at(-1)).toEqual(
+      expect.objectContaining({
+        command: 'set-frame',
+        bottomCornerRadius: 10,
+        visible: true,
+      })
+    )
+
+    controller.dispose()
+  })
+
   test('handles helper stdin errors during shutdown', () => {
     const warnSpy = vi
       .spyOn(console, 'warn')

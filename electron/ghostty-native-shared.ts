@@ -20,6 +20,7 @@ export interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
   cwd: string
   bounds: GhosttyNativeBounds
   backgroundColor?: string
+  bottomCornerRadius?: number
   visible: boolean
   shortcutContext?: GhosttyNativeShortcutContext
 }
@@ -56,4 +57,10 @@ export function isNonEmptyString(value: unknown): value is string {
 
 export function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
+}
+
+export function isOptionalFiniteNumber(value: unknown): value is number {
+  return (
+    value === undefined || (typeof value === 'number' && Number.isFinite(value))
+  )
 }

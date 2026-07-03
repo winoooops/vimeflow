@@ -21,6 +21,7 @@ const bodyMocks = vi.hoisted(() => ({
     onUnavailable?: () => void
     onRequestFocus?: () => void
     shortcutContext?: NativeGhosttyShortcutContext
+    bottomCornerRadius?: number
   } | null,
   xtermFocus: vi.fn(),
 }))
@@ -32,15 +33,18 @@ vi.mock('./GhosttyBody', () => {
     onUnavailable = undefined,
     onRequestFocus = undefined,
     shortcutContext = undefined,
+    bottomCornerRadius = undefined,
   }: {
     onUnavailable?: () => void
     onRequestFocus?: () => void
     shortcutContext?: NativeGhosttyShortcutContext
+    bottomCornerRadius?: number
   }): ReactElement => {
     bodyMocks.ghosttyProps = {
       onUnavailable,
       onRequestFocus,
       shortcutContext,
+      bottomCornerRadius,
     }
 
     return <div data-testid="ghostty-body" />
@@ -125,6 +129,24 @@ describe('TerminalBody', () => {
 
     expect(bodyMocks.ghosttyProps?.shortcutContext).toEqual(shortcutContext)
     expect(bodyMocks.ghosttyProps?.onRequestFocus).toBe(onRequestFocus)
+  })
+
+  test('passes bottom corner radius to native Ghostty body', () => {
+    render(
+      <TerminalBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        bottomCornerRadius={10}
+        mode="attach"
+        deferFit={deferFit}
+        enableImagePaste={enableImagePaste}
+      />
+    )
+
+    expect(bodyMocks.ghosttyProps?.bottomCornerRadius).toBe(10)
   })
 
   test('falls back to xterm when imperative native focus rejects', async () => {

@@ -17,6 +17,7 @@ import {
   isBounds,
   isHexColor,
   isNonEmptyString,
+  isOptionalFiniteNumber,
   isRecord,
   isString,
   type GhosttyNativeDataRequest,
@@ -54,7 +55,8 @@ interface GhosttyNativeParentAddon {
     x: number,
     y: number,
     width: number,
-    height: number
+    height: number,
+    bottomCornerRadius: number
   ) => void
   setShortcutDigits?: (surface: unknown, digits: string) => void
   setBackgroundColor?: (surface: unknown, color: string) => void
@@ -189,6 +191,7 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
         isBounds(value.bounds) &&
         (value.backgroundColor === undefined ||
           isHexColor(value.backgroundColor)) &&
+        isOptionalFiniteNumber(value.bottomCornerRadius) &&
         typeof value.visible === 'boolean' &&
         (value.shortcutContext === undefined ||
           isShortcutContext(value.shortcutContext))
@@ -312,11 +315,21 @@ export class GhosttyNativeParentController {
       y: Math.round(payload.bounds.y),
       width: frameVisible ? roundedWidth : 0,
       height: frameVisible ? roundedHeight : 0,
+      bottomCornerRadius: frameVisible
+        ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
+        : 0,
     }
     if (isHexColor(payload.backgroundColor)) {
       addon.setBackgroundColor?.(surface, payload.backgroundColor)
     }
-    addon.setFrame(surface, frame.x, frame.y, frame.width, frame.height)
+    addon.setFrame(
+      surface,
+      frame.x,
+      frame.y,
+      frame.width,
+      frame.height,
+      frame.bottomCornerRadius
+    )
     addon.setShortcutDigits?.(surface, shortcutDigits)
     this.flushPendingData(addon, state)
 

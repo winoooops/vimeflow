@@ -197,6 +197,25 @@ describe('GhosttyBody', () => {
     expect(themeService.current().id).toBe('obsidian-lens')
   })
 
+  test('sends bottom corner radius to native frame updates', async () => {
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        bottomCornerRadius={10}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ bottomCornerRadius: 10 })
+      )
+    })
+  })
+
   test('keeps native frame bounds unchanged when renderer CSS pixels match window points', () => {
     expect(
       nativeGhosttyBoundsFromRect(rect(10, 20, 300, 200), {

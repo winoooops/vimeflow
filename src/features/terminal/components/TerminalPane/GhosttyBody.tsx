@@ -43,6 +43,7 @@ interface GhosttyBodyProps {
   onRequestActive?: () => void
   onRequestFocus?: () => void
   shortcutContext?: NativeGhosttyShortcutContext
+  bottomCornerRadius?: number
   onUnavailable?: () => void
 }
 
@@ -120,6 +121,7 @@ export const GhosttyBody = ({
   onRequestActive = undefined,
   onRequestFocus = undefined,
   shortcutContext = undefined,
+  bottomCornerRadius = 0,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
   const theme = useTheme()
@@ -352,6 +354,7 @@ export const GhosttyBody = ({
         cwd,
         bounds,
         backgroundColor,
+        bottomCornerRadius,
         visible: true,
         ...(shortcutContext ? { shortcutContext } : {}),
       })
@@ -362,7 +365,14 @@ export const GhosttyBody = ({
     } catch {
       onUnavailable?.()
     }
-  }, [backgroundColor, cwd, onUnavailable, paneRef, shortcutContext])
+  }, [
+    backgroundColor,
+    bottomCornerRadius,
+    cwd,
+    onUnavailable,
+    paneRef,
+    shortcutContext,
+  ])
 
   const scheduleNativeFrameUpdate = useCallback((): void => {
     if (frameIdRef.current !== null) {

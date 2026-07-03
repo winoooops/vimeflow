@@ -16,6 +16,7 @@ import {
   isBounds,
   isHexColor,
   isNonEmptyString,
+  isOptionalFiniteNumber,
   isRecord,
   isString,
   type GhosttyNativeBounds,
@@ -156,6 +157,12 @@ export class GhosttyNativeHelperController {
     }
     this.currentWindow = win
 
+    const frame = toGhosttyScreenFrame(
+      win.getContentBounds(),
+      payload.bounds,
+      payload.visible
+    )
+
     this.getOrStartHelper().stdin.write(
       encodeFrame({
         kind: 'command',
@@ -163,11 +170,10 @@ export class GhosttyNativeHelperController {
         backgroundColor: isHexColor(payload.backgroundColor)
           ? payload.backgroundColor
           : '#000000',
-        ...toGhosttyScreenFrame(
-          win.getContentBounds(),
-          payload.bounds,
-          payload.visible
-        ),
+        bottomCornerRadius: frame.visible
+          ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
+          : 0,
+        ...frame,
       })
     )
 
@@ -580,6 +586,7 @@ function isGhosttyNativeUpdateRequest(
     isBounds(value.bounds) &&
     (value.backgroundColor === undefined ||
       isHexColor(value.backgroundColor)) &&
+    isOptionalFiniteNumber(value.bottomCornerRadius) &&
     typeof value.visible === 'boolean'
   )
 }

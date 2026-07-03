@@ -247,12 +247,25 @@ private final class EmbeddedGhosttySurface: NSObject {
         callbacks.renamePane()
     }
 
-    func setFrame(x: Double, y: Double, width: Double, height: Double) {
+    func setFrame(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        bottomCornerRadius: Double
+    ) {
         let safeWidth = max(0, width)
         let safeHeight = max(0, height)
+        let safeBottomCornerRadius = max(0, bottomCornerRadius)
         let parentHeight = parentView.bounds.height
         let appKitY = parentHeight - y - safeHeight
 
+        container.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
+        container.layer?.maskedCorners = [
+            .layerMinXMinYCorner,
+            .layerMaxXMinYCorner
+        ]
+        container.layer?.masksToBounds = safeBottomCornerRadius > 0
         container.frame = NSRect(
             x: x,
             y: appKitY,
@@ -456,7 +469,8 @@ public func vimeflowGhosttySetFrame(
     _ x: Double,
     _ y: Double,
     _ width: Double,
-    _ height: Double
+    _ height: Double,
+    _ bottomCornerRadius: Double
 ) {
     guard let surfacePointer else {
         return
@@ -467,7 +481,13 @@ public func vimeflowGhosttySetFrame(
         let surface = Unmanaged<EmbeddedGhosttySurface>
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
-        surface.setFrame(x: x, y: y, width: width, height: height)
+        surface.setFrame(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            bottomCornerRadius: bottomCornerRadius
+        )
     }
 }
 

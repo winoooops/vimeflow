@@ -19,7 +19,7 @@ using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            FocusCallback, ShortcutCallback,
                            RenamePaneCallback, void *);
-using SetFrameFn = void (*)(void *, double, double, double, double);
+using SetFrameFn = void (*)(void *, double, double, double, double, double);
 using SetShortcutDigitsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
@@ -476,11 +476,13 @@ napi_value Create(napi_env env, napi_callback_info info) {
 }
 
 napi_value SetFrame(napi_env env, napi_callback_info info) {
-  size_t argc = 5;
-  napi_value args[5];
+  size_t argc = 6;
+  napi_value args[6];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
   if (argc < 5) {
-    return Throw(env, "setFrame(surface, x, y, width, height) expected");
+    return Throw(env,
+                 "setFrame(surface, x, y, width, height[, "
+                 "bottomCornerRadius]) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -492,11 +494,16 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   double y = 0;
   double width = 0;
   double height = 0;
+  double bottom_corner_radius = 0;
   napi_get_value_double(env, args[1], &x);
   napi_get_value_double(env, args[2], &y);
   napi_get_value_double(env, args[3], &width);
   napi_get_value_double(env, args[4], &height);
-  bridge.set_frame(surface->swift_surface, x, y, width, height);
+  if (argc >= 6) {
+    napi_get_value_double(env, args[5], &bottom_corner_radius);
+  }
+  bridge.set_frame(surface->swift_surface, x, y, width, height,
+                   bottom_corner_radius);
 
   return nullptr;
 }

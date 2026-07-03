@@ -32,6 +32,7 @@ interface TerminalBodyProps {
   onRequestActive?: () => void
   onRequestFocus?: () => void
   shortcutContext?: NativeGhosttyShortcutContext
+  bottomCornerRadius?: number
   mode: BodyMode
   deferFit: boolean
   enableImagePaste: boolean
@@ -58,6 +59,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       onRequestActive = undefined,
       onRequestFocus = undefined,
       shortcutContext = undefined,
+      bottomCornerRadius = 0,
       mode,
       deferFit,
       enableImagePaste,
@@ -115,6 +117,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           onRequestActive={onRequestActive}
           onRequestFocus={onRequestFocus}
           shortcutContext={shortcutContext}
+          bottomCornerRadius={bottomCornerRadius}
           onUnavailable={handleNativeUnavailable}
         />
       )

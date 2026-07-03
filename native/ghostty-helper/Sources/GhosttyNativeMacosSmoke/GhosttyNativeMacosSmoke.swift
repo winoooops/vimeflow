@@ -101,6 +101,8 @@ final class GhosttyNativeMacosSmoke:
             }
         if helperMode {
             window.isReleasedWhenClosed = false
+            window.isOpaque = false
+            window.backgroundColor = .clear
             window.ignoresMouseEvents = false
             window.acceptsMouseMovedEvents = true
             window.level = .floating
@@ -298,6 +300,13 @@ final class GhosttyNativeMacosSmoke:
         guard let window else { return }
 
         setBackgroundColor(frame.backgroundColor)
+        let safeBottomCornerRadius = max(0, frame.bottomCornerRadius)
+        containerView?.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
+        containerView?.layer?.maskedCorners = [
+            .layerMinXMinYCorner,
+            .layerMaxXMinYCorner,
+        ]
+        containerView?.layer?.masksToBounds = safeBottomCornerRadius > 0
 
         if !frame.visible || frame.width <= 0 || frame.height <= 0 {
             window.orderOut(nil)

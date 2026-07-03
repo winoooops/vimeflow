@@ -31,6 +31,7 @@ import { usePaneWidth } from './usePaneWidth'
 
 // A pane narrower than this auto-collapses the bottom status bar. Tunable.
 const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
+const TERMINAL_PANE_CORNER_RADIUS = 10
 
 const INTERACTIVE_TARGET_SELECTOR = [
   'button',
@@ -253,6 +254,10 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const enableImagePaste = pane.agentType !== 'generic'
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
+    const terminalBodyBottomCornerRadius = isCollapsed
+      ? TERMINAL_PANE_CORNER_RADIUS
+      : 0
+
     const containerStyle = {
       boxShadow: 'none',
       cursor: isPaneActive ? ('default' as const) : ('pointer' as const),
@@ -270,7 +275,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         style={{
           ...containerStyle,
           background: 'var(--color-surface-container-lowest)',
-          borderRadius: 10,
+          borderRadius: TERMINAL_PANE_CORNER_RADIUS,
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
           opacity: isPaneActive ? 1 : 0.78,
         }}
@@ -309,7 +314,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
             onRestart={handleRestart}
           />
         ) : (
-          <div className="relative min-h-0 flex-1">
+          <div
+            data-testid="terminal-pane-body-slot"
+            className={`relative min-h-0 flex-1 ${
+              isCollapsed ? 'overflow-hidden' : ''
+            }`}
+            style={{
+              borderBottomLeftRadius: terminalBodyBottomCornerRadius,
+              borderBottomRightRadius: terminalBodyBottomCornerRadius,
+            }}
+          >
             <TerminalBody
               ref={bodyRef}
               paneId={pane.id}
@@ -324,6 +338,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               onRequestActive={requestPaneActive}
               onRequestFocus={onRequestFocus}
               shortcutContext={shortcutContext}
+              bottomCornerRadius={terminalBodyBottomCornerRadius}
               mode={bodyMode}
               deferFit={deferFit}
               enableImagePaste={enableImagePaste}
