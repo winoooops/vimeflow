@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-03
-ref_count: 13
+ref_count: 14
 ---
 
 # UI Visual Regression
@@ -220,4 +220,19 @@ test case for the state that triggers the collision.
 - **Fix:** Replaced the three explicit assertions with a full surface-rung list
   and loop, so every shipped surface background stays distinct from each
   theme's terminal canvas background.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Top-rung surface guard omitted a previously broken theme
+
+- **Source:** github-claude | PR #647 round 8 | 2026-07-03
+- **Severity:** LOW
+- **File:** `src/theme/themes/background-separation.test.ts`
+- **Finding:** The top-rung distinctness guard covered Gruvbox Dark and Tokyo
+  Night but omitted Gruvbox Light, even though Gruvbox Light hit the same
+  `surface-bright` collision class earlier in the PR. Future edits could
+  collapse `surface-container-high`, `surface-container-highest`, or
+  `surface-bright` in that theme without failing the regression test.
+- **Fix:** Added Gruvbox Light to the shared top-surface theme matrix so every
+  theme that has previously hit this collision class is guarded by the same
+  pairwise-distinctness assertion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

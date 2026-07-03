@@ -97,7 +97,7 @@ test('compact surfaces keep label text at AA contrast', () => {
 })
 
 test('interactive top surface rungs keep distinct hover and elevation states', () => {
-  const topSurfaceThemes = [gruvboxDark, tokyoNightTheme] as const
+  const topSurfaceThemes = [gruvboxDark, gruvboxLight, tokyoNightTheme] as const
 
   const topSurfaceRungs = [
     'surface-container-high',

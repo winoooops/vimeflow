@@ -78,12 +78,12 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 45       | 45   | 2026-06-26   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 29       | 15   | 2026-07-03   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 30       | 16   | 2026-07-03   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-25   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 30       | 6    | 2026-07-02   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 19       | 13   | 2026-07-03   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 20       | 14   | 2026-07-03   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 14       | 8    | 2026-06-22   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 14       | 7    | 2026-06-23   |
