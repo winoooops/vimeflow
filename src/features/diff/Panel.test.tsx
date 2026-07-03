@@ -398,6 +398,75 @@ describe('Panel', () => {
     ).toBeInTheDocument()
   })
 
+  test('copies review comments to the clipboard from the finish popover', async (): Promise<void> => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const originalClipboard = window.navigator.clipboard
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    })
+
+    try {
+      const annotation: DiffLineAnnotation<ReviewComment> = {
+        side: 'additions',
+        lineNumber: 5,
+        metadata: {
+          id: 'comment-1',
+          text: 'Needs review',
+          author: 'self',
+          createdAt: 1000,
+        },
+      }
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo/current', 'src/foo.ts', false), [annotation]],
+        ]),
+        annotationsForFile: () => [],
+        addAnnotation: () => 'ok',
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        totalAnnotations: () => 1,
+      }
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [],
+        filesCwd: '/repo/current',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({ diff: null, loading: false, error: null })
+      )
+
+      render(<Panel cwd="/repo/current" feedbackBatch={feedbackBatch} />)
+
+      await user.click(
+        screen.getByRole('button', { name: /finish feedback \(1\)/i })
+      )
+      await screen.findByRole('dialog', { name: 'Finish feedback' })
+
+      await user.click(screen.getByRole('button', { name: 'Copy (c)' }))
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+      const payload = writeText.mock.calls[0][0] as string
+      expect(payload).toContain('Needs review')
+      expect(payload).toContain('src/foo.ts')
+    } finally {
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: originalClipboard,
+        configurable: true,
+        writable: true,
+      })
+    }
+  })
+
   test('keeps draft-only feedback discard available in the empty state', async (): Promise<void> => {
     const user = userEvent.setup()
     const clearBatch = vi.fn()
@@ -831,6 +900,63 @@ describe('Panel', () => {
       fireEvent.mouseLeave(screen.getByTestId('changed-files-edge-hint'))
       act(() => {
         vi.advanceTimersByTime(219)
+      })
+      expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('keyboard reveal (e) auto-hides the changed-files panel after ~5s', (): void => {
+    vi.useFakeTimers()
+
+    try {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '.',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      render(<Panel />)
+
+      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+        key: 'e',
+      })
+      expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
+
+      act(() => {
+        vi.advanceTimersByTime(4999)
       })
       expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
 

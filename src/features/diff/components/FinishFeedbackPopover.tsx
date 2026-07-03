@@ -15,6 +15,9 @@ interface FinishFeedbackPopoverProps {
   fileCount: number
   onSend: (pane: PaneCandidate) => void
   onCancel: () => void
+  /** Copy the whole review to the clipboard — the fallback when no agent is
+   * running to send to. Omitted → the copy action is hidden. */
+  onCopy?: () => void
 }
 
 const isCapitalY = (event: KeyboardEvent): boolean =>
@@ -28,9 +31,21 @@ export const FinishFeedbackPopover = ({
   fileCount,
   onSend,
   onCancel,
+  onCopy = undefined,
 }: FinishFeedbackPopoverProps): ReactElement => {
   const commentWord = commentCount === 1 ? 'comment' : 'comments'
   const fileWord = fileCount === 1 ? 'file' : 'files'
+
+  const copyButton = onCopy ? (
+    <button
+      type="button"
+      aria-keyshortcuts="c"
+      onClick={(): void => onCopy()}
+      className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
+    >
+      Copy (c)
+    </button>
+  ) : null
 
   useEffect((): (() => void) => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -42,6 +57,14 @@ export const FinishFeedbackPopover = ({
         event.preventDefault()
         event.stopPropagation()
         onCancel()
+
+        return
+      }
+
+      if (onCopy && event.key === 'c') {
+        event.preventDefault()
+        event.stopPropagation()
+        onCopy()
 
         return
       }
@@ -58,7 +81,7 @@ export const FinishFeedbackPopover = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [onCancel, onSend, result])
+  }, [onCancel, onCopy, onSend, result])
 
   return (
     <Popover
@@ -85,7 +108,8 @@ export const FinishFeedbackPopover = ({
             </code>{' '}
             in a terminal pane.
           </p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {copyButton}
             <button
               type="button"
               aria-keyshortcuts="n"
@@ -105,6 +129,7 @@ export const FinishFeedbackPopover = ({
             {result.pane.tabName} ({result.pane.agentLabel})?
           </p>
           <div className="flex justify-end gap-2">
+            {copyButton}
             <button
               type="button"
               aria-keyshortcuts="n"
@@ -149,7 +174,8 @@ export const FinishFeedbackPopover = ({
               </div>
             ))}
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {copyButton}
             <button
               type="button"
               aria-keyshortcuts="n"

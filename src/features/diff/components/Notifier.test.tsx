@@ -65,6 +65,7 @@ const renderNotifier = (
         fileCount: 0,
         onCancel: vi.fn(),
         onSend: vi.fn(),
+        onCopy: vi.fn(),
       }}
       keyboardConfirm={null}
       onCancelKeyboardConfirm={vi.fn()}
@@ -111,6 +112,7 @@ describe('Notifier', () => {
           fileCount: 0,
           onCancel: vi.fn(),
           onSend: vi.fn(),
+          onCopy: vi.fn(),
         }}
         keyboardConfirm={{
           title: 'Discard hunk?',

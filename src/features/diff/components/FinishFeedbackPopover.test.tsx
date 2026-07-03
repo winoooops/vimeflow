@@ -260,3 +260,50 @@ test('pluralization uses plural for multiple comments and files', () => {
 
   anchor.remove()
 })
+
+test('shows a Copy button that calls onCopy on click and via the c key', async () => {
+  const user = userEvent.setup()
+  const anchor = createAnchor()
+  const onCopy = vi.fn()
+
+  render(
+    <FinishFeedbackPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      commentCount={2}
+      fileCount={1}
+      onSend={vi.fn()}
+      onCancel={vi.fn()}
+      onCopy={onCopy}
+    />
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Copy (c)' }))
+  expect(onCopy).toHaveBeenCalledTimes(1)
+
+  await user.keyboard('c')
+  expect(onCopy).toHaveBeenCalledTimes(2)
+
+  anchor.remove()
+})
+
+test('omits the Copy button when onCopy is not provided', () => {
+  const anchor = createAnchor()
+
+  render(
+    <FinishFeedbackPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      commentCount={1}
+      fileCount={1}
+      onSend={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  expect(
+    screen.queryByRole('button', { name: 'Copy (c)' })
+  ).not.toBeInTheDocument()
+
+  anchor.remove()
+})

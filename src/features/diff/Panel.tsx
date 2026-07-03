@@ -38,8 +38,10 @@ import { useKeyboard } from './hooks/useKeyboard'
 import { useDiffSearch } from './hooks/useDiffSearch'
 import {
   dispatchFeedbackBatch,
+  formatFeedbackPayload,
   type DispatchEntry,
 } from './services/feedbackDispatch'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   resolveCandidatePanes,
   type PaneCandidate,
@@ -66,6 +68,11 @@ const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
 const FILES_LIST_STORAGE_KEY = 'vf-diff-files-open'
 const FILES_LIST_CLOSE_DELAY_MS = 220
+
+// A keyboard reveal (`e`) has no mouse-leave to close it, so it self-dismisses
+// after this delay — longer than the hover-leave delay since there's no pointer
+// motion to signal intent. Wire to Settings later.
+const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -454,8 +461,23 @@ export const Panel = ({
       return
     }
 
-    setFilesListRevealed((open) => !open)
-  }, [clearFilesListHideTimer, filesListPinnedOpen, focusDiffRoot])
+    const willReveal = !filesListRevealed
+    setFilesListRevealed(willReveal)
+
+    // Timed self-dismiss for the keyboard reveal; any interaction (hover/focus/
+    // pin/file-select) clears this via the shared hide timer.
+    if (willReveal) {
+      filesListHideTimerRef.current = setTimeout(() => {
+        setFilesListRevealed(false)
+        filesListHideTimerRef.current = null
+      }, FILES_LIST_KEYBOARD_AUTO_HIDE_MS)
+    }
+  }, [
+    clearFilesListHideTimer,
+    filesListPinnedOpen,
+    filesListRevealed,
+    focusDiffRoot,
+  ])
 
   const scheduleHideFilesList = useCallback((): void => {
     clearFilesListHideTimer()
@@ -761,6 +783,33 @@ export const Panel = ({
     },
     [feedback, feedbackDispatch, notifyInfo, repoRootRef, response]
   )
+
+  // Copy the whole review to the clipboard — the escape hatch when no agent is
+  // running to send to (comments are otherwise trapped in the batch). Repo-
+  // relative paths from the batch keys are enough for a human paste target.
+  const handleCopyFeedback = useCallback((): void => {
+    const entries: DispatchEntry[] = []
+    for (const [key, annotations] of feedback.batch) {
+      const { filePath, staged } = parseBatchKey(key)
+      entries.push({ filePath, staged, annotations })
+    }
+
+    if (entries.length === 0) {
+      return
+    }
+
+    const count = feedback.totalAnnotations()
+    setFinishOpen(false)
+
+    void (async (): Promise<void> => {
+      const copied = await writeClipboardText(formatFeedbackPayload(entries))
+      notifyInfo(
+        copied
+          ? `Copied ${count} comment${count === 1 ? '' : 's'} to the clipboard.`
+          : 'Could not copy comments to the clipboard.'
+      )
+    })()
+  }, [feedback, notifyInfo])
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
@@ -1836,6 +1885,7 @@ export const Panel = ({
     fileCount: feedback.batch.size,
     onCancel: (): void => setFinishOpen(false),
     onSend: handleSendFeedback,
+    onCopy: handleCopyFeedback,
   }
 
   // Loading state
