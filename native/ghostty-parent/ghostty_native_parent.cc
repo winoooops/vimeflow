@@ -19,8 +19,9 @@ using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            FocusCallback, ShortcutCallback,
                            RenamePaneCallback, void *);
-using SetFrameFn = void (*)(void *, double, double, double, double);
+using SetFrameFn = void (*)(void *, double, double, double, double, double);
 using SetShortcutDigitsFn = void (*)(void *, const char *);
+using SetBackgroundColorFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using DestroyFn = void (*)(void *);
@@ -31,6 +32,7 @@ struct BridgeApi {
   CreateFn create = nullptr;
   SetFrameFn set_frame = nullptr;
   SetShortcutDigitsFn set_shortcut_digits = nullptr;
+  SetBackgroundColorFn set_background_color = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
   DestroyFn destroy = nullptr;
@@ -113,6 +115,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.set_frame)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_shortcut_digits",
                  reinterpret_cast<void **>(&bridge.set_shortcut_digits)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_background_color",
+                 reinterpret_cast<void **>(&bridge.set_background_color)) &&
       LoadSymbol(env, "vimeflow_ghostty_write",
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
@@ -472,11 +476,13 @@ napi_value Create(napi_env env, napi_callback_info info) {
 }
 
 napi_value SetFrame(napi_env env, napi_callback_info info) {
-  size_t argc = 5;
-  napi_value args[5];
+  size_t argc = 6;
+  napi_value args[6];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
   if (argc < 5) {
-    return Throw(env, "setFrame(surface, x, y, width, height) expected");
+    return Throw(env,
+                 "setFrame(surface, x, y, width, height[, "
+                 "bottomCornerRadius]) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -488,11 +494,16 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   double y = 0;
   double width = 0;
   double height = 0;
+  double bottom_corner_radius = 0;
   napi_get_value_double(env, args[1], &x);
   napi_get_value_double(env, args[2], &y);
   napi_get_value_double(env, args[3], &width);
   napi_get_value_double(env, args[4], &height);
-  bridge.set_frame(surface->swift_surface, x, y, width, height);
+  if (argc >= 6) {
+    napi_get_value_double(env, args[5], &bottom_corner_radius);
+  }
+  bridge.set_frame(surface->swift_surface, x, y, width, height,
+                   bottom_corner_radius);
 
   return nullptr;
 }
@@ -512,6 +523,25 @@ napi_value SetShortcutDigits(napi_env env, napi_callback_info info) {
 
   const std::string digits = GetString(env, args[1]);
   bridge.set_shortcut_digits(surface->swift_surface, digits.c_str());
+
+  return nullptr;
+}
+
+napi_value SetBackgroundColor(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "setBackgroundColor(surface, color) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  const std::string color = GetString(env, args[1]);
+  bridge.set_background_color(surface->swift_surface, color.c_str());
 
   return nullptr;
 }
@@ -570,6 +600,8 @@ napi_value Init(napi_env env, napi_value exports) {
       {"setFrame", nullptr, SetFrame, nullptr, nullptr, nullptr, napi_default,
        nullptr},
       {"setShortcutDigits", nullptr, SetShortcutDigits, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"setBackgroundColor", nullptr, SetBackgroundColor, nullptr, nullptr,
        nullptr, napi_default, nullptr},
       {"write", nullptr, Write, nullptr, nullptr, nullptr, napi_default,
        nullptr},

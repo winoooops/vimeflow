@@ -48,8 +48,8 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
     })
 
-    test('has surface-container token (#1e1e2e)', () => {
-      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+    test('has surface-container token (#23233b)', () => {
+      expect(obsidianLens.ui['surface-container']).toBe('#23233b')
     })
 
     test('has surface-container-high token (#292839)', () => {
@@ -179,7 +179,7 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
 
     test('existing tokens remain in theme definition (additive-only invariant)', () => {
       expect(obsidianLens.ui.primary).toBe('#e2c7ff')
-      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+      expect(obsidianLens.ui['surface-container']).toBe('#23233b')
       expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
       expect(obsidianLens.ui['surface-tint']).toBe('#d9b9ff')
       expect(obsidianLens.ui['secondary-container']).toBe('#124988')

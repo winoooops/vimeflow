@@ -104,6 +104,10 @@ describe('PaneStatusBar', () => {
     )
 
     expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('terminal-pane-status-bar')).toHaveClass(
+      'bg-surface-container-lowest'
+    )
+
     expect(screen.getByTestId('terminal-pane-status-bar')).not.toHaveClass(
       'bg-primary-container/15'
     )
@@ -122,6 +126,7 @@ describe('PaneStatusBar', () => {
     )
 
     expect(screen.getByTestId('terminal-pane-status-bar')).toHaveClass(
+      'bg-surface-container-lowest',
       'bg-primary-container/15'
     )
   })

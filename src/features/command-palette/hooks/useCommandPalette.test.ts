@@ -22,6 +22,7 @@ describe('useCommandPalette', () => {
       const activeElement = document.activeElement as HTMLElement
       activeElement.blur()
     }
+    themeService.apply('obsidian-lens')
   })
 
   afterEach(() => {
@@ -153,10 +154,11 @@ describe('useCommandPalette', () => {
         result.current.setQuery(':flex')
       })
 
-      // Fuzzy search surfaces the theme leaf; preview changes the displayed theme.
+      // Fuzzy search surfaces the theme leaf without committing the theme.
       expect(
         result.current.filteredResults.some((cmd) => cmd.id === 'theme-flexoki')
       ).toBe(true)
+      expect(themeService.current().id).toBe('obsidian-lens')
 
       // Select and execute the non-theme leaf without any preview callback.
       const noopIndex = result.current.filteredResults.findIndex(
@@ -172,6 +174,7 @@ describe('useCommandPalette', () => {
 
       expect(nonThemeExecute).toHaveBeenCalled()
       expect(themeService.current().id).toBe('obsidian-lens')
+      expect(themeService.displayed().id).toBe('obsidian-lens')
     })
 
     test('disabled palette rejects opens and closes current state', async () => {

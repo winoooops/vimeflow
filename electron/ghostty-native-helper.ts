@@ -14,7 +14,9 @@ import { BACKEND_EVENT } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
   isBounds,
+  isHexColor,
   isNonEmptyString,
+  isOptionalFiniteNumber,
   isRecord,
   isString,
   type GhosttyNativeBounds,
@@ -60,6 +62,7 @@ interface HelperEvent {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const HEADER_END = Buffer.from('\r\n\r\n', 'ascii')
 const CONTENT_LENGTH_HEADER = Buffer.from('Content-Length:', 'ascii')
+const GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR = '#000000'
 // ponytail: Content-Length guard for a local helper; make this configurable only if real Ghostty events exceed 16 MiB.
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 
@@ -155,15 +158,23 @@ export class GhosttyNativeHelperController {
     }
     this.currentWindow = win
 
+    const frame = toGhosttyScreenFrame(
+      win.getContentBounds(),
+      payload.bounds,
+      payload.visible
+    )
+
     this.getOrStartHelper().stdin.write(
       encodeFrame({
         kind: 'command',
         command: 'set-frame',
-        ...toGhosttyScreenFrame(
-          win.getContentBounds(),
-          payload.bounds,
-          payload.visible
-        ),
+        backgroundColor: isHexColor(payload.backgroundColor)
+          ? payload.backgroundColor
+          : GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
+        bottomCornerRadius: frame.visible
+          ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
+          : 0,
+        ...frame,
       })
     )
 
@@ -247,6 +258,7 @@ export class GhosttyNativeHelperController {
           width: 0,
           height: 0,
           visible: false,
+          backgroundColor: GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
         })
       )
     }
@@ -574,6 +586,9 @@ function isGhosttyNativeUpdateRequest(
     isNonEmptyString(value.paneId) &&
     isString(value.cwd) &&
     isBounds(value.bounds) &&
+    (value.backgroundColor === undefined ||
+      isHexColor(value.backgroundColor)) &&
+    isOptionalFiniteNumber(value.bottomCornerRadius) &&
     typeof value.visible === 'boolean'
   )
 }

@@ -316,6 +316,10 @@ describe('TerminalPane index', () => {
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveClass(
       '@container/pane'
     )
+
+    expect(
+      screen.getByTestId('terminal-pane-wrapper').getAttribute('style')
+    ).toContain('background: var(--color-surface-container-lowest)')
   })
 
   test('collapsing the pane hides the status bar', async () => {
@@ -333,6 +337,11 @@ describe('TerminalPane index', () => {
     expect(
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
+
+    expect(screen.getByTestId('terminal-pane-body-slot')).toHaveStyle({
+      borderBottomLeftRadius: '10px',
+      borderBottomRightRadius: '10px',
+    })
     expect(header).toHaveClass('gap-1.5')
     expect(header).toHaveClass('px-2')
     expect(header).toHaveClass('py-1')
@@ -362,6 +371,9 @@ describe('TerminalPane index', () => {
 
     expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-pane-header')).toHaveClass('gap-1.5')
+    expect(screen.getByTestId('terminal-pane-body-slot')).not.toHaveClass(
+      'overflow-hidden'
+    )
   })
 
   test('forwards pane.ptyId to Body as sessionId', () => {

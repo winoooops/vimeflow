@@ -6,6 +6,8 @@ struct GhosttyNativeFrame: Sendable {
     let width: Double
     let height: Double
     let visible: Bool
+    let backgroundColor: String
+    let bottomCornerRadius: Double
 }
 
 enum ElectronHostCommand: Sendable {
@@ -170,10 +172,12 @@ final class ElectronHostClient: @unchecked Sendable {
                 let y = frame["y"] as? Double,
                 let width = frame["width"] as? Double,
                 let height = frame["height"] as? Double,
-                let visible = frame["visible"] as? Bool
+                let visible = frame["visible"] as? Bool,
+                let backgroundColor = frame["backgroundColor"] as? String
             else {
                 return nil
             }
+            let bottomCornerRadius = frame["bottomCornerRadius"] as? Double ?? 0
 
             return .setFrame(
                 GhosttyNativeFrame(
@@ -181,7 +185,9 @@ final class ElectronHostClient: @unchecked Sendable {
                     y: y,
                     width: width,
                     height: height,
-                    visible: visible
+                    visible: visible,
+                    backgroundColor: backgroundColor,
+                    bottomCornerRadius: bottomCornerRadius
                 )
             )
 

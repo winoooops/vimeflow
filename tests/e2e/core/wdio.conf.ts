@@ -16,6 +16,7 @@ const cacheDir = path.resolve(
 export const config: WebdriverIO.Config = {
   runner: 'local',
   framework: 'mocha',
+  logLevel: 'warn',
   reporters: ['spec'],
   cacheDir,
 

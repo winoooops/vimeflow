@@ -46,6 +46,32 @@ private struct SendablePointer: @unchecked Sendable {
     let value: UnsafeMutableRawPointer?
 }
 
+private extension NSColor {
+    static func vimeflowGhosttyHexColor(_ hexColor: String) -> String? {
+        let hex = hexColor
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+
+        return hex.count == 6 && Int(hex, radix: 16) != nil ? hex : nil
+    }
+
+    convenience init?(vimeflowHexColor hexColor: String) {
+        guard
+            let hex = Self.vimeflowGhosttyHexColor(hexColor),
+            let value = Int(hex, radix: 16)
+        else {
+            return nil
+        }
+
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255,
+            alpha: 1
+        )
+    }
+}
+
 private final class CallbackBox: @unchecked Sendable {
     private let inputCallback: VimeflowGhosttyInputCallback?
     private let resizeCallback: VimeflowGhosttyResizeCallback?
@@ -221,12 +247,25 @@ private final class EmbeddedGhosttySurface: NSObject {
         callbacks.renamePane()
     }
 
-    func setFrame(x: Double, y: Double, width: Double, height: Double) {
+    func setFrame(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        bottomCornerRadius: Double
+    ) {
         let safeWidth = max(0, width)
         let safeHeight = max(0, height)
+        let safeBottomCornerRadius = max(0, bottomCornerRadius)
         let parentHeight = parentView.bounds.height
         let appKitY = parentHeight - y - safeHeight
 
+        container.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
+        container.layer?.maskedCorners = [
+            .layerMinXMinYCorner,
+            .layerMaxXMinYCorner
+        ]
+        container.layer?.masksToBounds = safeBottomCornerRadius > 0
         container.frame = NSRect(
             x: x,
             y: appKitY,
@@ -245,6 +284,21 @@ private final class EmbeddedGhosttySurface: NSObject {
 
             return (1...9).contains(value)
         })
+    }
+
+    func setBackgroundColor(_ hexColor: String) {
+        guard
+            let color = NSColor(vimeflowHexColor: hexColor),
+            let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor)
+        else {
+            return
+        }
+
+        container.layer?.backgroundColor = color.cgColor
+        controller.setTheme(TerminalTheme(
+            light: TerminalConfiguration().background(ghosttyHex),
+            dark: TerminalConfiguration().background(ghosttyHex)
+        ))
     }
 
     func receive(_ text: String) {
@@ -415,7 +469,8 @@ public func vimeflowGhosttySetFrame(
     _ x: Double,
     _ y: Double,
     _ width: Double,
-    _ height: Double
+    _ height: Double,
+    _ bottomCornerRadius: Double
 ) {
     guard let surfacePointer else {
         return
@@ -426,7 +481,13 @@ public func vimeflowGhosttySetFrame(
         let surface = Unmanaged<EmbeddedGhosttySurface>
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
-        surface.setFrame(x: x, y: y, width: width, height: height)
+        surface.setFrame(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            bottomCornerRadius: bottomCornerRadius
+        )
     }
 }
 
@@ -446,6 +507,25 @@ public func vimeflowGhosttySetShortcutDigits(
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
         surface.setShortcutDigits(digits)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_background_color")
+public func vimeflowGhosttySetBackgroundColor(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ colorPointer: UnsafePointer<CChar>?
+) {
+    guard let surfacePointer, let colorPointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let color = String(cString: colorPointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.setBackgroundColor(color)
     }
 }
 

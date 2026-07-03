@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from 'react'
 import { listen } from '../../../../lib/backend'
+import { useTheme } from '../../../../theme'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import type { ITerminalService } from '../../services/terminalService'
@@ -42,6 +43,7 @@ interface GhosttyBodyProps {
   onRequestActive?: () => void
   onRequestFocus?: () => void
   shortcutContext?: NativeGhosttyShortcutContext
+  bottomCornerRadius?: number
   onUnavailable?: () => void
 }
 
@@ -98,6 +100,11 @@ export const nativeGhosttyBoundsFromRect = (
   }
 }
 
+export const nativeGhosttyCornerRadiusFromCssPixels = (
+  radius: number,
+  viewport: NativeGhosttyViewportMetrics = window
+): number => radius * nativePointScale(viewport.outerWidth, viewport.innerWidth)
+
 const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
   Boolean(
     currentCwd &&
@@ -119,8 +126,11 @@ export const GhosttyBody = ({
   onRequestActive = undefined,
   onRequestFocus = undefined,
   shortcutContext = undefined,
+  bottomCornerRadius = 0,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
+  const theme = useTheme()
+  const backgroundColor = theme.terminal.background
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const submittedInputLineRef = useRef('')
@@ -343,11 +353,17 @@ export const GhosttyBody = ({
     }
 
     const bounds = nativeGhosttyBoundsFromRect(node.getBoundingClientRect())
+
+    const nativeBottomCornerRadius =
+      nativeGhosttyCornerRadiusFromCssPixels(bottomCornerRadius)
+
     try {
       const enabled = await updateNativeGhostty({
         ...paneRef,
         cwd,
         bounds,
+        backgroundColor,
+        bottomCornerRadius: nativeBottomCornerRadius,
         visible: true,
         ...(shortcutContext ? { shortcutContext } : {}),
       })
@@ -358,7 +374,14 @@ export const GhosttyBody = ({
     } catch {
       onUnavailable?.()
     }
-  }, [cwd, onUnavailable, paneRef, shortcutContext])
+  }, [
+    backgroundColor,
+    bottomCornerRadius,
+    cwd,
+    onUnavailable,
+    paneRef,
+    shortcutContext,
+  ])
 
   const scheduleNativeFrameUpdate = useCallback((): void => {
     if (frameIdRef.current !== null) {
@@ -555,7 +578,7 @@ export const GhosttyBody = ({
         void focusNativeSurface()
       }}
       role="presentation"
-      style={{ background: 'var(--color-surface)' }}
+      style={{ backgroundColor }}
     />
   )
 }
