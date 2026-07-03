@@ -100,6 +100,11 @@ export const nativeGhosttyBoundsFromRect = (
   }
 }
 
+export const nativeGhosttyCornerRadiusFromCssPixels = (
+  radius: number,
+  viewport: NativeGhosttyViewportMetrics = window
+): number => radius * nativePointScale(viewport.outerWidth, viewport.innerWidth)
+
 const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
   Boolean(
     currentCwd &&
@@ -348,13 +353,17 @@ export const GhosttyBody = ({
     }
 
     const bounds = nativeGhosttyBoundsFromRect(node.getBoundingClientRect())
+
+    const nativeBottomCornerRadius =
+      nativeGhosttyCornerRadiusFromCssPixels(bottomCornerRadius)
+
     try {
       const enabled = await updateNativeGhostty({
         ...paneRef,
         cwd,
         bounds,
         backgroundColor,
-        bottomCornerRadius,
+        bottomCornerRadius: nativeBottomCornerRadius,
         visible: true,
         ...(shortcutContext ? { shortcutContext } : {}),
       })

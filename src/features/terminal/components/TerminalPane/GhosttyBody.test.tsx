@@ -11,7 +11,11 @@ import {
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
-import { GhosttyBody, nativeGhosttyBoundsFromRect } from './GhosttyBody'
+import {
+  GhosttyBody,
+  nativeGhosttyBoundsFromRect,
+  nativeGhosttyCornerRadiusFromCssPixels,
+} from './GhosttyBody'
 
 const backendListeners = new Map<string, (payload: unknown) => void>()
 
@@ -119,6 +123,7 @@ const rect = (x: number, y: number, width: number, height: number): DOMRect =>
 
 describe('GhosttyBody', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
     backendListeners.clear()
     outputListener = null
@@ -216,6 +221,33 @@ describe('GhosttyBody', () => {
     })
   })
 
+  test('scales bottom corner radius to native window points', async () => {
+    vi.stubGlobal('innerWidth', 1533)
+    vi.stubGlobal('outerWidth', 1400)
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        bottomCornerRadius={10}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ bottomCornerRadius: expect.any(Number) })
+      )
+    })
+
+    const radius = vi.mocked(updateNativeGhostty).mock.calls[0][0]
+      .bottomCornerRadius
+
+    expect(radius).toBeCloseTo(9.132419438995434)
+  })
+
   test('keeps native frame bounds unchanged when renderer CSS pixels match window points', () => {
     expect(
       nativeGhosttyBoundsFromRect(rect(10, 20, 300, 200), {
@@ -246,6 +278,17 @@ describe('GhosttyBody', () => {
       width: 435.61643835616434,
       height: 763.8578680203045,
     })
+  })
+
+  test('converts CSS corner radius to native window points', () => {
+    expect(
+      nativeGhosttyCornerRadiusFromCssPixels(10, {
+        innerWidth: 1533,
+        innerHeight: 985,
+        outerWidth: 1400,
+        outerHeight: 900,
+      })
+    ).toBeCloseTo(9.13242)
   })
 
   test('falls back to unscaled native frame bounds when viewport metrics are unavailable', () => {

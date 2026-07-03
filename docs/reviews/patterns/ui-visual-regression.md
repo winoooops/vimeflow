@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-03
-ref_count: 14
+ref_count: 15
 ---
 
 # UI Visual Regression
@@ -297,4 +297,19 @@ test case for the state that triggers the collision.
 - **Fix:** Moved the four `browser-bar` tokens to distinct neighboring theme
   values and added a regression test asserting `browser-bar` remains distinct
   from `surface-container-lowest` in every shipped theme.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Native Ghostty corner radius used unscaled renderer pixels
+
+- **Source:** github-codex-connector | PR #651 round 1 | 2026-07-03
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty frame bounds were converted from renderer CSS
+  pixels to AppKit window points, but the collapsed-pane bottom corner radius
+  was still sent as the original CSS-pixel value. In zoomed or viewport-mismatch
+  environments, the native rounded corners could become too small or too large
+  relative to the converted frame and visibly diverge from the DOM wrapper.
+- **Fix:** Added a corner-radius conversion helper that applies the same
+  native point scale before calling `updateNativeGhostty`, and covered both the
+  helper and IPC payload with regression tests for mismatched viewport metrics.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
