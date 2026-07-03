@@ -61,6 +61,12 @@ test('app surface backgrounds stay distinct from terminal canvas backgrounds', (
   }
 })
 
+test('browser bar chrome stays distinct from its app surface parent', () => {
+  for (const theme of themes) {
+    expect(theme.ui['browser-bar']).not.toBe(theme.ui.surface)
+  }
+})
+
 test('nested app surface rungs stay distinct from adjacent lower rungs', () => {
   const adjacentSurfaceRungs = [
     'surface',

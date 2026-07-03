@@ -236,3 +236,20 @@ test case for the state that triggers the collision.
   theme that has previously hit this collision class is guarded by the same
   pairwise-distinctness assertion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Browser bar chrome collided with app surface
+
+- **Source:** github-claude | PR #647 round 9 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/dracula.ts`, `src/theme/themes/flexoki.ts`,
+  `src/theme/themes/gruvbox/gruvbox-dark.ts`,
+  `src/theme/themes/gruvbox/gruvbox-light.ts`,
+  `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface ladder shift moved `ui.surface` onto palette values
+  already used by `ui['browser-bar']` in five shipped themes. Browser tab-bar
+  chrome could therefore blend into its `bg-surface` browser pane parent,
+  recreating the disappearing-boundary issue for native browser panes.
+- **Fix:** Moved the affected `browser-bar` tokens to distinct adjacent palette
+  steps and added a shared regression test asserting every shipped theme keeps
+  `browser-bar` distinct from `surface`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

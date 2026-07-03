@@ -16,7 +16,7 @@ export const gruvboxDark: ThemeDefinition = {
     'surface-container-highest': '#58504a',
     'surface-bright': '#5a514a',
     'surface-tint': bright.orange,
-    'browser-bar': dark.bg0Hard,
+    'browser-bar': dark.bg0,
     'browser-tab-active': dark.bg1,
     primary: bright.orange,
     'primary-container': neutral.orange,
