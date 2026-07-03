@@ -713,6 +713,35 @@ export const Panel = ({
 
   const sendingFeedbackRef = useRef(false)
 
+  const buildFeedbackEntries = useCallback((): DispatchEntry[] => {
+    // git reports file paths relative to the repo TOPLEVEL, but the target
+    // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
+    // toplevel (`response.repoRoot`) so the dispatched reference is an
+    // absolute path the agent can resolve regardless of its cwd. Falls back to
+    // the repo-relative path if the root is unavailable (not in a git repo).
+    // Prefer the per-batch cwd root; fall back to the current diff's root, then
+    // the last-known root when `response` is transiently null (file-switch
+    // loading/error) so an in-flight batch keeps absolute paths.
+    const repoRoot = response?.repoRoot ?? repoRootRef.current
+    const entries: DispatchEntry[] = []
+
+    for (const [key, annotations] of feedback.batch) {
+      const { cwd: entryCwd, filePath: relPath, staged } = parseBatchKey(key)
+
+      const entryRepoRoot = repoRootRef.repoRootForCwd?.(entryCwd)
+
+      const resolvedRepoRoot =
+        entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
+
+      const filePath = resolvedRepoRoot
+        ? `${resolvedRepoRoot}/${relPath}`
+        : relPath
+      entries.push({ filePath, staged, annotations })
+    }
+
+    return entries
+  }, [feedback.batch, repoRootRef, response])
+
   const handleSendFeedback = useCallback(
     (pane: PaneCandidate): void => {
       if (sendingFeedbackRef.current) {
@@ -720,44 +749,7 @@ export const Panel = ({
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
-        // git reports file paths relative to the repo TOPLEVEL, but the target
-        // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
-        // toplevel (`response.repoRoot`) so the dispatched reference is an
-        // absolute path the agent can resolve regardless of its cwd. All batch
-        // entries share one repo (the batch is cleared on cwd change), so the
-        // current diff's repoRoot applies to every file. Falls back to the
-        // repo-relative path if the root is unavailable (not in a git repo).
-        // Prefer the current diff's root; fall back to the last-known root when
-        // `response` is transiently null (file-switch loading/error) so an
-        // in-flight batch keeps absolute paths. The empty-string (non-repo)
-        // case needs no fallback — the ref is empty there too — so `??` (null/
-        // undefined only) is exactly right.
-        const repoRoot = response?.repoRoot ?? repoRootRef.current
-        const entries: DispatchEntry[] = []
-        // parseBatchKey is the single source of truth for the key format (it
-        // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
-        // into the payload so an `MM` file (staged + unstaged both commented)
-        // stays disambiguated.
-        for (const [key, annotations] of feedback.batch) {
-          const {
-            cwd: entryCwd,
-            filePath: relPath,
-            staged,
-          } = parseBatchKey(key)
-
-          const entryRepoRoot =
-            'repoRootForCwd' in repoRootRef
-              ? repoRootRef.repoRootForCwd?.(entryCwd)
-              : undefined
-
-          const resolvedRepoRoot =
-            entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
-
-          const filePath = resolvedRepoRoot
-            ? `${resolvedRepoRoot}/${relPath}`
-            : relPath
-          entries.push({ filePath, staged, annotations })
-        }
+        const entries = buildFeedbackEntries()
 
         try {
           if (feedbackDispatch) {
@@ -781,18 +773,15 @@ export const Panel = ({
         }
       })()
     },
-    [feedback, feedbackDispatch, notifyInfo, repoRootRef, response]
+    [buildFeedbackEntries, feedback, feedbackDispatch, notifyInfo]
   )
 
   // Copy the whole review to the clipboard — the escape hatch when no agent is
-  // running to send to (comments are otherwise trapped in the batch). Repo-
-  // relative paths from the batch keys are enough for a human paste target.
+  // running to send to (comments are otherwise trapped in the batch). It uses
+  // the same resolved paths as the send path so pasted feedback works from an
+  // agent cwd below the repo root.
   const handleCopyFeedback = useCallback((): void => {
-    const entries: DispatchEntry[] = []
-    for (const [key, annotations] of feedback.batch) {
-      const { filePath, staged } = parseBatchKey(key)
-      entries.push({ filePath, staged, annotations })
-    }
+    const entries = buildFeedbackEntries()
 
     if (entries.length === 0) {
       return
@@ -809,7 +798,7 @@ export const Panel = ({
           : 'Could not copy comments to the clipboard.'
       )
     })()
-  }, [feedback, notifyInfo])
+  }, [buildFeedbackEntries, feedback, notifyInfo])
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)

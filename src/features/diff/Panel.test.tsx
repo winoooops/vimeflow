@@ -422,7 +422,10 @@ describe('Panel', () => {
 
       const feedbackBatch: UseFeedbackBatchReturn = {
         batch: new Map([
-          [makeBatchKey('/repo/current', 'src/foo.ts', false), [annotation]],
+          [
+            makeBatchKey('/repo/packages/app', 'src/foo.ts', false),
+            [annotation],
+          ],
         ]),
         annotationsForFile: () => [],
         addAnnotation: () => 'ok',
@@ -434,7 +437,7 @@ describe('Panel', () => {
 
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: [],
-        filesCwd: '/repo/current',
+        filesCwd: '/repo/packages/app',
         loading: false,
         error: null,
         refresh: vi.fn(),
@@ -445,7 +448,17 @@ describe('Panel', () => {
         fileDiffMock({ diff: null, loading: false, error: null })
       )
 
-      render(<Panel cwd="/repo/current" feedbackBatch={feedbackBatch} />)
+      render(
+        <Panel
+          cwd="/repo/packages/app"
+          feedbackBatch={feedbackBatch}
+          feedbackRepoRootRef={{
+            current: '',
+            repoRootForCwd: (entryCwd: string): string =>
+              entryCwd === '/repo/packages/app' ? '/repo' : '',
+          }}
+        />
+      )
 
       await user.click(
         screen.getByRole('button', { name: /finish feedback \(1\)/i })
@@ -457,7 +470,8 @@ describe('Panel', () => {
       await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
       const payload = writeText.mock.calls[0][0] as string
       expect(payload).toContain('Needs review')
-      expect(payload).toContain('src/foo.ts')
+      expect(payload).toContain('/repo/src/foo.ts')
+      expect(payload).not.toContain('> src/foo.ts:5')
     } finally {
       Object.defineProperty(window.navigator, 'clipboard', {
         value: originalClipboard,
