@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-20
-ref_count: 9
+last_updated: 2026-07-03
+ref_count: 10
 ---
 
 # UI Visual Regression
@@ -168,4 +168,13 @@ test case for the state that triggers the collision.
 - **File:** `src/agents/brandIcons.test.tsx`
 - **Finding:** The ClaudeCode regression test asserted the cropped viewBox and removed circle, but did not guard against reintroducing `preserveAspectRatio="none"`. That left the prior non-uniform scaling regression able to return without breaking the test.
 - **Fix:** Added an explicit assertion that the rendered SVG has no `preserveAspectRatio` attribute, preserving the uniform-scaling invariant alongside the rendered-ratio assertion.
+- **Commit:** same commit as this entry
+
+### 16. Surface-bright collision hides hover affordances
+
+- **Source:** github-claude | PR #647 round 1 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-light.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface elevation shift updated `surface-container-highest` in Gruvbox Light and Tokyo Night but left `surface-bright` on the previous rung, making it collide with `surface-container-high`. Hover backgrounds over panels already using the high surface could become visually invisible.
+- **Fix:** Re-pointed `surface-bright` to the same top step as `surface-container-highest` in both themes and added focused assertions so the intended pairing is guarded.
 - **Commit:** same commit as this entry

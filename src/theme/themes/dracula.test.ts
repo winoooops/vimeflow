@@ -6,6 +6,8 @@ test('dracula uses the Terminal Colors default palette', () => {
   expect(dracula.label).toBe('Dracula')
   expect(dracula.kind).toBe('dark')
   expect(dracula.ui.surface).toBe('#21222c')
+  expect(dracula.ui['surface-container-highest']).toBe('#5f6588')
+  expect(dracula.ui['surface-bright']).toBe('#5f6588')
   expect(dracula.ui.primary).toBe('#ff79c6')
   expect(dracula.ui['on-surface']).toBe('#f8f8f2')
   expect(dracula.ui['on-surface-variant']).toBe('#e8e8df')

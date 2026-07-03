@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-29
-ref_count: 84
+last_updated: 2026-07-03
+ref_count: 85
 ---
 
 # Accessibility
@@ -813,4 +813,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/diff/components/ChangedFilesList.tsx`
 - **Finding:** The unpinned changed-files edge hint opened the floating panel on keyboard focus, but only mouse leave scheduled dismissal. Tabbing to the hint could leave the absolute panel mounted over the diff until the user manually toggled it or happened to hover and leave.
 - **Fix:** Wrapped the unpinned hint and panel in a focus boundary that schedules hide when focus leaves the surface while preserving tab movement into the panel controls. Added regression coverage for tabbing through the hint, pin button, file row, file-comment button, and then out of the surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 80. Dracula highest surface fell below small-label contrast
+
+- **Source:** github-codex-connector | PR #647 round 1 | 2026-07-03
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/themes/dracula.ts`
+- **Finding:** `surface-container-highest` and `surface-bright` were moved to Dracula's muted comment color, which paired with `on-surface-variant` at about 2.4:1 contrast. Existing compact labels and keycaps using `bg-surface-container-highest text-on-surface-variant` became hard to read.
+- **Fix:** Mapped both elevated Dracula surface tokens to `#5f6588`, a darker surface step that preserves the highest/bright pairing while restoring small-label contrast, and added theme assertions for the reviewed tokens.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -31,7 +31,7 @@ export const tokyoNightTheme: ThemeDefinition = {
     'surface-container': tokyoNight.bgHigh,
     'surface-container-high': tokyoNight.gutter,
     'surface-container-highest': tokyoNight.comment,
-    'surface-bright': tokyoNight.gutter,
+    'surface-bright': tokyoNight.comment,
     'surface-tint': tokyoNight.blue,
     'browser-bar': tokyoNight.bgDark,
     'browser-tab-active': tokyoNight.bgMid,

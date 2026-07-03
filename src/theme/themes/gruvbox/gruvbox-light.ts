@@ -14,7 +14,7 @@ export const gruvboxLight: ThemeDefinition = {
     'surface-container': light.bg3,
     'surface-container-high': light.bg4,
     'surface-container-highest': light.gray,
-    'surface-bright': light.bg4,
+    'surface-bright': light.gray,
     'surface-tint': faded.orange,
     'browser-bar': light.bg0Hard,
     'browser-tab-active': light.bg0,
