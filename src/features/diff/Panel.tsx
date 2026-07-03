@@ -38,8 +38,10 @@ import { useKeyboard } from './hooks/useKeyboard'
 import { useDiffSearch } from './hooks/useDiffSearch'
 import {
   dispatchFeedbackBatch,
+  formatFeedbackPayload,
   type DispatchEntry,
 } from './services/feedbackDispatch'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   resolveCandidatePanes,
   type PaneCandidate,
@@ -66,6 +68,11 @@ const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
 const FILES_LIST_STORAGE_KEY = 'vf-diff-files-open'
 const FILES_LIST_CLOSE_DELAY_MS = 220
+
+// A keyboard reveal (`e`) has no mouse-leave to close it, so it self-dismisses
+// after this delay — longer than the hover-leave delay since there's no pointer
+// motion to signal intent. Wire to Settings later.
+const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -454,8 +461,23 @@ export const Panel = ({
       return
     }
 
-    setFilesListRevealed((open) => !open)
-  }, [clearFilesListHideTimer, filesListPinnedOpen, focusDiffRoot])
+    const willReveal = !filesListRevealed
+    setFilesListRevealed(willReveal)
+
+    // Timed self-dismiss for the keyboard reveal; any interaction (hover/focus/
+    // pin/file-select) clears this via the shared hide timer.
+    if (willReveal) {
+      filesListHideTimerRef.current = setTimeout(() => {
+        setFilesListRevealed(false)
+        filesListHideTimerRef.current = null
+      }, FILES_LIST_KEYBOARD_AUTO_HIDE_MS)
+    }
+  }, [
+    clearFilesListHideTimer,
+    filesListPinnedOpen,
+    filesListRevealed,
+    focusDiffRoot,
+  ])
 
   const scheduleHideFilesList = useCallback((): void => {
     clearFilesListHideTimer()
@@ -691,6 +713,35 @@ export const Panel = ({
 
   const sendingFeedbackRef = useRef(false)
 
+  const buildFeedbackEntries = useCallback((): DispatchEntry[] => {
+    // git reports file paths relative to the repo TOPLEVEL, but the target
+    // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
+    // toplevel (`response.repoRoot`) so the dispatched reference is an
+    // absolute path the agent can resolve regardless of its cwd. Falls back to
+    // the repo-relative path if the root is unavailable (not in a git repo).
+    // Prefer the per-batch cwd root; fall back to the current diff's root, then
+    // the last-known root when `response` is transiently null (file-switch
+    // loading/error) so an in-flight batch keeps absolute paths.
+    const repoRoot = response?.repoRoot ?? repoRootRef.current
+    const entries: DispatchEntry[] = []
+
+    for (const [key, annotations] of feedback.batch) {
+      const { cwd: entryCwd, filePath: relPath, staged } = parseBatchKey(key)
+
+      const entryRepoRoot = repoRootRef.repoRootForCwd?.(entryCwd)
+
+      const resolvedRepoRoot =
+        entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
+
+      const filePath = resolvedRepoRoot
+        ? `${resolvedRepoRoot}/${relPath}`
+        : relPath
+      entries.push({ filePath, staged, annotations })
+    }
+
+    return entries
+  }, [feedback.batch, repoRootRef, response])
+
   const handleSendFeedback = useCallback(
     (pane: PaneCandidate): void => {
       if (sendingFeedbackRef.current) {
@@ -698,44 +749,7 @@ export const Panel = ({
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
-        // git reports file paths relative to the repo TOPLEVEL, but the target
-        // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
-        // toplevel (`response.repoRoot`) so the dispatched reference is an
-        // absolute path the agent can resolve regardless of its cwd. All batch
-        // entries share one repo (the batch is cleared on cwd change), so the
-        // current diff's repoRoot applies to every file. Falls back to the
-        // repo-relative path if the root is unavailable (not in a git repo).
-        // Prefer the current diff's root; fall back to the last-known root when
-        // `response` is transiently null (file-switch loading/error) so an
-        // in-flight batch keeps absolute paths. The empty-string (non-repo)
-        // case needs no fallback — the ref is empty there too — so `??` (null/
-        // undefined only) is exactly right.
-        const repoRoot = response?.repoRoot ?? repoRootRef.current
-        const entries: DispatchEntry[] = []
-        // parseBatchKey is the single source of truth for the key format (it
-        // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
-        // into the payload so an `MM` file (staged + unstaged both commented)
-        // stays disambiguated.
-        for (const [key, annotations] of feedback.batch) {
-          const {
-            cwd: entryCwd,
-            filePath: relPath,
-            staged,
-          } = parseBatchKey(key)
-
-          const entryRepoRoot =
-            'repoRootForCwd' in repoRootRef
-              ? repoRootRef.repoRootForCwd?.(entryCwd)
-              : undefined
-
-          const resolvedRepoRoot =
-            entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
-
-          const filePath = resolvedRepoRoot
-            ? `${resolvedRepoRoot}/${relPath}`
-            : relPath
-          entries.push({ filePath, staged, annotations })
-        }
+        const entries = buildFeedbackEntries()
 
         try {
           if (feedbackDispatch) {
@@ -759,8 +773,32 @@ export const Panel = ({
         }
       })()
     },
-    [feedback, feedbackDispatch, notifyInfo, repoRootRef, response]
+    [buildFeedbackEntries, feedback, feedbackDispatch, notifyInfo]
   )
+
+  // Copy the whole review to the clipboard — the escape hatch when no agent is
+  // running to send to (comments are otherwise trapped in the batch). It uses
+  // the same resolved paths as the send path so pasted feedback works from an
+  // agent cwd below the repo root.
+  const handleCopyFeedback = useCallback((): void => {
+    const entries = buildFeedbackEntries()
+
+    if (entries.length === 0) {
+      return
+    }
+
+    const count = feedback.totalAnnotations()
+    setFinishOpen(false)
+
+    void (async (): Promise<void> => {
+      const copied = await writeClipboardText(formatFeedbackPayload(entries))
+      notifyInfo(
+        copied
+          ? `Copied ${count} comment${count === 1 ? '' : 's'} to the clipboard.`
+          : 'Could not copy comments to the clipboard.'
+      )
+    })()
+  }, [buildFeedbackEntries, feedback, notifyInfo])
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
@@ -1836,6 +1874,7 @@ export const Panel = ({
     fileCount: feedback.batch.size,
     onCancel: (): void => setFinishOpen(false),
     onSend: handleSendFeedback,
+    onCopy: handleCopyFeedback,
   }
 
   // Loading state

@@ -16,6 +16,7 @@ interface FinishFeedbackState {
   fileCount: number
   onCancel: () => void
   onSend: (pane: PaneCandidate) => void
+  onCopy: () => void
 }
 
 export interface KeyboardConfirmView {
@@ -102,6 +103,7 @@ export const Notifier = ({
           fileCount={finishFeedback.fileCount}
           onCancel={finishFeedback.onCancel}
           onSend={finishFeedback.onSend}
+          onCopy={finishFeedback.onCopy}
         />
       ) : null}
       {keyboardConfirm !== null && toolbarShellRef.current !== null ? (

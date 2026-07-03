@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-01
-ref_count: 17
+last_updated: 2026-07-03
+ref_count: 18
 ---
 
 # Derived State Consistency
@@ -256,4 +256,21 @@ base data is technically "correct."
   rebuild the edit target from `startLine` plus `endLine`; otherwise keep the
   single-line fallback. Added a regression test that opens an existing R1-R2
   comment for edit and submits the updated text through the range dialog.
+- **Commit:** same commit as this entry
+
+### 21. Copied feedback used weaker path derivation than sent feedback
+
+- **Source:** github-codex-connector | PR #650 round 1 | 2026-07-03
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The terminal send path resolved each feedback batch key through
+  the stored repo root before formatting, but the clipboard fallback parsed the
+  same batch keys directly into repo-relative paths. Pasting copied feedback
+  into an agent running from a repo subdirectory could therefore point at the
+  wrong file.
+- **Fix:** Extracted one shared feedback-entry builder for send and copy, using
+  the per-cwd repo-root lookup before falling back to the current or last-known
+  root. Added a clipboard regression test that copies a batch authored from a
+  repo subdirectory and asserts the payload contains the resolved repo-root
+  path.
 - **Commit:** same commit as this entry
