@@ -17,7 +17,7 @@ export const gruvboxLight: ThemeDefinition = {
     'surface-bright': '#b0a48a',
     'surface-tint': faded.orange,
     'browser-bar': '#f1e6bd',
-    'browser-tab-active': light.bg0,
+    'browser-tab-active': '#f6edc8',
     primary: faded.orange,
     'primary-container': neutral.orange,
     'primary-dim': '#c24b08',

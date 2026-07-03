@@ -15,17 +15,19 @@ export const cargoIntermediates = [
   path.join(repoRoot, 'target', 'debug', 'incremental'),
 ]
 
-export const cleanupCargoIntermediates = () => {
+export const cleanupCargoIntermediates = (remover = rmSync) => {
   if (process.env.CI !== 'true') {
     return
   }
 
   for (const targetPath of cargoIntermediates) {
-    rmSync(targetPath, { recursive: true, force: true })
+    remover(targetPath, { recursive: true, force: true })
   }
 }
 
-export const runAgentSuite = (spawner = spawnSync) => {
+export const runAgentSuite = (spawner = spawnSync, remover = rmSync) => {
+  cleanupCargoIntermediates(remover)
+
   const result = spawner(
     npmExecutable,
     ['wdio', 'tests/e2e/agent/wdio.conf.ts'],
@@ -36,7 +38,7 @@ export const runAgentSuite = (spawner = spawnSync) => {
     }
   )
 
-  cleanupCargoIntermediates()
+  cleanupCargoIntermediates(remover)
 
   if (result.error) {
     throw result.error

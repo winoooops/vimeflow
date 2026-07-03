@@ -67,3 +67,18 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **Finding:** Gruvbox Dark set `ui['browser-bar']` to the same hex value as `terminal.background`. When browser/tab chrome borders a terminal or other native canvas surface, identical pixels can erase the boundary the surface separation work is meant to preserve.
 - **Fix:** Moved Gruvbox Dark browser chrome to a distinct bg0-soft value and broadened the background separation test so `browser-bar` is included in the terminal-background collision guard.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Active browser tabs must not reuse terminal canvas colors
+
+- **Source:** github-claude | PR #647 round 12 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/background-separation.test.ts`,
+  `src/theme/themes/flexoki.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
+- **Finding:** The terminal-background collision guard covered the surface
+  ladder and `browser-bar` but omitted `browser-tab-active`, leaving Flexoki
+  and Gruvbox Light active browser tabs pixel-identical to
+  `terminal.background`.
+- **Fix:** Added `browser-tab-active` to the shared terminal-background
+  collision guard and moved the Flexoki and Gruvbox Light active-tab colors
+  to distinct off-ladder values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

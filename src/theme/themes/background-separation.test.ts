@@ -53,6 +53,7 @@ test('app surface backgrounds stay distinct from terminal canvas backgrounds', (
     'surface-container-highest',
     'surface-bright',
     'browser-bar',
+    'browser-tab-active',
   ] as const
 
   for (const theme of themes) {

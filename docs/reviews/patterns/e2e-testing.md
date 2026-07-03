@@ -359,3 +359,17 @@ completely different root causes. The generic fast-failure modes:
   after the suite returns. The sidecar binary remains available for diagnostics
   while post-job steps have materially more disk headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Final E2E suite may need disk cleanup before running specs
+
+- **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `scripts/run-e2e-agent.mjs`
+- **Finding:** The Linux E2E job exhausted disk while the agent suite was still
+  running, before the after-suite Cargo cleanup could execute. The failing spec
+  could not create its app-data status file and then failed on the missing
+  `statusFile` assertion.
+- **Fix:** Run the same CI-only Cargo intermediate cleanup before launching the
+  agent WDIO suite, while preserving the after-suite cleanup for post-job
+  headroom.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

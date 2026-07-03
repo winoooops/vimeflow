@@ -28,6 +28,32 @@ describe('run-e2e-agent script', () => {
     )
   })
 
+  test('frees CI cargo intermediates before and after the agent suite', () => {
+    process.env.CI = 'true'
+    const calls = []
+    const spawner = vi.fn(() => {
+      calls.push('wdio')
+
+      return { status: 0 }
+    })
+    const rmSync = vi.fn((targetPath) => {
+      calls.push(targetPath)
+    })
+
+    expect(runAgentSuite(spawner, rmSync)).toBe(0)
+    expect(rmSync).toHaveBeenCalledTimes(6)
+    expect(spawner).toHaveBeenCalledTimes(1)
+    expect(calls).toEqual([
+      expect.stringContaining('target/debug/build'),
+      expect.stringContaining('target/debug/deps'),
+      expect.stringContaining('target/debug/incremental'),
+      'wdio',
+      expect.stringContaining('target/debug/build'),
+      expect.stringContaining('target/debug/deps'),
+      expect.stringContaining('target/debug/incremental'),
+    ])
+  })
+
   test('preserves the WDIO exit status', () => {
     delete process.env.CI
     const spawner = vi.fn(() => ({ status: 7 }))
