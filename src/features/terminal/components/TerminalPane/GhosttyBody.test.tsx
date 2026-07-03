@@ -242,8 +242,8 @@ describe('GhosttyBody', () => {
       )
     })
 
-    const radius = vi.mocked(updateNativeGhostty).mock.calls[0][0]
-      .bottomCornerRadius
+    const radius =
+      vi.mocked(updateNativeGhostty).mock.calls[0][0].bottomCornerRadius
 
     expect(radius).toBeCloseTo(9.132419438995434)
   })
