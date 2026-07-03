@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-07-03
-ref_count: 85
+ref_count: 86
 ---
 
 # Accessibility
@@ -822,4 +822,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/theme/themes/dracula.ts`
 - **Finding:** `surface-container-highest` and `surface-bright` were moved to Dracula's muted comment color, which paired with `on-surface-variant` at about 2.4:1 contrast. Existing compact labels and keycaps using `bg-surface-container-highest text-on-surface-variant` became hard to read.
 - **Fix:** Mapped both elevated Dracula surface tokens to `#5f6588`, a darker surface step that preserves the highest/bright pairing while restoring small-label contrast, and added theme assertions for the reviewed tokens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 81. Theme top-rung surfaces regressed compact-label contrast
+
+- **Source:** github-claude | PR #647 round 2 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/tokyo-night.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`, `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** The shifted `surface-container-highest` and `surface-bright` values in Tokyo Night and Gruvbox paired with `on-surface-variant` below the 4.5:1 AA threshold used by compact keycaps, badges, and neutral chips.
+- **Fix:** Chose accessible top-rung surface values for the three affected themes and added a shared contrast regression test for `surface-container-highest`/`surface-bright` against `on-surface-variant`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

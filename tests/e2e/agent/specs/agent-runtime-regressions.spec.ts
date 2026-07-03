@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createNewSessionWithDefaults } from '../../shared/actions.js'
+import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -27,22 +28,6 @@ interface AgentStatusScenario {
   panelLabel: string
   turns: number
   usageFetched?: boolean
-}
-
-const waitForE2eBridge = async (): Promise<void> => {
-  await browser
-    .waitUntil(
-      async () =>
-        await browser.execute(
-          () => typeof window.__VIMEFLOW_E2E__ !== 'undefined'
-        ),
-      { timeout: 20_000, interval: 250 }
-    )
-    .catch(() => {
-      throw new Error(
-        'window.__VIMEFLOW_E2E__ missing — rebuild with VITE_E2E=1'
-      )
-    })
 }
 
 const waitForVisiblePtyId = async (): Promise<string> => {
