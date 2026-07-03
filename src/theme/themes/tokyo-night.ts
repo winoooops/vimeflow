@@ -29,7 +29,7 @@ export const tokyoNightTheme: ThemeDefinition = {
     'surface-container-lowest': tokyoNight.bgLow,
     'surface-container-low': tokyoNight.bgMid,
     'surface-container': tokyoNight.bgHigh,
-    'surface-container-high': tokyoNight.gutter,
+    'surface-container-high': '#3b4263',
     'surface-container-highest': '#3b4263',
     'surface-bright': '#3b4263',
     'surface-tint': tokyoNight.blue,

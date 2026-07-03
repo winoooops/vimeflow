@@ -832,3 +832,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The shifted `surface-container-highest` and `surface-bright` values in Tokyo Night and Gruvbox paired with `on-surface-variant` below the 4.5:1 AA threshold used by compact keycaps, badges, and neutral chips.
 - **Fix:** Chose accessible top-rung surface values for the three affected themes and added a shared contrast regression test for `surface-container-highest`/`surface-bright` against `on-surface-variant`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 82. Theme mid-tier surfaces regressed compact-label contrast
+
+- **Source:** github-claude | PR #647 round 3 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/tokyo-night.ts`
+- **Finding:** The surface ladder shift also moved `surface-container` and `surface-container-high` to values that paired with `on-surface-variant` below the 4.5:1 AA threshold in Gruvbox Dark and Tokyo Night, affecting common panel, notification, changed-file, review, and test-result rows.
+- **Fix:** Chose darker accessible mid-tier surface values for Gruvbox Dark and Tokyo Night, corrected the same compact-surface contrast gap exposed by the widened test in Gruvbox Light, and expanded the shared contrast regression test to cover `surface-container` and `surface-container-high` alongside the top rungs.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

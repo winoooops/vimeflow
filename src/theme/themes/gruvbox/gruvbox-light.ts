@@ -12,7 +12,7 @@ export const gruvboxLight: ThemeDefinition = {
     'surface-container-lowest': light.bg1,
     'surface-container-low': light.bg2,
     'surface-container': light.bg3,
-    'surface-container-high': light.bg4,
+    'surface-container-high': '#b0a48a',
     'surface-container-highest': '#c7b99a',
     'surface-bright': '#c7b99a',
     'surface-tint': faded.orange,

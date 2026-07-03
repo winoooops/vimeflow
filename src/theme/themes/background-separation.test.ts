@@ -55,17 +55,19 @@ test('app surface backgrounds stay distinct from terminal canvas backgrounds', (
   }
 })
 
-test('highest surfaces keep compact label text at AA contrast', () => {
-  for (const theme of themes) {
-    expect(
-      contrastRatio(
-        theme.ui['on-surface-variant'],
-        theme.ui['surface-container-highest']
-      )
-    ).toBeGreaterThanOrEqual(4.5)
+test('compact surfaces keep label text at AA contrast', () => {
+  const compactSurfaces = [
+    'surface-container',
+    'surface-container-high',
+    'surface-container-highest',
+    'surface-bright',
+  ] as const
 
-    expect(
-      contrastRatio(theme.ui['on-surface-variant'], theme.ui['surface-bright'])
-    ).toBeGreaterThanOrEqual(4.5)
+  for (const theme of themes) {
+    for (const surface of compactSurfaces) {
+      expect(
+        contrastRatio(theme.ui['on-surface-variant'], theme.ui[surface])
+      ).toBeGreaterThanOrEqual(4.5)
+    }
   }
 })
