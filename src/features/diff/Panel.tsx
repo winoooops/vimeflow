@@ -1044,6 +1044,30 @@ export const Panel = ({
     toggleDiffStyle,
   } = useToolbarState()
 
+  // A syntax-theme or line-diff-style change re-keys the pierre surface and
+  // remounts it. The generic post-render restore above only catches focus
+  // falling to document.body, but the theme control (a portalled dropdown) can
+  // leave focus on its chip and pierre's shadow-DOM remount can strand it on the
+  // shadow host, so a theme switch would otherwise lose keyboard focus. Once the
+  // remount commits, pull focus back to the diff root — but only when it's lost
+  // to the body or already sitting inside the diff pane, never yanking it from
+  // another workspace surface. Keyed on renderKey (theme + line-diff style) only;
+  // file switches also re-key but must not grab focus.
+  const previousRenderKeyRef = useRef(renderKey)
+  useEffect(() => {
+    const themeOrStyleChanged = previousRenderKeyRef.current !== renderKey
+    previousRenderKeyRef.current = renderKey
+    if (!themeOrStyleChanged) {
+      return
+    }
+
+    const root = diffRootRef.current
+    const active = document.activeElement
+    if (root !== null && (active === document.body || root.contains(active))) {
+      focusDiffRoot()
+    }
+  }, [renderKey, focusDiffRoot])
+
   // In-file diff search (VIM-252). The identity key drives the hook's reset
   // rules: new key = different file (active match resets), null = nothing
   // searchable (popup closes; also covers the narrow placeholder). Everything
