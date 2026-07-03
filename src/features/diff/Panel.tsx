@@ -1698,12 +1698,6 @@ export const Panel = ({
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
-  const refreshDiffFromKeyboard = useCallback((): void => {
-    if (latestDiffStatus === 'ready') {
-      acceptLatestDiff()
-    }
-  }, [acceptLatestDiff, latestDiffStatus])
-
   useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
@@ -1714,7 +1708,11 @@ export const Panel = ({
     onNextFile: (): void => goToFile(1),
     onToggleFilesList: toggleFilesList,
     onToggleFilesListPinned: toggleFilesListPinned,
-    onRefreshDiff: refreshDiffFromKeyboard,
+    onRefreshDiff: (): void => {
+      if (latestDiffStatus === 'ready') {
+        acceptLatestDiff()
+      }
+    },
     searchOpen: diffSearch.isOpen,
     onOpenSearch: diffSearch.open,
     onCloseSearch: diffSearch.close,
