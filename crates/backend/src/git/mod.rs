@@ -1998,7 +1998,11 @@ mod tests {
         let git_path = std::env::var_os("PATH").and_then(|paths| {
             std::env::split_paths(&paths)
                 .map(|path| path.join("git"))
-                .find(|path| path.is_file() && !path.to_string_lossy().contains(".qa-runner/bin"))
+                // The QA review runner prepends a push-intercepting git shim;
+                // fixture repos need the real git binary for local pushes.
+                .find(|path| {
+                    path.is_file() && !path.to_string_lossy().contains(".qa-runner/bin")
+                })
         });
 
         std::process::Command::new(git_path.unwrap_or_else(|| "git".into()))

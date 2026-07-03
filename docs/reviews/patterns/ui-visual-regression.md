@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-03
-ref_count: 10
+ref_count: 11
 ---
 
 # UI Visual Regression
@@ -178,3 +178,16 @@ test case for the state that triggers the collision.
 - **Finding:** The surface elevation shift updated `surface-container-highest` in Gruvbox Light and Tokyo Night but left `surface-bright` on the previous rung, making it collide with `surface-container-high`. Hover backgrounds over panels already using the high surface could become visually invisible.
 - **Fix:** Re-pointed `surface-bright` to the same top step as `surface-container-highest` in both themes and added focused assertions so the intended pairing is guarded.
 - **Commit:** same commit as this entry
+
+### 17. Adjacent Gruvbox Dark surface rungs collapsed
+
+- **Source:** github-claude | PR #647 round 4 | 2026-07-03
+- **Severity:** MEDIUM
+- **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`
+- **Finding:** `surface-container-low` and `surface-container` both resolved to
+  `#504945`, so nested panels using the adjacent semantic rungs rendered as one
+  flat surface in Gruvbox Dark.
+- **Fix:** Assigned `surface-container` to a distinct intermediate value that
+  still passes the label contrast guard, and added a regression test asserting
+  lower adjacent surface rungs remain distinct.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

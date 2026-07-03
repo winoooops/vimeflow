@@ -55,6 +55,24 @@ test('app surface backgrounds stay distinct from terminal canvas backgrounds', (
   }
 })
 
+test('nested app surface rungs stay distinct from adjacent lower rungs', () => {
+  const adjacentSurfaceRungs = [
+    'surface',
+    'surface-container-lowest',
+    'surface-container-low',
+    'surface-container',
+  ] as const
+
+  for (const theme of themes) {
+    for (let index = 1; index < adjacentSurfaceRungs.length; index += 1) {
+      const previousRung = adjacentSurfaceRungs[index - 1]
+      const currentRung = adjacentSurfaceRungs[index]
+
+      expect(theme.ui[currentRung]).not.toBe(theme.ui[previousRung])
+    }
+  }
+})
+
 test('compact surfaces keep label text at AA contrast', () => {
   const compactSurfaces = [
     'surface-container',

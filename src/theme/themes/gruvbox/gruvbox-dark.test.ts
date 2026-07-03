@@ -5,6 +5,7 @@ test('gruvbox dark exposes the canonical dark palette mapping', () => {
   expect(gruvboxDark.id).toBe('gruvbox-dark')
   expect(gruvboxDark.kind).toBe('dark')
   expect(gruvboxDark.ui.surface).toBe('#1d2021')
+  expect(gruvboxDark.ui['surface-container']).toBe('#5a514a')
   expect(gruvboxDark.ui['surface-container-highest']).toBe('#4d4743')
   expect(gruvboxDark.ui['surface-bright']).toBe('#4d4743')
   expect(gruvboxDark.ui.primary).toBe('#fe8019')
