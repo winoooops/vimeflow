@@ -482,21 +482,30 @@ export const DiffChipToolbar = ({
         {showPinnedActions ? (
           <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
             {onRefreshActiveFile !== undefined ? (
-              <button
-                type="button"
-                data-testid="diff-active-file-refresh"
-                aria-label="refresh diff"
-                onClick={onRefreshActiveFile}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary disabled:cursor-default disabled:opacity-70 disabled:hover:border-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-on-surface"
-              >
-                <span
-                  aria-hidden="true"
-                  className="material-symbols-outlined text-sm leading-none"
+              <Tooltip content="Refresh diff" shortcut="r">
+                <button
+                  type="button"
+                  data-testid="diff-active-file-refresh"
+                  aria-label="refresh diff"
+                  aria-keyshortcuts="r"
+                  onClick={onRefreshActiveFile}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary disabled:cursor-default disabled:opacity-70 disabled:hover:border-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-on-surface"
                 >
-                  refresh
-                </span>
-                Refresh diff
-              </button>
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-sm leading-none"
+                  >
+                    refresh
+                  </span>
+                  Refresh diff
+                  <span
+                    aria-hidden="true"
+                    className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
+                  >
+                    r
+                  </span>
+                </button>
+              </Tooltip>
             ) : null}
             {showActions ? (
               <button

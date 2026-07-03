@@ -69,6 +69,12 @@ const renderKeyboard = (
     onNextFile: vi.fn(),
     onToggleFilesList: vi.fn(),
     onToggleFilesListPinned: vi.fn(),
+    onRefreshDiff: vi.fn(),
+    searchOpen: false,
+    onOpenSearch: vi.fn(),
+    onCloseSearch: vi.fn(),
+    onNextMatch: vi.fn(),
+    onPreviousMatch: vi.fn(),
     onPreviousHunk: vi.fn(),
     onNextHunk: vi.fn(),
     onComment: vi.fn(),
@@ -150,6 +156,14 @@ describe('useKeyboard', () => {
 
     expect(props.onToggleFilesListPinned).toHaveBeenCalledOnce()
     expect(props.onToggleFilesList).not.toHaveBeenCalled()
+  })
+
+  test('r refreshes the diff', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('r')
+
+    expect(props.onRefreshDiff).toHaveBeenCalledOnce()
   })
 
   test('i opens comment editor for the selected line', () => {
@@ -272,6 +286,14 @@ describe('useKeyboard', () => {
     expect(props.onNextFile).not.toHaveBeenCalled()
   })
 
+  test('r is inert while a keyboard confirmation is open', () => {
+    const { props } = renderKeyboard({ confirming: true })
+
+    dispatch('r')
+
+    expect(props.onRefreshDiff).not.toHaveBeenCalled()
+  })
+
   test('handled shortcuts prevent default and stop propagation', () => {
     renderKeyboard()
 
@@ -383,6 +405,12 @@ describe('useKeyboard', () => {
       onNextFile: vi.fn(),
       onToggleFilesList: vi.fn(),
       onToggleFilesListPinned: vi.fn(),
+      onRefreshDiff: vi.fn(),
+      searchOpen: false,
+      onOpenSearch: vi.fn(),
+      onCloseSearch: vi.fn(),
+      onNextMatch: vi.fn(),
+      onPreviousMatch: vi.fn(),
       onPreviousHunk: vi.fn(),
       onNextHunk: vi.fn(),
       onComment: vi.fn(),
@@ -408,5 +436,98 @@ describe('useKeyboard', () => {
     dispatch('j')
 
     expect(props.onMoveLine).not.toHaveBeenCalled()
+  })
+
+  describe('search mode', () => {
+    test('/ fires onOpenSearch and is prevented', () => {
+      const onOpenSearch = vi.fn()
+      renderKeyboard({ onOpenSearch })
+
+      const event = dispatch('/')
+
+      expect(onOpenSearch).toHaveBeenCalledTimes(1)
+      expect(event.preventDefaultSpy).toHaveBeenCalled()
+    })
+
+    test('searchOpen remaps n/p to match navigation', () => {
+      const onNextMatch = vi.fn()
+      const onPreviousMatch = vi.fn()
+      const onNextFile = vi.fn()
+      renderKeyboard({
+        searchOpen: true,
+        onNextMatch,
+        onPreviousMatch,
+        onNextFile,
+      })
+
+      dispatch('n')
+      dispatch('p')
+
+      expect(onNextMatch).toHaveBeenCalledTimes(1)
+      expect(onPreviousMatch).toHaveBeenCalledTimes(1)
+      expect(onNextFile).not.toHaveBeenCalled()
+    })
+
+    test('search closed keeps n/p on file navigation', () => {
+      const onNextFile = vi.fn()
+      const onNextMatch = vi.fn()
+      renderKeyboard({ searchOpen: false, onNextFile, onNextMatch })
+
+      dispatch('n')
+
+      expect(onNextFile).toHaveBeenCalledTimes(1)
+      expect(onNextMatch).not.toHaveBeenCalled()
+    })
+
+    test('Esc closes search before cancelling visual mode', () => {
+      const onCloseSearch = vi.fn()
+      const onCancelVisualSelection = vi.fn()
+      renderKeyboard({
+        searchOpen: true,
+        visualMode: true,
+        onCloseSearch,
+        onCancelVisualSelection,
+      })
+
+      dispatch('Escape')
+
+      expect(onCloseSearch).toHaveBeenCalledTimes(1)
+      expect(onCancelVisualSelection).not.toHaveBeenCalled()
+    })
+
+    test('confirming keeps Esc and / inert', () => {
+      const onCloseSearch = vi.fn()
+      const onOpenSearch = vi.fn()
+      renderKeyboard({
+        confirming: true,
+        searchOpen: true,
+        onCloseSearch,
+        onOpenSearch,
+      })
+
+      dispatch('Escape')
+      dispatch('/')
+
+      expect(onCloseSearch).not.toHaveBeenCalled()
+      expect(onOpenSearch).not.toHaveBeenCalled()
+    })
+
+    test('other diff keys stay bound while search is open', () => {
+      const onStageHunk = vi.fn()
+      renderKeyboard({ searchOpen: true, onStageHunk })
+
+      dispatch('s')
+
+      expect(onStageHunk).toHaveBeenCalledTimes(1)
+    })
+
+    test('r still refreshes the diff while search is open', () => {
+      const onRefreshDiff = vi.fn()
+      renderKeyboard({ searchOpen: true, onRefreshDiff })
+
+      dispatch('r')
+
+      expect(onRefreshDiff).toHaveBeenCalledTimes(1)
+    })
   })
 })

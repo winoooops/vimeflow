@@ -769,6 +769,11 @@ describe('DiffChipToolbar', () => {
 
     const refresh = screen.getByRole('button', { name: 'refresh diff' })
     expect(refresh).toHaveTextContent('Refresh diff')
+    expect(refresh).toHaveAttribute('aria-keyshortcuts', 'r')
+    expect(within(refresh).getByText('r')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
 
     await user.click(refresh)
     expect(onRefresh).toHaveBeenCalledTimes(1)

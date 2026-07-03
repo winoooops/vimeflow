@@ -14,6 +14,12 @@ export interface UseKeyboardOptions {
   onNextFile: () => void
   onToggleFilesList: () => void
   onToggleFilesListPinned: () => void
+  onRefreshDiff: () => void
+  searchOpen: boolean
+  onOpenSearch: () => void
+  onCloseSearch: () => void
+  onNextMatch: () => void
+  onPreviousMatch: () => void
   onPreviousHunk: () => void
   onNextHunk: () => void
   onComment: () => void
@@ -64,6 +70,12 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onNextFile,
     onToggleFilesList,
     onToggleFilesListPinned,
+    onRefreshDiff,
+    searchOpen,
+    onOpenSearch,
+    onCloseSearch,
+    onNextMatch,
+    onPreviousMatch,
     onPreviousHunk,
     onNextHunk,
     onComment,
@@ -159,21 +171,33 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         return
       }
 
-      if (visualMode && event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        onCancelVisualSelection()
+      if (event.key === 'Escape') {
+        if (searchOpen) {
+          event.preventDefault()
+          event.stopPropagation()
+          onCloseSearch()
 
-        return
+          return
+        }
+
+        if (visualMode) {
+          event.preventDefault()
+          event.stopPropagation()
+          onCancelVisualSelection()
+
+          return
+        }
       }
 
       const handlers: Partial<Record<string, () => void>> = {
         j: () => onMoveLine(1),
         k: () => onMoveLine(-1),
-        n: onNextFile,
-        p: onPreviousFile,
+        n: searchOpen ? onNextMatch : onNextFile,
+        p: searchOpen ? onPreviousMatch : onPreviousFile,
+        '/': onOpenSearch,
         e: onToggleFilesList,
         E: onToggleFilesListPinned,
+        r: onRefreshDiff,
         '[': onPreviousHunk,
         ']': onNextHunk,
         i: onComment,
@@ -215,6 +239,12 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onNextFile,
     onToggleFilesList,
     onToggleFilesListPinned,
+    onRefreshDiff,
+    searchOpen,
+    onOpenSearch,
+    onCloseSearch,
+    onNextMatch,
+    onPreviousMatch,
     onPreviousHunk,
     onNextHunk,
     onComment,

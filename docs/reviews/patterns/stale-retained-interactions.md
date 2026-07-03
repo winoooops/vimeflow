@@ -2,8 +2,8 @@
 id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-01
-ref_count: 4
+last_updated: 2026-07-03
+ref_count: 6
 ---
 
 # Stale Retained Interactions
@@ -57,4 +57,22 @@ When a React component renders retained or stale content while fresh data for a 
 - **File:** `src/features/diff/Panel.tsx`
 - **Finding:** Confirming an edit to an existing file or line comment closed the editor without clearing an active visual selection. The next add-comment action could silently reuse that stale range instead of the current line.
 - **Fix:** Cleared visual selection after successful `updateAnnotation` calls, matching the existing add-comment success paths. Added panel coverage for editing while a visual range is active, then opening a fresh single-line comment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Clear stale search matches on file changes
+
+- **Source:** github-codex-connector | PR #648 round 1 | 2026-07-03
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useDiffSearch.ts`
+- **Finding:** An open diff search reset only the active index and paint on file-key changes. If the next diff stayed in loading or error state and never called `onPostRender`, the popup retained the previous file's match count and navigation targets.
+- **Fix:** Cleared the collected line map, match list, active index, pending render frame, and container reference immediately on non-null file-key changes, while preserving the query for the next rendered diff. Added hook coverage for the gap before the next `handlePostRender` call.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Do not reuse full stale-state invalidation for transient close
+
+- **Source:** github-claude | PR #648 round 2 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useDiffSearch.ts`
+- **Finding:** The round-1 file-switch fix reused the full collected-line reset from `close()`. Closing the search popup does not trigger a pierre rerender, so reopening search on the same file recomputed against an empty collection and reported zero matches until an unrelated diff rebuild occurred.
+- **Fix:** Split visible-popup reset from full collected-line invalidation. Manual close now clears query, matches, active index, and paint while preserving the current file's collected line cache; file-key changes still clear the collection. Added hook coverage for close-then-reopen on the same file without another `handlePostRender`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

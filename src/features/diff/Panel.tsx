@@ -1,5 +1,6 @@
 import {
   type ReactElement,
+  type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   useState,
@@ -11,6 +12,7 @@ import {
 import type {
   AnnotationSide,
   DiffLineAnnotation,
+  FileDiffOptions,
   SelectedLineRange,
 } from '@pierre/diffs'
 import { Popover } from '@/components/Popover'
@@ -33,6 +35,7 @@ import {
   type UseFeedbackBatchReturn,
 } from './hooks/useFeedbackBatch'
 import { useKeyboard } from './hooks/useKeyboard'
+import { useDiffSearch } from './hooks/useDiffSearch'
 import {
   dispatchFeedbackBatch,
   type DispatchEntry,
@@ -53,8 +56,11 @@ import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
 import { useVisualSelection } from './hooks/useVisualSelection'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
+import { DiffSearchButton } from './components/DiffSearchButton'
+import { DiffSearchPopup } from './components/DiffSearchPopup'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
 import { ReviewCommentRow } from './components/ReviewCommentRow'
+import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
@@ -398,6 +404,8 @@ export const Panel = ({
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
   const diffRootRef = useRef<HTMLDivElement>(null)
+  // Chromium does not dispatch blur/focusout when a focused child unmounts.
+  const focusWasInsidePanelRef = useRef(false)
   const diffScrollBodyRef = useRef<HTMLDivElement>(null)
 
   const filesListHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -475,6 +483,10 @@ export const Panel = ({
 
   const handleDiffRootPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): void => {
+      // DockPanel steals non-interactive pointerdown focus to its section; diff
+      // selection prevents the browser default focus handoff from correcting it.
+      event.stopPropagation()
+
       if (
         event.target instanceof Element &&
         event.target.closest(DIFF_NATIVE_FOCUS_SELECTOR) === null
@@ -484,6 +496,82 @@ export const Panel = ({
     },
     [focusDiffRoot]
   )
+
+  const handleDiffRootFocus = useCallback((): void => {
+    focusWasInsidePanelRef.current = true
+  }, [])
+
+  const handleDiffRootBlur = useCallback(
+    (event: ReactFocusEvent<HTMLDivElement>): void => {
+      if (event.relatedTarget !== null) {
+        const nextTarget = event.relatedTarget
+
+        if (
+          !(nextTarget instanceof Node) ||
+          !event.currentTarget.contains(nextTarget)
+        ) {
+          focusWasInsidePanelRef.current = false
+        }
+
+        return
+      }
+
+      if (!document.hasFocus()) {
+        return
+      }
+
+      requestAnimationFrame(() => {
+        if (
+          focusWasInsidePanelRef.current &&
+          document.activeElement === document.body
+        ) {
+          focusDiffRoot()
+        }
+      })
+    },
+    [focusDiffRoot]
+  )
+
+  useEffect(() => {
+    const clearPanelFocusOnOutsidePointerDown = (event: PointerEvent): void => {
+      const root = diffRootRef.current
+
+      if (
+        root !== null &&
+        event.target instanceof Node &&
+        !root.contains(event.target)
+      ) {
+        focusWasInsidePanelRef.current = false
+      }
+    }
+
+    document.addEventListener(
+      'pointerdown',
+      clearPanelFocusOnOutsidePointerDown,
+      {
+        capture: true,
+      }
+    )
+
+    return (): void => {
+      document.removeEventListener(
+        'pointerdown',
+        clearPanelFocusOnOutsidePointerDown,
+        { capture: true }
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    // No dependency array: focused child removal is caused by render, so every
+    // committed render checks for Chromium's silent body-focus handoff.
+    if (
+      focusWasInsidePanelRef.current &&
+      document.activeElement === document.body
+    ) {
+      focusDiffRoot()
+    }
+  })
 
   const localFeedback = useFeedbackBatch()
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
@@ -917,6 +1005,47 @@ export const Panel = ({
     effectiveDiffStyle,
     toggleDiffStyle,
   } = useToolbarState()
+
+  // In-file diff search (VIM-252). The identity key drives the hook's reset
+  // rules: new key = different file (active match resets), null = nothing
+  // searchable (popup closes; also covers the narrow placeholder). Everything
+  // merged into pierre options below must stay deep-equal-stable across
+  // renders or pierre force-rebuilds its DOM — hence the constant unsafeCSS
+  // and the ref-forwarded onPostRender with fixed identity (spec §4).
+  const diffSearchFileKey =
+    selectedFilePath === null || tooNarrow
+      ? null
+      : `${cwd}:${selectedFilePath}:${
+          selectedFileStaged ? 'staged' : 'unstaged'
+        }`
+
+  const diffSearch = useDiffSearch({
+    fileKey: diffSearchFileKey,
+    paintEnabled: true,
+    focusPanel: focusDiffRoot,
+  })
+
+  const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
+  diffSearchPostRenderRef.current = diffSearch.handlePostRender
+  const multiFileDiffOptionsRef = useRef(multiFileDiffOptions)
+  multiFileDiffOptionsRef.current = multiFileDiffOptions
+
+  const handleDiffPostRender = useCallback<
+    NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>
+  >((node, instance) => {
+    diffSearchPostRenderRef.current(node)
+    multiFileDiffOptionsRef.current.onPostRender?.(node, instance)
+  }, [])
+
+  const diffOptionsWithSearch = useMemo<FileDiffOptions<ReviewComment>>(
+    () => ({
+      ...multiFileDiffOptions,
+      unsafeCSS: DIFF_SEARCH_UNSAFE_CSS,
+      onPostRender: handleDiffPostRender,
+    }),
+    [multiFileDiffOptions, handleDiffPostRender]
+  )
+  const fileHeaderVisible = !multiFileDiffOptions.disableFileHeader
 
   const clearTransientSelection = useCallback((): void => {
     clearNavSelectionTimer()
@@ -1579,6 +1708,16 @@ export const Panel = ({
     onNextFile: (): void => goToFile(1),
     onToggleFilesList: toggleFilesList,
     onToggleFilesListPinned: toggleFilesListPinned,
+    onRefreshDiff: (): void => {
+      if (latestDiffStatus === 'ready') {
+        acceptLatestDiff()
+      }
+    },
+    searchOpen: diffSearch.isOpen,
+    onOpenSearch: diffSearch.open,
+    onCloseSearch: diffSearch.close,
+    onNextMatch: (): void => diffSearch.step(1),
+    onPreviousMatch: (): void => diffSearch.step(-1),
     onPreviousHunk: (): void => moveReviewTargetHunk(-1),
     onNextHunk: (): void => moveReviewTargetHunk(1),
     onComment: openSelectedComment,
@@ -1738,7 +1877,7 @@ export const Panel = ({
         ref={diffRootRef}
         data-testid="diff-empty-state"
         tabIndex={-1}
-        onPointerDownCapture={handleDiffRootPointerDown}
+        onPointerDown={handleDiffRootPointerDown}
         className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant focus:outline-none"
       >
         <Notifier
@@ -1792,7 +1931,9 @@ export const Panel = ({
       ref={diffRootRef}
       data-testid="diff-populated-state"
       tabIndex={-1}
-      onPointerDownCapture={handleDiffRootPointerDown}
+      onPointerDown={handleDiffRootPointerDown}
+      onFocus={handleDiffRootFocus}
+      onBlurCapture={handleDiffRootBlur}
       className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden focus:outline-none"
     >
       <Notifier
@@ -1857,6 +1998,29 @@ export const Panel = ({
           onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
         />
+        {diffSearchFileKey !== null ? (
+          <>
+            {!diffSearch.isOpen ? (
+              <DiffSearchButton
+                fileHeaderVisible={fileHeaderVisible}
+                onOpen={diffSearch.open}
+              />
+            ) : null}
+            <DiffSearchPopup
+              open={diffSearch.isOpen}
+              fileHeaderVisible={fileHeaderVisible}
+              query={diffSearch.query}
+              matchCount={diffSearch.matchCount}
+              activeOrdinal={diffSearch.activeOrdinal}
+              confirming={keyboardConfirmAction !== null}
+              inputRef={diffSearch.inputRef}
+              onQueryChange={diffSearch.setQuery}
+              onCommit={diffSearch.commit}
+              onStep={diffSearch.step}
+              onClose={diffSearch.close}
+            />
+          </>
+        ) : null}
         <div
           ref={setDiffPaneElement}
           data-testid="diff-right-pane"
@@ -1958,7 +2122,7 @@ export const Panel = ({
             pierreInputs={pierreInputs}
             tooNarrow={tooNarrow}
             renderKey={panelRenderKey}
-            options={multiFileDiffOptions}
+            options={diffOptionsWithSearch}
             selectedLines={selectedLines}
             lineAnnotations={lineAnnotations}
             annotationTarget={annotationTarget}
