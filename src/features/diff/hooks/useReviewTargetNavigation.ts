@@ -407,6 +407,29 @@ const stickyHeaderOffsetForDiffRoot = (root: HTMLElement): number => {
   return height === 0 ? 0 : height + STICKY_HEADER_SCROLL_GAP_PX
 }
 
+// A hunk already sitting fully within the visible viewport (below any sticky
+// header) should not trigger a scroll — moving the cursor is enough. This keeps
+// `[` / `]` from jerking the page when the next hunk is already on screen.
+export const isLineRangeFullyVisible = (
+  container: HTMLElement,
+  firstLine: HTMLElement,
+  lastLine: HTMLElement
+): boolean => {
+  if (container.clientHeight <= 0) {
+    return false
+  }
+
+  const containerRect = container.getBoundingClientRect()
+  const stickyOffset = stickyHeaderOffsetForDiffRoot(container)
+  const firstRect = firstLine.getBoundingClientRect()
+  const lastRect = lastLine.getBoundingClientRect()
+  const top = Math.min(firstRect.top, lastRect.top)
+  const bottom = Math.max(firstRect.bottom, lastRect.bottom)
+  const visibleTop = containerRect.top + stickyOffset
+
+  return top >= visibleTop && bottom <= containerRect.bottom
+}
+
 // Corrects scrollIntoView when the target row lands underneath the sticky
 // header instead of actually being visible.
 const revealLineBelowStickyHeader = (
@@ -649,6 +672,12 @@ export const useReviewTargetNavigation = ({
       const lastLine = findReviewTargetLineElement(node, lastTarget)
       if (firstLine === null || lastLine === null) {
         return false
+      }
+
+      // Already on screen — the cursor moved via activateTarget, so skip the
+      // scroll and report handled to avoid an unnecessary jump (VIM-272).
+      if (isLineRangeFullyVisible(node, firstLine, lastLine)) {
+        return true
       }
 
       firstLine.scrollIntoView({ block: 'start', inline: 'nearest' })

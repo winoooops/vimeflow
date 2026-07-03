@@ -1,7 +1,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { DiffLineAnnotation } from '@pierre/diffs'
-import { useReviewTargetNavigation } from './useReviewTargetNavigation'
+import {
+  isLineRangeFullyVisible,
+  useReviewTargetNavigation,
+} from './useReviewTargetNavigation'
 import type { FileDiff } from '../types'
 import type { ReviewComment } from './useFeedbackBatch'
 
@@ -92,5 +95,86 @@ describe('useReviewTargetNavigation', () => {
 
     expect(result.current.selectedLines).toBeNull()
     expect(result.current.activeTarget).toBeNull()
+  })
+})
+
+const rect = (top: number, bottom: number): DOMRect =>
+  ({
+    top,
+    bottom,
+    height: bottom - top,
+    left: 0,
+    right: 0,
+    width: 0,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  }) as DOMRect
+
+const lineWithRect = (top: number, bottom: number): HTMLElement => {
+  const element = document.createElement('div')
+  element.getBoundingClientRect = (): DOMRect => rect(top, bottom)
+
+  return element
+}
+
+const containerWithViewport = (top: number, bottom: number): HTMLElement => {
+  const element = document.createElement('div')
+  Object.defineProperty(element, 'clientHeight', {
+    value: bottom - top,
+    configurable: true,
+  })
+  element.getBoundingClientRect = (): DOMRect => rect(top, bottom)
+
+  return element
+}
+
+describe('isLineRangeFullyVisible', () => {
+  test('true when the whole hunk range sits inside the viewport', () => {
+    const container = containerWithViewport(0, 500)
+
+    expect(
+      isLineRangeFullyVisible(
+        container,
+        lineWithRect(100, 120),
+        lineWithRect(300, 320)
+      )
+    ).toBe(true)
+  })
+
+  test('false when the range extends below the viewport', () => {
+    const container = containerWithViewport(0, 500)
+
+    expect(
+      isLineRangeFullyVisible(
+        container,
+        lineWithRect(400, 420),
+        lineWithRect(560, 580)
+      )
+    ).toBe(false)
+  })
+
+  test('false when the range starts above the viewport', () => {
+    const container = containerWithViewport(100, 500)
+
+    expect(
+      isLineRangeFullyVisible(
+        container,
+        lineWithRect(40, 60),
+        lineWithRect(200, 220)
+      )
+    ).toBe(false)
+  })
+
+  test('false when the container has no measured height', () => {
+    const container = containerWithViewport(0, 0)
+
+    expect(
+      isLineRangeFullyVisible(
+        container,
+        lineWithRect(10, 20),
+        lineWithRect(30, 40)
+      )
+    ).toBe(false)
   })
 })
