@@ -33,7 +33,7 @@ import {
 } from './hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from './services/activePanePicker'
-import type { DiffLineAnnotation } from '@pierre/diffs'
+import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 
 // Mock the hooks
 vi.mock('./hooks/useGitStatus')
@@ -53,6 +53,8 @@ const workerPoolSetRenderOptionsMock = vi.fn(() => Promise.resolve(undefined))
 const workerPoolMock = {
   setRenderOptions: workerPoolSetRenderOptionsMock,
 }
+
+const multiFileDiffOptionsSeen: FileDiffOptions<ReviewComment>[] = []
 
 const deferredWorkerOptions = (): {
   promise: Promise<undefined>
@@ -87,12 +89,7 @@ vi.mock('@pierre/diffs/react', () => ({
   }: {
     oldFile: { name: string; contents: string; cacheKey?: string }
     newFile: { name: string; contents: string; cacheKey?: string }
-    options: {
-      diffStyle?: string
-      theme?: string
-      lineDiffType?: string
-      enableGutterUtility?: boolean
-    }
+    options: FileDiffOptions<ReviewComment>
     selectedLines?: {
       start: number
       end: number
@@ -121,43 +118,47 @@ vi.mock('@pierre/diffs/react', () => ({
         createdAt: number
       }
     }) => ReactElement
-  }): ReactElement => (
-    <div
-      data-testid="multi-file-diff"
-      data-old-name={oldFile.name}
-      data-old-contents={oldFile.contents}
-      data-old-cache-key={oldFile.cacheKey}
-      data-new-name={newFile.name}
-      data-new-contents={newFile.contents}
-      data-new-cache-key={newFile.cacheKey}
-      data-diff-style={options.diffStyle}
-      data-theme={options.theme}
-      data-line-diff-type={options.lineDiffType}
-      data-selected-lines-start={
-        selectedLines != null ? String(selectedLines.start) : undefined
-      }
-      data-selected-lines-end={
-        selectedLines != null ? String(selectedLines.end) : undefined
-      }
-      data-selected-lines-side={selectedLines?.side ?? undefined}
-    >
-      {renderGutterUtility != null ? (
-        <div data-testid="gutter-utility-slot">
-          {renderGutterUtility(() => ({ lineNumber: 1, side: 'additions' }))}
-        </div>
-      ) : null}
-      {lineAnnotations != null && renderAnnotation != null ? (
-        <div key={newFile.contents} data-testid="annotation-slot">
-          {lineAnnotations.map((annotation, index) => (
-            <div key={annotation.metadata.id ?? index}>
-              {renderAnnotation(annotation)}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      MultiFileDiff stub
-    </div>
-  ),
+  }): ReactElement => {
+    multiFileDiffOptionsSeen.push(options)
+
+    return (
+      <div
+        data-testid="multi-file-diff"
+        data-old-name={oldFile.name}
+        data-old-contents={oldFile.contents}
+        data-old-cache-key={oldFile.cacheKey}
+        data-new-name={newFile.name}
+        data-new-contents={newFile.contents}
+        data-new-cache-key={newFile.cacheKey}
+        data-diff-style={options.diffStyle}
+        data-theme={options.theme}
+        data-line-diff-type={options.lineDiffType}
+        data-selected-lines-start={
+          selectedLines != null ? String(selectedLines.start) : undefined
+        }
+        data-selected-lines-end={
+          selectedLines != null ? String(selectedLines.end) : undefined
+        }
+        data-selected-lines-side={selectedLines?.side ?? undefined}
+      >
+        {renderGutterUtility != null ? (
+          <div data-testid="gutter-utility-slot">
+            {renderGutterUtility(() => ({ lineNumber: 1, side: 'additions' }))}
+          </div>
+        ) : null}
+        {lineAnnotations != null && renderAnnotation != null ? (
+          <div key={newFile.contents} data-testid="annotation-slot">
+            {lineAnnotations.map((annotation, index) => (
+              <div key={annotation.metadata.id ?? index}>
+                {renderAnnotation(annotation)}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        MultiFileDiff stub
+      </div>
+    )
+  },
 }))
 
 /**
@@ -224,9 +225,20 @@ const setPaneWidth = (width: number): void => {
   })
 }
 
+const lastMultiFileDiffOptions = (): FileDiffOptions<ReviewComment> => {
+  const last = multiFileDiffOptionsSeen[multiFileDiffOptionsSeen.length - 1]
+
+  if (last === undefined) {
+    throw new Error('MultiFileDiff was not rendered')
+  }
+
+  return last
+}
+
 describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    multiFileDiffOptionsSeen.length = 0
     window.localStorage.clear()
     installMockResizeObserver()
   })
@@ -5003,11 +5015,175 @@ describe('Panel', () => {
         screen.getByRole('dialog', { name: /Comment on line/ })
       ).toBeInTheDocument()
 
-      expect(await screen.findByRole('status')).toHaveTextContent(
-        'Feedback limit reached'
-      )
+      expect(
+        await screen.findByText(/Feedback limit reached/)
+      ).toBeInTheDocument()
 
       spy.mockRestore()
+    })
+  })
+
+  describe('diff search wiring', () => {
+    const diffSearchFile: ChangedFile = {
+      path: 'src/App.tsx',
+      status: 'modified',
+      staged: false,
+    }
+
+    const diffSearchDiff: FileDiff = {
+      filePath: 'src/App.tsx',
+      oldPath: 'src/App.tsx',
+      newPath: 'src/App.tsx',
+      hunks: [],
+    }
+
+    const renderPanel = ({
+      tooNarrow = false,
+    }: {
+      tooNarrow?: boolean
+    } = {}): {
+      rerender: () => void
+      clearFiles: () => void
+    } => {
+      let files: ChangedFile[] = [diffSearchFile]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockImplementation(
+        (): UseGitStatusReturn => ({
+          files,
+          filesCwd: '/repo',
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+          idle: false,
+        })
+      )
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: diffSearchDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+          repoRoot: '/repo',
+        })
+      )
+
+      const view = (): ReactElement => (
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      const utils = render(view())
+
+      if (tooNarrow) {
+        setPaneWidth(DIFF_MIN_WIDTH_PX - 1)
+      }
+
+      return {
+        rerender: (): void => utils.rerender(view()),
+        clearFiles: (): void => {
+          files = []
+          utils.rerender(view())
+        },
+      }
+    }
+
+    test('passes a constant unsafeCSS and a stable onPostRender to pierre options', (): void => {
+      const { rerender } = renderPanel()
+      const first = lastMultiFileDiffOptions()
+
+      expect(first.unsafeCSS).toContain('::highlight(vf-diff-search)')
+
+      rerender()
+      const second = lastMultiFileDiffOptions()
+      expect(second).toEqual(first)
+      expect(second.unsafeCSS).toBe(first.unsafeCSS)
+      expect(second.onPostRender).toBe(first.onPostRender)
+    })
+
+    test('/ opens the search popup and focuses its input', async (): Promise<void> => {
+      renderPanel()
+
+      expect(screen.getByTestId('diff-body-region')).toHaveClass('relative')
+
+      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+        key: '/',
+      })
+
+      const popup = await screen.findByRole('search')
+      await waitFor(() => expect(popup).not.toHaveAttribute('inert'))
+      await waitFor(() =>
+        expect(
+          screen.getByRole('textbox', { name: /search in diff/i })
+        ).toHaveFocus()
+      )
+    })
+
+    test('search anchor moves down while the pierre file header is visible', async (): Promise<void> => {
+      const user = userEvent.setup()
+      renderPanel()
+
+      const button = screen.getByRole('button', { name: /search in diff/i })
+      expect(button).toHaveClass('right-[22px]')
+      expect(button).toHaveClass('top-10')
+      expect(button).not.toHaveClass('right-[72px]')
+      expect(button).not.toHaveClass('top-1')
+
+      await user.click(screen.getByRole('button', { name: /view settings/i }))
+      await user.click(
+        await screen.findByRole('menuitemcheckbox', {
+          name: 'File header',
+        })
+      )
+
+      expect(lastMultiFileDiffOptions().disableFileHeader).toBe(true)
+      expect(button).toHaveClass('right-[22px]')
+      expect(button).toHaveClass('top-1')
+      expect(button).not.toHaveClass('right-[72px]')
+      expect(button).not.toHaveClass('top-10')
+
+      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+        key: '/',
+      })
+
+      const popup = await screen.findByRole('search')
+      expect(popup).toHaveClass('right-[22px]')
+      expect(popup).toHaveClass('top-1')
+      expect(popup).not.toHaveClass('right-[72px]')
+      expect(popup).not.toHaveClass('top-10')
+    })
+
+    test('popup closes when the selected file goes away', async (): Promise<void> => {
+      const { clearFiles } = renderPanel()
+      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+        key: '/',
+      })
+      await screen.findByRole('search')
+
+      clearFiles()
+
+      await waitFor(() => {
+        expect(screen.queryByRole('search')).not.toBeInTheDocument()
+      })
+    })
+
+    test('narrow panel: no search button and / does not open search', (): void => {
+      renderPanel({ tooNarrow: true })
+
+      expect(
+        screen.queryByRole('button', { name: /search in diff/i })
+      ).not.toBeInTheDocument()
+
+      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+        key: '/',
+      })
+
+      expect(screen.queryByRole('search')).not.toBeInTheDocument()
     })
   })
 })

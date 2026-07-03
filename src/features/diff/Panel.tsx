@@ -11,6 +11,7 @@ import {
 import type {
   AnnotationSide,
   DiffLineAnnotation,
+  FileDiffOptions,
   SelectedLineRange,
 } from '@pierre/diffs'
 import { Popover } from '@/components/Popover'
@@ -33,6 +34,7 @@ import {
   type UseFeedbackBatchReturn,
 } from './hooks/useFeedbackBatch'
 import { useKeyboard } from './hooks/useKeyboard'
+import { useDiffSearch } from './hooks/useDiffSearch'
 import {
   dispatchFeedbackBatch,
   type DispatchEntry,
@@ -53,8 +55,11 @@ import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
 import { useVisualSelection } from './hooks/useVisualSelection'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
+import { DiffSearchButton } from './components/DiffSearchButton'
+import { DiffSearchPopup } from './components/DiffSearchPopup'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
 import { ReviewCommentRow } from './components/ReviewCommentRow'
+import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
@@ -918,6 +923,47 @@ export const Panel = ({
     toggleDiffStyle,
   } = useToolbarState()
 
+  // In-file diff search (VIM-252). The identity key drives the hook's reset
+  // rules: new key = different file (active match resets), null = nothing
+  // searchable (popup closes; also covers the narrow placeholder). Everything
+  // merged into pierre options below must stay deep-equal-stable across
+  // renders or pierre force-rebuilds its DOM — hence the constant unsafeCSS
+  // and the ref-forwarded onPostRender with fixed identity (spec §4).
+  const diffSearchFileKey =
+    selectedFilePath === null || tooNarrow
+      ? null
+      : `${cwd}:${selectedFilePath}:${
+          selectedFileStaged ? 'staged' : 'unstaged'
+        }`
+
+  const diffSearch = useDiffSearch({
+    fileKey: diffSearchFileKey,
+    paintEnabled: true,
+    focusPanel: focusDiffRoot,
+  })
+
+  const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
+  diffSearchPostRenderRef.current = diffSearch.handlePostRender
+  const multiFileDiffOptionsRef = useRef(multiFileDiffOptions)
+  multiFileDiffOptionsRef.current = multiFileDiffOptions
+
+  const handleDiffPostRender = useCallback<
+    NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>
+  >((node, instance) => {
+    diffSearchPostRenderRef.current(node)
+    multiFileDiffOptionsRef.current.onPostRender?.(node, instance)
+  }, [])
+
+  const diffOptionsWithSearch = useMemo<FileDiffOptions<ReviewComment>>(
+    () => ({
+      ...multiFileDiffOptions,
+      unsafeCSS: DIFF_SEARCH_UNSAFE_CSS,
+      onPostRender: handleDiffPostRender,
+    }),
+    [multiFileDiffOptions, handleDiffPostRender]
+  )
+  const fileHeaderVisible = !multiFileDiffOptions.disableFileHeader
+
   const clearTransientSelection = useCallback((): void => {
     clearNavSelectionTimer()
     setNavSelection(null)
@@ -1579,6 +1625,11 @@ export const Panel = ({
     onNextFile: (): void => goToFile(1),
     onToggleFilesList: toggleFilesList,
     onToggleFilesListPinned: toggleFilesListPinned,
+    searchOpen: diffSearch.isOpen,
+    onOpenSearch: diffSearch.open,
+    onCloseSearch: diffSearch.close,
+    onNextMatch: (): void => diffSearch.step(1),
+    onPreviousMatch: (): void => diffSearch.step(-1),
     onPreviousHunk: (): void => moveReviewTargetHunk(-1),
     onNextHunk: (): void => moveReviewTargetHunk(1),
     onComment: openSelectedComment,
@@ -1857,6 +1908,29 @@ export const Panel = ({
           onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
         />
+        {diffSearchFileKey !== null ? (
+          <>
+            {!diffSearch.isOpen ? (
+              <DiffSearchButton
+                fileHeaderVisible={fileHeaderVisible}
+                onOpen={diffSearch.open}
+              />
+            ) : null}
+            <DiffSearchPopup
+              open={diffSearch.isOpen}
+              fileHeaderVisible={fileHeaderVisible}
+              query={diffSearch.query}
+              matchCount={diffSearch.matchCount}
+              activeOrdinal={diffSearch.activeOrdinal}
+              confirming={keyboardConfirmAction !== null}
+              inputRef={diffSearch.inputRef}
+              onQueryChange={diffSearch.setQuery}
+              onCommit={diffSearch.commit}
+              onStep={diffSearch.step}
+              onClose={diffSearch.close}
+            />
+          </>
+        ) : null}
         <div
           ref={setDiffPaneElement}
           data-testid="diff-right-pane"
@@ -1958,7 +2032,7 @@ export const Panel = ({
             pierreInputs={pierreInputs}
             tooNarrow={tooNarrow}
             renderKey={panelRenderKey}
-            options={multiFileDiffOptions}
+            options={diffOptionsWithSearch}
             selectedLines={selectedLines}
             lineAnnotations={lineAnnotations}
             annotationTarget={annotationTarget}
