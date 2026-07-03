@@ -14,9 +14,12 @@ import type {
 import type { FileDiff } from '../types'
 import type { DiffStyle } from './useToolbarState'
 import type { ReviewComment } from './useFeedbackBatch'
-
-const PIERRE_DIFF_CONTAINER_SELECTOR = 'diffs-container'
-const STICKY_HEADER_SCROLL_GAP_PX = 4
+import {
+  isLineRangeFullyVisible,
+  lineRangeFitsBelowHeader,
+  PIERRE_DIFF_CONTAINER_SELECTOR,
+  scrollElementIntoViewBelowHeader,
+} from '../scroll/stickyHeaderScroll'
 
 // A review target is the stable comment/navigation address behind a rendered
 // Pierre row. Keyboard and pointer input both resolve to this same shape.
@@ -362,73 +365,6 @@ const findReviewTargetLineElement = (
   return null
 }
 
-// Hunk jumps prefer showing the whole hunk when it can fit in the scroll body.
-const lineRangeFitsContainer = (
-  container: HTMLElement,
-  firstLine: HTMLElement,
-  lastLine: HTMLElement
-): boolean => {
-  if (container.clientHeight <= 0) {
-    return true
-  }
-
-  const firstRect = firstLine.getBoundingClientRect()
-  const lastRect = lastLine.getBoundingClientRect()
-  const top = Math.min(firstRect.top, lastRect.top)
-  const bottom = Math.max(firstRect.bottom, lastRect.bottom)
-
-  return bottom - top <= container.clientHeight
-}
-
-// Sticky Pierre headers can cover the first visible row after scrollIntoView,
-// so measure the active header before nudging rows clear of it.
-const stickyHeaderOffsetForDiffRoot = (root: HTMLElement): number => {
-  const headers = [
-    ...root.querySelectorAll<HTMLElement>('[data-diffs-header][data-sticky]'),
-  ]
-
-  for (const container of root.querySelectorAll<HTMLElement>(
-    PIERRE_DIFF_CONTAINER_SELECTOR
-  )) {
-    if (container.shadowRoot !== null) {
-      headers.push(
-        ...container.shadowRoot.querySelectorAll<HTMLElement>(
-          '[data-diffs-header][data-sticky]'
-        )
-      )
-    }
-  }
-
-  const height = Math.max(
-    0,
-    ...headers.map((header) => header.getBoundingClientRect().height)
-  )
-
-  return height === 0 ? 0 : height + STICKY_HEADER_SCROLL_GAP_PX
-}
-
-// Corrects scrollIntoView when the target row lands underneath the sticky
-// header instead of actually being visible.
-const revealLineBelowStickyHeader = (
-  container: HTMLElement,
-  line: HTMLElement,
-  reservePreviousRow: boolean
-): void => {
-  const stickyOffset = stickyHeaderOffsetForDiffRoot(container)
-  if (stickyOffset === 0) {
-    return
-  }
-
-  const containerTop = container.getBoundingClientRect().top
-  const lineRect = line.getBoundingClientRect()
-  const rowOffset = reservePreviousRow ? lineRect.height : 0
-  const overlap = containerTop + stickyOffset + rowOffset - lineRect.top
-
-  if (overlap > 0) {
-    container.scrollTop = Math.max(0, container.scrollTop - Math.ceil(overlap))
-  }
-}
-
 // Applies the small set of scroll rules the diff view needs: nearest for normal
 // moves, top/bottom at the file edges, then sticky-header correction.
 const scrollLineElementIntoView = (
@@ -439,38 +375,39 @@ const scrollLineElementIntoView = (
   delta: number
 ): void => {
   if (delta === 0) {
-    line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    revealLineBelowStickyHeader(container, line, false)
+    scrollElementIntoViewBelowHeader(container, line, { block: 'nearest' })
 
     return
   }
 
   if (targetCount === 1) {
-    line.scrollIntoView({
+    scrollElementIntoViewBelowHeader(container, line, {
       block: delta > 0 ? 'end' : 'start',
-      inline: 'nearest',
+      reservePreviousRow: delta < 0,
     })
-    revealLineBelowStickyHeader(container, line, delta < 0)
 
     return
   }
 
   if (targetIndex === 0) {
-    line.scrollIntoView({ block: 'start', inline: 'nearest' })
-    revealLineBelowStickyHeader(container, line, delta < 0)
+    scrollElementIntoViewBelowHeader(container, line, {
+      block: 'start',
+      reservePreviousRow: delta < 0,
+    })
 
     return
   }
 
   if (targetIndex === targetCount - 1) {
-    line.scrollIntoView({ block: 'end', inline: 'nearest' })
-    revealLineBelowStickyHeader(container, line, false)
+    scrollElementIntoViewBelowHeader(container, line, { block: 'end' })
 
     return
   }
 
-  line.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  revealLineBelowStickyHeader(container, line, delta < 0)
+  scrollElementIntoViewBelowHeader(container, line, {
+    block: 'nearest',
+    reservePreviousRow: delta < 0,
+  })
 }
 
 // After page scrolling, use the row closest to the viewport center as the new
@@ -651,11 +588,17 @@ export const useReviewTargetNavigation = ({
         return false
       }
 
-      firstLine.scrollIntoView({ block: 'start', inline: 'nearest' })
+      // Already on screen — the cursor moved via activateTarget, so skip the
+      // scroll and report handled to avoid an unnecessary jump (VIM-272).
+      if (isLineRangeFullyVisible(node, firstLine, lastLine)) {
+        return true
+      }
+
+      scrollElementIntoViewBelowHeader(node, firstLine, { block: 'start' })
 
       if (
         firstLine === lastLine ||
-        !lineRangeFitsContainer(node, firstLine, lastLine)
+        !lineRangeFitsBelowHeader(node, firstLine, lastLine)
       ) {
         return true
       }

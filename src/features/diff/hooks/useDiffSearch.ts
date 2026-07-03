@@ -15,6 +15,8 @@ export interface UseDiffSearchOptions {
   paintEnabled: boolean
   /** Returns focus to the diff panel root. */
   focusPanel: () => void
+  /** The diff scroll body, so match reveals clear the sticky file header. */
+  scrollContainerRef: RefObject<HTMLElement | null>
 }
 
 export interface UseDiffSearchResult {
@@ -46,6 +48,7 @@ export const useDiffSearch = ({
   fileKey,
   paintEnabled,
   focusPanel,
+  scrollContainerRef,
 }: UseDiffSearchOptions): UseDiffSearchResult => {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQueryState] = useState('')
@@ -209,9 +212,13 @@ export const useDiffSearch = ({
       const next = (activeIndex + direction + matches.length) % matches.length
       hasNavigatedRef.current = true
       setActive(next)
-      scrollToMatch(matches[next], collectedRef.current.elements)
+      scrollToMatch(
+        scrollContainerRef.current,
+        matches[next],
+        collectedRef.current.elements
+      )
     },
-    [activeIndex, matches, setActive]
+    [activeIndex, matches, scrollContainerRef, setActive]
   )
 
   const commit = useCallback(
@@ -221,16 +228,24 @@ export const useDiffSearch = ({
           const next =
             (activeIndex + direction + matches.length) % matches.length
           setActive(next)
-          scrollToMatch(matches[next], collectedRef.current.elements)
+          scrollToMatch(
+            scrollContainerRef.current,
+            matches[next],
+            collectedRef.current.elements
+          )
         } else {
           hasNavigatedRef.current = true
-          scrollToMatch(matches[activeIndex], collectedRef.current.elements)
+          scrollToMatch(
+            scrollContainerRef.current,
+            matches[activeIndex],
+            collectedRef.current.elements
+          )
         }
       }
 
       focusPanel()
     },
-    [activeIndex, focusPanel, matches, setActive]
+    [activeIndex, focusPanel, matches, scrollContainerRef, setActive]
   )
 
   const previousKeyRef = useRef(fileKey)

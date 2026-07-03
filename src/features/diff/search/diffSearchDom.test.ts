@@ -251,20 +251,36 @@ describe('paintMatches / clearPaint (stubbed registry)', () => {
 })
 
 describe('scrollToMatch', () => {
-  test('scrolls the matched line element into view', () => {
+  test('routes through the header-aware primitive when a container is present', () => {
+    const container = document.createElement('div')
     const el = document.createElement('div')
     const scrollSpy = vi.fn()
     el.scrollIntoView = scrollSpy
     const elements = new Map([['additions:0,0', el]])
 
     scrollToMatch(
-      {
-        key: 'additions:0,0',
-        side: 'additions',
-        order: 0,
-        start: 0,
-        end: 1,
-      },
+      container,
+      { key: 'additions:0,0', side: 'additions', order: 0, start: 0, end: 1 },
+      elements
+    )
+
+    // The shared primitive always passes inline:'nearest'; the old header-blind
+    // path passed only { block: 'nearest' }.
+    expect(scrollSpy).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  })
+
+  test('falls back to a plain scroll when no container is available', () => {
+    const el = document.createElement('div')
+    const scrollSpy = vi.fn()
+    el.scrollIntoView = scrollSpy
+    const elements = new Map([['additions:0,0', el]])
+
+    scrollToMatch(
+      null,
+      { key: 'additions:0,0', side: 'additions', order: 0, start: 0, end: 1 },
       elements
     )
 

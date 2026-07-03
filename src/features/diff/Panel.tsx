@@ -1023,6 +1023,7 @@ export const Panel = ({
     fileKey: diffSearchFileKey,
     paintEnabled: true,
     focusPanel: focusDiffRoot,
+    scrollContainerRef: diffScrollBodyRef,
   })
 
   const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)

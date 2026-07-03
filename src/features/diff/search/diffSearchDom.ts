@@ -3,6 +3,7 @@ import type {
   DiffSearchMatch,
   DiffSearchSide,
 } from './matchDiffLines'
+import { scrollElementIntoViewBelowHeader } from '../scroll/stickyHeaderScroll'
 
 export const DIFF_SEARCH_HIGHLIGHT = 'vf-diff-search'
 
@@ -192,8 +193,22 @@ export const clearPaint = (): void => {
 }
 
 export const scrollToMatch = (
+  container: HTMLElement | null,
   match: DiffSearchMatch,
   elements: Map<string, HTMLElement>
 ): void => {
-  elements.get(match.key)?.scrollIntoView({ block: 'nearest' })
+  const element = elements.get(match.key)
+  if (element === undefined) {
+    return
+  }
+
+  // No scroll container available (before pierre's first render): fall back to a
+  // plain scroll so the match is at least reachable, without header correction.
+  if (container === null) {
+    element.scrollIntoView({ block: 'nearest' })
+
+    return
+  }
+
+  scrollElementIntoViewBelowHeader(container, element, { block: 'nearest' })
 }

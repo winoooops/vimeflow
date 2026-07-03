@@ -56,9 +56,16 @@ const render = (
 ): DiffSearchHookRender => {
   const focusPanel = vi.fn()
 
+  const scrollContainerRef = { current: document.createElement('div') }
+
   const hook = renderHook(
     ({ key, paint }) =>
-      useDiffSearch({ fileKey: key, paintEnabled: paint, focusPanel }),
+      useDiffSearch({
+        fileKey: key,
+        paintEnabled: paint,
+        focusPanel,
+        scrollContainerRef,
+      }),
     { initialProps: { key: fileKey, paint: paintEnabled } }
   )
   // Simulate pierre's first onPostRender so lines are collected.
