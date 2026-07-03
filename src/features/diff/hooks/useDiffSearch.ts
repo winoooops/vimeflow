@@ -101,6 +101,11 @@ export const useDiffSearch = ({
     setActive(0)
   }, [setActive])
 
+  const resetVisibleMatches = useCallback((): void => {
+    setMatches([])
+    setActive(0)
+  }, [setActive])
+
   const recompute = useCallback(
     (nextQuery: string, reconcile: (count: number) => number): void => {
       const nextMatches = matchDiffLines(collectedRef.current.lines, nextQuery)
@@ -164,13 +169,13 @@ export const useDiffSearch = ({
     setIsOpen(false)
     queryRef.current = ''
     setQueryState('')
-    resetCollectedMatches()
+    resetVisibleMatches()
     hasNavigatedRef.current = false
     clearPaint()
     if (wasOpen) {
       focusPanel()
     }
-  }, [cancelPendingFrame, focusPanel, resetCollectedMatches])
+  }, [cancelPendingFrame, focusPanel, resetVisibleMatches])
 
   const open = useCallback((): void => {
     if (fileKey === null) {

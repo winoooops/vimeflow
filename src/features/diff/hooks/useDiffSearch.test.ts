@@ -170,6 +170,20 @@ describe('useDiffSearch', () => {
     expect(focusPanel).toHaveBeenCalledOnce()
   })
 
+  test('close preserves collected lines for same-file reopen', () => {
+    const { result } = render()
+    act(() => result.current.open())
+    act(() => result.current.setQuery('search'))
+
+    act(() => result.current.close())
+    act(() => result.current.open())
+    act(() => result.current.setQuery('search'))
+
+    expect(result.current.matchCount).toBe(2)
+    expect(result.current.activeOrdinal).toBe(1)
+    expect(dom.collectLines).toHaveBeenCalledTimes(1)
+  })
+
   test('unmount clears paint', () => {
     const { result, unmount } = render()
     act(() => result.current.open())
