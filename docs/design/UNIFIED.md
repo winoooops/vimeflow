@@ -281,6 +281,14 @@ Rules:
 - `bare` is reserved for rich interactive hover **cards** that define a complete surface of their own (canonical consumer: the activity-details card via `ACTIVITY_CARD_SURFACE`). Never use it for plain labels.
 - Icon-only triggers keep their `aria-label` — the tooltip is hover/focus-only and is not an accessible-name substitute.
 - Features must not hand-roll floating surfaces: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` instead.
+
+> **In-pane tool layers (exception).** Absolutely-positioned surfaces that live
+> _inside_ a feature panel's subtree — the diff changed-files overlay (#645) and
+> the diff search popup (VIM-252) — are not floating surfaces in this contract's
+> sense: they are modeless, non-portaled, anchored to the panel (not a trigger),
+> and must stay inside the panel for keyboard-scope containment. They reuse the
+> glass recipe tokens directly and never import `@floating-ui`.
+
 - A trigger that is `disabled` swallows pointer events in Chromium — wrap it in a `<span className="inline-flex">` and let the span be the Tooltip child.
 
 ### 5.7 `Dropdown`
