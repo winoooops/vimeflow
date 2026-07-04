@@ -28,6 +28,7 @@ import {
   FILE_COMMENT_LINE_NUMBER,
   isFileLevelReviewAnnotation,
   isLineLevelReviewAnnotation,
+  isPendingReviewAnnotation,
   useFeedbackBatch,
   parseBatchKey,
   type FeedbackDraftStore,
@@ -736,6 +737,13 @@ export const Panel = ({
     const entries: DispatchEntry[] = []
 
     for (const [key, annotations] of feedback.batch) {
+      // Only dispatch comments that have not been sent yet; already-dispatched
+      // thread anchors stay in the hunk but are never re-sent (VIM-282).
+      const pending = annotations.filter(isPendingReviewAnnotation)
+      if (pending.length === 0) {
+        continue
+      }
+
       const { cwd: entryCwd, filePath: relPath, staged } = parseBatchKey(key)
 
       const entryRepoRoot = repoRootRef.repoRootForCwd?.(entryCwd)
@@ -746,7 +754,7 @@ export const Panel = ({
       const filePath = resolvedRepoRoot
         ? `${resolvedRepoRoot}/${relPath}`
         : relPath
-      entries.push({ filePath, staged, annotations })
+      entries.push({ filePath, staged, annotations: pending })
     }
 
     return entries
@@ -770,7 +778,10 @@ export const Panel = ({
               feedbackDispatch.writePty
             )
           }
-          feedback.clearBatch()
+          // Keep the sent comments in the hunk as thread anchors instead of
+          // wiping them (VIM-282); they are stamped dispatched so they are not
+          // re-sent, counted as pending, or removed by discard.
+          feedback.markDispatched(Date.now())
           setFinishOpen(false)
           const focusTerminal = feedbackDispatch?.focusTerminal
           if (focusTerminal !== undefined) {
@@ -797,7 +808,7 @@ export const Panel = ({
       return
     }
 
-    const count = feedback.totalAnnotations()
+    const count = feedback.pendingAnnotations()
     setFinishOpen(false)
 
     void (async (): Promise<void> => {
@@ -1817,7 +1828,7 @@ export const Panel = ({
     onUpdateFileComment: updateSelectedFileComment,
     onDeleteComment: deleteSelectedComment,
     onFinishReview: (): void => {
-      if (feedback.totalAnnotations() > 0) {
+      if (feedback.pendingAnnotations() > 0) {
         setFinishOpen(true)
       }
     },
@@ -1909,9 +1920,19 @@ export const Panel = ({
     ]
   )
 
-  const feedbackCount = feedback.totalAnnotations()
+  const feedbackCount = feedback.pendingAnnotations()
   const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
   const pendingFeedbackCount = feedbackCount + feedbackDraftCount
+
+  // Files with at least one pending comment — the "across N files" the Finish
+  // popover would actually send (VIM-282). Dispatched-only files are excluded.
+  const pendingFileCount = useMemo(
+    (): number =>
+      [...feedback.batch.values()].filter((list) =>
+        list.some(isPendingReviewAnnotation)
+      ).length,
+    [feedback.batch]
+  )
 
   const onFinishFeedback =
     feedbackCount > 0 ? (): void => setFinishOpen(true) : undefined
@@ -1923,7 +1944,7 @@ export const Panel = ({
       diffCwd: cwd,
     }),
     commentCount: feedbackCount,
-    fileCount: feedback.batch.size,
+    fileCount: pendingFileCount,
     onCancel: (): void => setFinishOpen(false),
     onSend: handleSendFeedback,
     onCopy: handleCopyFeedback,
@@ -1979,7 +2000,7 @@ export const Panel = ({
             currentFileIndex: -1,
             totalFiles: 0,
             feedbackCount: pendingFeedbackCount,
-            onDiscardFeedback: feedback.clearBatch,
+            onDiscardFeedback: feedback.clearPending,
             onFinishFeedback,
           }}
           finishFeedback={finishFeedback}
@@ -2047,7 +2068,7 @@ export const Panel = ({
           staging,
           selectedFileName: selectedFilePath ?? undefined,
           feedbackCount: pendingFeedbackCount,
-          onDiscardFeedback: feedback.clearBatch,
+          onDiscardFeedback: feedback.clearPending,
           onFinishFeedback,
           onRefreshActiveFile:
             latestDiffStatus === 'ready' ? acceptLatestDiff : undefined,

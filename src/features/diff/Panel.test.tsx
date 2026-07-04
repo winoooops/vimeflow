@@ -335,6 +335,7 @@ describe('Panel', () => {
   test('keeps feedback actions available in the empty state', async (): Promise<void> => {
     const user = userEvent.setup()
     const clearBatch = vi.fn()
+    const clearPending = vi.fn()
 
     const annotation: DiffLineAnnotation<ReviewComment> = {
       side: 'additions',
@@ -358,7 +359,10 @@ describe('Panel', () => {
       updateAnnotation: vi.fn(),
       removeAnnotation: vi.fn(),
       clearBatch,
+      clearPending,
+      markDispatched: vi.fn(),
       totalAnnotations: () => 1,
+      pendingAnnotations: () => 1,
     }
 
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
@@ -389,7 +393,7 @@ describe('Panel', () => {
       screen.getByRole('button', { name: /discard all feedback/i })
     )
 
-    expect(clearBatch).toHaveBeenCalledOnce()
+    expect(clearPending).toHaveBeenCalledOnce()
 
     await user.click(
       screen.getByRole('button', { name: /finish feedback \(1\)/i })
@@ -434,7 +438,10 @@ describe('Panel', () => {
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
         totalAnnotations: () => 1,
+        pendingAnnotations: () => 1,
       }
 
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
@@ -486,6 +493,7 @@ describe('Panel', () => {
   test('keeps draft-only feedback discard available in the empty state', async (): Promise<void> => {
     const user = userEvent.setup()
     const clearBatch = vi.fn()
+    const clearPending = vi.fn()
     const setDraft = vi.fn()
 
     const feedbackBatch: UseFeedbackBatchReturn = {
@@ -495,7 +503,10 @@ describe('Panel', () => {
       updateAnnotation: vi.fn(),
       removeAnnotation: vi.fn(),
       clearBatch,
+      clearPending,
+      markDispatched: vi.fn(),
       totalAnnotations: () => 0,
+      pendingAnnotations: () => 0,
     }
 
     const feedbackDraft: FeedbackDraftStore = {
@@ -553,7 +564,7 @@ describe('Panel', () => {
       screen.getByRole('button', { name: /discard all feedback/i })
     )
 
-    expect(clearBatch).toHaveBeenCalledOnce()
+    expect(clearPending).toHaveBeenCalledOnce()
   })
 
   test('renders full-width diff with a hover cue when changes exist', (): void => {
@@ -3561,7 +3572,10 @@ describe('Panel', () => {
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
         totalAnnotations: () => 0,
+        pendingAnnotations: () => 0,
       }
 
       render(
@@ -4106,7 +4120,10 @@ describe('Panel', () => {
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
         totalAnnotations: () => 0,
+        pendingAnnotations: () => 0,
       }
 
       render(
@@ -4215,7 +4232,10 @@ describe('Panel', () => {
         updateAnnotation,
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
         totalAnnotations: () => 1,
+        pendingAnnotations: () => 1,
       }
 
       render(
@@ -4291,7 +4311,10 @@ describe('Panel', () => {
         updateAnnotation,
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
         totalAnnotations: () => 1,
+        pendingAnnotations: () => 1,
       }
 
       render(
@@ -5608,7 +5631,7 @@ describe('Panel', () => {
       expect(screen.queryByText('Great change!')).not.toBeInTheDocument()
     })
 
-    test('Finish with one running candidate dispatches via writePty and clears the batch', async (): Promise<void> => {
+    test('Finish with one running candidate dispatches via writePty and keeps the sent comment in the hunk', async (): Promise<void> => {
       const user = userEvent.setup()
       const writePty = vi.fn().mockResolvedValue(undefined)
       const focusTerminal = vi.fn()
@@ -5684,6 +5707,10 @@ describe('Panel', () => {
           screen.queryByRole('button', { name: /finish feedback/i })
         ).not.toBeInTheDocument()
       )
+
+      // VIM-282: the dispatched comment stays in the hunk as a thread anchor
+      // instead of being wiped on send.
+      expect(screen.getByText('Great change!')).toBeInTheDocument()
     })
 
     test('preserves the comment draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {
@@ -5699,7 +5726,10 @@ describe('Panel', () => {
           updateAnnotation: vi.fn(),
           removeAnnotation: vi.fn(),
           clearBatch: vi.fn(),
+          clearPending: vi.fn(),
+          markDispatched: vi.fn(),
           totalAnnotations: () => 50,
+          pendingAnnotations: () => 50,
         })
 
       render(

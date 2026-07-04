@@ -19,6 +19,14 @@ export interface ReviewComment {
   text: string
   author: 'self'
   createdAt: number
+  /**
+   * When set, the comment has been dispatched to an agent and now stays in the
+   * hunk as a thread anchor (VIM-282) instead of being wiped on send.
+   * Comments with no dispatchedAt are the *pending* review — what Finish/Send
+   * and the discard action act on. A timestamp, not a boolean, so the thread
+   * model can order sends.
+   */
+  dispatchedAt?: number
   target?:
     | { scope: 'file' }
     | {
@@ -89,10 +97,32 @@ export const isLineLevelReviewAnnotation = (
   annotation: DiffLineAnnotation<ReviewComment>
 ): boolean => !isFileLevelReviewAnnotation(annotation)
 
+/**
+ * A comment is *pending* until it is dispatched to an agent. Pending comments
+ * are the review the user is still assembling; dispatched ones stay in the hunk
+ * as thread anchors but are never re-sent, counted as unfinished, or discarded.
+ */
+export const isPendingReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => annotation.metadata.dispatchedAt === undefined
+
 const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
   let count = 0
   for (const list of batch.values()) {
     count += list.length
+  }
+
+  return count
+}
+
+const countPendingInBatch = (batch: FeedbackBatch): number => {
+  let count = 0
+  for (const list of batch.values()) {
+    for (const annotation of list) {
+      if (isPendingReviewAnnotation(annotation)) {
+        count += 1
+      }
+    }
   }
 
   return count
@@ -209,7 +239,20 @@ export interface UseFeedbackBatchReturn {
     id: string
   ) => void
   clearBatch: () => void
+  /**
+   * Mark every pending comment in the owner as dispatched (keeping them in the
+   * hunk as thread anchors) and clear the open draft. Replaces clearBatch on the
+   * send path so submitted comments persist instead of being wiped.
+   */
+  markDispatched: (dispatchedAt: number) => void
+  /**
+   * Drop the pending comments and the open draft, leaving already dispatched
+   * thread anchors intact. The discard action.
+   */
+  clearPending: () => void
   totalAnnotations: () => number
+  /** Count of pending comments (not yet dispatched) — what Finish/Send acts on. */
+  pendingAnnotations: () => number
 }
 
 export interface FeedbackBatchSummary {
@@ -283,6 +326,11 @@ export const useFeedbackBatchStore = (
 
   const totalAnnotations = useCallback(
     (): number => countAnnotationsInBatch(batch),
+    [batch]
+  )
+
+  const pendingAnnotations = useCallback(
+    (): number => countPendingInBatch(batch),
     [batch]
   )
 
@@ -452,6 +500,113 @@ export const useFeedbackBatchStore = (
     })
   }, [ownerKey])
 
+  const clearOwnerDraft = useCallback((): void => {
+    setDraftsByOwner((prev) => {
+      if (!prev.has(ownerKey)) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      next.delete(ownerKey)
+
+      return next
+    })
+  }, [ownerKey])
+
+  // Send path (VIM-282): stamp every pending comment as dispatched and keep it
+  // in the hunk as a thread anchor, then close the draft. Unchanged file lists
+  // keep their identity so Pierre does not re-tokenize files with no pending
+  // comment.
+  const markDispatched = useCallback(
+    (dispatchedAt: number): void => {
+      setBatchesByOwner((prev) => {
+        const currentBatch = prev.get(ownerKey)
+        if (currentBatch === undefined || currentBatch.size === 0) {
+          return prev
+        }
+
+        let changed = false
+        const nextBatch: FeedbackBatch = new Map()
+        for (const [key, list] of currentBatch) {
+          if (!list.some(isPendingReviewAnnotation)) {
+            nextBatch.set(key, list)
+
+            continue
+          }
+
+          changed = true
+          nextBatch.set(
+            key,
+            list.map((annotation) =>
+              isPendingReviewAnnotation(annotation)
+                ? {
+                    ...annotation,
+                    metadata: { ...annotation.metadata, dispatchedAt },
+                  }
+                : annotation
+            )
+          )
+        }
+
+        if (!changed) {
+          return prev
+        }
+
+        const next = new Map(prev).set(ownerKey, nextBatch)
+        optimisticBatchesRef.current = next
+
+        return next
+      })
+
+      clearOwnerDraft()
+    },
+    [clearOwnerDraft, ownerKey]
+  )
+
+  // Discard path (VIM-282): drop pending comments and the draft, but leave
+  // dispatched thread anchors in place.
+  const clearPending = useCallback((): void => {
+    setBatchesByOwner((prev) => {
+      const currentBatch = prev.get(ownerKey)
+      if (currentBatch === undefined || currentBatch.size === 0) {
+        return prev
+      }
+
+      let changed = false
+      const nextBatch: FeedbackBatch = new Map()
+      for (const [key, list] of currentBatch) {
+        const kept = list.filter(
+          (annotation) => !isPendingReviewAnnotation(annotation)
+        )
+        if (kept.length === list.length) {
+          nextBatch.set(key, list)
+
+          continue
+        }
+        changed = true
+        if (kept.length > 0) {
+          nextBatch.set(key, kept)
+        }
+      }
+
+      if (!changed) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      if (nextBatch.size === 0) {
+        next.delete(ownerKey)
+      } else {
+        next.set(ownerKey, nextBatch)
+      }
+      optimisticBatchesRef.current = next
+
+      return next
+    })
+
+    clearOwnerDraft()
+  }, [clearOwnerDraft, ownerKey])
+
   const setDraft = useCallback(
     (nextDraft: FeedbackDraft | null): void => {
       setDraftsByOwner((prev) => {
@@ -481,7 +636,10 @@ export const useFeedbackBatchStore = (
       updateAnnotation,
       removeAnnotation,
       clearBatch,
+      markDispatched,
+      clearPending,
       totalAnnotations,
+      pendingAnnotations,
     }),
     [
       batch,
@@ -490,7 +648,10 @@ export const useFeedbackBatchStore = (
       updateAnnotation,
       removeAnnotation,
       clearBatch,
+      markDispatched,
+      clearPending,
       totalAnnotations,
+      pendingAnnotations,
     ]
   )
 
@@ -543,7 +704,14 @@ export const useFeedbackBatchStore = (
       .map((entryOwnerKey) => {
         const entryBatch = batchesByOwner.get(entryOwnerKey) ?? EMPTY_BATCH
         const entryDraft = draftsByOwner.get(entryOwnerKey) ?? null
-        const fileKeys = new Set(entryBatch.keys())
+
+        // Only files with a pending comment count as unfinished — dispatched
+        // thread anchors are done (VIM-282).
+        const fileKeys = new Set(
+          [...entryBatch.entries()]
+            .filter(([, list]) => list.some(isPendingReviewAnnotation))
+            .map(([entryKey]) => entryKey)
+        )
 
         const draftCount =
           entryDraft !== null && entryDraft.text.trim().length > 0 ? 1 : 0
@@ -557,7 +725,7 @@ export const useFeedbackBatchStore = (
         return {
           ownerKey: entryOwnerKey,
           fileCount: fileKeys.size,
-          commentCount: countAnnotationsInBatch(entryBatch),
+          commentCount: countPendingInBatch(entryBatch),
           draftCount,
         }
       })
