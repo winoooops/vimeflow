@@ -72,12 +72,16 @@ export interface TerminalZoneProps {
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
+  /** Sync a pane's burner terminal back to its host pane cwd. */
+  onSyncBurner?: (target: BurnerTarget) => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys whose burner secondary terminal is currently visible. */
   openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
+  outOfSyncBurnerPaneKeys?: ReadonlySet<string>
   layoutRegistry?: PaneLayoutRegistry
 }
 
@@ -105,9 +109,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
+      onSyncBurner = undefined,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
+      outOfSyncBurnerPaneKeys = undefined,
       layoutRegistry = undefined,
     }: TerminalZoneProps,
     ref
@@ -212,10 +218,12 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onClosePane={removePane}
                     onPanePlacementsChange={setSessionPlacements}
                     onBurner={onBurner}
+                    onSyncBurner={onSyncBurner}
                     layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     openBurnerPaneKeys={openBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
+                    outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
                     deferTerminalFit={deferTerminalFit}
                   />
                 </div>

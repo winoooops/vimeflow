@@ -1046,7 +1046,35 @@ test('the align callback writes `cd <live host cwd>` + Enter to the burner pty',
   // prefix (Ctrl-E, Ctrl-U) clears any half-typed input so the cd runs clean.
   expect(service.write).toHaveBeenCalledWith({
     sessionId: 'burner-pty',
-    data: "\x05\x15cd '/repo/projects/simple-tui'\r",
+    data: "\x05\x15cd '/repo/projects/simple-tui' && printf '\\033]7;%s\\007' \"$PWD\"\r",
+  })
+})
+
+test('syncToPaneCwd writes the live host cwd for a target pane', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/current']])
+  const target: BurnerTarget = { sessionId: 's1', paneId: 'p0', cwd: '/repo' }
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle(target)
+  })
+
+  act(() => {
+    result.current.syncToPaneCwd(target)
+  })
+
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/current' && printf '\\033]7;%s\\007' \"$PWD\"\r",
   })
 })
 
@@ -1078,7 +1106,7 @@ test('the align callback prefers the agent cwd over the live host cwd', async ()
 
   expect(service.write).toHaveBeenCalledWith({
     sessionId: 'burner-pty',
-    data: "\x05\x15cd '/repo/.claude/worktrees/agent-task'\r",
+    data: "\x05\x15cd '/repo/.claude/worktrees/agent-task' && printf '\\033]7;%s\\007' \"$PWD\"\r",
   })
 })
 
@@ -1107,7 +1135,7 @@ test('the align callback falls back to the live host cwd when no agent cwd is av
 
   expect(service.write).toHaveBeenCalledWith({
     sessionId: 'burner-pty',
-    data: "\x05\x15cd '/repo/current-shell-pwd'\r",
+    data: "\x05\x15cd '/repo/current-shell-pwd' && printf '\\033]7;%s\\007' \"$PWD\"\r",
   })
 })
 
@@ -1140,7 +1168,7 @@ test('the align callback resolves the latest host cwd at click-time, not a stale
 
   expect(service.write).toHaveBeenCalledWith({
     sessionId: 'burner-pty',
-    data: "\x05\x15cd '/repo/second'\r",
+    data: "\x05\x15cd '/repo/second' && printf '\\033]7;%s\\007' \"$PWD\"\r",
   })
 })
 
@@ -1168,7 +1196,7 @@ test('quotes the cwd so spaces and apostrophes survive as one cd argument', asyn
   // POSIX single-quote escaping: a literal ' becomes '\'' , whole path wrapped.
   expect(service.write).toHaveBeenCalledWith({
     sessionId: 'burner-pty',
-    data: "\x05\x15cd '/repo/my proj'\\''s dir'\r",
+    data: "\x05\x15cd '/repo/my proj'\\''s dir' && printf '\\033]7;%s\\007' \"$PWD\"\r",
   })
 })
 
@@ -1382,12 +1410,14 @@ test('marks the align button out-of-sync when the burner cwd differs from the ho
     firstPopup(result.current.renderNode).props.onCwdChange?.('/repo/sub')
   })
   expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(true)
+  expect(result.current.outOfSyncByPane.get('s1:p0')).toBe(true)
 
   // Synced back (the cd lands, or the user cd's back) → highlight clears.
   act(() => {
     firstPopup(result.current.renderNode).props.onCwdChange?.('/repo')
   })
   expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
+  expect(result.current.outOfSyncByPane.get('s1:p0')).toBe(false)
 })
 
 test('the host pane moving makes the burner out-of-sync', async () => {

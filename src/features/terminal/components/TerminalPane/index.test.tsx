@@ -177,6 +177,37 @@ describe('TerminalPane index', () => {
     })
   })
 
+  test('the burner sync button activates its pane and syncs that pane burner', async () => {
+    const onBurner = vi.fn()
+    const onSyncBurner = vi.fn()
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        onBurner={onBurner}
+        onSyncBurner={onSyncBurner}
+        onRequestActive={onRequestActive}
+        openBurnerPaneKeys={new Set(['s1:p0'])}
+        outOfSyncBurnerPaneKeys={new Set(['s1:p0'])}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /sync burner terminal/i })
+    )
+
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onSyncBurner).toHaveBeenCalledWith({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'pty-s1',
+      cwd: '/home/user/repo',
+    })
+    expect(onBurner).not.toHaveBeenCalled()
+  })
+
   test('clicking an inactive terminal body requests pane activation', async () => {
     const onRequestActive = vi.fn()
     const user = userEvent.setup()

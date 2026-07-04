@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { HeaderActions } from './HeaderActions'
@@ -177,6 +177,153 @@ describe('HeaderActions', () => {
     })
     expect(button).toHaveAttribute('aria-pressed', 'true')
     expect(button.className).toContain('aria-pressed:bg-primary/10')
+  })
+
+  test('renders burner sync only when the open burner cwd has drifted', () => {
+    const onSyncBurner = vi.fn()
+
+    const { rerender } = render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOutOfSync
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /sync burner terminal/i })
+    ).toBeNull()
+
+    rerender(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /sync burner terminal/i })
+    ).toBeNull()
+
+    rerender(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+        burnerOutOfSync
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /sync burner terminal/i })
+    ).toBeInTheDocument()
+
+    expect(screen.getByTestId('burner-control-pill').className).toContain(
+      'h-[22px]'
+    )
+  })
+
+  test('burner sync sits before the burner toggle and stops click propagation', () => {
+    const onSyncBurner = vi.fn()
+    const onParentClick = vi.fn()
+
+    render(
+      <div onClick={onParentClick}>
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onSyncBurner={onSyncBurner}
+          burnerOpen
+          burnerOutOfSync
+        />
+      </div>
+    )
+
+    const sync = screen.getByRole('button', { name: /sync burner terminal/i })
+    const burner = screen.getByRole('button', { name: /hide burner terminal/i })
+
+    expect(
+      sync.compareDocumentPosition(burner) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    fireEvent.click(sync)
+
+    expect(onSyncBurner).toHaveBeenCalledTimes(1)
+    expect(onParentClick).not.toHaveBeenCalled()
+    expect(sync.className).toContain('animate-spin')
+  })
+
+  test('burner sync shows failure if the cwd remains out of sync', () => {
+    vi.useFakeTimers()
+    const onSyncBurner = vi.fn()
+
+    try {
+      render(
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onSyncBurner={onSyncBurner}
+          burnerOpen
+          burnerOutOfSync
+        />
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /sync burner terminal/i })
+      )
+
+      act(() => {
+        vi.advanceTimersByTime(1200)
+      })
+
+      expect(onSyncBurner).toHaveBeenCalledTimes(1)
+      expect(
+        screen.getByRole('button', {
+          name: /sync failed; check burner terminal/i,
+        })
+      ).toHaveTextContent('sync_problem')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('burner sync shows a blocked failure while the burner shell has a foreground command', () => {
+    const onSyncBurner = vi.fn()
+
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+        burnerOutOfSync
+        burnerActive
+      />
+    )
+
+    const sync = screen.getByRole('button', { name: /sync burner terminal/i })
+
+    expect(sync).not.toBeDisabled()
+    expect(sync).toHaveTextContent('sync')
+
+    fireEvent.click(sync)
+
+    expect(onSyncBurner).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('button', {
+        name: /stop the running command, then sync pwd/i,
+      })
+    ).toHaveTextContent('sync_problem')
   })
 
   test('renders visible pane shortcut hint when provided', () => {

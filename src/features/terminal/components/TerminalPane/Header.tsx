@@ -21,9 +21,11 @@ export interface HeaderProps {
   onToggleCollapse: () => void
   onClose?: () => void
   onBurner?: () => void
+  onSyncBurner?: () => void
   burnerActive?: boolean
   burnerOpen?: boolean
   burnerShellExists?: boolean
+  burnerOutOfSync?: boolean
   /**
    * VIM-167: when true, the header acts as the pane's drag handle for the
    * drag-into-slot interaction. The terminal body stays non-draggable so xterm
@@ -48,9 +50,11 @@ export const Header = ({
   onToggleCollapse,
   onClose = undefined,
   onBurner = undefined,
+  onSyncBurner = undefined,
   burnerActive = false,
   burnerOpen = false,
   burnerShellExists = false,
+  burnerOutOfSync = false,
   draggable = false,
   onHeaderDragStart = undefined,
   onHeaderDragEnd = undefined,
@@ -125,9 +129,11 @@ export const Header = ({
           hideCollapseToggle={hideCollapseToggle || autoCollapsed}
           onClose={onClose}
           onBurner={onBurner}
+          onSyncBurner={onSyncBurner}
           burnerActive={burnerActive}
           burnerOpen={burnerOpen}
           burnerShellExists={burnerShellExists}
+          burnerOutOfSync={burnerOutOfSync}
         />
       </div>
     </div>

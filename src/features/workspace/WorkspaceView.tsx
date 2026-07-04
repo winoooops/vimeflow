@@ -1278,8 +1278,10 @@ const WorkspaceViewContent = (): ReactElement => {
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
+    syncToPaneCwd: syncBurnerToPaneCwd,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    outOfSyncByPane: outOfSyncBurnerByPane,
     hasVisibleBurner,
     visibleBurnerPaneKey,
   } = useBurnerTerminals({
@@ -1334,6 +1336,16 @@ const WorkspaceViewContent = (): ReactElement => {
         ? new Set<string>()
         : new Set([visibleBurnerPaneKey]),
     [visibleBurnerPaneKey]
+  )
+
+  const outOfSyncBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...outOfSyncBurnerByPane]
+          .filter(([, outOfSync]) => outOfSync)
+          .map(([key]) => key)
+      ),
+    [outOfSyncBurnerByPane]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -2876,9 +2888,11 @@ const WorkspaceViewContent = (): ReactElement => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
               onBurner={(target): void => void toggleBurner(target)}
+              onSyncBurner={syncBurnerToPaneCwd}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
               openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
+              outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockPanel : null}
