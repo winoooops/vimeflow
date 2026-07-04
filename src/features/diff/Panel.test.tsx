@@ -99,12 +99,7 @@ vi.mock('@pierre/diffs/react', () => ({
     lineAnnotations?: {
       lineNumber: number
       side: string
-      metadata: {
-        id: string
-        text: string
-        author: string
-        createdAt: number
-      }
+      metadata: ReviewComment
     }[]
     renderGutterUtility?: (
       getHovered: () => { lineNumber: number; side: string }
@@ -112,12 +107,7 @@ vi.mock('@pierre/diffs/react', () => ({
     renderAnnotation?: (a: {
       lineNumber: number
       side: string
-      metadata: {
-        id: string
-        text: string
-        author: string
-        createdAt: number
-      }
+      metadata: ReviewComment
     }) => ReactElement
   }): ReactElement => {
     multiFileDiffOptionsSeen.push(options)
@@ -3728,6 +3718,58 @@ describe('Panel', () => {
       ).not.toBeInTheDocument()
     })
 
+    test('keyboard Shift+U leaves dispatched file-level comments read-only', (): void => {
+      const updateAnnotation = vi.fn()
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map(),
+        annotationsForFile: () => [
+          {
+            lineNumber: 0,
+            side: 'additions',
+            metadata: {
+              id: 'comment-1',
+              text: 'Sent file comment',
+              author: 'self',
+              createdAt: 1000,
+              dispatchedAt: 2000,
+              target: { scope: 'file' },
+            },
+          },
+        ],
+        addAnnotation: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 1,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'U',
+        shiftKey: true,
+      })
+
+      expect(
+        screen.queryByRole('dialog', { name: 'Comment on file src/foo.ts' })
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('Sent file comment')).toBeInTheDocument()
+      expect(updateAnnotation).not.toHaveBeenCalled()
+    })
+
     test('hides a file-level draft when another file is selected', async (): Promise<void> => {
       const user = userEvent.setup()
 
@@ -4446,6 +4488,58 @@ describe('Panel', () => {
       fireEvent.keyDown(diff, { key: 'x' })
 
       expect(screen.queryByText('Updated comment')).not.toBeInTheDocument()
+    })
+
+    test('u and x leave a dispatched keyboard-selected line comment read-only', (): void => {
+      const updateAnnotation = vi.fn()
+      const removeAnnotation = vi.fn()
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map(),
+        annotationsForFile: () => [
+          {
+            lineNumber: 1,
+            side: 'additions',
+            metadata: {
+              id: 'comment-1',
+              text: 'Sent comment',
+              author: 'self',
+              createdAt: 1000,
+              dispatchedAt: 2000,
+            },
+          },
+        ],
+        addAnnotation: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation,
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 1,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      fireEvent.keyDown(diff, { key: 'u' })
+      fireEvent.keyDown(diff, { key: 'x' })
+
+      expect(
+        screen.queryByRole('dialog', { name: /Comment on line R1/ })
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('Sent comment')).toBeInTheDocument()
+      expect(updateAnnotation).not.toHaveBeenCalled()
+      expect(removeAnnotation).not.toHaveBeenCalled()
     })
 
     test('exiting a comment editor returns focus to the diff root', async (): Promise<void> => {

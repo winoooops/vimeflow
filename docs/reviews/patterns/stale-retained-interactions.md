@@ -3,7 +3,7 @@ id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-07-04
-ref_count: 7
+ref_count: 8
 ---
 
 # Stale Retained Interactions
@@ -89,4 +89,13 @@ When a React component renders retained or stale content while fresh data for a 
 - **Fix:** Made dispatched comment rows read-only by hiding Edit/Delete controls
   whenever `dispatchedAt` is present. Added component coverage proving sent
   anchors expose no edit or delete buttons.
+- **Commit:** same commit as this entry
+
+### 9. Sent review anchors stayed mutable through keyboard shortcuts
+
+- **Source:** github-claude | PR #655 round 2 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** Dispatched review comments were read-only through row controls, but the keyboard edit/delete handlers still operated on the selected annotation without checking `dispatchedAt`. Keyboard users could change the local text for a sent anchor or remove the anchor entirely after feedback had already been delivered.
+- **Fix:** Guarded line-level `u`/`x` handlers with `isPendingReviewAnnotation` and made `Shift+U` select only pending file-level comments. Added panel coverage proving dispatched line and file comments remain visible and do not open edit state or delete through shortcuts.
 - **Commit:** same commit as this entry

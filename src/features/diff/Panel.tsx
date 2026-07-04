@@ -1594,7 +1594,8 @@ export const Panel = ({
     if (
       selectedFilePath === null ||
       reviewTarget === null ||
-      reviewTargetComment === undefined
+      reviewTargetComment === undefined ||
+      !isPendingReviewAnnotation(reviewTargetComment)
     ) {
       notifyInfo('No comment selected.')
 
@@ -1629,8 +1630,18 @@ export const Panel = ({
       return
     }
 
+    const pendingFileComments = fileCommentsForSelectedFile.filter(
+      isPendingReviewAnnotation
+    )
+
+    if (pendingFileComments.length === 0) {
+      notifyInfo('No file comment selected.')
+
+      return
+    }
+
     const fileCommentToEdit =
-      fileCommentsForSelectedFile[fileCommentsForSelectedFile.length - 1]
+      pendingFileComments[pendingFileComments.length - 1]
 
     setFileCommentAnchorPoint(null)
     setAnnotationTarget({
@@ -1654,7 +1665,8 @@ export const Panel = ({
     if (
       selectedFilePath === null ||
       reviewTarget === null ||
-      reviewTargetComment === undefined
+      reviewTargetComment === undefined ||
+      !isPendingReviewAnnotation(reviewTargetComment)
     ) {
       notifyInfo('No comment selected.')
 
