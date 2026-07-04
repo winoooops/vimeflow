@@ -106,4 +106,40 @@ describe('ReviewCommentRow', () => {
 
     expect(handleDelete).not.toHaveBeenCalled()
   })
+
+  test('shows the range label when provided', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: '5',
+          text: 'Range note',
+          author: 'self',
+          createdAt: 5000,
+        }}
+        targetLabel="lines R4-R6"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('lines R4-R6')).toBeInTheDocument()
+    expect(screen.getByText('Range note')).toBeInTheDocument()
+  })
+
+  test('omits the label for a plain comment', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: '6',
+          text: 'Plain note',
+          author: 'self',
+          createdAt: 6000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText(/lines R/)).not.toBeInTheDocument()
+  })
 })

@@ -249,6 +249,7 @@ export const PanelBody = ({
               return (
                 <ReviewCommentRow
                   comment={annotation.metadata}
+                  targetLabel={annotationTargetLabel(annotation)}
                   onEdit={(): void => onEditComment(annotation)}
                   onDelete={(): void => onDeleteComment(annotation.metadata.id)}
                 />

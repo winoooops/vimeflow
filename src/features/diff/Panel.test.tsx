@@ -4140,7 +4140,9 @@ describe('Panel', () => {
         'src/foo.ts',
         false,
         expect.objectContaining({
-          lineNumber: 1,
+          // Anchored at the range's last line so the comment renders below the
+          // selection; the span stays in target (VIM-273).
+          lineNumber: 2,
           side: 'additions',
           metadata: expect.objectContaining({
             text: 'Review this range',

@@ -36,6 +36,7 @@ import {
 } from './hooks/useFeedbackBatch'
 import { useKeyboard } from './hooks/useKeyboard'
 import { useDiffSearch } from './hooks/useDiffSearch'
+import { useDiffRangeBars } from './hooks/useDiffRangeBars'
 import {
   dispatchFeedbackBatch,
   formatFeedbackPayload,
@@ -63,6 +64,12 @@ import { DiffSearchPopup } from './components/DiffSearchPopup'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
 import { ReviewCommentRow } from './components/ReviewCommentRow'
 import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
+import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
+
+// One stable <style> injected into pierre's shadow tree: the search highlight
+// plus the persistent range-comment gutter bar (VIM-273). A module constant so
+// pierre never force-rebuilds on an unsafeCSS identity change.
+const DIFF_UNSAFE_CSS = `${DIFF_SEARCH_UNSAFE_CSS}\n${DIFF_RANGE_BAR_UNSAFE_CSS}`
 
 const DIFF_NATIVE_FOCUS_SELECTOR =
   'button, input, textarea, select, [contenteditable], [role="textbox"]'
@@ -1099,8 +1106,15 @@ export const Panel = ({
     scrollContainerRef: diffScrollBodyRef,
   })
 
+  const diffRangeBars = useDiffRangeBars({
+    fileKey: diffSearchFileKey,
+    annotations: realAnnotations,
+  })
+
   const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
   diffSearchPostRenderRef.current = diffSearch.handlePostRender
+  const diffRangeBarsPostRenderRef = useRef(diffRangeBars.handlePostRender)
+  diffRangeBarsPostRenderRef.current = diffRangeBars.handlePostRender
   const multiFileDiffOptionsRef = useRef(multiFileDiffOptions)
   multiFileDiffOptionsRef.current = multiFileDiffOptions
 
@@ -1108,13 +1122,14 @@ export const Panel = ({
     NonNullable<FileDiffOptions<ReviewComment>['onPostRender']>
   >((node, instance) => {
     diffSearchPostRenderRef.current(node)
+    diffRangeBarsPostRenderRef.current(node)
     multiFileDiffOptionsRef.current.onPostRender?.(node, instance)
   }, [])
 
   const diffOptionsWithSearch = useMemo<FileDiffOptions<ReviewComment>>(
     () => ({
       ...multiFileDiffOptions,
-      unsafeCSS: DIFF_SEARCH_UNSAFE_CSS,
+      unsafeCSS: DIFF_UNSAFE_CSS,
       onPostRender: handleDiffPostRender,
     }),
     [multiFileDiffOptions, handleDiffPostRender]
@@ -1724,7 +1739,10 @@ export const Panel = ({
           selectedFileStaged,
           {
             side: annotationTarget.side,
-            lineNumber: annotationTarget.lineNumber,
+            // Anchor a range comment at its last line so it renders below the
+            // selection; the span stays in metadata.target (VIM-273).
+            lineNumber:
+              annotationTarget.rangeEndLine ?? annotationTarget.lineNumber,
             metadata: {
               id: nextFeedbackCommentId(),
               text,
