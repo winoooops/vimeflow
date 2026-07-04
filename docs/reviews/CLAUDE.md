@@ -96,7 +96,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 7        | 7    | 2026-06-22   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 14       | 8    | 2026-06-30   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 15       | 9    | 2026-07-04   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 14       | 9    | 2026-06-28   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |

@@ -125,6 +125,9 @@ const isNativeGhosttyPreloadEnabled =
   process.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
   process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
 
+const isNativeGhosttyParentPreloadEnabled =
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+
 const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
   ? {
       ghosttyNative: {
@@ -136,16 +139,20 @@ const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
           ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
         destroy: (request: unknown): Promise<unknown> =>
           ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
-        attachSecondary: (request: unknown): Promise<unknown> =>
-          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_ATTACH, request),
-        secondaryData: (request: unknown): Promise<unknown> =>
-          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_DATA, request),
-        focusSecondary: (request: unknown): Promise<unknown> =>
-          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_FOCUS, request),
-        removeSecondary: (request: unknown): Promise<unknown> =>
-          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_REMOVE, request),
-        setSecondaryVisible: (request: unknown): Promise<unknown> =>
-          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_VISIBLE, request),
+        ...(isNativeGhosttyParentPreloadEnabled
+          ? {
+              attachSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_ATTACH, request),
+              secondaryData: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_DATA, request),
+              focusSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_FOCUS, request),
+              removeSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_REMOVE, request),
+              setSecondaryVisible: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_VISIBLE, request),
+            }
+          : {}),
       },
     }
   : {}
