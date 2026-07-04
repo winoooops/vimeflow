@@ -56,6 +56,11 @@ private final class EmbeddedGhosttyContainerView: NSView {
 }
 
 private final class EmbeddedGhosttyDividerView: NSView {
+    var isDarkBackground = true {
+        didSet {
+            needsDisplay = true
+        }
+    }
     var vertical = true {
         didSet {
             needsDisplay = true
@@ -68,10 +73,8 @@ private final class EmbeddedGhosttyDividerView: NSView {
 
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let lineWidth = 1 / scale
-        // System separators can disappear against themed Ghostty canvases.
-        let isDark =
-            effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let dividerColor = isDark
+        // App theme and macOS appearance can differ; contrast against Ghostty's canvas.
+        let dividerColor = isDarkBackground
             ? NSColor.white.withAlphaComponent(0.22)
             : NSColor.black.withAlphaComponent(0.12)
         dividerColor.setFill()
@@ -109,6 +112,21 @@ private extension NSColor {
             .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
 
         return hex.count == 6 && Int(hex, radix: 16) != nil ? hex : nil
+    }
+
+    static func vimeflowIsDarkHexColor(_ hexColor: String) -> Bool {
+        guard
+            let hex = vimeflowGhosttyHexColor(hexColor),
+            let value = Int(hex, radix: 16)
+        else {
+            return true
+        }
+
+        let red = Double((value >> 16) & 0xff) / 255
+        let green = Double((value >> 8) & 0xff) / 255
+        let blue = Double(value & 0xff) / 255
+
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.5
     }
 
     convenience init?(vimeflowHexColor hexColor: String) {
@@ -406,6 +424,7 @@ private final class EmbeddedGhosttySurface: NSObject {
 
         container.layer?.backgroundColor = color.cgColor
         backgroundHexColor = ghosttyHex
+        dividerView?.isDarkBackground = NSColor.vimeflowIsDarkHexColor(ghosttyHex)
         controller.setTheme(TerminalTheme(
             light: TerminalConfiguration().background(ghosttyHex),
             dark: TerminalConfiguration().background(ghosttyHex)
@@ -598,6 +617,7 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
 
         let divider = EmbeddedGhosttyDividerView(frame: .zero)
+        divider.isDarkBackground = NSColor.vimeflowIsDarkHexColor(backgroundHexColor)
         divider.onDrag = { [weak self] delta in
             self?.resizeSecondarySplit(delta: delta)
         }
