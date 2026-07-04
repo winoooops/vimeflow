@@ -589,6 +589,8 @@ function isGhosttyNativeUpdateRequest(
     (value.backgroundColor === undefined ||
       isHexColor(value.backgroundColor)) &&
     isOptionalFiniteNumber(value.bottomCornerRadius) &&
+    typeof value.parentHeight === 'number' &&
+    Number.isFinite(value.parentHeight) &&
     typeof value.visible === 'boolean'
   )
 }

@@ -153,6 +153,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -231,6 +232,7 @@ describe('ghostty native helper', () => {
           paneId: 'pane-1',
           cwd: '',
           visible: true,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
         }
       )
@@ -286,6 +288,7 @@ describe('ghostty native helper', () => {
           paneId: 'pane-1',
           cwd: '/tmp',
           visible: true,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
           bottomCornerRadius: 10,
         }
@@ -350,6 +353,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -407,6 +411,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -481,6 +486,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -556,6 +562,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -618,6 +625,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -656,6 +664,7 @@ describe('ghostty native helper', () => {
         paneId: 'pane-2',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )

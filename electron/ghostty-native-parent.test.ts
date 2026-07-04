@@ -155,6 +155,7 @@ describe('ghostty native parent', () => {
           cwd: '/tmp',
           backgroundColor: 'not-a-color',
           visible: true,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
         }
       )
@@ -182,6 +183,7 @@ describe('ghostty native parent', () => {
           paneId: 'pane-1',
           cwd: '/tmp',
           visible: true,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
         }
       )
@@ -232,6 +234,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -272,11 +275,20 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10.4, y: 20.5, width: 300.49, height: 200.51 },
       }
     )
 
-    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 21, 300, 201, 0)
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      21,
+      300,
+      201,
+      0,
+      900
+    )
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -285,11 +297,20 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: false,
+        parentHeight: 900,
         bounds: { x: 10.6, y: 20.4, width: 300.51, height: 200.49 },
       }
     )
 
-    expect(addon.setFrame).toHaveBeenLastCalledWith(surface, 11, 20, 0, 0, 0)
+    expect(addon.setFrame).toHaveBeenLastCalledWith(
+      surface,
+      11,
+      20,
+      0,
+      0,
+      0,
+      900
+    )
 
     controller.dispose()
   })
@@ -327,11 +348,91 @@ describe('ghostty native parent', () => {
         cwd: '/tmp',
         backgroundColor: '#fffcf0',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
 
     expect(addon.setBackgroundColor).toHaveBeenCalledWith(surface, '#fffcf0')
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        backgroundColor: '#fffcf0',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.setBackgroundColor).toHaveBeenCalledTimes(1)
+
+    controller.dispose()
+  })
+
+  test('flushes pending data once when the parented surface is created', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_DATA)?.(
+        {},
+        { sessionId: 'pty-1', paneId: 'pane-1', data: 'boot' }
+      )
+    ).toEqual({ enabled: true })
+    expect(addon.write).not.toHaveBeenCalled()
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.write).toHaveBeenCalledWith(surface, 'boot')
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.write).toHaveBeenCalledTimes(1)
 
     controller.dispose()
   })
@@ -368,11 +469,69 @@ describe('ghostty native parent', () => {
         cwd: '/tmp',
         bottomCornerRadius: 10,
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
 
-    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200, 10)
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      20,
+      300,
+      200,
+      10,
+      900
+    )
+
+    controller.dispose()
+  })
+
+  test('forwards same-snapshot parent height to AppKit', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        parentHeight: 900.4,
+        visible: true,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      20,
+      300,
+      200,
+      0,
+      900
+    )
 
     controller.dispose()
   })
@@ -409,11 +568,12 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 0, height: 200 },
       }
     )
 
-    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 0, 0, 0)
+    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 0, 0, 0, 900)
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -422,11 +582,20 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 0 },
       }
     )
 
-    expect(addon.setFrame).toHaveBeenLastCalledWith(surface, 10, 20, 0, 0, 0)
+    expect(addon.setFrame).toHaveBeenLastCalledWith(
+      surface,
+      10,
+      20,
+      0,
+      0,
+      0,
+      900
+    )
 
     controller.dispose()
   })
@@ -463,6 +632,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
         shortcutContext: {
           paneIds: ['pane-1', 'pane-2', 'pane-3'],
@@ -480,6 +650,25 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+        shortcutContext: {
+          paneIds: ['pane-1', 'pane-2', 'pane-3'],
+          activePaneId: 'pane-1',
+        },
+      }
+    )
+
+    expect(addon.setShortcutDigits).toHaveBeenCalledTimes(1)
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
         shortcutContext: {
           paneIds: ['pane-1', 'pane-2', 'pane-3'],
@@ -541,6 +730,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -554,7 +744,16 @@ describe('ghostty native parent', () => {
       expect.any(Function),
       expect.any(Function)
     )
-    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 300, 200, 0)
+
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      20,
+      300,
+      200,
+      0,
+      900
+    )
 
     callbacks.onInput?.('a')
     callbacks.onResize?.(80, 24)
@@ -638,6 +837,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -713,6 +913,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -774,6 +975,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -841,6 +1043,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
@@ -852,6 +1055,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-2',
         cwd: '/tmp',
         visible: true,
+        parentHeight: 900,
         bounds: { x: 400, y: 20, width: 300, height: 200 },
       }
     )
@@ -864,7 +1068,8 @@ describe('ghostty native parent', () => {
       20,
       300,
       200,
-      0
+      0,
+      900
     )
 
     expect(addon.setFrame).toHaveBeenCalledWith(
@@ -873,7 +1078,8 @@ describe('ghostty native parent', () => {
       20,
       300,
       200,
-      0
+      0,
+      900
     )
 
     callbacks[0]?.onInput('a')
