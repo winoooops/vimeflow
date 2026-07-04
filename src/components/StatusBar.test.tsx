@@ -274,6 +274,14 @@ describe('StatusBar', () => {
     )
   })
 
+  test('shows the burner open state when a burner shell is visible', () => {
+    renderStatusBar({ burnerCount: 1, burnerOpen: true })
+
+    expect(screen.getByTestId('status-bar-burner')).toHaveTextContent(
+      'burner open'
+    )
+  })
+
   test('omits the burner count segment when none are running', () => {
     renderStatusBar({ burnerCount: 0 })
 

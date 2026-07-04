@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+// cspell:ignore Ghostty ghostty GHOSTTY
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
@@ -30,10 +31,22 @@ import {
   NATIVE_OVERLAY_RENDER,
   type NativeOverlayInvokeChannel,
 } from './native-overlay-channels'
+import {
+  GHOSTTY_NATIVE_DATA,
+  GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_ATTACH,
+  GHOSTTY_NATIVE_SECONDARY_DATA,
+  GHOSTTY_NATIVE_SECONDARY_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_REMOVE,
+  GHOSTTY_NATIVE_SECONDARY_VISIBLE,
+  GHOSTTY_NATIVE_UPDATE,
+} from './ghostty-native-channels'
 import './preload'
 
 const electronMock = vi.hoisted(() => {
   let exposedApi: Record<string, unknown> | undefined
+  vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')
 
   return {
     get exposed(): Record<string, unknown> | undefined {
@@ -51,6 +64,10 @@ const electronMock = vi.hoisted(() => {
       setMaxListeners: vi.fn(),
     },
   }
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
 })
 
 vi.mock('electron', () => ({
@@ -196,6 +213,39 @@ test('exposes dialog.pickDirectory bound to the channel', async () => {
   await api.dialog.pickDirectory()
   expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
     DIALOG_PICK_DIRECTORY
+  )
+})
+
+describe('preload native Ghostty wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  test.each([
+    ['update', GHOSTTY_NATIVE_UPDATE],
+    ['data', GHOSTTY_NATIVE_DATA],
+    ['focus', GHOSTTY_NATIVE_FOCUS],
+    ['destroy', GHOSTTY_NATIVE_DESTROY],
+    ['attachSecondary', GHOSTTY_NATIVE_SECONDARY_ATTACH],
+    ['secondaryData', GHOSTTY_NATIVE_SECONDARY_DATA],
+    ['focusSecondary', GHOSTTY_NATIVE_SECONDARY_FOCUS],
+    ['removeSecondary', GHOSTTY_NATIVE_SECONDARY_REMOVE],
+    ['setSecondaryVisible', GHOSTTY_NATIVE_SECONDARY_VISIBLE],
+  ])(
+    '%s invokes ipcRenderer.invoke with the correct channel',
+    async (method: string, channel: string) => {
+      const api = exposedApi() as {
+        ghosttyNative?: Record<string, (request: unknown) => Promise<unknown>>
+      }
+      const request = { sessionId: 'pty-1', paneId: 'pane-1' }
+
+      await api.ghosttyNative?.[method](request)
+
+      expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+        channel,
+        request
+      )
+    }
   )
 })
 

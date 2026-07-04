@@ -32,11 +32,32 @@ export interface NativeGhosttyDataRequest extends NativeGhosttyPaneRef {
   data: string
 }
 
+export interface NativeGhosttySecondaryRequest extends NativeGhosttyPaneRef {
+  secondarySessionId: string
+}
+
+export interface NativeGhosttySecondaryDataRequest extends NativeGhosttySecondaryRequest {
+  data: string
+}
+
+export interface NativeGhosttySecondaryVisibleRequest extends NativeGhosttySecondaryRequest {
+  visible: boolean
+}
+
 export interface NativeGhosttyApi {
   update: (request: NativeGhosttyUpdateRequest) => Promise<unknown>
   data: (request: NativeGhosttyDataRequest) => Promise<unknown>
   focus: (request: NativeGhosttyPaneRef) => Promise<unknown>
   destroy: (request: NativeGhosttyPaneRef) => Promise<unknown>
+  attachSecondary?: (request: NativeGhosttySecondaryRequest) => Promise<unknown>
+  secondaryData?: (
+    request: NativeGhosttySecondaryDataRequest
+  ) => Promise<unknown>
+  focusSecondary?: (request: NativeGhosttySecondaryRequest) => Promise<unknown>
+  removeSecondary?: (request: NativeGhosttySecondaryRequest) => Promise<unknown>
+  setSecondaryVisible?: (
+    request: NativeGhosttySecondaryVisibleRequest
+  ) => Promise<unknown>
 }
 
 export interface NativeGhosttyOutputOptions {
@@ -74,6 +95,21 @@ const isDisabledResult = (value: unknown): boolean =>
 // Renderer selection is macOS AND preload bridge; feature flags stay in preload/main.
 export const shouldUseNativeGhostty = (): boolean =>
   isMacRenderer() && Boolean(nativeGhosttyApi())
+
+export const canUseNativeGhosttySecondary = (): boolean => {
+  const api = nativeGhosttyApi()
+
+  return (
+    isMacRenderer() &&
+    Boolean(
+      api?.attachSecondary &&
+      api.secondaryData &&
+      api.focusSecondary &&
+      api.removeSecondary &&
+      api.setSecondaryVisible
+    )
+  )
+}
 
 export const updateNativeGhostty = async (
   request: NativeGhosttyUpdateRequest
@@ -118,6 +154,64 @@ export const destroyNativeGhostty = async (
   request: NativeGhosttyPaneRef
 ): Promise<void> => {
   await nativeGhosttyApi()?.destroy(request)
+}
+
+export const attachNativeGhosttySecondary = async (
+  request: NativeGhosttySecondaryRequest
+): Promise<boolean> => {
+  const api = nativeGhosttyApi()
+  if (!api?.attachSecondary) {
+    return false
+  }
+
+  const result = await api.attachSecondary(request)
+
+  return !isDisabledResult(result)
+}
+
+export const sendNativeGhosttySecondaryData = async (
+  request: NativeGhosttySecondaryDataRequest
+): Promise<boolean> => {
+  const api = nativeGhosttyApi()
+  if (!api?.secondaryData) {
+    return false
+  }
+
+  const result = await api.secondaryData(request)
+
+  return !isDisabledResult(result)
+}
+
+export const focusNativeGhosttySecondary = async (
+  request: NativeGhosttySecondaryRequest
+): Promise<boolean> => {
+  const api = nativeGhosttyApi()
+  if (!api?.focusSecondary) {
+    return false
+  }
+
+  const result = await api.focusSecondary(request)
+
+  return !isDisabledResult(result)
+}
+
+export const removeNativeGhosttySecondary = async (
+  request: NativeGhosttySecondaryRequest
+): Promise<void> => {
+  await nativeGhosttyApi()?.removeSecondary?.(request)
+}
+
+export const setNativeGhosttySecondaryVisible = async (
+  request: NativeGhosttySecondaryVisibleRequest
+): Promise<boolean> => {
+  const api = nativeGhosttyApi()
+  if (!api?.setSecondaryVisible) {
+    return false
+  }
+
+  const result = await api.setSecondaryVisible(request)
+
+  return !isDisabledResult(result)
 }
 
 export const attachNativeGhosttyOutput = async (

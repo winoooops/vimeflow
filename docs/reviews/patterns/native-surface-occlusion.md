@@ -2,7 +2,7 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-03
+last_updated: 2026-07-04
 ref_count: 1
 ---
 
@@ -72,4 +72,13 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **Fix:** Added `browser-tab-active` to the shared terminal-background
   collision guard and moved the Flexoki and Gruvbox Light active-tab colors
   to distinct off-ladder values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Native burner panes assumed primary Ghostty bridge meant secondary support
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** The burner hook rendered native secondary panes whenever the primary macOS Ghostty bridge existed. Legacy helper mode exposes only primary update/data/focus/destroy IPC, so the native secondary attach path failed and killed a newly spawned burner instead of falling back to the xterm popup.
+- **Fix:** Added an explicit `canUseNativeGhosttySecondary()` capability check that requires every secondary IPC method, and used it to select native burner rendering. Legacy helper mode now keeps the primary native pane path while burner panes use the xterm popup.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

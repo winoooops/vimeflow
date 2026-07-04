@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-30
-ref_count: 8
+last_updated: 2026-07-04
+ref_count: 9
 ---
 
 # Type Contract Safety
@@ -170,4 +170,20 @@ expands.
 - **Fix:** Added `surfaceTone?: string` to the Electron-side menu payload and
   accepted string values in the runtime validator. Extended the themed overlay
   controller test to pass the field through to the renderer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Preload exposed secondary native Ghostty capability in legacy helper mode
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/preload.ts`
+- **Finding:** The preload bridge exposed optional secondary Ghostty IPC methods
+  whenever either native Ghostty flag was enabled. In legacy helper mode, the main
+  process registers only the base helper IPC handlers, so renderer capability
+  detection could select native secondary burners and then hit missing handler
+  rejections.
+- **Fix:** Gate the secondary preload methods separately on
+  `VITE_GHOSTTY_NATIVE_MACOS_PARENT`, while keeping base native Ghostty methods
+  available for both helper and parent modes. Added focused preload tests for
+  parent-mode exposure and legacy helper omission.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -64,6 +64,8 @@ export interface TerminalPaneProps {
   onRequestFocus?: () => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner secondary terminal is currently visible. */
+  openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
@@ -106,6 +108,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onRequestActive = undefined,
       onRequestFocus = undefined,
       activeBurnerPaneKeys = undefined,
+      openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       onCwdChange = undefined,
       onCommandSubmit = undefined,
@@ -232,8 +235,13 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       // slot's click-to-activate never runs — without this the active-pane
       // state would stay on the previously-focused pane.
       onRequestActive?.(session.id, pane.id)
-      onBurner?.({ sessionId: session.id, paneId: pane.id, cwd: pane.cwd })
-    }, [onRequestActive, onBurner, session.id, pane.id, pane.cwd])
+      onBurner?.({
+        sessionId: session.id,
+        paneId: pane.id,
+        hostPtyId: pane.ptyId,
+        cwd: pane.cwd,
+      })
+    }, [onRequestActive, onBurner, session.id, pane.id, pane.ptyId, pane.cwd])
 
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
@@ -297,6 +305,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onBurner={onBurner ? handleBurner : undefined}
           burnerActive={
             activeBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
+          }
+          burnerOpen={
+            openBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
           burnerShellExists={
             runningBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false

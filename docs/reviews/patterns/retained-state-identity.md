@@ -2,7 +2,7 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
+last_updated: 2026-07-04
 ref_count: 1
 ---
 
@@ -21,4 +21,13 @@ When a React component renders retained (stale) content while fresh data for a n
 - **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
 - **Finding:** During retained-body fetching, `bodySnapshotKey` referred to the previously rendered/source pane while `snapshotKey` referred to the current target pane. The `handleScroll` callback wrote user scroll events to `bodySnapshotKey`, so scrolling retained content during the refresh window overwrote the source pane's saved scroll position and caused it to reopen at the wrong offset later.
 - **Fix:** Added an identity guard before `writeStatusScrollAnchor` that returns early when `bodySnapshotKey !== snapshotKey`, and added `snapshotKey` to the `handleScroll` `useCallback` dependencies.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Retained burner entries kept a stale native host PTY after pane restart
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** Burner entries are intentionally retained by stable `${sessionId}:${paneId}` identity across pane restarts, but the native secondary request kept the old `hostPtyId`. When the host pane remounted with a new PTY, an open native burner stayed attached to the removed native surface until the user toggled it.
+- **Fix:** Threaded a live pane-key-to-PTY map from `WorkspaceView` into `useBurnerTerminals`, updated retained entries when the host PTY changes, and covered the reattach path with a native burner regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -22,6 +22,7 @@ export interface HeaderProps {
   onClose?: () => void
   onBurner?: () => void
   burnerActive?: boolean
+  burnerOpen?: boolean
   burnerShellExists?: boolean
   /**
    * VIM-167: when true, the header acts as the pane's drag handle for the
@@ -48,6 +49,7 @@ export const Header = ({
   onClose = undefined,
   onBurner = undefined,
   burnerActive = false,
+  burnerOpen = false,
   burnerShellExists = false,
   draggable = false,
   onHeaderDragStart = undefined,
@@ -124,6 +126,7 @@ export const Header = ({
           onClose={onClose}
           onBurner={onBurner}
           burnerActive={burnerActive}
+          burnerOpen={burnerOpen}
           burnerShellExists={burnerShellExists}
         />
       </div>

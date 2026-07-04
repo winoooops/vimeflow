@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty ghostty
 import {
   createElement,
   Fragment,
@@ -13,11 +14,23 @@ import { registerChord } from '../../command-palette/chordRegistry'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
+import {
+  attachNativeGhosttySecondary,
+  canUseNativeGhosttySecondary,
+  focusNativeGhosttySecondary,
+  removeNativeGhosttySecondary,
+  sendNativeGhosttySecondaryData,
+  setNativeGhosttySecondaryVisible,
+  type NativeGhosttySecondaryRequest,
+} from '../nativeGhosttyClient'
+import { parseOsc7Cwd } from '../components/TerminalPane/osc7'
 
 type BurnerStatus = 'running' | 'exited'
 
 interface BurnerEntry {
   burnerPtyId: string
+  hostPaneId: string
+  hostPtyId?: string
   pid: number
   status: BurnerStatus
   /** The cwd the shell spawned at (the `<Body>` attach snapshot). */
@@ -38,6 +51,7 @@ interface BurnerEntry {
 export interface BurnerTarget {
   sessionId: string
   paneId: string
+  hostPtyId?: string
   cwd: string
 }
 
@@ -71,6 +85,150 @@ const CLEAR_LINE = '\x05\x15'
 
 // Compare OSC 7 cwds forgiving a trailing slash (root stays "/").
 const normalizeCwd = (value: string): string => value.replace(/\/+$/, '') || '/'
+const OSC7_SEQUENCE_PATTERN = /\u001b\]7;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g
+
+interface NativeGhosttyBurnerTerminalProps {
+  open: boolean
+  hostPtyId: string
+  paneId: string
+  burnerPtyId: string
+  service: ITerminalService
+  onPaneReady?: NotifyPaneReady
+  onCwdChange?: (cwd: string) => void
+  onUnavailable: () => void
+}
+
+const NativeGhosttyBurnerTerminal = ({
+  open,
+  hostPtyId,
+  paneId,
+  burnerPtyId,
+  service,
+  onPaneReady = undefined,
+  onCwdChange = undefined,
+  onUnavailable,
+}: NativeGhosttyBurnerTerminalProps): null => {
+  const onCwdChangeRef = useRef(onCwdChange)
+  onCwdChangeRef.current = onCwdChange
+  const onUnavailableRef = useRef(onUnavailable)
+  onUnavailableRef.current = onUnavailable
+
+  const request = useMemo<NativeGhosttySecondaryRequest>(
+    () => ({
+      sessionId: hostPtyId,
+      paneId,
+      secondarySessionId: burnerPtyId,
+    }),
+    [burnerPtyId, hostPtyId, paneId]
+  )
+
+  const handleNativeOutput = useCallback((data: string): void => {
+    for (const match of data.matchAll(OSC7_SEQUENCE_PATTERN)) {
+      const cwd = parseOsc7Cwd(match[1])
+      if (cwd) {
+        onCwdChangeRef.current?.(cwd)
+      }
+    }
+  }, [])
+
+  const sendOutputToNative = useCallback(
+    async (data: string): Promise<void> => {
+      try {
+        await sendNativeGhosttySecondaryData({ ...request, data })
+      } catch {
+        // Best effort: if native attach disappears, burner lifecycle still owns the PTY.
+      }
+    },
+    [request]
+  )
+
+  useEffect(() => {
+    const lifecycle = { cancelled: false }
+    const isCancelled = (): boolean => lifecycle.cancelled
+    let releasePaneReady: (() => void) | null = null
+    let unsubscribeOutput: (() => void) | null = null
+
+    const drainBufferedOutput = (data: string): void => {
+      handleNativeOutput(data)
+      void sendOutputToNative(data)
+    }
+
+    const attach = async (): Promise<void> => {
+      let enabled = false
+      try {
+        enabled = await attachNativeGhosttySecondary(request)
+      } catch {
+        if (!isCancelled()) {
+          onUnavailableRef.current()
+        }
+
+        return
+      }
+      if (!enabled || isCancelled()) {
+        if (!enabled && !isCancelled()) {
+          onUnavailableRef.current()
+        }
+
+        return
+      }
+
+      const unsubscribe = await service.onData((ptyId, data) => {
+        if (ptyId !== burnerPtyId) {
+          return
+        }
+
+        handleNativeOutput(data)
+        void sendOutputToNative(data)
+      })
+
+      if (isCancelled()) {
+        unsubscribe()
+
+        return
+      }
+
+      unsubscribeOutput = unsubscribe
+      releasePaneReady = onPaneReady?.(burnerPtyId, drainBufferedOutput) ?? null
+    }
+
+    void attach()
+
+    return (): void => {
+      lifecycle.cancelled = true
+      releasePaneReady?.()
+      unsubscribeOutput?.()
+      void (async (): Promise<void> => {
+        try {
+          await removeNativeGhosttySecondary(request)
+        } catch {
+          // Best-effort cleanup can race Electron shutdown.
+        }
+      })()
+    }
+  }, [
+    burnerPtyId,
+    handleNativeOutput,
+    onPaneReady,
+    request,
+    sendOutputToNative,
+    service,
+  ])
+
+  useEffect(() => {
+    void (async (): Promise<void> => {
+      try {
+        await setNativeGhosttySecondaryVisible({ ...request, visible: open })
+        if (open) {
+          await focusNativeGhosttySecondary(request)
+        }
+      } catch {
+        // Best effort: losing the native child should not break burner state.
+      }
+    })()
+  }, [open, request])
+
+  return null
+}
 
 export interface UseBurnerTerminalsArgs {
   service: ITerminalService
@@ -103,6 +261,12 @@ export interface UseBurnerTerminalsArgs {
    * the sync target even before the interactive shell's pwd catches up.
    */
   agentPaneCwds?: ReadonlyMap<string, string>
+  /**
+   * Live `${sessionId}:${paneId}` → current pane ptyId. Pane restarts preserve
+   * the stable pane key but rotate the native host ptyId; open native burners
+   * reattach when this value changes.
+   */
+  livePanePtyIds?: ReadonlyMap<string, string>
 }
 
 export interface UseBurnerTerminals {
@@ -128,6 +292,8 @@ export interface UseBurnerTerminals {
   activeByPane: ReadonlyMap<string, boolean>
   /** True while a burner popup is visibly open over the workspace. */
   hasVisibleBurner: boolean
+  /** Stable pane key for the burner currently shown, including native Ghostty. */
+  visibleBurnerPaneKey: string | null
 }
 
 /**
@@ -147,6 +313,7 @@ export const useBurnerTerminals = ({
   dropAllForPty,
   livePaneCwds,
   agentPaneCwds,
+  livePanePtyIds,
 }: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -305,6 +472,8 @@ export const useBurnerTerminals = ({
         registerPending?.(result.sessionId)
         entriesRef.current.set(key, {
           burnerPtyId: result.sessionId,
+          hostPaneId: target.paneId,
+          hostPtyId: target.hostPtyId,
           pid: result.pid,
           status: 'running',
           cwd: result.cwd,
@@ -334,11 +503,24 @@ export const useBurnerTerminals = ({
       const key = paneKey(target.sessionId, target.paneId)
       showIntentRef.current = key
       await spawnIfNeeded(target, key)
+      const entry = entriesRef.current.get(key)
+      if (
+        entry &&
+        (entry.hostPaneId !== target.paneId ||
+          entry.hostPtyId !== target.hostPtyId)
+      ) {
+        entriesRef.current.set(key, {
+          ...entry,
+          hostPaneId: target.paneId,
+          hostPtyId: target.hostPtyId,
+        })
+        commit()
+      }
       if (entriesRef.current.has(key) && showIntentRef.current === key) {
         setVisibleKey(key)
       }
     },
-    [spawnIfNeeded]
+    [commit, spawnIfNeeded]
   )
 
   const toggle = useCallback(
@@ -359,6 +541,7 @@ export const useBurnerTerminals = ({
         await show({
           sessionId: focused.session.id,
           paneId: focused.pane.id,
+          hostPtyId: focused.pane.ptyId,
           cwd: focused.pane.cwd,
         })
 
@@ -519,6 +702,29 @@ export const useBurnerTerminals = ({
     commit()
   }, [livePaneKeys, killBurner, commit])
 
+  useEffect(() => {
+    if (!livePanePtyIds) {
+      return
+    }
+
+    const updates: [string, BurnerEntry][] = []
+    entriesRef.current.forEach((entry, key) => {
+      const hostPtyId = livePanePtyIds.get(key)
+      if (!hostPtyId || entry.hostPtyId === hostPtyId) {
+        return
+      }
+
+      updates.push([key, { ...entry, hostPtyId }])
+    })
+
+    if (updates.length > 0) {
+      for (const [key, entry] of updates) {
+        entriesRef.current.set(key, entry)
+      }
+      commit()
+    }
+  }, [livePanePtyIds, commit])
+
   // Memoized so consumers threading it down only re-render on actual change.
   const runningByPane = useMemo(() => {
     const map = new Map<string, BurnerStatus>()
@@ -541,6 +747,30 @@ export const useBurnerTerminals = ({
           null,
           [...entries.entries()].map(([key, entry]): ReactNode => {
             const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
+
+            if (canUseNativeGhosttySecondary() && entry.hostPtyId) {
+              return createElement(NativeGhosttyBurnerTerminal, {
+                key: `${key}:${entry.burnerPtyId}`,
+                open: visibleKey === key,
+                hostPtyId: entry.hostPtyId,
+                paneId: entry.hostPaneId,
+                burnerPtyId: entry.burnerPtyId,
+                service,
+                onPaneReady: notifyPaneReady,
+                onCwdChange: (cwd: string): void => setBurnerCwd(key, cwd),
+                onUnavailable: (): void => {
+                  const current = entriesRef.current.get(key)
+                  if (current?.burnerPtyId !== entry.burnerPtyId) {
+                    return
+                  }
+
+                  killBurner(current.burnerPtyId)
+                  entriesRef.current.delete(key)
+                  setVisibleKey((visible) => (visible === key ? null : visible))
+                  commit()
+                },
+              })
+            }
 
             return createElement(BurnerTerminalPopup, {
               // Keyed by pty so a re-spawned (post-exit) shell remounts a fresh
@@ -579,6 +809,9 @@ export const useBurnerTerminals = ({
     toggle,
     runningByPane,
     activeByPane,
-    hasVisibleBurner: visibleKey !== null,
+    hasVisibleBurner:
+      visibleKey !== null &&
+      (!canUseNativeGhosttySecondary() || !entries.get(visibleKey)?.hostPtyId),
+    visibleBurnerPaneKey: visibleKey,
   }
 }

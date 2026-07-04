@@ -1,10 +1,16 @@
-import { test, expect, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+// cspell:ignore ghostty
+import { afterEach, test, expect, vi } from 'vitest'
+import { render, renderHook, act, waitFor } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { useBurnerTerminals, type BurnerTarget } from './useBurnerTerminals'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
+
+afterEach(() => {
+  delete (window as unknown as { vimeflow?: unknown }).vimeflow
+  vi.unstubAllGlobals()
+})
 
 const makeFocusedPane = (
   sessionId = 's1',
@@ -23,6 +29,7 @@ const makeService = (): ITerminalService =>
       .mockResolvedValue({ sessionId: 'burner-pty', pid: 7, cwd: '/repo' }),
     kill: vi.fn().mockResolvedValue(undefined),
     write: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn().mockResolvedValue(() => undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
     onBurnerForeground: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
@@ -192,19 +199,178 @@ test('hasVisibleBurner tracks only the visible popup, not hidden live shells', a
   )
 
   expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
 
   await act(async () => {
     await result.current.toggle()
   })
 
   expect(result.current.hasVisibleBurner).toBe(true)
+  expect(result.current.visibleBurnerPaneKey).toBe('s1:p0')
 
   await act(async () => {
     await result.current.toggle()
   })
 
   expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
   expect(result.current.renderNode).not.toBeNull()
+})
+
+test('drops a native burner when secondary attach is unavailable', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const attachSecondary = vi.fn(() => Promise.resolve({ enabled: false }))
+  const removeSecondary = vi.fn(() => Promise.resolve({}))
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      update: vi.fn(),
+      data: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+      attachSecondary,
+      secondaryData: vi.fn(() => Promise.resolve({})),
+      focusSecondary: vi.fn(() => Promise.resolve({})),
+      removeSecondary,
+      setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+    },
+  }
+
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'host-pty',
+      cwd: '/repo',
+    })
+  })
+
+  const rendered = render(result.current.renderNode)
+
+  await waitFor(() => {
+    expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-pty' })
+  })
+
+  expect(attachSecondary).toHaveBeenCalledWith({
+    sessionId: 'host-pty',
+    paneId: 'p0',
+    secondarySessionId: 'burner-pty',
+  })
+  expect(result.current.runningByPane.size).toBe(0)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
+
+  rendered.unmount()
+})
+
+test('uses the xterm popup for legacy native Ghostty without secondary IPC', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      update: vi.fn(),
+      data: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    },
+  }
+
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'host-pty',
+      cwd: '/repo',
+    })
+  })
+
+  const popup = firstPopup(result.current.renderNode)
+
+  expect(popup.props.burnerPtyId).toBe('burner-pty')
+  expect(result.current.hasVisibleBurner).toBe(true)
+  expect(service.kill).not.toHaveBeenCalled()
+})
+
+test('reattaches a native burner when the host pane pty rotates', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const attachSecondary = vi.fn(() => Promise.resolve({}))
+  const removeSecondary = vi.fn(() => Promise.resolve({}))
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      update: vi.fn(),
+      data: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+      attachSecondary,
+      secondaryData: vi.fn(() => Promise.resolve({})),
+      focusSecondary: vi.fn(() => Promise.resolve({})),
+      removeSecondary,
+      setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+    },
+  }
+
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result, rerender } = renderHook(
+    (props: { ptys: ReadonlyMap<string, string> }) =>
+      useBurnerTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: new Set<string>(['s1:p0']),
+        livePanePtyIds: props.ptys,
+      }),
+    { initialProps: { ptys: new Map([['s1:p0', 'host-old']]) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'host-old',
+      cwd: '/repo',
+    })
+  })
+
+  const rendered = render(result.current.renderNode)
+
+  await waitFor(() => {
+    expect(attachSecondary).toHaveBeenCalledWith({
+      sessionId: 'host-old',
+      paneId: 'p0',
+      secondarySessionId: 'burner-pty',
+    })
+  })
+
+  act(() => {
+    rerender({ ptys: new Map([['s1:p0', 'host-new']]) })
+  })
+  rendered.rerender(result.current.renderNode)
+
+  await waitFor(() => {
+    rendered.rerender(result.current.renderNode)
+    expect(attachSecondary).toHaveBeenCalledWith({
+      sessionId: 'host-new',
+      paneId: 'p0',
+      secondarySessionId: 'burner-pty',
+    })
+  })
+
+  rendered.unmount()
 })
 
 test('renderNode stays non-null when hidden while a shell is alive', async () => {

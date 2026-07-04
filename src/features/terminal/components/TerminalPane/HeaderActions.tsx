@@ -3,9 +3,19 @@ import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
-const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
+const burnerButtonLabel = (
+  active: boolean,
+  open: boolean,
+  shellExists: boolean
+): string => {
   if (active) {
-    return 'open burner terminal (running)'
+    return open
+      ? 'hide burner terminal (running)'
+      : 'open burner terminal (running)'
+  }
+
+  if (open) {
+    return 'hide burner terminal'
   }
 
   if (shellExists) {
@@ -29,6 +39,8 @@ export interface HeaderActionsProps {
    * drives the amber button tint (the sole running cue).
    */
   burnerActive?: boolean
+  /** This pane's burner secondary terminal is currently visible. */
+  burnerOpen?: boolean
   /**
    * A burner shell exists for this pane but no foreground command is running.
    * Exposed to assistive tech so an idle-but-live shell is distinguishable
@@ -45,9 +57,14 @@ export const HeaderActions = ({
   onClose = undefined,
   onBurner = undefined,
   burnerActive = false,
+  burnerOpen = false,
   burnerShellExists = false,
 }: HeaderActionsProps): ReactElement => {
-  const burnerLabel = burnerButtonLabel(burnerActive, burnerShellExists)
+  const burnerLabel = burnerButtonLabel(
+    burnerActive,
+    burnerOpen,
+    burnerShellExists
+  )
   const collapseLabel = isCollapsed ? 'expand status' : 'collapse status'
 
   return (
@@ -68,6 +85,7 @@ export const HeaderActions = ({
             label={burnerLabel}
             showTooltip={TOOLTIP_SUPPRESSED}
             size="sm"
+            pressed={burnerOpen}
             onClick={(event) => {
               event.stopPropagation()
               onBurner()

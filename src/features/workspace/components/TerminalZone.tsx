@@ -74,6 +74,8 @@ export interface TerminalZoneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner secondary terminal is currently visible. */
+  openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   layoutRegistry?: PaneLayoutRegistry
@@ -104,6 +106,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onContainerFocus = undefined,
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
+      openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       layoutRegistry = undefined,
     }: TerminalZoneProps,
@@ -211,6 +214,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onBurner={onBurner}
                     layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
+                    openBurnerPaneKeys={openBurnerPaneKeys}
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     deferTerminalFit={deferTerminalFit}
                   />

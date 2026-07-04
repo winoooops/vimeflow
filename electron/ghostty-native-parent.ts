@@ -8,6 +8,11 @@ import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_ATTACH,
+  GHOSTTY_NATIVE_SECONDARY_DATA,
+  GHOSTTY_NATIVE_SECONDARY_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_REMOVE,
+  GHOSTTY_NATIVE_SECONDARY_VISIBLE,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
 import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
@@ -22,6 +27,9 @@ import {
   isString,
   type GhosttyNativeDataRequest,
   type GhosttyNativePaneRequest,
+  type GhosttyNativeSecondaryDataRequest,
+  type GhosttyNativeSecondaryRequest,
+  type GhosttyNativeSecondaryVisibleRequest,
   type GhosttyNativeShortcutContext,
   type GhosttyNativeUpdateRequest,
 } from './ghostty-native-shared'
@@ -31,6 +39,11 @@ interface GhosttyNativePayloadByKind {
   data: GhosttyNativeDataRequest
   focus: GhosttyNativePaneRequest
   destroy: GhosttyNativePaneRequest
+  secondaryAttach: GhosttyNativeSecondaryRequest
+  secondaryData: GhosttyNativeSecondaryDataRequest
+  secondaryFocus: GhosttyNativeSecondaryRequest
+  secondaryRemove: GhosttyNativeSecondaryRequest
+  secondaryVisible: GhosttyNativeSecondaryVisibleRequest
 }
 
 interface GhosttyNativeParentAddon {
@@ -64,6 +77,16 @@ interface GhosttyNativeParentAddon {
   write: (surface: unknown, data: string) => void
   focus: (surface: unknown) => void
   destroy: (surface: unknown) => void
+  addSecondary?: (
+    surface: unknown,
+    onInput: (data: string) => void,
+    onResize: (cols: number, rows: number) => void,
+    onFocus: () => void
+  ) => void
+  setSecondaryVisible?: (surface: unknown, visible: boolean) => void
+  writeSecondary?: (surface: unknown, data: string) => void
+  focusSecondary?: (surface: unknown) => void
+  removeSecondary?: (surface: unknown) => void
 }
 
 interface GhosttyNativeParentDeps {
@@ -79,11 +102,19 @@ interface GhosttyNativeSurfaceState {
   pane: GhosttyNativePaneRequest
   surface: unknown
   pendingData: string[]
+  secondary: GhosttyNativeSecondaryState | null
   // Resize updates pass through this same path. Cache values that reapply
   // Ghostty theme/shortcut state so steady resize only calls setFrame.
   lastBackgroundColor: string | null
   lastResize: { cols: number; rows: number } | null
   lastShortcutDigits: string | null
+}
+
+interface GhosttyNativeSecondaryState {
+  sessionId: string
+  attached: boolean
+  pendingData: string[]
+  lastResize: { cols: number; rows: number } | null
 }
 
 interface GhosttyNativeShortcutInput {
@@ -208,6 +239,20 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
     case 'focus':
     case 'destroy':
       return true
+    case 'secondaryAttach':
+    case 'secondaryFocus':
+    case 'secondaryRemove':
+      return isNonEmptyString(value.secondarySessionId)
+    case 'secondaryData':
+      return (
+        isNonEmptyString(value.secondarySessionId) &&
+        typeof value.data === 'string'
+      )
+    case 'secondaryVisible':
+      return (
+        isNonEmptyString(value.secondarySessionId) &&
+        typeof value.visible === 'boolean'
+      )
     default:
       return false
   }
@@ -270,6 +315,31 @@ export class GhosttyNativeParentController {
     ipcMain.handle(GHOSTTY_NATIVE_DESTROY, (_event, payload) =>
       this.destroy(requireNativePayload('destroy', payload))
     )
+
+    ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_ATTACH, (event, payload) =>
+      this.attachSecondary(
+        event.sender,
+        requireNativePayload('secondaryAttach', payload)
+      )
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_DATA, (_event, payload) =>
+      this.sendSecondaryData(requireNativePayload('secondaryData', payload))
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_FOCUS, (_event, payload) =>
+      this.focusSecondary(requireNativePayload('secondaryFocus', payload))
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_REMOVE, (_event, payload) =>
+      this.removeSecondary(requireNativePayload('secondaryRemove', payload))
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_VISIBLE, (_event, payload) =>
+      this.setSecondaryVisible(
+        requireNativePayload('secondaryVisible', payload)
+      )
+    )
   }
 
   dispose(): void {
@@ -277,6 +347,11 @@ export class GhosttyNativeParentController {
     ipcMain.removeHandler(GHOSTTY_NATIVE_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_FOCUS)
     ipcMain.removeHandler(GHOSTTY_NATIVE_DESTROY)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_ATTACH)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_DATA)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_FOCUS)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_REMOVE)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_VISIBLE)
     for (const key of this.surfaces.keys()) {
       this.destroySurface(key)
     }
@@ -415,6 +490,200 @@ export class GhosttyNativeParentController {
     return { enabled: true }
   }
 
+  private attachSecondary(
+    sender: WebContents,
+    payload: GhosttyNativeSecondaryRequest
+  ): { enabled: boolean } {
+    if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.addSecondary) {
+      return { enabled: false }
+    }
+
+    const win = BrowserWindow.fromWebContents(sender)
+    if (!win) {
+      throw new Error('ghostty native secondary attach has no owning window')
+    }
+
+    const state = this.getOrCreatePaneState(payload)
+    const surface = this.getOrCreateSurface(addon, win, state)
+    this.replaceSecondaryIfNeeded(addon, state, payload.secondarySessionId)
+
+    addon.addSecondary(
+      surface,
+      (data) => {
+        if (
+          win.isDestroyed() ||
+          !this.surfaces.has(this.paneKey(state.pane)) ||
+          state.secondary?.sessionId !== payload.secondarySessionId
+        ) {
+          return
+        }
+
+        void this.sidecar.invoke('write_pty', {
+          request: {
+            sessionId: payload.secondarySessionId,
+            data,
+          },
+        })
+      },
+      (cols, rows) => {
+        if (
+          win.isDestroyed() ||
+          !this.surfaces.has(this.paneKey(state.pane)) ||
+          state.secondary?.sessionId !== payload.secondarySessionId
+        ) {
+          return
+        }
+
+        if (
+          state.secondary.lastResize?.cols === cols &&
+          state.secondary.lastResize.rows === rows
+        ) {
+          return
+        }
+
+        state.secondary.lastResize = { cols, rows }
+        void this.sidecar.invoke('resize_pty', {
+          request: {
+            sessionId: payload.secondarySessionId,
+            cols,
+            rows,
+          },
+        })
+      },
+      () => {
+        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        win.webContents.send(BACKEND_EVENT, {
+          event: 'ghostty-native-focus',
+          payload: state.pane,
+        })
+      }
+    )
+    if (state.secondary) {
+      state.secondary.attached = true
+    }
+    this.flushPendingSecondaryData(addon, state)
+
+    return { enabled: true }
+  }
+
+  private sendSecondaryData(payload: GhosttyNativeSecondaryDataRequest): {
+    enabled: boolean
+  } {
+    if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.writeSecondary) {
+      return { enabled: false }
+    }
+
+    const state = this.getOrCreatePaneState(payload)
+    if (
+      state.secondary &&
+      state.secondary.sessionId !== payload.secondarySessionId
+    ) {
+      return { enabled: true }
+    }
+
+    const secondary = this.ensureSecondaryState(
+      state,
+      payload.secondarySessionId
+    )
+
+    if (!state.surface || !secondary.attached) {
+      secondary.pendingData.push(payload.data)
+
+      if (secondary.pendingData.length > MAX_PENDING_CHUNKS) {
+        secondary.pendingData.shift()
+      }
+
+      return { enabled: true }
+    }
+
+    addon.writeSecondary(state.surface, payload.data)
+
+    return { enabled: true }
+  }
+
+  private focusSecondary(payload: GhosttyNativeSecondaryRequest): {
+    enabled: boolean
+  } {
+    if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.focusSecondary) {
+      return { enabled: false }
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (
+      state?.surface &&
+      state.secondary?.sessionId === payload.secondarySessionId
+    ) {
+      addon.focusSecondary(state.surface)
+    }
+
+    return { enabled: true }
+  }
+
+  private removeSecondary(payload: GhosttyNativeSecondaryRequest): {
+    enabled: boolean
+  } {
+    if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.removeSecondary) {
+      return { enabled: false }
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (
+      state?.surface &&
+      state.secondary?.sessionId === payload.secondarySessionId
+    ) {
+      addon.removeSecondary(state.surface)
+      state.secondary = null
+    }
+
+    return { enabled: true }
+  }
+
+  private setSecondaryVisible(payload: GhosttyNativeSecondaryVisibleRequest): {
+    enabled: boolean
+  } {
+    if (!this.enabled()) {
+      return { enabled: false }
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.setSecondaryVisible) {
+      return { enabled: false }
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (
+      state?.surface &&
+      state.secondary?.sessionId === payload.secondarySessionId
+    ) {
+      addon.setSecondaryVisible(state.surface, payload.visible)
+    }
+
+    return { enabled: true }
+  }
+
   private enabled(): boolean {
     return isGhosttyNativeParentEnabled(this.platform, this.env)
   }
@@ -468,6 +737,7 @@ export class GhosttyNativeParentController {
       },
       surface: null,
       pendingData: [],
+      secondary: null,
       lastBackgroundColor: null,
       lastResize: null,
       lastShortcutDigits: null,
@@ -652,6 +922,52 @@ export class GhosttyNativeParentController {
     // that small tail once the native surface exists so startup text is kept.
     for (const data of state.pendingData.splice(0)) {
       addon.write(state.surface, data)
+    }
+  }
+
+  private ensureSecondaryState(
+    state: GhosttyNativeSurfaceState,
+    secondarySessionId: string
+  ): GhosttyNativeSecondaryState {
+    if (state.secondary?.sessionId === secondarySessionId) {
+      return state.secondary
+    }
+
+    state.secondary = {
+      sessionId: secondarySessionId,
+      attached: false,
+      pendingData: [],
+      lastResize: null,
+    }
+
+    return state.secondary
+  }
+
+  private replaceSecondaryIfNeeded(
+    addon: GhosttyNativeParentAddon,
+    state: GhosttyNativeSurfaceState,
+    secondarySessionId: string
+  ): void {
+    if (state.secondary?.sessionId === secondarySessionId) {
+      return
+    }
+
+    if (state.surface && state.secondary) {
+      addon.removeSecondary?.(state.surface)
+    }
+    this.ensureSecondaryState(state, secondarySessionId)
+  }
+
+  private flushPendingSecondaryData(
+    addon: GhosttyNativeParentAddon,
+    state: GhosttyNativeSurfaceState
+  ): void {
+    if (!state.surface || !state.secondary?.attached) {
+      return
+    }
+
+    for (const data of state.secondary.pendingData.splice(0)) {
+      addon.writeSecondary?.(state.surface, data)
     }
   }
 

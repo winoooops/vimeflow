@@ -351,6 +351,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       runningByPane: new Map(),
       activeByPane: new Map(),
       hasVisibleBurner: false,
+      visibleBurnerPaneKey: null,
     })
   })
 
