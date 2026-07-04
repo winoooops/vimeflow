@@ -134,7 +134,7 @@ describe('ReviewCommentEditor', () => {
     await user.keyboard('{Enter}')
 
     expect(handleConfirm).toHaveBeenCalledTimes(1)
-    expect(handleConfirm).toHaveBeenCalledWith('my comment')
+    expect(handleConfirm).toHaveBeenCalledWith('my comment', 'change')
   })
 
   test('Shift+Enter inserts a newline and does not confirm', async () => {
@@ -311,6 +311,69 @@ describe('ReviewCommentEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Comment' }))
 
     expect(handleConfirm).toHaveBeenCalledTimes(1)
-    expect(handleConfirm).toHaveBeenCalledWith('valid comment')
+    expect(handleConfirm).toHaveBeenCalledWith('valid comment', 'change')
+  })
+
+  test('clicking a category chip confirms with that category', async () => {
+    const user = userEvent.setup()
+    const handleConfirm = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="a question"
+        onConfirm={handleConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Question' }))
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+
+    expect(handleConfirm).toHaveBeenCalledWith('a question', 'question')
+  })
+
+  test('Ctrl+L cycles the category forward (vim l)', async () => {
+    const user = userEvent.setup()
+    const handleConfirm = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="cycled"
+        onConfirm={handleConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('textbox'))
+    // Default 'change' (index 1) → Ctrl+L → 'bug' (index 2).
+    await user.keyboard('{Control>}l{/Control}')
+    await user.keyboard('{Enter}')
+
+    expect(handleConfirm).toHaveBeenLastCalledWith('cycled', 'bug')
+  })
+
+  test('initialCategory seeds the picker (used when editing)', async () => {
+    const user = userEvent.setup()
+    const handleConfirm = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="seeded"
+        initialCategory="suggestion"
+        onConfirm={handleConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('textbox'))
+    await user.keyboard('{Enter}')
+
+    expect(handleConfirm).toHaveBeenCalledWith('seeded', 'suggestion')
   })
 })

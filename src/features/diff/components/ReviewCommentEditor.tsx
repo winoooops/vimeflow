@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  DEFAULT_REVIEW_COMMENT_CATEGORY,
+  REVIEW_COMMENT_CATEGORIES,
+  type ReviewCommentCategory,
+} from '../hooks/useFeedbackBatch'
+import { REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
 
 type CommentSide = 'deletions' | 'additions'
 
@@ -6,9 +12,10 @@ interface ReviewCommentEditorBaseProps {
   chrome?: 'card' | 'plain'
   surfaceRole?: 'dialog' | 'none'
   initialText?: string
+  initialCategory?: ReviewCommentCategory
   value?: string
   onTextChange?: (text: string) => void
-  onConfirm: (text: string) => void
+  onConfirm: (text: string, category: ReviewCommentCategory) => void
   onCancel: () => void
 }
 
@@ -96,14 +103,28 @@ export const ReviewCommentEditor = ({
   chrome = 'card',
   surfaceRole = 'dialog',
   initialText = '',
+  initialCategory = DEFAULT_REVIEW_COMMENT_CATEGORY,
   value = undefined,
   onTextChange = undefined,
   onConfirm,
   onCancel,
 }: ReviewCommentEditorProps): ReactElement => {
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
+
+  const [category, setCategory] =
+    useState<ReviewCommentCategory>(initialCategory)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const text = value ?? uncontrolledText
+
+  // Ctrl+H / Ctrl+L cycle the category (vim h/l).
+  const cycleCategory = (direction: 1 | -1): void => {
+    setCategory((current) => {
+      const count = REVIEW_COMMENT_CATEGORIES.length
+      const index = REVIEW_COMMENT_CATEGORIES.indexOf(current)
+
+      return REVIEW_COMMENT_CATEGORIES[(index + direction + count) % count]
+    })
+  }
 
   const updateText = (next: string): void => {
     if (value === undefined) {
@@ -126,7 +147,7 @@ export const ReviewCommentEditor = ({
     const trimmed = text.trim()
 
     if (trimmed.length > 0) {
-      onConfirm(trimmed)
+      onConfirm(trimmed, category)
     }
   }
 
@@ -159,6 +180,31 @@ export const ReviewCommentEditor = ({
           Comment on {targetDescription}
         </span>
       </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {REVIEW_COMMENT_CATEGORIES.map((option) => {
+          const meta = REVIEW_CATEGORY_META[option]
+          const active = option === category
+
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={active}
+              onClick={(): void => setCategory(option)}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                active
+                  ? `bg-surface-container-highest ${meta.chip}`
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {meta.label}
+            </button>
+          )
+        })}
+        <span className="ml-auto text-[10px] text-on-surface-variant/70">
+          ⌃H / ⌃L
+        </span>
+      </div>
       <textarea
         ref={textareaRef}
         value={text}
@@ -178,6 +224,28 @@ export const ReviewCommentEditor = ({
             moveTextareaCursorVertically(e.currentTarget, -1)
 
             return
+          }
+
+          // Ctrl+H / Ctrl+L cycle the category (vim h/l). Capturing Ctrl+H
+          // overrides textarea backspace — deletion uses the Backspace key.
+          if (e.ctrlKey && !e.metaKey && !e.altKey) {
+            const lowered = e.key.toLowerCase()
+
+            if (lowered === 'l') {
+              e.preventDefault()
+              e.stopPropagation()
+              cycleCategory(1)
+
+              return
+            }
+
+            if (lowered === 'h') {
+              e.preventDefault()
+              e.stopPropagation()
+              cycleCategory(-1)
+
+              return
+            }
           }
 
           if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {

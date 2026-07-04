@@ -33,6 +33,7 @@ import {
   parseBatchKey,
   type FeedbackDraftStore,
   type ReviewComment,
+  type ReviewCommentCategory,
   type UseFeedbackBatchReturn,
 } from './hooks/useFeedbackBatch'
 import { useKeyboard } from './hooks/useKeyboard'
@@ -1686,7 +1687,7 @@ export const Panel = ({
   ])
 
   const confirmCommentEditor = useCallback(
-    (text: string): void => {
+    (text: string, category: ReviewCommentCategory): void => {
       if (annotationTarget === null) {
         return
       }
@@ -1698,7 +1699,7 @@ export const Panel = ({
             annotationTarget.filePath,
             annotationTarget.staged,
             annotationTarget.editId,
-            { text }
+            { text, category }
           )
           cancelVisualSelection(false)
           setFileCommentAnchorPoint(null)
@@ -1718,6 +1719,7 @@ export const Panel = ({
               id: nextFeedbackCommentId(),
               text,
               author: 'self',
+              category,
               createdAt: Date.now(),
               target: { scope: 'file' },
             },
@@ -1758,7 +1760,7 @@ export const Panel = ({
           selectedFilePath,
           selectedFileStaged,
           annotationTarget.editId,
-          { text }
+          { text, category }
         )
         cancelVisualSelection(false)
         closeCommentEditor()
@@ -1777,6 +1779,7 @@ export const Panel = ({
               id: nextFeedbackCommentId(),
               text,
               author: 'self',
+              category,
               createdAt: Date.now(),
               ...(annotationTarget.rangeEndLine === undefined
                 ? {}

@@ -14,7 +14,11 @@ import type {
   SelectedLineRange,
 } from '@pierre/diffs'
 import { IconButton } from '@/components/IconButton'
-import { DRAFT_ID, type ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  DRAFT_ID,
+  type ReviewComment,
+  type ReviewCommentCategory,
+} from '../hooks/useFeedbackBatch'
 import type { AnnotationTarget } from '../hooks/useReviewCommentDraft'
 import type { PierreFileInputs } from '../services/pierreAdapter'
 import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
@@ -150,7 +154,7 @@ interface PanelBodyProps {
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
   onCommentTextChange: (text: string) => void
-  onConfirmComment: (text: string) => void
+  onConfirmComment: (text: string, category: ReviewCommentCategory) => void
   onCancelComment: () => void
 }
 
@@ -238,6 +242,7 @@ export const PanelBody = ({
                     lineNumber={annotation.lineNumber}
                     side={annotation.side}
                     targetLabel={annotationTargetLabel(annotation)}
+                    initialCategory={annotation.metadata.category}
                     value={commentDraftText}
                     onTextChange={onCommentTextChange}
                     onConfirm={onConfirmComment}

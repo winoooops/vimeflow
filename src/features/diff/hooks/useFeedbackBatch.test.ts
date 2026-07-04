@@ -5,6 +5,9 @@ import {
   useFeedbackBatchStore,
   makeBatchKey,
   parseBatchKey,
+  isAgentReviewAnnotation,
+  isPendingReviewAnnotation,
+  reviewCommentCategory,
 } from './useFeedbackBatch'
 import type { ReviewComment } from './useFeedbackBatch'
 import type { DiffLineAnnotation } from '@pierre/diffs'
@@ -814,5 +817,82 @@ describe('useFeedbackBatchStore', () => {
     rerender({ ownerKey: 'session-b:p0', cwd: '/repo-b' })
 
     expect(result.current.feedbackDraft.draft?.text).toBe('draft b')
+  })
+})
+
+describe('review annotation category + agent predicates (VIM-256)', () => {
+  const annotation = (
+    overrides: Partial<ReviewComment>
+  ): DiffLineAnnotation<ReviewComment> => ({
+    side: 'additions',
+    lineNumber: 1,
+    metadata: {
+      id: 'x',
+      text: 't',
+      author: 'self',
+      createdAt: 1,
+      ...overrides,
+    },
+  })
+
+  test('isAgentReviewAnnotation is true only for agent-authored comments', () => {
+    expect(isAgentReviewAnnotation(annotation({ author: 'agent' }))).toBe(true)
+    expect(isAgentReviewAnnotation(annotation({ author: 'self' }))).toBe(false)
+  })
+
+  test('an agent reply is never pending, even without a dispatchedAt', () => {
+    expect(isPendingReviewAnnotation(annotation({ author: 'agent' }))).toBe(
+      false
+    )
+    expect(isPendingReviewAnnotation(annotation({ author: 'self' }))).toBe(true)
+  })
+
+  test('reviewCommentCategory defaults an untagged comment to change', () => {
+    expect(
+      reviewCommentCategory({
+        id: 'x',
+        text: 't',
+        author: 'self',
+        createdAt: 1,
+      })
+    ).toBe('change')
+
+    expect(
+      reviewCommentCategory({
+        id: 'x',
+        text: 't',
+        author: 'self',
+        createdAt: 1,
+        category: 'question',
+      })
+    ).toBe('question')
+  })
+
+  test('an agent annotation in the batch is not counted as pending', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('user-1')
+      )
+
+      result.current.addAnnotation('/repo', 'a.ts', false, {
+        side: 'additions',
+        lineNumber: 2,
+        metadata: {
+          id: 'agent-1',
+          text: 'reply',
+          author: 'agent',
+          createdAt: 1,
+        },
+      })
+    })
+
+    expect(result.current.totalAnnotations()).toBe(2)
+    // Only the user comment is pending; the agent reply is excluded.
+    expect(result.current.pendingAnnotations()).toBe(1)
   })
 })

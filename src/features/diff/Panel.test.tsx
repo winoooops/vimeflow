@@ -4312,7 +4312,7 @@ describe('Panel', () => {
         'src/foo.ts',
         false,
         'comment-1',
-        { text: 'Updated comment' }
+        { text: 'Updated comment', category: 'change' }
       )
       fireEvent.keyDown(diff, { key: 'i' })
 
@@ -4384,7 +4384,7 @@ describe('Panel', () => {
         'src/foo.ts',
         false,
         'comment-1',
-        { text: 'Updated range comment' }
+        { text: 'Updated range comment', category: 'change' }
       )
     })
 
