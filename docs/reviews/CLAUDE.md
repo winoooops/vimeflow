@@ -100,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 10       | 7    | 2026-06-22   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 6        | 5    | 2026-07-03   |
-| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 2        | 2    | 2026-06-28   |
+| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 3        | 3    | 2026-07-04   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 6        | 3    | 2026-06-27   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 2    | 2026-06-18   |

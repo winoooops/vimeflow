@@ -8,6 +8,8 @@ import {
 import type { ReviewComment } from './useFeedbackBatch'
 
 export interface UseDiffRangeBarsOptions {
+  /** Identity for the selected file whose diff DOM owns these annotations. */
+  fileKey: string | null
   /** Committed line-level annotations for the selected file. */
   annotations: DiffLineAnnotation<ReviewComment>[]
 }
@@ -23,21 +25,32 @@ export interface UseDiffRangeBarsResult {
  * cells on every `onPostRender` (pierre wipes custom attributes when it
  * rebuilds), coalescing rebuild bursts with a single rAF.
  *
- * Tagging is idempotent — it reads the live container + spans and rewrites to
- * the current state — so unlike search (which owns the global CSS.highlights
- * registry) it needs no stale-frame/generation guard: a late frame simply paints
- * the truth. A file switch is handled by the new file's own onPostRender, which
- * replaces the container and cancels any in-flight frame.
+ * Tagging is idempotent when the stored container still belongs to the selected
+ * file: it reads the live container + spans and rewrites to the current state.
+ * File switches invalidate the retained Pierre container until the new file's
+ * own `onPostRender` stores a matching container, preventing annotation changes
+ * from repainting stale shadow DOM from the previously selected file.
  */
 export const useDiffRangeBars = ({
+  fileKey,
   annotations,
 }: UseDiffRangeBarsOptions): UseDiffRangeBarsResult => {
   const containerRef = useRef<Element | null>(null)
+  const containerFileKeyRef = useRef<string | null>(null)
+  const previousFileKeyRef = useRef(fileKey)
+  const fileKeyRef = useRef(fileKey)
   const rafRef = useRef<number | null>(null)
+
+  if (previousFileKeyRef.current !== fileKey) {
+    previousFileKeyRef.current = fileKey
+    containerRef.current = null
+    containerFileKeyRef.current = null
+  }
 
   const spans = rangeBarSpansForAnnotations(annotations)
   const spansRef = useRef(spans)
   spansRef.current = spans
+  fileKeyRef.current = fileKey
   const spansKey = rangeBarSpansKey(spans)
 
   const cancelPendingFrame = useCallback((): void => {
@@ -47,25 +60,37 @@ export const useDiffRangeBars = ({
     }
   }, [])
 
+  const paintStoredContainer = useCallback((): void => {
+    if (
+      fileKeyRef.current === null ||
+      containerFileKeyRef.current !== fileKeyRef.current
+    ) {
+      return
+    }
+
+    paintRangeBars(containerRef.current, spansRef.current)
+  }, [])
+
   const handlePostRender = useCallback(
     (node: Element): void => {
       containerRef.current = node
+      containerFileKeyRef.current = fileKey
       cancelPendingFrame()
 
       // One frame coalesces pierre's rebuild bursts (plain → highlighted paint).
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
-        paintRangeBars(containerRef.current, spansRef.current)
+        paintStoredContainer()
       })
     },
-    [cancelPendingFrame]
+    [cancelPendingFrame, fileKey, paintStoredContainer]
   )
 
   // Re-tag when the committed ranges change without a pierre rebuild — a comment
   // added/removed while the same file stays rendered.
   useEffect(() => {
-    paintRangeBars(containerRef.current, spansRef.current)
-  }, [spansKey])
+    paintStoredContainer()
+  }, [paintStoredContainer, spansKey])
 
   useEffect(() => cancelPendingFrame, [cancelPendingFrame])
 

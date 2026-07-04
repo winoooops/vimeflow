@@ -70,7 +70,10 @@ describe('useDiffRangeBars', () => {
     const host = makeHost([3, 4, 5, 6])
 
     const { result } = renderHook(() =>
-      useDiffRangeBars({ annotations: [rangeAnn(4, 6)] })
+      useDiffRangeBars({
+        fileKey: 'src/a.ts:unstaged',
+        annotations: [rangeAnn(4, 6)],
+      })
     )
 
     act(() => result.current.handlePostRender(host))
@@ -85,7 +88,11 @@ describe('useDiffRangeBars', () => {
     const host = makeHost([3, 4, 5, 6])
 
     const { result, rerender } = renderHook(
-      ({ ann }) => useDiffRangeBars({ annotations: ann }),
+      ({ ann }) =>
+        useDiffRangeBars({
+          fileKey: 'src/a.ts:unstaged',
+          annotations: ann,
+        }),
       { initialProps: { ann: [rangeAnn(4, 6)] } }
     )
 
@@ -95,5 +102,35 @@ describe('useDiffRangeBars', () => {
 
     rerender({ ann: [] })
     expect(barAt(host, 5)).toBeNull()
+  })
+
+  test('does not repaint the previous file container after the file key changes', () => {
+    const previousHost = makeHost([3, 4, 5, 6])
+
+    const { result, rerender } = renderHook(
+      ({ ann, fileKey }) =>
+        useDiffRangeBars({
+          fileKey,
+          annotations: ann,
+        }),
+      {
+        initialProps: {
+          ann: [rangeAnn(4, 6)],
+          fileKey: 'src/a.ts:unstaged',
+        },
+      }
+    )
+
+    act(() => result.current.handlePostRender(previousHost))
+    flushRaf()
+    expect(barAt(previousHost, 5)).toBe('mid')
+
+    rerender({
+      ann: [rangeAnn(3, 4)],
+      fileKey: 'src/b.ts:unstaged',
+    })
+
+    expect(barAt(previousHost, 4)).toBe('first')
+    expect(barAt(previousHost, 5)).toBe('mid')
   })
 })

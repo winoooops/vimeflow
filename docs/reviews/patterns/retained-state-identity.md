@@ -2,8 +2,8 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-28
-ref_count: 2
+last_updated: 2026-07-04
+ref_count: 3
 ---
 
 # Retained State Identity
@@ -36,4 +36,13 @@ When a React component renders retained (stale) content while fresh data for a n
   session id, storing, reading, and deleting only the active session's restore
   layout. Added a regression test covering two sessions toggled to focus mode
   independently.
+- **Commit:** same commit as this entry
+
+### 3. Range-bar repaint can target a stale file container on file switch
+
+- **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useDiffRangeBars.ts`
+- **Finding:** The diff range-bar hook retained Pierre's last rendered shadow-DOM container but repainted whenever selected-file annotations changed. During file navigation, new-file spans could be combined with the previous file's retained container before Pierre posted the new file's render callback.
+- **Fix:** Passed the selected-file key into the hook, stored that key with the retained container, invalidated the container on file-key changes, and skipped repaint unless the stored container key still matches the active file key. Added a regression test that changes file keys with different spans and verifies the previous file host is not repainted.
 - **Commit:** same commit as this entry
