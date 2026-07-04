@@ -185,12 +185,7 @@ const buildSegments = ({
   'session' | 'contextPct' | 'burnerCount' | 'burnerOpen'
 >): Segment[] => {
   // Global across sessions, so it surfaces even when no session is active.
-  const burnerText =
-    burnerOpen && burnerCount > 1
-      ? `burner open ×${burnerCount}`
-      : burnerOpen
-        ? 'burner open'
-        : `burner ×${burnerCount}`
+  const burnerText = burnerOpen ? 'burner open' : `burner ×${burnerCount}`
 
   const burnerSegment: Segment | null =
     burnerCount > 0

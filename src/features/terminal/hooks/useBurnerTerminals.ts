@@ -716,11 +716,9 @@ export const useBurnerTerminals = ({
           Fragment,
           null,
           [...entries.entries()].map(([key, entry]): ReactNode => {
-            const useNativeBurner =
-              shouldUseNativeGhostty() && entry.hostPtyId !== undefined
             const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
 
-            if (useNativeBurner && entry.hostPtyId) {
+            if (shouldUseNativeGhostty() && entry.hostPtyId) {
               return createElement(NativeGhosttyBurnerTerminal, {
                 key: `${key}:${entry.burnerPtyId}`,
                 open: visibleKey === key,

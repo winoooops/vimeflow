@@ -275,10 +275,10 @@ describe('StatusBar', () => {
   })
 
   test('shows the burner open state when a burner shell is visible', () => {
-    renderStatusBar({ burnerCount: 2, burnerOpen: true })
+    renderStatusBar({ burnerCount: 1, burnerOpen: true })
 
     expect(screen.getByTestId('status-bar-burner')).toHaveTextContent(
-      'burner open ×2'
+      'burner open'
     )
   })
 
