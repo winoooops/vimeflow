@@ -155,7 +155,7 @@ describe('ghostty native parent', () => {
           cwd: '/tmp',
           backgroundColor: 'not-a-color',
           visible: true,
-        parentHeight: 900,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
         }
       )
@@ -183,7 +183,7 @@ describe('ghostty native parent', () => {
           paneId: 'pane-1',
           cwd: '/tmp',
           visible: true,
-        parentHeight: 900,
+          parentHeight: 900,
           bounds: { x: 10, y: 20, width: 300, height: 200 },
         }
       )
@@ -573,15 +573,7 @@ describe('ghostty native parent', () => {
       }
     )
 
-    expect(addon.setFrame).toHaveBeenCalledWith(
-      surface,
-      10,
-      20,
-      0,
-      0,
-      0,
-      900
-    )
+    expect(addon.setFrame).toHaveBeenCalledWith(surface, 10, 20, 0, 0, 0, 900)
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },

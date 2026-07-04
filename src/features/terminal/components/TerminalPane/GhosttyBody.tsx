@@ -179,9 +179,8 @@ export const GhosttyBody = ({
   const inFlightNativeFrameRef = useRef<Promise<void> | null>(null)
   const lastSentNativeFrameKeyRef = useRef<string | null>(null)
 
-  const queuedNativeFrameSnapshotRef = useRef<NativeGhosttyFrameSnapshot | null>(
-    null
-  )
+  const queuedNativeFrameSnapshotRef =
+    useRef<NativeGhosttyFrameSnapshot | null>(null)
   const resizeTrackingUntilRef = useRef(0)
   const submittedInputLineRef = useRef('')
   const agentCwdOutputBufferRef = useRef('')
@@ -451,8 +450,10 @@ export const GhosttyBody = ({
       viewport
     )
 
-    const nativeBottomCornerRadius =
-      nativeGhosttyCornerRadiusFromCssPixels(bottomCornerRadius, viewport)
+    const nativeBottomCornerRadius = nativeGhosttyCornerRadiusFromCssPixels(
+      bottomCornerRadius,
+      viewport
+    )
 
     // AppKit flips y from the parent view height. Send the renderer's
     // same-window snapshot so top-edge live resize cannot mix old pane bounds

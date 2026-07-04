@@ -500,9 +500,7 @@ describe('GhosttyBody', () => {
     vi.mocked(updateNativeGhostty).mockClear()
 
     const node = screen.getByTestId('native-ghostty-pane')
-    node.getBoundingClientRect = vi.fn(() =>
-      rect(10.4, 20.4, 300.4, 200.4)
-    )
+    node.getBoundingClientRect = vi.fn(() => rect(10.4, 20.4, 300.4, 200.4))
 
     act(() => {
       resizeCallback?.([], {} as ResizeObserver)
@@ -516,9 +514,7 @@ describe('GhosttyBody', () => {
       })
     )
 
-    node.getBoundingClientRect = vi.fn(() =>
-      rect(10.49, 20.49, 300.49, 200.49)
-    )
+    node.getBoundingClientRect = vi.fn(() => rect(10.49, 20.49, 300.49, 200.49))
 
     act(() => {
       resizeCallback?.([], {} as ResizeObserver)
@@ -526,9 +522,7 @@ describe('GhosttyBody', () => {
 
     expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
 
-    node.getBoundingClientRect = vi.fn(() =>
-      rect(10.6, 20.6, 300.6, 200.6)
-    )
+    node.getBoundingClientRect = vi.fn(() => rect(10.6, 20.6, 300.6, 200.6))
 
     act(() => {
       resizeCallback?.([], {} as ResizeObserver)
