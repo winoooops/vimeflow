@@ -68,7 +68,8 @@ private final class EmbeddedGhosttyDividerView: NSView {
 
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let lineWidth = 1 / scale
-        NSColor.separatorColor.setFill()
+        // System separators can disappear against themed Ghostty canvases.
+        NSColor.labelColor.withAlphaComponent(0.24).setFill()
 
         if vertical {
             NSRect(
