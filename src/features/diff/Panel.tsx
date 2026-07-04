@@ -69,6 +69,9 @@ const DIFF_NATIVE_FOCUS_SELECTOR =
 const FILES_LIST_STORAGE_KEY = 'vf-diff-files-open'
 const FILES_LIST_CLOSE_DELAY_MS = 220
 
+const isDiffNativeFocusTarget = (target: Element): boolean =>
+  target.closest(DIFF_NATIVE_FOCUS_SELECTOR) !== null
+
 // A keyboard reveal (`e`) has no mouse-leave to close it, so it self-dismisses
 // after this delay — longer than the hover-leave delay since there's no pointer
 // motion to signal intent. Wire to Settings later.
@@ -511,7 +514,7 @@ export const Panel = ({
 
       if (
         event.target instanceof Element &&
-        event.target.closest(DIFF_NATIVE_FOCUS_SELECTOR) === null
+        !isDiffNativeFocusTarget(event.target)
       ) {
         focusDiffRoot()
       }
@@ -1063,7 +1066,15 @@ export const Panel = ({
 
     const root = diffRootRef.current
     const active = document.activeElement
-    if (root !== null && (active === document.body || root.contains(active))) {
+
+    const activeIsEditable =
+      active instanceof Element && isDiffNativeFocusTarget(active)
+
+    if (
+      root !== null &&
+      !activeIsEditable &&
+      (active === document.body || root.contains(active))
+    ) {
       focusDiffRoot()
     }
   }, [renderKey, focusDiffRoot])
@@ -1171,8 +1182,7 @@ export const Panel = ({
     onPointerHover: handleBodyPointerMove,
     scrollTargetIntoView,
     shouldIgnorePointerTarget: (target): boolean =>
-      target instanceof Element &&
-      target.closest(DIFF_NATIVE_FOCUS_SELECTOR) !== null,
+      target instanceof Element && isDiffNativeFocusTarget(target),
     targetIndexFromPointerEvent,
     targets: reviewTargets,
   })

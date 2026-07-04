@@ -1,17 +1,28 @@
 import { render, screen, waitFor, act } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement, ReactNode } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
-import type { TerminalZoneProps } from './components/TerminalZone'
+import type {
+  TerminalZoneHandle,
+  TerminalZoneProps,
+} from './components/TerminalZone'
 import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 const overlayRegistrationPropsSpy = vi.hoisted(() => vi.fn())
+const terminalFocusActivePaneSpy = vi.hoisted(() => vi.fn())
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
@@ -92,11 +103,28 @@ vi.mock('@/components/sidebar/Sidebar', () => ({
 }))
 
 vi.mock('./components/TerminalZone', () => ({
-  TerminalZone: (props: TerminalZoneProps): ReactElement => {
-    terminalZonePropsSpy(props)
+  TerminalZone: forwardRef<TerminalZoneHandle, TerminalZoneProps>(
+    function MockTerminalZone(props, ref): ReactElement {
+      const nodeRef = useRef<HTMLDivElement>(null)
 
-    return <div data-testid="terminal-zone" />
-  },
+      useImperativeHandle(
+        ref,
+        () => ({
+          focusActivePane: (): boolean => {
+            terminalFocusActivePaneSpy()
+            nodeRef.current?.focus()
+
+            return nodeRef.current !== null
+          },
+        }),
+        []
+      )
+
+      terminalZonePropsSpy(props)
+
+      return <div ref={nodeRef} data-testid="terminal-zone" tabIndex={-1} />
+    }
+  ),
 }))
 
 vi.mock('./components/DockPanel', () => ({
@@ -123,10 +151,18 @@ vi.mock('../editor/components/UnsavedChangesDialog', () => ({
     onSave: () => void
     onDiscard: () => void
     onCancel: () => void
-  }): ReactElement | null =>
-    isOpen ? (
-      <div data-testid="unsaved-changes-dialog">
-        <button type="button" onClick={onSave}>
+  }): ReactElement | null => {
+    const saveRef = useRef<HTMLButtonElement>(null)
+
+    useEffect(() => {
+      if (isOpen) {
+        saveRef.current?.focus()
+      }
+    }, [isOpen])
+
+    return isOpen ? (
+      <div data-testid="unsaved-changes-dialog" role="dialog">
+        <button ref={saveRef} type="button" onClick={onSave}>
           Save
         </button>
         <button type="button" onClick={onDiscard}>
@@ -136,7 +172,8 @@ vi.mock('../editor/components/UnsavedChangesDialog', () => ({
           Cancel
         </button>
       </div>
-    ) : null,
+    ) : null
+  },
 }))
 
 const createMockSession = (id: string, name: string): Session => ({
@@ -1033,6 +1070,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     const input = screen.getByRole('combobox', {
       name: 'Command palette search',
     })
+    terminalFocusActivePaneSpy.mockClear()
     await user.clear(input)
     await user.type(input, ':open-file /tmp/notes.md')
     await user.keyboard('{Enter}')
@@ -1041,6 +1079,12 @@ describe('WorkspaceView - Command Palette Integration', () => {
       expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
     })
 
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Command palette' })
+      ).toBeNull()
+    })
+    expect(terminalFocusActivePaneSpy).not.toHaveBeenCalled()
     expect(openFile).not.toHaveBeenCalled()
   })
 
