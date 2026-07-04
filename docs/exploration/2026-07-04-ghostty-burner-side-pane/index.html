@@ -19,8 +19,13 @@
         --green: #85c88a;
         --danger: #f28b82;
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
       }
 
       * {
@@ -76,7 +81,10 @@
         background: color-mix(in srgb, var(--shell) 16%, transparent);
         color: #ffd990;
         font:
-          700 11px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          700 11px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
         letter-spacing: 0.06em;
       }
@@ -95,12 +103,15 @@
         background: var(--surface-2);
         color: var(--text);
         font:
-          600 12px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          600 12px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
         cursor: pointer;
       }
 
-      button[data-active="true"] {
+      button[data-active='true'] {
         background: color-mix(in srgb, var(--shell) 28%, var(--surface-2));
         color: #ffe1a3;
       }
@@ -221,7 +232,10 @@
         background: var(--surface-2);
         border-bottom: 1px solid var(--line);
         font:
-          600 11px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          600 11px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
       }
 
@@ -247,7 +261,10 @@
       .micro {
         color: var(--muted);
         font:
-          600 10px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          600 10px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
         letter-spacing: 0.04em;
       }
@@ -258,7 +275,10 @@
         background: color-mix(in srgb, var(--shell) 16%, transparent);
         color: #ffd990;
         font:
-          700 10px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          700 10px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
         letter-spacing: 0.06em;
       }
@@ -269,7 +289,10 @@
         background: #1b1b1b;
         color: #f5f2e9;
         font:
-          700 13px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          700 13px/1.45 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
           monospace;
       }
 
@@ -431,7 +454,9 @@
           <h2>Mechanism</h2>
           <div class="note">
             <span class="marker">1</span>
-            <span>Clicking burner creates or reveals a Vimeflow shell pane.</span>
+            <span
+              >Clicking burner creates or reveals a Vimeflow shell pane.</span
+            >
           </div>
           <div class="note">
             <span class="marker">2</span>
@@ -482,21 +507,20 @@
     </main>
 
     <script>
-      const buttons = [...document.querySelectorAll("button[data-mode]")]
-      const grid = document.getElementById("paneGrid")
-      const burner = document.getElementById("burnerPane")
+      const buttons = [...document.querySelectorAll('button[data-mode]')]
+      const grid = document.getElementById('paneGrid')
+      const burner = document.getElementById('burnerPane')
 
       buttons.forEach((button) => {
-        button.addEventListener("click", () => {
+        button.addEventListener('click', () => {
           const mode = button.dataset.mode
           buttons.forEach((item) => {
-            item.dataset.active = item === button ? "true" : "false"
+            item.dataset.active = item === button ? 'true' : 'false'
           })
           grid.className = `pane-grid ${mode}`
-          burner.hidden = mode === "host-only"
+          burner.hidden = mode === 'host-only'
         })
       })
     </script>
   </body>
 </html>
-

@@ -13,7 +13,7 @@ The only split-related public symbol is `TerminalSurfaceContext.split` (`Sources
 
 ## Addendum — Recompiling doesn't help (verified upstream v1.2.3)
 
-Everything split-related in the **full** `include/ghostty.h` (the untrimmed API real Ghostty.app links) is an *action*: `GHOSTTY_ACTION_NEW_SPLIT` / `GOTO_SPLIT` / `RESIZE_SPLIT` / `EQUALIZE_SPLITS` / `TOGGLE_SPLIT_ZOOM` plus four functions like `ghostty_surface_split()`. In the core:
+Everything split-related in the **full** `include/ghostty.h` (the untrimmed API real Ghostty.app links) is an _action_: `GHOSTTY_ACTION_NEW_SPLIT` / `GOTO_SPLIT` / `RESIZE_SPLIT` / `EQUALIZE_SPLITS` / `TOGGLE_SPLIT_ZOOM` plus four functions like `ghostty_surface_split()`. In the core:
 
 ```zig
 // upstream src/apprt/embedded.zig:1843 (v1.2.3)
@@ -26,11 +26,11 @@ It fires `.new_split` **back out to the host's action callback**. The core never
 
 ## Q2 — Two-TerminalView coexistence constraints
 
-| Constraint | Evidence | Impact |
-|---|---|---|
+| Constraint                                       | Evidence                                                                 | Impact                                                                                                                                                       |
+| ------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **One `TerminalController` per view** (BLOCKING) | `TerminalController.swift:59-60`, `TerminalSurfaceCoordinator.swift:138` | `onWakeup`/`shouldProcessWakeup` are single-slot closures; `rebuildIfReady()` overwrites them — a shared controller silences the earlier view's render loop. |
-| Avoid `TerminalController.shared` | `TerminalController.swift:46` | Convenience singleton; naive use triggers the constraint above. |
-| Process-global init/rendering (SAFE) | `TerminalController.swift:300`, `AppTerminalView.swift:13` | `ghostty_init` one-shot guarded; per-controller `ghostty_app_t`; per-view `CAMetalLayer`; per-coordinator main-queue tick, no shared display link. |
+| Avoid `TerminalController.shared`                | `TerminalController.swift:46`                                            | Convenience singleton; naive use triggers the constraint above.                                                                                              |
+| Process-global init/rendering (SAFE)             | `TerminalController.swift:300`, `AppTerminalView.swift:13`               | `ghostty_init` one-shot guarded; per-controller `ghostty_app_t`; per-view `CAMetalLayer`; per-coordinator main-queue tick, no shared display link.           |
 
 Vimeflow already follows the pattern: `EmbeddedGhosttySurface` uses `private lazy var controller = TerminalController()` (`GhosttyElectronBridge.swift:201`).
 
@@ -59,7 +59,7 @@ Ordered minimal plan (native-first):
 7. **`src/features/terminal/nativeGhosttyClient.ts`** — `childId` on `NativeGhosttyPaneRef`; `NativeGhosttyAddBurnerRequest`; helpers per the existing enabled/disabled-sentinel pattern.
 8. **React `GhosttyBody.tsx` + `useBurnerTerminals.ts`** — `childId` prop threaded into `paneRef` and the `ghostty-native-input`/`-focus` event filters (lines 574-634); the hook's `renderNode` popup block (lines 537-575) replaced by native attach/detach calls from `show()`/`hide()`.
 
-Keep: the entire `useBurnerTerminals` PTY state machine (ephemeral spawn, `paneKey`, show/toggle/hide, cwd align VIM-81, OSC 7 tracking, foreground cue VIM-71, self-exit VIM-62, reconcile/kill, boot reap, `Mod+; \`` chord, header signals). Retire: `BurnerTerminalPopup/index.tsx` in full; the hook's `renderNode` block; `{burnerTerminalNode}` at `WorkspaceView.tsx:3031`; re-evaluate the `burnerTerminalOpen` occlusion registration (`WorkspaceView.tsx:2541-2545`).
+Keep: the entire `useBurnerTerminals` PTY state machine (ephemeral spawn, `paneKey`, show/toggle/hide, cwd align VIM-81, OSC 7 tracking, foreground cue VIM-71, self-exit VIM-62, reconcile/kill, boot reap, `Mod+; \`` chord, header signals). Retire: the full `BurnerTerminalPopup/index.tsx`; the hook renderNode block; the burnerTerminalNode slot at WorkspaceView.tsx:3031; re-evaluate the `burnerTerminalOpen` occlusion registration (`WorkspaceView.tsx:2541-2545`).
 
 ## Risks, ranked (verified by codex round 2)
 
@@ -75,7 +75,7 @@ Added by codex round 2:
 - **R7 (HIGH) — Burner output has no subscriber.** Native output forwarding is owned by the mounted `GhosttyBody` (`GhosttyBody.tsx:637-657`) — a role the popup Body currently plays for the burner (`useBurnerTerminals.ts:537-574`). Retiring the popup without a replacement leaves burner PTY output going nowhere. Mitigation: a forwarder owned by `useBurnerTerminals` on native attach — `service.onData(burnerPtyId)` → `sendNativeGhosttyData(childId: 'burner')` — draining the `registerPending` buffer into it.
 - **R8 (HIGH) — Hide must not become destructive.** Today `hide()` keeps the popup Body mounted (`display:none`), so shell + scrollback survive. The library frees surface state on coordinator teardown (`TerminalSurfaceCoordinator.swift:311-323`, though `AppTerminalView` survives plain window detach — `AppTerminalView+Lifecycle.swift:52-67`, `:96-99`). Implementing native hide as remove/destroy kills scrollback. Mitigation: hide = AppKit `isHidden` on the burner view (view + session alive); `removeBurnerChild` reserved for kill.
 - **R9 (HIGH) — Callback-context use-after-free.** Swift's `CallbackBox` holds the raw C++ context pointer (`GhosttyElectronBridge.swift:75-82`) and invokes it on input/resize (`:101-119`); C++ casts it back in the trampolines (`ghostty_native_parent.cc:177-184`). Freeing the `BurnerContext` before the Swift child is destroyed is a UAF, not just a leak. Mitigation: `RemoveBurnerChild` destroys the Swift child first, then releases tsfns/context; mirror the primary's atomic `released` flag.
-- **R10 (HIGH) — Child frames in the wrong coordinate space.** `setFrame` y-flips renderer coordinates via `parentHeight` for the container (`GhosttyElectronBridge.swift:261-275`); the primary then fills `container.bounds` (`:277`). Child sub-rects must be computed in the container's *local* bounds — a second parent-height y-flip misplaces the burner. Mitigation: `layoutChildren()` computes sub-rects purely from `container.bounds`.
+- **R10 (HIGH) — Child frames in the wrong coordinate space.** `setFrame` y-flips renderer coordinates via `parentHeight` for the container (`GhosttyElectronBridge.swift:261-275`); the primary then fills `container.bounds` (`:277`). Child sub-rects must be computed in the container's _local_ bounds — a second parent-height y-flip misplaces the burner. Mitigation: `layoutChildren()` computes sub-rects purely from `container.bounds`.
 
 ## Spike order (revised per codex round 2)
 
