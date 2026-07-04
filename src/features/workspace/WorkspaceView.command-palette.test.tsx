@@ -348,8 +348,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: null,
       toggle: vi.fn().mockResolvedValue(undefined),
+      syncToPaneCwd: vi.fn(),
       runningByPane: new Map(),
       activeByPane: new Map(),
+      outOfSyncByPane: new Map(),
       hasVisibleBurner: false,
       visibleBurnerPaneKey: null,
     })

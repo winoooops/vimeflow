@@ -89,6 +89,8 @@ export interface SplitViewProps {
   ) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
+  /** Sync a pane's burner terminal back to its host pane cwd. */
+  onSyncBurner?: (target: BurnerTarget) => void
   layoutRegistry?: PaneLayoutRegistry
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
@@ -96,6 +98,8 @@ export interface SplitViewProps {
   openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
+  outOfSyncBurnerPaneKeys?: ReadonlySet<string>
   deferTerminalFit?: boolean
 }
 
@@ -185,10 +189,12 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onClosePane = undefined,
       onPanePlacementsChange = undefined,
       onBurner = undefined,
+      onSyncBurner = undefined,
       layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
+      outOfSyncBurnerPaneKeys = undefined,
       deferTerminalFit = false,
     }: SplitViewProps,
     ref
@@ -666,11 +672,13 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         onRestart={onSessionRestart}
                         onClose={closeHandler}
                         onBurner={onBurner}
+                        onSyncBurner={onSyncBurner}
                         onRequestActive={onSetActivePane}
                         onRequestFocus={onRequestFocus}
                         activeBurnerPaneKeys={activeBurnerPaneKeys}
                         openBurnerPaneKeys={openBurnerPaneKeys}
                         runningBurnerPaneKeys={runningBurnerPaneKeys}
+                        outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
                         isActive={isActive}
                         shortcutContext={nativeShortcutContext}
                         shortcutHint={

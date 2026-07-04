@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 27       | 23   | 2026-07-04   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 13       | 12   | 2026-06-28   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 15       | 12   | 2026-06-26   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 16       | 12   | 2026-07-04   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 8        | 2    | 2026-06-28   |
@@ -84,7 +84,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 30       | 6    | 2026-07-02   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 25       | 15   | 2026-07-03   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 26       | 16   | 2026-07-04   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 17       | 10   | 2026-07-03   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 14       | 7    | 2026-06-23   |

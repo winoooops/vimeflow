@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-26
+last_updated: 2026-07-04
 ref_count: 12
 ---
 
@@ -185,4 +185,19 @@ base data is technically "correct."
 - **Finding:** The dialog passed an empty or whitespace-only session name through to
   session creation, bypassing the derived folder-name fallback used for nullish names.
 - **Fix:** Trim the submitted name and fall back to `deriveSessionName(path)` when it is blank.
+- **Commit:** same commit as this entry
+
+### 16. Blocked burner sync status survived after the foreground command exited
+
+- **Source:** github-claude | PR #658 round 1 | 2026-07-04
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/HeaderActions.tsx`
+- **Finding:** Clicking sync while a burner foreground command was active set
+  the visible sync state to `blocked`, but the cleanup effect only watched
+  whether the sync affordance disappeared. If the command exited while the
+  burner stayed open and out of sync, the header kept showing the blocked icon
+  and instruction even though the next click could sync normally.
+- **Fix:** Added a focused effect that resets `blocked` back to `idle` when
+  `burnerActive` becomes false while the sync affordance remains visible, plus
+  regression coverage for the active-to-idle rerender transition.
 - **Commit:** same commit as this entry

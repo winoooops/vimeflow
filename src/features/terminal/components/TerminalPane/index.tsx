@@ -59,6 +59,8 @@ export interface TerminalPaneProps {
   onClose?: (sessionId: string, paneId: string) => void
   /** Toggle this pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
+  /** Sync this pane's burner terminal back to the pane cwd. */
+  onSyncBurner?: (target: BurnerTarget) => void
   /** Make this pane active — the burner button focuses its pane (spec §8). */
   onRequestActive?: (sessionId: string, paneId: string) => void
   onRequestFocus?: () => void
@@ -68,6 +70,8 @@ export interface TerminalPaneProps {
   openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
+  outOfSyncBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onCommandSubmit?: (ptyId: string, command: string) => void
   onRestart?: (sessionId: string, paneId?: string) => void
@@ -105,11 +109,13 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       mode = 'spawn',
       onClose = undefined,
       onBurner = undefined,
+      onSyncBurner = undefined,
       onRequestActive = undefined,
       onRequestFocus = undefined,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
+      outOfSyncBurnerPaneKeys = undefined,
       onCwdChange = undefined,
       onCommandSubmit = undefined,
       onRestart = undefined,
@@ -243,6 +249,23 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       })
     }, [onRequestActive, onBurner, session.id, pane.id, pane.ptyId, pane.cwd])
 
+    const handleSyncBurner = useCallback((): void => {
+      onRequestActive?.(session.id, pane.id)
+      onSyncBurner?.({
+        sessionId: session.id,
+        paneId: pane.id,
+        hostPtyId: pane.ptyId,
+        cwd: pane.cwd,
+      })
+    }, [
+      onRequestActive,
+      onSyncBurner,
+      session.id,
+      pane.id,
+      pane.ptyId,
+      pane.cwd,
+    ])
+
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
         if (!pane.active) {
@@ -303,6 +326,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
           onBurner={onBurner ? handleBurner : undefined}
+          onSyncBurner={onSyncBurner ? handleSyncBurner : undefined}
           burnerActive={
             activeBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
@@ -311,6 +335,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           }
           burnerShellExists={
             runningBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
+          }
+          burnerOutOfSync={
+            outOfSyncBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
           draggable={paneDraggable}
           onHeaderDragStart={onHeaderDragStart}

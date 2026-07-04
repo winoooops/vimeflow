@@ -82,6 +82,7 @@ const hasControlBytes = (value: string): boolean => {
 // Ctrl-E then Ctrl-U: move to end of line and kill it, so the injected cd runs
 // on a clean prompt instead of merging with whatever the user half-typed.
 const CLEAR_LINE = '\x05\x15'
+const PRINT_OSC7_CWD = `printf '\\033]7;%s\\007' "$PWD"`
 
 // Compare OSC 7 cwds forgiving a trailing slash (root stays "/").
 const normalizeCwd = (value: string): string => value.replace(/\/+$/, '') || '/'
@@ -278,6 +279,8 @@ export interface UseBurnerTerminals {
   renderNode: ReactNode
   /** Toggle the popup for a target pane (defaults to the focused pane). */
   toggle: (target?: BurnerTarget) => Promise<void>
+  /** Sync a pane's burner shell to its host pane's current directory. */
+  syncToPaneCwd: (target: BurnerTarget) => void
   /**
    * Running burner shells keyed by `${sessionId}:${paneId}` — drives the
    * live-but-hidden cues. Global across sessions (hide ≠ kill survives a
@@ -290,6 +293,8 @@ export interface UseBurnerTerminals {
    * distinct from `runningByPane`, which only means a shell exists.
    */
   activeByPane: ReadonlyMap<string, boolean>
+  /** Burner shells whose current cwd differs from their host pane cwd. */
+  outOfSyncByPane: ReadonlyMap<string, boolean>
   /** True while a burner popup is visibly open over the workspace. */
   hasVisibleBurner: boolean
   /** Stable pane key for the burner currently shown, including native Ghostty. */
@@ -392,7 +397,8 @@ export const useBurnerTerminals = ({
   // real `cd` (queues behind any running command, shows in history), resolved at
   // call-time from refs so it prefers the active agent's structured worktree cwd
   // while falling back to the host pane's current cwd. The burner's own `cd`
-  // still never moves the pane (no OSC 7 wiring on the popup).
+  // still never moves the pane; the synthetic OSC 7 only updates this burner
+  // entry so the header sync affordance can settle after a successful cd.
   const alignCwd = useCallback(
     (key: string): void => {
       const entry = entriesRef.current.get(key)
@@ -419,7 +425,7 @@ export const useBurnerTerminals = ({
         try {
           await service.write({
             sessionId: ptyId,
-            data: `${CLEAR_LINE}cd ${singleQuote(cwd)}\r`,
+            data: `${CLEAR_LINE}cd ${singleQuote(cwd)} && ${PRINT_OSC7_CWD}\r`,
           })
         } catch (err) {
           // eslint-disable-next-line no-console
@@ -558,6 +564,13 @@ export const useBurnerTerminals = ({
       await show(target)
     },
     [resolveFocusedPane, visibleKey, show, hide]
+  )
+
+  const syncToPaneCwd = useCallback(
+    (target: BurnerTarget): void => {
+      alignCwd(paneKey(target.sessionId, target.paneId))
+    },
+    [alignCwd]
   )
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
@@ -740,13 +753,28 @@ export const useBurnerTerminals = ({
     return map
   }, [entries])
 
+  const outOfSyncByPane = useMemo(() => {
+    const map = new Map<string, boolean>()
+    entries.forEach((entry, key) => {
+      const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
+      map.set(
+        key,
+        entry.status === 'running' &&
+          targetCwd !== undefined &&
+          normalizeCwd(entry.currentCwd) !== normalizeCwd(targetCwd)
+      )
+    })
+
+    return map
+  }, [agentPaneCwds, entries, livePaneCwds])
+
   const renderNode: ReactNode =
     entries.size > 0
       ? createElement(
           Fragment,
           null,
           [...entries.entries()].map(([key, entry]): ReactNode => {
-            const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
+            const outOfSync = outOfSyncByPane.get(key) ?? false
 
             if (canUseNativeGhosttySecondary() && entry.hostPtyId) {
               return createElement(NativeGhosttyBurnerTerminal, {
@@ -795,10 +823,7 @@ export const useBurnerTerminals = ({
               // Track the burner's own cwd (isolated, never the host pane) and
               // light the button amber once it has wandered from its host pane.
               onCwdChange: (cwd: string): void => setBurnerCwd(key, cwd),
-              outOfSync:
-                entry.status === 'running' &&
-                targetCwd !== undefined &&
-                normalizeCwd(entry.currentCwd) !== normalizeCwd(targetCwd),
+              outOfSync,
             })
           })
         )
@@ -807,8 +832,10 @@ export const useBurnerTerminals = ({
   return {
     renderNode,
     toggle,
+    syncToPaneCwd,
     runningByPane,
     activeByPane,
+    outOfSyncByPane,
     hasVisibleBurner:
       visibleKey !== null &&
       (!canUseNativeGhosttySecondary() || !entries.get(visibleKey)?.hostPtyId),

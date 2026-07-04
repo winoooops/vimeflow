@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-03
-ref_count: 15
+last_updated: 2026-07-04
+ref_count: 16
 ---
 
 # UI Visual Regression
@@ -312,4 +312,18 @@ test case for the state that triggers the collision.
 - **Fix:** Added a corner-radius conversion helper that applies the same
   native point scale before calling `updateNativeGhostty`, and covered both the
   helper and IPC payload with regression tests for mismatched viewport metrics.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Active burner sync toggle lost compact sizing
+
+- **Source:** github-codex-connector | PR #658 round 1 | 2026-07-04
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/HeaderActions.tsx`
+- **Finding:** The burner toggle class composition checked `burnerActive`
+  before `showBurnerSync`, so an active burner with a drifted cwd kept the
+  amber running tint but skipped the `!h-5 !w-5 rounded-md` sizing required by
+  the combined sync/toggle pill.
+- **Fix:** Made the sync-pill branch own the compact sizing and select the
+  active amber tint versus idle primary tint inside that branch. Added a
+  regression test covering the active, open, out-of-sync state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
