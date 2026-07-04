@@ -97,6 +97,12 @@ export const HeaderActions = ({
     }
   }, [showBurnerSync])
 
+  useEffect(() => {
+    if (showBurnerSync && !burnerActive && burnerSyncStatus === 'blocked') {
+      setBurnerSyncStatus('idle')
+    }
+  }, [burnerActive, burnerSyncStatus, showBurnerSync])
+
   useEffect(
     () => (): void => {
       if (syncFailureTimeoutRef.current) {

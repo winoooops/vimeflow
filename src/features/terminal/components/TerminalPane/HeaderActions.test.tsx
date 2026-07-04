@@ -326,6 +326,48 @@ describe('HeaderActions', () => {
     ).toHaveTextContent('sync_problem')
   })
 
+  test('burner sync clears blocked status when the foreground command exits', () => {
+    const onSyncBurner = vi.fn()
+
+    const { rerender } = render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+        burnerOutOfSync
+        burnerActive
+      />
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /sync burner terminal/i })
+    )
+
+    expect(
+      screen.getByRole('button', {
+        name: /stop the running command, then sync pwd/i,
+      })
+    ).toHaveTextContent('sync_problem')
+
+    rerender(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+        burnerOutOfSync
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /sync burner terminal/i })
+    ).toHaveTextContent('sync')
+    expect(onSyncBurner).not.toHaveBeenCalled()
+  })
+
   test('renders visible pane shortcut hint when provided', () => {
     render(
       <HeaderActions
