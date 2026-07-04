@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
-import { ReviewCommentRow } from './ReviewCommentRow'
+import { formatSentAgo, ReviewCommentRow } from './ReviewCommentRow'
 
 describe('ReviewCommentRow', () => {
   test('renders the comment text', () => {
@@ -143,7 +143,7 @@ describe('ReviewCommentRow', () => {
     expect(screen.queryByText(/lines R/)).not.toBeInTheDocument()
   })
 
-  test('marks a dispatched comment as Sent', () => {
+  test('marks a dispatched comment as Sent with the time elapsed', () => {
     render(
       <ReviewCommentRow
         comment={{
@@ -158,7 +158,8 @@ describe('ReviewCommentRow', () => {
       />
     )
 
-    expect(screen.getByText('Sent')).toBeInTheDocument()
+    // "Sent <n>d ago" — the badge leads with "Sent" and carries an elapsed time.
+    expect(screen.getByText(/^Sent\b.*ago$/)).toBeInTheDocument()
   })
 
   test('a pending comment shows no Sent label and keeps edit', () => {
@@ -175,9 +176,33 @@ describe('ReviewCommentRow', () => {
       />
     )
 
-    expect(screen.queryByText('Sent')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Sent\b/)).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Edit comment' })
     ).toBeInTheDocument()
+  })
+})
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+describe('formatSentAgo', () => {
+  const base = 1_000_000_000_000
+
+  test('under a minute reads "just now"', () => {
+    expect(formatSentAgo(base, base)).toBe('just now')
+    expect(formatSentAgo(base, base + 59_000)).toBe('just now')
+  })
+
+  test('rounds down to minutes, hours, and days', () => {
+    expect(formatSentAgo(base, base + 5 * MINUTE)).toBe('5m ago')
+    expect(formatSentAgo(base, base + 90 * MINUTE)).toBe('1h ago')
+    expect(formatSentAgo(base, base + 3 * HOUR)).toBe('3h ago')
+    expect(formatSentAgo(base, base + 2 * DAY)).toBe('2d ago')
+  })
+
+  test('a future dispatchedAt (clock skew) reads "just now"', () => {
+    expect(formatSentAgo(base + 5000, base)).toBe('just now')
   })
 })

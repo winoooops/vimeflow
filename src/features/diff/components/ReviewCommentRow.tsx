@@ -14,6 +14,33 @@ interface ReviewCommentRowProps {
   onDelete: () => void
 }
 
+const MINUTE_MS = 60_000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+
+/**
+ * Compact "time since sent" for the Sent badge: `just now`, `5m ago`, `3h ago`,
+ * `2d ago`. Takes an explicit `now` so it stays pure and testable; the row
+ * passes `Date.now()`.
+ */
+export const formatSentAgo = (dispatchedAt: number, now: number): string => {
+  const delta = now - dispatchedAt
+
+  if (delta < MINUTE_MS) {
+    return 'just now'
+  }
+
+  if (delta < HOUR_MS) {
+    return `${Math.floor(delta / MINUTE_MS)}m ago`
+  }
+
+  if (delta < DAY_MS) {
+    return `${Math.floor(delta / HOUR_MS)}h ago`
+  }
+
+  return `${Math.floor(delta / DAY_MS)}d ago`
+}
+
 export const ReviewCommentRow = ({
   comment,
   editShortcut = 'u',
@@ -23,18 +50,18 @@ export const ReviewCommentRow = ({
   onDelete,
 }: ReviewCommentRowProps): ReactElement => {
   // A dispatched comment was sent to an agent and now persists as a thread
-  // anchor (VIM-282); label it "Sent" so it reads as sent rather than an unsent
-  // draft.
-  const dispatched = comment.dispatchedAt !== undefined
+  // anchor (VIM-282); label it "Sent <time ago>" so it reads as sent — with how
+  // long ago — rather than an unsent draft.
+  const { dispatchedAt } = comment
 
   return (
     <div className="mx-2 my-1 flex items-start gap-2 rounded-md bg-surface-container-high/60 px-3 py-2">
       <div className="min-w-0 flex-1">
-        {dispatched || targetLabel !== undefined ? (
+        {dispatchedAt !== undefined || targetLabel !== undefined ? (
           <div className="mb-1 flex flex-wrap items-center gap-1">
-            {dispatched ? (
+            {dispatchedAt !== undefined ? (
               <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-primary">
-                Sent
+                Sent {formatSentAgo(dispatchedAt, Date.now())}
               </span>
             ) : null}
             {targetLabel !== undefined ? (
