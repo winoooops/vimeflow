@@ -28,6 +28,12 @@ using SetShortcutDigitsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
+using AddSecondaryFn = void (*)(void *, InputCallback, ResizeCallback,
+                                FocusCallback, void *);
+using SetSecondaryVisibleFn = void (*)(void *, bool);
+using RemoveSecondaryFn = void (*)(void *);
+using WriteSecondaryFn = void (*)(void *, const unsigned char *, int);
+using FocusSecondaryFn = void (*)(void *);
 using DestroyFn = void (*)(void *);
 
 struct BridgeApi {
@@ -39,6 +45,11 @@ struct BridgeApi {
   SetBackgroundColorFn set_background_color = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
+  AddSecondaryFn add_secondary = nullptr;
+  SetSecondaryVisibleFn set_secondary_visible = nullptr;
+  RemoveSecondaryFn remove_secondary = nullptr;
+  WriteSecondaryFn write_secondary = nullptr;
+  FocusSecondaryFn focus_secondary = nullptr;
   DestroyFn destroy = nullptr;
 };
 
@@ -49,8 +60,12 @@ struct SurfaceHandle {
   napi_threadsafe_function focus_tsfn = nullptr;
   napi_threadsafe_function shortcut_tsfn = nullptr;
   napi_threadsafe_function rename_pane_tsfn = nullptr;
+  napi_threadsafe_function secondary_input_tsfn = nullptr;
+  napi_threadsafe_function secondary_resize_tsfn = nullptr;
+  napi_threadsafe_function secondary_focus_tsfn = nullptr;
   void *swift_surface = nullptr;
   std::atomic_bool callbacks_released = false;
+  std::atomic_bool secondary_callbacks_released = true;
   std::mutex callback_mutex;
 };
 
@@ -125,6 +140,16 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
                  reinterpret_cast<void **>(&bridge.focus)) &&
+      LoadSymbol(env, "vimeflow_ghostty_add_secondary",
+                 reinterpret_cast<void **>(&bridge.add_secondary)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_secondary_visible",
+                 reinterpret_cast<void **>(&bridge.set_secondary_visible)) &&
+      LoadSymbol(env, "vimeflow_ghostty_remove_secondary",
+                 reinterpret_cast<void **>(&bridge.remove_secondary)) &&
+      LoadSymbol(env, "vimeflow_ghostty_write_secondary",
+                 reinterpret_cast<void **>(&bridge.write_secondary)) &&
+      LoadSymbol(env, "vimeflow_ghostty_focus_secondary",
+                 reinterpret_cast<void **>(&bridge.focus_secondary)) &&
       LoadSymbol(env, "vimeflow_ghostty_destroy",
                  reinterpret_cast<void **>(&bridge.destroy))) {
     bridge.loaded_path = path;
@@ -162,6 +187,28 @@ napi_threadsafe_function AcquireSurfaceCallback(
 
   std::lock_guard<std::mutex> lock(surface->callback_mutex);
   if (surface->callbacks_released.load(std::memory_order_relaxed)) {
+    return nullptr;
+  }
+
+  napi_threadsafe_function tsfn = surface->*member;
+  if (tsfn == nullptr ||
+      napi_acquire_threadsafe_function(tsfn) != napi_ok) {
+    return nullptr;
+  }
+
+  return tsfn;
+}
+
+napi_threadsafe_function AcquireSecondaryCallback(
+    SurfaceHandle *surface, napi_threadsafe_function SurfaceHandle::*member) {
+  if (surface->callbacks_released.load(std::memory_order_acquire) ||
+      surface->secondary_callbacks_released.load(std::memory_order_acquire)) {
+    return nullptr;
+  }
+
+  std::lock_guard<std::mutex> lock(surface->callback_mutex);
+  if (surface->callbacks_released.load(std::memory_order_relaxed) ||
+      surface->secondary_callbacks_released.load(std::memory_order_relaxed)) {
     return nullptr;
   }
 
@@ -215,6 +262,66 @@ void OnResize(void *context, int columns, int rows) {
                                     napi_tsfn_nonblocking) == napi_ok) {
     payload.release();
   }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
+void OnSecondaryInput(void *context, const unsigned char *data, int length) {
+  if (context == nullptr || data == nullptr || length <= 0) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSecondaryCallback(surface, &SurfaceHandle::secondary_input_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  auto payload = std::make_unique<InputPayload>();
+  payload->data.assign(reinterpret_cast<const char *>(data),
+                       static_cast<size_t>(length));
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
+                                    napi_tsfn_nonblocking) == napi_ok) {
+    payload.release();
+  }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
+void OnSecondaryResize(void *context, int columns, int rows) {
+  if (context == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSecondaryCallback(surface, &SurfaceHandle::secondary_resize_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  auto payload = std::make_unique<ResizePayload>();
+  payload->columns = columns;
+  payload->rows = rows;
+  if (napi_call_threadsafe_function(tsfn, payload.get(),
+                                    napi_tsfn_nonblocking) == napi_ok) {
+    payload.release();
+  }
+  napi_release_threadsafe_function(tsfn, napi_tsfn_release);
+}
+
+void OnSecondaryFocus(void *context) {
+  if (context == nullptr) {
+    return;
+  }
+
+  auto *surface = static_cast<SurfaceHandle *>(context);
+  napi_threadsafe_function tsfn =
+      AcquireSecondaryCallback(surface, &SurfaceHandle::secondary_focus_tsfn);
+  if (tsfn == nullptr) {
+    return;
+  }
+
+  napi_call_threadsafe_function(tsfn, nullptr, napi_tsfn_nonblocking);
   napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
@@ -358,6 +465,7 @@ bool CreateThreadsafeFunction(napi_env env, napi_value callback,
              nullptr, call_js, result) == napi_ok;
 }
 
+void ReleaseSecondaryCallbacks(SurfaceHandle *surface);
 void ReleaseSurfaceCallbacks(SurfaceHandle *surface);
 
 void FinalizeSurface(napi_env env, void *data, void *) {
@@ -366,13 +474,45 @@ void FinalizeSurface(napi_env env, void *data, void *) {
     return;
   }
 
-  ReleaseSurfaceCallbacks(surface);
   if (surface->swift_surface != nullptr && bridge.destroy != nullptr) {
     bridge.destroy(surface->swift_surface);
     surface->swift_surface = nullptr;
   }
+  ReleaseSecondaryCallbacks(surface);
+  ReleaseSurfaceCallbacks(surface);
 
   delete surface;
+}
+
+void ReleaseSecondaryCallbacks(SurfaceHandle *surface) {
+  bool expected = false;
+  if (!surface->secondary_callbacks_released.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel)) {
+    return;
+  }
+
+  napi_threadsafe_function secondary_input_tsfn = nullptr;
+  napi_threadsafe_function secondary_resize_tsfn = nullptr;
+  napi_threadsafe_function secondary_focus_tsfn = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(surface->callback_mutex);
+    secondary_input_tsfn = surface->secondary_input_tsfn;
+    secondary_resize_tsfn = surface->secondary_resize_tsfn;
+    secondary_focus_tsfn = surface->secondary_focus_tsfn;
+    surface->secondary_input_tsfn = nullptr;
+    surface->secondary_resize_tsfn = nullptr;
+    surface->secondary_focus_tsfn = nullptr;
+  }
+
+  if (secondary_input_tsfn != nullptr) {
+    napi_release_threadsafe_function(secondary_input_tsfn, napi_tsfn_abort);
+  }
+  if (secondary_resize_tsfn != nullptr) {
+    napi_release_threadsafe_function(secondary_resize_tsfn, napi_tsfn_abort);
+  }
+  if (secondary_focus_tsfn != nullptr) {
+    napi_release_threadsafe_function(secondary_focus_tsfn, napi_tsfn_abort);
+  }
 }
 
 void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
@@ -416,6 +556,18 @@ void ReleaseSurfaceCallbacks(SurfaceHandle *surface) {
   if (rename_pane_tsfn != nullptr) {
     napi_release_threadsafe_function(rename_pane_tsfn, napi_tsfn_abort);
   }
+}
+
+bool HasSecondaryCallbacks(SurfaceHandle *surface) {
+  if (surface->secondary_callbacks_released.load(std::memory_order_acquire)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lock(surface->callback_mutex);
+  return !surface->secondary_callbacks_released.load(std::memory_order_relaxed) &&
+         surface->secondary_input_tsfn != nullptr &&
+         surface->secondary_resize_tsfn != nullptr &&
+         surface->secondary_focus_tsfn != nullptr;
 }
 
 napi_value Create(napi_env env, napi_callback_info info) {
@@ -575,6 +727,129 @@ napi_value Write(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+napi_value AddSecondary(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value args[4];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 4) {
+    return Throw(
+        env,
+        "addSecondary(surface, onInput, onResize, onFocus) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  if (HasSecondaryCallbacks(surface)) {
+    bridge.set_secondary_visible(surface->swift_surface, true);
+    return nullptr;
+  }
+
+  napi_threadsafe_function input_tsfn = nullptr;
+  napi_threadsafe_function resize_tsfn = nullptr;
+  napi_threadsafe_function focus_tsfn = nullptr;
+  if (!CreateThreadsafeFunction(env, args[1], "vimeflow-ghostty-secondary-input",
+                                CallJsInput, &input_tsfn) ||
+      !CreateThreadsafeFunction(env, args[2], "vimeflow-ghostty-secondary-resize",
+                                CallJsResize, &resize_tsfn) ||
+      !CreateThreadsafeFunction(env, args[3], "vimeflow-ghostty-secondary-focus",
+                                CallJsFocus, &focus_tsfn)) {
+    if (input_tsfn != nullptr) {
+      napi_release_threadsafe_function(input_tsfn, napi_tsfn_abort);
+    }
+    if (resize_tsfn != nullptr) {
+      napi_release_threadsafe_function(resize_tsfn, napi_tsfn_abort);
+    }
+    if (focus_tsfn != nullptr) {
+      napi_release_threadsafe_function(focus_tsfn, napi_tsfn_abort);
+    }
+    return Throw(env, "failed to create Ghostty secondary callbacks");
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(surface->callback_mutex);
+    surface->secondary_input_tsfn = input_tsfn;
+    surface->secondary_resize_tsfn = resize_tsfn;
+    surface->secondary_focus_tsfn = focus_tsfn;
+    surface->secondary_callbacks_released.store(false,
+                                                std::memory_order_release);
+  }
+
+  bridge.add_secondary(surface->swift_surface, OnSecondaryInput,
+                       OnSecondaryResize, OnSecondaryFocus, surface);
+
+  return nullptr;
+}
+
+napi_value SetSecondaryVisible(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "setSecondaryVisible(surface, visible) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  bool visible = false;
+  napi_get_value_bool(env, args[1], &visible);
+  bridge.set_secondary_visible(surface->swift_surface, visible);
+
+  return nullptr;
+}
+
+napi_value RemoveSecondary(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface != nullptr && surface->swift_surface != nullptr) {
+    bridge.remove_secondary(surface->swift_surface);
+    ReleaseSecondaryCallbacks(surface);
+  }
+
+  return nullptr;
+}
+
+napi_value WriteSecondary(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "writeSecondary(surface, data) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  const std::string data = GetString(env, args[1]);
+  bridge.write_secondary(surface->swift_surface,
+                         reinterpret_cast<const unsigned char *>(data.data()),
+                         static_cast<int>(data.size()));
+
+  return nullptr;
+}
+
+napi_value FocusSecondary(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface != nullptr && surface->swift_surface != nullptr) {
+    bridge.focus_secondary(surface->swift_surface);
+  }
+
+  return nullptr;
+}
+
 napi_value Focus(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
@@ -595,6 +870,7 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
   if (surface != nullptr && surface->swift_surface != nullptr) {
     bridge.destroy(surface->swift_surface);
     surface->swift_surface = nullptr;
+    ReleaseSecondaryCallbacks(surface);
     ReleaseSurfaceCallbacks(surface);
   }
 
@@ -615,6 +891,16 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr},
       {"focus", nullptr, Focus, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"addSecondary", nullptr, AddSecondary, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"setSecondaryVisible", nullptr, SetSecondaryVisible, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"writeSecondary", nullptr, WriteSecondary, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"focusSecondary", nullptr, FocusSecondary, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"removeSecondary", nullptr, RemoveSecondary, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"destroy", nullptr, Destroy, nullptr, nullptr, nullptr, napi_default,
        nullptr},
   };

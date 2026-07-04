@@ -46,6 +46,28 @@ private struct SendablePointer: @unchecked Sendable {
     let value: UnsafeMutableRawPointer?
 }
 
+private final class EmbeddedGhosttyContainerView: NSView {
+    var onLayout: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
+}
+
+private final class EmbeddedGhosttyDividerView: NSView {
+    var vertical = true
+    var onDrag: ((CGFloat) -> Void)?
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: vertical ? .resizeLeftRight : .resizeUpDown)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(vertical ? event.deltaX : event.deltaY)
+    }
+}
+
 private extension NSColor {
     static func vimeflowGhosttyHexColor(_ hexColor: String) -> String? {
         let hex = hexColor
@@ -152,6 +174,54 @@ private final class CallbackBox: @unchecked Sendable {
 }
 
 @MainActor
+private final class EmbeddedGhosttyChild {
+    let callbacks: CallbackBox
+    let controller: TerminalController
+    let session: InMemoryTerminalSession
+    let terminalView: TerminalView
+
+    init(callbacks: CallbackBox) {
+        self.callbacks = callbacks
+
+        let controller = TerminalController()
+        self.controller = controller
+
+        let session = InMemoryTerminalSession(
+            write: { [callbacks] data in
+                callbacks.sendInput(data)
+            },
+            resize: { [callbacks] viewport in
+                callbacks.sendResize(
+                    columns: Int(viewport.columns),
+                    rows: Int(viewport.rows)
+                )
+            }
+        )
+        self.session = session
+
+        let view = TerminalView(frame: .zero)
+        view.controller = controller
+        view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
+        self.terminalView = view
+    }
+
+    func setBackgroundColor(_ hexColor: String) {
+        guard let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor) else {
+            return
+        }
+
+        controller.setTheme(TerminalTheme(
+            light: TerminalConfiguration().background(ghosttyHex),
+            dark: TerminalConfiguration().background(ghosttyHex)
+        ))
+    }
+
+    func receive(_ text: String) {
+        session.receive(text)
+    }
+}
+
+@MainActor
 private final class EmbeddedGhosttySurface: NSObject {
     private static let shortcutDigitByKeyCode: [UInt16: Character] = [
         18: "1",
@@ -166,12 +236,16 @@ private final class EmbeddedGhosttySurface: NSObject {
     ]
 
     private let parentView: NSView
-    private let container = NSView(frame: .zero)
+    private let container = EmbeddedGhosttyContainerView(frame: .zero)
     private let callbacks: CallbackBox
     private var focusMonitor: Any?
     private var contextMenuMonitor: Any?
     private var shortcutMonitor: Any?
     private var shortcutDigits = Set<Character>()
+    private var backgroundHexColor = "000000"
+    private var secondaryChild: EmbeddedGhosttyChild?
+    private var dividerView: EmbeddedGhosttyDividerView?
+    private var secondarySplitRatio: CGFloat = 0.34
 
     private lazy var contextMenu: NSMenu = {
         let menu = NSMenu()
@@ -274,7 +348,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             height: safeHeight
         )
         updateLiveResizePrediction(frame: container.frame)
-        terminalView.frame = container.bounds
+        layoutChildren()
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
     }
 
@@ -297,14 +371,85 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
 
         container.layer?.backgroundColor = color.cgColor
+        backgroundHexColor = ghosttyHex
         controller.setTheme(TerminalTheme(
             light: TerminalConfiguration().background(ghosttyHex),
             dark: TerminalConfiguration().background(ghosttyHex)
         ))
+        secondaryChild?.setBackgroundColor(ghosttyHex)
     }
 
     func receive(_ text: String) {
         session.receive(text)
+    }
+
+    func addSecondary(
+        inputCallback: VimeflowGhosttyInputCallback?,
+        resizeCallback: VimeflowGhosttyResizeCallback?,
+        focusCallback: VimeflowGhosttyFocusCallback?,
+        callbackContext: UnsafeMutableRawPointer?
+    ) {
+        if let secondaryChild {
+            secondaryChild.terminalView.isHidden = false
+            dividerView?.isHidden = false
+            layoutChildren()
+            parentView.window?.makeFirstResponder(secondaryChild.terminalView)
+            return
+        }
+
+        let callbacks = CallbackBox(
+            inputCallback: inputCallback,
+            resizeCallback: resizeCallback,
+            focusCallback: focusCallback,
+            shortcutCallback: nil,
+            renamePaneCallback: nil,
+            callbackContext: callbackContext
+        )
+        let child = EmbeddedGhosttyChild(callbacks: callbacks)
+        child.setBackgroundColor(backgroundHexColor)
+        container.addSubview(child.terminalView)
+        secondaryChild = child
+        ensureDivider()
+        dividerView?.isHidden = false
+        layoutChildren()
+        parentView.window?.makeFirstResponder(child.terminalView)
+    }
+
+    func setSecondaryVisible(_ visible: Bool) {
+        guard let secondaryChild else {
+            return
+        }
+
+        secondaryChild.terminalView.isHidden = !visible
+        dividerView?.isHidden = !visible
+        layoutChildren()
+        if visible {
+            parentView.window?.makeFirstResponder(secondaryChild.terminalView)
+        } else {
+            focus()
+        }
+    }
+
+    func removeSecondary(refocusPrimary: Bool = true) {
+        secondaryChild?.terminalView.removeFromSuperview()
+        secondaryChild = nil
+        dividerView?.isHidden = true
+        layoutChildren()
+        if refocusPrimary {
+            focus()
+        }
+    }
+
+    func receiveSecondary(_ text: String) {
+        secondaryChild?.receive(text)
+    }
+
+    func focusSecondary() {
+        guard let secondaryTerminalView = secondaryChild?.terminalView else {
+            return
+        }
+
+        parentView.window?.makeFirstResponder(secondaryTerminalView)
     }
 
     func focus() {
@@ -324,12 +469,16 @@ private final class EmbeddedGhosttySurface: NSObject {
             NSEvent.removeMonitor(shortcutMonitor)
             self.shortcutMonitor = nil
         }
+        removeSecondary(refocusPrimary: false)
         container.removeFromSuperview()
     }
 
     private func install() {
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.black.cgColor
+        container.onLayout = { [weak self] in
+            self?.layoutChildren()
+        }
         container.addSubview(terminalView)
         parentView.addSubview(container, positioned: .above, relativeTo: nil)
         focusMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
@@ -409,37 +558,152 @@ private final class EmbeddedGhosttySurface: NSObject {
         return [minMargin, size, maxMargin]
     }
 
-    private func handleMouseDown(_ event: NSEvent) {
-        guard let window = terminalView.window, event.window === window else {
+    private func ensureDivider() {
+        if dividerView != nil {
             return
+        }
+
+        let divider = EmbeddedGhosttyDividerView(frame: .zero)
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        divider.onDrag = { [weak self] delta in
+            self?.resizeSecondarySplit(delta: delta)
+        }
+        container.addSubview(divider)
+        dividerView = divider
+    }
+
+    private func resizeSecondarySplit(delta: CGFloat) {
+        let bounds = container.bounds
+        if bounds.width < 720 {
+            secondarySplitRatio = clamped(
+                secondarySplitRatio - delta / max(1, bounds.height),
+                min: 0.2,
+                max: 0.65
+            )
+        } else {
+            secondarySplitRatio = clamped(
+                secondarySplitRatio - delta / max(1, bounds.width),
+                min: 0.2,
+                max: 0.65
+            )
+        }
+        layoutChildren()
+    }
+
+    private func clamped(_ value: CGFloat, min minValue: CGFloat, max maxValue: CGFloat) -> CGFloat {
+        min(max(value, minValue), maxValue)
+    }
+
+    private func layoutChildren() {
+        let bounds = container.bounds
+        guard let secondaryTerminalView = secondaryChild?.terminalView,
+              !secondaryTerminalView.isHidden
+        else {
+            terminalView.frame = bounds
+            dividerView?.isHidden = true
+            return
+        }
+
+        let divider: CGFloat = 6
+        dividerView?.isHidden = false
+        if bounds.width < 720 {
+            let secondaryHeight = clamped(
+                floor(bounds.height * secondarySplitRatio),
+                min: 140,
+                max: max(140, bounds.height - 180)
+            )
+            terminalView.frame = NSRect(
+                x: 0,
+                y: secondaryHeight + divider,
+                width: bounds.width,
+                height: max(0, bounds.height - secondaryHeight - divider)
+            )
+            secondaryTerminalView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: bounds.width,
+                height: secondaryHeight
+            )
+            dividerView?.vertical = false
+            dividerView?.frame = NSRect(
+                x: 0,
+                y: secondaryHeight,
+                width: bounds.width,
+                height: divider
+            )
+        } else {
+            let secondaryWidth = clamped(
+                floor(bounds.width * secondarySplitRatio),
+                min: 260,
+                max: max(260, bounds.width - 320)
+            )
+            terminalView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: max(0, bounds.width - secondaryWidth - divider),
+                height: bounds.height
+            )
+            secondaryTerminalView.frame = NSRect(
+                x: bounds.width - secondaryWidth,
+                y: 0,
+                width: secondaryWidth,
+                height: bounds.height
+            )
+            dividerView?.vertical = true
+            dividerView?.frame = NSRect(
+                x: bounds.width - secondaryWidth - divider,
+                y: 0,
+                width: divider,
+                height: bounds.height
+            )
+        }
+        if let dividerView {
+            container.window?.invalidateCursorRects(for: dividerView)
+        }
+    }
+
+    private func terminalHit(for event: NSEvent) -> (view: TerminalView, callbacks: CallbackBox)? {
+        if let secondaryChild, !secondaryChild.terminalView.isHidden {
+            let secondaryLocation = secondaryChild.terminalView.convert(event.locationInWindow, from: nil)
+            if secondaryChild.terminalView.bounds.contains(secondaryLocation) {
+                return (secondaryChild.terminalView, secondaryChild.callbacks)
+            }
         }
 
         let terminalLocation = terminalView.convert(event.locationInWindow, from: nil)
-        guard terminalView.bounds.contains(terminalLocation) else {
+        if terminalView.bounds.contains(terminalLocation) {
+            return (terminalView, callbacks)
+        }
+
+        return nil
+    }
+
+    private func handleMouseDown(_ event: NSEvent) {
+        guard let window = container.window, event.window === window else {
             return
         }
 
-        callbacks.focusSurface()
+        terminalHit(for: event)?.callbacks.focusSurface()
     }
 
     private func handleRightMouse(_ event: NSEvent) -> Bool {
-        guard let window = terminalView.window, event.window === window else {
+        guard let window = container.window, event.window === window else {
             return false
         }
 
-        let terminalLocation = terminalView.convert(event.locationInWindow, from: nil)
-        guard terminalView.bounds.contains(terminalLocation) else {
+        guard let hit = terminalHit(for: event) else {
             return false
         }
 
-        focus()
-        NSMenu.popUpContextMenu(contextMenu, with: event, for: terminalView)
+        parentView.window?.makeFirstResponder(hit.view)
+        NSMenu.popUpContextMenu(contextMenu, with: event, for: hit.view)
 
         return true
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard let window = terminalView.window, event.window === window else {
+        guard let window = container.window, event.window === window else {
             return false
         }
 
@@ -447,8 +711,16 @@ private final class EmbeddedGhosttySurface: NSObject {
             return false
         }
 
-        if firstResponder !== terminalView,
-           !firstResponder.isDescendant(of: terminalView) {
+        let primaryFocused = firstResponder === terminalView ||
+            firstResponder.isDescendant(of: terminalView)
+        let secondaryFocused =
+            if let secondaryTerminalView = secondaryChild?.terminalView {
+                firstResponder === secondaryTerminalView ||
+                    firstResponder.isDescendant(of: secondaryTerminalView)
+            } else {
+                false
+            }
+        if !primaryFocused && !secondaryFocused {
             return false
         }
 
@@ -615,6 +887,102 @@ public func vimeflowGhosttyWrite(
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
         surface.receive(text)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_add_secondary")
+public func vimeflowGhosttyAddSecondary(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ inputCallback: VimeflowGhosttyInputCallback?,
+    _ resizeCallback: VimeflowGhosttyResizeCallback?,
+    _ focusCallback: VimeflowGhosttyFocusCallback?,
+    _ callbackContext: UnsafeMutableRawPointer?
+) {
+    guard let surfacePointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let contextPointer = SendablePointer(value: callbackContext)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.addSecondary(
+            inputCallback: inputCallback,
+            resizeCallback: resizeCallback,
+            focusCallback: focusCallback,
+            callbackContext: contextPointer.value
+        )
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_secondary_visible")
+public func vimeflowGhosttySetSecondaryVisible(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ visible: Bool
+) {
+    guard let surfacePointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.setSecondaryVisible(visible)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_remove_secondary")
+public func vimeflowGhosttyRemoveSecondary(_ surfacePointer: UnsafeMutableRawPointer?) {
+    guard let surfacePointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.removeSecondary()
+    }
+}
+
+@_cdecl("vimeflow_ghostty_write_secondary")
+public func vimeflowGhosttyWriteSecondary(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ bytes: UnsafePointer<UInt8>?,
+    _ length: Int32
+) {
+    guard let surfacePointer, let bytes, length > 0 else {
+        return
+    }
+
+    let text = String(decoding: UnsafeBufferPointer(start: bytes, count: Int(length)), as: UTF8.self)
+
+    let pointer = SendablePointer(value: surfacePointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.receiveSecondary(text)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_focus_secondary")
+public func vimeflowGhosttyFocusSecondary(_ surfacePointer: UnsafeMutableRawPointer?) {
+    guard let surfacePointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.focusSecondary()
     }
 }
 

@@ -159,6 +159,12 @@ Source inspection of `libghostty-spm` 1.2.7 (rev `2b0e1b9d`), independently re-v
 - **The fallback (two `TerminalView`s in one `EmbeddedGhosttySurface`) is confirmed viable**, with one hard rule: each `TerminalView` needs its **own `TerminalController`** — `onWakeup`/`shouldProcessWakeup` are single-slot closures, so a shared controller silences the earlier view. `EmbeddedGhosttySurface` already creates a per-surface controller (`GhosttyElectronBridge.swift:201`), so the burner just adds a second controller + view + session.
 - Recommended spike order: Swift-only second `TerminalView` in `GhosttyNativeMacosSmoke` first, then bridge/N-API/IPC per the change plan in the technical note.
 
+## Implementation Status
+
+- **Milestone 1: Swift-only smoke is complete.** `ghostty-native-macos-smoke` can show, hide, remove, and resize a second native `TerminalView` inside one container. The smoke keeps the child role generic as `secondary`, even though the first product use is the burner.
+- **Milestone 2: Native bridge API is in progress.** `GhosttyElectronBridge` now owns an optional secondary child inside `EmbeddedGhosttySurface`, with a separate `TerminalController`, `InMemoryTerminalSession`, input callback, resize callback, focus callback, and AppKit divider. The C++ addon exposes `addSecondary`, `setSecondaryVisible`, `writeSecondary`, `focusSecondary`, and `removeSecondary`; the native-parent smoke checks those exports.
+- **Next: Electron and renderer wiring.** Add child-aware IPC and renderer calls so product code can attach the burner PTY to the secondary native child. This must preserve hide-vs-remove semantics and route burner input/resize/output by the burner PTY id, never by the primary pane session id.
+
 ## Open Questions
 
 - Should opening burner focus the burner immediately or keep focus in primary until user clicks it?
@@ -195,4 +201,3 @@ Constraints:
 
 Deliver a concise visual spec with states, spacing, labels, and interaction notes.
 ```
-

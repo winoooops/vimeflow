@@ -596,7 +596,7 @@ final class GhosttyNativeMacosSmoke:
 
         let bounds = containerView.bounds
         if bounds.width < 720 {
-            secondarySplitRatio = max(0.2, min(0.65, secondarySplitRatio + delta / max(1, bounds.height)))
+            secondarySplitRatio = max(0.2, min(0.65, secondarySplitRatio - delta / max(1, bounds.height)))
         } else {
             secondarySplitRatio = max(0.2, min(0.65, secondarySplitRatio - delta / max(1, bounds.width)))
         }
@@ -672,7 +672,9 @@ final class GhosttyNativeMacosSmoke:
                 height: bounds.height
             )
         }
-        dividerView?.resetCursorRects()
+        if let dividerView {
+            containerView.window?.invalidateCursorRects(for: dividerView)
+        }
     }
 
     private func appKitFrameFromTopLeft(_ frame: GhosttyNativeFrame) -> NSRect {

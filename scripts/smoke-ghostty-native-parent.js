@@ -11,7 +11,18 @@ const nativeDir = join(repoRoot, 'dist-native', 'ghostty-parent')
 const addonPath = join(nativeDir, 'ghostty_native_parent.node')
 const bridgePath = join(nativeDir, 'libGhosttyElectronBridge.dylib')
 
-const expectedExports = ['create', 'setFrame', 'write', 'focus', 'destroy']
+const expectedExports = [
+  'create',
+  'setFrame',
+  'write',
+  'focus',
+  'addSecondary',
+  'setSecondaryVisible',
+  'writeSecondary',
+  'focusSecondary',
+  'removeSecondary',
+  'destroy',
+]
 
 const requireFile = (file) => {
   if (!existsSync(file)) {
