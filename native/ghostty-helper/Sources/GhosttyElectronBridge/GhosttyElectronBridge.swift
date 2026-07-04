@@ -273,6 +273,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             width: safeWidth,
             height: safeHeight
         )
+        updateLiveResizePrediction(frame: container.frame)
         terminalView.frame = container.bounds
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
     }
@@ -342,6 +343,70 @@ private final class EmbeddedGhosttySurface: NSObject {
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             self?.handleKeyDown(event) == true ? nil : event
         }
+    }
+
+    private func updateLiveResizePrediction(frame: NSRect) {
+        guard parentView.inLiveResize else {
+            container.autoresizingMask = []
+
+            return
+        }
+
+        // AppKit moves/resizes the native view between renderer IPC corrections
+        // during live resize; renderer frames still win on the next update.
+        container.autoresizingMask = predictedAutoresizingMask(
+            frame: frame,
+            parentBounds: parentView.bounds
+        )
+    }
+
+    private func predictedAutoresizingMask(
+        frame: NSRect,
+        parentBounds: NSRect
+    ) -> NSView.AutoresizingMask {
+        let tolerance: CGFloat = 1
+        let touchesLeft = abs(frame.minX - parentBounds.minX) <= tolerance
+        let touchesRight = abs(frame.maxX - parentBounds.maxX) <= tolerance
+        let touchesBottom = abs(frame.minY - parentBounds.minY) <= tolerance
+        let touchesTop = abs(frame.maxY - parentBounds.maxY) <= tolerance
+        var mask: NSView.AutoresizingMask = []
+
+        mask.formUnion(axisAutoresizingMask(
+            touchesMin: touchesLeft,
+            touchesMax: touchesRight,
+            size: .width,
+            minMargin: .minXMargin,
+            maxMargin: .maxXMargin
+        ))
+        mask.formUnion(axisAutoresizingMask(
+            touchesMin: touchesBottom,
+            touchesMax: touchesTop,
+            size: .height,
+            minMargin: .minYMargin,
+            maxMargin: .maxYMargin
+        ))
+
+        return mask
+    }
+
+    private func axisAutoresizingMask(
+        touchesMin: Bool,
+        touchesMax: Bool,
+        size: NSView.AutoresizingMask,
+        minMargin: NSView.AutoresizingMask,
+        maxMargin: NSView.AutoresizingMask
+    ) -> NSView.AutoresizingMask {
+        if touchesMin && touchesMax {
+            return [size]
+        }
+        if touchesMin {
+            return [maxMargin]
+        }
+        if touchesMax {
+            return [minMargin]
+        }
+
+        return [minMargin, size, maxMargin]
     }
 
     private func handleMouseDown(_ event: NSEvent) {

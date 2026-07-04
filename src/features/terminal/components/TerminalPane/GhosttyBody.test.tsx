@@ -15,7 +15,6 @@ import {
   GhosttyBody,
   nativeGhosttyBoundsFromRect,
   nativeGhosttyCornerRadiusFromCssPixels,
-  nativeGhosttyParentHeightFromViewport,
 } from './GhosttyBody'
 
 const backendListeners = new Map<string, (payload: unknown) => void>()
@@ -290,17 +289,6 @@ describe('GhosttyBody', () => {
         outerHeight: 900,
       })
     ).toBeCloseTo(9.13242)
-  })
-
-  test('converts CSS viewport height to native window points', () => {
-    expect(
-      nativeGhosttyParentHeightFromViewport({
-        innerWidth: 1533,
-        innerHeight: 985,
-        outerWidth: 1400,
-        outerHeight: 900,
-      })
-    ).toBe(900)
   })
 
   test('falls back to unscaled native frame bounds when viewport metrics are unavailable', () => {
