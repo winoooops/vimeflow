@@ -256,8 +256,49 @@ describe('useReviewCommentDraft', () => {
       staged: false,
       scope: 'file',
       text: '',
+      category: 'change',
     })
     expect(result.current.lineAnnotations).toEqual([existingAnnotation])
+  })
+
+  test('setCommentCategory persists the category into the draft (VIM-256)', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(target, false)
+      result.current.setCommentCategory('question')
+    })
+
+    expect(result.current.commentCategory).toBe('question')
+    expect(result.current.draft?.category).toBe('question')
+  })
+
+  test('closeCommentDraft resets the next draft to the default category', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(target, false)
+      result.current.setCommentCategory('question')
+      result.current.closeCommentDraft(false)
+      result.current.setAnnotationTarget(fileTarget, false)
+    })
+
+    expect(result.current.commentCategory).toBe('change')
+    expect(result.current.draft?.category).toBe('change')
+  })
+
+  test('restores the category from a stored draft (survives a restore)', () => {
+    const { result } = renderDraftHook({
+      cwd: '/repo',
+      filePath: 'src/foo.ts',
+      staged: false,
+      side: 'additions',
+      lineNumber: 2,
+      text: 'Restored text',
+      category: 'bug',
+    })
+
+    expect(result.current.commentCategory).toBe('bug')
   })
 
   test('compares target identity by file, side, line, staged state, and edit id', () => {

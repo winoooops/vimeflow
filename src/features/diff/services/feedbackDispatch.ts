@@ -1,7 +1,9 @@
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import {
   isFileLevelReviewAnnotation,
+  reviewCommentCategory,
   type ReviewComment,
+  type ReviewCommentCategory,
 } from '../hooks/useFeedbackBatch'
 
 const PASTE_START = '\x1b[200~'
@@ -35,6 +37,7 @@ export interface DispatchEntry {
   annotations: DiffLineAnnotation<ReviewComment>[]
 }
 
+// The target suffix only — the caller prepends the "> [#n · Category] " tag.
 const formatAnnotationTarget = (
   entry: DispatchEntry,
   annotation: DiffLineAnnotation<ReviewComment>
@@ -43,41 +46,70 @@ const formatAnnotationTarget = (
   const stagedLabel = entry.staged ? 'staged' : 'unstaged'
 
   if (isFileLevelReviewAnnotation(annotation)) {
-    return `> ${filePath} (file) [${stagedLabel}]`
+    return `${filePath} (file) [${stagedLabel}]`
   }
 
   if (annotation.metadata.target?.scope === 'range') {
     const { startLine, endLine, side } = annotation.metadata.target
 
-    return `> ${filePath}:${startLine}-${endLine} (${side}) [${stagedLabel}]`
+    return `${filePath}:${startLine}-${endLine} (${side}) [${stagedLabel}]`
   }
 
-  return `> ${filePath}:${annotation.lineNumber} (${annotation.side}) [${stagedLabel}]`
+  return `${filePath}:${annotation.lineNumber} (${annotation.side}) [${stagedLabel}]`
 }
 
+const CATEGORY_LABEL: Record<ReviewCommentCategory, string> = {
+  question: 'Question',
+  change: 'Change request',
+  bug: 'Bug',
+  suggestion: 'Suggestion',
+}
+
+// Per-category instruction — the VIM-253 intent. A Question asks the agent to
+// answer in its reply; the rest ask it to change files.
+const CATEGORY_INSTRUCTION: Record<ReviewCommentCategory, string> = {
+  question: 'Answer inline in your reply. Do not edit files.',
+  change: 'Make this change.',
+  bug: 'Fix this.',
+  suggestion: 'Apply this if you agree.',
+}
+
+// The structured payload the agent receives. Each item is tagged with its
+// category (the VIM-253 intent) and a [#n] handle it can reply against — the
+// seam for structured Q&A (VIM-249 / VIM-283). The category chip in the UI is
+// just the face value of this.
 export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
   const totalCount = entries.reduce((s, e) => s + e.annotations.length, 0)
-  const fileCount = entries.length
-  const header = `> Inline review feedback (${totalCount} comment${totalCount === 1 ? '' : 's'} across ${fileCount} file${fileCount === 1 ? '' : 's'}):`
+  const header = `> Inline review — ${totalCount} item${totalCount === 1 ? '' : 's'}. Reply to each by its [#n].`
 
-  const body = entries
-    .flatMap((entry) =>
-      entry.annotations.map((a) => {
-        const lines = a.metadata.text
-          .split('\n')
-          .map((line) => `> ─ ${stripControls(line)}`)
+  const blocks: string[] = []
+  let index = 0
+  for (const entry of entries) {
+    for (const annotation of entry.annotations) {
+      index += 1
+      const category = reviewCommentCategory(annotation.metadata)
 
-        return [formatAnnotationTarget(entry, a), ...lines, '>'].join('\n')
-      })
-    )
-    .join('\n')
+      const textLines = annotation.metadata.text
+        .split('\n')
+        .map((line) => `> ─ ${stripControls(line)}`)
+
+      blocks.push(
+        [
+          `> [#${index} · ${CATEGORY_LABEL[category]}] ${formatAnnotationTarget(entry, annotation)}`,
+          ...textLines,
+          `> → ${CATEGORY_INSTRUCTION[category]}`,
+          '>',
+        ].join('\n')
+      )
+    }
+  }
 
   return [
     header,
     '>',
-    body,
+    ...blocks,
     '> ―',
-    '> Please address these and reply when done.',
+    '> When done, reply referencing each [#n].',
   ].join('\n')
 }
 

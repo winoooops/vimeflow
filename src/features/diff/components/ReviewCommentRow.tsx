@@ -1,6 +1,10 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
-import type { ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  reviewCommentCategory,
+  type ReviewComment,
+} from '../hooks/useFeedbackBatch'
+import { REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
 
 interface ReviewCommentRowProps {
   comment: ReviewComment
@@ -49,34 +53,50 @@ export const ReviewCommentRow = ({
   onEdit,
   onDelete,
 }: ReviewCommentRowProps): ReactElement => {
-  // A dispatched comment was sent to an agent and now persists as a thread
-  // anchor (VIM-282); label it "Sent <time ago>" so it reads as sent — with how
-  // long ago — rather than an unsent draft.
-  const { dispatchedAt } = comment
+  // The category chip is the face value of the comment's structured category
+  // (VIM-256/253). Agent replies render distinctly and read-only; a dispatched
+  // user comment also shows "Sent <time ago>" (VIM-282).
+  const { author, dispatchedAt } = comment
+  const isAgent = author === 'agent'
   const isDispatched = dispatchedAt !== undefined
+  const readOnly = isAgent || isDispatched
+  const categoryMeta = REVIEW_CATEGORY_META[reviewCommentCategory(comment)]
 
   return (
-    <div className="mx-2 my-1 flex items-start gap-2 rounded-md bg-surface-container-high/60 px-3 py-2">
+    <div
+      className={`mx-2 my-1 flex items-start gap-2 rounded-md px-3 py-2 ${
+        isAgent ? 'bg-primary-container/15' : 'bg-surface-container-high/60'
+      }`}
+    >
       <div className="min-w-0 flex-1">
-        {isDispatched || targetLabel !== undefined ? (
-          <div className="mb-1 flex flex-wrap items-center gap-1">
-            {isDispatched ? (
-              <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-primary">
-                Sent {formatSentAgo(dispatchedAt, Date.now())}
-              </span>
-            ) : null}
-            {targetLabel !== undefined ? (
-              <span className="inline-block rounded bg-surface-container-highest/70 px-1.5 py-px font-mono text-[10px] text-on-surface-variant">
-                {targetLabel}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="mb-1 flex flex-wrap items-center gap-1">
+          {isAgent ? (
+            <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-success">
+              Agent reply
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium ${categoryMeta.chip}`}
+            >
+              {categoryMeta.label}
+            </span>
+          )}
+          {isDispatched ? (
+            <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-primary">
+              Sent {formatSentAgo(dispatchedAt, Date.now())}
+            </span>
+          ) : null}
+          {targetLabel !== undefined ? (
+            <span className="inline-block rounded bg-surface-container-highest/70 px-1.5 py-px font-mono text-[10px] text-on-surface-variant">
+              {targetLabel}
+            </span>
+          ) : null}
+        </div>
         <p className="break-words whitespace-pre-wrap text-xs text-on-surface">
           {comment.text}
         </p>
       </div>
-      {isDispatched ? null : (
+      {readOnly ? null : (
         <div className="flex shrink-0 items-center gap-1">
           <IconButton
             icon="edit"

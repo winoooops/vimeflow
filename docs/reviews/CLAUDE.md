@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 19       | 19   | 2026-06-21   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 12       | 12   | 2026-06-22   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 22       | 19   | 2026-07-04   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 22       | 20   | 2026-07-04   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 90   | 2026-06-25   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 93       | 88   | 2026-07-04   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 70   | 2026-06-26   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 71   | 2026-06-26   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -99,8 +99,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 10       | 7    | 2026-06-22   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
-| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 9        | 8    | 2026-07-04   |
-| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 3        | 3    | 2026-07-04   |
+| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 10       | 9    | 2026-07-04   |
+| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 3        | 4    | 2026-07-04   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 6        | 3    | 2026-06-27   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 2    | 2026-06-18   |
@@ -109,6 +109,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
 | [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 13       | 5    | 2026-06-22   |
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 3        | 1    | 2026-06-22   |
-| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 10       | 5    | 2026-06-29   |
+| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 11       | 6    | 2026-07-04   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |

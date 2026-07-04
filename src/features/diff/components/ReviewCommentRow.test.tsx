@@ -205,6 +205,61 @@ describe('ReviewCommentRow', () => {
       screen.getByRole('button', { name: 'Edit comment' })
     ).toBeInTheDocument()
   })
+
+  test('renders the category chip for a user comment', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'q',
+          text: 'Why?',
+          author: 'self',
+          category: 'question',
+          createdAt: 1000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Question')).toBeInTheDocument()
+  })
+
+  test('an untagged comment shows the default Change chip', () => {
+    render(
+      <ReviewCommentRow
+        comment={{ id: 'd', text: 'x', author: 'self', createdAt: 1000 }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Change')).toBeInTheDocument()
+  })
+
+  test('an agent reply renders distinctly and read-only', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'a',
+          text: 'The cap bounds latency.',
+          author: 'agent',
+          createdAt: 1000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Agent reply')).toBeInTheDocument()
+    expect(screen.getByText('The cap bounds latency.')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Edit comment' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'Delete comment' })
+    ).not.toBeInTheDocument()
+  })
 })
 
 const MINUTE = 60_000

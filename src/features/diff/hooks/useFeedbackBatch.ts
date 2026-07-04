@@ -14,10 +14,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 
+/**
+ * The user's one-axis tag on a review comment (VIM-256/253). It is the
+ * structured signal, not decoration: it drives the chip AND the dispatch intent
+ * (a Question asks the agent to answer; the rest ask it to change files).
+ */
+export type ReviewCommentCategory = 'question' | 'change' | 'bug' | 'suggestion'
+
+/** Ordered for the editor's Ctrl+H / Ctrl+L cycling and the category chips. */
+export const REVIEW_COMMENT_CATEGORIES: readonly ReviewCommentCategory[] = [
+  'question',
+  'change',
+  'bug',
+  'suggestion',
+]
+
+/**
+ * Comments with no explicit category behave as a change request — the prior
+ * one-way behavior — so existing/persisted comments render and dispatch
+ * unchanged.
+ */
+export const DEFAULT_REVIEW_COMMENT_CATEGORY: ReviewCommentCategory = 'change'
+
 export interface ReviewComment {
   id: string
   text: string
-  author: 'self'
+  /**
+   * 'self' = a user comment; 'agent' = a coding-agent reply (VIM-256), which
+   * renders distinctly and is never dispatched or counted as pending.
+   */
+  author: 'self' | 'agent'
+  /**
+   * The user's category tag (VIM-256/253). Absent →
+   * DEFAULT_REVIEW_COMMENT_CATEGORY. Not set on agent replies.
+   */
+  category?: ReviewCommentCategory
   createdAt: number
   /**
    * When set, the comment has been dispatched to an agent and now stays in the
@@ -97,14 +128,28 @@ export const isLineLevelReviewAnnotation = (
   annotation: DiffLineAnnotation<ReviewComment>
 ): boolean => !isFileLevelReviewAnnotation(annotation)
 
+/** A coding-agent reply (VIM-256): renders distinctly and is never dispatched. */
+export const isAgentReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => annotation.metadata.author === 'agent'
+
+/** The effective category, defaulting absent tags to a change request. */
+export const reviewCommentCategory = (
+  comment: ReviewComment
+): ReviewCommentCategory => comment.category ?? DEFAULT_REVIEW_COMMENT_CATEGORY
+
 /**
  * A comment is *pending* until it is dispatched to an agent. Pending comments
  * are the review the user is still assembling; dispatched ones stay in the hunk
  * as thread anchors but are never re-sent, counted as unfinished, or discarded.
+ * Agent replies are never pending — they are the agent's output, not the user's
+ * unsent feedback.
  */
 export const isPendingReviewAnnotation = (
   annotation: DiffLineAnnotation<ReviewComment>
-): boolean => annotation.metadata.dispatchedAt === undefined
+): boolean =>
+  !isAgentReviewAnnotation(annotation) &&
+  annotation.metadata.dispatchedAt === undefined
 
 const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
   let count = 0
@@ -276,6 +321,8 @@ interface FeedbackDraftBase {
   staged: boolean
   editId?: string
   text: string
+  /** The picked category, persisted so it survives a draft restore (VIM-256). */
+  category?: ReviewCommentCategory
 }
 
 export type FeedbackDraft =

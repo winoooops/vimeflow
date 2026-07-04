@@ -56,6 +56,7 @@ const workerPoolMock = {
 }
 
 const multiFileDiffOptionsSeen: FileDiffOptions<ReviewComment>[] = []
+let mockedGutterHoverLine = 1
 
 const deferredWorkerOptions = (): {
   promise: Promise<undefined>
@@ -134,7 +135,10 @@ vi.mock('@pierre/diffs/react', () => ({
       >
         {renderGutterUtility != null ? (
           <div data-testid="gutter-utility-slot">
-            {renderGutterUtility(() => ({ lineNumber: 1, side: 'additions' }))}
+            {renderGutterUtility(() => ({
+              lineNumber: mockedGutterHoverLine,
+              side: 'additions',
+            }))}
           </div>
         ) : null}
         {lineAnnotations != null && renderAnnotation != null ? (
@@ -230,6 +234,7 @@ describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     multiFileDiffOptionsSeen.length = 0
+    mockedGutterHoverLine = 1
     window.localStorage.clear()
     themeService.apply('obsidian-lens')
     installMockResizeObserver()
@@ -4252,6 +4257,72 @@ describe('Panel', () => {
       ).not.toBeInTheDocument()
     })
 
+    test('switching comment targets resets a stale draft category', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.click(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line R1/ })
+        ).getByRole('button', { name: 'Question' })
+      )
+
+      mockedGutterHoverLine = 2
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      const nextLineDialog = screen.getByRole('dialog', {
+        name: /Comment on line R2/,
+      })
+
+      expect(
+        within(nextLineDialog).getByRole('button', { name: 'Change' })
+      ).toHaveAttribute('aria-pressed', 'true')
+
+      expect(
+        within(nextLineDialog).getByRole('button', { name: 'Question' })
+      ).toHaveAttribute('aria-pressed', 'false')
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+      await user.click(
+        within(screen.getByTestId('changed-files-pane')).getByRole('button', {
+          name: 'Comment on file foo.ts',
+        })
+      )
+
+      const fileDialog = screen.getByRole('dialog', {
+        name: 'Comment on file src/foo.ts',
+      })
+
+      expect(
+        within(fileDialog).getByRole('button', { name: 'Change' })
+      ).toHaveAttribute('aria-pressed', 'true')
+
+      expect(
+        within(fileDialog).getByRole('button', { name: 'Question' })
+      ).toHaveAttribute('aria-pressed', 'false')
+    })
+
     test('editing a comment clears a stale visual range before the next insert', async (): Promise<void> => {
       const user = userEvent.setup()
       const updateAnnotation = vi.fn()
@@ -4312,7 +4383,7 @@ describe('Panel', () => {
         'src/foo.ts',
         false,
         'comment-1',
-        { text: 'Updated comment' }
+        { text: 'Updated comment', category: 'change' }
       )
       fireEvent.keyDown(diff, { key: 'i' })
 
@@ -4384,7 +4455,7 @@ describe('Panel', () => {
         'src/foo.ts',
         false,
         'comment-1',
-        { text: 'Updated range comment' }
+        { text: 'Updated range comment', category: 'change' }
       )
     })
 

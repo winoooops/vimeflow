@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  DEFAULT_REVIEW_COMMENT_CATEGORY,
+  REVIEW_COMMENT_CATEGORIES,
+  type ReviewCommentCategory,
+} from '../hooks/useFeedbackBatch'
+import { REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
 
 type CommentSide = 'deletions' | 'additions'
 
@@ -6,9 +12,13 @@ interface ReviewCommentEditorBaseProps {
   chrome?: 'card' | 'plain'
   surfaceRole?: 'dialog' | 'none'
   initialText?: string
+  initialCategory?: ReviewCommentCategory
   value?: string
+  /** Controlled category (from the draft). Falls back to local state if unset. */
+  category?: ReviewCommentCategory
   onTextChange?: (text: string) => void
-  onConfirm: (text: string) => void
+  onCategoryChange?: (category: ReviewCommentCategory) => void
+  onConfirm: (text: string, category: ReviewCommentCategory) => void
   onCancel: () => void
 }
 
@@ -96,14 +106,39 @@ export const ReviewCommentEditor = ({
   chrome = 'card',
   surfaceRole = 'dialog',
   initialText = '',
+  initialCategory = DEFAULT_REVIEW_COMMENT_CATEGORY,
   value = undefined,
+  category: categoryValue = undefined,
   onTextChange = undefined,
+  onCategoryChange = undefined,
   onConfirm,
   onCancel,
 }: ReviewCommentEditorProps): ReactElement => {
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
+
+  const [uncontrolledCategory, setUncontrolledCategory] =
+    useState<ReviewCommentCategory>(initialCategory)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const text = value ?? uncontrolledText
+  const selectedCategory = categoryValue ?? uncontrolledCategory
+
+  const updateCategory = (next: ReviewCommentCategory): void => {
+    if (categoryValue === undefined) {
+      setUncontrolledCategory(next)
+    }
+
+    onCategoryChange?.(next)
+  }
+
+  // Ctrl+H / Ctrl+L cycle the category (vim h/l).
+  const cycleCategory = (direction: 1 | -1): void => {
+    const count = REVIEW_COMMENT_CATEGORIES.length
+    const index = REVIEW_COMMENT_CATEGORIES.indexOf(selectedCategory)
+
+    updateCategory(
+      REVIEW_COMMENT_CATEGORIES[(index + direction + count) % count]
+    )
+  }
 
   const updateText = (next: string): void => {
     if (value === undefined) {
@@ -126,7 +161,7 @@ export const ReviewCommentEditor = ({
     const trimmed = text.trim()
 
     if (trimmed.length > 0) {
-      onConfirm(trimmed)
+      onConfirm(trimmed, selectedCategory)
     }
   }
 
@@ -159,6 +194,31 @@ export const ReviewCommentEditor = ({
           Comment on {targetDescription}
         </span>
       </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {REVIEW_COMMENT_CATEGORIES.map((option) => {
+          const meta = REVIEW_CATEGORY_META[option]
+          const active = option === selectedCategory
+
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={active}
+              onClick={(): void => updateCategory(option)}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                active
+                  ? `bg-surface-container-highest ${meta.chip}`
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {meta.label}
+            </button>
+          )
+        })}
+        <span className="ml-auto text-[10px] text-on-surface-variant/70">
+          ⌃H / ⌃L
+        </span>
+      </div>
       <textarea
         ref={textareaRef}
         value={text}
@@ -178,6 +238,28 @@ export const ReviewCommentEditor = ({
             moveTextareaCursorVertically(e.currentTarget, -1)
 
             return
+          }
+
+          // Ctrl+H / Ctrl+L cycle the category (vim h/l). Capturing Ctrl+H
+          // overrides textarea backspace — deletion uses the Backspace key.
+          if (e.ctrlKey && !e.metaKey && !e.altKey) {
+            const lowered = e.key.toLowerCase()
+
+            if (lowered === 'l') {
+              e.preventDefault()
+              e.stopPropagation()
+              cycleCategory(1)
+
+              return
+            }
+
+            if (lowered === 'h') {
+              e.preventDefault()
+              e.stopPropagation()
+              cycleCategory(-1)
+
+              return
+            }
           }
 
           if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {

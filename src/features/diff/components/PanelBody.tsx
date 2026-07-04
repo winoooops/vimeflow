@@ -14,7 +14,11 @@ import type {
   SelectedLineRange,
 } from '@pierre/diffs'
 import { IconButton } from '@/components/IconButton'
-import { DRAFT_ID, type ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  DRAFT_ID,
+  type ReviewComment,
+  type ReviewCommentCategory,
+} from '../hooks/useFeedbackBatch'
 import type { AnnotationTarget } from '../hooks/useReviewCommentDraft'
 import type { PierreFileInputs } from '../services/pierreAdapter'
 import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
@@ -142,6 +146,7 @@ interface PanelBodyProps {
   lineAnnotations: DiffLineAnnotation<ReviewComment>[]
   annotationTarget: AnnotationTarget | null
   commentDraftText: string
+  commentCategory: ReviewCommentCategory
   onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: ReactPointerEvent<HTMLDivElement>) => void
@@ -150,7 +155,8 @@ interface PanelBodyProps {
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
   onCommentTextChange: (text: string) => void
-  onConfirmComment: (text: string) => void
+  onCommentCategoryChange: (category: ReviewCommentCategory) => void
+  onConfirmComment: (text: string, category: ReviewCommentCategory) => void
   onCancelComment: () => void
 }
 
@@ -166,6 +172,7 @@ export const PanelBody = ({
   lineAnnotations,
   annotationTarget,
   commentDraftText,
+  commentCategory,
   onPointerDown = undefined,
   onPointerMove,
   onPointerUp = undefined,
@@ -174,6 +181,7 @@ export const PanelBody = ({
   onEditComment,
   onDeleteComment,
   onCommentTextChange,
+  onCommentCategoryChange,
   onConfirmComment,
   onCancelComment,
 }: PanelBodyProps): ReactElement => {
@@ -239,7 +247,9 @@ export const PanelBody = ({
                     side={annotation.side}
                     targetLabel={annotationTargetLabel(annotation)}
                     value={commentDraftText}
+                    category={commentCategory}
                     onTextChange={onCommentTextChange}
+                    onCategoryChange={onCommentCategoryChange}
                     onConfirm={onConfirmComment}
                     onCancel={onCancelComment}
                   />
