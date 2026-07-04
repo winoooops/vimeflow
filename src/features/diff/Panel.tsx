@@ -781,7 +781,14 @@ export const Panel = ({
           // Keep the sent comments in the hunk as thread anchors instead of
           // wiping them (VIM-282); they are stamped dispatched so they are not
           // re-sent, counted as pending, or removed by discard.
-          feedback.markDispatched(Date.now())
+          feedback.markDispatched(
+            Date.now(),
+            new Set(
+              entries.flatMap((entry) =>
+                entry.annotations.map((annotation) => annotation.metadata.id)
+              )
+            )
+          )
           setFinishOpen(false)
           const focusTerminal = feedbackDispatch?.focusTerminal
           if (focusTerminal !== undefined) {

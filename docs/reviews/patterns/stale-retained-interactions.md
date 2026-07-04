@@ -2,8 +2,8 @@
 id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-03
-ref_count: 6
+last_updated: 2026-07-04
+ref_count: 7
 ---
 
 # Stale Retained Interactions
@@ -76,3 +76,17 @@ When a React component renders retained or stale content while fresh data for a 
 - **Finding:** The round-1 file-switch fix reused the full collected-line reset from `close()`. Closing the search popup does not trigger a pierre rerender, so reopening search on the same file recomputed against an empty collection and reported zero matches until an unrelated diff rebuild occurred.
 - **Fix:** Split visible-popup reset from full collected-line invalidation. Manual close now clears query, matches, active index, and paint while preserving the current file's collected line cache; file-key changes still clear the collection. Added hook coverage for close-then-reopen on the same file without another `handlePostRender`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Sent review anchors kept pending edit/delete controls
+
+- **Source:** github-claude + github-codex-connector | PR #655 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/ReviewCommentRow.tsx`
+- **Finding:** Dispatched review comments were retained in the diff as "Sent"
+  anchors, but the row still rendered Edit and Delete actions. Editing preserved
+  `dispatchedAt`, so local text changed while Finish/Send ignored it; deleting
+  removed the thread anchor for feedback that had already been delivered.
+- **Fix:** Made dispatched comment rows read-only by hiding Edit/Delete controls
+  whenever `dispatchedAt` is present. Added component coverage proving sent
+  anchors expose no edit or delete buttons.
+- **Commit:** same commit as this entry

@@ -244,7 +244,10 @@ export interface UseFeedbackBatchReturn {
    * hunk as thread anchors) and clear the open draft. Replaces clearBatch on the
    * send path so submitted comments persist instead of being wiped.
    */
-  markDispatched: (dispatchedAt: number) => void
+  markDispatched: (
+    dispatchedAt: number,
+    dispatchedAnnotationIds: ReadonlySet<string>
+  ) => void
   /**
    * Drop the pending comments and the open draft, leaving already dispatched
    * thread anchors intact. The discard action.
@@ -359,7 +362,7 @@ export const useFeedbackBatchStore = (
       const optimisticBatch =
         optimisticBatchesRef.current.get(ownerKey) ?? EMPTY_BATCH
 
-      if (countAnnotationsInBatch(optimisticBatch) >= SOFT_CAP) {
+      if (countPendingInBatch(optimisticBatch) >= SOFT_CAP) {
         addAnnotationResultRef.current = 'cap-reached'
 
         return addAnnotationResultRef.current
@@ -377,7 +380,7 @@ export const useFeedbackBatchStore = (
       addAnnotationResultRef.current = 'ok'
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(ownerKey) ?? EMPTY_BATCH
-        if (countAnnotationsInBatch(currentBatch) >= SOFT_CAP) {
+        if (countPendingInBatch(currentBatch) >= SOFT_CAP) {
           addAnnotationResultRef.current = 'cap-reached'
           optimisticBatchesRef.current = prev
 
@@ -513,12 +516,15 @@ export const useFeedbackBatchStore = (
     })
   }, [ownerKey])
 
-  // Send path (VIM-282): stamp every pending comment as dispatched and keep it
-  // in the hunk as a thread anchor, then close the draft. Unchanged file lists
+  // Send path (VIM-282): stamp sent pending comments as dispatched and keep
+  // them in the hunk as thread anchors, then close the draft. Unchanged file lists
   // keep their identity so Pierre does not re-tokenize files with no pending
   // comment.
   const markDispatched = useCallback(
-    (dispatchedAt: number): void => {
+    (
+      dispatchedAt: number,
+      dispatchedAnnotationIds: ReadonlySet<string>
+    ): void => {
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(ownerKey)
         if (currentBatch === undefined || currentBatch.size === 0) {
@@ -528,7 +534,13 @@ export const useFeedbackBatchStore = (
         let changed = false
         const nextBatch: FeedbackBatch = new Map()
         for (const [key, list] of currentBatch) {
-          if (!list.some(isPendingReviewAnnotation)) {
+          if (
+            !list.some(
+              (annotation) =>
+                isPendingReviewAnnotation(annotation) &&
+                dispatchedAnnotationIds.has(annotation.metadata.id)
+            )
+          ) {
             nextBatch.set(key, list)
 
             continue
@@ -538,7 +550,8 @@ export const useFeedbackBatchStore = (
           nextBatch.set(
             key,
             list.map((annotation) =>
-              isPendingReviewAnnotation(annotation)
+              isPendingReviewAnnotation(annotation) &&
+              dispatchedAnnotationIds.has(annotation.metadata.id)
                 ? {
                     ...annotation,
                     metadata: { ...annotation.metadata, dispatchedAt },

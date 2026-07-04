@@ -53,13 +53,14 @@ export const ReviewCommentRow = ({
   // anchor (VIM-282); label it "Sent <time ago>" so it reads as sent — with how
   // long ago — rather than an unsent draft.
   const { dispatchedAt } = comment
+  const isDispatched = dispatchedAt !== undefined
 
   return (
     <div className="mx-2 my-1 flex items-start gap-2 rounded-md bg-surface-container-high/60 px-3 py-2">
       <div className="min-w-0 flex-1">
-        {dispatchedAt !== undefined || targetLabel !== undefined ? (
+        {isDispatched || targetLabel !== undefined ? (
           <div className="mb-1 flex flex-wrap items-center gap-1">
-            {dispatchedAt !== undefined ? (
+            {isDispatched ? (
               <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-primary">
                 Sent {formatSentAgo(dispatchedAt, Date.now())}
               </span>
@@ -75,25 +76,27 @@ export const ReviewCommentRow = ({
           {comment.text}
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <IconButton
-          icon="edit"
-          label="Edit comment"
-          size="sm"
-          shortcut={editShortcut === 'Shift+U' ? ['Shift', 'U'] : 'u'}
-          aria-keyshortcuts={editShortcut}
-          onClick={(): void => onEdit()}
-        />
-        <IconButton
-          icon="delete"
-          label="Delete comment"
-          variant="danger"
-          size="sm"
-          shortcut={deleteShortcut ?? undefined}
-          aria-keyshortcuts={deleteShortcut ?? undefined}
-          onClick={(): void => onDelete()}
-        />
-      </div>
+      {isDispatched ? null : (
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton
+            icon="edit"
+            label="Edit comment"
+            size="sm"
+            shortcut={editShortcut === 'Shift+U' ? ['Shift', 'U'] : 'u'}
+            aria-keyshortcuts={editShortcut}
+            onClick={(): void => onEdit()}
+          />
+          <IconButton
+            icon="delete"
+            label="Delete comment"
+            variant="danger"
+            size="sm"
+            shortcut={deleteShortcut ?? undefined}
+            aria-keyshortcuts={deleteShortcut ?? undefined}
+            onClick={(): void => onDelete()}
+          />
+        </div>
+      )}
     </div>
   )
 }

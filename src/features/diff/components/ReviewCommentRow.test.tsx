@@ -162,6 +162,30 @@ describe('ReviewCommentRow', () => {
     expect(screen.getByText(/^Sent\b.*ago$/)).toBeInTheDocument()
   })
 
+  test('dispatched comments are read-only anchors', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'sent-read-only',
+          text: 'Sent note',
+          author: 'self',
+          createdAt: 7000,
+          dispatchedAt: 7100,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Edit comment' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'Delete comment' })
+    ).not.toBeInTheDocument()
+  })
+
   test('a pending comment shows no Sent label and keeps edit', () => {
     render(
       <ReviewCommentRow
