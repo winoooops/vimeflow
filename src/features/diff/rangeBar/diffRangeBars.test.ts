@@ -113,15 +113,18 @@ describe('paintRangeBars', () => {
     expect(barAt(host, 5)).toBeNull()
   })
 
-  test('unified deletion rows resolve to the deletions side', () => {
-    const host = makeHost('unified', [5])
-    const cell = host.shadowRoot?.querySelector('[data-column-number="5"]')
-    cell?.setAttribute('data-line-type', 'change-deletion')
+  test.each(['change-deletion', 'removed'])(
+    'unified %s rows resolve to the deletions side',
+    (lineType) => {
+      const host = makeHost('unified', [5])
+      const cell = host.shadowRoot?.querySelector('[data-column-number="5"]')
+      cell?.setAttribute('data-line-type', lineType)
 
-    paintRangeBars(host, [{ side: 'deletions', startLine: 5, endLine: 5 }])
+      paintRangeBars(host, [{ side: 'deletions', startLine: 5, endLine: 5 }])
 
-    expect(barAt(host, 5)).toBe('single')
-  })
+      expect(barAt(host, 5)).toBe('single')
+    }
+  )
 
   test('clears prior tags on repaint', () => {
     const host = makeHost('split-additions', [4, 5, 6])

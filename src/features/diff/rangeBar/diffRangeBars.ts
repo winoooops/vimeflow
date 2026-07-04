@@ -63,8 +63,11 @@ const gutterCellSide = (el: HTMLElement): AnnotationSide => {
     return 'additions'
   }
 
-  // Unified column: deletion rows carry data-line-type="change-deletion".
-  return el.getAttribute('data-line-type') === 'change-deletion'
+  // Unified column: deletion rows can use either pierre's change-deletion
+  // marker or the normalized removed line type used by navigation.
+  const lineType = el.getAttribute('data-line-type')
+
+  return lineType === 'change-deletion' || lineType === 'removed'
     ? 'deletions'
     : 'additions'
 }

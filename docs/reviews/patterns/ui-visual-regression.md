@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-03
-ref_count: 14
+last_updated: 2026-07-04
+ref_count: 15
 ---
 
 # UI Visual Regression
@@ -270,4 +270,18 @@ test case for the state that triggers the collision.
 - **Fix:** Moved the four `browser-bar` tokens to distinct neighboring theme
   values and added a regression test asserting `browser-bar` remains distinct
   from `surface-container-lowest` in every shipped theme.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Unified diff range bars missed normalized removed rows
+
+- **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/rangeBar/diffRangeBars.ts`
+- **Finding:** The range-bar DOM pass treated unified gutter cells as deletion
+  rows only when `data-line-type="change-deletion"`. Unified diffs can also
+  expose removed rows as `data-line-type="removed"`, which made deletion-side
+  range comments fail to paint their persistent gutter bar on those rows.
+- **Fix:** Mirrored the review-navigation side resolver by classifying both
+  `change-deletion` and `removed` as deletions, and expanded the co-located
+  range-bar test to cover both unified deletion row spellings.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
