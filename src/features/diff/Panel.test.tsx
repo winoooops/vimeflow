@@ -56,6 +56,7 @@ const workerPoolMock = {
 }
 
 const multiFileDiffOptionsSeen: FileDiffOptions<ReviewComment>[] = []
+let mockedGutterHoverLine = 1
 
 const deferredWorkerOptions = (): {
   promise: Promise<undefined>
@@ -134,7 +135,10 @@ vi.mock('@pierre/diffs/react', () => ({
       >
         {renderGutterUtility != null ? (
           <div data-testid="gutter-utility-slot">
-            {renderGutterUtility(() => ({ lineNumber: 1, side: 'additions' }))}
+            {renderGutterUtility(() => ({
+              lineNumber: mockedGutterHoverLine,
+              side: 'additions',
+            }))}
           </div>
         ) : null}
         {lineAnnotations != null && renderAnnotation != null ? (
@@ -230,6 +234,7 @@ describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     multiFileDiffOptionsSeen.length = 0
+    mockedGutterHoverLine = 1
     window.localStorage.clear()
     themeService.apply('obsidian-lens')
     installMockResizeObserver()
@@ -4265,8 +4270,6 @@ describe('Panel', () => {
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
-      const diff = screen.getByTestId('multi-file-diff')
-
       await user.click(
         within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
           name: 'Add comment on this line',
@@ -4279,7 +4282,7 @@ describe('Panel', () => {
         ).getByRole('button', { name: 'Question' })
       )
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      mockedGutterHoverLine = 2
 
       await user.click(
         within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
@@ -4294,14 +4297,18 @@ describe('Panel', () => {
       expect(
         within(nextLineDialog).getByRole('button', { name: 'Change' })
       ).toHaveAttribute('aria-pressed', 'true')
+
       expect(
         within(nextLineDialog).getByRole('button', { name: 'Question' })
       ).toHaveAttribute('aria-pressed', 'false')
 
-      fireEvent.keyDown(diff, {
-        key: 'I',
-        shiftKey: true,
-      })
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+      await user.click(
+        within(screen.getByTestId('changed-files-pane')).getByRole('button', {
+          name: 'Comment on file foo.ts',
+        })
+      )
 
       const fileDialog = screen.getByRole('dialog', {
         name: 'Comment on file src/foo.ts',
@@ -4310,6 +4317,7 @@ describe('Panel', () => {
       expect(
         within(fileDialog).getByRole('button', { name: 'Change' })
       ).toHaveAttribute('aria-pressed', 'true')
+
       expect(
         within(fileDialog).getByRole('button', { name: 'Question' })
       ).toHaveAttribute('aria-pressed', 'false')
