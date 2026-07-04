@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-03
-ref_count: 87
+last_updated: 2026-07-04
+ref_count: 88
 ---
 
 # Accessibility
@@ -849,4 +849,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
 - **Finding:** The final Gruvbox token choices preserved compact-label contrast but left the dark theme with `surface-container` and `surface-bright` duplicated, and both Gruvbox themes with elevated rungs that moved opposite the theme-kind elevation direction. Nested panels and hover states could therefore render flat or visually inverted.
 - **Fix:** Re-picked nearby Gruvbox surface values so the dark ladder increases in luminance, the light ladder decreases in luminance, and all compact surface rungs still meet the existing AA contrast guard. Added a Gruvbox-specific regression test that checks the full surface ladder ordering by theme kind.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 84. Diff remount focus restore stole focus from editable descendants
+
+- **Source:** github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The render-key focus restoration for theme and line-style remounts treated any active element inside the diff root as safe to replace with root focus. Diff-owned text inputs such as search and review-comment editors could regain focus after a workspace theme command, then immediately lose it to the bare diff root.
+- **Fix:** Added a shared diff native-focus predicate and skipped the render-key root restore when `document.activeElement` is an input, textarea, contenteditable element, or `role="textbox"`. Added a regression test that keeps the diff search textbox focused across a workspace theme change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 85. Palette-close surface focus restore ignored follow-up dialogs
+
+- **Source:** github-claude + github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command-palette close effect always restored focus to the active terminal or dock surface, even when the command itself opened a follow-up modal such as `UnsavedChangesDialog`. That could move keyboard focus behind an active `aria-modal` dialog.
+- **Fix:** Guarded the palette-close focus restore while `showUnsavedDialog` or `newSessionDialog.open` is true, preserving the follow-up dialog's focus ownership.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -69,6 +69,9 @@ const DIFF_NATIVE_FOCUS_SELECTOR =
 const FILES_LIST_STORAGE_KEY = 'vf-diff-files-open'
 const FILES_LIST_CLOSE_DELAY_MS = 220
 
+const isDiffNativeFocusTarget = (target: Element): boolean =>
+  target.closest(DIFF_NATIVE_FOCUS_SELECTOR) !== null
+
 // A keyboard reveal (`e`) has no mouse-leave to close it, so it self-dismisses
 // after this delay — longer than the hover-leave delay since there's no pointer
 // motion to signal intent. Wire to Settings later.
@@ -511,7 +514,7 @@ export const Panel = ({
 
       if (
         event.target instanceof Element &&
-        event.target.closest(DIFF_NATIVE_FOCUS_SELECTOR) === null
+        !isDiffNativeFocusTarget(event.target)
       ) {
         focusDiffRoot()
       }
@@ -1044,6 +1047,38 @@ export const Panel = ({
     toggleDiffStyle,
   } = useToolbarState()
 
+  // A syntax-theme or line-diff-style change re-keys the pierre surface and
+  // remounts it. The generic post-render restore above only catches focus
+  // falling to document.body, but the theme control (a portalled dropdown) can
+  // leave focus on its chip and pierre's shadow-DOM remount can strand it on the
+  // shadow host, so a theme switch would otherwise lose keyboard focus. Once the
+  // remount commits, pull focus back to the diff root — but only when it's lost
+  // to the body or already sitting inside the diff pane, never yanking it from
+  // another workspace surface. Keyed on renderKey (theme + line-diff style) only;
+  // file switches also re-key but must not grab focus.
+  const previousRenderKeyRef = useRef(renderKey)
+  useEffect(() => {
+    const themeOrStyleChanged = previousRenderKeyRef.current !== renderKey
+    previousRenderKeyRef.current = renderKey
+    if (!themeOrStyleChanged) {
+      return
+    }
+
+    const root = diffRootRef.current
+    const active = document.activeElement
+
+    const activeIsEditable =
+      active instanceof Element && isDiffNativeFocusTarget(active)
+
+    if (
+      root !== null &&
+      !activeIsEditable &&
+      (active === document.body || root.contains(active))
+    ) {
+      focusDiffRoot()
+    }
+  }, [renderKey, focusDiffRoot])
+
   // In-file diff search (VIM-252). The identity key drives the hook's reset
   // rules: new key = different file (active match resets), null = nothing
   // searchable (popup closes; also covers the narrow placeholder). Everything
@@ -1147,8 +1182,7 @@ export const Panel = ({
     onPointerHover: handleBodyPointerMove,
     scrollTargetIntoView,
     shouldIgnorePointerTarget: (target): boolean =>
-      target instanceof Element &&
-      target.closest(DIFF_NATIVE_FOCUS_SELECTOR) !== null,
+      target instanceof Element && isDiffNativeFocusTarget(target),
     targetIndexFromPointerEvent,
     targets: reviewTargets,
   })

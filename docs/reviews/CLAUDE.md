@@ -56,10 +56,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 86       | 40   | 2026-06-29   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 87       | 41   | 2026-07-04   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 90   | 2026-06-25   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 91       | 87   | 2026-07-03   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 93       | 88   | 2026-07-04   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 70   | 2026-06-26   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |

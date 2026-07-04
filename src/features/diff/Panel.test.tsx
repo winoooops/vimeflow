@@ -34,6 +34,7 @@ import {
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from './services/activePanePicker'
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
+import { themeService } from '../../theme'
 
 // Mock the hooks
 vi.mock('./hooks/useGitStatus')
@@ -240,6 +241,7 @@ describe('Panel', () => {
     vi.clearAllMocks()
     multiFileDiffOptionsSeen.length = 0
     window.localStorage.clear()
+    themeService.apply('obsidian-lens')
     installMockResizeObserver()
   })
 
@@ -869,6 +871,99 @@ describe('Panel', () => {
       cwd: '.',
     })
     expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
+  })
+
+  test('changing the syntax theme keeps keyboard focus on the diff (VIM-276)', async (): Promise<void> => {
+    const user = userEvent.setup()
+
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [{ path: 'src/App.tsx', status: 'modified', staged: false }],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    const diffRoot = screen.getByTestId('diff-populated-state')
+    act(() => diffRoot.focus())
+    expect(diffRoot).toHaveFocus()
+
+    // Switch the syntax theme via the toolbar dropdown; the pierre surface
+    // re-keys and remounts, which used to strand focus off the diff.
+    await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
+    const menu = await screen.findByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: /dracula/i }))
+
+    await waitFor(() => expect(diffRoot).toHaveFocus())
+  })
+
+  test('changing the workspace theme preserves focused diff text fields', async (): Promise<void> => {
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [{ path: 'src/App.tsx', status: 'modified', staged: false }],
+      filesCwd: '.',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
+      })
+    )
+
+    render(<Panel />)
+
+    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      key: '/',
+    })
+
+    const input = await screen.findByRole('textbox', {
+      name: /search in diff/i,
+    })
+    await waitFor(() => expect(input).toHaveFocus())
+
+    act(() => {
+      themeService.apply('flexoki')
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-theme',
+        'pierre-light'
+      )
+    )
+    expect(input).toHaveFocus()
   })
 
   test('hover reveal waits before closing on mouse leave', (): void => {

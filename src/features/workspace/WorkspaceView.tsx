@@ -1750,6 +1750,37 @@ const WorkspaceViewContent = (): ReactElement => {
     enabled: !showUnsavedDialog && !newSessionDialog.open,
   })
 
+  // The palette owns focus while open (its Dialog focus-trap), and restoring to
+  // whatever happened to be focused when it opened is unreliable — a theme
+  // command even remounts the diff underneath it. On close, deterministically
+  // return focus to whichever surface is active — terminal pane or dock
+  // (diff/editor) — so keyboard flow survives any palette command. Runs after
+  // the Dialog's own restore (child effects fire before this parent effect), so
+  // this wins.
+  const wasCommandPaletteOpenRef = useRef(commandPalette.state.isOpen)
+  useEffect(() => {
+    const wasOpen = wasCommandPaletteOpenRef.current
+    wasCommandPaletteOpenRef.current = commandPalette.state.isOpen
+
+    if (
+      wasOpen &&
+      !commandPalette.state.isOpen &&
+      !showUnsavedDialog &&
+      !newSessionDialog.open
+    ) {
+      requestFocus(
+        activeContainerId === TERMINAL_CONTAINER_ID ? 'terminal' : dockTab
+      )
+    }
+  }, [
+    commandPalette.state.isOpen,
+    activeContainerId,
+    dockTab,
+    requestFocus,
+    showUnsavedDialog,
+    newSessionDialog.open,
+  ])
+
   usePaneShortcuts({
     sessions,
     activeSessionId,
