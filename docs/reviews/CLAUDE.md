@@ -44,12 +44,12 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 8    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 6        | 1    | 2026-07-03   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 7        | 1    | 2026-07-04   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 65       | 64   | 2026-06-30   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 26       | 23   | 2026-06-30   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 27       | 23   | 2026-07-04   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 13       | 12   | 2026-06-28   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 15       | 12   | 2026-06-26   |
@@ -101,7 +101,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 14       | 9    | 2026-06-28   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 1    | 2026-06-15   |
-| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 1        | 1    | 2026-06-15   |
+| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 2        | 1    | 2026-07-04   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 6        | 2    | 2026-06-27   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 1    | 2026-06-18   |

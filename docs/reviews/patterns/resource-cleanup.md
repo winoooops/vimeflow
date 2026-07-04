@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-30
+last_updated: 2026-07-04
 ref_count: 23
 ---
 
@@ -262,4 +262,13 @@ causes listener accumulation and duplicate event handling.
   unconditional, but guard every overlay-window/webContents method behind
   `!record.overlayWindow.isDestroyed()`. Added regression coverage for closing
   after overlay-window destruction.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Hoisted preload test env mutation leaked across Vitest worker state
+
+- **Source:** github-claude | PR #656 round 1 | 2026-07-04
+- **Severity:** LOW
+- **File:** `electron/preload.test.ts`
+- **Finding:** A hoisted preload test set `process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'` directly so the native bridge existed before importing preload code, but never restored the process-global env value. Later tests in the same worker could inherit native Ghostty mode unexpectedly.
+- **Fix:** Replaced the raw env write with `vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')` and added `afterAll(() => vi.unstubAllEnvs())`, mirroring the existing explicit global cleanup pattern.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

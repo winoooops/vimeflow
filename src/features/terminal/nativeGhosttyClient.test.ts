@@ -4,6 +4,7 @@ import type { ITerminalService } from './services/terminalService'
 import {
   attachNativeGhosttySecondary,
   attachNativeGhosttyOutput,
+  canUseNativeGhosttySecondary,
   sendNativeGhosttySecondaryData,
   shouldUseNativeGhostty,
   type NativeGhosttyApi,
@@ -103,6 +104,38 @@ describe('nativeGhosttyClient', () => {
         secondarySessionId: 'burner-pty',
       })
     ).resolves.toBe(false)
+  })
+
+  test('keeps native secondary burners disabled for the legacy helper bridge', () => {
+    const api: NativeGhosttyApi = {
+      update: vi.fn(() => Promise.resolve({})),
+      data: vi.fn(() => Promise.resolve({})),
+      focus: vi.fn(() => Promise.resolve({})),
+      destroy: vi.fn(() => Promise.resolve({})),
+    }
+    vi.stubGlobal('navigator', { platform: 'MacIntel' })
+    vi.stubGlobal('window', { vimeflow: { ghosttyNative: api } })
+
+    expect(shouldUseNativeGhostty()).toBe(true)
+    expect(canUseNativeGhosttySecondary()).toBe(false)
+  })
+
+  test('enables native secondary burners when every secondary API is present', () => {
+    const api: NativeGhosttyApi = {
+      update: vi.fn(() => Promise.resolve({})),
+      data: vi.fn(() => Promise.resolve({})),
+      focus: vi.fn(() => Promise.resolve({})),
+      destroy: vi.fn(() => Promise.resolve({})),
+      attachSecondary: vi.fn(() => Promise.resolve({})),
+      secondaryData: vi.fn(() => Promise.resolve({})),
+      focusSecondary: vi.fn(() => Promise.resolve({})),
+      removeSecondary: vi.fn(() => Promise.resolve({})),
+      setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+    }
+    vi.stubGlobal('navigator', { platform: 'MacIntel' })
+    vi.stubGlobal('window', { vimeflow: { ghosttyNative: api } })
+
+    expect(canUseNativeGhosttySecondary()).toBe(true)
   })
 
   test('secondary data forwards through the optional native bridge', async () => {

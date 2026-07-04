@@ -1,5 +1,5 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
@@ -46,7 +46,7 @@ import './preload'
 
 const electronMock = vi.hoisted(() => {
   let exposedApi: Record<string, unknown> | undefined
-  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'
+  vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')
 
   return {
     get exposed(): Record<string, unknown> | undefined {
@@ -64,6 +64,10 @@ const electronMock = vi.hoisted(() => {
       setMaxListeners: vi.fn(),
     },
   }
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
 })
 
 vi.mock('electron', () => ({

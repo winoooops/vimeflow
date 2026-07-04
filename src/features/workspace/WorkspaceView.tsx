@@ -1236,6 +1236,16 @@ const WorkspaceViewContent = (): ReactElement => {
     [sessions]
   )
 
+  const livePanePtyIds = useMemo(
+    () =>
+      new Map(
+        sessions.flatMap((s) =>
+          s.panes.map((p) => [`${s.id}:${p.id}`, p.ptyId] as const)
+        )
+      ),
+    [sessions]
+  )
+
   // Preferred burner sync targets from the active agent's structured cwd.
   // This captures agent-driven worktree moves that may not be reflected in the
   // host shell's pwd yet; `useBurnerTerminals` falls back to `livePaneCwds`.
@@ -1282,6 +1292,7 @@ const WorkspaceViewContent = (): ReactElement => {
     dropAllForPty,
     livePaneCwds,
     agentPaneCwds,
+    livePanePtyIds,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo

@@ -96,6 +96,21 @@ const isDisabledResult = (value: unknown): boolean =>
 export const shouldUseNativeGhostty = (): boolean =>
   isMacRenderer() && Boolean(nativeGhosttyApi())
 
+export const canUseNativeGhosttySecondary = (): boolean => {
+  const api = nativeGhosttyApi()
+
+  return (
+    isMacRenderer() &&
+    Boolean(
+      api?.attachSecondary &&
+      api.secondaryData &&
+      api.focusSecondary &&
+      api.removeSecondary &&
+      api.setSecondaryVisible
+    )
+  )
+}
+
 export const updateNativeGhostty = async (
   request: NativeGhosttyUpdateRequest
 ): Promise<boolean> => {

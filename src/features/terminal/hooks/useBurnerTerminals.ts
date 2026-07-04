@@ -16,11 +16,11 @@ import type { NotifyPaneReady } from './useTerminal'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import {
   attachNativeGhosttySecondary,
+  canUseNativeGhosttySecondary,
   focusNativeGhosttySecondary,
   removeNativeGhosttySecondary,
   sendNativeGhosttySecondaryData,
   setNativeGhosttySecondaryVisible,
-  shouldUseNativeGhostty,
   type NativeGhosttySecondaryRequest,
 } from '../nativeGhosttyClient'
 import { parseOsc7Cwd } from '../components/TerminalPane/osc7'
@@ -261,6 +261,12 @@ export interface UseBurnerTerminalsArgs {
    * the sync target even before the interactive shell's pwd catches up.
    */
   agentPaneCwds?: ReadonlyMap<string, string>
+  /**
+   * Live `${sessionId}:${paneId}` → current pane ptyId. Pane restarts preserve
+   * the stable pane key but rotate the native host ptyId; open native burners
+   * reattach when this value changes.
+   */
+  livePanePtyIds?: ReadonlyMap<string, string>
 }
 
 export interface UseBurnerTerminals {
@@ -307,6 +313,7 @@ export const useBurnerTerminals = ({
   dropAllForPty,
   livePaneCwds,
   agentPaneCwds,
+  livePanePtyIds,
 }: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -695,6 +702,29 @@ export const useBurnerTerminals = ({
     commit()
   }, [livePaneKeys, killBurner, commit])
 
+  useEffect(() => {
+    if (!livePanePtyIds) {
+      return
+    }
+
+    const updates: [string, BurnerEntry][] = []
+    entriesRef.current.forEach((entry, key) => {
+      const hostPtyId = livePanePtyIds.get(key)
+      if (!hostPtyId || entry.hostPtyId === hostPtyId) {
+        return
+      }
+
+      updates.push([key, { ...entry, hostPtyId }])
+    })
+
+    if (updates.length > 0) {
+      for (const [key, entry] of updates) {
+        entriesRef.current.set(key, entry)
+      }
+      commit()
+    }
+  }, [livePanePtyIds, commit])
+
   // Memoized so consumers threading it down only re-render on actual change.
   const runningByPane = useMemo(() => {
     const map = new Map<string, BurnerStatus>()
@@ -718,7 +748,7 @@ export const useBurnerTerminals = ({
           [...entries.entries()].map(([key, entry]): ReactNode => {
             const targetCwd = agentPaneCwds?.get(key) ?? livePaneCwds?.get(key)
 
-            if (shouldUseNativeGhostty() && entry.hostPtyId) {
+            if (canUseNativeGhosttySecondary() && entry.hostPtyId) {
               return createElement(NativeGhosttyBurnerTerminal, {
                 key: `${key}:${entry.burnerPtyId}`,
                 open: visibleKey === key,
@@ -781,7 +811,7 @@ export const useBurnerTerminals = ({
     activeByPane,
     hasVisibleBurner:
       visibleKey !== null &&
-      (!shouldUseNativeGhostty() || !entries.get(visibleKey)?.hostPtyId),
+      (!canUseNativeGhosttySecondary() || !entries.get(visibleKey)?.hostPtyId),
     visibleBurnerPaneKey: visibleKey,
   }
 }
