@@ -34,6 +34,39 @@ private final class GhosttyHelperWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
+// Smoke-only layout hook. Production child layout belongs in
+// EmbeddedGhosttySurface, then this helper class should be deleted.
+private final class SmokeContainerView: NSView {
+    var onLayout: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
+}
+
+// Smoke-only divider. It proves the nested terminal region can be resized;
+// production should move this behavior into the embedded AppKit surface.
+private final class SmokeDividerView: NSView {
+    var vertical = true
+    var onDrag: ((CGFloat) -> Void)?
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: vertical ? .resizeLeftRight : .resizeUpDown)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(vertical ? event.deltaX : event.deltaY)
+    }
+}
+
+// Smoke-only child routing. Keep the role generic so the production nested
+// terminal path can support more than the burner use case.
+private enum SmokeTerminalRole {
+    case primary
+    case secondary
+}
+
 @main
 final class GhosttyNativeMacosSmoke:
     NSObject,
@@ -43,13 +76,20 @@ final class GhosttyNativeMacosSmoke:
     TerminalSurfaceCloseDelegate
 {
     private var window: NSWindow?
-    private var containerView: NSView?
+    private var containerView: SmokeContainerView?
     private var terminalView: TerminalView?
+    private var secondaryTerminalView: TerminalView?
+    private var dividerView: SmokeDividerView?
     private var backendClient: VimeflowBackendClient?
     private var electronHostClient: ElectronHostClient?
     private var ptySessionId: String?
+    private var secondaryPtySessionId: String?
     private var pendingGrid = GhosttyGridSize(columns: 80, rows: 24)
+    private var secondaryPendingGrid = GhosttyGridSize(columns: 80, rows: 12)
     private var lastForwardedGrid: GhosttyGridSize?
+    private var secondaryLastForwardedGrid: GhosttyGridSize?
+    private var secondarySplitRatio: CGFloat = 0.34
+    private var shortcutMonitor: Any?
     private let helperMode = CommandLine.arguments.contains("--electron-helper")
 
     private lazy var controller = TerminalController()
@@ -57,7 +97,7 @@ final class GhosttyNativeMacosSmoke:
     private lazy var session = InMemoryTerminalSession(
         write: { [weak self] data in
             DispatchQueue.main.async {
-                self?.handleTerminalInput(data)
+                self?.handleTerminalInput(data, role: .primary)
             }
         },
         resize: { viewport in
@@ -66,7 +106,29 @@ final class GhosttyNativeMacosSmoke:
                     GhosttyGridSize(
                         columns: Int(viewport.columns),
                         rows: Int(viewport.rows)
-                    )
+                    ),
+                    role: .primary
+                )
+            }
+        }
+    )
+
+    private lazy var secondaryController = TerminalController()
+
+    private lazy var secondarySession = InMemoryTerminalSession(
+        write: { [weak self] data in
+            DispatchQueue.main.async {
+                self?.handleTerminalInput(data, role: .secondary)
+            }
+        },
+        resize: { viewport in
+            DispatchQueue.main.async { [weak self] in
+                self?.handleGhosttyResize(
+                    GhosttyGridSize(
+                        columns: Int(viewport.columns),
+                        rows: Int(viewport.rows)
+                    ),
+                    role: .secondary
                 )
             }
         }
@@ -113,9 +175,12 @@ final class GhosttyNativeMacosSmoke:
         }
         window.title = "Vimeflow Ghostty native smoke"
 
-        let container = NSView()
+        let container = SmokeContainerView()
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.black.cgColor
+        container.onLayout = { [weak self] in
+            self?.layoutSmokeTerminalViews()
+        }
         window.contentView = container
 
         let terminalView = TerminalView(frame: .zero)
@@ -124,15 +189,8 @@ final class GhosttyNativeMacosSmoke:
         terminalView.configuration = TerminalSurfaceOptions(
             backend: .inMemory(session)
         )
-        terminalView.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(terminalView)
-        NSLayoutConstraint.activate([
-            terminalView.topAnchor.constraint(equalTo: container.topAnchor),
-            terminalView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            terminalView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            terminalView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
 
         self.window = window
         self.containerView = container
@@ -148,8 +206,10 @@ final class GhosttyNativeMacosSmoke:
             session.receive(
                 "\u{001b}[38;2;141;224;210mVimeflow Ghostty native smoke\u{001b}[0m\r\n"
                     + "GhosttyTerminal is now connected to vimeflow-backend PTY over stdio IPC.\r\n"
+                    + "Smoke controls: Cmd+B show burner, Cmd+Shift+B hide burner, Cmd+Option+B remove burner.\r\n"
                     + "Starting shell...\r\n\r\n"
             )
+            installSmokeShortcuts()
             startBackendPty()
         }
     }
@@ -162,6 +222,13 @@ final class GhosttyNativeMacosSmoke:
         if let ptySessionId {
             backendClient?.killPty(sessionId: ptySessionId)
         }
+        if let secondaryPtySessionId {
+            backendClient?.killPty(sessionId: secondaryPtySessionId)
+        }
+        if let shortcutMonitor {
+            NSEvent.removeMonitor(shortcutMonitor)
+            self.shortcutMonitor = nil
+        }
         backendClient?.shutdown()
         electronHostClient?.sendClosed()
         electronHostClient?.close()
@@ -172,24 +239,35 @@ final class GhosttyNativeMacosSmoke:
     }
 
     func terminalDidResize(columns: Int, rows: Int) {
-        handleGhosttyResize(GhosttyGridSize(columns: columns, rows: rows))
+        handleGhosttyResize(
+            GhosttyGridSize(columns: columns, rows: rows),
+            role: .primary
+        )
     }
 
     func terminalDidClose(processAlive _: Bool) {
         NSApp.terminate(nil)
     }
 
-    private func handleTerminalInput(_ data: Data) {
+    private func handleTerminalInput(_ data: Data, role: SmokeTerminalRole) {
         if helperMode {
             electronHostClient?.sendInput(data)
             return
         }
 
-        guard let ptySessionId else {
+        let targetSessionId =
+            switch role {
+            case .primary:
+                ptySessionId
+            case .secondary:
+                secondaryPtySessionId
+            }
+
+        guard let targetSessionId else {
             return
         }
 
-        backendClient?.writePty(sessionId: ptySessionId, data: data)
+        backendClient?.writePty(sessionId: targetSessionId, data: data)
     }
 
     private func startBackendPty() {
@@ -218,7 +296,7 @@ final class GhosttyNativeMacosSmoke:
             case let .success(pty):
                 self.ptySessionId = pty.id
                 self.window?.title = "Vimeflow Ghostty native smoke - \(pty.shell)"
-                self.forwardResizeIfNeeded(self.pendingGrid)
+                self.forwardResizeIfNeeded(self.pendingGrid, role: .primary)
             case let .failure(error):
                 self.ptySessionId = nil
                 self.showBackendError(error)
@@ -229,19 +307,31 @@ final class GhosttyNativeMacosSmoke:
     private func handleBackendEvent(_ event: VimeflowBackendEvent) {
         switch event {
         case let .ptyData(sessionId, data):
-            guard sessionId == ptySessionId else { return }
-            session.receive(data)
+            if sessionId == ptySessionId {
+                session.receive(data)
+            } else if sessionId == secondaryPtySessionId {
+                secondarySession.receive(data)
+            }
         }
     }
 
-    private func handleGhosttyResize(_ grid: GhosttyGridSize) {
+    private func handleGhosttyResize(_ grid: GhosttyGridSize, role: SmokeTerminalRole) {
         guard grid.columns > 0, grid.rows > 0 else {
             return
         }
 
-        pendingGrid = grid
+        switch role {
+        case .primary:
+            pendingGrid = grid
+        case .secondary:
+            secondaryPendingGrid = grid
+        }
 
         if helperMode {
+            guard role == .primary else {
+                return
+            }
+
             guard lastForwardedGrid != grid else {
                 return
             }
@@ -251,20 +341,40 @@ final class GhosttyNativeMacosSmoke:
             return
         }
 
-        forwardResizeIfNeeded(grid)
+        forwardResizeIfNeeded(grid, role: role)
     }
 
-    private func forwardResizeIfNeeded(_ grid: GhosttyGridSize) {
-        guard let ptySessionId, let backendClient else {
+    private func forwardResizeIfNeeded(_ grid: GhosttyGridSize, role: SmokeTerminalRole) {
+        guard let backendClient else {
             return
         }
 
-        guard lastForwardedGrid != grid else {
+        let targetSessionId =
+            switch role {
+            case .primary:
+                ptySessionId
+            case .secondary:
+                secondaryPtySessionId
+            }
+
+        guard let targetSessionId else {
             return
         }
 
-        lastForwardedGrid = grid
-        backendClient.resizePty(sessionId: ptySessionId, grid: grid)
+        switch role {
+        case .primary:
+            guard lastForwardedGrid != grid else {
+                return
+            }
+            lastForwardedGrid = grid
+        case .secondary:
+            guard secondaryLastForwardedGrid != grid else {
+                return
+            }
+            secondaryLastForwardedGrid = grid
+        }
+
+        backendClient.resizePty(sessionId: targetSessionId, grid: grid)
     }
 
     private func showBackendError(_ error: Error) {
@@ -331,6 +441,10 @@ final class GhosttyNativeMacosSmoke:
             light: TerminalConfiguration().background(ghosttyHex),
             dark: TerminalConfiguration().background(ghosttyHex)
         ))
+        secondaryController.setTheme(TerminalTheme(
+            light: TerminalConfiguration().background(ghosttyHex),
+            dark: TerminalConfiguration().background(ghosttyHex)
+        ))
     }
 
     private func focusHelperWindow() {
@@ -347,6 +461,218 @@ final class GhosttyNativeMacosSmoke:
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    // Smoke-only keyboard controls. Production add/hide/remove will be driven
+    // by Electron IPC from the pane header, not by local AppKit shortcuts.
+    private func installSmokeShortcuts() {
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self, self.handleSmokeShortcut(event) else {
+                return event
+            }
+
+            return nil
+        }
+    }
+
+    private func handleSmokeShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command),
+              event.charactersIgnoringModifiers?.lowercased() == "b"
+        else {
+            return false
+        }
+
+        if flags.contains(.option) {
+            removeSecondarySmokeTerminal()
+            return true
+        }
+
+        if flags.contains(.shift) {
+            hideSecondarySmokeTerminal()
+            return true
+        }
+
+        showSecondarySmokeTerminal()
+        return true
+    }
+
+    private func showSecondarySmokeTerminal() {
+        if let secondaryTerminalView {
+            secondaryTerminalView.isHidden = false
+            layoutSmokeTerminalViews()
+            window?.makeFirstResponder(secondaryTerminalView)
+            return
+        }
+
+        let secondaryTerminalView = TerminalView(frame: .zero)
+        secondaryTerminalView.controller = secondaryController
+        secondaryTerminalView.configuration = TerminalSurfaceOptions(
+            backend: .inMemory(secondarySession)
+        )
+        containerView?.addSubview(secondaryTerminalView)
+        self.secondaryTerminalView = secondaryTerminalView
+        ensureSmokeDivider()
+        dividerView?.isHidden = false
+        secondarySession.receive(
+            "\u{001b}[38;2;214;163;72mVimeflow burner smoke\u{001b}[0m\r\n"
+                + "Separate TerminalView, TerminalController, and ephemeral PTY.\r\n\r\n"
+        )
+        layoutSmokeTerminalViews()
+        window?.makeFirstResponder(secondaryTerminalView)
+        startSecondaryBackendPty()
+    }
+
+    private func hideSecondarySmokeTerminal() {
+        secondaryTerminalView?.isHidden = true
+        dividerView?.isHidden = true
+        layoutSmokeTerminalViews()
+        if let terminalView {
+            window?.makeFirstResponder(terminalView)
+        }
+    }
+
+    private func removeSecondarySmokeTerminal() {
+        if let secondaryPtySessionId {
+            backendClient?.killPty(sessionId: secondaryPtySessionId)
+        }
+        secondaryPtySessionId = nil
+        secondaryLastForwardedGrid = nil
+        secondaryTerminalView?.removeFromSuperview()
+        secondaryTerminalView = nil
+        dividerView?.isHidden = true
+        layoutSmokeTerminalViews()
+        if let terminalView {
+            window?.makeFirstResponder(terminalView)
+        }
+    }
+
+    private func startSecondaryBackendPty() {
+        guard secondaryPtySessionId == nil else {
+            return
+        }
+
+        let sessionId = UUID().uuidString
+        secondaryPtySessionId = sessionId
+        backendClient?.spawnPty(
+            sessionId: sessionId,
+            cwd: VimeflowBackendClient.defaultWorkingDirectory()
+        ) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case let .success(pty):
+                self.secondaryPtySessionId = pty.id
+                self.forwardResizeIfNeeded(self.secondaryPendingGrid, role: .secondary)
+            case let .failure(error):
+                self.secondaryPtySessionId = nil
+                self.secondarySession.receive(
+                    "\r\n\u{001b}[38;2;243;139;168mBurner spawn failed:\u{001b}[0m "
+                        + "\(error.localizedDescription)\r\n"
+                )
+            }
+        }
+    }
+
+    private func ensureSmokeDivider() {
+        if dividerView != nil {
+            return
+        }
+
+        let divider = SmokeDividerView(frame: .zero)
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        divider.onDrag = { [weak self] delta in
+            self?.resizeSecondarySplit(delta: delta)
+        }
+        containerView?.addSubview(divider)
+        dividerView = divider
+    }
+
+    private func resizeSecondarySplit(delta: CGFloat) {
+        guard let containerView else {
+            return
+        }
+
+        let bounds = containerView.bounds
+        if bounds.width < 720 {
+            secondarySplitRatio = max(0.2, min(0.65, secondarySplitRatio + delta / max(1, bounds.height)))
+        } else {
+            secondarySplitRatio = max(0.2, min(0.65, secondarySplitRatio - delta / max(1, bounds.width)))
+        }
+        layoutSmokeTerminalViews()
+    }
+
+    private func clamped(_ value: CGFloat, min minValue: CGFloat, max maxValue: CGFloat) -> CGFloat {
+        min(max(value, minValue), maxValue)
+    }
+
+    private func layoutSmokeTerminalViews() {
+        guard let containerView, let terminalView else {
+            return
+        }
+
+        let bounds = containerView.bounds
+        guard let secondaryTerminalView, !secondaryTerminalView.isHidden else {
+            terminalView.frame = bounds
+            dividerView?.isHidden = true
+            return
+        }
+
+        let divider: CGFloat = 6
+        dividerView?.isHidden = false
+        if bounds.width < 720 {
+            let secondaryHeight = clamped(
+                floor(bounds.height * secondarySplitRatio),
+                min: 140,
+                max: max(140, bounds.height - 180)
+            )
+            terminalView.frame = NSRect(
+                x: 0,
+                y: secondaryHeight + divider,
+                width: bounds.width,
+                height: max(0, bounds.height - secondaryHeight - divider)
+            )
+            secondaryTerminalView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: bounds.width,
+                height: secondaryHeight
+            )
+            dividerView?.vertical = false
+            dividerView?.frame = NSRect(
+                x: 0,
+                y: secondaryHeight,
+                width: bounds.width,
+                height: divider
+            )
+        } else {
+            let secondaryWidth = clamped(
+                floor(bounds.width * secondarySplitRatio),
+                min: 260,
+                max: max(260, bounds.width - 320)
+            )
+            terminalView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: max(0, bounds.width - secondaryWidth - divider),
+                height: bounds.height
+            )
+            secondaryTerminalView.frame = NSRect(
+                x: bounds.width - secondaryWidth,
+                y: 0,
+                width: secondaryWidth,
+                height: bounds.height
+            )
+            dividerView?.vertical = true
+            dividerView?.frame = NSRect(
+                x: bounds.width - secondaryWidth - divider,
+                y: 0,
+                width: divider,
+                height: bounds.height
+            )
+        }
+        dividerView?.resetCursorRects()
     }
 
     private func appKitFrameFromTopLeft(_ frame: GhosttyNativeFrame) -> NSRect {
