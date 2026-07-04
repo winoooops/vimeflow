@@ -2,6 +2,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   type ReactElement,
@@ -76,6 +77,11 @@ interface NativeGhosttyViewportMetrics {
   outerHeight: number
 }
 
+interface NativeGhosttyFrameSnapshot {
+  key: string
+  request: Parameters<typeof updateNativeGhostty>[0]
+}
+
 const nativePointScale = (outerSize: number, innerSize: number): number =>
   Number.isFinite(outerSize) &&
   Number.isFinite(innerSize) &&
@@ -107,6 +113,50 @@ export const nativeGhosttyCornerRadiusFromCssPixels = (
   viewport: NativeGhosttyViewportMetrics = window
 ): number => radius * nativePointScale(viewport.outerWidth, viewport.innerWidth)
 
+// AppKit flips y from the parent view height. Send the renderer's same-window
+// snapshot so top-edge live resize cannot mix old pane bounds with a new height.
+export const nativeGhosttyParentHeightFromViewport = (
+  viewport: NativeGhosttyViewportMetrics = window
+): number =>
+  Number.isFinite(viewport.outerHeight) && viewport.outerHeight > 0
+    ? viewport.outerHeight
+    : viewport.innerHeight
+
+// Main rounds native frames before calling AppKit. Dedupe on that rounded shape
+// so tiny DOM float churn does not become repeated native resize IPC.
+const nativeGhosttyFrameKey = ({
+  backgroundColor,
+  bottomCornerRadius,
+  bounds,
+  parentHeight,
+  shortcutContext,
+  visible,
+}: {
+  backgroundColor: string
+  bottomCornerRadius: number
+  bounds: NativeGhosttyBounds
+  parentHeight: number
+  shortcutContext?: NativeGhosttyShortcutContext
+  visible: boolean
+}): string => {
+  const roundedWidth = Math.round(bounds.width)
+  const roundedHeight = Math.round(bounds.height)
+  const frameVisible = visible && roundedWidth > 0 && roundedHeight > 0
+
+  return [
+    Math.round(bounds.x),
+    Math.round(bounds.y),
+    frameVisible ? roundedWidth : 0,
+    frameVisible ? roundedHeight : 0,
+    Math.round(parentHeight),
+    frameVisible ? Math.max(0, Math.round(bottomCornerRadius)) : 0,
+    frameVisible ? '1' : '0',
+    backgroundColor,
+    shortcutContext?.activePaneId ?? '',
+    ...(shortcutContext?.paneIds ?? []),
+  ].join(':')
+}
+
 const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
   Boolean(
     currentCwd &&
@@ -135,6 +185,12 @@ export const GhosttyBody = ({
   const backgroundColor = theme.terminal.background
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
+  const inFlightNativeFrameRef = useRef<Promise<void> | null>(null)
+  const lastSentNativeFrameKeyRef = useRef<string | null>(null)
+
+  const queuedNativeFrameSnapshotRef = useRef<NativeGhosttyFrameSnapshot | null>(
+    null
+  )
   const resizeTrackingUntilRef = useRef(0)
   const submittedInputLineRef = useRef('')
   const agentCwdOutputBufferRef = useRef('')
@@ -349,39 +405,107 @@ export const GhosttyBody = ({
     [handleNativeOutput, sendOutputToNative]
   )
 
-  const updateNativeFrame = useCallback(async (): Promise<void> => {
+  // One place for native-frame IPC error handling; callers queue snapshots and
+  // do not need to care whether native Ghostty is disabled or unavailable.
+  const sendNativeFrameSnapshot = useCallback(
+    async (snapshot: NativeGhosttyFrameSnapshot): Promise<void> => {
+      try {
+        const enabled = await updateNativeGhostty(snapshot.request)
+
+        if (!enabled) {
+          onUnavailable?.()
+        }
+      } catch {
+        onUnavailable?.()
+      }
+    },
+    [onUnavailable]
+  )
+
+  // Keep only one IPC in flight. Resize can fire faster than native can apply
+  // frames, so newer snapshots replace the queued one instead of stacking calls.
+  const flushQueuedNativeFrame = useCallback((): void => {
+    if (inFlightNativeFrameRef.current !== null) {
+      return
+    }
+
+    const snapshot = queuedNativeFrameSnapshotRef.current
+    if (!snapshot) {
+      return
+    }
+
+    queuedNativeFrameSnapshotRef.current = null
+    lastSentNativeFrameKeyRef.current = snapshot.key
+
+    const inFlight = sendNativeFrameSnapshot(snapshot)
+    inFlightNativeFrameRef.current = inFlight
+
+    void (async (): Promise<void> => {
+      await inFlight
+      if (inFlightNativeFrameRef.current === inFlight) {
+        inFlightNativeFrameRef.current = null
+      }
+      flushQueuedNativeFrame()
+    })()
+  }, [sendNativeFrameSnapshot])
+
+  const updateNativeFrame = useCallback((): void => {
     const node = containerRef.current
     if (!node) {
       return
     }
 
-    const bounds = nativeGhosttyBoundsFromRect(node.getBoundingClientRect())
+    const viewport = {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth,
+      outerHeight: window.outerHeight,
+    }
+
+    const bounds = nativeGhosttyBoundsFromRect(
+      node.getBoundingClientRect(),
+      viewport
+    )
 
     const nativeBottomCornerRadius =
-      nativeGhosttyCornerRadiusFromCssPixels(bottomCornerRadius)
+      nativeGhosttyCornerRadiusFromCssPixels(bottomCornerRadius, viewport)
+    const parentHeight = nativeGhosttyParentHeightFromViewport(viewport)
+    const visible = true
 
-    try {
-      const enabled = await updateNativeGhostty({
+    const snapshot = {
+      key: nativeGhosttyFrameKey({
+        backgroundColor,
+        bottomCornerRadius: nativeBottomCornerRadius,
+        bounds,
+        parentHeight,
+        shortcutContext,
+        visible,
+      }),
+      request: {
         ...paneRef,
         cwd,
         bounds,
         backgroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
-        visible: true,
+        parentHeight,
+        visible,
         ...(shortcutContext ? { shortcutContext } : {}),
-      })
-
-      if (!enabled) {
-        onUnavailable?.()
-      }
-    } catch {
-      onUnavailable?.()
+      },
     }
+
+    if (lastSentNativeFrameKeyRef.current === snapshot.key) {
+      queuedNativeFrameSnapshotRef.current = null
+
+      return
+    }
+
+    queuedNativeFrameSnapshotRef.current = snapshot
+    flushQueuedNativeFrame()
   }, [
     backgroundColor,
     bottomCornerRadius,
     cwd,
-    onUnavailable,
+    flushQueuedNativeFrame,
     paneRef,
     shortcutContext,
   ])
@@ -396,7 +520,7 @@ export const GhosttyBody = ({
 
     const runFrameUpdate = (): void => {
       frameIdRef.current = null
-      void updateNativeFrame()
+      updateNativeFrame()
 
       if (Date.now() >= resizeTrackingUntilRef.current) {
         return
@@ -408,17 +532,27 @@ export const GhosttyBody = ({
     frameIdRef.current = window.requestAnimationFrame(runFrameUpdate)
   }, [updateNativeFrame])
 
-  // Keep the parented NSView aligned; resize events only schedule rAF updates.
-  useEffect(() => {
+  const syncAndTrackNativeFrame = useCallback((): void => {
+    updateNativeFrame()
+    scheduleNativeFrameUpdate()
+  }, [scheduleNativeFrameUpdate, updateNativeFrame])
+
+  // Keep the parented NSView aligned with the React pane:
+  // 1. ResizeObserver/window resize sends one frame update immediately.
+  // 2. The same signal extends a short "keep sampling" deadline.
+  // 3. One rAF loop samples again until resize has been quiet long enough.
+  // 4. Cleanup cancels that loop, drops the queued frame, and unregisters both
+  //    the observer and window listener.
+  useLayoutEffect(() => {
     const node = containerRef.current
     if (!node) {
       return
     }
 
-    void updateNativeFrame()
-    const observer = new ResizeObserver(scheduleNativeFrameUpdate)
+    updateNativeFrame()
+    const observer = new ResizeObserver(syncAndTrackNativeFrame)
     observer.observe(node)
-    window.addEventListener('resize', scheduleNativeFrameUpdate)
+    window.addEventListener('resize', syncAndTrackNativeFrame)
 
     return (): void => {
       if (frameIdRef.current !== null) {
@@ -426,10 +560,11 @@ export const GhosttyBody = ({
         frameIdRef.current = null
       }
       resizeTrackingUntilRef.current = 0
+      queuedNativeFrameSnapshotRef.current = null
       observer.disconnect()
-      window.removeEventListener('resize', scheduleNativeFrameUpdate)
+      window.removeEventListener('resize', syncAndTrackNativeFrame)
     }
-  }, [scheduleNativeFrameUpdate, updateNativeFrame])
+  }, [syncAndTrackNativeFrame, updateNativeFrame])
 
   // Focus follows the active pane, but focus no longer owns surface lifetime.
   useEffect(() => {

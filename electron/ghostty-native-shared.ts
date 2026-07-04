@@ -21,6 +21,7 @@ export interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
   bounds: GhosttyNativeBounds
   backgroundColor?: string
   bottomCornerRadius?: number
+  parentHeight: number
   visible: boolean
   shortcutContext?: GhosttyNativeShortcutContext
 }

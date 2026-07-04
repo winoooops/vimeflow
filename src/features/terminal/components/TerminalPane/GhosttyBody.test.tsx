@@ -1,5 +1,5 @@
 // cspell:ignore Ghostty
-import { act, render, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { flexoki, obsidianLens, themeService } from '../../../../theme'
 import type { ITerminalService } from '../../services/terminalService'
@@ -15,6 +15,7 @@ import {
   GhosttyBody,
   nativeGhosttyBoundsFromRect,
   nativeGhosttyCornerRadiusFromCssPixels,
+  nativeGhosttyParentHeightFromViewport,
 } from './GhosttyBody'
 
 const backendListeners = new Map<string, (payload: unknown) => void>()
@@ -291,6 +292,17 @@ describe('GhosttyBody', () => {
     ).toBeCloseTo(9.13242)
   })
 
+  test('converts CSS viewport height to native window points', () => {
+    expect(
+      nativeGhosttyParentHeightFromViewport({
+        innerWidth: 1533,
+        innerHeight: 985,
+        outerWidth: 1400,
+        outerHeight: 900,
+      })
+    ).toBe(900)
+  })
+
   test('falls back to unscaled native frame bounds when viewport metrics are unavailable', () => {
     expect(
       nativeGhosttyBoundsFromRect(rect(10, 20, 300, 200), {
@@ -327,6 +339,53 @@ describe('GhosttyBody', () => {
     await waitFor(() => {
       expect(updateNativeGhostty).toHaveBeenCalledWith(
         expect.objectContaining({ shortcutContext })
+      )
+    })
+  })
+
+  test('sends native frame updates when only shortcut context changes', async () => {
+    const firstShortcutContext = {
+      paneIds: ['pane-1', 'pane-2'],
+      activePaneId: 'pane-1',
+    }
+
+    const nextShortcutContext = {
+      paneIds: ['pane-1', 'pane-2'],
+      activePaneId: 'pane-2',
+    }
+
+    const { rerender } = render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        shortcutContext={firstShortcutContext}
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ shortcutContext: firstShortcutContext })
+      )
+    })
+    vi.mocked(updateNativeGhostty).mockClear()
+
+    rerender(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        shortcutContext={nextShortcutContext}
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ shortcutContext: nextShortcutContext })
       )
     })
   })
@@ -380,6 +439,7 @@ describe('GhosttyBody', () => {
       resizeCallback?.([], {} as ResizeObserver)
     })
 
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(0)
     expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
 
     await act(async () => {
@@ -388,7 +448,7 @@ describe('GhosttyBody', () => {
       await Promise.resolve()
     })
 
-    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(0)
     expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
 
     act(() => {
@@ -404,7 +464,7 @@ describe('GhosttyBody', () => {
       await Promise.resolve()
     })
 
-    expect(updateNativeGhostty).toHaveBeenCalledTimes(2)
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(0)
     expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(3)
 
     await act(async () => {
@@ -413,11 +473,162 @@ describe('GhosttyBody', () => {
       await Promise.resolve()
     })
 
-    expect(updateNativeGhostty).toHaveBeenCalledTimes(3)
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(0)
     expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(3)
 
     dateNowSpy.mockRestore()
     requestAnimationFrameSpy.mockRestore()
+  })
+
+  test('dedupes resize observer updates by rounded native frame', async () => {
+    let resizeCallback: ResizeObserverCallback | null = null
+
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((callback: ResizeObserverCallback) => {
+        resizeCallback = callback
+
+        return {
+          observe: vi.fn(),
+          unobserve: vi.fn(),
+          disconnect: vi.fn(),
+        }
+      })
+    )
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    })
+    vi.mocked(updateNativeGhostty).mockClear()
+
+    const node = screen.getByTestId('native-ghostty-pane')
+    node.getBoundingClientRect = vi.fn(() =>
+      rect(10.4, 20.4, 300.4, 200.4)
+    )
+
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    expect(updateNativeGhostty).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bounds: { x: 10.4, y: 20.4, width: 300.4, height: 200.4 },
+        parentHeight: window.outerHeight,
+      })
+    )
+
+    node.getBoundingClientRect = vi.fn(() =>
+      rect(10.49, 20.49, 300.49, 200.49)
+    )
+
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+
+    node.getBoundingClientRect = vi.fn(() =>
+      rect(10.6, 20.6, 300.6, 200.6)
+    )
+
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(2)
+    expect(updateNativeGhostty).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bounds: { x: 10.6, y: 20.6, width: 300.6, height: 200.6 },
+      })
+    )
+  })
+
+  test('coalesces native frame updates while one IPC request is in flight', async () => {
+    let resizeCallback: ResizeObserverCallback | null = null
+    let resolveFirstResize: ((enabled: boolean) => void) | undefined
+
+    vi.stubGlobal(
+      'ResizeObserver',
+      vi.fn().mockImplementation((callback: ResizeObserverCallback) => {
+        resizeCallback = callback
+
+        return {
+          observe: vi.fn(),
+          unobserve: vi.fn(),
+          disconnect: vi.fn(),
+        }
+      })
+    )
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    })
+    vi.mocked(updateNativeGhostty).mockClear()
+    vi.mocked(updateNativeGhostty).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstResize = resolve
+      })
+    )
+
+    const node = screen.getByTestId('native-ghostty-pane')
+    node.getBoundingClientRect = vi.fn(() => rect(10, 20, 300, 200))
+
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+
+    node.getBoundingClientRect = vi.fn(() => rect(15, 20, 300, 200))
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    node.getBoundingClientRect = vi.fn(() => rect(25, 20, 300, 200))
+    act(() => {
+      resizeCallback?.([], {} as ResizeObserver)
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveFirstResize?.(true)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(updateNativeGhostty).toHaveBeenCalledTimes(2)
+    expect(updateNativeGhostty).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bounds: { x: 25, y: 20, width: 300, height: 200 },
+      })
+    )
   })
 
   test('absorbs native destroy failures during unmount cleanup', async () => {

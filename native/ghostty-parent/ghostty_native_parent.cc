@@ -19,7 +19,11 @@ using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            FocusCallback, ShortcutCallback,
                            RenamePaneCallback, void *);
-using SetFrameFn = void (*)(void *, double, double, double, double, double);
+// JS calls setFrame(surface, x, y, width, height, bottomCornerRadius,
+// parentHeight). The six numeric args map the renderer's top-left native frame
+// plus styling and same-snapshot parent height for Swift's AppKit y-flip.
+using SetFrameFn = void (*)(
+    void *, double, double, double, double, double, double);
 using SetShortcutDigitsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
@@ -476,13 +480,13 @@ napi_value Create(napi_env env, napi_callback_info info) {
 }
 
 napi_value SetFrame(napi_env env, napi_callback_info info) {
-  size_t argc = 6;
-  napi_value args[6];
+  size_t argc = 7;
+  napi_value args[7];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
   if (argc < 5) {
     return Throw(env,
                  "setFrame(surface, x, y, width, height[, "
-                 "bottomCornerRadius]) expected");
+                 "bottomCornerRadius, parentHeight]) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -495,6 +499,7 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   double width = 0;
   double height = 0;
   double bottom_corner_radius = 0;
+  double parent_height = 0;
   napi_get_value_double(env, args[1], &x);
   napi_get_value_double(env, args[2], &y);
   napi_get_value_double(env, args[3], &width);
@@ -502,8 +507,11 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   if (argc >= 6) {
     napi_get_value_double(env, args[5], &bottom_corner_radius);
   }
+  if (argc >= 7) {
+    napi_get_value_double(env, args[6], &parent_height);
+  }
   bridge.set_frame(surface->swift_surface, x, y, width, height,
-                   bottom_corner_radius);
+                   bottom_corner_radius, parent_height);
 
   return nullptr;
 }

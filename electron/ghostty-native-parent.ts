@@ -56,7 +56,8 @@ interface GhosttyNativeParentAddon {
     y: number,
     width: number,
     height: number,
-    bottomCornerRadius: number
+    bottomCornerRadius: number,
+    parentHeight: number
   ) => void
   setShortcutDigits?: (surface: unknown, digits: string) => void
   setBackgroundColor?: (surface: unknown, color: string) => void
@@ -78,7 +79,11 @@ interface GhosttyNativeSurfaceState {
   pane: GhosttyNativePaneRequest
   surface: unknown
   pendingData: string[]
+  // Resize updates pass through this same path. Cache values that reapply
+  // Ghostty theme/shortcut state so steady resize only calls setFrame.
+  lastBackgroundColor: string | null
   lastResize: { cols: number; rows: number } | null
+  lastShortcutDigits: string | null
 }
 
 interface GhosttyNativeShortcutInput {
@@ -192,6 +197,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
         (value.backgroundColor === undefined ||
           isHexColor(value.backgroundColor)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
+        typeof value.parentHeight === 'number' &&
+        Number.isFinite(value.parentHeight) &&
         typeof value.visible === 'boolean' &&
         (value.shortcutContext === undefined ||
           isShortcutContext(value.shortcutContext))
@@ -318,8 +325,13 @@ export class GhosttyNativeParentController {
       bottomCornerRadius: frameVisible
         ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
         : 0,
+      parentHeight: Math.max(0, Math.round(payload.parentHeight)),
     }
-    if (isHexColor(payload.backgroundColor)) {
+    if (
+      isHexColor(payload.backgroundColor) &&
+      state.lastBackgroundColor !== payload.backgroundColor
+    ) {
+      state.lastBackgroundColor = payload.backgroundColor
       addon.setBackgroundColor?.(surface, payload.backgroundColor)
     }
     addon.setFrame(
@@ -328,10 +340,16 @@ export class GhosttyNativeParentController {
       frame.y,
       frame.width,
       frame.height,
-      frame.bottomCornerRadius
+      frame.bottomCornerRadius,
+      frame.parentHeight
     )
-    addon.setShortcutDigits?.(surface, shortcutDigits)
-    this.flushPendingData(addon, state)
+    if (state.lastShortcutDigits !== shortcutDigits) {
+      state.lastShortcutDigits = shortcutDigits
+      addon.setShortcutDigits?.(surface, shortcutDigits)
+    }
+    if (state.pendingData.length > 0) {
+      this.flushPendingData(addon, state)
+    }
 
     return { enabled: true }
   }
@@ -450,7 +468,9 @@ export class GhosttyNativeParentController {
       },
       surface: null,
       pendingData: [],
+      lastBackgroundColor: null,
       lastResize: null,
+      lastShortcutDigits: null,
     }
     this.surfaces.set(key, state)
 
