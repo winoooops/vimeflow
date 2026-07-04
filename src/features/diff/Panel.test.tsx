@@ -4252,6 +4252,69 @@ describe('Panel', () => {
       ).not.toBeInTheDocument()
     })
 
+    test('switching comment targets resets a stale draft category', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.click(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line R1/ })
+        ).getByRole('button', { name: 'Question' })
+      )
+
+      fireEvent.keyDown(diff, { key: 'j' })
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      const nextLineDialog = screen.getByRole('dialog', {
+        name: /Comment on line R2/,
+      })
+
+      expect(
+        within(nextLineDialog).getByRole('button', { name: 'Change' })
+      ).toHaveAttribute('aria-pressed', 'true')
+      expect(
+        within(nextLineDialog).getByRole('button', { name: 'Question' })
+      ).toHaveAttribute('aria-pressed', 'false')
+
+      fireEvent.keyDown(diff, {
+        key: 'I',
+        shiftKey: true,
+      })
+
+      const fileDialog = screen.getByRole('dialog', {
+        name: 'Comment on file src/foo.ts',
+      })
+
+      expect(
+        within(fileDialog).getByRole('button', { name: 'Change' })
+      ).toHaveAttribute('aria-pressed', 'true')
+      expect(
+        within(fileDialog).getByRole('button', { name: 'Question' })
+      ).toHaveAttribute('aria-pressed', 'false')
+    })
+
     test('editing a comment clears a stale visual range before the next insert', async (): Promise<void> => {
       const user = userEvent.setup()
       const updateAnnotation = vi.fn()

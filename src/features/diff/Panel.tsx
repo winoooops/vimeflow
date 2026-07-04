@@ -26,6 +26,7 @@ import { useNotifyInfo } from '../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from './types'
 import {
   FILE_COMMENT_LINE_NUMBER,
+  DEFAULT_REVIEW_COMMENT_CATEGORY,
   isFileLevelReviewAnnotation,
   isLineLevelReviewAnnotation,
   isPendingReviewAnnotation,
@@ -1450,13 +1451,15 @@ export const Panel = ({
       selectedRange
     )
 
-    setCommentDraftText((current) => {
-      if (annotationTarget === null) {
-        return ''
-      }
+    const isNewTarget =
+      annotationTarget === null ||
+      !isSameAnnotationTarget(annotationTarget, nextTarget)
 
-      return isSameAnnotationTarget(annotationTarget, nextTarget) ? current : ''
-    }, false)
+    if (isNewTarget) {
+      setCommentCategory(DEFAULT_REVIEW_COMMENT_CATEGORY)
+    }
+
+    setCommentDraftText((current) => (isNewTarget ? '' : current), false)
     setAnnotationTarget(nextTarget)
   }, [
     activateReviewTarget,
@@ -1467,6 +1470,7 @@ export const Panel = ({
     selectedFilePath,
     selectedFileStaged,
     setAnnotationTarget,
+    setCommentCategory,
     setCommentDraftText,
     visualSelectedLines,
   ])
@@ -1489,18 +1493,23 @@ export const Panel = ({
         staged: file.staged,
       }
 
-      setCommentDraftText((current) => {
-        if (annotationTarget === null) {
-          return ''
-        }
+      const isNewTarget =
+        annotationTarget === null ||
+        !isSameAnnotationTarget(annotationTarget, nextTarget)
 
-        return isSameAnnotationTarget(annotationTarget, nextTarget)
-          ? current
-          : ''
-      }, false)
+      if (isNewTarget) {
+        setCommentCategory(DEFAULT_REVIEW_COMMENT_CATEGORY)
+      }
+
+      setCommentDraftText((current) => (isNewTarget ? '' : current), false)
       setAnnotationTarget(nextTarget)
     },
-    [annotationTarget, setAnnotationTarget, setCommentDraftText]
+    [
+      annotationTarget,
+      setAnnotationTarget,
+      setCommentCategory,
+      setCommentDraftText,
+    ]
   )
 
   const openSelectedFileComment = useCallback((): void => {
@@ -1901,15 +1910,15 @@ export const Panel = ({
         selectedRange
       )
 
-      setCommentDraftText((current) => {
-        if (annotationTarget === null) {
-          return ''
-        }
+      const isNewTarget =
+        annotationTarget === null ||
+        !isSameAnnotationTarget(annotationTarget, nextTarget)
 
-        return isSameAnnotationTarget(annotationTarget, nextTarget)
-          ? current
-          : ''
-      }, false)
+      if (isNewTarget) {
+        setCommentCategory(DEFAULT_REVIEW_COMMENT_CATEGORY)
+      }
+
+      setCommentDraftText((current) => (isNewTarget ? '' : current), false)
       setAnnotationTarget(nextTarget)
     },
     [
@@ -1917,6 +1926,7 @@ export const Panel = ({
       deactivateReviewTarget,
       selectedFilePath,
       selectedFileStaged,
+      setCommentCategory,
       setCommentDraftText,
       setAnnotationTarget,
       visualSelectedLines,
