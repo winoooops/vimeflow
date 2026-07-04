@@ -172,6 +172,7 @@ describe('TerminalPane index', () => {
     expect(onBurner).toHaveBeenCalledWith({
       sessionId: 's1',
       paneId: 'p0',
+      hostPtyId: 'pty-s1',
       cwd: '/home/user/repo',
     })
   })
