@@ -146,6 +146,7 @@ interface PanelBodyProps {
   lineAnnotations: DiffLineAnnotation<ReviewComment>[]
   annotationTarget: AnnotationTarget | null
   commentDraftText: string
+  commentCategory: ReviewCommentCategory
   onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
   onPointerUp?: (event: ReactPointerEvent<HTMLDivElement>) => void
@@ -154,6 +155,7 @@ interface PanelBodyProps {
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
   onCommentTextChange: (text: string) => void
+  onCommentCategoryChange: (category: ReviewCommentCategory) => void
   onConfirmComment: (text: string, category: ReviewCommentCategory) => void
   onCancelComment: () => void
 }
@@ -170,6 +172,7 @@ export const PanelBody = ({
   lineAnnotations,
   annotationTarget,
   commentDraftText,
+  commentCategory,
   onPointerDown = undefined,
   onPointerMove,
   onPointerUp = undefined,
@@ -178,6 +181,7 @@ export const PanelBody = ({
   onEditComment,
   onDeleteComment,
   onCommentTextChange,
+  onCommentCategoryChange,
   onConfirmComment,
   onCancelComment,
 }: PanelBodyProps): ReactElement => {
@@ -242,9 +246,10 @@ export const PanelBody = ({
                     lineNumber={annotation.lineNumber}
                     side={annotation.side}
                     targetLabel={annotationTargetLabel(annotation)}
-                    initialCategory={annotation.metadata.category}
                     value={commentDraftText}
+                    category={commentCategory}
                     onTextChange={onCommentTextChange}
+                    onCategoryChange={onCommentCategoryChange}
                     onConfirm={onConfirmComment}
                     onCancel={onCancelComment}
                   />

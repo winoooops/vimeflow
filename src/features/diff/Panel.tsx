@@ -29,6 +29,7 @@ import {
   isFileLevelReviewAnnotation,
   isLineLevelReviewAnnotation,
   isPendingReviewAnnotation,
+  reviewCommentCategory,
   useFeedbackBatch,
   parseBatchKey,
   type FeedbackDraftStore,
@@ -671,10 +672,12 @@ export const Panel = ({
   const {
     annotationTarget,
     commentDraftText,
+    commentCategory,
     commentDraftIsRecoverable,
     lineAnnotations,
     setAnnotationTarget,
     setCommentDraftText,
+    setCommentCategory,
     closeCommentDraft: closeCommentEditor,
   } = useReviewCommentDraft({
     cwd,
@@ -1612,6 +1615,7 @@ export const Panel = ({
       editId: reviewTargetComment.metadata.id,
     })
     setCommentDraftText(reviewTargetComment.metadata.text, false)
+    setCommentCategory(reviewCommentCategory(reviewTargetComment.metadata))
   }, [
     activateReviewTarget,
     notifyInfo,
@@ -1622,6 +1626,7 @@ export const Panel = ({
     selectedFileStaged,
     setAnnotationTarget,
     setCommentDraftText,
+    setCommentCategory,
   ])
 
   const updateSelectedFileComment = useCallback((): void => {
@@ -1652,6 +1657,7 @@ export const Panel = ({
       editId: fileCommentToEdit.metadata.id,
     })
     setCommentDraftText(fileCommentToEdit.metadata.text, false)
+    setCommentCategory(reviewCommentCategory(fileCommentToEdit.metadata))
   }, [
     fileCommentsForSelectedFile,
     notifyInfo,
@@ -1659,6 +1665,7 @@ export const Panel = ({
     selectedFileStaged,
     setAnnotationTarget,
     setCommentDraftText,
+    setCommentCategory,
   ])
 
   // Deletes the annotation on the selected review target.
@@ -1933,11 +1940,13 @@ export const Panel = ({
         editId: annotation.metadata.id,
       })
       setCommentDraftText(annotation.metadata.text, false)
+      setCommentCategory(reviewCommentCategory(annotation.metadata))
     },
     [
       selectedFilePath,
       selectedFileStaged,
       setCommentDraftText,
+      setCommentCategory,
       setAnnotationTarget,
     ]
   )
@@ -2200,9 +2209,11 @@ export const Panel = ({
               chrome="plain"
               surfaceRole="none"
               value={commentDraftText}
+              category={commentCategory}
               onTextChange={(text): void => {
                 setCommentDraftText(text, false)
               }}
+              onCategoryChange={setCommentCategory}
               onConfirm={confirmCommentEditor}
               onCancel={cancelCommentEditor}
             />
@@ -2235,6 +2246,9 @@ export const Panel = ({
                         editId: annotation.metadata.id,
                       })
                       setCommentDraftText(annotation.metadata.text, false)
+                      setCommentCategory(
+                        reviewCommentCategory(annotation.metadata)
+                      )
                     }}
                     onDelete={(): void => {
                       focusDiffRoot()
@@ -2262,6 +2276,7 @@ export const Panel = ({
             lineAnnotations={lineAnnotations}
             annotationTarget={annotationTarget}
             commentDraftText={commentDraftText}
+            commentCategory={commentCategory}
             onPointerDown={startMouseVisualSelection}
             onPointerMove={moveMouseVisualSelection}
             onPointerUp={stopMouseVisualSelection}
@@ -2272,6 +2287,7 @@ export const Panel = ({
             onCommentTextChange={(text): void => {
               setCommentDraftText(text, false)
             }}
+            onCommentCategoryChange={setCommentCategory}
             onConfirmComment={confirmCommentEditor}
             onCancelComment={cancelCommentEditor}
           />

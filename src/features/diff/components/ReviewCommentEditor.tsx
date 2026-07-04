@@ -14,7 +14,10 @@ interface ReviewCommentEditorBaseProps {
   initialText?: string
   initialCategory?: ReviewCommentCategory
   value?: string
+  /** Controlled category (from the draft). Falls back to local state if unset. */
+  category?: ReviewCommentCategory
   onTextChange?: (text: string) => void
+  onCategoryChange?: (category: ReviewCommentCategory) => void
   onConfirm: (text: string, category: ReviewCommentCategory) => void
   onCancel: () => void
 }
@@ -105,25 +108,36 @@ export const ReviewCommentEditor = ({
   initialText = '',
   initialCategory = DEFAULT_REVIEW_COMMENT_CATEGORY,
   value = undefined,
+  category: categoryValue = undefined,
   onTextChange = undefined,
+  onCategoryChange = undefined,
   onConfirm,
   onCancel,
 }: ReviewCommentEditorProps): ReactElement => {
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
 
-  const [category, setCategory] =
+  const [uncontrolledCategory, setUncontrolledCategory] =
     useState<ReviewCommentCategory>(initialCategory)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const text = value ?? uncontrolledText
+  const selectedCategory = categoryValue ?? uncontrolledCategory
+
+  const updateCategory = (next: ReviewCommentCategory): void => {
+    if (categoryValue === undefined) {
+      setUncontrolledCategory(next)
+    }
+
+    onCategoryChange?.(next)
+  }
 
   // Ctrl+H / Ctrl+L cycle the category (vim h/l).
   const cycleCategory = (direction: 1 | -1): void => {
-    setCategory((current) => {
-      const count = REVIEW_COMMENT_CATEGORIES.length
-      const index = REVIEW_COMMENT_CATEGORIES.indexOf(current)
+    const count = REVIEW_COMMENT_CATEGORIES.length
+    const index = REVIEW_COMMENT_CATEGORIES.indexOf(selectedCategory)
 
-      return REVIEW_COMMENT_CATEGORIES[(index + direction + count) % count]
-    })
+    updateCategory(
+      REVIEW_COMMENT_CATEGORIES[(index + direction + count) % count]
+    )
   }
 
   const updateText = (next: string): void => {
@@ -147,7 +161,7 @@ export const ReviewCommentEditor = ({
     const trimmed = text.trim()
 
     if (trimmed.length > 0) {
-      onConfirm(trimmed, category)
+      onConfirm(trimmed, selectedCategory)
     }
   }
 
@@ -183,14 +197,14 @@ export const ReviewCommentEditor = ({
       <div className="flex flex-wrap items-center gap-1">
         {REVIEW_COMMENT_CATEGORIES.map((option) => {
           const meta = REVIEW_CATEGORY_META[option]
-          const active = option === category
+          const active = option === selectedCategory
 
           return (
             <button
               key={option}
               type="button"
               aria-pressed={active}
-              onClick={(): void => setCategory(option)}
+              onClick={(): void => updateCategory(option)}
               className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                 active
                   ? `bg-surface-container-highest ${meta.chip}`

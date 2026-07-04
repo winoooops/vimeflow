@@ -21,10 +21,12 @@ import {
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 import type { FileDiff } from '../types'
 import {
+  DEFAULT_REVIEW_COMMENT_CATEGORY,
   DRAFT_ID,
   type FeedbackDraft,
   type FeedbackDraftStore,
   type ReviewComment,
+  type ReviewCommentCategory,
 } from './useFeedbackBatch'
 
 interface LineAnnotationTarget {
@@ -63,6 +65,7 @@ interface UseReviewCommentDraftArgs {
 export interface UseReviewCommentDraftReturn {
   annotationTarget: AnnotationTarget | null
   commentDraftText: string
+  commentCategory: ReviewCommentCategory
   annotationTargetIsCurrentFile: boolean
   annotationTargetLineExists: boolean
   commentDraftIsRecoverable: boolean
@@ -75,6 +78,7 @@ export interface UseReviewCommentDraftReturn {
     next: SetStateAction<string>,
     focusDiff?: boolean
   ) => void
+  setCommentCategory: (next: ReviewCommentCategory) => void
   closeCommentDraft: (focusDiff?: boolean) => void
 }
 
@@ -119,7 +123,8 @@ const draftToAnnotationTarget = (draft: FeedbackDraft): AnnotationTarget => {
 const annotationTargetToDraft = (
   cwd: string,
   target: AnnotationTarget,
-  text: string
+  text: string,
+  category: ReviewCommentCategory
 ): FeedbackDraft => {
   if (isFileAnnotationTarget(target)) {
     const draft: FeedbackDraft = {
@@ -128,6 +133,7 @@ const annotationTargetToDraft = (
       staged: target.staged,
       scope: 'file',
       text,
+      category,
     }
 
     if (target.editId !== undefined) {
@@ -144,6 +150,7 @@ const annotationTargetToDraft = (
     side: target.side,
     lineNumber: target.lineNumber,
     text,
+    category,
   }
 
   if (target.rangeEndLine !== undefined) {
@@ -265,8 +272,14 @@ export const useReviewCommentDraft = ({
   const [commentDraftText, setCommentDraftTextState] = useState(
     () => initialFeedbackDraft?.text ?? ''
   )
+
+  const [commentCategory, setCommentCategoryState] =
+    useState<ReviewCommentCategory>(
+      () => initialFeedbackDraft?.category ?? DEFAULT_REVIEW_COMMENT_CATEGORY
+    )
   const annotationTargetRef = useRef(annotationTarget)
   const commentDraftTextRef = useRef(commentDraftText)
+  const commentCategoryRef = useRef(commentCategory)
 
   const setAnnotationTarget = useCallback(
     (next: SetStateAction<AnnotationTarget | null>, focusDiff = true): void => {
@@ -280,7 +293,12 @@ export const useReviewCommentDraft = ({
       setActiveDraft(
         resolved === null
           ? null
-          : annotationTargetToDraft(cwd, resolved, commentDraftTextRef.current)
+          : annotationTargetToDraft(
+              cwd,
+              resolved,
+              commentDraftTextRef.current,
+              commentCategoryRef.current
+            )
       )
       setAnnotationTargetState(resolved)
     },
@@ -299,11 +317,36 @@ export const useReviewCommentDraft = ({
       setActiveDraft(
         annotationTargetRef.current === null
           ? null
-          : annotationTargetToDraft(cwd, annotationTargetRef.current, resolved)
+          : annotationTargetToDraft(
+              cwd,
+              annotationTargetRef.current,
+              resolved,
+              commentCategoryRef.current
+            )
       )
       setCommentDraftTextState(resolved)
     },
     [cwd, focusDiffRoot, setActiveDraft]
+  )
+
+  // The category is controlled like the text so it persists in the draft and is
+  // seeded when an existing comment is edited (VIM-256) — no focus change.
+  const setCommentCategory = useCallback(
+    (next: ReviewCommentCategory): void => {
+      commentCategoryRef.current = next
+      if (annotationTargetRef.current !== null) {
+        setActiveDraft(
+          annotationTargetToDraft(
+            cwd,
+            annotationTargetRef.current,
+            commentDraftTextRef.current,
+            next
+          )
+        )
+      }
+      setCommentCategoryState(next)
+    },
+    [cwd, setActiveDraft]
   )
 
   useEffect(() => {
@@ -316,8 +359,10 @@ export const useReviewCommentDraft = ({
       ) {
         annotationTargetRef.current = null
         commentDraftTextRef.current = ''
+        commentCategoryRef.current = DEFAULT_REVIEW_COMMENT_CATEGORY
         setAnnotationTargetState(null)
         setCommentDraftTextState('')
+        setCommentCategoryState(DEFAULT_REVIEW_COMMENT_CATEGORY)
       }
 
       return
@@ -346,6 +391,13 @@ export const useReviewCommentDraft = ({
     if (commentDraftTextRef.current !== activeDraft.text) {
       commentDraftTextRef.current = activeDraft.text
       setCommentDraftTextState(activeDraft.text)
+    }
+
+    const restoredCategory =
+      activeDraft.category ?? DEFAULT_REVIEW_COMMENT_CATEGORY
+    if (commentCategoryRef.current !== restoredCategory) {
+      commentCategoryRef.current = restoredCategory
+      setCommentCategoryState(restoredCategory)
     }
   }, [activeDraft, cwd, setActiveDraft])
 
@@ -434,12 +486,14 @@ export const useReviewCommentDraft = ({
   return {
     annotationTarget,
     commentDraftText,
+    commentCategory,
     annotationTargetIsCurrentFile,
     annotationTargetLineExists,
     commentDraftIsRecoverable,
     lineAnnotations,
     setAnnotationTarget,
     setCommentDraftText,
+    setCommentCategory,
     closeCommentDraft,
   }
 }

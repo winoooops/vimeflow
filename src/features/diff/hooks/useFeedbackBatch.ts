@@ -321,6 +321,8 @@ interface FeedbackDraftBase {
   staged: boolean
   editId?: string
   text: string
+  /** The picked category, persisted so it survives a draft restore (VIM-256). */
+  category?: ReviewCommentCategory
 }
 
 export type FeedbackDraft =

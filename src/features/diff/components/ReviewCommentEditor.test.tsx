@@ -376,4 +376,31 @@ describe('ReviewCommentEditor', () => {
 
     expect(handleConfirm).toHaveBeenCalledWith('seeded', 'suggestion')
   })
+
+  test('uses the controlled category prop and reports changes up', async () => {
+    const user = userEvent.setup()
+    const handleConfirm = vi.fn()
+    const handleCategoryChange = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="controlled"
+        category="bug"
+        onCategoryChange={handleCategoryChange}
+        onConfirm={handleConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    // Submits with the controlled category, not the default.
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    expect(handleConfirm).toHaveBeenCalledWith('controlled', 'bug')
+
+    // Ctrl+L reports the change upward instead of mutating local state.
+    await user.click(screen.getByRole('textbox'))
+    await user.keyboard('{Control>}l{/Control}')
+    expect(handleCategoryChange).toHaveBeenCalledWith('suggestion')
+  })
 })
