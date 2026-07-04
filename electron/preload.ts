@@ -39,6 +39,11 @@ import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_ATTACH,
+  GHOSTTY_NATIVE_SECONDARY_DATA,
+  GHOSTTY_NATIVE_SECONDARY_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_REMOVE,
+  GHOSTTY_NATIVE_SECONDARY_VISIBLE,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
 import {
@@ -131,6 +136,16 @@ const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
           ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
         destroy: (request: unknown): Promise<unknown> =>
           ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
+        attachSecondary: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_ATTACH, request),
+        secondaryData: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_DATA, request),
+        focusSecondary: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_FOCUS, request),
+        removeSecondary: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_REMOVE, request),
+        setSecondaryVisible: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_VISIBLE, request),
       },
     }
   : {}

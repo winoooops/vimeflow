@@ -4,6 +4,10 @@ import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_ATTACH,
+  GHOSTTY_NATIVE_SECONDARY_DATA,
+  GHOSTTY_NATIVE_SECONDARY_REMOVE,
+  GHOSTTY_NATIVE_SECONDARY_VISIBLE,
   GHOSTTY_NATIVE_UPDATE,
 } from './ghostty-native-channels'
 import { BACKEND_EVENT, COMMAND_PALETTE_TOGGLE } from './ipc-channels'
@@ -785,6 +789,207 @@ describe('ghostty native parent', () => {
     })
     expect(webContentsFocus).toHaveBeenCalledOnce()
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+
+    controller.dispose()
+  })
+
+  test('attaches secondary child and routes input plus resize to its PTY', () => {
+    const callbacks: {
+      onInput?: (data: string) => void
+      onResize?: (cols: number, rows: number) => void
+      onFocus?: () => void
+    } = {}
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      addSecondary: vi.fn((_surface, input, resize, focus) => {
+        callbacks.onInput = input
+        callbacks.onResize = resize
+        callbacks.onFocus = focus
+      }),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      writeSecondary: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+        { sender: {} },
+        {
+          sessionId: 'host-pty',
+          paneId: 'pane-1',
+          secondarySessionId: 'burner-pty',
+        }
+      )
+    ).toEqual({ enabled: true })
+
+    expect(addon.create).toHaveBeenCalledOnce()
+    expect(addon.addSecondary).toHaveBeenCalledWith(
+      surface,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function)
+    )
+
+    callbacks.onInput?.('a')
+    callbacks.onResize?.(80, 24)
+    callbacks.onResize?.(80, 24)
+    callbacks.onFocus?.()
+
+    expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
+      request: { sessionId: 'burner-pty', data: 'a' },
+    })
+
+    expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+      request: { sessionId: 'burner-pty', cols: 80, rows: 24 },
+    })
+
+    expect(webContentsSend).toHaveBeenCalledWith(BACKEND_EVENT, {
+      event: 'ghostty-native-focus',
+      payload: { sessionId: 'host-pty', paneId: 'pane-1' },
+    })
+    expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+
+    controller.dispose()
+  })
+
+  test('buffers capped secondary output until the child is attached', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      addSecondary: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      writeSecondary: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    for (let index = 0; index < 70; index += 1) {
+      expect(
+        handlers.get(GHOSTTY_NATIVE_SECONDARY_DATA)?.(
+          {},
+          {
+            sessionId: 'host-pty',
+            paneId: 'pane-1',
+            secondarySessionId: 'burner-pty',
+            data: `boot-${index}`,
+          }
+        )
+      ).toEqual({ enabled: true })
+    }
+    expect(addon.writeSecondary).not.toHaveBeenCalled()
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+      }
+    )
+
+    expect(addon.writeSecondary).toHaveBeenCalledTimes(64)
+    expect(addon.writeSecondary).toHaveBeenNthCalledWith(1, surface, 'boot-6')
+    expect(addon.writeSecondary).toHaveBeenLastCalledWith(surface, 'boot-69')
+
+    controller.dispose()
+  })
+
+  test('hides and removes secondary child without destroying primary surface', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      addSecondary: vi.fn(),
+      setSecondaryVisible: vi.fn(),
+      removeSecondary: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      writeSecondary: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+      }
+    )
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_SECONDARY_VISIBLE)?.(
+        {},
+        {
+          sessionId: 'host-pty',
+          paneId: 'pane-1',
+          secondarySessionId: 'burner-pty',
+          visible: false,
+        }
+      )
+    ).toEqual({ enabled: true })
+
+    expect(addon.setSecondaryVisible).toHaveBeenCalledWith(surface, false)
+
+    expect(
+      handlers.get(GHOSTTY_NATIVE_SECONDARY_REMOVE)?.(
+        {},
+        {
+          sessionId: 'host-pty',
+          paneId: 'pane-1',
+          secondarySessionId: 'burner-pty',
+        }
+      )
+    ).toEqual({ enabled: true })
+
+    expect(addon.removeSecondary).toHaveBeenCalledWith(surface)
+    expect(addon.destroy).not.toHaveBeenCalled()
 
     controller.dispose()
   })

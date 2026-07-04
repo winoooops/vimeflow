@@ -92,6 +92,8 @@ export interface SplitViewProps {
   layoutRegistry?: PaneLayoutRegistry
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys whose burner secondary terminal is currently visible. */
+  openBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
   runningBurnerPaneKeys?: ReadonlySet<string>
   deferTerminalFit?: boolean
@@ -185,6 +187,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onBurner = undefined,
       layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
       activeBurnerPaneKeys = undefined,
+      openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       deferTerminalFit = false,
     }: SplitViewProps,
@@ -666,6 +669,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         onRequestActive={onSetActivePane}
                         onRequestFocus={onRequestFocus}
                         activeBurnerPaneKeys={activeBurnerPaneKeys}
+                        openBurnerPaneKeys={openBurnerPaneKeys}
                         runningBurnerPaneKeys={runningBurnerPaneKeys}
                         isActive={isActive}
                         shortcutContext={nativeShortcutContext}

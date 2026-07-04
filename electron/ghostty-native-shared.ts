@@ -30,6 +30,18 @@ export interface GhosttyNativeDataRequest extends GhosttyNativePaneRequest {
   data: string
 }
 
+export interface GhosttyNativeSecondaryRequest extends GhosttyNativePaneRequest {
+  secondarySessionId: string
+}
+
+export interface GhosttyNativeSecondaryDataRequest extends GhosttyNativeSecondaryRequest {
+  data: string
+}
+
+export interface GhosttyNativeSecondaryVisibleRequest extends GhosttyNativeSecondaryRequest {
+  visible: boolean
+}
+
 export function isBounds(value: unknown): value is GhosttyNativeBounds {
   return (
     isRecord(value) &&

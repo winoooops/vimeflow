@@ -56,8 +56,36 @@ private final class EmbeddedGhosttyContainerView: NSView {
 }
 
 private final class EmbeddedGhosttyDividerView: NSView {
-    var vertical = true
+    var vertical = true {
+        didSet {
+            needsDisplay = true
+        }
+    }
     var onDrag: ((CGFloat) -> Void)?
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let lineWidth = 1 / scale
+        NSColor.separatorColor.setFill()
+
+        if vertical {
+            NSRect(
+                x: floor((bounds.width - lineWidth) / 2),
+                y: 0,
+                width: lineWidth,
+                height: bounds.height
+            ).fill()
+        } else {
+            NSRect(
+                x: 0,
+                y: floor((bounds.height - lineWidth) / 2),
+                width: bounds.width,
+                height: lineWidth
+            ).fill()
+        }
+    }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: vertical ? .resizeLeftRight : .resizeUpDown)
@@ -564,8 +592,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
 
         let divider = EmbeddedGhosttyDividerView(frame: .zero)
-        divider.wantsLayer = true
-        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
         divider.onDrag = { [weak self] delta in
             self?.resizeSecondarySplit(delta: delta)
         }

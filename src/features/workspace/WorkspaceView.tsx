@@ -1271,6 +1271,7 @@ const WorkspaceViewContent = (): ReactElement => {
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
     hasVisibleBurner,
+    visibleBurnerPaneKey,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -1293,7 +1294,8 @@ const WorkspaceViewContent = (): ReactElement => {
     void toggleBurnerRef.current()
   }, [])
 
-  // Pane-keys with a live burner shell — drives the status-bar count.
+  // Pane-keys with a live burner shell. Hidden native burners stay here, but
+  // the bottom bar only counts the currently visible secondary terminal.
   const runningBurnerPaneKeys = useMemo(
     () =>
       new Set(
@@ -1313,6 +1315,14 @@ const WorkspaceViewContent = (): ReactElement => {
           .map(([key]) => key)
       ),
     [activeBurnerByPane]
+  )
+
+  const openBurnerPaneKeys = useMemo(
+    () =>
+      visibleBurnerPaneKey === null
+        ? new Set<string>()
+        : new Set([visibleBurnerPaneKey]),
+    [visibleBurnerPaneKey]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -2856,6 +2866,7 @@ const WorkspaceViewContent = (): ReactElement => {
               }}
               onBurner={(target): void => void toggleBurner(target)}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
+              openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
@@ -2905,7 +2916,8 @@ const WorkspaceViewContent = (): ReactElement => {
           onOpenPalette={commandPalette.open}
           dockOpen={isDockOpen}
           onToggleDock={handleToggleDock}
-          burnerCount={runningBurnerPaneKeys.size}
+          burnerCount={openBurnerPaneKeys.size}
+          burnerOpen={openBurnerPaneKeys.size > 0}
         />
       </main>
 

@@ -32,6 +32,11 @@ export interface BackendApi {
     data: (request: unknown) => Promise<unknown>
     focus: (request: unknown) => Promise<unknown>
     destroy: (request: unknown) => Promise<unknown>
+    attachSecondary?: (request: unknown) => Promise<unknown>
+    secondaryData?: (request: unknown) => Promise<unknown>
+    focusSecondary?: (request: unknown) => Promise<unknown>
+    removeSecondary?: (request: unknown) => Promise<unknown>
+    setSecondaryVisible?: (request: unknown) => Promise<unknown>
   }
 
   nativeOverlay?: {

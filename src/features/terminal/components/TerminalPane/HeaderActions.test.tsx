@@ -161,6 +161,24 @@ describe('HeaderActions', () => {
     expect(button.className).toContain('text-on-surface-muted') // still gray, not amber
   })
 
+  test('opened burner uses pressed state on its pane button', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        burnerOpen
+        burnerShellExists
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: 'hide burner terminal',
+    })
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(button.className).toContain('aria-pressed:bg-primary/10')
+  })
+
   test('renders visible pane shortcut hint when provided', () => {
     render(
       <HeaderActions

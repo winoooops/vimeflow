@@ -40,8 +40,10 @@ export interface StatusBarProps {
   /** Whether the editor/diff dock is open — drives the toggle's icon tone. */
   dockOpen: boolean
   onToggleDock: () => void
-  /** Total running burner shells across all sessions (VIM-53/71 cue). */
+  /** Burner shells currently visible in a pane. Hidden shells are pane-local. */
   burnerCount?: number
+  /** True when one burner shell is visibly shown. */
+  burnerOpen?: boolean
 }
 
 interface Segment {
@@ -177,11 +179,19 @@ const buildSegments = ({
   session,
   contextPct,
   burnerCount = 0,
+  burnerOpen = false,
 }: Pick<
   StatusBarProps,
-  'session' | 'contextPct' | 'burnerCount'
+  'session' | 'contextPct' | 'burnerCount' | 'burnerOpen'
 >): Segment[] => {
   // Global across sessions, so it surfaces even when no session is active.
+  const burnerText =
+    burnerOpen && burnerCount > 1
+      ? `burner open ×${burnerCount}`
+      : burnerOpen
+        ? 'burner open'
+        : `burner ×${burnerCount}`
+
   const burnerSegment: Segment | null =
     burnerCount > 0
       ? {
@@ -196,7 +206,7 @@ const buildSegments = ({
                 aria-hidden="true"
                 className="h-[5px] w-[5px] rounded-full bg-current"
               />
-              burner ×{burnerCount}
+              {burnerText}
             </span>
           ),
         }
@@ -313,8 +323,14 @@ export const StatusBar = ({
   dockOpen,
   onToggleDock,
   burnerCount = 0,
+  burnerOpen = false,
 }: StatusBarProps): ReactElement => {
-  const segments = buildSegments({ session, contextPct, burnerCount })
+  const segments = buildSegments({
+    session,
+    contextPct,
+    burnerCount,
+    burnerOpen,
+  })
 
   return (
     <footer

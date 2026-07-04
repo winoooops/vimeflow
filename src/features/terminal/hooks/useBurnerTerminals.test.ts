@@ -1,10 +1,16 @@
-import { test, expect, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+// cspell:ignore ghostty
+import { afterEach, test, expect, vi } from 'vitest'
+import { render, renderHook, act, waitFor } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { useBurnerTerminals, type BurnerTarget } from './useBurnerTerminals'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
+
+afterEach(() => {
+  delete (window as unknown as { vimeflow?: unknown }).vimeflow
+  vi.unstubAllGlobals()
+})
 
 const makeFocusedPane = (
   sessionId = 's1',
@@ -192,19 +198,69 @@ test('hasVisibleBurner tracks only the visible popup, not hidden live shells', a
   )
 
   expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
 
   await act(async () => {
     await result.current.toggle()
   })
 
   expect(result.current.hasVisibleBurner).toBe(true)
+  expect(result.current.visibleBurnerPaneKey).toBe('s1:p0')
 
   await act(async () => {
     await result.current.toggle()
   })
 
   expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
   expect(result.current.renderNode).not.toBeNull()
+})
+
+test('drops a native burner when secondary attach is unavailable', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const attachSecondary = vi.fn(() => Promise.resolve({ enabled: false }))
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      update: vi.fn(),
+      data: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+      attachSecondary,
+    },
+  }
+
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'host-pty',
+      cwd: '/repo',
+    })
+  })
+
+  const rendered = render(result.current.renderNode)
+
+  await waitFor(() => {
+    expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-pty' })
+  })
+
+  expect(attachSecondary).toHaveBeenCalledWith({
+    sessionId: 'host-pty',
+    paneId: 'p0',
+    secondarySessionId: 'burner-pty',
+  })
+  expect(result.current.runningByPane.size).toBe(0)
+  expect(result.current.visibleBurnerPaneKey).toBeNull()
+
+  rendered.unmount()
 })
 
 test('renderNode stays non-null when hidden while a shell is alive', async () => {
