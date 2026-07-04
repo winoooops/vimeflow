@@ -90,6 +90,42 @@ describe('useFeedbackBatch', () => {
     expect(result.current.totalAnnotations()).toBe(50)
   })
 
+  test('dispatched comments do not count against the pending soft cap', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+    const dispatchedIds = new Set<string>()
+
+    act(() => {
+      for (let i = 0; i < 50; i++) {
+        const id = `sent-${i}`
+        dispatchedIds.add(id)
+        result.current.addAnnotation(
+          '/repo',
+          `file-${i}.ts`,
+          false,
+          makeAnnotation(id, 'x', i + 1)
+        )
+      }
+    })
+
+    act(() => {
+      result.current.markDispatched(4242, dispatchedIds)
+    })
+
+    let addResult: 'ok' | 'cap-reached' = 'cap-reached'
+    act(() => {
+      addResult = result.current.addAnnotation(
+        '/repo',
+        'next.ts',
+        false,
+        makeAnnotation('next')
+      )
+    })
+
+    expect(addResult).toBe('ok')
+    expect(result.current.totalAnnotations()).toBe(51)
+    expect(result.current.pendingAnnotations()).toBe(1)
+  })
+
   test('updateAnnotation patches text; preserves createdAt, author, side, lineNumber', () => {
     const { result } = renderHook(() => useFeedbackBatch())
 
@@ -197,6 +233,171 @@ describe('useFeedbackBatch', () => {
 
     expect(result.current.totalAnnotations()).toBe(0)
     expect(result.current.batch.size).toBe(0)
+  })
+
+  test('markDispatched stamps pending comments and keeps them in the batch', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('m-1')
+      )
+
+      result.current.addAnnotation(
+        '/repo',
+        'b.ts',
+        false,
+        makeAnnotation('m-2')
+      )
+    })
+
+    expect(result.current.pendingAnnotations()).toBe(2)
+
+    act(() => {
+      result.current.markDispatched(4242, new Set(['m-1', 'm-2']))
+    })
+
+    // Comments persist as thread anchors, but none are pending anymore.
+    expect(result.current.totalAnnotations()).toBe(2)
+    expect(result.current.pendingAnnotations()).toBe(0)
+    expect(
+      result.current.annotationsForFile('/repo', 'a.ts', false)[0].metadata
+        .dispatchedAt
+    ).toBe(4242)
+  })
+
+  test('markDispatched leaves already-dispatched comments untouched', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('first')
+      )
+    })
+
+    act(() => {
+      result.current.markDispatched(100, new Set(['first']))
+    })
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('second')
+      )
+    })
+
+    act(() => {
+      result.current.markDispatched(200, new Set(['second']))
+    })
+
+    const [first, second] = result.current.annotationsForFile(
+      '/repo',
+      'a.ts',
+      false
+    )
+    expect(first.metadata.dispatchedAt).toBe(100)
+    expect(second.metadata.dispatchedAt).toBe(200)
+  })
+
+  test('markDispatched stamps only the dispatched snapshot ids', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('sent')
+      )
+
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('late')
+      )
+    })
+
+    act(() => {
+      result.current.markDispatched(100, new Set(['sent']))
+    })
+
+    const [sent, late] = result.current.annotationsForFile(
+      '/repo',
+      'a.ts',
+      false
+    )
+    expect(sent.metadata.dispatchedAt).toBe(100)
+    expect(late.metadata.dispatchedAt).toBeUndefined()
+    expect(result.current.pendingAnnotations()).toBe(1)
+  })
+
+  test('clearPending drops pending comments but keeps dispatched thread anchors', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('kept')
+      )
+    })
+
+    act(() => {
+      result.current.markDispatched(100, new Set(['kept']))
+    })
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('dropped')
+      )
+    })
+
+    expect(result.current.totalAnnotations()).toBe(2)
+
+    act(() => {
+      result.current.clearPending()
+    })
+
+    const list = result.current.annotationsForFile('/repo', 'a.ts', false)
+    expect(list).toHaveLength(1)
+    expect(list[0].metadata.id).toBe('kept')
+    expect(result.current.pendingAnnotations()).toBe(0)
+  })
+
+  test('clearPending removes the file key when only pending comments existed', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+    const key = makeBatchKey('/repo', 'a.ts', false)
+
+    act(() => {
+      result.current.addAnnotation(
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('p-1')
+      )
+    })
+
+    expect(result.current.batch.has(key)).toBe(true)
+
+    act(() => {
+      result.current.clearPending()
+    })
+
+    expect(result.current.batch.has(key)).toBe(false)
+    expect(result.current.totalAnnotations()).toBe(0)
   })
 
   test('clearBatch identity is stable across a re-render (add does not change clearBatch ref)', () => {
@@ -509,6 +710,70 @@ describe('useFeedbackBatchStore', () => {
 
     expect(result.current.feedbackDraft.draft).toBeNull()
     expect(result.current.feedbackBatch.totalAnnotations()).toBe(0)
+  })
+
+  test('markDispatched keeps the comment but clears the owner draft', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    act(() => {
+      result.current.feedbackBatch.markDispatched(999, new Set(['owner-a']))
+    })
+
+    expect(result.current.feedbackDraft.draft).toBeNull()
+    // The dispatched comment stays in the hunk as a thread anchor.
+    expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    expect(result.current.feedbackBatch.pendingAnnotations()).toBe(0)
+  })
+
+  test('a fully dispatched owner drops out of unfinished-review summaries', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    expect(result.current.summaries).toHaveLength(1)
+
+    act(() => {
+      result.current.feedbackBatch.markDispatched(1, new Set(['owner-a']))
+    })
+
+    // The comment still renders in the hunk, but it is no longer "unfinished".
+    expect(result.current.summaries).toEqual([])
+    expect(
+      result.current.feedbackBatch.annotationsForFile(
+        '/repo-a',
+        'src/a.ts',
+        false
+      )
+    ).toHaveLength(1)
   })
 
   test('prunes drafts for closed owners', () => {

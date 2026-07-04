@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-03
-ref_count: 18
+last_updated: 2026-07-04
+ref_count: 19
 ---
 
 # Derived State Consistency
@@ -273,4 +273,21 @@ base data is technically "correct."
   root. Added a clipboard regression test that copies a batch authored from a
   repo subdirectory and asserts the payload contains the resolved repo-root
   path.
+- **Commit:** same commit as this entry
+
+### 22. Sent review anchors counted as active pending feedback
+
+- **Source:** github-claude + github-codex-connector | PR #655 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useFeedbackBatch.ts`
+- **Finding:** VIM-282 kept dispatched review comments in the hunk as sent
+  anchors, but the soft-cap and send-completion paths still treated every
+  retained annotation as active pending feedback. A sent 50-comment review could
+  permanently block new comments, and comments added after the send snapshot but
+  before completion could be stamped as sent without ever being included in the
+  terminal payload.
+- **Fix:** Changed the cap to count only pending annotations and made
+  `markDispatched` accept the exact dispatched annotation-id snapshot built by
+  the send path. Added hook regressions for sent anchors freeing capacity and
+  for late comments remaining pending.
 - **Commit:** same commit as this entry
