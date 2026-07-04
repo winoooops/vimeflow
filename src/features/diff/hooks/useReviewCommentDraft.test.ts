@@ -222,6 +222,9 @@ describe('useReviewCommentDraft', () => {
         endLine: 3,
       },
     })
+    // The draft anchors at the range's LAST line so the editor renders below the
+    // selection (VIM-273); the span stays in target.
+    expect(result.current.lineAnnotations[1]?.lineNumber).toBe(3)
   })
 
   test('treats a range draft as stale when the end line is missing', () => {

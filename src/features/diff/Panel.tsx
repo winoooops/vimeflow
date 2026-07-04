@@ -1106,10 +1106,7 @@ export const Panel = ({
     scrollContainerRef: diffScrollBodyRef,
   })
 
-  const diffRangeBars = useDiffRangeBars({
-    annotations: realAnnotations,
-    fileKey: diffSearchFileKey,
-  })
+  const diffRangeBars = useDiffRangeBars({ annotations: realAnnotations })
 
   const diffSearchPostRenderRef = useRef(diffSearch.handlePostRender)
   diffSearchPostRenderRef.current = diffSearch.handlePostRender

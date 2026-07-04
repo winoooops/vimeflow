@@ -70,10 +70,7 @@ describe('useDiffRangeBars', () => {
     const host = makeHost([3, 4, 5, 6])
 
     const { result } = renderHook(() =>
-      useDiffRangeBars({
-        annotations: [rangeAnn(4, 6)],
-        fileKey: 'a.ts:unstaged',
-      })
+      useDiffRangeBars({ annotations: [rangeAnn(4, 6)] })
     )
 
     act(() => result.current.handlePostRender(host))
@@ -88,8 +85,7 @@ describe('useDiffRangeBars', () => {
     const host = makeHost([3, 4, 5, 6])
 
     const { result, rerender } = renderHook(
-      ({ ann }) =>
-        useDiffRangeBars({ annotations: ann, fileKey: 'a.ts:unstaged' }),
+      ({ ann }) => useDiffRangeBars({ annotations: ann }),
       { initialProps: { ann: [rangeAnn(4, 6)] } }
     )
 
@@ -98,22 +94,6 @@ describe('useDiffRangeBars', () => {
     expect(barAt(host, 5)).toBe('mid')
 
     rerender({ ann: [] })
-    expect(barAt(host, 5)).toBeNull()
-  })
-
-  test('drops a frame that resolves after a file switch', () => {
-    const host = makeHost([3, 4, 5, 6])
-
-    const { result, rerender } = renderHook(
-      ({ fk }) =>
-        useDiffRangeBars({ annotations: [rangeAnn(4, 6)], fileKey: fk }),
-      { initialProps: { fk: 'a.ts:unstaged' } }
-    )
-
-    act(() => result.current.handlePostRender(host))
-    rerender({ fk: 'b.ts:unstaged' }) // switch before the frame runs
-    flushRaf()
-
     expect(barAt(host, 5)).toBeNull()
   })
 })

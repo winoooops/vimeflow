@@ -10,8 +10,6 @@ import type { ReviewComment } from './useFeedbackBatch'
 export interface UseDiffRangeBarsOptions {
   /** Committed line-level annotations for the selected file. */
   annotations: DiffLineAnnotation<ReviewComment>[]
-  /** `${path}:${'staged' | 'unstaged'}` or null; a change invalidates in-flight paints. */
-  fileKey: string | null
 }
 
 export interface UseDiffRangeBarsResult {
@@ -23,15 +21,18 @@ export interface UseDiffRangeBarsResult {
  * Draws the persistent gutter bar for committed range comments (VIM-273).
  * Pierre has no decorations API, so — like search — this tags shadow-DOM gutter
  * cells on every `onPostRender` (pierre wipes custom attributes when it
- * rebuilds), coalescing rebuild bursts with a single rAF and guarding stale
- * frames with a monotonic generation token.
+ * rebuilds), coalescing rebuild bursts with a single rAF.
+ *
+ * Tagging is idempotent — it reads the live container + spans and rewrites to
+ * the current state — so unlike search (which owns the global CSS.highlights
+ * registry) it needs no stale-frame/generation guard: a late frame simply paints
+ * the truth. A file switch is handled by the new file's own onPostRender, which
+ * replaces the container and cancels any in-flight frame.
  */
 export const useDiffRangeBars = ({
   annotations,
-  fileKey,
 }: UseDiffRangeBarsOptions): UseDiffRangeBarsResult => {
   const containerRef = useRef<Element | null>(null)
-  const generationRef = useRef(0)
   const rafRef = useRef<number | null>(null)
 
   const spans = rangeBarSpansForAnnotations(annotations)
@@ -51,14 +52,9 @@ export const useDiffRangeBars = ({
       containerRef.current = node
       cancelPendingFrame()
 
-      const generation = generationRef.current
       // One frame coalesces pierre's rebuild bursts (plain → highlighted paint).
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null
-        if (generation !== generationRef.current) {
-          return
-        }
-
         paintRangeBars(containerRef.current, spansRef.current)
       })
     },
@@ -71,21 +67,7 @@ export const useDiffRangeBars = ({
     paintRangeBars(containerRef.current, spansRef.current)
   }, [spansKey])
 
-  // A file switch invalidates any in-flight frame and the stored container; the
-  // next onPostRender re-establishes both.
-  useEffect(() => {
-    generationRef.current += 1
-    cancelPendingFrame()
-    containerRef.current = null
-  }, [cancelPendingFrame, fileKey])
-
-  useEffect(
-    () => (): void => {
-      generationRef.current += 1
-      cancelPendingFrame()
-    },
-    [cancelPendingFrame]
-  )
+  useEffect(() => cancelPendingFrame, [cancelPendingFrame])
 
   return { handlePostRender }
 }
