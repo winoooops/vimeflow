@@ -142,4 +142,42 @@ describe('ReviewCommentRow', () => {
 
     expect(screen.queryByText(/lines R/)).not.toBeInTheDocument()
   })
+
+  test('marks a dispatched comment as Sent', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: '7',
+          text: 'Sent note',
+          author: 'self',
+          createdAt: 7000,
+          dispatchedAt: 7100,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Sent')).toBeInTheDocument()
+  })
+
+  test('a pending comment shows no Sent label and keeps edit', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: '8',
+          text: 'Pending note',
+          author: 'self',
+          createdAt: 8000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('Sent')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Edit comment' })
+    ).toBeInTheDocument()
+  })
 })
