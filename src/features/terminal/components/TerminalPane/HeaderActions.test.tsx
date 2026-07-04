@@ -128,6 +128,29 @@ describe('HeaderActions', () => {
     expect(screen.queryByTestId('burner-live-dot')).toBeNull()
   })
 
+  test('active out-of-sync burner toggle keeps compact pill sizing', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={vi.fn()}
+        burnerOpen
+        burnerOutOfSync
+        burnerActive
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: /hide burner terminal \(running\)/i,
+    })
+    expect(button.className).toContain('!h-5')
+    expect(button.className).toContain('!w-5')
+    expect(button.className).toContain('rounded-md')
+    expect(button.className).toContain('bg-agent-shell-accent/15')
+    expect(button.className).toContain('text-agent-shell-accent')
+  })
+
   test('no running cue when the pane burner is not running', () => {
     render(
       <HeaderActions

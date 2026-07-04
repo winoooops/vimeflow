@@ -141,10 +141,14 @@ export const HeaderActions = ({
         }}
         // Running keeps the amber status tint; pressed still reflects open/hidden.
         className={
-          burnerActive
-            ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
-            : showBurnerSync
-              ? '!h-5 !w-5 rounded-md bg-primary/10 text-primary hover:bg-primary/15'
+          showBurnerSync
+            ? `!h-5 !w-5 rounded-md ${
+                burnerActive
+                  ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
+                  : 'bg-primary/10 text-primary hover:bg-primary/15'
+              }`
+            : burnerActive
+              ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
               : undefined
         }
       />
