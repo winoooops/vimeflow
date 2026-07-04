@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-29
-ref_count: 5
+last_updated: 2026-07-04
+ref_count: 6
 ---
 
 # Transient UI Side Effects
@@ -153,3 +153,15 @@ to persistent state through a separate, explicit path.
   scrolling and sticky-header reveal without previous-row reservation. Added a
   regression assertion for lateral movement on a single split replacement row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. Closing a review draft retained the prior category
+
+- **Source:** github-codex-connector | PR #657 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useReviewCommentDraft.ts`
+- **Finding:** Closing a draft cleared the annotation target and text, but the
+  selected review category ref stayed on the previous value. The next new
+  comment could open as Question/Bug/Suggestion and dispatch the wrong intent.
+- **Fix:** Reset the category to the default from `closeCommentDraft`, and add a
+  hook regression test that closes a non-default draft before opening a new one.
+- **Commit:** same commit as this entry

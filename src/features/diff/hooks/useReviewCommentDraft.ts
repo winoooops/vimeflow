@@ -479,8 +479,9 @@ export const useReviewCommentDraft = ({
     (focusDiff = true): void => {
       setAnnotationTarget(null, focusDiff)
       setCommentDraftText('', false)
+      setCommentCategory(DEFAULT_REVIEW_COMMENT_CATEGORY)
     },
-    [setCommentDraftText, setAnnotationTarget]
+    [setCommentDraftText, setAnnotationTarget, setCommentCategory]
   )
 
   return {

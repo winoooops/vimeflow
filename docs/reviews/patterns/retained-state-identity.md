@@ -3,7 +3,7 @@ id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
 last_updated: 2026-07-04
-ref_count: 3
+ref_count: 4
 ---
 
 # Retained State Identity

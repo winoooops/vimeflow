@@ -273,6 +273,20 @@ describe('useReviewCommentDraft', () => {
     expect(result.current.draft?.category).toBe('question')
   })
 
+  test('closeCommentDraft resets the next draft to the default category', () => {
+    const { result } = renderDraftHook()
+
+    act(() => {
+      result.current.setAnnotationTarget(target, false)
+      result.current.setCommentCategory('question')
+      result.current.closeCommentDraft(false)
+      result.current.setAnnotationTarget(fileTarget, false)
+    })
+
+    expect(result.current.commentCategory).toBe('change')
+    expect(result.current.draft?.category).toBe('change')
+  })
+
   test('restores the category from a stored draft (survives a restore)', () => {
     const { result } = renderDraftHook({
       cwd: '/repo',
