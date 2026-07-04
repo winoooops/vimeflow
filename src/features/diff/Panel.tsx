@@ -1739,7 +1739,10 @@ export const Panel = ({
           selectedFileStaged,
           {
             side: annotationTarget.side,
-            lineNumber: annotationTarget.lineNumber,
+            // Anchor a range comment at its last line so it renders below the
+            // selection; the span stays in metadata.target (VIM-273).
+            lineNumber:
+              annotationTarget.rangeEndLine ?? annotationTarget.lineNumber,
             metadata: {
               id: nextFeedbackCommentId(),
               text,

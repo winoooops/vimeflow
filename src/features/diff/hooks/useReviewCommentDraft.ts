@@ -390,7 +390,9 @@ export const useReviewCommentDraft = ({
       // annotation reserves the exact line slot for the unsent comment editor.
       const draft: DiffLineAnnotation<ReviewComment> = {
         side: annotationTarget.side,
-        lineNumber: annotationTarget.lineNumber,
+        // Match the committed anchor: a range draft renders below its last line.
+        lineNumber:
+          annotationTarget.rangeEndLine ?? annotationTarget.lineNumber,
         metadata: {
           id: DRAFT_ID,
           text: '',
