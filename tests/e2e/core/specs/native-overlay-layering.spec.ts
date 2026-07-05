@@ -172,7 +172,13 @@ const clickEnabledCheckedOverlayCheckbox = async (): Promise<string | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
     const overlay = electron.webContents
       .getAllWebContents()
-      .find((contents) => contents.getURL().includes('nativeOverlay=1'))
+      .find((contents) => {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
+
+        return mode === '1' || mode === 'menu'
+      })
 
     if (!overlay) {
       return null
@@ -207,7 +213,13 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
     const overlay = electron.webContents
       .getAllWebContents()
-      .find((contents) => contents.getURL().includes('nativeOverlay=1'))
+      .find((contents) => {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
+
+        return mode === '1' || mode === 'menu'
+      })
 
     if (!overlay) {
       return null
@@ -229,7 +241,13 @@ const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
       electron.BrowserWindow.getAllWindows().find(
-        (window) => !window.webContents.getURL().includes('nativeOverlay=1')
+        (window) => {
+          const mode = new URL(window.webContents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          return mode !== '1' && mode !== 'menu' && mode !== 'tooltip'
+        }
       ) ?? electron.BrowserWindow.getAllWindows()[0]
 
     if (!parent) {
@@ -413,7 +431,13 @@ describe('NativeOverlay BrowserWindow layering', () => {
     await browser.electron.execute(async (electron: ElectronModule) => {
       const overlay = electron.webContents
         .getAllWebContents()
-        .find((contents) => contents.getURL().includes('nativeOverlay=1'))
+        .find((contents) => {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          return mode === '1' || mode === 'menu'
+        })
 
       await overlay?.executeJavaScript(`
         document.dispatchEvent(

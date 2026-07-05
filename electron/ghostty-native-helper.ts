@@ -435,7 +435,7 @@ export class GhosttyNativeHelperController {
         payload: { ...this.currentPane, data },
       })
     }
-    void this.sidecar.invoke('write_pty', {
+    this.invokeSidecar('write_pty', {
       request: {
         sessionId: this.currentPane.sessionId,
         data,
@@ -456,13 +456,27 @@ export class GhosttyNativeHelperController {
     }
 
     this.lastResize = { cols, rows }
-    void this.sidecar.invoke('resize_pty', {
+    this.invokeSidecar('resize_pty', {
       request: {
         sessionId: this.currentPane.sessionId,
         cols,
         rows,
       },
     })
+  }
+
+  private invokeSidecar(
+    command: Parameters<Sidecar['invoke']>[0],
+    payload: Parameters<Sidecar['invoke']>[1]
+  ): void {
+    void (async (): Promise<void> => {
+      try {
+        await this.sidecar.invoke(command, payload)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Ghostty native sidecar invoke failed', error)
+      }
+    })()
   }
 
   private shutdownHelper(): void {

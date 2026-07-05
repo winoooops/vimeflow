@@ -187,6 +187,102 @@ describe('ghostty native helper', () => {
     controller.dispose()
   })
 
+  test('handles rejected sidecar input and resize invokes locally', async () => {
+    const stdout = new PassThrough()
+
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback): void {
+        callback()
+      },
+    })
+
+    const helper: {
+      stdin: Writable
+      stdout: PassThrough
+      stderr: null
+      on: ReturnType<typeof vi.fn>
+      kill: ReturnType<typeof vi.fn>
+    } = {
+      stdin,
+      stdout,
+      stderr: null,
+      on: vi.fn(() => helper),
+      kill: vi.fn(() => true),
+    }
+
+    const error = new Error('sidecar unavailable')
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.reject(error)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const controller = setupGhosttyNativeHelper({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
+      spawnFn: vi.fn(() => helper),
+    })
+
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    for (const event of [
+      {
+        kind: 'event',
+        event: 'pty-input',
+        payload: { data: '/clear\r' },
+      },
+      {
+        kind: 'event',
+        event: 'pty-resize',
+        payload: { cols: 120, rows: 40 },
+      },
+    ]) {
+      const body = Buffer.from(JSON.stringify(event), 'utf8')
+      stdout.emit(
+        'data',
+        Buffer.concat([
+          Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
+          body,
+        ])
+      )
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
+      request: { sessionId: 'pty-1', data: '/clear\r' },
+    })
+
+    expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+      request: { sessionId: 'pty-1', cols: 120, rows: 40 },
+    })
+
+    expect(warn).toHaveBeenCalledWith(
+      'Ghostty native sidecar invoke failed',
+      error
+    )
+
+    warn.mockRestore()
+    controller.dispose()
+  })
+
   test('accepts an empty cwd while validating native updates', () => {
     const stdout = new PassThrough()
 

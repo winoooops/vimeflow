@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-05
-ref_count: 0
+ref_count: 1
 ---
 
 # IPC Resource Bounds
@@ -87,4 +87,18 @@ not become repeated unhandled main-process failures.
 - **File:** `electron/ghostty-native-parent.ts`
 - **Finding:** The native Ghostty parent accepted any non-empty `sessionId` and `paneId`, and each unique pair could create a retained pane state and eventually a real AppKit surface. A renderer loop could exhaust main-process native resources with valid-shaped payloads.
 - **Fix:** Added a conservative `MAX_SURFACES` cap before creating new pane state, while preserving existing pane updates. Regression coverage fills the cap with unique pane ids and asserts the overflow request is rejected before native allocation.
+- **Commit:** same commit as this entry
+
+### 6. Legacy Ghostty helper callbacks dropped sidecar invoke rejections
+
+- **Source:** github-claude | PR #667 round 6 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The legacy Ghostty helper path still used fire-and-forget
+  `sidecar.invoke` calls for helper input and resize events. If the sidecar was
+  unavailable or rejected mid-session, ordinary typing and resizing could
+  produce repeated unhandled promise rejections in Electron's main process.
+- **Fix:** Added the same nonblocking `invokeSidecar` wrapper used by the
+  native parent controller and routed legacy helper input/resize invokes through
+  it. Added regression coverage for rejected input and resize invokes.
 - **Commit:** same commit as this entry
