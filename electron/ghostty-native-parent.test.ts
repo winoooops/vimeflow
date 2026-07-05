@@ -31,12 +31,14 @@ const {
 } = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
   isDestroyed: vi.fn(() => false),
-  webContentsExecuteJavaScript: vi.fn((script: string, gesture?: boolean) => {
-    void script
-    void gesture
+  webContentsExecuteJavaScript: vi.fn(
+    (script: string, gesture?: boolean): Promise<unknown> => {
+      void script
+      void gesture
 
-    return Promise.resolve(false)
-  }),
+      return Promise.resolve(false)
+    }
+  ),
   webContentsFocus: vi.fn(),
   webContentsIsDestroyed: vi.fn(() => false),
   webContentsSend: vi.fn(),
