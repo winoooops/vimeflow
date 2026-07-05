@@ -31,6 +31,7 @@ const makeService = (): ITerminalService =>
     write: vi.fn().mockResolvedValue(undefined),
     onData: vi.fn().mockResolvedValue(() => undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
+    onError: vi.fn().mockResolvedValue(() => undefined),
     onBurnerForeground: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
 
@@ -219,7 +220,7 @@ test('hasVisibleBurner tracks only the visible popup, not hidden live shells', a
   expect(result.current.renderNode).not.toBeNull()
 })
 
-test('drops a native burner when secondary attach is unavailable', async () => {
+test('keeps a native burner in the DOM fallback when secondary attach is unavailable', async () => {
   vi.stubGlobal('navigator', { platform: 'MacIntel' })
   const attachSecondary = vi.fn(() => Promise.resolve({ enabled: false }))
   const removeSecondary = vi.fn(() => Promise.resolve({}))
@@ -257,16 +258,18 @@ test('drops a native burner when secondary attach is unavailable', async () => {
   const rendered = render(result.current.renderNode)
 
   await waitFor(() => {
-    expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-pty' })
+    expect(firstPopup(result.current.renderNode).props.cwd).toBe('/repo')
   })
+  rendered.rerender(result.current.renderNode)
 
   expect(attachSecondary).toHaveBeenCalledWith({
     sessionId: 'host-pty',
     paneId: 'p0',
     secondarySessionId: 'burner-pty',
   })
-  expect(result.current.runningByPane.size).toBe(0)
-  expect(result.current.visibleBurnerPaneKey).toBeNull()
+  expect(service.kill).not.toHaveBeenCalled()
+  expect(result.current.runningByPane.get('s1:p0')).toBe('running')
+  expect(firstPopup(result.current.renderNode).props.open).toBe(true)
 
   rendered.unmount()
 })
@@ -1361,6 +1364,7 @@ test('marks the popup align button busy while a foreground command runs', async 
 test('falls back to the DOM popup without killing the burner when native attach is unavailable', async () => {
   const service = makeService()
   const focused = makeFocusedPane('s1', 'p0', '/repo')
+
   const ghosttyNative = {
     attachSecondary: vi.fn(() => Promise.resolve({ enabled: false })),
     secondaryData: vi.fn(() => Promise.resolve({})),
