@@ -23,6 +23,8 @@ nativeHandle.writeBigUInt64LE(1n)
 
 const {
   existsSync,
+  browserWindowState,
+  browserWindowOnce,
   isDestroyed,
   webContentsExecuteJavaScript,
   webContentsFocus,
@@ -30,6 +32,8 @@ const {
   webContentsSend,
 } = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
+  browserWindowState: { id: 1 },
+  browserWindowOnce: vi.fn(),
   isDestroyed: vi.fn(() => false),
   webContentsExecuteJavaScript: vi.fn(
     (script: string, gesture?: boolean): Promise<unknown> => {
@@ -52,8 +56,10 @@ vi.mock('node:fs', () => ({
 vi.mock('electron', () => ({
   BrowserWindow: {
     fromWebContents: vi.fn(() => ({
+      id: browserWindowState.id,
       getNativeWindowHandle: (): Buffer => nativeHandle,
       isDestroyed,
+      once: browserWindowOnce,
       webContents: {
         executeJavaScript: webContentsExecuteJavaScript,
         focus: webContentsFocus,
@@ -79,6 +85,8 @@ describe('ghostty native parent', () => {
     handlers.clear()
     existsSync.mockReset()
     existsSync.mockReturnValue(false)
+    browserWindowState.id = 1
+    browserWindowOnce.mockClear()
     isDestroyed.mockReset()
     isDestroyed.mockReturnValue(false)
     webContentsExecuteJavaScript.mockReset()
@@ -482,6 +490,138 @@ describe('ghostty native parent', () => {
     )
 
     expect(addon.write).toHaveBeenCalledTimes(1)
+
+    controller.dispose()
+  })
+
+  test('destroys parented surfaces when their BrowserWindow closes', () => {
+    const firstSurface = {}
+    const secondSurface = {}
+
+    const addon = {
+      create: vi
+        .fn()
+        .mockReturnValueOnce(firstSurface)
+        .mockReturnValueOnce(secondSurface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    const closedHandler = browserWindowOnce.mock.calls[0]?.[1] as
+      | (() => void)
+      | undefined
+
+    if (closedHandler === undefined) {
+      throw new Error('expected BrowserWindow closed handler')
+    }
+
+    closedHandler()
+
+    expect(addon.destroy).toHaveBeenCalledWith(firstSurface)
+
+    browserWindowState.id = 2
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.create).toHaveBeenCalledTimes(2)
+    expect(addon.setFrame).toHaveBeenLastCalledWith(
+      secondSurface,
+      10,
+      20,
+      300,
+      200,
+      0,
+      900
+    )
+
+    controller.dispose()
+  })
+
+  test('caps renderer-created pane state before allocating unbounded surfaces', () => {
+    const addon = {
+      create: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+    const data = handlers.get(GHOSTTY_NATIVE_DATA)
+
+    for (let index = 0; index < 128; index += 1) {
+      expect(
+        data?.(
+          {},
+          {
+            sessionId: `pty-${index}`,
+            paneId: `pane-${index}`,
+            data: 'boot',
+          }
+        )
+      ).toEqual({ enabled: true })
+    }
+
+    expect(() =>
+      data?.(
+        {},
+        {
+          sessionId: 'pty-overflow',
+          paneId: 'pane-overflow',
+          data: 'boot',
+        }
+      )
+    ).toThrow('ghostty native parent surface limit exceeded')
+
+    expect(addon.create).not.toHaveBeenCalled()
 
     controller.dispose()
   })

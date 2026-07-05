@@ -299,3 +299,12 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Track native unavailability on the current burner entry and render
   the DOM burner popup for that PTY instead of calling `killBurner`.
 - **Commit:** same commit as this entry
+
+### 30. Cached native pane surfaces must be evicted when their BrowserWindow closes
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty surfaces were cached only by session and pane id, while the callback closures captured the original `BrowserWindow`. macOS close/reopen could leave restored panes reusing a native surface bound to a destroyed window.
+- **Fix:** Track surface keys by owning `BrowserWindow.id`, register one `closed` handler per window, and destroy/evict every surface owned by that window before a later update can reuse the pane id. The surface creation path also destroys a stale owner-specific surface before reparenting.
+- **Commit:** same commit as this entry

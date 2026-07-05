@@ -102,7 +102,8 @@ interface GhosttyNativeParentDeps {
 
 interface GhosttyNativeSurfaceState {
   pane: GhosttyNativePaneRequest
-  surface: unknown
+  surface: unknown | null
+  ownerWindowId: number | null
   pendingData: string[]
   secondary: GhosttyNativeSecondaryState | null
   // Resize updates pass through this same path. Cache values that reapply
@@ -138,6 +139,7 @@ interface GhosttyNativeShortcutDispatchState {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const MAX_PENDING_CHUNKS = 64
+const MAX_SURFACES = 128
 
 // Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in with
 // VITE_GHOSTTY_NATIVE_MACOS_PARENT so ordinary local runs can keep the fallback.
@@ -329,6 +331,10 @@ export class GhosttyNativeParentController {
 
   private readonly surfaces = new Map<string, GhosttyNativeSurfaceState>()
 
+  private readonly surfaceKeysByWindowId = new Map<number, Set<string>>()
+
+  private readonly windowClosedHandlers = new Map<number, () => void>()
+
   constructor(deps: GhosttyNativeParentDeps) {
     this.sidecar = deps.sidecar
     this.platform = deps.platform ?? process.platform
@@ -399,6 +405,8 @@ export class GhosttyNativeParentController {
     for (const key of this.surfaces.keys()) {
       this.destroySurface(key)
     }
+    this.surfaceKeysByWindowId.clear()
+    this.windowClosedHandlers.clear()
   }
 
   private update(
@@ -781,12 +789,17 @@ export class GhosttyNativeParentController {
       return existing
     }
 
+    if (this.surfaces.size >= MAX_SURFACES) {
+      throw new Error('ghostty native parent surface limit exceeded')
+    }
+
     const state = {
       pane: {
         sessionId: payload.sessionId,
         paneId: payload.paneId,
       },
       surface: null,
+      ownerWindowId: null,
       pendingData: [],
       secondary: null,
       lastBackgroundColor: null,
@@ -804,9 +817,21 @@ export class GhosttyNativeParentController {
     win: BrowserWindow,
     state: GhosttyNativeSurfaceState
   ): unknown {
-    if (state.surface) {
+    if (state.surface && state.ownerWindowId === win.id) {
       return state.surface
     }
+
+    const key = this.paneKey(state.pane)
+    if (state.surface) {
+      addon.destroy(state.surface)
+      if (state.ownerWindowId !== null) {
+        this.surfaceKeysByWindowId.get(state.ownerWindowId)?.delete(key)
+      }
+      state.surface = null
+      state.ownerWindowId = null
+    }
+
+    this.registerWindowCleanup(win)
 
     state.surface = addon.create(
       bridgePath(this.nativeParentDir),
@@ -901,8 +926,32 @@ export class GhosttyNativeParentController {
         })
       }
     )
+    state.ownerWindowId = win.id
+    this.surfaceKeysByWindowId.get(win.id)?.add(key)
 
     return state.surface
+  }
+
+  private registerWindowCleanup(win: BrowserWindow): void {
+    if (this.windowClosedHandlers.has(win.id)) {
+      return
+    }
+
+    this.surfaceKeysByWindowId.set(win.id, new Set())
+
+    const handleClosed = (): void => {
+      const keys = [...(this.surfaceKeysByWindowId.get(win.id) ?? [])]
+
+      for (const key of keys) {
+        this.destroySurface(key)
+      }
+
+      this.surfaceKeysByWindowId.delete(win.id)
+      this.windowClosedHandlers.delete(win.id)
+    }
+
+    this.windowClosedHandlers.set(win.id, handleClosed)
+    win.once('closed', handleClosed)
   }
 
   private async forwardShortcutToAppRenderer(
@@ -1063,6 +1112,11 @@ export class GhosttyNativeParentController {
       addon.destroy(state.surface)
     }
     this.surfaces.delete(key)
+
+    if (state.ownerWindowId !== null) {
+      const keys = this.surfaceKeysByWindowId.get(state.ownerWindowId)
+      keys?.delete(key)
+    }
   }
 }
 

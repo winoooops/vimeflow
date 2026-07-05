@@ -79,3 +79,12 @@ not become repeated unhandled main-process failures.
   and secondary native input/resize callbacks to use it, with a regression test
   for rejected input and resize invokes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Renderer-supplied pane identities must not allocate unbounded native surfaces
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty parent accepted any non-empty `sessionId` and `paneId`, and each unique pair could create a retained pane state and eventually a real AppKit surface. A renderer loop could exhaust main-process native resources with valid-shaped payloads.
+- **Fix:** Added a conservative `MAX_SURFACES` cap before creating new pane state, while preserving existing pane updates. Regression coverage fills the cap with unique pane ids and asserts the overflow request is rejected before native allocation.
+- **Commit:** same commit as this entry

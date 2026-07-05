@@ -419,3 +419,12 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Check for the displayed-layouts menu before clicking the trigger, so
   retrying waits against an already-open menu instead of toggling it closed.
 - **Commit:** same commit as this entry
+
+### 36. Platform-skipped specs must be wired into a matching platform CI job
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `package.json`
+- **Finding:** The native-overlay layering spec lived in the Linux core suite but skipped unless `process.platform === 'darwin'`. The macOS Ghostty workflow used an explicit `--spec` filter that only selected the terminal smoke spec, so the layering assertions never ran in CI.
+- **Fix:** Added the layering spec to the macOS Ghostty E2E npm script, which the workflow already runs with native Ghostty and native-overlay environment variables enabled.
+- **Commit:** same commit as this entry

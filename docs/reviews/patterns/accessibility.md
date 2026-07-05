@@ -912,3 +912,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The command-palette close effect always restored focus to the active terminal or dock surface, even when the command itself opened a follow-up modal such as `UnsavedChangesDialog`. That could move keyboard focus behind an active `aria-modal` dialog.
 - **Fix:** Guarded the palette-close focus restore while `showUnsavedDialog` or `newSessionDialog.open` is true, preserving the follow-up dialog's focus ownership.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 99. Native-overlay fallback dialog remained an invisible focusable modal
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** While native overlay transport owned the visible dialog, the local DOM fallback stayed mounted with `role="dialog"` and `aria-modal="true"` and still received initial focus. Keyboard and assistive-technology users could be moved into an invisible modal subtree.
+- **Fix:** Mark the hidden local fallback `aria-hidden` and `inert`, skip local initial focus, and skip dialog-stack registration while native transport is active. Added regression tests for hidden fallback attributes and focus retention outside the local subtree.
+- **Commit:** same commit as this entry

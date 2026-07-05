@@ -430,6 +430,10 @@ const DialogRoot = ({
   closeOnEscapeRef.current = closeOnEscape
 
   useEffect(() => {
+    if (hideLocalForNative) {
+      return
+    }
+
     if (open && !wasOpenRef.current) {
       previousFocusRef.current =
         document.activeElement instanceof HTMLElement
@@ -450,7 +454,7 @@ const DialogRoot = ({
 
       previousFocusRef.current = null
     }
-  }, [initialFocusRef, open, restoreFocus])
+  }, [hideLocalForNative, initialFocusRef, open, restoreFocus])
 
   useEffect(
     () => (): void => {
@@ -462,7 +466,7 @@ const DialogRoot = ({
   )
 
   useEffect(() => {
-    if (!open) {
+    if (!open || hideLocalForNative) {
       return undefined
     }
 
@@ -490,7 +494,7 @@ const DialogRoot = ({
     return (): void => {
       unregisterDialogLayer(layer)
     }
-  }, [open])
+  }, [hideLocalForNative, open])
 
   if (typeof document === 'undefined') {
     return null
@@ -503,6 +507,8 @@ const DialogRoot = ({
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
+          aria-hidden={hideLocalForNative ? 'true' : undefined}
+          inert={hideLocalForNative ? true : undefined}
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledBy}
           aria-describedby={ariaDescribedBy}

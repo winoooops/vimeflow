@@ -133,16 +133,19 @@ describe('Dialog', () => {
         nativeOverlayPayload={nativeDialogPayload}
         onOpenChange={vi.fn()}
         aria-label="Command palette"
+        testId="local-dialog"
       >
         <p>Local body</p>
       </Dialog>
     )
 
-    const dialog = screen.getByRole('dialog', { name: 'Command palette' })
+    const dialog = screen.getByTestId('local-dialog')
 
     await waitFor(() => {
       expect(bridge.open).toHaveBeenCalledOnce()
       expect(dialog).toHaveClass('opacity-0')
+      expect(dialog).toHaveAttribute('aria-hidden', 'true')
+      expect(dialog).toHaveAttribute('inert')
     })
 
     const request = bridge.open.mock.calls[0]?.[0] as
@@ -162,6 +165,36 @@ describe('Dialog', () => {
     })
   })
 
+  test('does not move focus into hidden local dialog during native overlay', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge(true)
+    const prior = document.createElement('button')
+    prior.textContent = 'Prior'
+    document.body.appendChild(prior)
+    prior.focus()
+
+    try {
+      render(
+        <Dialog
+          open
+          nativeOverlay
+          nativeOverlayPayload={nativeDialogPayload}
+          onOpenChange={vi.fn()}
+          aria-label="Command palette"
+        >
+          <button type="button">Local action</button>
+        </Dialog>
+      )
+
+      await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+      expect(prior).toHaveFocus()
+    } finally {
+      prior.remove()
+    }
+  })
+
   test('keeps local dialog visible when native overlay is rejected', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
@@ -174,12 +207,13 @@ describe('Dialog', () => {
         nativeOverlayPayload={nativeDialogPayload}
         onOpenChange={vi.fn()}
         aria-label="Command palette"
+        testId="local-dialog"
       >
         <p>Local body</p>
       </Dialog>
     )
 
-    const dialog = screen.getByRole('dialog', { name: 'Command palette' })
+    const dialog = screen.getByTestId('local-dialog')
 
     await waitFor(() => {
       expect(bridge.open).toHaveBeenCalledOnce()
