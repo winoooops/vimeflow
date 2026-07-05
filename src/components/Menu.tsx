@@ -363,6 +363,7 @@ const MenuRoot = ({
   const triggerNodeRef = useRef<HTMLElement | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
   const labelsRef = useRef<(string | null)[]>([])
+  const nativeLifecycleActiveRef = useRef(false)
 
   const { disabledIndices, setRowDisabled, clearRow } = useMenuDisabledIndices()
 
@@ -432,6 +433,21 @@ const MenuRoot = ({
     }
   }, [nativeOverlay, nativeUnsupportedReason, open, transport])
 
+  useEffect(() => {
+    if (!canAttemptNative) {
+      nativeLifecycleActiveRef.current = false
+
+      return
+    }
+
+    nativeLifecycleActiveRef.current = true
+
+    return (): void => {
+      nativeLifecycleActiveRef.current = false
+      closeNativeOverlay(surfaceId)
+    }
+  }, [canAttemptNative, surfaceId])
+
   // When the native transport is available, measure the trigger and send main a
   // serializable menu request. The local menu stays hidden unless that open
   // attempt is rejected, which preserves the existing fallback path.
@@ -473,7 +489,9 @@ const MenuRoot = ({
       )
 
       if (cancelled.current) {
-        closeNativeOverlay(surfaceId)
+        if (!nativeLifecycleActiveRef.current) {
+          closeNativeOverlay(surfaceId)
+        }
 
         return
       }
@@ -483,9 +501,65 @@ const MenuRoot = ({
 
     return (): void => {
       cancelled.current = true
-      closeNativeOverlay(surfaceId)
     }
   }, [canAttemptNative, nativeActions, nativePayloadKey, placement, surfaceId])
+
+  useEffect(() => {
+    if (!canAttemptNative || nativeAttempt !== 'active') {
+      return
+    }
+
+    let frameId: number | null = null
+
+    const sendLatestRect = (): void => {
+      if (frameId !== null) {
+        return
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null
+        const triggerRect = triggerNodeRef.current?.getBoundingClientRect()
+        if (triggerRect === undefined) {
+          return
+        }
+
+        void openNativeOverlay(
+          {
+            surfaceId,
+            kind: NATIVE_OVERLAY_KINDS.menu,
+            anchorRect: {
+              x: triggerRect.x,
+              y: triggerRect.y,
+              width: triggerRect.width,
+              height: triggerRect.height,
+            },
+            placement,
+            payload: nativeSpecRef.current.payload,
+            theme: nativeOverlayThemeSnapshot(),
+          },
+          {
+            actions: nativeActions,
+            onClose: (): void => handleOpenChangeRef.current(false),
+          }
+        )
+      })
+    }
+
+    window.addEventListener('resize', sendLatestRect)
+    const observer = new ResizeObserver(sendLatestRect)
+    const triggerNode = triggerNodeRef.current
+    if (triggerNode !== null) {
+      observer.observe(triggerNode)
+    }
+
+    return (): void => {
+      window.removeEventListener('resize', sendLatestRect)
+      observer.disconnect()
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+    }
+  }, [canAttemptNative, nativeActions, nativeAttempt, placement, surfaceId])
 
   useEffect(() => {
     if (closeSignalRef.current === closeSignal) {

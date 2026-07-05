@@ -381,6 +381,45 @@ describe('Tooltip', () => {
     })
   })
 
+  test('resyncs native tooltip anchor geometry after resize', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+
+    const rectSpy = vi
+      .spyOn(trigger, 'getBoundingClientRect')
+      .mockReturnValueOnce(rect({ x: 20, y: 30, width: 40, height: 12 }))
+      .mockReturnValue(rect({ x: 50, y: 60, width: 70, height: 18 }))
+
+    await user.hover(trigger)
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const firstRequest = nativeBridge.open.mock.calls[0][0] as {
+      surfaceId: string
+    }
+
+    window.dispatchEvent(new Event('resize'))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    expect(nativeBridge.open.mock.calls[1][0]).toMatchObject({
+      surfaceId: firstRequest.surfaceId,
+      kind: 'tooltip',
+      anchorRect: { x: 50, y: 60, width: 70, height: 18 },
+    })
+
+    rectSpy.mockRestore()
+  })
+
   test('falls back locally when native tooltip overlay is rejected', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

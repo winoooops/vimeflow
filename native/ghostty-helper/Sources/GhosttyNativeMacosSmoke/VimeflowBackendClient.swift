@@ -42,6 +42,8 @@ final class VimeflowBackendClient: @unchecked Sendable {
         Result<VimeflowPtySession, VimeflowBackendClientError>
     ) -> Void
 
+    private static let maxFrameBytes = 16 * 1024 * 1024
+
     private enum PendingRequest: Sendable {
         case spawn(SpawnCompletion)
 
@@ -272,6 +274,11 @@ final class VimeflowBackendClient: @unchecked Sendable {
 
     private func appendStdout(_ data: Data) {
         stdoutBuffer.append(data)
+        guard stdoutBuffer.count <= Self.maxFrameBytes else {
+            disable(.malformedFrame("frame exceeds maximum size"))
+            return
+        }
+
         processStdoutBuffer()
     }
 
@@ -293,6 +300,10 @@ final class VimeflowBackendClient: @unchecked Sendable {
                 let contentLength = Self.parseContentLength(header)
             else {
                 disable(.malformedFrame("missing Content-Length"))
+                return
+            }
+            guard contentLength >= 0 && contentLength <= Self.maxFrameBytes else {
+                disable(.malformedFrame("invalid Content-Length"))
                 return
             }
 

@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
   useId,
   useState,
@@ -194,6 +195,46 @@ export const Tooltip = ({
     }
   }, [nativeUnsupportedReason, open, transport])
 
+  const sendNativeTooltipRequest = useCallback(async (): Promise<boolean> => {
+    if (nativeTooltipText === null) {
+      return false
+    }
+
+    const reference = refs.reference.current
+    if (!(reference instanceof Element)) {
+      warnNativeOverlayFallback('tooltip native overlay is missing an anchor')
+      setNativeFailed(true)
+
+      return false
+    }
+
+    const rect = reference.getBoundingClientRect()
+
+    return openNativeOverlay(
+      {
+        surfaceId: nativeSurfaceId,
+        kind: NATIVE_OVERLAY_KINDS.tooltip,
+        anchorRect: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        },
+        placement,
+        payload: {
+          kind: 'tooltip',
+          text: nativeTooltipText,
+          maxWidth,
+        },
+        theme: nativeOverlayThemeSnapshot(),
+      },
+      {
+        actions: new Map(),
+        onClose: () => setOpen(false),
+      }
+    )
+  }, [maxWidth, nativeSurfaceId, nativeTooltipText, placement, refs.reference])
+
   useEffect(() => {
     if (!canUseNativeOverlay || nativeTooltipText === null) {
       if (!open) {
@@ -203,42 +244,11 @@ export const Tooltip = ({
       return
     }
 
-    const reference = refs.reference.current
-    if (!(reference instanceof Element)) {
-      warnNativeOverlayFallback('tooltip native overlay is missing an anchor')
-      setNativeFailed(true)
-
-      return
-    }
-
     const state = { canceled: false }
-    const rect = reference.getBoundingClientRect()
     setNativeFailed(false)
 
     void (async (): Promise<void> => {
-      const accepted = await openNativeOverlay(
-        {
-          surfaceId: nativeSurfaceId,
-          kind: NATIVE_OVERLAY_KINDS.tooltip,
-          anchorRect: {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-          },
-          placement,
-          payload: {
-            kind: 'tooltip',
-            text: nativeTooltipText,
-            maxWidth,
-          },
-          theme: nativeOverlayThemeSnapshot(),
-        },
-        {
-          actions: new Map(),
-          onClose: () => setOpen(false),
-        }
-      )
+      const accepted = await sendNativeTooltipRequest()
 
       if (state.canceled) {
         if (accepted) {
@@ -262,12 +272,64 @@ export const Tooltip = ({
     }
   }, [
     canUseNativeOverlay,
-    maxWidth,
     nativeSurfaceId,
     nativeTooltipText,
     open,
-    placement,
+    sendNativeTooltipRequest,
+  ])
+
+  useEffect(() => {
+    if (!canUseNativeOverlay || nativeTooltipText === null || nativeFailed) {
+      return
+    }
+
+    let frameId: number | null = null
+
+    const sendLatestRect = (): void => {
+      if (frameId !== null) {
+        return
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null
+
+        void (async (): Promise<void> => {
+          const accepted = await sendNativeTooltipRequest()
+          if (!accepted) {
+            warnNativeOverlayFallback('tooltip native overlay was rejected')
+            setNativeFailed(true)
+          }
+        })()
+      })
+    }
+
+    const reference = refs.reference.current
+
+    const observer =
+      typeof ResizeObserver !== 'undefined' && reference instanceof Element
+        ? new ResizeObserver(sendLatestRect)
+        : null
+
+    if (reference instanceof Element) {
+      observer?.observe(reference)
+    }
+
+    window.addEventListener('resize', sendLatestRect)
+
+    return (): void => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+
+      observer?.disconnect()
+      window.removeEventListener('resize', sendLatestRect)
+    }
+  }, [
+    canUseNativeOverlay,
+    nativeFailed,
+    nativeTooltipText,
     refs.reference,
+    sendNativeTooltipRequest,
   ])
 
   const childRef = isValidElement(children)

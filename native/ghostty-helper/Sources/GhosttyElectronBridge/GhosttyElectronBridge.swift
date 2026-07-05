@@ -47,6 +47,37 @@ private struct SendablePointer: @unchecked Sendable {
     let value: UnsafeMutableRawPointer?
 }
 
+@MainActor
+private enum SurfaceHandleRegistry {
+    private static var live = Set<UInt>()
+
+    static func insert(_ pointer: UnsafeMutableRawPointer) {
+        live.insert(UInt(bitPattern: pointer))
+    }
+
+    static func contains(_ pointer: UnsafeMutableRawPointer) -> Bool {
+        live.contains(UInt(bitPattern: pointer))
+    }
+
+    static func remove(_ pointer: UnsafeMutableRawPointer) -> Bool {
+        live.remove(UInt(bitPattern: pointer)) != nil
+    }
+}
+
+@MainActor
+private func liveSurface(from pointer: SendablePointer) -> EmbeddedGhosttySurface? {
+    guard
+        let rawPointer = pointer.value,
+        SurfaceHandleRegistry.contains(rawPointer)
+    else {
+        return nil
+    }
+
+    return Unmanaged<EmbeddedGhosttySurface>
+        .fromOpaque(rawPointer)
+        .takeUnretainedValue()
+}
+
 private final class EmbeddedGhosttyContainerView: NSView {
     var onLayout: (() -> Void)?
 
@@ -928,7 +959,10 @@ public func vimeflowGhosttyCreate(
             callbackContext: contextPointer.value
         )
 
-        return SendablePointer(value: Unmanaged.passRetained(surface).toOpaque())
+        let rawPointer = Unmanaged.passRetained(surface).toOpaque()
+        SurfaceHandleRegistry.insert(rawPointer)
+
+        return SendablePointer(value: rawPointer)
     }
 
     return surfacePointer.value
@@ -950,9 +984,7 @@ public func vimeflowGhosttySetFrame(
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.setFrame(
             x: x,
             y: y,
@@ -976,9 +1008,7 @@ public func vimeflowGhosttySetShortcutDigits(
     let pointer = SendablePointer(value: surfacePointer)
     let digits = String(cString: digitsPointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.setShortcutDigits(digits)
     }
 }
@@ -995,9 +1025,7 @@ public func vimeflowGhosttySetBackgroundColor(
     let pointer = SendablePointer(value: surfacePointer)
     let color = String(cString: colorPointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.setBackgroundColor(color)
     }
 }
@@ -1014,9 +1042,7 @@ public func vimeflowGhosttySetForegroundColor(
     let pointer = SendablePointer(value: surfacePointer)
     let color = String(cString: colorPointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.setForegroundColor(color)
     }
 }
@@ -1035,9 +1061,7 @@ public func vimeflowGhosttyWrite(
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.receive(text)
     }
 }
@@ -1057,9 +1081,7 @@ public func vimeflowGhosttyAddSecondary(
     let pointer = SendablePointer(value: surfacePointer)
     let contextPointer = SendablePointer(value: callbackContext)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.addSecondary(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
@@ -1080,9 +1102,7 @@ public func vimeflowGhosttySetSecondaryVisible(
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.setSecondaryVisible(visible)
     }
 }
@@ -1095,9 +1115,7 @@ public func vimeflowGhosttyRemoveSecondary(_ surfacePointer: UnsafeMutableRawPoi
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.removeSecondary()
     }
 }
@@ -1116,9 +1134,7 @@ public func vimeflowGhosttyWriteSecondary(
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.receiveSecondary(text)
     }
 }
@@ -1131,9 +1147,7 @@ public func vimeflowGhosttyFocusSecondary(_ surfacePointer: UnsafeMutableRawPoin
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.focusSecondary()
     }
 }
@@ -1146,9 +1160,7 @@ public func vimeflowGhosttyFocus(_ surfacePointer: UnsafeMutableRawPointer?) {
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
-        let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
-            .takeUnretainedValue()
+        guard let surface = liveSurface(from: pointer) else { return }
         surface.focus()
     }
 }
@@ -1161,8 +1173,15 @@ public func vimeflowGhosttyDestroy(_ surfacePointer: UnsafeMutableRawPointer?) {
 
     let pointer = SendablePointer(value: surfacePointer)
     mainActorSync {
+        guard
+            let rawPointer = pointer.value,
+            SurfaceHandleRegistry.remove(rawPointer)
+        else {
+            return
+        }
+
         let surface = Unmanaged<EmbeddedGhosttySurface>
-            .fromOpaque(pointer.value!)
+            .fromOpaque(rawPointer)
             .takeRetainedValue()
         surface.destroy()
     }

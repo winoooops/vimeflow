@@ -256,7 +256,7 @@ interface NativeOverlayOpenResult {
 
 interface NativeOverlayLayerRecord {
   window: BrowserWindow
-  ready: Promise<void>
+  ready: Promise<boolean>
 }
 
 interface NativeOverlayRecord {
@@ -740,7 +740,14 @@ export class NativeOverlayController {
       this.closeSurface(record.activeSurfaceId, 'replaced', true)
     }
 
-    await record.menu.ready
+    const layerReady = await record.menu.ready
+    if (!layerReady) {
+      return { accepted: false, reason: 'overlay-load-failed' }
+    }
+    if (parent.isDestroyed() || record.menu.window.isDestroyed()) {
+      return { accepted: false, reason: 'owner-closed' }
+    }
+
     record.syncBounds()
     record.menu.window.setIgnoreMouseEvents(false)
     record.menu.window.showInactive()
@@ -778,7 +785,14 @@ export class NativeOverlayController {
       this.closeSurface(record.activeTooltipSurfaceId, 'replaced', true, false)
     }
 
-    await record.tooltip.ready
+    const layerReady = await record.tooltip.ready
+    if (!layerReady) {
+      return { accepted: false, reason: 'overlay-load-failed' }
+    }
+    if (parent.isDestroyed() || record.tooltip.window.isDestroyed()) {
+      return { accepted: false, reason: 'owner-closed' }
+    }
+
     record.syncBounds()
     record.tooltip.window.setIgnoreMouseEvents(true)
     record.tooltip.window.showInactive()
@@ -941,8 +955,29 @@ export class NativeOverlayController {
       },
     })
 
-    const ready = new Promise<void>((resolve) => {
-      overlayWindow.webContents.once('did-finish-load', () => resolve())
+    const ready = new Promise<boolean>((resolve) => {
+      let settled = false
+
+      const finish = (value: boolean): void => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        clearTimeout(timeout)
+        overlayWindow.webContents.removeListener(
+          'did-finish-load',
+          handleFinish
+        )
+        overlayWindow.webContents.removeListener('did-fail-load', handleFail)
+        resolve(value)
+      }
+      const timeout = setTimeout(() => finish(false), OVERLAY_RENDER_TIMEOUT_MS)
+      const handleFinish = (): void => finish(true)
+      const handleFail = (): void => finish(false)
+
+      overlayWindow.webContents.once('did-finish-load', handleFinish)
+      overlayWindow.webContents.once('did-fail-load', handleFail)
     })
 
     overlayWindow.setIgnoreMouseEvents(true)

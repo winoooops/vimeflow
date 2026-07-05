@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-07-05
-ref_count: 10
+ref_count: 11
 ---
 
 # Parser Resilience
@@ -294,4 +294,20 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/reply.rs`
 - **Finding:** The reply extractor passed the captured sentinel body directly to `serde_json`, so a valid machine block echoed with Markdown quote prefixes such as `> { ... }` failed parsing and lost structured per-comment replies.
 - **Fix:** Added a normalization step that strips optional leading Markdown quote markers from captured payload lines before validation or best-effort nonce parsing, while preserving the original raw sentinel text. Added a regression test for quoted payloads.
+- **Commit:** same commit as this entry
+
+### 20. Length-prefixed native frames must reject invalid lengths
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/ElectronHostClient.swift`,
+  `native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/VimeflowBackendClient.swift`,
+  `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The Swift stdio frame parsers accepted negative or huge
+  `Content-Length` values before computing `bodyStart + contentLength`, and the
+  native addon ignored `napi_get_value_string_utf8` status while converting JS
+  strings.
+- **Fix:** Added a 16 MiB frame cap, rejected negative lengths before slicing,
+  closed/disabled malformed streams, and made addon string conversion fail
+  explicitly on non-string or unreadable values.
 - **Commit:** same commit as this entry

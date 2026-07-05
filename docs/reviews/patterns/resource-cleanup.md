@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-04
-ref_count: 23
+last_updated: 2026-07-05
+ref_count: 24
 ---
 
 # Resource Cleanup
@@ -272,3 +272,17 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** A hoisted preload test set `process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'` directly so the native bridge existed before importing preload code, but never restored the process-global env value. Later tests in the same worker could inherit native Ghostty mode unexpectedly.
 - **Fix:** Replaced the raw env write with `vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')` and added `afterAll(() => vi.unstubAllEnvs())`, mirroring the existing explicit global cleanup pattern.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Native helper and overlay queues need explicit failure bounds
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/native-overlay.ts`, `electron/ghostty-native-helper.ts`
+- **Finding:** Native overlay layer readiness only resolved on
+  `did-finish-load`, permanently wedging future opens if the first page load
+  failed. The Ghostty dev helper also wrote directly to child stdin without
+  honoring stream backpressure, allowing unbounded queued memory.
+- **Fix:** Added overlay load failure/timeout handling and routed helper stdin
+  writes through a bounded writer that shuts down the helper when pending bytes
+  exceed the frame budget.
+- **Commit:** same commit as this entry

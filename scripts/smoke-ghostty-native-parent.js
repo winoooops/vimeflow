@@ -52,16 +52,18 @@ const smokeOtool = (file) => {
   const repoPrefix = `${repoRoot}${sep}`
 
   for (const dependency of dependencies) {
-    if (dependency.startsWith(`${file} `)) {
+    const dependencyPath = dependency.replace(/\s+\(.*\)$/, '')
+
+    if (dependencyPath === file) {
       continue
     }
 
-    if (dependency.includes('not found')) {
-      throw new Error(`${file} has unresolved dependency: ${dependency}`)
+    if (dependencyPath.includes(repoPrefix)) {
+      throw new Error(`${file} has repo-local dependency: ${dependency}`)
     }
 
-    if (dependency.includes(repoPrefix)) {
-      throw new Error(`${file} has repo-local dependency: ${dependency}`)
+    if (dependencyPath.startsWith('/') && !existsSync(dependencyPath)) {
+      throw new Error(`${file} has missing dependency: ${dependency}`)
     }
   }
 }

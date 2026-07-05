@@ -99,6 +99,8 @@ export class GhosttyNativeHelperController {
 
   private lastResize: { cols: number; rows: number } | null = null
 
+  private pendingStdinBytes = 0
+
   constructor(deps: GhosttyNativeHelperDeps) {
     this.sidecar = deps.sidecar
     this.platform = deps.platform ?? process.platform
@@ -165,24 +167,42 @@ export class GhosttyNativeHelperController {
       payload.visible
     )
 
-    this.getOrStartHelper().stdin.write(
-      encodeFrame({
-        kind: 'command',
-        command: 'set-frame',
-        backgroundColor: isHexColor(payload.backgroundColor)
-          ? payload.backgroundColor
-          : GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
-        foregroundColor: isHexColor(payload.foregroundColor)
-          ? payload.foregroundColor
-          : GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
-        bottomCornerRadius: frame.visible
-          ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
-          : 0,
-        ...frame,
-      })
-    )
+    this.writeHelperFrame({
+      kind: 'command',
+      command: 'set-frame',
+      backgroundColor: isHexColor(payload.backgroundColor)
+        ? payload.backgroundColor
+        : GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
+      foregroundColor: isHexColor(payload.foregroundColor)
+        ? payload.foregroundColor
+        : GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
+      bottomCornerRadius: frame.visible
+        ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
+        : 0,
+      ...frame,
+    })
 
     return { enabled: true }
+  }
+
+  private writeHelperFrame(frame: Record<string, unknown>): void {
+    const encoded = encodeFrame(frame)
+    if (this.pendingStdinBytes + encoded.length > MAX_FRAME_BYTES) {
+      this.shutdownHelper()
+
+      return
+    }
+
+    const helper = this.getOrStartHelper()
+    const accepted = helper.stdin.write(encoded)
+    if (accepted) {
+      return
+    }
+
+    this.pendingStdinBytes += encoded.length
+    helper.stdin.once('drain', () => {
+      this.pendingStdinBytes = 0
+    })
   }
 
   private sendData(payload: unknown): { enabled: boolean } {
@@ -203,14 +223,12 @@ export class GhosttyNativeHelperController {
       return { enabled: false }
     }
 
-    this.getOrStartHelper().stdin.write(
-      encodeFrame({
-        kind: 'command',
-        command: 'pty-data',
-        sessionId: payload.sessionId,
-        data: payload.data,
-      })
-    )
+    this.writeHelperFrame({
+      kind: 'command',
+      command: 'pty-data',
+      sessionId: payload.sessionId,
+      data: payload.data,
+    })
 
     return { enabled: true }
   }
@@ -228,12 +246,10 @@ export class GhosttyNativeHelperController {
       return { enabled: false }
     }
 
-    this.getOrStartHelper().stdin.write(
-      encodeFrame({
-        kind: 'command',
-        command: 'focus',
-      })
-    )
+    this.writeHelperFrame({
+      kind: 'command',
+      command: 'focus',
+    })
 
     return { enabled: true }
   }
@@ -253,19 +269,17 @@ export class GhosttyNativeHelperController {
       this.lastResize = null
       this.clearStdout()
       this.discardUntilFrameStart = true
-      this.helper?.stdin.write(
-        encodeFrame({
-          kind: 'command',
-          command: 'set-frame',
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-          visible: false,
-          backgroundColor: GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
-          foregroundColor: GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
-        })
-      )
+      this.writeHelperFrame({
+        kind: 'command',
+        command: 'set-frame',
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        visible: false,
+        backgroundColor: GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
+        foregroundColor: GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
+      })
     }
 
     return { enabled: true }
@@ -322,6 +336,7 @@ export class GhosttyNativeHelperController {
       this.clearStdout()
       this.discardUntilFrameStart = false
       this.lastResize = null
+      this.pendingStdinBytes = 0
     })
 
     helper.on('error', (error) => {
@@ -450,6 +465,7 @@ export class GhosttyNativeHelperController {
     this.clearStdout()
     this.discardUntilFrameStart = false
     this.lastResize = null
+    this.pendingStdinBytes = 0
 
     if (!helper) {
       return

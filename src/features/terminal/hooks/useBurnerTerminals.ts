@@ -113,6 +113,7 @@ const NativeGhosttyBurnerTerminal = ({
   onCwdChangeRef.current = onCwdChange
   const onUnavailableRef = useRef(onUnavailable)
   onUnavailableRef.current = onUnavailable
+  const visibilityRequestRef = useRef(0)
 
   const request = useMemo<NativeGhosttySecondaryRequest>(
     () => ({
@@ -216,9 +217,16 @@ const NativeGhosttyBurnerTerminal = ({
   ])
 
   useEffect(() => {
+    const requestId = visibilityRequestRef.current + 1
+    visibilityRequestRef.current = requestId
+
     void (async (): Promise<void> => {
       try {
         await setNativeGhosttySecondaryVisible({ ...request, visible: open })
+        if (visibilityRequestRef.current !== requestId) {
+          return
+        }
+
         if (open) {
           await focusNativeGhosttySecondary(request)
         }
@@ -836,9 +844,7 @@ export const useBurnerTerminals = ({
     runningByPane,
     activeByPane,
     outOfSyncByPane,
-    hasVisibleBurner:
-      visibleKey !== null &&
-      (!canUseNativeGhosttySecondary() || !entries.get(visibleKey)?.hostPtyId),
+    hasVisibleBurner: visibleKey !== null,
     visibleBurnerPaneKey: visibleKey,
   }
 }

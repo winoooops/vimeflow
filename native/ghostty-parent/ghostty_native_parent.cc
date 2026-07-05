@@ -2,7 +2,9 @@
 #include <node_api.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
+#include <limits.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -114,9 +116,79 @@ bool LoadSymbol(napi_env env, const char *name, void **target) {
   return false;
 }
 
+std::string ParentDir(const std::string &path) {
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) {
+    return "";
+  }
+
+  return path.substr(0, slash);
+}
+
+std::string Basename(const std::string &path) {
+  const size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) {
+    return path;
+  }
+
+  return path.substr(slash + 1);
+}
+
+bool RealPath(const std::string &path, std::string *resolved) {
+  char buffer[PATH_MAX];
+  if (realpath(path.c_str(), buffer) == nullptr) {
+    return false;
+  }
+
+  *resolved = buffer;
+  return true;
+}
+
+bool CurrentAddonPath(std::string *path) {
+  Dl_info info;
+  if (dladdr(reinterpret_cast<void *>(&CurrentAddonPath), &info) == 0 ||
+      info.dli_fname == nullptr) {
+    return false;
+  }
+
+  return RealPath(info.dli_fname, path);
+}
+
+bool ValidateBridgePath(napi_env env, const std::string &path,
+                        std::string *resolved_path) {
+  if (!RealPath(path, resolved_path)) {
+    napi_throw_error(env, nullptr, "ghostty native bridge path does not exist");
+    return false;
+  }
+
+  if (Basename(*resolved_path) != "libGhosttyElectronBridge.dylib") {
+    napi_throw_error(env, nullptr, "unexpected ghostty native bridge filename");
+    return false;
+  }
+
+  std::string addon_path;
+  if (!CurrentAddonPath(&addon_path)) {
+    napi_throw_error(env, nullptr, "unable to resolve native addon path");
+    return false;
+  }
+
+  if (ParentDir(*resolved_path) != ParentDir(addon_path)) {
+    napi_throw_error(env, nullptr,
+                     "ghostty native bridge must be beside native addon");
+    return false;
+  }
+
+  return true;
+}
+
 bool EnsureBridge(napi_env env, const std::string &path) {
+  std::string resolved_path;
+  if (!ValidateBridgePath(env, path, &resolved_path)) {
+    return false;
+  }
+
   if (bridge.library != nullptr) {
-    if (bridge.loaded_path != path) {
+    if (bridge.loaded_path != resolved_path) {
       napi_throw_error(env, nullptr,
                        "ghostty native bridge already loaded from another path");
       return false;
@@ -125,7 +197,7 @@ bool EnsureBridge(napi_env env, const std::string &path) {
     return true;
   }
 
-  bridge.library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  bridge.library = dlopen(resolved_path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (bridge.library == nullptr) {
     napi_throw_error(env, nullptr, dlerror());
     return false;
@@ -157,7 +229,7 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.focus_secondary)) &&
       LoadSymbol(env, "vimeflow_ghostty_destroy",
                  reinterpret_cast<void **>(&bridge.destroy))) {
-    bridge.loaded_path = path;
+    bridge.loaded_path = resolved_path;
     return true;
   }
 
@@ -165,13 +237,22 @@ bool EnsureBridge(napi_env env, const std::string &path) {
   return false;
 }
 
-std::string GetString(napi_env env, napi_value value) {
+bool GetString(napi_env env, napi_value value, std::string *out) {
   size_t length = 0;
-  napi_get_value_string_utf8(env, value, nullptr, 0, &length);
-  std::vector<char> buffer(length + 1);
-  napi_get_value_string_utf8(env, value, buffer.data(), buffer.size(), &length);
+  if (napi_get_value_string_utf8(env, value, nullptr, 0, &length) != napi_ok) {
+    napi_throw_error(env, nullptr, "expected string argument");
+    return false;
+  }
 
-  return std::string(buffer.data(), length);
+  std::vector<char> buffer(length + 1);
+  if (napi_get_value_string_utf8(env, value, buffer.data(), buffer.size(),
+                                 &length) != napi_ok) {
+    napi_throw_error(env, nullptr, "failed to read string argument");
+    return false;
+  }
+
+  *out = std::string(buffer.data(), length);
+  return true;
 }
 
 SurfaceHandle *GetSurface(napi_env env, napi_value value) {
@@ -587,7 +668,11 @@ napi_value Create(napi_env env, napi_callback_info info) {
         "create(path, nativeHandle, onInput, onResize, onFocus, onShortcut, onRenamePane) expected");
   }
 
-  const std::string bridge_path = GetString(env, args[0]);
+  std::string bridge_path;
+  if (!GetString(env, args[0], &bridge_path)) {
+    return nullptr;
+  }
+
   if (!EnsureBridge(env, bridge_path)) {
     return nullptr;
   }
@@ -688,7 +773,11 @@ napi_value SetShortcutDigits(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  const std::string digits = GetString(env, args[1]);
+  std::string digits;
+  if (!GetString(env, args[1], &digits)) {
+    return nullptr;
+  }
+
   bridge.set_shortcut_digits(surface->swift_surface, digits.c_str());
 
   return nullptr;
@@ -707,7 +796,11 @@ napi_value SetBackgroundColor(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  const std::string color = GetString(env, args[1]);
+  std::string color;
+  if (!GetString(env, args[1], &color)) {
+    return nullptr;
+  }
+
   bridge.set_background_color(surface->swift_surface, color.c_str());
 
   return nullptr;
@@ -726,7 +819,11 @@ napi_value SetForegroundColor(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  const std::string color = GetString(env, args[1]);
+  std::string color;
+  if (!GetString(env, args[1], &color)) {
+    return nullptr;
+  }
+
   bridge.set_foreground_color(surface->swift_surface, color.c_str());
 
   return nullptr;
@@ -745,7 +842,11 @@ napi_value Write(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  const std::string data = GetString(env, args[1]);
+  std::string data;
+  if (!GetString(env, args[1], &data)) {
+    return nullptr;
+  }
+
   bridge.write(surface->swift_surface,
                reinterpret_cast<const unsigned char *>(data.data()),
                static_cast<int>(data.size()));
@@ -856,7 +957,11 @@ napi_value WriteSecondary(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  const std::string data = GetString(env, args[1]);
+  std::string data;
+  if (!GetString(env, args[1], &data)) {
+    return nullptr;
+  }
+
   bridge.write_secondary(surface->swift_surface,
                          reinterpret_cast<const unsigned char *>(data.data()),
                          static_cast<int>(data.size()));

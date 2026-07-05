@@ -1276,11 +1276,8 @@ describe('Menu.Context', () => {
 
     const secondRequest = nativeMenuRequestAt(nativeBridge.open, 1)
 
-    expect(nativeBridge.close).toHaveBeenCalledWith({
-      surfaceId: firstRequest.surfaceId,
-      reason: 'renderer',
-    })
-
+    expect(secondRequest.surfaceId).toBe(firstRequest.surfaceId)
+    expect(nativeBridge.close).not.toHaveBeenCalled()
     expect(secondRequest.payload.sections?.[0]?.items[0]).toMatchObject({
       type: 'checkbox',
       label: 'Quad',

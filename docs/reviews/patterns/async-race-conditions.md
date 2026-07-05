@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-01
-ref_count: 77
+last_updated: 2026-07-05
+ref_count: 79
 ---
 
 # Async Race Conditions
@@ -870,4 +870,54 @@ prevent showing previous data.
 - **Fix:** Reused the dialog generation guard to detect accepted stale opens
   after dismissal or unmount and explicitly close that surface, while leaving
   superseded same-surface content updates open for the queued replacement.
+- **Commit:** same commit as this entry
+
+### 82. Native menu payload updates must not share close lifecycle
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** The native menu open effect included the serialized payload key
+  in the same effect that closed the overlay during cleanup. Checkbox/state
+  updates therefore destroyed and recreated the native BrowserWindow surface
+  instead of updating it in place.
+- **Fix:** Split native menu lifecycle cleanup from payload updates. Payload
+  changes re-send the menu request for the same surface id, while close/unmount
+  remains the only path that closes the native overlay.
+- **Commit:** same commit as this entry
+
+### 83. Async native visibility calls need supersession guards
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** Rapid burner open/close toggles launched overlapping native
+  visibility/focus IPC chains. A slower earlier chain could resolve after a
+  newer state and focus/show the secondary surface for the wrong final state.
+- **Fix:** Added a monotonic visibility request token and dropped stale
+  completions before issuing focus.
+- **Commit:** same commit as this entry
+
+### 84. Native overlay open must re-check destroyed windows after awaits
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/native-overlay.ts`
+- **Finding:** Menu and tooltip open paths awaited the overlay layer readiness
+  promise and then immediately touched BrowserWindow methods. If the parent
+  closed during first load, the overlay window could already be destroyed.
+- **Fix:** Added post-await parent/overlay `isDestroyed()` guards and return a
+  clean rejected open result instead of throwing through the IPC handler.
+- **Commit:** same commit as this entry
+
+### 85. Native anchored overlays need geometry refresh after resize
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
+- **Finding:** Native menu and tooltip overlays sent a one-shot anchor rect
+  when they opened. Window resize or trigger layout changes could leave the
+  native surface detached from its React anchor.
+- **Fix:** Added window resize and trigger ResizeObserver refresh paths that
+  resend the same native surface id with the current anchor rect.
 - **Commit:** same commit as this entry

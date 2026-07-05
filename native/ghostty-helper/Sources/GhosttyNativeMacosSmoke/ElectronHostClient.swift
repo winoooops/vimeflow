@@ -21,6 +21,8 @@ enum ElectronHostCommand: Sendable {
 final class ElectronHostClient: @unchecked Sendable {
     typealias CommandHandler = @MainActor @Sendable (_ command: ElectronHostCommand) -> Void
 
+    private static let maxFrameBytes = 16 * 1024 * 1024
+
     private let ioQueue = DispatchQueue(label: "dev.vimeflow.ghostty-native-smoke.electron-host")
     private var inputBuffer = Data()
     private var commandHandler: CommandHandler?
@@ -98,6 +100,11 @@ final class ElectronHostClient: @unchecked Sendable {
 
     private func appendInput(_ data: Data) {
         inputBuffer.append(data)
+        guard inputBuffer.count <= Self.maxFrameBytes else {
+            close()
+            return
+        }
+
         processInputBuffer()
     }
 
@@ -118,6 +125,10 @@ final class ElectronHostClient: @unchecked Sendable {
                 ),
                 let contentLength = Self.parseContentLength(header)
             else {
+                close()
+                return
+            }
+            guard contentLength >= 0 && contentLength <= Self.maxFrameBytes else {
                 close()
                 return
             }

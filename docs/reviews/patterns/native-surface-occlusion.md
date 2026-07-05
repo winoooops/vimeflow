@@ -3,7 +3,7 @@ id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
 last_updated: 2026-07-05
-ref_count: 2
+ref_count: 3
 ---
 
 # Native Surface Occlusion
@@ -113,4 +113,17 @@ React overlays that drive Electron native WebContentsView visibility must regist
   the local Browse button while native-overlay mode is active, leaving the native
   serialized Browse action as the only picker path. Added unit coverage for the
   disabled local path.
+- **Commit:** same commit as this entry
+
+### 11. Native burner visibility still occludes browser panes
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** `hasVisibleBurner` excluded native secondary burners by checking
+  for `hostPtyId`, but `WorkspaceView` uses that boolean to occlude native
+  browser panes under the burner popup. Native burners therefore left browser
+  WebContentsViews visible above the open burner surface.
+- **Fix:** Restored `hasVisibleBurner` to mean any visible burner, regardless of
+  whether it renders via local xterm or native Ghostty secondary.
 - **Commit:** same commit as this entry
