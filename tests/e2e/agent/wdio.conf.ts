@@ -55,7 +55,8 @@ export const config: WebdriverIO.Config = {
     },
   ],
 
-  // Agent detection polls every ~2s; give it room.
-  waitforTimeout: 30_000,
-  mochaOpts: { ui: 'bdd', timeout: 90_000 },
+  // Agent detection polls every ~2s and hosted runners can be slow after the
+  // preceding E2E suites have built and launched several Electron sessions.
+  waitforTimeout: 45_000,
+  mochaOpts: { ui: 'bdd', timeout: 120_000 },
 }
