@@ -176,6 +176,7 @@ const shouldRefocusGhosttyAfterWorkspaceShortcut = (
 ): boolean =>
   /^Digit[1-9]$/.test(input.code) ||
   input.code === 'Backslash' ||
+  input.code === 'KeyB' ||
   input.code === 'KeyZ'
 
 const isShortcutContext = (

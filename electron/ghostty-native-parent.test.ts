@@ -1129,6 +1129,21 @@ describe('ghostty native parent', () => {
     webContentsExecuteJavaScript.mockClear()
     addon.focus.mockClear()
 
+    callbacks.onShortcut?.('b', 'KeyB', false, true, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyB')
+    expect(addon.focus).toHaveBeenCalledWith(surface)
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
     callbacks.onShortcut?.('0', 'Digit0', false, true, false, false)
 
     await new Promise((resolve) => {
