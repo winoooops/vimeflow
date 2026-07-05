@@ -63,6 +63,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const HEADER_END = Buffer.from('\r\n\r\n', 'ascii')
 const CONTENT_LENGTH_HEADER = Buffer.from('Content-Length:', 'ascii')
 const GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR = '#000000'
+const GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR = '#ffffff'
 // ponytail: Content-Length guard for a local helper; make this configurable only if real Ghostty events exceed 16 MiB.
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 
@@ -171,6 +172,9 @@ export class GhosttyNativeHelperController {
         backgroundColor: isHexColor(payload.backgroundColor)
           ? payload.backgroundColor
           : GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
+        foregroundColor: isHexColor(payload.foregroundColor)
+          ? payload.foregroundColor
+          : GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
         bottomCornerRadius: frame.visible
           ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
           : 0,
@@ -259,6 +263,7 @@ export class GhosttyNativeHelperController {
           height: 0,
           visible: false,
           backgroundColor: GHOSTTY_NATIVE_FALLBACK_BACKGROUND_COLOR,
+          foregroundColor: GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
         })
       )
     }
@@ -588,6 +593,8 @@ function isGhosttyNativeUpdateRequest(
     isBounds(value.bounds) &&
     (value.backgroundColor === undefined ||
       isHexColor(value.backgroundColor)) &&
+    (value.foregroundColor === undefined ||
+      isHexColor(value.foregroundColor)) &&
     isOptionalFiniteNumber(value.bottomCornerRadius) &&
     typeof value.parentHeight === 'number' &&
     Number.isFinite(value.parentHeight) &&

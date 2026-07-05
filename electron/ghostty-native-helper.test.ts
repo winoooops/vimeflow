@@ -655,6 +655,7 @@ describe('ghostty native helper', () => {
       height: 0,
       visible: false,
       backgroundColor: '#000000',
+      foregroundColor: '#ffffff',
     })
 
     update?.(

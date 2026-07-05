@@ -89,6 +89,8 @@ final class GhosttyNativeMacosSmoke:
     private var lastForwardedGrid: GhosttyGridSize?
     private var secondaryLastForwardedGrid: GhosttyGridSize?
     private var secondarySplitRatio: CGFloat = 0.34
+    private var backgroundHexColor = "000000"
+    private var foregroundHexColor = "ffffff"
     private var shortcutMonitor: Any?
     private let helperMode = CommandLine.arguments.contains("--electron-helper")
 
@@ -410,6 +412,7 @@ final class GhosttyNativeMacosSmoke:
         guard let window else { return }
 
         setBackgroundColor(frame.backgroundColor)
+        setForegroundColor(frame.foregroundColor)
         let safeBottomCornerRadius = max(0, frame.bottomCornerRadius)
         containerView?.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
         containerView?.layer?.maskedCorners = [
@@ -437,13 +440,35 @@ final class GhosttyNativeMacosSmoke:
         }
 
         containerView?.layer?.backgroundColor = color.cgColor
+        backgroundHexColor = ghosttyHex
+        applyTheme()
+    }
+
+    private func setForegroundColor(_ hexColor: String) {
+        guard let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor) else {
+            return
+        }
+
+        foregroundHexColor = ghosttyHex
+        applyTheme()
+    }
+
+    private func applyTheme() {
         controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration().background(ghosttyHex),
-            dark: TerminalConfiguration().background(ghosttyHex)
+            light: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor),
+            dark: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor)
         ))
         secondaryController.setTheme(TerminalTheme(
-            light: TerminalConfiguration().background(ghosttyHex),
-            dark: TerminalConfiguration().background(ghosttyHex)
+            light: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor),
+            dark: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor)
         ))
     }
 
