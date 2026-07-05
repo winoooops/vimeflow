@@ -20,13 +20,14 @@ use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscr
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
-    emit_lifecycle_on_change, record_lifecycle,
+    emit_agent_cwd, emit_agent_reply, emit_agent_session_title, emit_agent_tool_call,
+    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle,
 };
+use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::sanitize_title;
 use crate::agent::types::{
-    AgentCwdEvent, AgentPhase, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent,
-    TitleSource, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentSessionTitleEvent, AgentToolCallEvent,
+    AgentTurnEvent, TitleSource, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -408,6 +409,7 @@ fn process_line(
     match dto.line_type.as_deref().unwrap_or("") {
         "assistant" => {
             process_assistant_message(&dto, session_id, cwd, events, in_flight, replay_done);
+            emit_reply_if_present(&dto, session_id, events);
         }
         "user" => {
             process_user_message(
@@ -511,6 +513,59 @@ fn emit_title(
 /// feed look as if everything happened at once.
 fn extract_timestamp(timestamp: Option<&str>) -> String {
     timestamp.map(str::to_string).unwrap_or_else(now_iso8601)
+}
+
+/// If a COMPLETED assistant turn's reply carries the VIM-283 sentinel block,
+/// extract it and emit `agent-reply`. Fires once per finished turn (gated on the
+/// terminal `stop_reason`), mirroring the Codex `emit_reply_if_present`.
+fn emit_reply_if_present(
+    dto: &ClaudeTranscriptLineDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+) {
+    let ended = matches!(
+        dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
+        Some("end_turn" | "stop_sequence" | "max_tokens")
+    );
+    if !ended {
+        return;
+    }
+
+    let Some(blocks) = message_content_items(dto) else {
+        return;
+    };
+
+    // The completed reply prose is the assistant's `text` content blocks.
+    let reply_text = blocks
+        .iter()
+        .filter(|block| text_block_type(block) == Some("text"))
+        .filter_map(text_block_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let Some(outcome) = extract_agent_reply(&reply_text) else {
+        return;
+    };
+
+    let (raw_text, nonce, replies) = match outcome {
+        AgentReplyOutcome::Structured {
+            raw,
+            nonce,
+            replies,
+        } => (raw, Some(nonce), Some(replies)),
+        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+    };
+
+    let event = AgentReplyEvent {
+        session_id: session_id.to_string(),
+        nonce,
+        raw_text,
+        replies,
+    };
+
+    if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-reply event: {}", e);
+    }
 }
 
 /// Extract tool_use entries from an assistant message.
@@ -1736,6 +1791,60 @@ mod tests {
 
         assert_eq!(concrete.count("agent-tool-call"), 1);
         assert!(in_flight.is_empty(), "matched tool_use should be removed");
+    }
+
+    fn drive_assistant_line(concrete: &Arc<FakeEventSink>, line: &str) {
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0;
+        let mut last_cwd = None;
+        let mut last_title_memo: Option<String> = None;
+
+        process_line(
+            line,
+            "sess-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            "claude-agent-sid",
+            &mut last_title_memo,
+            &mut None,
+            &mut None,
+            true,
+        );
+    }
+
+    #[test]
+    fn assistant_end_turn_with_reply_block_emits_agent_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"because latency\"}]}\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line);
+
+        let replies: Vec<_> = concrete
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-reply")
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].1["sessionId"], "sess-1");
+        assert_eq!(replies[0].1["nonce"], "abc");
+        assert_eq!(replies[0].1["replies"][0]["id"], 1);
+    }
+
+    #[test]
+    fn assistant_end_turn_without_sentinel_emits_no_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"just done"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line);
+
+        assert!(concrete
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-reply"));
     }
 
     /// Regression: `summarize_input` must preserve the absent vs present-null
