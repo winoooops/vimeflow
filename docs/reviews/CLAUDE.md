@@ -97,7 +97,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 8        | 5    | 2026-06-20   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
-| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 10       | 7    | 2026-06-22   |
+| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 10       | 9    | 2026-07-04   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 4        | 4    | 2026-07-05   |

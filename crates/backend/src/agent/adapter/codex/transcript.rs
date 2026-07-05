@@ -552,7 +552,7 @@ fn process_event_msg(
                 replay_activity,
                 replay_done,
             );
-            emit_reply_if_present(payload, session_id, events);
+            emit_reply_if_present(payload, session_id, events, replay_done);
         }
         _ => {}
     }
@@ -560,7 +560,16 @@ fn process_event_msg(
 
 /// If the completed reply on a `task_complete` carries the VIM-283 sentinel
 /// block, extract it and emit `agent-reply`. No sentinel → no event.
-fn emit_reply_if_present(payload: &CodexPayloadDto, session_id: &str, events: &Arc<dyn EventSink>) {
+fn emit_reply_if_present(
+    payload: &CodexPayloadDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    replay_done: bool,
+) {
+    if !replay_done {
+        return;
+    }
+
     let Some(outcome) = payload
         .last_agent_message
         .as_deref()
@@ -1768,6 +1777,37 @@ mod tests {
             &mut None,
             &mut ReplayActivity::default(),
             true,
+        );
+
+        assert!(sink
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-reply"));
+    }
+
+    #[test]
+    fn process_line_replayed_task_complete_with_reply_block_emits_no_reply() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+
+        let line = r#"{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","duration_ms":5,"last_agent_message":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"because latency\"}]}\nVIMEFLOW_REPLY>>>"}}"#;
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut None,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            false,
         );
 
         assert!(sink
