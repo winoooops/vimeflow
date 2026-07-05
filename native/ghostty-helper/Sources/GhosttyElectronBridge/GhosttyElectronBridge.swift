@@ -308,7 +308,8 @@ private final class EmbeddedGhosttySurface: NSObject {
     ]
 
     // App-owned shortcuts must cross the AppKit -> Electron boundary while
-    // Ghostty has focus. Keep this list explicit; Cmd+R/reload is a later scope.
+    // Ghostty has focus. VIM-294 tracks replacing this explicit list with a
+    // shared shortcut registry; Cmd+R/reload is still a later scope.
     private static let workspaceShortcutByKeyCode: [UInt16: (key: String, code: String)] = [
         5: ("g", "KeyG"),
         6: ("z", "KeyZ"),

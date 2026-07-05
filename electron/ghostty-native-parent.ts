@@ -169,6 +169,8 @@ const ghosttyShortcutEventInit = (
   cancelable: true,
 })
 
+// Keep this paired with GhosttyElectronBridge.workspaceShortcutByKeyCode until
+// VIM-294 replaces the native forwarding allowlist with a shared registry.
 const shouldRefocusGhosttyAfterWorkspaceShortcut = (
   input: GhosttyNativeShortcutInput
 ): boolean =>
