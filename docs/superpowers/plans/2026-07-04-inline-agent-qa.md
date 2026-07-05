@@ -42,7 +42,7 @@ pub struct AgentReplyEvent {
     pub replies: Option<Vec<AgentReply>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[allow(dead_code)]
@@ -98,7 +98,12 @@ const CLOSE: &str = "VIMEFLOW_REPLY>>>";
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum AgentReplyOutcome {
-    Malformed { raw: String },
+    // `nonce` is best-effort: Some when the block is a parseable object with a
+    // non-empty string nonce (even if other schema checks fail), None only when
+    // the JSON is unparseable. The frontend nonce-gates on it, so a malformed
+    // block whose nonce still matches the pending dispatch reaches the degrade
+    // path; a truly unparseable one (None) is ignored — it can't be correlated.
+    Malformed { raw: String, nonce: Option<String> },
     Structured { raw: String, nonce: String, replies: Vec<AgentReply> },
 }
 
@@ -147,6 +152,7 @@ mod tests {
             r#"{"v":2,"nonce":"a","replies":[{"id":1,"status":"answered","text":"x"}]}"#, // bad version
             r#"{"v":1,"nonce":"","replies":[{"id":1,"status":"answered","text":"x"}]}"#,  // empty nonce
             r#"{"v":1,"nonce":"a","replies":[]}"#,                                          // empty replies
+            r#"{"v":1,"nonce":"a","replies":[{"id":0,"status":"answered","text":"x"}]}"#,  // zero id (not positive)
             r#"{"v":1,"nonce":"a","replies":[{"id":-1,"status":"answered","text":"x"}]}"#, // negative id
             r#"{"v":1,"nonce":"a","replies":[{"id":1,"status":"bogus","text":"x"}]}"#,      // unknown status
             r#"{"v":1,"nonce":"a","replies":[{"id":1,"status":"answered","text":"x"},{"id":1,"status":"changed","text":"y"}]}"#, // dup id
@@ -157,6 +163,25 @@ mod tests {
                 "expected Malformed for: {case}"
             );
         }
+    }
+
+    #[test]
+    fn schema_invalid_but_parseable_block_keeps_the_nonce() {
+        // Bad status, but the object + nonce parse → Malformed carries the nonce
+        // so the frontend can still nonce-gate the degrade.
+        let text = block(r#"{"v":1,"nonce":"keep","replies":[{"id":1,"status":"bogus","text":"x"}]}"#);
+        assert!(matches!(
+            extract_agent_reply(&text),
+            Some(AgentReplyOutcome::Malformed { nonce: Some(n), .. }) if n == "keep"
+        ));
+    }
+
+    #[test]
+    fn unparseable_json_has_no_nonce() {
+        assert!(matches!(
+            extract_agent_reply(&block("{not json")),
+            Some(AgentReplyOutcome::Malformed { nonce: None, .. })
+        ));
     }
 
     #[test]
@@ -212,8 +237,18 @@ pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome>
 
     match validate(json) {
         Some((nonce, replies)) => Some(AgentReplyOutcome::Structured { raw, nonce, replies }),
-        None => Some(AgentReplyOutcome::Malformed { raw }),
+        // Best-effort nonce so a schema-invalid-but-parseable block can still be
+        // nonce-gated by the frontend degrade path.
+        None => Some(AgentReplyOutcome::Malformed { raw, nonce: best_effort_nonce(json) }),
     }
+}
+
+/// A non-empty string `nonce` from an otherwise-invalid block; None if the JSON
+/// is unparseable or has no usable nonce.
+fn best_effort_nonce(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let nonce = value.get("nonce")?.as_str()?;
+    (!nonce.is_empty()).then(|| nonce.to_string())
 }
 
 fn validate(json: &str) -> Option<(String, Vec<AgentReply>)> {
@@ -227,7 +262,8 @@ fn validate(json: &str) -> Option<(String, Vec<AgentReply>)> {
     let mut seen = std::collections::HashSet::new();
     let mut replies = Vec::with_capacity(raw_replies.len());
     for entry in raw_replies {
-        let id = u32::try_from(entry.id?).ok()?; // negative / oversized → None
+        // positive u32 only: zero, negative, or oversized → None (malformed).
+        let id = u32::try_from(entry.id?).ok().filter(|&n| n > 0)?;
         if !seen.insert(id) {
             return None; // duplicate id
         }
@@ -243,7 +279,7 @@ fn validate(json: &str) -> Option<(String, Vec<AgentReply>)> {
 }
 ```
 
-Add `mod reply;` to `crates/backend/src/agent/mod.rs`.
+**Before running the tests**, register the module — add `mod reply;` to `crates/backend/src/agent/mod.rs` in this step (Step 1), so the new `#[cfg(test)]` module compiles.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -364,7 +400,9 @@ CodexPayloadType::TaskComplete => {
             crate::agent::reply::AgentReplyOutcome::Structured { raw, nonce, replies } => {
                 (raw, Some(nonce), Some(replies))
             }
-            crate::agent::reply::AgentReplyOutcome::Malformed { raw } => (raw, None, None),
+            // Malformed carries a best-effort nonce (Some when the block parsed as
+            // an object) so the frontend can still nonce-gate the degrade.
+            crate::agent::reply::AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
         };
         let payload = crate::agent::types::AgentReplyEvent {
             session_id: session_id.to_string(),
@@ -373,7 +411,7 @@ CodexPayloadType::TaskComplete => {
             replies,
         };
         if let Err(err) = crate::agent::events::emit_agent_reply(events.as_ref(), &payload) {
-            tracing::warn!("failed to emit agent-reply: {err}");
+            log::warn!("failed to emit agent-reply: {err}");
         }
     }
 }
@@ -463,12 +501,16 @@ export const formatFeedbackPayload = (
     '>',
     ...blocks,
     '> ―',
-    '> When done, end your reply with this exact block, echoing the nonce verbatim:',
+    '> When done, end your reply with this exact block, echoing the nonce verbatim.',
+    '> status is one of: "answered" (a question), "changed" (you edited files), "skipped".',
     '> <<<VIMEFLOW_REPLY',
-    `> {"v":1,"nonce":"${nonce}","replies":[{"id":1,"status":"answered|changed|skipped","text":"..."}]}`,
+    `> {"v":1,"nonce":"${nonce}","replies":[{"id":1,"status":"answered","text":"..."}]}`,
     '> VIMEFLOW_REPLY>>>',
   ].join('\n')
 }
+```
+
+The sample uses a single valid literal (`"answered"`); the line above enumerates the choices in prose, so an agent copying the block verbatim never produces the invalid `answered|changed|skipped`.
 ```
 
 Thread the nonce through `dispatchFeedbackBatch`:
@@ -487,15 +529,30 @@ export const dispatchFeedbackBatch = async (
 }
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 4: Update the callers in the SAME task (or the app won't compile)**
 
-Run: `npx vitest run src/features/diff/services/feedbackDispatch.test.ts`
-Expected: PASS. (Update the existing dispatch tests to pass a nonce arg.)
+Both `formatFeedbackPayload` and `dispatchFeedbackBatch` now require `nonce`. Update their call sites in `Panel.tsx` now — do not defer to Task 10:
 
-- [ ] **Step 5: Commit**
+- **Send path** (`handleSendFeedback`, ~line 779): generate a nonce and pass it (Task 10 will reuse the same `nonce` for the pending record — for this task, a local `const nonce = Math.random().toString(36).slice(2, 8)` inline is enough):
+  ```ts
+  await dispatchFeedbackBatch(pane.paneId, pane.ptyId, entries, nonce, feedbackDispatch.writePty)
+  ```
+- **Copy path** (`handleCopyFeedback`, ~line 817): the clipboard copy has no agent to reply, so pass a fresh throwaway nonce purely to satisfy the signature:
+  ```ts
+  const text = formatFeedbackPayload(entries, Math.random().toString(36).slice(2, 8))
+  ```
+
+Also update the existing `feedbackDispatch.test.ts` and any `Panel.test.tsx` dispatch assertions to the new arity.
+
+- [ ] **Step 5: Run the diff suite**
+
+Run: `npx vitest run src/features/diff && npm run type-check`
+Expected: PASS — no caller left on the old arity.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/diff/services/feedbackDispatch.ts src/features/diff/services/feedbackDispatch.test.ts
+git add src/features/diff/services/feedbackDispatch.ts src/features/diff/services/feedbackDispatch.test.ts src/features/diff/Panel.tsx src/features/diff/Panel.test.tsx
 git commit -m "feat(diff): dispatch reply-block instruction with a per-dispatch nonce (VIM-249)"
 ```
 
@@ -694,7 +751,9 @@ Expected: FAIL — no pending record.
 
 - [ ] **Step 3: Implement**
 
-`buildFeedbackEntries` numbers `[#n]` by its ordered iteration. Have it also emit the ordered handle list built from the **annotation's own** `(cwd, repo-relative filePath, staged)` — the batch key, not the resolved absolute path. Return `{ entries, handles }`. In `handleSendFeedback`, generate a nonce, build the `PendingReview`, `setPendingReview(...)`, then dispatch with the nonce:
+First, **add a `feedbackOwnerKey: string` prop to `Panel`** (thread it here, not in Task 12), passed from WorkspaceView's `activeFeedbackOwnerKey` (WorkspaceView.tsx:1833) — Task 10's test depends on it, so it can't wait for Task 12. Add it to `PanelProps` and the WorkspaceView `<Panel .../>` render.
+
+`buildFeedbackEntries` numbers `[#n]` by its ordered iteration. Have it also emit the ordered handle list built from the **annotation's own** `(cwd, repo-relative filePath, staged)` — the batch key, not the resolved absolute path. Return `{ entries, handles }`. In `handleSendFeedback`, generate the nonce **once** (reusing the value passed to `dispatchFeedbackBatch` from Task 7, not a second one), build the `PendingReview`, `setPendingReview(...)`:
 
 ```ts
 const nonce = Math.random().toString(36).slice(2, 8) // ponytail: 6-char correlation token, not a secret
@@ -704,7 +763,7 @@ await dispatchFeedbackBatch(pane.paneId, pane.ptyId, entries, nonce, feedbackDis
 feedback.markDispatched(Date.now())
 setPendingReview({
   ptyId: pane.ptyId,
-  ownerKey: feedbackOwnerKey, // the active owner at dispatch (thread via prop; see Task 11)
+  ownerKey: feedbackOwnerKey, // the new prop
   nonce,
   dispatchedAt: Date.now(),
   byHandle: handles,
@@ -748,6 +807,15 @@ test('ignores an event whose nonce does not match (superseded dispatch)', async 
 test('ignores an event with no pending record for the session', async () => { /* ... */ })
 test('degrades a malformed marker (replies:null) to one rawText note and clears the record', async () => { /* ... */ })
 test('degrades when no reply id matches, anchored to the lowest pending handle', async () => { /* ... */ })
+
+// The two cases that prove byHandle is consumed without over-clearing:
+test('mixed reply attaches valid handles and drops an unknown id', async () => {
+  // byHandle has {1,2}; reply ids [1, 99] → attach #1, drop 99, record now has {2} (NOT cleared).
+})
+test('partial reply leaves the unanswered handles pending', async () => {
+  // byHandle has {1,2}; reply ids [1] → attach #1, record still has {2}; a later reply for #2 attaches then clears.
+})
+
 test('a replayed event after handles are consumed is a no-op', async () => { /* ... */ })
 ```
 
@@ -825,15 +893,16 @@ git add src/features/diff/hooks/useAgentReply.ts src/features/diff/hooks/useAgen
 git commit -m "feat(diff): useAgentReply — capture, correlate, degrade (VIM-249)"
 ```
 
-### Task 12: Mount the hook + thread the owner key (`WorkspaceView.tsx`, `Panel.tsx`)
+### Task 12: Mount the hook (`WorkspaceView.tsx`)
+
+The owner-key prop was already threaded in Task 10; this task only wires the capture hook into the one place the feedback store lives.
 
 **Files:**
 - Modify: `src/features/workspace/WorkspaceView.tsx` (mount `useAgentReply` beside `useFeedbackBatchStore`, ~line 1862)
-- Modify: `src/features/diff/Panel.tsx` (accept the active `feedbackOwnerKey` as a prop for Task 10's record)
 
 - [ ] **Step 1: Mount the hook**
 
-In WorkspaceView, where `useFeedbackBatchStore` is instantiated, pass its `feedbackBatch.addAnnotationForOwner` and a comment-id generator into `useAgentReply({ addAnnotationForOwner, nextCommentId })`. Pass `activeFeedbackOwnerKey` (line 1833) down to `Panel` so Task 10 records the dispatching owner.
+In WorkspaceView, where `useFeedbackBatchStore` is instantiated, pass its `feedbackBatch.addAnnotationForOwner` and a comment-id generator into `useAgentReply({ addAnnotationForOwner, nextCommentId })`. This is the single subscription point — the hook mutates the shared store that every `Panel` reads from.
 
 - [ ] **Step 2: Type-check**
 
@@ -857,23 +926,38 @@ git commit -m "feat(diff): mount useAgentReply and route replies to the dispatch
 No new render code — an `author:'agent'` annotation already renders "Agent reply" (distinct, read-only) via `ReviewCommentRow` (VIM-256). This task confirms it and closes the round-trip.
 
 **Files:**
-- Test: `src/features/diff/Panel.test.tsx` (integration)
+- Create: `src/features/diff/agentReplyThread.integration.test.tsx`
 
-- [ ] **Step 1: Write the integration test**
+- [ ] **Step 1: Write the integration test at the store layer**
 
-Simulate an `agent-reply` after a dispatch and assert an "Agent reply" row renders under the dispatched comment's line:
+`useAgentReply` subscribes in WorkspaceView and mutates the shared feedback store — `Panel` alone never subscribes, so the test must mount both against **one** store instance. Use a small harness component that instantiates `useFeedbackBatchStore`, wires `useAgentReply` to its `addAnnotationForOwner`, and renders `Panel` bound to the same `feedbackBatch` (Panel already accepts `feedbackBatch`/`feedbackDraft` props — see the existing Panel tests):
 
-```ts
+```tsx
+const Harness = (): ReactElement => {
+  const store = useFeedbackBatchStore('sess:p0', '/repo')
+  useAgentReply({
+    addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
+    nextCommentId: () => `agent-${Date.now()}`,
+  })
+  return <Panel cwd="/repo" feedbackBatch={store.feedbackBatch} feedbackDraft={store.feedbackDraft} /* + selectedFile on src/foo.ts */ />
+}
+
 test('an agent reply renders in the thread under the dispatched comment', async () => {
-  // render Panel with a dispatched question on src/foo.ts:5, drive Finish→send,
-  // then fire a mocked agent-reply { sessionId, nonce, replies:[{id:1,status:'answered',text:'Because latency.'}] }
-  // expect the "Agent reply" chip + "Because latency." to appear.
+  // 1. seed a pending review: setPendingReview({ ptyId:'pty-1', ownerKey:'sess:p0', nonce:'abc',
+  //    byHandle: Map{1 → { cwd:'/repo', filePath:'src/foo.ts', staged:false, commentId:'c1', lineNumber:5, side:'additions' }} })
+  //    (and a committed user comment 'c1' on that line via the store, so the thread has the question)
+  // 2. render <Harness/>
+  // 3. fire the captured listen('agent-reply') callback with
+  //    { sessionId:'pty-1', nonce:'abc', rawText:'...', replies:[{id:1,status:'answered',text:'Because latency.'}] }
+  // 4. await: expect the 'Agent reply' chip AND 'Because latency.' to be in the document.
 })
 ```
 
-- [ ] **Step 2: Run to verify pass** (after implementation is already in place)
+Mock `listen` so the test can capture and invoke the `'agent-reply'` callback (mirror how `useAgentStatus` tests drive events).
 
-Run: `npx vitest run src/features/diff/Panel.test.tsx -t "agent reply renders"`
+- [ ] **Step 2: Run to verify pass** (all implementation is already in place by now)
+
+Run: `npx vitest run src/features/diff/agentReplyThread.integration.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 3: Full gate**

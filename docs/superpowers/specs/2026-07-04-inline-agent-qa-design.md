@@ -112,7 +112,7 @@ New event types in `crates/backend/src/agent/types.rs` (alongside `AgentTurnEven
 #[serde(rename_all = "camelCase")]
 pub struct AgentReplyEvent {
     pub session_id: String,     // → "sessionId"
-    pub nonce: Option<String>,  // echoed dispatch token; None on malformed
+    pub nonce: Option<String>,  // echoed token; best-effort on malformed (None only if JSON unparseable)
     pub raw_text: String,       // → "rawText"
     pub replies: Option<Vec<AgentReply>>,
 }
