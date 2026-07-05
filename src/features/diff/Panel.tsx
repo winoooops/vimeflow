@@ -47,6 +47,10 @@ import {
   makeDispatchNonce,
   type DispatchEntry,
 } from './services/feedbackDispatch'
+import {
+  setPendingReview,
+  type PendingReviewHandle,
+} from './services/pendingReviews'
 import { writeClipboardText } from '@/lib/clipboard'
 import {
   resolveCandidatePanes,
@@ -168,6 +172,9 @@ interface PanelBaseProps {
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
+  /** The active feedback owner (sessionId:paneId) — recorded at dispatch so an
+   * agent reply routes back to this review even after a pane switch (VIM-249). */
+  feedbackOwnerKey?: string
 }
 
 export type PanelProps = PanelBaseProps & PanelSelectionControl
@@ -259,6 +266,7 @@ export const Panel = ({
   feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
+  feedbackOwnerKey = undefined,
 }: PanelProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
@@ -730,7 +738,10 @@ export const Panel = ({
 
   const sendingFeedbackRef = useRef(false)
 
-  const buildFeedbackEntries = useCallback((): DispatchEntry[] => {
+  const buildFeedbackEntries = useCallback((): {
+    entries: DispatchEntry[]
+    handles: Map<number, PendingReviewHandle>
+  } => {
     // git reports file paths relative to the repo TOPLEVEL, but the target
     // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
     // toplevel (`response.repoRoot`) so the dispatched reference is an
@@ -741,6 +752,11 @@ export const Panel = ({
     // loading/error) so an in-flight batch keeps absolute paths.
     const repoRoot = response?.repoRoot ?? repoRootRef.current
     const entries: DispatchEntry[] = []
+    // [#n] → the comment it addressed. The path fields are the annotation BATCH
+    // KEY (repo-relative), NOT the absolute prompt path, so an agent reply
+    // (VIM-249) attaches back onto the same batch the comment lives in.
+    const handles = new Map<number, PendingReviewHandle>()
+    let handle = 0
 
     for (const [key, annotations] of feedback.batch) {
       // Only dispatch comments that have not been sent yet; already-dispatched
@@ -761,9 +777,23 @@ export const Panel = ({
         ? `${resolvedRepoRoot}/${relPath}`
         : relPath
       entries.push({ filePath, staged, annotations: pending })
+
+      // Number handles in the SAME nested order formatFeedbackPayload assigns
+      // [#n], so handle N maps to the Nth dispatched comment.
+      for (const annotation of pending) {
+        handle += 1
+        handles.set(handle, {
+          cwd: entryCwd,
+          filePath: relPath,
+          staged,
+          commentId: annotation.metadata.id,
+          lineNumber: annotation.lineNumber,
+          side: annotation.side,
+        })
+      }
     }
 
-    return entries
+    return { entries, handles }
   }, [feedback.batch, repoRootRef, response])
 
   const handleSendFeedback = useCallback(
@@ -773,9 +803,9 @@ export const Panel = ({
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
-        const entries = buildFeedbackEntries()
+        const { entries, handles } = buildFeedbackEntries()
         // Per-dispatch correlation token the agent echoes in its reply block
-        // (VIM-249). Task 10 records it so a reply can be matched to this send.
+        // (VIM-249), recorded below so a reply can be matched to this send.
         const nonce = makeDispatchNonce()
 
         try {
@@ -787,6 +817,18 @@ export const Panel = ({
               nonce,
               feedbackDispatch.writePty
             )
+            // Record the pending review so an agent-reply for this pty can be
+            // correlated back to these comments (VIM-249). Keyed by pty; a new
+            // dispatch replaces it. Only when there's an owner to attach onto.
+            if (feedbackOwnerKey !== undefined && handles.size > 0) {
+              setPendingReview({
+                ptyId: pane.ptyId,
+                ownerKey: feedbackOwnerKey,
+                nonce,
+                dispatchedAt: Date.now(),
+                byHandle: handles,
+              })
+            }
           }
           // Keep the sent comments in the hunk as thread anchors instead of
           // wiping them (VIM-282); they are stamped dispatched so they are not
@@ -811,7 +853,13 @@ export const Panel = ({
         }
       })()
     },
-    [buildFeedbackEntries, feedback, feedbackDispatch, notifyInfo]
+    [
+      buildFeedbackEntries,
+      feedback,
+      feedbackDispatch,
+      feedbackOwnerKey,
+      notifyInfo,
+    ]
   )
 
   // Copy the whole review to the clipboard — the escape hatch when no agent is
@@ -819,7 +867,7 @@ export const Panel = ({
   // the same resolved paths as the send path so pasted feedback works from an
   // agent cwd below the repo root.
   const handleCopyFeedback = useCallback((): void => {
-    const entries = buildFeedbackEntries()
+    const { entries } = buildFeedbackEntries()
 
     if (entries.length === 0) {
       return
