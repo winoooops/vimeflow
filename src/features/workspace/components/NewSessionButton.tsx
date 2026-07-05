@@ -18,28 +18,32 @@ export const NewSessionButton = ({
   shortcutHint,
   ariaKeyshortcuts,
   ref = undefined,
-}: NewSessionButtonProps): ReactElement => (
-  <Tooltip content="New session" shortcut={shortcutHint} placement="bottom">
-    <Button
-      ref={ref}
-      variant="flat-primary"
-      onClick={onClick}
-      aria-label="New session"
-      aria-keyshortcuts={ariaKeyshortcuts}
-      data-testid="sidebar-new-session"
-      className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch h-auto overflow-hidden rounded-[10px] px-0"
-    >
-      <span className="vf-new-session-button-content flex min-w-0 items-center justify-center">
-        <span
-          className="material-symbols-outlined text-[19px]"
-          aria-hidden="true"
-        >
-          add
+}: NewSessionButtonProps): ReactElement => {
+  const tooltip = shortcutHint ? `New session ${shortcutHint}` : 'New session'
+
+  return (
+    <Tooltip content={tooltip} placement="bottom" nativeOverlay>
+      <Button
+        ref={ref}
+        variant="flat-primary"
+        onClick={onClick}
+        aria-label="New session"
+        aria-keyshortcuts={ariaKeyshortcuts}
+        data-testid="sidebar-new-session"
+        className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch h-auto overflow-hidden rounded-[10px] px-0"
+      >
+        <span className="vf-new-session-button-content flex min-w-0 items-center justify-center">
+          <span
+            className="material-symbols-outlined text-[19px]"
+            aria-hidden="true"
+          >
+            add
+          </span>
+          <span className="vf-new-session-label overflow-hidden whitespace-nowrap font-body text-[13px] font-semibold">
+            New session
+          </span>
         </span>
-        <span className="vf-new-session-label overflow-hidden whitespace-nowrap font-body text-[13px] font-semibold">
-          New session
-        </span>
-      </span>
-    </Button>
-  </Tooltip>
-)
+      </Button>
+    </Tooltip>
+  )
+}

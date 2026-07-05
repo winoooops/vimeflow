@@ -22,8 +22,10 @@ import {
 } from '@/components/base/floating/nativeOverlay'
 
 export type {
+  NativeOverlayActionEvent,
   NativeOverlayActionHandler,
   NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayNewSessionDialogPayload,
 } from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
@@ -309,20 +311,26 @@ const DialogRoot = ({
     nativeAttempt === 'pending' || nativeAttempt === 'active'
 
   useEffect(() => {
-    if (!open) {
-      nativeOverlayGenerationRef.current += 1
-      closeNativeOverlay(surfaceId)
-      setNativeAttempt('idle')
-
-      return
-    }
-
     if (
+      open &&
       nativeOverlay &&
       transport === 'native-overlay' &&
       nativeUnsupportedReason !== null
     ) {
       warnNativeOverlayFallback(nativeUnsupportedReason)
+    }
+
+    if (
+      !open ||
+      !nativeOverlay ||
+      transport !== 'native-overlay' ||
+      nativeUnsupportedReason !== null
+    ) {
+      nativeOverlayGenerationRef.current += 1
+      closeNativeOverlay(surfaceId)
+      setNativeAttempt('idle')
+
+      return
     }
   }, [nativeOverlay, nativeUnsupportedReason, open, surfaceId, transport])
 

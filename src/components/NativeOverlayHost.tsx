@@ -13,6 +13,9 @@ import type {
   NativeOverlayMenuItem,
   NativeOverlayMenuRequest,
   NativeOverlayMenuSection,
+  NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayNewSessionCommandOption,
+  NativeOverlayNewSessionDialogPayload,
   NativeOverlayRequest,
   NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
@@ -25,6 +28,7 @@ interface NativeOverlayHostBridge {
     surfaceId: string
     actionId: string
     closeOnSelect?: boolean
+    suspendOnSelect?: boolean
     feedback?: 'copy'
     index?: number
   }) => Promise<unknown>
@@ -44,6 +48,14 @@ interface NativeOverlayKeyboardEvent {
   metaKey: boolean
   shiftKey: boolean
   repeat: boolean
+}
+
+type NativeOverlayNewSessionRequest = NativeOverlayDialogRequest & {
+  payload: NativeOverlayNewSessionDialogPayload
+}
+
+type NativeOverlayCommandPaletteRequest = NativeOverlayDialogRequest & {
+  payload: NativeOverlayCommandPaletteDialogPayload
 }
 
 const COPY_FEEDBACK_MS = 1300
@@ -76,8 +88,10 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
   (value as { kind?: unknown }).kind === 'dialog' &&
   (value as { payload?: { kind?: unknown; dialog?: unknown } }).payload
     ?.kind === 'dialog' &&
-  (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
-    'command-palette'
+  ((value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+    'command-palette' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'new-session')
 
 const isCopyActionResult = (
   value: unknown
@@ -191,6 +205,36 @@ const OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES =
   'inline-flex min-w-[18px] h-[18px] px-[5px] items-center justify-center ' +
   'rounded-[4px] border font-mono text-[10px] font-semibold ' +
   'bg-surface-container-highest/60 text-on-surface-variant border-outline-variant/60'
+
+const OVERLAY_NEW_SESSION_PANEL_CLASSES =
+  'w-[min(560px,calc(100vw-32px))] max-h-[min(680px,calc(100vh-48px))] ' +
+  'flex flex-col overflow-hidden rounded-2xl border border-outline-variant/30 ' +
+  'bg-surface-container-high/95 shadow-2xl backdrop-blur-md backdrop-saturate-150'
+
+const OVERLAY_NEW_SESSION_LABEL_CLASSES =
+  'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
+
+const OVERLAY_NEW_SESSION_FIELD_CLASSES =
+  'mt-2 flex h-11 min-w-0 items-center gap-2 rounded-[9px] ' +
+  'bg-surface-container-lowest px-3 text-[13px] text-on-surface'
+
+const OVERLAY_NEW_SESSION_LAYOUT_BUTTON_CLASSES =
+  'flex w-full items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 ' +
+  'text-left text-[12px] transition-colors'
+
+const OVERLAY_NEW_SESSION_PANE_BUTTON_CLASSES =
+  'flex min-h-0 min-w-0 flex-col items-center justify-center gap-1.5 ' +
+  'rounded-[10px] border border-dashed p-2 text-center transition-colors'
+
+const OVERLAY_NEW_SESSION_COMMAND_BUTTON_CLASSES =
+  'inline-flex items-center gap-1.5 rounded-[8px] border px-2 py-1 ' +
+  'text-[11px] transition-colors'
+
+const OVERLAY_NEW_SESSION_BROWSE_BUTTON_CLASSES =
+  'h-11 cursor-pointer rounded-[9px] border border-outline-variant/45 px-3 ' +
+  'text-[12px] text-on-surface-variant transition-colors ' +
+  'hover:border-primary-container/50 hover:bg-primary-container/12 hover:text-on-surface ' +
+  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary'
 
 const OVERLAY_MENU_COMPOSITE_PRIMARY_CLASSES =
   'flex min-w-0 flex-1 items-center gap-2.5 rounded text-left outline-none ' +
@@ -350,7 +394,7 @@ const NativeOverlayCommandPalette = ({
   request,
   close,
 }: {
-  request: NativeOverlayDialogRequest
+  request: NativeOverlayCommandPaletteRequest
   close: () => void
 }): ReactElement => {
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
@@ -549,6 +593,311 @@ const NativeOverlayCommandPalette = ({
   )
 }
 
+const overlayCommandGlyph = (
+  command: NativeOverlayNewSessionCommandOption,
+  size = 15
+): ReactElement => (
+  <span
+    aria-hidden="true"
+    className="flex shrink-0 items-center justify-center rounded-lg font-mono leading-none"
+    style={{
+      width: size + 14,
+      height: size + 14,
+      color: `var(${command.accentVar})`,
+      background: `color-mix(in srgb, var(${command.accentVar}) 16%, transparent)`,
+      fontSize: size,
+    }}
+  >
+    {command.materialIcon === undefined ? (
+      (command.glyph ?? command.label.slice(0, 1))
+    ) : (
+      <span
+        className="material-symbols-outlined leading-none"
+        style={{ fontSize: size }}
+      >
+        {command.materialIcon}
+      </span>
+    )}
+  </span>
+)
+
+const commandForId = (
+  commands: readonly NativeOverlayNewSessionCommandOption[],
+  commandId: string
+): NativeOverlayNewSessionCommandOption =>
+  commands.find((command) => command.id === commandId) ?? commands[0]
+
+const layoutButtonClass = (selected: boolean): string =>
+  `${OVERLAY_NEW_SESSION_LAYOUT_BUTTON_CLASSES} ${
+    selected
+      ? 'bg-primary-container/15 text-primary'
+      : 'text-on-surface-variant hover:bg-surface-container-high/60'
+  }`
+
+const paneButtonClass = (selected: boolean): string =>
+  `${OVERLAY_NEW_SESSION_PANE_BUTTON_CLASSES} ${
+    selected
+      ? 'border-primary-container/60 bg-primary-container/10'
+      : 'border-outline-variant/50 bg-surface-container/40 hover:bg-surface-container/70'
+  }`
+
+const commandButtonClass = (selected: boolean): string =>
+  `${OVERLAY_NEW_SESSION_COMMAND_BUTTON_CLASSES} ${
+    selected
+      ? 'border-primary-container/60 bg-primary-container/15 text-primary'
+      : 'border-outline-variant/40 bg-surface-container-lowest/40 text-on-surface-variant hover:bg-surface-container-high/60'
+  }`
+
+const NativeOverlayNewSession = ({
+  request,
+  close,
+}: {
+  request: NativeOverlayNewSessionRequest
+  close: () => void
+}): ReactElement => {
+  const payload = request.payload
+
+  const selectedLayout =
+    payload.layouts.find((layout) => layout.id === payload.selectedLayoutId) ??
+    payload.layouts[0]
+
+  const activePane =
+    payload.panes.find(
+      (pane) => pane.index === payload.activeCommandPaneIndex
+    ) ?? payload.panes[0]
+
+  const dispatchAction = (
+    actionId: string,
+    closeOnSelect = false,
+    suspendOnSelect = false
+  ): void => {
+    void nativeOverlayHostBridge()?.action({
+      surfaceId: request.surfaceId,
+      actionId,
+      closeOnSelect,
+      ...(suspendOnSelect ? { suspendOnSelect: true } : {}),
+    })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={payload.ariaLabel}
+      className={OVERLAY_DIALOG_BACKDROP_CLASSES}
+      onMouseDown={(event): void => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault()
+          close()
+        }
+      }}
+    >
+      <div className={OVERLAY_NEW_SESSION_PANEL_CLASSES}>
+        <div className="flex items-center gap-2.5 px-5 pb-1 pt-3.5">
+          <span
+            className="material-symbols-outlined text-base text-primary-container"
+            aria-hidden="true"
+          >
+            bolt
+          </span>
+          <span className="flex-1 text-[14.5px] font-semibold text-on-surface">
+            New session
+          </span>
+          <IconButton
+            icon="close"
+            label="Close"
+            onClick={(): void => dispatchAction(payload.actions.cancel, true)}
+          />
+        </div>
+
+        <div className="min-h-0 overflow-auto px-5 pb-5 pt-2">
+          <label className={OVERLAY_NEW_SESSION_LABEL_CLASSES}>
+            Session name
+          </label>
+          <div className={OVERLAY_NEW_SESSION_FIELD_CLASSES}>
+            <span
+              className="material-symbols-outlined text-[15px] text-on-surface-muted"
+              aria-hidden="true"
+            >
+              edit
+            </span>
+            <button
+              type="button"
+              className="min-w-0 flex-1 truncate text-left font-medium outline-none"
+              onClick={(): void => dispatchAction(payload.actions.focusName)}
+            >
+              {payload.name}
+            </button>
+            {payload.nameEdited ? (
+              <button
+                type="button"
+                className="rounded-full border border-primary-container/40 px-2 py-0.5 font-mono text-[9.5px] text-primary-container"
+                onClick={(): void => dispatchAction(payload.actions.resetName)}
+              >
+                reset
+              </button>
+            ) : (
+              <span className="rounded-full border border-outline-variant/50 px-2 py-0.5 font-mono text-[9.5px] text-on-surface-muted">
+                folder name
+              </span>
+            )}
+          </div>
+
+          <div className={`${OVERLAY_NEW_SESSION_LABEL_CLASSES} mt-4`}>
+            Working directory
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <div className={`${OVERLAY_NEW_SESSION_FIELD_CLASSES} mt-0 flex-1`}>
+              <span
+                className="material-symbols-outlined text-base text-primary-container"
+                aria-hidden="true"
+              >
+                folder_open
+              </span>
+              <span className="min-w-0 truncate font-mono text-[12px]">
+                {payload.path}
+              </span>
+            </div>
+            <button
+              type="button"
+              className={OVERLAY_NEW_SESSION_BROWSE_BUTTON_CLASSES}
+              onClick={(): void =>
+                dispatchAction(payload.actions.browse, false, true)
+              }
+            >
+              Browse
+            </button>
+          </div>
+
+          <div className="mt-4 flex min-h-[232px] items-start gap-4">
+            <div className="w-[158px] shrink-0">
+              <div className={OVERLAY_NEW_SESSION_LABEL_CLASSES}>Layout</div>
+              <div className="mt-2 max-h-[240px] overflow-auto pr-1">
+                {payload.layouts.map((layout) => (
+                  <button
+                    key={layout.id}
+                    type="button"
+                    className={layoutButtonClass(
+                      layout.id === payload.selectedLayoutId
+                    )}
+                    onClick={(): void =>
+                      dispatchAction(
+                        `${payload.actions.pickLayoutPrefix}${layout.id}`
+                      )
+                    }
+                  >
+                    <span className="truncate">{layout.label}</span>
+                    <span className="font-mono text-[10px] text-on-surface-muted">
+                      {layout.capacity}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className={OVERLAY_NEW_SESSION_LABEL_CLASSES}>
+                Starting command
+              </div>
+              <div className="mt-0.5 text-[11px] text-on-surface-muted">
+                choose a panel, then its starting command
+              </div>
+              <div className="mt-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest/60 p-2 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--color-on-surface)_8%,transparent)]">
+                <div
+                  className="grid h-[152px] gap-2"
+                  style={{
+                    gridTemplateColumns: selectedLayout.cols,
+                    gridTemplateRows: selectedLayout.rows,
+                    gridTemplateAreas: selectedLayout.areas
+                      .map((row) => `"${row.join(' ')}"`)
+                      .join(' '),
+                  }}
+                >
+                  {payload.panes.map((pane) => {
+                    const command = commandForId(
+                      payload.commands,
+                      pane.commandId
+                    )
+
+                    const selected =
+                      pane.index === payload.activeCommandPaneIndex
+
+                    return (
+                      <button
+                        key={pane.areaName}
+                        type="button"
+                        className={paneButtonClass(selected)}
+                        style={{ gridArea: pane.areaName }}
+                        onClick={(): void =>
+                          dispatchAction(
+                            `${payload.actions.selectPanePrefix}${String(
+                              pane.index
+                            )}`
+                          )
+                        }
+                      >
+                        {overlayCommandGlyph(command)}
+                        <span className="max-w-full truncate text-xs font-semibold text-on-surface-variant">
+                          {command.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {payload.commands.map((command) => (
+                  <button
+                    key={command.id}
+                    type="button"
+                    className={commandButtonClass(
+                      command.id === activePane.commandId
+                    )}
+                    onClick={(): void =>
+                      dispatchAction(
+                        `${payload.actions.pickCommandPrefix}${String(
+                          activePane.index
+                        )}:${command.id}`
+                      )
+                    }
+                  >
+                    {overlayCommandGlyph(command, 12)}
+                    <span>{command.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 bg-surface-container-lowest/40 px-5 py-3.5">
+          <button
+            type="button"
+            className="rounded-[9px] border border-outline-variant/35 px-3 py-2 text-[12px] text-on-surface-variant hover:bg-surface-container-high/60"
+            onClick={(): void => dispatchAction(payload.actions.cancel, true)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-[9px] bg-primary px-3 py-2 text-[12px] font-semibold text-on-primary hover:bg-primary/90"
+            onClick={(): void => dispatchAction(payload.actions.create, true)}
+          >
+            <span
+              className="material-symbols-outlined text-[15px]"
+              aria-hidden="true"
+            >
+              bolt
+            </span>
+            Create session
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export const NativeOverlayHost = ({
   mode = 'menu',
 }: {
@@ -706,7 +1055,21 @@ export const NativeOverlayHost = ({
 
   if (!isMenuRequest(request)) {
     if (isDialogRequest(request)) {
-      return <NativeOverlayCommandPalette request={request} close={close} />
+      if (request.payload.dialog === 'new-session') {
+        return (
+          <NativeOverlayNewSession
+            request={request as NativeOverlayNewSessionRequest}
+            close={close}
+          />
+        )
+      }
+
+      return (
+        <NativeOverlayCommandPalette
+          request={request as NativeOverlayCommandPaletteRequest}
+          close={close}
+        />
+      )
     }
 
     return null

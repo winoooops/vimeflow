@@ -16,6 +16,7 @@ import {
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
+  NATIVE_OVERLAY_RESUME,
 } from './native-overlay-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
@@ -252,6 +253,8 @@ contextBridge.exposeInMainWorld('vimeflow', {
       ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
     actionResult: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(NATIVE_OVERLAY_ACTION_RESULT, request),
+    resume: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_RESUME, request),
     onAction: (callback: (payload: unknown) => void): (() => void) => {
       const handler = (_event: IpcRendererEvent, payload: unknown): void => {
         callback(payload)

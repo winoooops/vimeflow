@@ -568,7 +568,7 @@ impl BackendState {
         let state = Connection::open(&state_db).map_err(|e| format!("open state db: {e}"))?;
         state
             .execute_batch(
-                "CREATE TABLE threads (
+                "CREATE TABLE IF NOT EXISTS threads (
                     id TEXT PRIMARY KEY,
                     rollout_path TEXT NOT NULL,
                     cwd TEXT,
@@ -578,7 +578,7 @@ impl BackendState {
             .map_err(|e| format!("create threads table: {e}"))?;
         state
             .execute(
-                "INSERT INTO threads (id, rollout_path, cwd, updated_at_ms)
+                "INSERT OR REPLACE INTO threads (id, rollout_path, cwd, updated_at_ms)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     format!("tid-e2e-{session_id}"),
@@ -592,7 +592,7 @@ impl BackendState {
         let logs_db = codex_home.join("logs.sqlite");
         let logs = Connection::open(&logs_db).map_err(|e| format!("open logs db: {e}"))?;
         logs.execute_batch(
-            "CREATE TABLE logs (
+            "CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY,
                 ts INTEGER NOT NULL,
                 ts_nanos INTEGER NOT NULL,
@@ -601,7 +601,7 @@ impl BackendState {
                 process_uuid TEXT NOT NULL,
                 thread_id TEXT
             );
-            CREATE INDEX idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
+            CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
         )
         .map_err(|e| format!("create logs table: {e}"))?;
 

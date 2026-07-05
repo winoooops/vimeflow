@@ -6,11 +6,13 @@ import { pickDirectory } from './pickDirectory'
 interface WorkingDirectoryFieldProps {
   path: string
   onChange: (path: string) => void
+  browseDisabled?: boolean
 }
 
 export const WorkingDirectoryField = ({
   path,
   onChange,
+  browseDisabled = false,
 }: WorkingDirectoryFieldProps): ReactElement => {
   const handleBrowse = async (): Promise<void> => {
     let picked: string | null
@@ -41,6 +43,7 @@ export const WorkingDirectoryField = ({
         variant="default"
         leadingIcon="drive_folder_upload"
         className="h-11"
+        disabled={browseDisabled}
         onClick={() => {
           void handleBrowse()
         }}

@@ -29,6 +29,7 @@ import {
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
+  NATIVE_OVERLAY_RESUME,
   type NativeOverlayInvokeChannel,
 } from './native-overlay-channels'
 import {
@@ -112,6 +113,7 @@ const nativeOverlayInvokeCases: readonly [
 ][] = [
   ['open', NATIVE_OVERLAY_OPEN, { surfaceId: 'surface-1' }],
   ['close', NATIVE_OVERLAY_CLOSE, { surfaceId: 'surface-1' }],
+  ['resume', NATIVE_OVERLAY_RESUME, { surfaceId: 'surface-1' }],
   ['actionResult', NATIVE_OVERLAY_ACTION_RESULT, { surfaceId: 'surface-1' }],
 ]
 

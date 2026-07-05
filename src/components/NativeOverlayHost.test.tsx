@@ -178,6 +178,75 @@ const commandPaletteRequest: NativeOverlayRequest = {
   },
 }
 
+const newSessionRequest: NativeOverlayRequest = {
+  surfaceId: 'dialog-2',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'new-session',
+    ariaLabel: 'New session',
+    name: 'vimeflow-core',
+    path: '~/code/vimeflow-core',
+    nameEdited: false,
+    selectedLayoutId: 'vsplit',
+    activeCommandPaneIndex: 1,
+    layouts: [
+      {
+        id: 'single',
+        label: 'Single',
+        capacity: 1,
+        cols: 'minmax(0,1fr)',
+        rows: 'minmax(0,1fr)',
+        areas: [['p0']],
+      },
+      {
+        id: 'vsplit',
+        label: 'Vertical split',
+        capacity: 2,
+        cols: 'minmax(0,1fr) minmax(0,1fr)',
+        rows: 'minmax(0,1fr)',
+        areas: [['p0', 'p1']],
+      },
+    ],
+    panes: [
+      { index: 0, areaName: 'p0', commandId: 'claude' },
+      { index: 1, areaName: 'p1', commandId: 'shell' },
+    ],
+    commands: [
+      {
+        id: 'claude',
+        label: 'Claude Code',
+        accentVar: '--color-agent-claude-accent',
+        glyph: 'C',
+      },
+      {
+        id: 'codex',
+        label: 'Codex CLI',
+        accentVar: '--color-agent-codex-accent',
+        glyph: 'X',
+      },
+      {
+        id: 'shell',
+        label: 'Shell',
+        accentVar: '--color-agent-shell-accent',
+        glyph: '$',
+      },
+    ],
+    actions: {
+      focusName: 'new-session:focus-name',
+      resetName: 'new-session:reset-name',
+      browse: 'new-session:browse',
+      cancel: 'new-session:cancel',
+      create: 'new-session:create',
+      selectPanePrefix: 'new-session:select-pane:',
+      pickLayoutPrefix: 'new-session:pick-layout:',
+      pickCommandPrefix: 'new-session:pick-command:',
+    },
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -264,6 +333,7 @@ const installNativeOverlayHostBridge = (): {
       open: vi.fn(() => Promise.resolve({ accepted: true })),
       close: ownerOverlayClose,
       actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
       onAction: vi.fn(() => vi.fn()),
       onClose: vi.fn(() => vi.fn()),
     },
@@ -368,6 +438,53 @@ describe('NativeOverlayHost', () => {
     })
 
     expect(screen.getByRole('dialog', { name: 'Command palette' })).toBe(dialog)
+  })
+
+  test('renders new session dialog requests and dispatches actions', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(newSessionRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'New session',
+    })
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText('vimeflow-core')).toBeInTheDocument()
+    expect(screen.getByText('~/code/vimeflow-core')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Single 1' }))
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-2',
+      actionId: 'new-session:pick-layout:single',
+      closeOnSelect: false,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Codex CLI' }))
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-2',
+      actionId: 'new-session:pick-command:1:codex',
+      closeOnSelect: false,
+    })
+
+    const browseButton = screen.getByRole('button', { name: 'Browse' })
+    expect(browseButton).toHaveClass('cursor-pointer')
+
+    await user.click(browseButton)
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-2',
+      actionId: 'new-session:browse',
+      closeOnSelect: false,
+      suspendOnSelect: true,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Create session' }))
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-2',
+      actionId: 'new-session:create',
+      closeOnSelect: true,
+    })
   })
 
   test('scrolls the selected command palette row into view', async () => {

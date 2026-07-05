@@ -43,6 +43,7 @@ const installNativeOverlayBridge = (): {
       open,
       close: vi.fn().mockResolvedValue(undefined),
       actionResult: vi.fn().mockResolvedValue(undefined),
+      resume: vi.fn().mockResolvedValue(undefined),
       onAction: vi.fn(() => vi.fn()),
       onClose: vi.fn(() => vi.fn()),
     },

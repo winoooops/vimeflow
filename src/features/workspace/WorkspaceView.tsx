@@ -3042,6 +3042,7 @@ const WorkspaceViewContent = (): ReactElement => {
             onCreated: () => claimTerminal(),
           })
         }}
+        nativeOverlay
       />
 
       <LayoutCreatorModal

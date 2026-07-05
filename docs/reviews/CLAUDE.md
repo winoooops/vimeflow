@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 8    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 7        | 1    | 2026-07-04   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 8        | 2    | 2026-07-05   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 65       | 64   | 2026-06-30   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
@@ -76,10 +76,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 27       | 12   | 2026-07-03   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 47       | 46   | 2026-06-28   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 48       | 47   | 2026-07-05   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 30       | 16   | 2026-07-03   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 29       | 17   | 2026-07-05   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 18       | 7    | 2026-06-28   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 30       | 6    | 2026-07-02   |
@@ -100,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 14       | 9    | 2026-06-28   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
-| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 1    | 2026-06-15   |
+| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 2        | 2    | 2026-06-15   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 2        | 1    | 2026-07-04   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 6        | 2    | 2026-06-27   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |

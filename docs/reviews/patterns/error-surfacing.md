@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-28
-ref_count: 46
+last_updated: 2026-07-05
+ref_count: 47
 ---
 
 # Error Surfacing
@@ -462,4 +462,17 @@ failed" must mean the editor shows the original file, not the requested one.
   the write could emit an unhandled `EPIPE` and terminate the Electron main process.
 - **Fix:** Register a warn-only stdin error handler immediately after spawn and wrap the
   cooperative shutdown write in a best-effort try/catch before killing the helper.
+- **Commit:** same commit as this entry
+
+### 47. Native directory picker rejection escaped overlay action handler
+
+- **Source:** github-claude | PR #660 round 1 | 2026-07-05
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** The native-overlay Browse action awaited the Electron directory picker
+  inside a fire-and-forget async IIFE with `finally` for overlay resume, but no
+  `catch`, so an IPC rejection could surface as an unhandled promise rejection.
+- **Fix:** Catch picker rejections inside the native Browse action and keep the
+  `finally` resume path intact. Added regression coverage that a rejected picker
+  still resumes the native overlay.
 - **Commit:** same commit as this entry
