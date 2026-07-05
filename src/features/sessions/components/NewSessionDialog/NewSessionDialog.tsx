@@ -1,20 +1,35 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
 } from 'react'
 import { Button } from '@/components/Button'
-import { Dialog } from '@/components/Dialog'
+import {
+  Dialog,
+  type NativeOverlayActionEvent,
+  type NativeOverlayActionHandler,
+  type NativeOverlayNewSessionDialogPayload,
+} from '@/components/Dialog'
 import { IconButton } from '@/components/IconButton'
+import type {
+  CommandId,
+  CreateSessionOptions,
+  PaneLayoutId,
+} from '@/features/sessions/types'
+import { deriveSessionName } from '@/features/sessions/utils/sessionPaths'
 import { LayoutSwitcher } from '@/features/terminal/components/LayoutSwitcher'
-import type { PaneLayoutRegistry } from '../../../terminal/layout-registry'
-import type { CommandId, CreateSessionOptions, PaneLayoutId } from '../../types'
-import { deriveSessionName } from '../../utils/sessionPaths'
+import {
+  gridAreaNameForSlotId,
+  type PaneLayoutRegistry,
+} from '@/features/terminal/layout-registry'
 import { CommandBoard } from './CommandBoard'
 import { WorkingDirectoryField } from './WorkingDirectoryField'
+import { COMMANDS, COMMAND_ORDER } from './commands'
 import { getLastLayout, setLastLayout } from './lastLayoutStore'
+import { pickDirectory } from './pickDirectory'
 
 interface NewSessionDialogProps {
   open: boolean
@@ -23,6 +38,7 @@ interface NewSessionDialogProps {
   defaultCwd: string
   /** Builtin + saved custom layouts available for switching. */
   layoutRegistry: PaneLayoutRegistry
+  nativeOverlay?: boolean
 }
 
 const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
@@ -32,18 +48,32 @@ const LABEL =
 
 const TITLE_ID = 'new-session-dialog-title'
 
+const NATIVE_ACTION_FOCUS_NAME = 'new-session:focus-name'
+const NATIVE_ACTION_RESET_NAME = 'new-session:reset-name'
+const NATIVE_ACTION_BROWSE = 'new-session:browse'
+const NATIVE_ACTION_CANCEL = 'new-session:cancel'
+const NATIVE_ACTION_CREATE = 'new-session:create'
+const NATIVE_ACTION_SELECT_PANE_PREFIX = 'new-session:select-pane:'
+const NATIVE_ACTION_PICK_LAYOUT_PREFIX = 'new-session:pick-layout:'
+const NATIVE_ACTION_PICK_COMMAND_PREFIX = 'new-session:pick-command:'
+
 export const NewSessionDialog = ({
   open,
   onOpenChange,
   onCreate,
   defaultCwd,
   layoutRegistry,
+  nativeOverlay = false,
 }: NewSessionDialogProps): ReactElement => {
   const [path, setPath] = useState(defaultCwd)
   const [name, setName] = useState(() => deriveSessionName(defaultCwd))
   const [nameEdited, setNameEdited] = useState(false)
   const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
+  // Native overlay renders this dialog in a separate BrowserWindow, so it gets
+  // serializable state instead of React children. This index tells that layer
+  // which pane's command picker is active.
+  const [activeCommandPaneIndex, setActiveCommandPaneIndex] = useState(0)
   const [openMenuCount, setOpenMenuCount] = useState(0)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -85,6 +115,7 @@ export const NewSessionDialog = ({
     setPath(defaultCwdRef.current)
     setName(deriveSessionName(defaultCwdRef.current))
     setNameEdited(false)
+    setActiveCommandPaneIndex(0)
     // Default to the layout the user last created with (if it still exists),
     // so they don't re-pick their preferred layout every time.
     // localStorage holds an arbitrary string; getLayout returns null for an
@@ -100,15 +131,45 @@ export const NewSessionDialog = ({
 
   const layout = layoutRegistry.getFallbackLayout(layoutId)
 
-  const applyPath = (next: string): void => {
-    setPath(next)
+  useEffect(() => {
+    setActiveCommandPaneIndex((current) =>
+      Math.min(current, Math.max(0, layout.capacity - 1))
+    )
+  }, [layout.capacity])
 
-    if (!nameEdited) {
-      setName(deriveSessionName(next))
-    }
-  }
+  const applyPath = useCallback(
+    (next: string): void => {
+      setPath(next)
 
-  const handleCreate = (): void => {
+      if (!nameEdited) {
+        setName(deriveSessionName(next))
+      }
+    },
+    [nameEdited]
+  )
+
+  const handleOpenNativeDirectoryPicker = useCallback(
+    (event?: NativeOverlayActionEvent): void => {
+      void (async (): Promise<void> => {
+        try {
+          const picked = await pickDirectory()
+
+          if (picked !== null) {
+            applyPath(picked)
+          }
+        } finally {
+          if (event !== undefined) {
+            void window.vimeflow?.nativeOverlay?.resume({
+              surfaceId: event.surfaceId,
+            })
+          }
+        }
+      })()
+    },
+    [applyPath]
+  )
+
+  const handleCreate = useCallback((): void => {
     const panes = Array.from({ length: layout.capacity }, (_, i) => ({
       command: assign[i] ?? 'shell',
     }))
@@ -121,7 +182,154 @@ export const NewSessionDialog = ({
     })
     setLastLayout(layoutId)
     onOpenChange(false)
-  }
+  }, [assign, layout.capacity, layoutId, name, onCreate, onOpenChange, path])
+
+  const nativeOverlayPayload = useMemo(
+    (): NativeOverlayNewSessionDialogPayload => ({
+      kind: 'dialog',
+      dialog: 'new-session',
+      ariaLabel: 'New session',
+      name,
+      path,
+      nameEdited,
+      selectedLayoutId: layoutId,
+      activeCommandPaneIndex,
+      layouts: layoutRegistry.layouts.map((entry) => ({
+        id: entry.id,
+        label: entry.name,
+        capacity: entry.capacity,
+        cols: entry.cols,
+        rows: entry.rows,
+        areas: entry.areas.map((row) => [...row]),
+      })),
+      panes: layout.definition.addOrder.map((slotId, index) => ({
+        index,
+        areaName: gridAreaNameForSlotId(slotId),
+        commandId: assign[index] ?? 'shell',
+      })),
+      commands: COMMAND_ORDER.map((commandId) => {
+        const command = COMMANDS[commandId]
+
+        return {
+          id: command.id,
+          label: command.label,
+          accentVar: command.accentVar,
+          ...(command.glyph === undefined ? {} : { glyph: command.glyph }),
+          ...(command.materialIcon === undefined
+            ? {}
+            : { materialIcon: command.materialIcon }),
+        }
+      }),
+      actions: {
+        focusName: NATIVE_ACTION_FOCUS_NAME,
+        resetName: NATIVE_ACTION_RESET_NAME,
+        browse: NATIVE_ACTION_BROWSE,
+        cancel: NATIVE_ACTION_CANCEL,
+        create: NATIVE_ACTION_CREATE,
+        selectPanePrefix: NATIVE_ACTION_SELECT_PANE_PREFIX,
+        pickLayoutPrefix: NATIVE_ACTION_PICK_LAYOUT_PREFIX,
+        pickCommandPrefix: NATIVE_ACTION_PICK_COMMAND_PREFIX,
+      },
+    }),
+    [
+      activeCommandPaneIndex,
+      assign,
+      layout.definition.addOrder,
+      layoutId,
+      layoutRegistry.layouts,
+      name,
+      nameEdited,
+      path,
+    ]
+  )
+
+  const nativeOverlayActions = useMemo((): ReadonlyMap<
+    string,
+    NativeOverlayActionHandler
+  > => {
+    const actions = new Map<string, NativeOverlayActionHandler>([
+      [
+        NATIVE_ACTION_FOCUS_NAME,
+        {
+          retainSession: true,
+          run: (): void => {
+            nameInputRef.current?.focus()
+          },
+        },
+      ],
+      [
+        NATIVE_ACTION_RESET_NAME,
+        {
+          retainSession: true,
+          run: (): void => {
+            setNameEdited(false)
+            setName(deriveSessionName(path))
+            nameInputRef.current?.focus()
+          },
+        },
+      ],
+      [
+        NATIVE_ACTION_BROWSE,
+        {
+          retainSession: true,
+          run: handleOpenNativeDirectoryPicker,
+        },
+      ],
+      [
+        NATIVE_ACTION_CANCEL,
+        (): void => {
+          onOpenChange(false)
+        },
+      ],
+      [NATIVE_ACTION_CREATE, handleCreate],
+    ])
+
+    layoutRegistry.layouts.forEach((entry) => {
+      actions.set(`${NATIVE_ACTION_PICK_LAYOUT_PREFIX}${entry.id}`, {
+        retainSession: true,
+        run: (): void => {
+          setLayoutId(entry.id)
+        },
+      })
+    })
+
+    layout.definition.addOrder.forEach((_slotId, paneIndex) => {
+      actions.set(`${NATIVE_ACTION_SELECT_PANE_PREFIX}${String(paneIndex)}`, {
+        retainSession: true,
+        run: (): void => {
+          setActiveCommandPaneIndex(paneIndex)
+        },
+      })
+
+      COMMAND_ORDER.forEach((commandId) => {
+        actions.set(
+          `${NATIVE_ACTION_PICK_COMMAND_PREFIX}${String(
+            paneIndex
+          )}:${commandId}`,
+          {
+            retainSession: true,
+            run: (): void => {
+              setAssign((prev) => {
+                const next = [...prev]
+                next[paneIndex] = commandId
+
+                return next
+              })
+            },
+          }
+        )
+      })
+    })
+
+    return actions
+  }, [
+    handleOpenNativeDirectoryPicker,
+    handleCreate,
+    layout.definition.addOrder,
+    layoutRegistry.layouts,
+    onOpenChange,
+    path,
+  ])
 
   return (
     <Dialog
@@ -131,6 +339,9 @@ export const NewSessionDialog = ({
       initialFocusRef={nameInputRef}
       dismissDisabled={openMenuCount > 0}
       restoreFocus={!createdRef.current}
+      nativeOverlay={nativeOverlay}
+      nativeOverlayPayload={nativeOverlayPayload}
+      nativeOverlayActions={nativeOverlayActions}
       panelClassName="flex w-[min(560px,100%)] max-w-[560px] flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 shadow-2xl backdrop-blur-md backdrop-saturate-150"
     >
       {/* header */}

@@ -4,10 +4,13 @@ export const NATIVE_OVERLAY_CLOSE = 'native-overlay:close'
 
 export const NATIVE_OVERLAY_ACTION_RESULT = 'native-overlay:action-result'
 
+export const NATIVE_OVERLAY_RESUME = 'native-overlay:resume'
+
 export type NativeOverlayInvokeChannel =
   | typeof NATIVE_OVERLAY_OPEN
   | typeof NATIVE_OVERLAY_CLOSE
   | typeof NATIVE_OVERLAY_ACTION_RESULT
+  | typeof NATIVE_OVERLAY_RESUME
 
 export const NATIVE_OVERLAY_ACTION = 'native-overlay:action'
 

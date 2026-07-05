@@ -49,6 +49,7 @@ const installNativeOverlayBridge = (): {
       open,
       close,
       actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
       onAction: vi.fn((callback: (event: unknown) => void) => {
         actionListener = callback
 

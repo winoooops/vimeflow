@@ -123,8 +123,58 @@ export interface NativeOverlayCommandPaletteDialogPayload {
   actions: NativeOverlayCommandPaletteActions
 }
 
+export interface NativeOverlayNewSessionCommandOption {
+  id: string
+  label: string
+  accentVar: string
+  glyph?: string
+  materialIcon?: string
+}
+
+export interface NativeOverlayNewSessionLayoutOption {
+  id: string
+  label: string
+  capacity: number
+  cols: string
+  rows: string
+  areas: readonly (readonly string[])[]
+}
+
+export interface NativeOverlayNewSessionPaneOption {
+  index: number
+  areaName: string
+  commandId: string
+}
+
+export interface NativeOverlayNewSessionActions {
+  focusName: string
+  resetName: string
+  browse: string
+  cancel: string
+  create: string
+  selectPanePrefix: string
+  pickLayoutPrefix: string
+  pickCommandPrefix: string
+}
+
+export interface NativeOverlayNewSessionDialogPayload {
+  kind: 'dialog'
+  dialog: 'new-session'
+  ariaLabel: string
+  name: string
+  path: string
+  nameEdited: boolean
+  selectedLayoutId: string
+  activeCommandPaneIndex: number
+  layouts: NativeOverlayNewSessionLayoutOption[]
+  panes: NativeOverlayNewSessionPaneOption[]
+  commands: NativeOverlayNewSessionCommandOption[]
+  actions: NativeOverlayNewSessionActions
+}
+
 export type NativeOverlayDialogPayload =
-  NativeOverlayCommandPaletteDialogPayload
+  | NativeOverlayCommandPaletteDialogPayload
+  | NativeOverlayNewSessionDialogPayload
 
 // Native overlay payloads are plain data only. Menu and tooltip are supported
 // today; dialog has a narrow command-palette model. Popover and future dialog
@@ -163,6 +213,7 @@ export interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
   closeOnSelect?: boolean
+  suspendOnSelect?: boolean
   feedback?: 'copy'
   index?: number
 }
@@ -224,6 +275,7 @@ interface NativeOverlayBridge {
   open: (request: NativeOverlayRequest) => Promise<NativeOverlayOpenResult>
   close: (request: { surfaceId: string; reason: 'renderer' }) => Promise<void>
   actionResult: (request: NativeOverlayActionResultEvent) => Promise<void>
+  resume: (request: { surfaceId: string }) => Promise<void>
   onAction: (callback: (event: unknown) => void) => () => void
   onClose: (callback: (event: unknown) => void) => () => void
 }
@@ -256,6 +308,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   typeof value.actionId === 'string' &&
   (value.closeOnSelect === undefined ||
     typeof value.closeOnSelect === 'boolean') &&
+  (value.suspendOnSelect === undefined ||
+    typeof value.suspendOnSelect === 'boolean') &&
   (value.feedback === undefined || value.feedback === 'copy') &&
   (value.index === undefined || typeof value.index === 'number')
 

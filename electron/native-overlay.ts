@@ -19,6 +19,7 @@ import {
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
+  NATIVE_OVERLAY_RESUME,
 } from './native-overlay-channels'
 import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
 
@@ -139,7 +140,58 @@ interface NativeOverlayCommandPaletteDialogPayload {
   actions: NativeOverlayCommandPaletteActions
 }
 
-type NativeOverlayDialogPayload = NativeOverlayCommandPaletteDialogPayload
+interface NativeOverlayNewSessionCommandOption {
+  id: string
+  label: string
+  accentVar: string
+  glyph?: string
+  materialIcon?: string
+}
+
+interface NativeOverlayNewSessionLayoutOption {
+  id: string
+  label: string
+  capacity: number
+  cols: string
+  rows: string
+  areas: readonly (readonly string[])[]
+}
+
+interface NativeOverlayNewSessionPaneOption {
+  index: number
+  areaName: string
+  commandId: string
+}
+
+interface NativeOverlayNewSessionActions {
+  focusName: string
+  resetName: string
+  browse: string
+  cancel: string
+  create: string
+  selectPanePrefix: string
+  pickLayoutPrefix: string
+  pickCommandPrefix: string
+}
+
+interface NativeOverlayNewSessionDialogPayload {
+  kind: 'dialog'
+  dialog: 'new-session'
+  ariaLabel: string
+  name: string
+  path: string
+  nameEdited: boolean
+  selectedLayoutId: string
+  activeCommandPaneIndex: number
+  layouts: NativeOverlayNewSessionLayoutOption[]
+  panes: NativeOverlayNewSessionPaneOption[]
+  commands: NativeOverlayNewSessionCommandOption[]
+  actions: NativeOverlayNewSessionActions
+}
+
+type NativeOverlayDialogPayload =
+  | NativeOverlayCommandPaletteDialogPayload
+  | NativeOverlayNewSessionDialogPayload
 
 type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
@@ -170,6 +222,7 @@ interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
   closeOnSelect?: boolean
+  suspendOnSelect?: boolean
   feedback?: 'copy'
   index?: number
 }
@@ -240,6 +293,17 @@ interface IpcMainLike {
 
 const OVERLAY_RENDER_TIMEOUT_MS = 1000
 
+const OVERLAY_CURSOR_RESET_SCRIPT = `
+(() => {
+  document.documentElement.style.cursor = 'default'
+  document.body.style.cursor = 'default'
+  window.setTimeout(() => {
+    document.documentElement.style.cursor = ''
+    document.body.style.cursor = ''
+  }, 80)
+})()
+`
+
 const MENU_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
   ' ': ' ',
   ArrowDown: 'ArrowDown',
@@ -263,6 +327,25 @@ const MENU_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const resetOverlayCursor = (overlayWindow: BrowserWindow): void => {
+  if (overlayWindow.webContents.isDestroyed()) {
+    return
+  }
+
+  // AppKit modal panels can leave Chromium's last cursor active while this
+  // transparent window temporarily ignores mouse events.
+  void (async (): Promise<void> => {
+    try {
+      await overlayWindow.webContents.executeJavaScript(
+        OVERLAY_CURSOR_RESET_SCRIPT,
+        true
+      )
+    } catch {
+      // Cursor reset is cosmetic; overlay ordering should continue if it fails.
+    }
+  })()
+}
 
 const isString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0
@@ -378,9 +461,66 @@ const isCommandPaletteActions = (
 ): value is NativeOverlayCommandPaletteActions =>
   isRecord(value) && isString(value.selectIndex) && isString(value.executeIndex)
 
-const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
+const isStringMatrix = (
+  value: unknown
+): value is readonly (readonly string[])[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every(
+    (row) =>
+      Array.isArray(row) &&
+      row.length > 0 &&
+      row.every((entry) => typeof entry === 'string')
+  )
+
+const isNewSessionCommandOption = (
+  value: unknown
+): value is NativeOverlayNewSessionCommandOption =>
   isRecord(value) &&
-  value.kind === 'dialog' &&
+  isString(value.id) &&
+  isString(value.label) &&
+  isString(value.accentVar) &&
+  (value.glyph === undefined || typeof value.glyph === 'string') &&
+  (value.materialIcon === undefined || typeof value.materialIcon === 'string')
+
+const isNewSessionLayoutOption = (
+  value: unknown
+): value is NativeOverlayNewSessionLayoutOption =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.label) &&
+  isFiniteNumber(value.capacity) &&
+  value.capacity > 0 &&
+  isString(value.cols) &&
+  isString(value.rows) &&
+  isStringMatrix(value.areas)
+
+const isNewSessionPaneOption = (
+  value: unknown
+): value is NativeOverlayNewSessionPaneOption =>
+  isRecord(value) &&
+  isFiniteNumber(value.index) &&
+  value.index >= 0 &&
+  isString(value.areaName) &&
+  isString(value.commandId)
+
+const isNewSessionActions = (
+  value: unknown
+): value is NativeOverlayNewSessionActions =>
+  isRecord(value) &&
+  isString(value.focusName) &&
+  isString(value.resetName) &&
+  isString(value.browse) &&
+  isString(value.cancel) &&
+  isString(value.create) &&
+  isString(value.selectPanePrefix) &&
+  isString(value.pickLayoutPrefix) &&
+  isString(value.pickCommandPrefix)
+
+const isCommandPaletteDialogPayload = (
+  value: unknown
+): value is NativeOverlayCommandPaletteDialogPayload =>
+  isRecord(value) &&
   value.dialog === 'command-palette' &&
   isString(value.ariaLabel) &&
   typeof value.query === 'string' &&
@@ -392,6 +532,34 @@ const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
   Array.isArray(value.results) &&
   value.results.every(isCommandPaletteItem) &&
   isCommandPaletteActions(value.actions)
+
+const isNewSessionDialogPayload = (
+  value: unknown
+): value is NativeOverlayNewSessionDialogPayload =>
+  isRecord(value) &&
+  value.dialog === 'new-session' &&
+  isString(value.ariaLabel) &&
+  typeof value.name === 'string' &&
+  typeof value.path === 'string' &&
+  typeof value.nameEdited === 'boolean' &&
+  isString(value.selectedLayoutId) &&
+  isFiniteNumber(value.activeCommandPaneIndex) &&
+  value.activeCommandPaneIndex >= 0 &&
+  Array.isArray(value.layouts) &&
+  value.layouts.length > 0 &&
+  value.layouts.every(isNewSessionLayoutOption) &&
+  Array.isArray(value.panes) &&
+  value.panes.length > 0 &&
+  value.panes.every(isNewSessionPaneOption) &&
+  Array.isArray(value.commands) &&
+  value.commands.length > 0 &&
+  value.commands.every(isNewSessionCommandOption) &&
+  isNewSessionActions(value.actions)
+
+const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
+  isRecord(value) &&
+  value.kind === 'dialog' &&
+  (isCommandPaletteDialogPayload(value) || isNewSessionDialogPayload(value))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
   isRecord(value) &&
@@ -438,6 +606,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isString(value.actionId) &&
   (value.closeOnSelect === undefined ||
     typeof value.closeOnSelect === 'boolean') &&
+  (value.suspendOnSelect === undefined ||
+    typeof value.suspendOnSelect === 'boolean') &&
   (value.feedback === undefined || value.feedback === 'copy') &&
   (value.index === undefined || isFiniteNumber(value.index))
 
@@ -503,6 +673,7 @@ export class NativeOverlayController {
     ipc.handle(NATIVE_OVERLAY_READY, this.handleReady)
     ipc.handle(NATIVE_OVERLAY_ACTION, this.handleAction)
     ipc.handle(NATIVE_OVERLAY_ACTION_RESULT, this.handleActionResult)
+    ipc.handle(NATIVE_OVERLAY_RESUME, this.handleResume)
     this.registeredIpc = ipc
   }
 
@@ -513,6 +684,7 @@ export class NativeOverlayController {
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_READY)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION_RESULT)
+      this.registeredIpc.removeHandler(NATIVE_OVERLAY_RESUME)
       this.registeredIpc = null
     }
 
@@ -691,11 +863,28 @@ export class NativeOverlayController {
     const owner = surface.owner
     if (payload.closeOnSelect !== false) {
       this.closeSurface(payload.surfaceId, 'action', false)
+    } else if (payload.suspendOnSelect === true) {
+      this.suspendSurface(payload.surfaceId)
     }
 
     if (!owner.isDestroyed()) {
       owner.send(NATIVE_OVERLAY_ACTION, payload)
     }
+  }
+
+  private readonly handleResume = (
+    event: IpcMainInvokeEvent,
+    payload: unknown
+  ): void => {
+    if (!isCloseRequest(payload)) {
+      return
+    }
+
+    if (!this.surfaceFromOwnerSender(payload.surfaceId, event.sender)) {
+      return
+    }
+
+    this.resumeSurface(payload.surfaceId)
   }
 
   private readonly handleActionResult = (
@@ -1012,6 +1201,49 @@ export class NativeOverlayController {
         surface.owner.send(NATIVE_OVERLAY_CLOSED, { surfaceId, reason })
       }
     }
+  }
+
+  private suspendSurface(surfaceId: string): void {
+    const surface = this.surfaces.get(surfaceId)
+    if (!surface || surface.kind === 'tooltip') {
+      return
+    }
+
+    const record = this.overlays.get(surface.parentId)
+    if (
+      record?.activeSurfaceId !== surfaceId ||
+      record.menu.window.isDestroyed()
+    ) {
+      return
+    }
+
+    const overlayWindow = record.menu.window
+    resetOverlayCursor(overlayWindow)
+    overlayWindow.setAlwaysOnTop(false)
+    overlayWindow.setIgnoreMouseEvents(true)
+  }
+
+  private resumeSurface(surfaceId: string): void {
+    const surface = this.surfaces.get(surfaceId)
+    if (!surface || surface.kind === 'tooltip') {
+      return
+    }
+
+    const record = this.overlays.get(surface.parentId)
+    if (
+      record?.activeSurfaceId !== surfaceId ||
+      record.menu.window.isDestroyed()
+    ) {
+      return
+    }
+
+    record.syncBounds()
+    const overlayWindow = record.menu.window
+    overlayWindow.setIgnoreMouseEvents(false)
+    overlayWindow.showInactive()
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+    overlayWindow.moveTop()
+    resetOverlayCursor(overlayWindow)
   }
 
   private surfaceFromOverlaySender(

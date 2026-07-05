@@ -43,6 +43,7 @@ export interface BackendApi {
     open: (request: unknown) => Promise<{ accepted: boolean; reason?: string }>
     close: (request: unknown) => Promise<void>
     actionResult: (request: unknown) => Promise<void>
+    resume: (request: unknown) => Promise<void>
     onAction: (callback: (event: unknown) => void) => UnlistenFn
     onClose: (callback: (event: unknown) => void) => UnlistenFn
   }

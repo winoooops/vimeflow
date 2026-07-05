@@ -9,6 +9,7 @@ import {
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
+  NATIVE_OVERLAY_RESUME,
 } from './native-overlay-channels'
 import { COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import { NativeOverlayController } from './native-overlay'
@@ -31,6 +32,7 @@ interface FakeWebContents {
   send: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
+  executeJavaScript: ReturnType<typeof vi.fn>
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   removeListener: ReturnType<typeof vi.fn>
@@ -70,6 +72,7 @@ const electronMock = vi.hoisted(() => {
       send: vi.fn(),
       focus: vi.fn(),
       isDestroyed: vi.fn(() => false),
+      executeJavaScript: vi.fn(() => Promise.resolve(undefined)),
       setWindowOpenHandler: vi.fn(),
       on: vi.fn((event: string, handler: EventHandler): void => {
         handlersByEvent.set(event, [
@@ -153,6 +156,7 @@ const electronMock = vi.hoisted(() => {
         webContents.send.mockClear()
         webContents.focus.mockClear()
         webContents.isDestroyed.mockClear()
+        webContents.executeJavaScript.mockClear()
         webContents.setWindowOpenHandler.mockClear()
         webContents.on.mockClear()
         webContents.removeListener.mockClear()
@@ -164,6 +168,7 @@ const electronMock = vi.hoisted(() => {
         this.show.mockClear()
         this.showInactive.mockClear()
         this.hide.mockClear()
+        this.moveTop.mockClear()
         this.close.mockClear()
         this.loadURL.mockClear()
         this.on.mockClear()
@@ -1112,6 +1117,52 @@ describe('NativeOverlayController', () => {
       NATIVE_OVERLAY_ACTION_RESULT,
       result
     )
+  })
+
+  test('action can suspend and resume an interactive overlay for native modal work', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    overlayWindow.setAlwaysOnTop.mockClear()
+    overlayWindow.setIgnoreMouseEvents.mockClear()
+    overlayWindow.showInactive.mockClear()
+    overlayWindow.moveTop.mockClear()
+    overlayWindow.hide.mockClear()
+    overlayWindow.webContents.executeJavaScript.mockClear()
+
+    handler(NATIVE_OVERLAY_ACTION)(
+      { sender: overlayWindow.webContents },
+      {
+        surfaceId: request.surfaceId,
+        actionId: 'browse',
+        closeOnSelect: false,
+        suspendOnSelect: true,
+      }
+    )
+
+    expect(overlayWindow.hide).not.toHaveBeenCalled()
+    expect(overlayWindow.webContents.executeJavaScript).toHaveBeenCalledOnce()
+    expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+    expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+
+    handler(NATIVE_OVERLAY_RESUME)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: request.surfaceId }
+    )
+
+    expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
+    expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
+    expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(
+      true,
+      'screen-saver'
+    )
+    expect(overlayWindow.moveTop).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.executeJavaScript).toHaveBeenCalledTimes(2)
   })
 
   test('rejects native overlay on non-macOS platforms', async () => {

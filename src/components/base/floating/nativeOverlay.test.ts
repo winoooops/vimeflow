@@ -71,6 +71,7 @@ const installBridge = (
       }),
       close: vi.fn(() => Promise.resolve()),
       actionResult,
+      resume: vi.fn(() => Promise.resolve()),
       onAction: vi.fn((callback: (event: unknown) => void) => {
         actionListener = callback
 
