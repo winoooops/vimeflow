@@ -10,6 +10,7 @@ pub(crate) mod config;
 pub mod detector;
 pub(crate) mod events;
 pub(crate) mod kimi_usage_consent;
+pub(crate) mod reply;
 pub mod sanitize_title;
 pub mod types;
 
