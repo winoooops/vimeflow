@@ -107,6 +107,7 @@ export function buildCommands(target) {
           ],
         ]
       : ['vite', ['build', '--mode', 'electron']]
+
   const commands = [
     ['npm', ['run', 'type-check']],
     rendererBuildCommand,
