@@ -24,9 +24,11 @@ The dispatch footer (today: `> When done, reply referencing each [#n].`) is exte
 
 ```
 <<<VIMEFLOW_REPLY
-{"v":1,"replies":[{"id":1,"status":"answered","text":"The cap bounds tail latency; raising it risks pileups."}]}
+{"v":1,"nonce":"r7k2m9","replies":[{"id":1,"status":"answered","text":"The cap bounds tail latency; raising it risks pileups."}]}
 VIMEFLOW_REPLY>>>
 ```
+
+The dispatched block carries a per-dispatch **`nonce`** the agent is told to echo back verbatim. Because `[#n]` handles restart at `1` on every dispatch, the nonce is the only thing distinguishing a reply to *this* dispatch from a late reply to a superseded one on the same pty — without it, an old reply's `#1` would match the new dispatch's `#1` and misroute.
 
 ### Ownership — which PR decides what
 
@@ -38,6 +40,7 @@ Split so neither PR makes a decision it lacks context for:
 ### Fields
 
 - **`v`** — schema version, integer, currently `1`.
+- **`nonce`** — non-empty string; the per-dispatch token the agent echoes verbatim. PR-1 only validates it is a non-empty string (it has no dispatch context); PR-2 checks it **equals** the pending record's nonce and ignores the event otherwise.
 - **`replies[]`** — a non-empty array; one entry per `[#n]` the agent addressed:
   - **`id`** — a positive integer within `u32` range, the `[#n]` handle.
   - **`status`** — exactly one of `"answered"`, `"changed"`, `"skipped"`.
@@ -49,6 +52,7 @@ A block is **valid** only if all of these hold; any violation makes it **malform
 
 - the text between the sentinels parses as JSON and is an object;
 - `v === 1` (any other value, or missing, is malformed — the field is reserved for future shapes);
+- `nonce` is a non-empty string (value not checked here — that's PR-2);
 - `replies` is a **non-empty** array;
 - each entry has an `id` that is a positive integer within `u32` range (zero, negative, or over `u32::MAX` → malformed), a `status` that is exactly one of the three literals, and a string `text`;
 - `id`s are **unique** within the block.
@@ -99,28 +103,37 @@ The sentinel scan, JSON parse, and the Section-1 schema validation live here **o
 
 ### Event type
 
-New ts-rs types emitted as `agent-reply` over the existing `EventSink` → IPC path:
+New event types in `crates/backend/src/agent/types.rs` (alongside `AgentTurnEvent`), emitted as `agent-reply` over the existing `EventSink` → IPC path. **Mirror the existing agent-event pattern exactly** — `pub struct` with **`pub` fields** (so the Codex decoder in a sibling module can construct them), and the repo's test-gated ts-rs export (`#[cfg_attr(test, derive(ts_rs::TS))]` + `#[cfg_attr(test, ts(export))]`) so the bindings generate under `cfg(test)` like every other event:
 
 ```rust
-// `pub(crate)` so the Codex decoder can construct them; derives match the
-// existing agent events (Serialize + ts_rs::TS) so the serialize_event + binding
-// path works. Renames give camelCase fields + lowercase status literals — the
-// shape the frontend contract expects.
-#[derive(Clone, Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AgentReplyEvent {
-    session_id: String,   // → "sessionId"
-    raw_text: String,     // → "rawText"
-    replies: Option<Vec<AgentReply>>,
+pub struct AgentReplyEvent {
+    pub session_id: String,     // → "sessionId"
+    pub nonce: Option<String>,  // echoed dispatch token; None on malformed
+    pub raw_text: String,       // → "rawText"
+    pub replies: Option<Vec<AgentReply>>,
 }
 
-#[derive(Clone, Serialize, ts_rs::TS)]
-pub(crate) struct AgentReply { id: u32, status: AgentReplyStatus, text: String }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct AgentReply {
+    pub id: u32,
+    pub status: AgentReplyStatus,
+    pub text: String,
+}
 
-#[derive(Clone, Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum AgentReplyStatus { Answered, Changed, Skipped } // → "answered" | "changed" | "skipped"
+pub enum AgentReplyStatus { Answered, Changed, Skipped } // → "answered" | "changed" | "skipped"
 ```
+
+Emitted via a `pub(crate) fn emit_agent_reply(sink, payload: &AgentReplyEvent)` in `events.rs`, mirroring `emit_agent_turn`. The `AgentReplyOutcome` helper in `reply.rs` stays `pub(crate)`; the decoder maps it into this `pub`-fielded event.
 
 - `replies: Some(..)` — the schema-valid typed replies.
 - `replies: None` — **is** the malformed marker; `raw_text` carries the full reply for the frontend's degrade note.
@@ -138,7 +151,8 @@ Rust unit tests over `extract_agent_reply` + the emit path:
 
 - valid block → `Structured` with the typed replies;
 - sentinel present + malformed JSON → `Malformed`;
-- sentinel + schema-invalid (empty `replies`, non-array `replies`, string `id`, unknown `status`, duplicate `id`) → `Malformed`;
+- sentinel + schema-invalid (missing/empty `nonce`, empty `replies`, non-array `replies`, string/negative `id`, unknown `status`, duplicate `id`) → `Malformed`;
+- a valid block round-trips the `nonce` into the emitted event;
 - no sentinel → `None` (no event);
 - block wrapped in a markdown fence with surrounding prose → still extracted;
 - multi-line `text` round-trips.
@@ -151,18 +165,21 @@ Until PR-2 adds the dispatch instruction, no agent emits the sentinel, so `agent
 
 ### Dispatch instruction
 
-Extend `feedbackDispatch`'s footer from `> When done, reply referencing each [#n].` to instruct the agent to end its reply with the Section-1 sentinel block (spell out the exact format + a one-line example in the prompt). This is the only change to the dispatched payload; the `[#n · Category]` item blocks are unchanged.
+At dispatch, generate a short per-dispatch `nonce` and extend `feedbackDispatch`'s footer from `> When done, reply referencing each [#n].` to instruct the agent to end its reply with the Section-1 sentinel block, **echoing this nonce verbatim** (spell out the exact format + a one-line example, with the nonce interpolated, in the prompt). The `[#n · Category]` item blocks are otherwise unchanged.
 
 ### Pending-review record — the gate + the `[#n]`↔comment map
 
-At dispatch, record the correlation state — keyed by `ptyId`, but carrying the **feedback owner** so a reply lands on the *dispatched* review even if the user has since switched panes:
+At dispatch, record the correlation state — keyed by `ptyId`, carrying the **feedback owner** (so a reply lands on the *dispatched* review even after a pane switch) and the **nonce** (so a superseded dispatch's reply is rejected):
 
 ```ts
 interface PendingReview {
   ptyId: string
   ownerKey: string     // the feedback owner (sessionId:paneId) at dispatch time
-  dispatchedAt: number // generation stamp
+  nonce: string        // the dispatched token the agent must echo
+  dispatchedAt: number
   // [#n] → the comment it addressed, in the order buildFeedbackEntries numbered them.
+  // The path fields are the annotation BATCH KEY — the original (cwd, repo-relative
+  // filePath, staged), NOT the resolved absolute agent-facing path used in the prompt.
   byHandle: Map<
     number,
     { cwd: string; filePath: string; staged: boolean; commentId: string; lineNumber: number; side: AnnotationSide }
@@ -170,18 +187,18 @@ interface PendingReview {
 }
 ```
 
-`byHandle` is built from the **same ordered iteration** `buildFeedbackEntries` uses to assign `[#n]`. Stored in a module store `pendingReviewsByPty` (keyed by `ptyId`), replaced on the next dispatch to that pty. It is correlation state, not persisted review data — the comments themselves persist via VIM-282.
+**Batch-key vs. prompt path (finding).** `buildFeedbackEntries` resolves each path to an absolute *agent-facing* path for the prompt, but the feedback store keys annotations by the original `(cwd, repo-relative filePath, staged)` batch key. The pending record therefore stores the **annotation's own** `(cwd, filePath, staged)` — taken from the source annotation, not the `DispatchEntry` — so a reply's `addAnnotation` targets the same batch the comment lives in and renders co-located. `byHandle` is built from the **same ordered iteration** `buildFeedbackEntries` uses to assign `[#n]`. Stored in module store `pendingReviewsByPty` (keyed by `ptyId`), replaced on the next dispatch to that pty. Correlation state, not persisted review data — the comments persist via VIM-282.
 
 ### Capture hook
 
 `useAgentReply` mirrors `useAgentStatus`'s subscription pattern — `listen('agent-reply', ...)` — and lives where **all** feedback owners are reachable (alongside `useFeedbackBatchStore` in WorkspaceView), so it can attach to a specific owner. For each event:
 
-1. **Gate:** look up `pendingReviewsByPty[event.sessionId]`. None → ignore (a stray sentinel in unrelated agent output cannot touch the thread).
+1. **Gate (session + nonce):** look up `pendingReviewsByPty[event.sessionId]`. None → ignore. Record exists but `event.nonce !== record.nonce` (or `event.nonce` is null) → ignore — this is a reply to a superseded dispatch, or a stray sentinel. Only a session **and** nonce match proceeds.
 2. **`replies: Some`:** resolve each `reply.id` against `byHandle`.
-   - If **no** id matches any pending handle → treat the whole event as malformed (degrade, below).
-   - Otherwise, for each matched id: attach an `author: 'agent'` annotation carrying `reply.text` at that comment's `{ lineNumber, side, filePath, staged }` **on the record's `ownerKey`** — an owner-addressed `addAnnotation(ownerKey, …)`, so the reply lands on the dispatched review's batch, not the active pane's — then **remove the handle from `byHandle`** so a replayed event can't attach it twice. Ids with no match (in a mixed reply) are dropped, dev-logged.
-3. **`replies: None` (malformed marker):** attach `event.rawText` as one `author: 'agent'` note on the record's `ownerKey`.
-4. **Close the gate:** if `byHandle` is now empty, **delete the record**. The review is fully answered, so a duplicate/replayed or later unrelated `agent-reply` finds no pending handle and is ignored.
+   - If **no** id matches any pending handle → treat the whole event as malformed (step 3).
+   - Otherwise, for each matched id: attach an `author: 'agent'` annotation carrying `reply.text` at that comment's `{ lineNumber, side, filePath, staged }` via an **owner-addressed** `addAnnotation(record.ownerKey, …)`, so the reply lands on the dispatched review's batch, not the active pane's — then **remove the handle from `byHandle`**. Ids with no match (mixed reply) are dropped, dev-logged. Skip to step 4.
+3. **Malformed / all-unmatched degrade:** attach `event.rawText` as one `author: 'agent'` note via `addAnnotation(record.ownerKey, …)`, anchored to the **lowest-id pending handle's** comment (a deterministic anchor; the first comment the user dispatched that is still open). Then **clear the entire record** — the degrade is terminal for this dispatch, so a replay can't add a duplicate note.
+4. **Close the gate:** if `byHandle` is now empty, **delete the record**. Fully answered → a duplicate/replayed or later unrelated `agent-reply` finds no pending record and is ignored.
 
 This needs one small store addition — an **owner-addressed** `addAnnotation(ownerKey, …)`, since today's `addAnnotation` binds to the active owner.
 
@@ -191,18 +208,20 @@ The attached `author: 'agent'` annotation renders as **"Agent reply"** — disti
 
 ### Lifecycle
 
-An attached reply is an ordinary annotation — it persists like any comment (VIM-282). The `pendingReviewsByPty` record is **consumed as handles attach and deleted when empty**, so a duplicate/replayed `agent-reply` is a no-op. A new dispatch to the same pty replaces the record. A never-answered dispatch leaves a record until the next dispatch, fillable only by a reply whose `sessionId` matches — harmless. Owner-addressed attachment means switching panes before the reply arrives does not misroute it.
+An attached reply is an ordinary annotation — it persists like any comment (VIM-282). The `pendingReviewsByPty` record is **consumed as handles attach and deleted when empty** (or cleared on the terminal degrade), so a duplicate/replayed `agent-reply` is a no-op. A new dispatch to the same pty replaces the record and mints a new nonce, so a late reply for the old dispatch fails the nonce gate. Owner-addressed attachment means switching panes before the reply arrives does not misroute it.
 
 ### Tests
 
-- **correlation:** an `agent-reply` for a pending `ptyId` attaches replies to the right comments by `[#n]`;
-- **gate:** an event whose `sessionId` has no pending record is ignored;
+- **correlation:** an `agent-reply` for a pending `ptyId` with a matching nonce attaches replies to the right comments by `[#n]`;
+- **gate (session):** an event whose `sessionId` has no pending record is ignored;
+- **gate (nonce / superseded):** an event whose nonce ≠ the current record's (a reply to a superseded dispatch) is ignored, even though its `#1` collides with the new dispatch's `#1`;
 - **owner-routed:** a reply attaches to the *dispatching* owner's review even after the active pane changed;
-- **degrade (all-unmatched):** a reply whose ids match no pending handle degrades the whole event to a `rawText` note;
+- **batch-key path:** a reply renders co-located with the comment (attached under the annotation's repo-relative key, not the prompt's absolute path);
+- **degrade (all-unmatched):** a reply whose ids match no pending handle attaches `rawText` to the lowest pending handle's comment and clears the record;
 - **unmatched (mixed):** a reply with some valid handles plus one unknown id attaches the valid ones and drops the unknown;
-- **degrade (marker):** `replies: null` attaches `rawText` as one agent note;
+- **degrade (marker):** `replies: null` attaches `rawText` as one agent note and clears the record;
 - **partial:** a reply covering a subset of handles attaches those, leaves the rest waiting;
-- **idempotent:** a replayed `agent-reply` after its handles are consumed is a no-op.
+- **idempotent:** a replayed `agent-reply` after its handles are consumed (or after a terminal degrade) is a no-op.
 
 ## Section 4 — Rollout, scope, and risks *(both PRs)*
 
@@ -227,4 +246,4 @@ The only change to the dispatched payload is the footer instruction to emit the 
 
 - **Prompt adherence** — Codex may not always emit the block. Graceful degrade covers it (no block → no thread reply); PR-2 should sanity-check Codex adherence with a real dispatch before wider rollout.
 - **Sentinel collision** — an agent quoting the sentinel in prose. Low risk (unique literal); the parser takes the first open…close pair.
-- **Superseded dispatch** — a second dispatch to the same pty replaces the record; a late reply for the old dispatch whose ids don't match is dropped/degraded. The `dispatchedAt` stamp is available to reject stale replies if this proves noisy.
+- **Superseded dispatch** — a second dispatch to the same pty replaces the record and mints a new nonce; a late reply for the old dispatch fails the nonce gate (Section 3) and is ignored, even when its `#n` handles collide with the new dispatch's.
