@@ -168,7 +168,7 @@ describe('GhosttyBody', () => {
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
   })
 
-  test('sends displayed theme background to native frame updates', async () => {
+  test('sends displayed theme colors to native frame updates', async () => {
     render(
       <GhosttyBody
         paneId="pane-1"
@@ -183,6 +183,7 @@ describe('GhosttyBody', () => {
       expect(updateNativeGhostty).toHaveBeenCalledWith(
         expect.objectContaining({
           backgroundColor: obsidianLens.terminal.background,
+          foregroundColor: obsidianLens.terminal.foreground,
         })
       )
     })
@@ -196,6 +197,7 @@ describe('GhosttyBody', () => {
       expect(updateNativeGhostty).toHaveBeenCalledWith(
         expect.objectContaining({
           backgroundColor: flexoki.terminal.background,
+          foregroundColor: flexoki.terminal.foreground,
         })
       )
     })

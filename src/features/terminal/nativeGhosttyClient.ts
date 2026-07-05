@@ -22,6 +22,7 @@ export interface NativeGhosttyUpdateRequest extends NativeGhosttyPaneRef {
   cwd: string
   bounds: NativeGhosttyBounds
   backgroundColor: string
+  foregroundColor: string
   bottomCornerRadius?: number
   parentHeight: number
   visible: boolean

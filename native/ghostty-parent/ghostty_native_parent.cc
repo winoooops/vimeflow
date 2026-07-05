@@ -26,6 +26,7 @@ using SetFrameFn = void (*)(
     void *, double, double, double, double, double, double);
 using SetShortcutDigitsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
+using SetForegroundColorFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using AddSecondaryFn = void (*)(void *, InputCallback, ResizeCallback,
@@ -43,6 +44,7 @@ struct BridgeApi {
   SetFrameFn set_frame = nullptr;
   SetShortcutDigitsFn set_shortcut_digits = nullptr;
   SetBackgroundColorFn set_background_color = nullptr;
+  SetForegroundColorFn set_foreground_color = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
   AddSecondaryFn add_secondary = nullptr;
@@ -136,6 +138,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.set_shortcut_digits)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_background_color",
                  reinterpret_cast<void **>(&bridge.set_background_color)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_foreground_color",
+                 reinterpret_cast<void **>(&bridge.set_foreground_color)) &&
       LoadSymbol(env, "vimeflow_ghostty_write",
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
@@ -706,6 +710,25 @@ napi_value SetBackgroundColor(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+napi_value SetForegroundColor(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "setForegroundColor(surface, color) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  const std::string color = GetString(env, args[1]);
+  bridge.set_foreground_color(surface->swift_surface, color.c_str());
+
+  return nullptr;
+}
+
 napi_value Write(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
@@ -886,6 +909,8 @@ napi_value Init(napi_env env, napi_value exports) {
       {"setShortcutDigits", nullptr, SetShortcutDigits, nullptr, nullptr,
        nullptr, napi_default, nullptr},
       {"setBackgroundColor", nullptr, SetBackgroundColor, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"setForegroundColor", nullptr, SetForegroundColor, nullptr, nullptr,
        nullptr, napi_default, nullptr},
       {"write", nullptr, Write, nullptr, nullptr, nullptr, napi_default,
        nullptr},

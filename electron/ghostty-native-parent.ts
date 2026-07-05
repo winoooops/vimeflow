@@ -74,6 +74,7 @@ interface GhosttyNativeParentAddon {
   ) => void
   setShortcutDigits?: (surface: unknown, digits: string) => void
   setBackgroundColor?: (surface: unknown, color: string) => void
+  setForegroundColor?: (surface: unknown, color: string) => void
   write: (surface: unknown, data: string) => void
   focus: (surface: unknown) => void
   destroy: (surface: unknown) => void
@@ -106,6 +107,7 @@ interface GhosttyNativeSurfaceState {
   // Resize updates pass through this same path. Cache values that reapply
   // Ghostty theme/shortcut state so steady resize only calls setFrame.
   lastBackgroundColor: string | null
+  lastForegroundColor: string | null
   lastResize: { cols: number; rows: number } | null
   lastShortcutDigits: string | null
 }
@@ -227,6 +229,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
         isBounds(value.bounds) &&
         (value.backgroundColor === undefined ||
           isHexColor(value.backgroundColor)) &&
+        (value.foregroundColor === undefined ||
+          isHexColor(value.foregroundColor)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
         typeof value.parentHeight === 'number' &&
         Number.isFinite(value.parentHeight) &&
@@ -408,6 +412,13 @@ export class GhosttyNativeParentController {
     ) {
       state.lastBackgroundColor = payload.backgroundColor
       addon.setBackgroundColor?.(surface, payload.backgroundColor)
+    }
+    if (
+      isHexColor(payload.foregroundColor) &&
+      state.lastForegroundColor !== payload.foregroundColor
+    ) {
+      state.lastForegroundColor = payload.foregroundColor
+      addon.setForegroundColor?.(surface, payload.foregroundColor)
     }
     addon.setFrame(
       surface,
@@ -739,6 +750,7 @@ export class GhosttyNativeParentController {
       pendingData: [],
       secondary: null,
       lastBackgroundColor: null,
+      lastForegroundColor: null,
       lastResize: null,
       lastShortcutDigits: null,
     }

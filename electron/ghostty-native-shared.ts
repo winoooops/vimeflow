@@ -20,6 +20,7 @@ export interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
   cwd: string
   bounds: GhosttyNativeBounds
   backgroundColor?: string
+  foregroundColor?: string
   bottomCornerRadius?: number
   parentHeight: number
   visible: boolean

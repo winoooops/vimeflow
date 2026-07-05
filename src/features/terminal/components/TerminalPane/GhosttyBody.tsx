@@ -117,6 +117,7 @@ export const nativeGhosttyCornerRadiusFromCssPixels = (
 // so tiny DOM float churn does not become repeated native resize IPC.
 const nativeGhosttyFrameKey = ({
   backgroundColor,
+  foregroundColor,
   bottomCornerRadius,
   bounds,
   parentHeight,
@@ -124,6 +125,7 @@ const nativeGhosttyFrameKey = ({
   visible,
 }: {
   backgroundColor: string
+  foregroundColor: string
   bottomCornerRadius: number
   bounds: NativeGhosttyBounds
   parentHeight: number
@@ -143,6 +145,7 @@ const nativeGhosttyFrameKey = ({
     frameVisible ? Math.max(0, Math.round(bottomCornerRadius)) : 0,
     frameVisible ? '1' : '0',
     backgroundColor,
+    foregroundColor,
     shortcutContext?.activePaneId ?? '',
     ...(shortcutContext?.paneIds ?? []),
   ].join(':')
@@ -174,6 +177,7 @@ export const GhosttyBody = ({
 }: GhosttyBodyProps): ReactElement => {
   const theme = useTheme()
   const backgroundColor = theme.terminal.background
+  const foregroundColor = theme.terminal.foreground
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const inFlightNativeFrameRef = useRef<Promise<void> | null>(null)
@@ -467,6 +471,7 @@ export const GhosttyBody = ({
     const snapshot = {
       key: nativeGhosttyFrameKey({
         backgroundColor,
+        foregroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
         bounds,
         parentHeight,
@@ -478,6 +483,7 @@ export const GhosttyBody = ({
         cwd,
         bounds,
         backgroundColor,
+        foregroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
         parentHeight,
         visible,
@@ -495,6 +501,7 @@ export const GhosttyBody = ({
     flushQueuedNativeFrame()
   }, [
     backgroundColor,
+    foregroundColor,
     bottomCornerRadius,
     cwd,
     flushQueuedNativeFrame,

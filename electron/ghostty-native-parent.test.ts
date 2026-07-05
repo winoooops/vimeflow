@@ -166,6 +166,42 @@ describe('ghostty native parent', () => {
     ).toThrow('invalid ghostty native parent update payload')
   })
 
+  test('rejects invalid native update foreground color', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon: {
+        create: vi.fn(),
+        setFrame: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+      },
+    })
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          foregroundColor: 'not-a-color',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+    ).toThrow('invalid ghostty native parent update payload')
+  })
+
   test('returns disabled instead of throwing when addon artifacts are missing', () => {
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
@@ -319,13 +355,14 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('forwards native background color updates to AppKit', () => {
+  test('forwards native theme color updates to AppKit', () => {
     const surface = {}
 
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
       setBackgroundColor: vi.fn(),
+      setForegroundColor: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -351,6 +388,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         backgroundColor: '#fffcf0',
+        foregroundColor: '#100f0f',
         visible: true,
         parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
@@ -358,6 +396,7 @@ describe('ghostty native parent', () => {
     )
 
     expect(addon.setBackgroundColor).toHaveBeenCalledWith(surface, '#fffcf0')
+    expect(addon.setForegroundColor).toHaveBeenCalledWith(surface, '#100f0f')
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -366,6 +405,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         cwd: '/tmp',
         backgroundColor: '#fffcf0',
+        foregroundColor: '#100f0f',
         visible: true,
         parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
@@ -373,6 +413,7 @@ describe('ghostty native parent', () => {
     )
 
     expect(addon.setBackgroundColor).toHaveBeenCalledTimes(1)
+    expect(addon.setForegroundColor).toHaveBeenCalledTimes(1)
 
     controller.dispose()
   })

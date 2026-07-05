@@ -231,6 +231,8 @@ private final class EmbeddedGhosttyChild {
     let controller: TerminalController
     let session: InMemoryTerminalSession
     let terminalView: TerminalView
+    private var backgroundHexColor = "000000"
+    private var foregroundHexColor = "ffffff"
 
     init(callbacks: CallbackBox) {
         self.callbacks = callbacks
@@ -262,9 +264,27 @@ private final class EmbeddedGhosttyChild {
             return
         }
 
+        backgroundHexColor = ghosttyHex
+        applyTheme()
+    }
+
+    func setForegroundColor(_ hexColor: String) {
+        guard let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor) else {
+            return
+        }
+
+        foregroundHexColor = ghosttyHex
+        applyTheme()
+    }
+
+    private func applyTheme() {
         controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration().background(ghosttyHex),
-            dark: TerminalConfiguration().background(ghosttyHex)
+            light: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor),
+            dark: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor)
         ))
     }
 
@@ -295,6 +315,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var shortcutMonitor: Any?
     private var shortcutDigits = Set<Character>()
     private var backgroundHexColor = "000000"
+    private var foregroundHexColor = "ffffff"
     private var secondaryChild: EmbeddedGhosttyChild?
     private var dividerView: EmbeddedGhosttyDividerView?
     private var secondarySplitRatio: CGFloat = 0.34
@@ -425,11 +446,29 @@ private final class EmbeddedGhosttySurface: NSObject {
         container.layer?.backgroundColor = color.cgColor
         backgroundHexColor = ghosttyHex
         dividerView?.isDarkBackground = NSColor.vimeflowIsDarkHexColor(ghosttyHex)
-        controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration().background(ghosttyHex),
-            dark: TerminalConfiguration().background(ghosttyHex)
-        ))
+        applyTheme()
         secondaryChild?.setBackgroundColor(ghosttyHex)
+    }
+
+    func setForegroundColor(_ hexColor: String) {
+        guard let ghosttyHex = NSColor.vimeflowGhosttyHexColor(hexColor) else {
+            return
+        }
+
+        foregroundHexColor = ghosttyHex
+        applyTheme()
+        secondaryChild?.setForegroundColor(ghosttyHex)
+    }
+
+    private func applyTheme() {
+        controller.setTheme(TerminalTheme(
+            light: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor),
+            dark: TerminalConfiguration()
+                .background(backgroundHexColor)
+                .foreground(foregroundHexColor)
+        ))
     }
 
     func receive(_ text: String) {
@@ -460,6 +499,7 @@ private final class EmbeddedGhosttySurface: NSObject {
         )
         let child = EmbeddedGhosttyChild(callbacks: callbacks)
         child.setBackgroundColor(backgroundHexColor)
+        child.setForegroundColor(foregroundHexColor)
         container.addSubview(child.terminalView)
         secondaryChild = child
         ensureDivider()
@@ -918,6 +958,25 @@ public func vimeflowGhosttySetBackgroundColor(
             .fromOpaque(pointer.value!)
             .takeUnretainedValue()
         surface.setBackgroundColor(color)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_foreground_color")
+public func vimeflowGhosttySetForegroundColor(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ colorPointer: UnsafePointer<CChar>?
+) {
+    guard let surfacePointer, let colorPointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let color = String(cString: colorPointer)
+    mainActorSync {
+        let surface = Unmanaged<EmbeddedGhosttySurface>
+            .fromOpaque(pointer.value!)
+            .takeUnretainedValue()
+        surface.setForegroundColor(color)
     }
 }
 
