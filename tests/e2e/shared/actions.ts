@@ -79,7 +79,9 @@ const waitForLayoutDisplayMenuItem = async (
       return
     }
 
-    await clickBySelector('button[aria-label="Configure displayed layouts"]')
+    if (!(await hasElement(menuSelector))) {
+      await clickBySelector('button[aria-label="Configure displayed layouts"]')
+    }
 
     try {
       await browser.waitUntil(

@@ -1534,6 +1534,100 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
+  test('reports createSession spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+    service.spawn = vi.fn().mockRejectedValue(new Error('bridge unavailable'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to create terminal: bridge unavailable'
+      )
+    )
+    expect(result.current.sessions).toHaveLength(0)
+  })
+
+  test('reports addPane spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const sessionId = result.current.sessions[0].id
+
+    act(() => {
+      result.current.setSessionLayout(sessionId, 'vsplit')
+    })
+
+    vi.mocked(service.spawn).mockRejectedValueOnce(
+      new Error('bridge unavailable')
+    )
+
+    act(() => {
+      result.current.addPane(sessionId)
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to add terminal pane: bridge unavailable'
+      )
+    )
+  })
+
+  test('reports restartSession spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    vi.mocked(service.spawn).mockRejectedValueOnce(
+      new Error('bridge unavailable')
+    )
+
+    act(() => {
+      result.current.restartSession(result.current.sessions[0].id)
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to restart terminal: bridge unavailable'
+      )
+    )
+  })
+
   // A browser-only session restored from the durable store has no shell PTY,
   // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.

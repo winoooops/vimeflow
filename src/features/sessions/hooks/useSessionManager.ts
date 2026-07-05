@@ -119,8 +119,8 @@ export interface SessionManager {
    * replaced with metadata for the new session — status flips to 'running'
    * and id is the new sessionId returned by spawn.
    *
-   * No-op if the id isn't in `sessions`. Surfaces spawn errors via
-   * console.warn — a future iteration may surface as a toast.
+   * No-op if the id isn't in `sessions`. Surfaces spawn errors via the
+   * configured terminal-spawn error callback.
    */
   restartSession: (id: string, paneId?: string) => void
   renameSession: (id: string, name: string) => void
@@ -262,6 +262,13 @@ const browserSessionIdForSession = (session: Session): string => session.id
  */
 export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
+  onTerminalSpawnError?: (message: string) => void
+}
+
+const spawnErrorMessage = (action: string, error: unknown): string => {
+  const detail = error instanceof Error ? error.message : String(error)
+
+  return `${action}: ${detail}`
 }
 
 // Generated AgentPhase is lower-camel (serde rename_all camelCase).
@@ -277,7 +284,7 @@ export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
 ): SessionManager => {
-  const { autoCreateOnEmpty = true } = options
+  const { autoCreateOnEmpty = true, onTerminalSpawnError } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
 
@@ -869,6 +876,7 @@ export const useSessionManager = (
 
           const panes: Pane[] = []
           const browserPaneIds: string[] = []
+          let shellSpawnFailure: unknown = null
 
           specs.forEach((spec, i) => {
             const mapped = commandToPane(spec.command)
@@ -897,6 +905,9 @@ export const useSessionManager = (
                 'createSession: pane spawn failed',
                 settled.status === 'rejected' ? settled.reason : undefined
               )
+              if (settled.status === 'rejected') {
+                shellSpawnFailure = settled.reason
+              }
 
               return
             }
@@ -929,8 +940,24 @@ export const useSessionManager = (
 
           if (panes.length === 0) {
             log.warn('createSession: no panes spawned; session not created')
+            onTerminalSpawnError?.(
+              shellSpawnFailure === null
+                ? 'Failed to create terminal'
+                : spawnErrorMessage(
+                    'Failed to create terminal',
+                    shellSpawnFailure
+                  )
+            )
 
             return
+          }
+          if (shellSpawnFailure !== null) {
+            onTerminalSpawnError?.(
+              spawnErrorMessage(
+                'Failed to create one or more terminal panes',
+                shellSpawnFailure
+              )
+            )
           }
           panes[0] = { ...panes[0], active: true }
 
@@ -987,12 +1014,21 @@ export const useSessionManager = (
           }
         } catch (err) {
           log.warn('createSession failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to create terminal', err)
+          )
         } finally {
           setPendingSpawns((c) => c - 1)
         }
       })()
     },
-    [layoutRegistry, registerPending, service, setActiveSessionId]
+    [
+      layoutRegistry,
+      onTerminalSpawnError,
+      registerPending,
+      service,
+      setActiveSessionId,
+    ]
   )
 
   // Create a browser-only session from scratch (spec §6.2): one runtime browser
@@ -1596,6 +1632,9 @@ export const useSessionManager = (
           registerPtySession(result.sessionId, result.sessionId, result.cwd)
         } catch (err) {
           log.warn('addPane: spawn failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to add terminal pane', err)
+          )
         } finally {
           setPendingSpawns((count) => count - 1)
           pendingPaneOps.current.delete(sessionId)
@@ -1606,6 +1645,7 @@ export const useSessionManager = (
       activeSessionIdRef,
       dropAllForPty,
       layoutRegistry,
+      onTerminalSpawnError,
       registerPending,
       service,
     ]
@@ -1809,6 +1849,9 @@ export const useSessionManager = (
           })
         } catch (err) {
           log.warn('restartSession: spawn failed; old session preserved', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to restart terminal', err)
+          )
 
           return
         }
@@ -1930,6 +1973,7 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       dropAllForPty,
+      onTerminalSpawnError,
       registerPending,
       service,
       setActiveSessionId,

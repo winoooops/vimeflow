@@ -313,6 +313,9 @@ const WorkspaceViewContent = (): ReactElement => {
   // pins the instance for the component's lifetime so re-renders don't
   // produce a fresh mock and silently disconnect the manager from the panes.
   const terminalService = useMemo(() => createTerminalService(), [])
+  // General-purpose error banner for workspace-level failures that are not
+  // owned by a dialog, including terminal spawn failures.
+  const [fileError, setFileError] = useState<string | null>(null)
 
   const {
     sessions,
@@ -343,7 +346,9 @@ const WorkspaceViewContent = (): ReactElement => {
     notifyPaneReady,
     registerPending,
     dropAllForPty,
-  } = useSessionManager(terminalService)
+  } = useSessionManager(terminalService, {
+    onTerminalSpawnError: setFileError,
+  })
 
   // Detect which modifier the toolbar advertises on this platform so
   // the keyboard shortcut reserves EXACTLY that combo (and no other).
@@ -1140,10 +1145,6 @@ const WorkspaceViewContent = (): ReactElement => {
     isUnsavedDialogSavingRef.current = value
     setIsUnsavedDialogSaving(value)
   }, [])
-
-  // General-purpose error banner for non-dialog file ops (direct file open,
-  // async load failure inside CodeEditor, vim :w save failure).
-  const [fileError, setFileError] = useState<string | null>(null)
 
   // Dock panel controlled state.
   const dockCanvasRef = useRef<HTMLDivElement>(null)

@@ -476,3 +476,16 @@ failed" must mean the editor shows the original file, not the requested one.
   `finally` resume path intact. Added regression coverage that a rejected picker
   still resumes the native overlay.
 - **Commit:** same commit as this entry
+
+### 48. Terminal spawn failures only reached developer logs
+
+- **Source:** github-codex-connector | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Bridge generation failures made `service.spawn` reject, but the
+  create, add-pane, and restart flows only logged warnings. A user could lose
+  the ability to open a terminal with no visible explanation.
+- **Fix:** Added an optional terminal-spawn error callback to `useSessionManager`
+  and wired `WorkspaceView` to the existing alert banner. Added hook coverage
+  for create/add/restart failures and a workspace-level banner regression test.
+- **Commit:** same commit as this entry

@@ -407,3 +407,15 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Keep refreshing only while the status file is absent or still
   contains the fixture-owned JSON; stop once external test content appears.
 - **Commit:** same commit as this entry
+
+### 35. E2E menu retry toggled an already-open menu closed
+
+- **Source:** github-codex-connector | PR #667 round 4 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`
+- **Finding:** `waitForLayoutDisplayMenuItem` clicked the displayed-layouts
+  trigger on every retry. Because the trigger is a toggle, a slow first wait
+  could leave the menu open and the retry would close it before waiting again.
+- **Fix:** Check for the displayed-layouts menu before clicking the trigger, so
+  retrying waits against an already-open menu instead of toggling it closed.
+- **Commit:** same commit as this entry
