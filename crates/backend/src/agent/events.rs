@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentSessionTitleEvent, AgentStatusEvent,
-    AgentToolCallEvent, AgentTurnEvent,
+    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplyEvent, AgentSessionTitleEvent,
+    AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
 };
 use crate::runtime::{serialize_event, EventSink};
 
@@ -29,6 +29,13 @@ pub(crate) fn emit_agent_turn(
     payload: &AgentTurnEvent,
 ) -> Result<(), String> {
     events.emit_json("agent-turn", serialize_event(payload)?)
+}
+
+pub(crate) fn emit_agent_reply(
+    events: &dyn EventSink,
+    payload: &AgentReplyEvent,
+) -> Result<(), String> {
+    events.emit_json("agent-reply", serialize_event(payload)?)
 }
 
 pub(crate) fn emit_agent_cwd(

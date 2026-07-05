@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-22
-ref_count: 8
+last_updated: 2026-07-05
+ref_count: 9
 ---
 
 # Parser Resilience
@@ -237,4 +237,22 @@ true` and drop the chunk.
 - **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
 - **Finding:** The hand-written YAML parser only supported `accepts: [browser, shell]`. A user-authored block list under `accepts:` was parsed as unrelated `- browser` slot-level lines, so the restriction was dropped without an error.
 - **Fix:** Added a narrow `accepts:` block-list state that accumulates following `- kind` scalars into the current slot restriction. The new test covers block-sequence YAML and verifies both values are preserved.
+- **Commit:** same commit as this entry
+
+### 15. Truncated structured reply block drops a recoverable nonce
+
+- **Source:** github-claude | PR #659 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/reply.rs`
+- **Finding:** The truncated sentinel branch returned a malformed reply with `nonce: None` before trying the same best-effort nonce recovery used for schema-invalid blocks. A reply cut off after complete JSON but before the close sentinel would therefore be ignored by the frontend nonce gate instead of degrading to a user-visible raw note.
+- **Fix:** Normalize the trailing candidate payload and pass it through `best_effort_nonce` in the no-close-sentinel branch. Added a regression test proving parseable truncated JSON preserves its nonce.
+- **Commit:** same commit as this entry
+
+### 16. Quoted structured reply payload is parsed as malformed JSON
+
+- **Source:** github-codex-connector | PR #659 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/reply.rs`
+- **Finding:** The reply extractor passed the captured sentinel body directly to `serde_json`, so a valid machine block echoed with Markdown quote prefixes such as `> { ... }` failed parsing and lost structured per-comment replies.
+- **Fix:** Added a normalization step that strips optional leading Markdown quote markers from captured payload lines before validation or best-effort nonce parsing, while preserving the original raw sentinel text. Added a regression test for quoted payloads.
 - **Commit:** same commit as this entry
