@@ -2,7 +2,7 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-06-27
+last_updated: 2026-07-05
 ref_count: 3
 ---
 
@@ -106,4 +106,19 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   empty and the user is not typing args. The existing longest-common-prefix
   guard still no-ops when the fuzzy results do not share an extension. Added a
   regression test for `:oe` completing to `:open-`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Agent replies consumed before attach succeeded
+
+- **Source:** github-codex-connector | PR #662 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useAgentReply.ts`
+- **Finding:** The agent reply hook deleted a pending review handle and could
+  clear the pending record even when `addAnnotationForOwner` reported
+  `cap-reached`. A reply event that did not actually attach could therefore be
+  treated as complete, losing the agent answer.
+- **Fix:** Made successful attachment the authoritative completion signal:
+  matched handles are consumed only when the add returns `ok`, and agent-authored
+  annotations bypass the pending-comment cap because they are not user feedback
+  awaiting dispatch. Added regression coverage for cap-blocked replies.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -649,6 +649,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 ) : (
                   <Panel
@@ -658,6 +659,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 )}
               </div>

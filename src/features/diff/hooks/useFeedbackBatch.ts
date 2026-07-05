@@ -270,6 +270,14 @@ export interface UseFeedbackBatchReturn {
     staged: boolean,
     annotation: DiffLineAnnotation<ReviewComment>
   ) => 'ok' | 'cap-reached'
+  /** Add onto a SPECIFIC owner (not the active one) — for agent replies (VIM-249). */
+  addAnnotationForOwner: (
+    ownerKey: string,
+    cwd: string,
+    filePath: string,
+    staged: boolean,
+    annotation: DiffLineAnnotation<ReviewComment>
+  ) => 'ok' | 'cap-reached'
   updateAnnotation: (
     cwd: string,
     filePath: string,
@@ -397,8 +405,13 @@ export const useFeedbackBatchStore = (
     [batch]
   )
 
-  const addAnnotation = useCallback(
+  // Owner-addressed add: targets a SPECIFIC owner, not the active one. The diff
+  // add path uses `addAnnotation` (active owner); an agent reply (VIM-249) uses
+  // this to attach onto the owner that dispatched the review, even after the
+  // user switched panes.
+  const addAnnotationForOwner = useCallback(
     (
+      targetOwnerKey: string,
       requestedCwd: string,
       filePath: string,
       staged: boolean,
@@ -407,9 +420,12 @@ export const useFeedbackBatchStore = (
       const key = makeBatchKey(requestedCwd, filePath, staged)
 
       const optimisticBatch =
-        optimisticBatchesRef.current.get(ownerKey) ?? EMPTY_BATCH
+        optimisticBatchesRef.current.get(targetOwnerKey) ?? EMPTY_BATCH
 
-      if (countPendingInBatch(optimisticBatch) >= SOFT_CAP) {
+      if (
+        annotation.metadata.author !== 'agent' &&
+        countPendingInBatch(optimisticBatch) >= SOFT_CAP
+      ) {
         addAnnotationResultRef.current = 'cap-reached'
 
         return addAnnotationResultRef.current
@@ -421,13 +437,16 @@ export const useFeedbackBatchStore = (
         annotation
       )
       optimisticBatchesRef.current = new Map(optimisticBatchesRef.current).set(
-        ownerKey,
+        targetOwnerKey,
         optimisticNextBatch
       )
       addAnnotationResultRef.current = 'ok'
       setBatchesByOwner((prev) => {
-        const currentBatch = prev.get(ownerKey) ?? EMPTY_BATCH
-        if (countPendingInBatch(currentBatch) >= SOFT_CAP) {
+        const currentBatch = prev.get(targetOwnerKey) ?? EMPTY_BATCH
+        if (
+          annotation.metadata.author !== 'agent' &&
+          countPendingInBatch(currentBatch) >= SOFT_CAP
+        ) {
           addAnnotationResultRef.current = 'cap-reached'
           optimisticBatchesRef.current = prev
 
@@ -435,7 +454,7 @@ export const useFeedbackBatchStore = (
         }
 
         const nextBatch = addAnnotationToBatch(currentBatch, key, annotation)
-        const next = new Map(prev).set(ownerKey, nextBatch)
+        const next = new Map(prev).set(targetOwnerKey, nextBatch)
         optimisticBatchesRef.current = next
         addAnnotationResultRef.current = 'ok'
 
@@ -444,7 +463,24 @@ export const useFeedbackBatchStore = (
 
       return addAnnotationResultRef.current
     },
-    [ownerKey]
+    []
+  )
+
+  const addAnnotation = useCallback(
+    (
+      requestedCwd: string,
+      filePath: string,
+      staged: boolean,
+      annotation: DiffLineAnnotation<ReviewComment>
+    ): 'ok' | 'cap-reached' =>
+      addAnnotationForOwner(
+        ownerKey,
+        requestedCwd,
+        filePath,
+        staged,
+        annotation
+      ),
+    [addAnnotationForOwner, ownerKey]
   )
 
   const updateAnnotation = useCallback(
@@ -693,6 +729,7 @@ export const useFeedbackBatchStore = (
       batch,
       annotationsForFile,
       addAnnotation,
+      addAnnotationForOwner,
       updateAnnotation,
       removeAnnotation,
       clearBatch,
@@ -705,6 +742,7 @@ export const useFeedbackBatchStore = (
       batch,
       annotationsForFile,
       addAnnotation,
+      addAnnotationForOwner,
       updateAnnotation,
       removeAnnotation,
       clearBatch,

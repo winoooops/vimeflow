@@ -93,6 +93,39 @@ describe('useFeedbackBatch', () => {
     expect(result.current.totalAnnotations()).toBe(50)
   })
 
+  test('agent replies bypass the pending soft cap', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      for (let i = 0; i < 50; i++) {
+        result.current.addAnnotation(
+          '/repo',
+          `file-${i}.ts`,
+          false,
+          makeAnnotation(`id-${i}`, 'x', i + 1)
+        )
+      }
+    })
+
+    let addResult: 'ok' | 'cap-reached' = 'cap-reached'
+    act(() => {
+      addResult = result.current.addAnnotation('/repo', 'reply.ts', false, {
+        side: 'additions',
+        lineNumber: 1,
+        metadata: {
+          id: 'agent-1',
+          text: 'reply',
+          author: 'agent',
+          createdAt: 1000,
+        },
+      })
+    })
+
+    expect(addResult).toBe('ok')
+    expect(result.current.totalAnnotations()).toBe(51)
+    expect(result.current.pendingAnnotations()).toBe(50)
+  })
+
   test('dispatched comments do not count against the pending soft cap', () => {
     const { result } = renderHook(() => useFeedbackBatch())
     const dispatchedIds = new Set<string>()
@@ -464,6 +497,31 @@ describe('useFeedbackBatch', () => {
 })
 
 describe('useFeedbackBatchStore', () => {
+  test('addAnnotationForOwner targets a specific owner, not the active one', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'sess:p0', cwd: '/repo' } }
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotationForOwner(
+        'sess:p0',
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('reply-1')
+      )
+    })
+
+    // Switch the active owner away and back — the annotation stayed on sess:p0.
+    rerender({ ownerKey: 'sess:p1', cwd: '/repo' })
+    rerender({ ownerKey: 'sess:p0', cwd: '/repo' })
+
+    expect(
+      result.current.feedbackBatch.annotationsForFile('/repo', 'a.ts', false)
+    ).toHaveLength(1)
+  })
+
   test('stores unfinished reviews separately per owner key', () => {
     const { result, rerender } = renderHook(
       ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),

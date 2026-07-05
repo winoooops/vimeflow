@@ -33,6 +33,7 @@ import {
 } from './hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from './services/activePanePicker'
+import { clearPendingReview, getPendingReview } from './services/pendingReviews'
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { themeService } from '../../theme'
 
@@ -351,6 +352,7 @@ describe('Panel', () => {
       batch,
       annotationsForFile: () => [],
       addAnnotation: () => 'ok',
+      addAnnotationForOwner: () => 'ok',
       updateAnnotation: vi.fn(),
       removeAnnotation: vi.fn(),
       clearBatch,
@@ -430,6 +432,7 @@ describe('Panel', () => {
         ]),
         annotationsForFile: () => [],
         addAnnotation: () => 'ok',
+        addAnnotationForOwner: () => 'ok',
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -495,6 +498,7 @@ describe('Panel', () => {
       batch: new Map(),
       annotationsForFile: () => [],
       addAnnotation: () => 'ok',
+      addAnnotationForOwner: () => 'ok',
       updateAnnotation: vi.fn(),
       removeAnnotation: vi.fn(),
       clearBatch,
@@ -3564,6 +3568,7 @@ describe('Panel', () => {
         batch: new Map(),
         annotationsForFile: () => [],
         addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -3743,6 +3748,7 @@ describe('Panel', () => {
           },
         ],
         addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation,
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -4164,6 +4170,7 @@ describe('Panel', () => {
         batch: new Map(),
         annotationsForFile: () => [],
         addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation: vi.fn(),
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -4342,6 +4349,7 @@ describe('Panel', () => {
           },
         ],
         addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation,
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -4421,6 +4429,7 @@ describe('Panel', () => {
           },
         ],
         addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation,
         removeAnnotation: vi.fn(),
         clearBatch: vi.fn(),
@@ -4581,6 +4590,7 @@ describe('Panel', () => {
           },
         ],
         addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation,
         removeAnnotation,
         clearBatch: vi.fn(),
@@ -5816,6 +5826,7 @@ describe('Panel', () => {
           cwd="/repo"
           selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
           onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
           feedbackDispatch={{
             candidates: [candidate],
             writePty,
@@ -5876,6 +5887,16 @@ describe('Panel', () => {
       // VIM-282: the dispatched comment stays in the hunk as a thread anchor
       // instead of being wiped on send.
       expect(screen.getByText('Great change!')).toBeInTheDocument()
+
+      // VIM-249: a pending review is recorded for this pty, keyed by [#n], so an
+      // agent reply can be correlated back. The path is the repo-relative batch
+      // key, not the absolute prompt path.
+      const pending = getPendingReview('pty-1')
+      expect(pending?.ownerKey).toBe('sess:pane-1')
+      expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
+      expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
+
+      clearPendingReview('pty-1') // module singleton — don't leak into other tests
     })
 
     test('preserves the comment draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {
@@ -5888,6 +5909,7 @@ describe('Panel', () => {
           batch: new Map(),
           annotationsForFile: () => [],
           addAnnotation: addAnnotationSpy,
+          addAnnotationForOwner: vi.fn(() => 'ok' as const),
           updateAnnotation: vi.fn(),
           removeAnnotation: vi.fn(),
           clearBatch: vi.fn(),

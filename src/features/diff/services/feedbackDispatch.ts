@@ -78,7 +78,10 @@ const CATEGORY_INSTRUCTION: Record<ReviewCommentCategory, string> = {
 // category (the VIM-253 intent) and a [#n] handle it can reply against — the
 // seam for structured Q&A (VIM-249 / VIM-283). The category chip in the UI is
 // just the face value of this.
-export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
+export const formatFeedbackPayload = (
+  entries: DispatchEntry[],
+  nonce: string
+): string => {
   const totalCount = entries.reduce((s, e) => s + e.annotations.length, 0)
   const header = `> Inline review — ${totalCount} item${totalCount === 1 ? '' : 's'}. Reply to each by its [#n].`
 
@@ -109,17 +112,27 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
     '>',
     ...blocks,
     '> ―',
-    '> When done, reply referencing each [#n].',
+    '> When done, end your reply with this exact block, echoing the nonce verbatim.',
+    '> status is one of: "answered" (a question), "changed" (you edited files), "skipped".',
+    '> <<<VIMEFLOW_REPLY',
+    `> {"v":1,"nonce":"${nonce}","replies":[{"id":1,"status":"answered","text":"..."}]}`,
+    '> VIMEFLOW_REPLY>>>',
   ].join('\n')
 }
+
+// A short per-dispatch correlation token (VIM-249). Not a secret — it only
+// distinguishes a reply to this dispatch from a superseded one on the same pty.
+export const makeDispatchNonce = (): string =>
+  Math.random().toString(36).slice(2, 8)
 
 export const dispatchFeedbackBatch = async (
   _paneId: string,
   ptyId: string,
   entries: DispatchEntry[],
+  nonce: string,
   writePty: (ptyId: string, data: string) => Promise<void>
 ): Promise<void> => {
-  const formatted = formatFeedbackPayload(entries)
+  const formatted = formatFeedbackPayload(entries, nonce)
   const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
 
   await writePty(ptyId, payload)
