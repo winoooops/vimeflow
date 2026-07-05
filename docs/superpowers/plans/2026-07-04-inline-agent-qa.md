@@ -981,3 +981,5 @@ git commit -m "test(diff): agent reply renders in the thread end-to-end (VIM-249
 - **Claude Code adapter:** call `extract_agent_reply` on the assistant text blocks its decoder already reads (`process_assistant_message`) and `emit_agent_reply` — no contract change.
 - **Kimi / OpenCode:** same one-call pattern.
 - **Activity feed:** surface replies in the agent-status feed (a `reply` activity kind).
+
+<!-- codex-reviewed: 2026-07-05T04:32:33Z -->
