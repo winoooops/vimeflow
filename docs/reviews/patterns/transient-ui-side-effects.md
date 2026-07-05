@@ -138,6 +138,7 @@ to persistent state through a separate, explicit path.
   is present. Added regression coverage for a themed request followed by an
   unthemed request in the same host window.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 9. Split diff row navigation scrolled on no-op movement
 
 - **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29

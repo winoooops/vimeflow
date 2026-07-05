@@ -31,6 +31,7 @@ When a React component renders retained (stale) content while fresh data for a n
 - **Finding:** Burner entries are intentionally retained by stable `${sessionId}:${paneId}` identity across pane restarts, but the native secondary request kept the old `hostPtyId`. When the host pane remounted with a new PTY, an open native burner stayed attached to the removed native surface until the user toggled it.
 - **Fix:** Threaded a live pane-key-to-PTY map from `WorkspaceView` into `useBurnerTerminals`, updated retained entries when the host PTY changes, and covered the reattach path with a native burner regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 2. Single focus-toggle restore slot is shared across sessions
 
 - **Source:** github-claude | PR #631 round 1 | 2026-06-28

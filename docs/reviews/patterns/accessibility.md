@@ -798,6 +798,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/PaneRenameInput.tsx`
 - **Finding:** Rename validation and backend error text rendered only inside `sr-only`, so sighted users received only color and border feedback when a pane rename failed.
 - **Fix:** Rendered a compact visible `role="alert"` message in `text-error` while preserving `aria-describedby`; updated regression coverage to assert the alert is not `sr-only`.
+
 ### 74. Generic layout picker announced workspace-only focus action
 
 - **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28

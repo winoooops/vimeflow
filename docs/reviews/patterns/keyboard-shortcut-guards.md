@@ -345,6 +345,7 @@ against three classes of false-fire:
   through 9 to the forwarded `DigitN` payload, preserving the existing
   allowed-digit filter.
 - **Commit:** same commit as this entry
+
 ### 25. Mod+Z focus toggle captured terminal and editor undo controls
 
 - **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28

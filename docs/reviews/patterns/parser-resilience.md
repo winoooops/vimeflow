@@ -277,6 +277,7 @@ true` and drop the chunk.
 - **Fix:** Added the same fallback background color used by normal update frames
   to the destroy hide/reset payload and asserted the serialized destroy command
   in the helper regression test.
+
 ### 15. Truncated structured reply block drops a recoverable nonce
 
 - **Source:** github-claude | PR #659 round 1 | 2026-07-05

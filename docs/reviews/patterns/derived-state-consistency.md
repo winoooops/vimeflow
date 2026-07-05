@@ -200,6 +200,7 @@ base data is technically "correct."
 - **Fix:** Added a focused effect that resets `blocked` back to `idle` when
   `burnerActive` becomes false while the sync affordance remains visible, plus
   regression coverage for the active-to-idle rerender transition.
+
 ### 16. Empty diff toolbar ignored draft-only feedback
 
 - **Source:** github-codex-connector | PR #637 round 1 | 2026-06-30

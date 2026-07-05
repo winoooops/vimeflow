@@ -271,6 +271,7 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `tests/e2e/shared/actions.ts`, `tests/e2e/core/specs/navigation.spec.ts`
 - **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
 - **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
+
 ### 25. Electron WDIO suites need capability-level worker caps
 
 - **Source:** local-codex | PR #637 CI failure | 2026-06-30

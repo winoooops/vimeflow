@@ -48,6 +48,7 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **File:** `src/components/Menu.tsx`
 - **Finding:** `LayoutDisplayMenu` opted into NativeOverlay but always rendered `Menu.Checkbox` rows, and the menu serializer treated checkboxes as unsupported content. The layout-display trigger therefore fell back to the local DOM menu, so the native overlay smoke path and its `menuitemcheckbox` E2E expectation could not exercise the BrowserWindow overlay above Ghostty.
 - **Fix:** Added checkbox serialization to the shared Menu native payload path and introduced retained native action handlers so checkbox toggles stay open and resync state while normal menu actions keep the existing at-most-once close behavior.
+
 ### 4. Keep edge reveal controls out of diff gutters
 
 - **Source:** github-claude | PR #645 round 1 | 2026-07-02
