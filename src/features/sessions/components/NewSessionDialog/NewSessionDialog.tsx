@@ -157,6 +157,8 @@ export const NewSessionDialog = ({
           if (picked !== null) {
             applyPath(picked)
           }
+        } catch {
+          return
         } finally {
           if (event !== undefined) {
             void window.vimeflow?.nativeOverlay?.resume({
@@ -410,7 +412,11 @@ export const NewSessionDialog = ({
 
         <label className={`${LABEL} mt-4 block`}>Working directory</label>
         <div className="mt-2">
-          <WorkingDirectoryField path={path} onChange={applyPath} />
+          <WorkingDirectoryField
+            path={path}
+            onChange={applyPath}
+            browseDisabled={nativeOverlay}
+          />
         </div>
 
         <div className="mt-4 flex min-h-[232px] items-start gap-4">

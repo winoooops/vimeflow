@@ -70,11 +70,19 @@ const setNavigatorPlatform = (platform: string): void => {
 
 const installNativeOverlayBridge = (): {
   open: ReturnType<typeof vi.fn>
+  onAction: ReturnType<typeof vi.fn>
   resume: ReturnType<typeof vi.fn>
   emitAction: (event: unknown) => void
 } => {
   let actionListener: ((event: unknown) => void) | null = null
   const open = vi.fn(() => Promise.resolve({ accepted: true }))
+
+  const onAction = vi.fn((callback: (event: unknown) => void) => {
+    actionListener = callback
+
+    return vi.fn()
+  })
+
   const resume = vi.fn(() => Promise.resolve())
 
   window.vimeflow = {
@@ -85,17 +93,17 @@ const installNativeOverlayBridge = (): {
       close: vi.fn(() => Promise.resolve()),
       actionResult: vi.fn(() => Promise.resolve()),
       resume,
-      onAction: vi.fn((callback: (event: unknown) => void) => {
-        actionListener = callback
-
-        return vi.fn()
-      }),
+      onAction,
       onClose: vi.fn(() => vi.fn()),
+    },
+    dialog: {
+      pickDirectory: vi.fn(() => Promise.resolve(null)),
     },
   }
 
   return {
     open,
+    onAction,
     resume,
     emitAction: (event): void => {
       actionListener?.(event)
@@ -253,6 +261,9 @@ describe('NewSessionDialog', () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const bridge = installNativeOverlayBridge()
+    window.vimeflow!.dialog!.pickDirectory = vi.fn(() =>
+      Promise.reject(new Error('IPC unavailable'))
+    )
     const { onCreate } = setup({ nativeOverlay: true })
 
     await waitFor(() => {
@@ -331,6 +342,17 @@ describe('NewSessionDialog', () => {
         layout: 'vsplit',
         panes: [{ command: 'claude' }, { command: 'codex' }],
       })
+    })
+  })
+
+  test('disables the local Browse button while native overlay is active', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    installNativeOverlayBridge()
+    setup({ nativeOverlay: true })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /browse/i })).toBeDisabled()
     })
   })
 })

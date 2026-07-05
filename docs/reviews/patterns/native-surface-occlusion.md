@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-04
-ref_count: 1
+last_updated: 2026-07-05
+ref_count: 2
 ---
 
 # Native Surface Occlusion
@@ -82,3 +82,18 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **Finding:** The burner hook rendered native secondary panes whenever the primary macOS Ghostty bridge existed. Legacy helper mode exposes only primary update/data/focus/destroy IPC, so the native secondary attach path failed and killed a newly spawned burner instead of falling back to the xterm popup.
 - **Fix:** Added an explicit `canUseNativeGhosttySecondary()` capability check that requires every secondary IPC method, and used it to select native burner rendering. Legacy helper mode now keeps the primary native pane path while burner panes use the xterm popup.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Hidden local Browse button bypassed native overlay suspension
+
+- **Source:** github-codex-connector | PR #660 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** Native-overlay mode kept the local dialog tree mounted and focusable
+  while visually hidden, so keyboard users could activate the local Browse button.
+  That path opened the regular directory picker without suspending the native
+  overlay, letting the overlay remain above the AppKit sheet.
+- **Fix:** Added a `browseDisabled` prop to `WorkingDirectoryField` and disabled
+  the local Browse button while native-overlay mode is active, leaving the native
+  serialized Browse action as the only picker path. Added unit coverage for the
+  disabled local path.
+- **Commit:** same commit as this entry

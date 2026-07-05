@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-03
-ref_count: 16
+last_updated: 2026-07-05
+ref_count: 17
 ---
 
 # E2E Testing
@@ -318,3 +318,17 @@ completely different root causes. The generic fast-failure modes:
   agent WDIO suite, while preserving the after-suite cleanup for post-job
   headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. E2E Codex watcher seed must tolerate retried partial SQLite setup
+
+- **Source:** deterministic CI failure | PR #660 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** The Linux agent smoke suite retried `e2e_start_codex_watcher`
+  after a partial SQLite setup left `state.sqlite` initialized. The helper used
+  plain `CREATE TABLE` statements, so the retry failed with `table threads
+already exists` before the spec could assert agent status rendering.
+- **Fix:** Made the e2e-only Codex watcher seed idempotent with
+  `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and
+  `INSERT OR REPLACE` for the seeded thread row.
+- **Commit:** same commit as this entry
