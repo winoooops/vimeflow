@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-05
-ref_count: 6
+ref_count: 7
 ---
 
 # Keyboard Shortcut Guards
@@ -407,4 +407,20 @@ against three classes of false-fire:
   back into the diff panel.
 - **Fix:** Move focus to the stable diff root at the start of `toggleFilesList`, mirroring
   the pinned-toggle handoff before any changed-files subtree is hidden or remounted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Native Cmd+N forwarding dropped auto-repeat state
+
+- **Source:** github-codex-connector | PR #666 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`,
+  `native/ghostty-parent/ghostty_native_parent.cc`, `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty Cmd+N forwarding path synthesized renderer
+  `keydown` events without preserving `NSEvent.isARepeat`. Held Cmd+N repeats
+  therefore reached `useNewSessionShortcut` as `event.repeat === false`,
+  bypassing its held-key guard and allowing multiple session spawns.
+- **Fix:** Threaded repeat state through the Swift callback, C++ N-API bridge,
+  and TypeScript shortcut payload, then set `KeyboardEventInit.repeat` on the
+  synthetic event. Added regression coverage that forwarded KeyN includes
+  `repeat: true`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

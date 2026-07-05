@@ -59,7 +59,8 @@ interface GhosttyNativeParentAddon {
       control: boolean,
       meta: boolean,
       alt: boolean,
-      shift: boolean
+      shift: boolean,
+      repeat: boolean
     ) => void,
     onRenamePane: () => void
   ) => unknown
@@ -126,6 +127,12 @@ interface GhosttyNativeShortcutInput {
   meta: boolean
   alt: boolean
   shift: boolean
+  repeat: boolean
+}
+
+interface GhosttyNativeShortcutDispatchState {
+  activeGhosttyPane: boolean
+  dockHasFocus: boolean
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -165,9 +172,39 @@ const ghosttyShortcutEventInit = (
   metaKey: input.meta,
   altKey: input.alt,
   shiftKey: input.shift,
+  repeat: input.repeat,
   bubbles: true,
   cancelable: true,
 })
+
+const isShortcutDispatchState = (
+  value: unknown
+): value is GhosttyNativeShortcutDispatchState =>
+  isRecord(value) &&
+  typeof value.activeGhosttyPane === 'boolean' &&
+  typeof value.dockHasFocus === 'boolean'
+
+// Keep this paired with GhosttyElectronBridge.workspaceShortcutByKeyCode until
+// VIM-294 replaces the native forwarding allowlist with a shared registry.
+const shouldRefocusGhosttyAfterWorkspaceShortcut = (
+  input: GhosttyNativeShortcutInput,
+  dispatchState: GhosttyNativeShortcutDispatchState
+): boolean => {
+  if (!dispatchState.activeGhosttyPane || dispatchState.dockHasFocus) {
+    return false
+  }
+
+  return (
+    /^Digit[1-9]$/.test(input.code) ||
+    input.code === 'Backslash' ||
+    input.code === 'Digit0' ||
+    input.code === 'KeyB' ||
+    input.code === 'KeyE' ||
+    input.code === 'KeyG' ||
+    input.code === 'KeyN' ||
+    input.code === 'KeyZ'
+  )
+}
 
 const isShortcutContext = (
   value: unknown
@@ -819,7 +856,7 @@ export class GhosttyNativeParentController {
           payload: state.pane,
         })
       },
-      (key, code, control, meta, alt, shift) => {
+      (key, code, control, meta, alt, shift, repeat) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
@@ -845,6 +882,7 @@ export class GhosttyNativeParentController {
           meta,
           alt,
           shift,
+          repeat,
         })
       },
       () => {
@@ -904,20 +942,27 @@ export class GhosttyNativeParentController {
             requestAnimationFrame(() => {
               const renameInputOpen =
                 document.querySelector('[data-workspace-overlay-id="pane-rename"]') !== null
+              const activeElement = document.activeElement
+              const dockHasFocus =
+                activeElement instanceof Element &&
+                activeElement.closest('[data-container-id="dock"]') !== null
               const activeGhosttyPane = Array.from(
                 document.querySelectorAll('[data-pane-kind="shell"][data-pane-active="true"]')
               ).some((node) =>
                 node.getAttribute('data-pane-id') === ${JSON.stringify(state.pane.paneId)} &&
                 node.getAttribute('data-pty-id') === ${JSON.stringify(state.pane.sessionId)}
               )
-              resolve(!renameInputOpen && activeGhosttyPane)
+              resolve({ activeGhosttyPane: !renameInputOpen && activeGhosttyPane, dockHasFocus })
             })
           })
         })()`,
         false
       )
 
-      if (shouldRefocus === true) {
+      if (
+        isShortcutDispatchState(shouldRefocus) &&
+        shouldRefocusGhosttyAfterWorkspaceShortcut(input, shouldRefocus)
+      ) {
         addon.focus(state.surface)
       }
     } catch {

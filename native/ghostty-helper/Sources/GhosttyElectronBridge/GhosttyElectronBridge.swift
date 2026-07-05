@@ -25,6 +25,7 @@ public typealias VimeflowGhosttyShortcutCallback = @convention(c) (
     Bool,
     Bool,
     Bool,
+    Bool,
     Bool
 ) -> Void
 
@@ -203,7 +204,8 @@ private final class CallbackBox: @unchecked Sendable {
         control: Bool,
         meta: Bool,
         alt: Bool,
-        shift: Bool
+        shift: Bool,
+        repeatEvent: Bool
     ) {
         key.withCString { keyPointer in
             code.withCString { codePointer in
@@ -214,7 +216,8 @@ private final class CallbackBox: @unchecked Sendable {
                     control,
                     meta,
                     alt,
-                    shift
+                    shift,
+                    repeatEvent
                 )
             }
         }
@@ -306,6 +309,24 @@ private final class EmbeddedGhosttySurface: NSObject {
         28: "8",
         25: "9"
     ]
+
+    // App-owned shortcuts must cross the AppKit -> Electron boundary while
+    // Ghostty has focus. VIM-294 tracks replacing this explicit list with a
+    // shared shortcut registry; Cmd+R/reload is still a later scope.
+    private static let workspaceShortcutByKeyCode: [UInt16: (key: String, code: String)] = [
+        5: ("g", "KeyG"),
+        6: ("z", "KeyZ"),
+        11: ("b", "KeyB"),
+        14: ("e", "KeyE"),
+        29: ("0", "Digit0"),
+        42: ("\\", "Backslash"),
+        45: ("n", "KeyN")
+    ]
+
+    private static let workspaceShortcutCodesAllowingExtraModifiers = Set([
+        "Digit0",
+        "Backslash"
+    ])
 
     private let parentView: NSView
     private let container = EmbeddedGhosttyContainerView(frame: .zero)
@@ -830,10 +851,29 @@ private final class EmbeddedGhosttySurface: NSObject {
                 control: flags.contains(.control),
                 meta: flags.contains(.command),
                 alt: flags.contains(.option),
-                shift: flags.contains(.shift)
+                shift: flags.contains(.shift),
+                repeatEvent: event.isARepeat
             )
 
             return true
+        }
+
+        if let shortcut = Self.workspaceShortcutByKeyCode[event.keyCode] {
+            let allowsExtraModifiers =
+                Self.workspaceShortcutCodesAllowingExtraModifiers.contains(shortcut.code)
+            if allowsExtraModifiers || (!flags.contains(.option) && !flags.contains(.shift)) {
+                callbacks.forwardShortcut(
+                    key: shortcut.key,
+                    code: shortcut.code,
+                    control: flags.contains(.control),
+                    meta: flags.contains(.command),
+                    alt: flags.contains(.option),
+                    shift: flags.contains(.shift),
+                    repeatEvent: event.isARepeat
+                )
+
+                return true
+            }
         }
 
         guard let digit = Self.shortcutDigitByKeyCode[event.keyCode] else {
@@ -850,7 +890,8 @@ private final class EmbeddedGhosttySurface: NSObject {
             control: flags.contains(.control),
             meta: flags.contains(.command),
             alt: flags.contains(.option),
-            shift: flags.contains(.shift)
+            shift: flags.contains(.shift),
+            repeatEvent: event.isARepeat
         )
 
         return true

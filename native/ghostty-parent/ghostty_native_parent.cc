@@ -14,7 +14,7 @@ using InputCallback = void (*)(void *, const unsigned char *, int);
 using ResizeCallback = void (*)(void *, int, int);
 using FocusCallback = void (*)(void *);
 using ShortcutCallback = void (*)(void *, const char *, const char *, bool,
-                                  bool, bool, bool);
+                                  bool, bool, bool, bool);
 using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            FocusCallback, ShortcutCallback,
@@ -87,6 +87,7 @@ struct ShortcutPayload {
   bool meta = false;
   bool alt = false;
   bool shift = false;
+  bool repeat = false;
 };
 
 BridgeApi bridge;
@@ -346,7 +347,7 @@ void OnFocus(void *context) {
 }
 
 void OnShortcut(void *context, const char *key, const char *code, bool control,
-                bool meta, bool alt, bool shift) {
+                bool meta, bool alt, bool shift, bool repeat) {
   if (context == nullptr || key == nullptr || code == nullptr) {
     return;
   }
@@ -365,6 +366,7 @@ void OnShortcut(void *context, const char *key, const char *code, bool control,
   payload->meta = meta;
   payload->alt = alt;
   payload->shift = shift;
+  payload->repeat = repeat;
   if (napi_call_threadsafe_function(tsfn, payload.get(),
                                     napi_tsfn_nonblocking) == napi_ok) {
     payload.release();
@@ -439,7 +441,7 @@ void CallJsShortcut(napi_env env, napi_value callback, void *, void *data) {
   }
 
   napi_value global;
-  napi_value argv[6];
+  napi_value argv[7];
   if (napi_get_global(env, &global) == napi_ok &&
       napi_create_string_utf8(env, payload->key.data(), payload->key.size(),
                               &argv[0]) == napi_ok &&
@@ -448,9 +450,10 @@ void CallJsShortcut(napi_env env, napi_value callback, void *, void *data) {
       napi_get_boolean(env, payload->control, &argv[2]) == napi_ok &&
       napi_get_boolean(env, payload->meta, &argv[3]) == napi_ok &&
       napi_get_boolean(env, payload->alt, &argv[4]) == napi_ok &&
-      napi_get_boolean(env, payload->shift, &argv[5]) == napi_ok) {
+      napi_get_boolean(env, payload->shift, &argv[5]) == napi_ok &&
+      napi_get_boolean(env, payload->repeat, &argv[6]) == napi_ok) {
     napi_value ignored;
-    napi_call_function(env, global, callback, 6, argv, &ignored);
+    napi_call_function(env, global, callback, 7, argv, &ignored);
   }
 }
 
