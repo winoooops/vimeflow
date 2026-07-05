@@ -306,11 +306,12 @@ describe('ghostty native helper', () => {
     controller.dispose()
   })
 
-  test('handles helper stdin errors during shutdown', () => {
+  test('resets cached helper state after stdin errors', () => {
     const warnSpy = vi
       .spyOn(console, 'warn')
       .mockImplementation(() => undefined)
     const stdout = new PassThrough()
+    const nextStdout = new PassThrough()
 
     const stdin = new Writable({
       write(_chunk, _encoding, callback): void {
@@ -332,6 +333,18 @@ describe('ghostty native helper', () => {
       kill: vi.fn(() => true),
     }
 
+    const nextHelper = {
+      stdin: new Writable({
+        write(_chunk, _encoding, callback): void {
+          callback()
+        },
+      }),
+      stdout: nextStdout,
+      stderr: null,
+      on: vi.fn(() => nextHelper),
+      kill: vi.fn(() => true),
+    }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
@@ -342,7 +355,10 @@ describe('ghostty native helper', () => {
       sidecar,
       platform: 'darwin',
       env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
-      spawnFn: vi.fn(() => helper),
+      spawnFn: vi
+        .fn()
+        .mockReturnValueOnce(helper)
+        .mockReturnValueOnce(nextHelper),
     })
     const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
 
@@ -358,12 +374,43 @@ describe('ghostty native helper', () => {
       }
     )
 
-    expect(() => {
-      stdin.emit('error', new Error('EPIPE'))
-      controller.dispose()
-    }).not.toThrow()
-    expect(helper.kill).toHaveBeenCalled()
+    stdin.emit('error', new Error('EPIPE'))
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
 
+    expect(nextHelper.stdin).not.toBe(stdin)
+    expect(helper.kill).toHaveBeenCalledOnce()
+
+    const body = Buffer.from(
+      JSON.stringify({
+        kind: 'event',
+        event: 'pty-input',
+        payload: { data: 'stale' },
+      }),
+      'utf8'
+    )
+    stdout.emit(
+      'data',
+      Buffer.concat([
+        Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
+        body,
+      ])
+    )
+
+    expect(sidecar.invoke).not.toHaveBeenCalledWith('write_pty', {
+      request: { sessionId: 'pty-1', data: 'stale' },
+    })
+
+    controller.dispose()
     warnSpy.mockRestore()
   })
 
@@ -512,6 +559,96 @@ describe('ghostty native helper', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
       request: { sessionId: 'pty-1', cols: 100, rows: 30 },
     })
+
+    controller.dispose()
+  })
+
+  test('shuts down helper when stdout exceeds the frame limit before a header', () => {
+    const stdout = new PassThrough()
+    const nextStdout = new PassThrough()
+
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback): void {
+        callback()
+      },
+    })
+
+    const nextStdin = new Writable({
+      write(_chunk, _encoding, callback): void {
+        callback()
+      },
+    })
+
+    const helper: {
+      stdin: Writable
+      stdout: PassThrough
+      stderr: null
+      on: ReturnType<typeof vi.fn>
+      kill: ReturnType<typeof vi.fn>
+    } = {
+      stdin,
+      stdout,
+      stderr: null,
+      on: vi.fn(() => helper),
+      kill: vi.fn(() => true),
+    }
+
+    const nextHelper = {
+      stdin: nextStdin,
+      stdout: nextStdout,
+      stderr: null,
+      on: vi.fn(() => nextHelper),
+      kill: vi.fn(() => true),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const spawnFn = vi
+      .fn()
+      .mockReturnValueOnce(helper)
+      .mockReturnValueOnce(nextHelper)
+
+    const controller = setupGhosttyNativeHelper({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS: '1' },
+      spawnFn,
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    stdout.emit('data', Buffer.alloc(16 * 1024 * 1024 + 1, 'x'))
+
+    expect(helper.kill).toHaveBeenCalledOnce()
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(spawnFn).toHaveBeenCalledTimes(2)
 
     controller.dispose()
   })

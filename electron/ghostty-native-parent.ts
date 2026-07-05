@@ -574,7 +574,7 @@ export class GhosttyNativeParentController {
           return
         }
 
-        void this.sidecar.invoke('write_pty', {
+        this.invokeSidecar('write_pty', {
           request: {
             sessionId: payload.secondarySessionId,
             data,
@@ -598,7 +598,7 @@ export class GhosttyNativeParentController {
         }
 
         state.secondary.lastResize = { cols, rows }
-        void this.sidecar.invoke('resize_pty', {
+        this.invokeSidecar('resize_pty', {
           request: {
             sessionId: payload.secondarySessionId,
             cols,
@@ -821,7 +821,7 @@ export class GhosttyNativeParentController {
           payload: { ...state.pane, data },
         })
 
-        void this.sidecar.invoke('write_pty', {
+        this.invokeSidecar('write_pty', {
           request: {
             sessionId: state.pane.sessionId,
             data,
@@ -838,7 +838,7 @@ export class GhosttyNativeParentController {
         }
 
         state.lastResize = { cols, rows }
-        void this.sidecar.invoke('resize_pty', {
+        this.invokeSidecar('resize_pty', {
           request: {
             sessionId: state.pane.sessionId,
             cols,
@@ -984,6 +984,20 @@ export class GhosttyNativeParentController {
     for (const data of state.pendingData.splice(0)) {
       addon.write(state.surface, data)
     }
+  }
+
+  private invokeSidecar(
+    command: Parameters<Sidecar['invoke']>[0],
+    payload: Parameters<Sidecar['invoke']>[1]
+  ): void {
+    void (async (): Promise<void> => {
+      try {
+        await this.sidecar.invoke(command, payload)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Ghostty native sidecar invoke failed', error)
+      }
+    })()
   }
 
   private ensureSecondaryState(

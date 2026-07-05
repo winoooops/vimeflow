@@ -294,6 +294,17 @@ interface IpcMainLike {
 }
 
 const OVERLAY_RENDER_TIMEOUT_MS = 1000
+const MAX_OVERLAY_ITEMS = 200
+const MAX_OVERLAY_SECTIONS = 50
+const MAX_OVERLAY_SUB_ACTIONS = 20
+const MAX_COMMAND_PALETTE_RESULTS = 200
+const MAX_COMMAND_PALETTE_SHORTCUTS = 8
+const MAX_NEW_SESSION_LAYOUTS = 24
+const MAX_NEW_SESSION_PANES = 16
+const MAX_NEW_SESSION_COMMANDS = 64
+const MAX_NEW_SESSION_AREA_ROWS = 16
+const MAX_NEW_SESSION_AREA_COLUMNS = 16
+const MAX_THEME_VARIABLES = 512
 
 const OVERLAY_CURSOR_RESET_SCRIPT = `
 (() => {
@@ -355,6 +366,20 @@ const isString = (value: unknown): value is string =>
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
+const isBoundedArray = <T>(
+  value: unknown,
+  maxLength: number,
+  itemGuard: (item: unknown) => item is T
+): value is T[] =>
+  Array.isArray(value) && value.length <= maxLength && value.every(itemGuard)
+
+const isNonEmptyBoundedArray = <T>(
+  value: unknown,
+  maxLength: number,
+  itemGuard: (item: unknown) => item is T
+): value is T[] =>
+  isBoundedArray(value, maxLength, itemGuard) && value.length > 0
+
 const isRect = (value: unknown): value is NativeOverlayRect =>
   isRecord(value) &&
   isFiniteNumber(value.x) &&
@@ -386,9 +411,11 @@ const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
       (value.icon === undefined || typeof value.icon === 'string') &&
       (value.active === undefined || typeof value.active === 'boolean') &&
       (value.disabled === undefined || typeof value.disabled === 'boolean') &&
-      Array.isArray(value.actions) &&
-      value.actions.length > 0 &&
-      value.actions.every(isMenuSubAction)
+      isNonEmptyBoundedArray(
+        value.actions,
+        MAX_OVERLAY_SUB_ACTIONS,
+        isMenuSubAction
+      )
     )
   }
 
@@ -412,7 +439,7 @@ const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
 }
 
 const hasMenuItems = (items: unknown): boolean =>
-  Array.isArray(items) && items.length > 0 && items.every(isMenuItem)
+  isNonEmptyBoundedArray(items, MAX_OVERLAY_ITEMS, isMenuItem)
 
 const isMenuSection = (value: unknown): value is NativeOverlayMenuSection =>
   isRecord(value) &&
@@ -420,13 +447,30 @@ const isMenuSection = (value: unknown): value is NativeOverlayMenuSection =>
   hasMenuItems(value.items)
 
 const hasMenuSections = (sections: unknown): boolean =>
-  Array.isArray(sections) &&
-  sections.length > 0 &&
-  sections.every(isMenuSection)
+  isNonEmptyBoundedArray(sections, MAX_OVERLAY_SECTIONS, isMenuSection)
 
 const isStringRecord = (value: unknown): value is Record<string, string> =>
-  isRecord(value) &&
-  Object.values(value).every((entry) => typeof entry === 'string')
+  isRecord(value) && hasBoundedStringValues(value, MAX_THEME_VARIABLES)
+
+const hasBoundedStringValues = (
+  value: Record<string, unknown>,
+  maxEntries: number
+): value is Record<string, string> => {
+  let entryCount = 0
+
+  for (const key in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) {
+      continue
+    }
+
+    entryCount += 1
+    if (entryCount > maxEntries || typeof value[key] !== 'string') {
+      return false
+    }
+  }
+
+  return true
+}
 
 const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   isRecord(value) &&
@@ -435,7 +479,9 @@ const isMenuPayload = (value: unknown): value is NativeOverlayMenuPayload =>
   (value.matchAnchorWidth === undefined ||
     typeof value.matchAnchorWidth === 'boolean') &&
   (value.surfaceTone === undefined || typeof value.surfaceTone === 'string') &&
-  (hasMenuItems(value.items) || hasMenuSections(value.sections))
+  (value.items === undefined || hasMenuItems(value.items)) &&
+  (value.sections === undefined || hasMenuSections(value.sections)) &&
+  (value.items !== undefined || value.sections !== undefined)
 
 const isTooltipPayload = (
   value: unknown
@@ -455,8 +501,11 @@ const isCommandPaletteItem = (
   (value.hint === undefined || typeof value.hint === 'string') &&
   isString(value.icon) &&
   (value.shortcut === undefined ||
-    (Array.isArray(value.shortcut) &&
-      value.shortcut.every((entry) => typeof entry === 'string')))
+    isBoundedArray(
+      value.shortcut,
+      MAX_COMMAND_PALETTE_SHORTCUTS,
+      (entry): entry is string => typeof entry === 'string'
+    ))
 
 const isCommandPaletteActions = (
   value: unknown
@@ -468,10 +517,12 @@ const isStringMatrix = (
 ): value is readonly (readonly string[])[] =>
   Array.isArray(value) &&
   value.length > 0 &&
+  value.length <= MAX_NEW_SESSION_AREA_ROWS &&
   value.every(
     (row) =>
       Array.isArray(row) &&
       row.length > 0 &&
+      row.length <= MAX_NEW_SESSION_AREA_COLUMNS &&
       row.every((entry) => typeof entry === 'string')
   )
 
@@ -531,8 +582,11 @@ const isCommandPaletteDialogPayload = (
     typeof value.activeDescendantId === 'string') &&
   (value.argumentPlaceholder === undefined ||
     typeof value.argumentPlaceholder === 'string') &&
-  Array.isArray(value.results) &&
-  value.results.every(isCommandPaletteItem) &&
+  isBoundedArray(
+    value.results,
+    MAX_COMMAND_PALETTE_RESULTS,
+    isCommandPaletteItem
+  ) &&
   isCommandPaletteActions(value.actions)
 
 const isNewSessionDialogPayload = (
@@ -547,15 +601,21 @@ const isNewSessionDialogPayload = (
   isString(value.selectedLayoutId) &&
   isFiniteNumber(value.activeCommandPaneIndex) &&
   value.activeCommandPaneIndex >= 0 &&
-  Array.isArray(value.layouts) &&
-  value.layouts.length > 0 &&
-  value.layouts.every(isNewSessionLayoutOption) &&
-  Array.isArray(value.panes) &&
-  value.panes.length > 0 &&
-  value.panes.every(isNewSessionPaneOption) &&
-  Array.isArray(value.commands) &&
-  value.commands.length > 0 &&
-  value.commands.every(isNewSessionCommandOption) &&
+  isNonEmptyBoundedArray(
+    value.layouts,
+    MAX_NEW_SESSION_LAYOUTS,
+    isNewSessionLayoutOption
+  ) &&
+  isNonEmptyBoundedArray(
+    value.panes,
+    MAX_NEW_SESSION_PANES,
+    isNewSessionPaneOption
+  ) &&
+  isNonEmptyBoundedArray(
+    value.commands,
+    MAX_NEW_SESSION_COMMANDS,
+    isNewSessionCommandOption
+  ) &&
   isNewSessionActions(value.actions)
 
 const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>

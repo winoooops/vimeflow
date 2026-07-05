@@ -474,6 +474,35 @@ describe('NativeOverlayController', () => {
     expect(menuWindow.setAlwaysOnTop).toHaveBeenCalledWith(true, 'screen-saver')
   })
 
+  test('accepts command palette dialog payloads with no results', async () => {
+    const emptyResultsRequest = {
+      ...dialogRequest,
+      surfaceId: 'dialog-empty-results',
+      payload: {
+        ...dialogRequest.payload,
+        query: 'missing',
+        selectedIndex: -1,
+        results: [],
+      },
+    } as const
+
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      emptyResultsRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    finishOverlayLoad(1)
+
+    await Promise.resolve()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      emptyResultsRequest
+    )
+
+    await acknowledgeOverlayReady(menuWindow, emptyResultsRequest.surfaceId)
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+  })
+
   test('relays owner menu keydown events to the non-focusable menu layer', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -689,6 +718,71 @@ describe('NativeOverlayController', () => {
 
     await acknowledgeOverlayReady(overlayWindow, themedRequest.surfaceId)
     await expect(openPromise).resolves.toEqual({ accepted: true })
+  })
+
+  test('rejects oversized overlay payload collections before rendering', async () => {
+    const oversizedRequest = {
+      ...request,
+      payload: {
+        kind: 'menu',
+        items: Array.from({ length: 201 }, (_value, index) => ({
+          id: `item-${index}`,
+          label: `Item ${index}`,
+        })),
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        oversizedRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('rejects oversized optional menu collections even with valid items', async () => {
+    const oversizedRequest = {
+      ...request,
+      payload: {
+        kind: 'menu',
+        items: [{ id: 'copy', label: 'Copy' }],
+        sections: Array.from({ length: 51 }, (_value, index) => ({
+          label: `Section ${index}`,
+          items: [{ id: `item-${index}`, label: `Item ${index}` }],
+        })),
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        oversizedRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('rejects oversized theme variable records before rendering', async () => {
+    const oversizedThemeRequest = {
+      ...request,
+      theme: {
+        variables: Object.fromEntries(
+          Array.from({ length: 513 }, (_value, index) => [
+            `--color-${index}`,
+            '#000000',
+          ])
+        ),
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        oversizedThemeRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   test('falls back locally and hides the overlay window when render is never acknowledged', async () => {

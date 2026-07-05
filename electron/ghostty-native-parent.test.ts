@@ -1341,6 +1341,75 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('contains native callback sidecar rejections', async () => {
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+
+    const callbacks: {
+      onInput?: (data: string) => void
+      onResize?: (cols: number, rows: number) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, input, resize, _focus, _shortcut, _renamePane) => {
+          void _focus
+          void _shortcut
+          void _renamePane
+          callbacks.onInput = input
+          callbacks.onResize = resize
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.reject(new Error('sidecar unavailable'))),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+    update?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    callbacks.onInput?.('a')
+    callbacks.onResize?.(80, 24)
+    await Promise.resolve()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Ghostty native sidecar invoke failed',
+      expect.any(Error)
+    )
+    expect(warnSpy).toHaveBeenCalledTimes(2)
+
+    controller.dispose()
+    warnSpy.mockRestore()
+  })
+
   test('keeps separate surfaces for split panes', () => {
     const callbacks: {
       onInput: (data: string) => void

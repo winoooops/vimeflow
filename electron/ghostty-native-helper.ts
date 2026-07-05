@@ -316,10 +316,18 @@ export class GhosttyNativeHelperController {
     )
 
     helper.stdout.on('data', (chunk: Buffer | string) => {
+      if (this.helper !== helper) {
+        return
+      }
+
       this.appendStdout(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     })
 
     helper.stderr?.on('data', (chunk: Buffer | string) => {
+      if (this.helper !== helper) {
+        return
+      }
+
       // eslint-disable-next-line no-console
       console.warn(`[ghostty-native] ${String(chunk)}`)
     })
@@ -327,21 +335,17 @@ export class GhosttyNativeHelperController {
     helper.stdin.on('error', (error) => {
       // eslint-disable-next-line no-console
       console.warn('Ghostty native helper stdin failed', error)
+      this.terminateHelper(helper)
     })
 
     helper.on('exit', () => {
-      this.helper = null
-      this.currentPane = null
-      this.currentWindow = null
-      this.clearStdout()
-      this.discardUntilFrameStart = false
-      this.lastResize = null
-      this.pendingStdinBytes = 0
+      this.resetHelperState(helper)
     })
 
     helper.on('error', (error) => {
       // eslint-disable-next-line no-console
       console.warn('Ghostty native helper failed', error)
+      this.terminateHelper(helper)
     })
 
     this.helper = helper
@@ -369,6 +373,10 @@ export class GhosttyNativeHelperController {
 
       const headerEnd = this.indexOfHeaderEnd()
       if (headerEnd === -1) {
+        if (this.stdoutLength > MAX_FRAME_BYTES) {
+          this.shutdownHelper()
+        }
+
         return
       }
 
@@ -459,13 +467,7 @@ export class GhosttyNativeHelperController {
 
   private shutdownHelper(): void {
     const helper = this.helper
-    this.helper = null
-    this.currentPane = null
-    this.currentWindow = null
-    this.clearStdout()
-    this.discardUntilFrameStart = false
-    this.lastResize = null
-    this.pendingStdinBytes = 0
+    this.resetHelperState(helper)
 
     if (!helper) {
       return
@@ -477,6 +479,25 @@ export class GhosttyNativeHelperController {
       // eslint-disable-next-line no-console
       console.warn('Ghostty native helper shutdown failed', error)
     }
+    helper.kill()
+  }
+
+  private resetHelperState(helper: GhosttyNativeHelperProcess | null): void {
+    if (helper !== null && this.helper !== helper) {
+      return
+    }
+
+    this.helper = null
+    this.currentPane = null
+    this.currentWindow = null
+    this.clearStdout()
+    this.discardUntilFrameStart = false
+    this.lastResize = null
+    this.pendingStdinBytes = 0
+  }
+
+  private terminateHelper(helper: GhosttyNativeHelperProcess): void {
+    this.resetHelperState(helper)
     helper.kill()
   }
 
